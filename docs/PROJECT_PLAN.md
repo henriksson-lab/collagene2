@@ -111,6 +111,8 @@ The desktop MVP baseline is viewer, GenBank import and virtual restriction diges
 
 The user has reviewed the early preview and considers the GUI unfinished, particularly the left side. Complete the functional desktop workspace alongside cloning controls before requesting another GUI review: compact functional navigation, a searchable document explorer, document switching tabs, and a coherent editor toolbar and inspector. Use Benchling's navigation and sequence workspace as visual references while retaining simple document organization. A working viewer and passing scientific tests alone do not establish GUI readiness. Keep mobile design deferred.
 
+The cloning interaction should follow the sequence-centred Benchling assembly pattern: method, backbone/insert slots populated from source selections, preparation and primer review, junction/product preview, then outputs. The dedicated draft and source-view connections remain required; numeric forms alone do not satisfy this workflow. [Interaction design and reviewed reference sources](CLONING_INTERACTION_DESIGN.md).
+
 The MVP must satisfy these acceptance conditions:
 
 1. Open a real GenBank sequence directly, with explicit import errors and retained original evidence. Preserve topology, IUPAC calls, both strands, compound/origin-spanning annotations and supported qualifiers through native save/reopen and declared-loss exports.
@@ -149,6 +151,13 @@ inference from files or imported physical summaries, and it enables ordinary
 whole-fragment ligation when the operator supplies the required terminal groups.
 [Declaration scope](DECLARED_SOURCE_TERMINI.md). Existing unknown inputs and
 unsupported physical intermediates keep their previous restrictions.
+
+Source-derived overlap-primer suggestions now select anchored domains from explicit
+original-source intervals and synthesize only the requested neighboring homology.
+The web route includes source-selection capture, separate oligo review and explicit
+application before fresh verification; MCP uses the same engine. This advances
+ordinary assembly setup while the dedicated sequence-centred assembly workspace
+and region-defined intent remain required. [Planner model](OVERLAP_PRIMER_DESIGN.md).
 
 ## Feature inventory and delivery priorities
 

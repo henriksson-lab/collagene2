@@ -119,3 +119,5 @@ pub mod primer_reuse;
 pub mod ligation_recipe;
 
 pub mod assembly_junctions;
+
+pub mod overlap_primer_design;

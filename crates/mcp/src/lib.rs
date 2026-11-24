@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 116;
+pub const CURRENT_TOOL_COUNT: usize = 117;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -972,6 +972,16 @@ pub struct Proposal {
     pub inputs: Vec<BoundInput>,
     /// Typed PCR, overlap, digest, terminal treatment or ligation operations. Sources refer to input IDs or earlier steps.
     pub steps: Vec<Operation>,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OverlapPrimerDesignQuery {
+    /// Actual original templates with exact immutable source revisions.
+    pub inputs: Vec<BoundInput>,
+    /// Independently supplied intended DNA; never manufactured from chosen intervals.
+    pub target: DocumentRef,
+    /// Explicit ordered template intervals, orientation and bounded heuristic controls.
+    pub request: collagene_core::overlap_primer_design::Request,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -4654,6 +4664,60 @@ impl CollageneServer {
         output(
             json!({"document":args.document,"product_count":products.len(),"products":summaries,"truncated":products.len()>100,"model":"exact non-overlapping binding sites within one template turn; no experimental guarantee"}),
         )
+    }
+    #[tool(
+        description = "Plan bounded anchored PCR primers for explicitly ordered source intervals and orientations, using exact immutable DNA documents and an independently supplied target. Generates one-sided homology tails from the next actual source interval, never from target DNA, plus a practical overlap recipe and ordered oligos. Existing primer heuristic/conditions and Gibson/HiFi/InFusion advisory profile are explicit. Planner output is advisory and unverified, not a saved candidate or proof of amplification, specificity or target agreement. Pass its recipe and exact inputs/target to propose_overlap_assembly for fresh preparation and verification."
+    )]
+    async fn design_overlap_primers(
+        &self,
+        Parameters(args): Parameters<OverlapPrimerDesignQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.inputs.is_empty() || args.inputs.len() > 128 {
+            return Err(bad(
+                "overlap-primer design requires 1..128 actual source bindings",
+            ));
+        }
+        let server = self.clone();
+        self.compute(move || {
+            let (inputs,target)={let store=server.store.lock().unwrap();let target=store.document(&args.target)?;
+                let mut seen=BTreeSet::new();let mut sources=Vec::with_capacity(args.inputs.len());
+                for bound in &args.inputs {
+                    if bound.id.trim().is_empty()||bound.id.len()>128||!seen.insert(bound.id.as_str()) {return Err(bad("empty, oversized or duplicate template input ID"));}
+                    sources.push((bound.id.as_str(),store.document(&bound.document)?));
+                }
+                collagene_core::overlap_primer_design::preflight(&sources,target,&args.request).map_err(bad)?;
+                let inputs=sources.into_iter().map(|(id,molecule)|PlanInput{id:id.into(),revision:molecule.revision(),molecule:molecule.clone()}).collect::<Vec<_>>();
+                (inputs,target.clone())};
+            let report=collagene_core::overlap_primer_design::design(&inputs,&target,&args.request).map_err(bad)?;
+            let expected=collagene_core::overlap_primer_design::design_revision(&inputs,&target,&args.request).map_err(bad)?;
+            report.validate_binding(&expected).map_err(bad)?;
+            let ordered_oligos=report.recipe.fragments.iter().map(|fragment| {
+                match &fragment.preparation {
+                    collagene_core::assembly_recipe::Preparation::ExactPcr{forward,reverse}=>Ok(json!({
+                        "role":fragment.role,"input_id":fragment.input_id,"reverse_fragment":fragment.reverse,
+                        "forward":{"primer":forward,"ordered_sequence":forward.ordered_sequence()},
+                        "reverse":{"primer":reverse,"ordered_sequence":reverse.ordered_sequence()}})),
+                    _=>Err(bad("planner did not retain explicit exact-PCR preparation"))
+                }
+            }).collect::<Result<Vec<_>,_>>()?;
+            #[derive(Serialize)]
+            struct Evidence<'a>{inputs:&'a [BoundInput],target:&'a DocumentRef,report:&'a collagene_core::overlap_primer_design::Report,interpretation:&'static str}
+            let evidence=Evidence{inputs:&args.inputs,target:&args.target,report:&report,
+                interpretation:"Advisory anchored primer heuristic and source-derived one-sided homology only. Independent target identity is retained but agreement, amplification and uniqueness require fresh compiler/verifier reconstruction; no source or candidate is promoted."};
+            let artifact=server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","overlap-primer-design.json")?;
+            output(json!({"state":"advisory","verified":false,"inputs":args.inputs,"target":args.target,
+                "context_revision":report.context_revision,"source_revisions":report.source_revisions,
+                "recipe":report.recipe,"ordered_oligos":ordered_oligos,
+                "design_count":report.designs.len(),"designs":report.designs.iter().take(32).map(|design|json!({
+                    "source_revision":design.source_revision,"candidate_pair_count":design.pairs.len(),
+                    "evaluated_pairs":design.evaluated_pairs,"rejected_pairs":design.rejected_pairs,
+                    "warnings":design.warnings.iter().take(10).map(|w|w.chars().take(512).collect::<String>()).collect::<Vec<_>>(),
+                    "warnings_truncated":design.warnings.len()>10||design.warnings.iter().take(10).any(|w|w.chars().count()>512)})).collect::<Vec<_>>(),
+                "design_preview_truncated":report.designs.len()>32,
+                "warnings":report.warnings.iter().take(100).map(|w|w.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),
+                "warnings_truncated":report.warnings.len()>100||report.warnings.iter().take(100).any(|w|w.chars().count()>1024),
+                "artifact_id":artifact,"authority":"Advisory design only. Use the returned recipe with propose_overlap_assembly against the same exact inputs and independent target; method guidance and primer heuristics do not verify a cloning result."}))
+        }).await
     }
     #[tool(
         description = "Compile an explicit ordered overlap cloning recipe from immutable source document revisions and an independent target. Each fragment declares WholeLinear, an explicit DeclaredDuplex original-source terminal assumption, complete Digest with selected fragment, or ExactPcr with actual ordered oligos; orientations, homology lengths, topology and published-method advisory profile are explicit. Freshly reconstructs preparations and verifies the resulting typed plan. Atomically saves an immutable candidate and full preparation/junction/verification JSON; no guessed tails, automatic winner, source mutation or laboratory guarantee. Reuse verify_plan and HTML/PDF exports with its plan_revision."

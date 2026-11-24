@@ -113,6 +113,8 @@ pub enum OverlapPreparation {
 #[derive(Clone, PartialEq, Eq)]
 pub struct OverlapInput {
     pub document: usize,
+    pub interval_start: String,
+    pub interval_end: String,
     pub reverse: bool,
     pub treatment: Treatment,
     pub preparation: OverlapPreparation,
@@ -132,6 +134,8 @@ impl Default for OverlapInput {
     fn default() -> Self {
         Self {
             document: 0,
+            interval_start: "1".into(),
+            interval_end: String::new(),
             reverse: false,
             treatment: Treatment::Keep,
             preparation: OverlapPreparation::WholeLinear,
@@ -259,6 +263,32 @@ impl MethodsState {
         Ok((overlaps, options))
     }
 }
+#[derive(Clone, PartialEq, Eq)]
+struct PlannerForm {
+    overlap: String,
+    minimum: String,
+    maximum: String,
+    tm: String,
+}
+impl Default for PlannerForm {
+    fn default() -> Self {
+        Self {
+            overlap: "20".into(),
+            minimum: "18".into(),
+            maximum: "30".into(),
+            tm: "60".into(),
+        }
+    }
+}
+struct Suggestions {
+    report: collagene_core::overlap_primer_design::Report,
+    config: MethodsState,
+    form: PlannerForm,
+    context: Vec<crate::digest::SourceInfo>,
+    target: String,
+    target_context: crate::digest::SourceInfo,
+    epoch: u64,
+}
 #[derive(Clone)]
 struct Evidence {
     config: MethodsState,
@@ -353,6 +383,9 @@ pub fn CloningMethodsPanel(
     molecule: Memo<Molecule>,
     query_options: Memo<Vec<(usize, String)>>,
     get_query: Callback<usize, Option<Molecule>>,
+    source_info: Callback<usize, Option<crate::digest::SourceInfo>>,
+    target_info: Memo<crate::digest::SourceInfo>,
+    selected_region: Callback<(), Option<(usize, usize, usize)>>,
     config: RwSignal<MethodsState>,
     epoch: RwSignal<u64>,
     on_candidate: Callback<Candidate>,
@@ -376,6 +409,13 @@ pub fn CloningMethodsPanel(
             }
         })
     });
+    let source_context = Memo::new(move |_| {
+        source_indices
+            .get()
+            .into_iter()
+            .map(|i| source_info.run(i))
+            .collect::<Option<Vec<_>>>()
+    });
     let sources = Memo::new(move |_| {
         source_indices
             .get()
@@ -394,6 +434,9 @@ pub fn CloningMethodsPanel(
     let status = RwSignal::new(String::new());
     let generation = RwSignal::new(0u32);
     let evidence = RwSignal::new(None::<Arc<Evidence>>);
+    let planner_form = RwSignal::new(PlannerForm::default());
+    let suggestions = RwSignal::new(None::<Arc<Suggestions>>);
+
     let active = StoredValue::new_local(None::<Rc<CachedWorker>>);
     let alive = Arc::new(AtomicBool::new(true));
     let cleanup = alive.clone();
@@ -408,17 +451,211 @@ pub fn CloningMethodsPanel(
         let _ = (
             config.get(),
             source_revisions.get(),
+            source_context.get(),
+            target_info.get(),
+            planner_form.get(),
             target.get(),
             epoch.get(),
         );
         generation.update(|n| *n = n.wrapping_add(1));
         evidence.set(None);
+        suggestions.set(None);
         if let Some(w) = active.get_value() {
             w.close();
         }
         active.set_value(None);
         busy.set(false);
         status.set(String::new());
+    });
+    let suggestion_alive = alive.clone();
+    let suggest = Callback::new(move |()| {
+        let state = config.get_untracked();
+        let selected = planner_form.get_untracked();
+        if state.mode != Mode::Overlap {
+            status.set("Choose overlap assembly before suggesting primers.".into());
+            return;
+        }
+        let (Some(inputs), Some(context)) =
+            (sources.get_untracked(), source_context.get_untracked())
+        else {
+            status.set("Choose available original source documents.".into());
+            return;
+        };
+        let bound_target = molecule.get_untracked();
+        let target_context = target_info.get_untracked();
+        let bound_epoch = epoch.get_untracked();
+        let (inputs, request) =
+            match primer_design_request(&state, inputs, &bound_target, &selected) {
+                Ok(v) => v,
+                Err(e) => {
+                    status.set(e);
+                    return;
+                }
+            };
+        let revisions = inputs
+            .iter()
+            .map(|p| p.revision.clone())
+            .collect::<Vec<_>>();
+        if revisions
+            != context
+                .iter()
+                .map(|s| s.binding.revision.clone())
+                .collect::<Vec<_>>()
+        {
+            status.set("Original sources changed before primer planning.".into());
+            return;
+        }
+        let revision = match collagene_core::overlap_primer_design::design_revision(
+            &inputs,
+            &bound_target,
+            &request,
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                status.set(e.to_string());
+                return;
+            }
+        };
+        let target_revision = bound_target.revision();
+        if target_revision != target_context.binding.revision {
+            status.set("Target changed before primer planning.".into());
+            return;
+        }
+        if source_context.get_untracked() != Some(context.clone())
+            || target_info.get_untracked() != target_context
+            || config.get_untracked() != state
+            || planner_form.get_untracked() != selected
+            || epoch.get_untracked() != bound_epoch
+        {
+            status.set("Sources or settings changed before primer planning.".into());
+            return;
+        }
+        let worker = match CachedWorker::new() {
+            Ok(v) => Rc::new(v),
+            Err(e) => {
+                status.set(e);
+                return;
+            }
+        };
+        if let Some(old) = active.get_value() {
+            old.close();
+        }
+        active.set_value(Some(worker.clone()));
+        let token = generation.get_untracked().wrapping_add(1);
+        generation.set(token);
+        busy.set(true);
+        evidence.set(None);
+        suggestions.set(None);
+        status.set("Suggesting deterministic annealing domains and homology tails from original source regions…".into());
+        let alive = suggestion_alive.clone();
+        spawn_local(async move {
+            let response = ask(
+                &worker,
+                AnalysisJob::DesignOverlapPrimers {
+                    inputs,
+                    target: bound_target,
+                    request,
+                },
+                revision.clone(),
+                token,
+            )
+            .await;
+            worker.close();
+            if !alive.load(Ordering::Relaxed)
+                || generation.get_untracked() != token
+                || config.get_untracked() != state
+                || planner_form.get_untracked() != selected
+                || source_context.get_untracked() != Some(context.clone())
+                || target_info.get_untracked() != target_context
+                || target.get_untracked() != target_revision
+                || epoch.get_untracked() != bound_epoch
+            {
+                return;
+            }
+            active.set_value(None);
+            busy.set(false);
+            match response {
+                Ok(AnalysisResult::OverlapPrimersDesigned(report)) => match report
+                    .validate_binding(&revision)
+                {
+                    Ok(()) if report.source_revisions == revisions => {
+                        suggestions.set(Some(Arc::new(Suggestions {
+                            report,
+                            config: state,
+                            form: selected,
+                            context,
+                            target: target_revision,
+                            target_context,
+                            epoch: bound_epoch,
+                        })));
+                        status.set("Primer proposals ready. Review ordered sequences and explicitly apply before computing assembly evidence.".into());
+                    }
+                    Ok(()) => status.set(
+                        "Primer suggestions did not match the original source revisions.".into(),
+                    ),
+                    Err(error) => status.set(error.to_string()),
+                },
+                Ok(_) => status.set("Unexpected overlap primer design response.".into()),
+                Err(error) => status.set(error),
+            }
+        });
+    });
+    let apply_suggestions = Callback::new(move |()| {
+        let Some(proposal) = suggestions.get_untracked() else {
+            return;
+        };
+        if busy.get_untracked()
+            || config.get_untracked() != proposal.config
+            || planner_form.get_untracked() != proposal.form
+            || source_context.get_untracked() != Some(proposal.context.clone())
+            || target_info.get_untracked() != proposal.target_context
+            || target.get_untracked() != proposal.target
+            || epoch.get_untracked() != proposal.epoch
+        {
+            status.set("Sources, target or settings changed; request fresh primer suggestions before applying.".into());
+            return;
+        }
+        if proposal.report.recipe.fragments.len() != proposal.config.rows.len() {
+            status.set("Suggested primer rows do not match the original fragment order.".into());
+            return;
+        }
+        let mut updated = proposal.config.clone();
+        for (i, fragment) in proposal.report.recipe.fragments.iter().enumerate() {
+            if fragment.input_id != format!("source-{}", i + 1)
+                || fragment.reverse != updated.rows[i].reverse
+            {
+                status
+                    .set("Suggested source order or orientation changed; nothing applied.".into());
+                return;
+            }
+            let collagene_core::assembly_recipe::Preparation::ExactPcr { forward, reverse } =
+                &fragment.preparation
+            else {
+                status
+                    .set("Suggestion is not an explicit PCR preparation; nothing applied.".into());
+                return;
+            };
+            let row = &mut updated.rows[i];
+            row.preparation = OverlapPreparation::ExactPcr;
+            row.forward_name = forward.name.clone();
+            row.forward = forward.annealing.as_str().into();
+            row.forward_tail = forward.tail.clone();
+            row.reverse_name = reverse.name.clone();
+            row.reverse_primer = reverse.annealing.as_str().into();
+            row.reverse_tail = reverse.tail.clone();
+        }
+        updated.overlaps = proposal
+            .report
+            .recipe
+            .overlaps
+            .iter()
+            .map(usize::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        config.set(updated);
+        suggestions.set(None);
+        evidence.set(None);
+        status.set("Suggested primers copied explicitly. Compute method evidence and verify the prepared assembly against the independent target.".into());
     });
     let compute = Callback::new(move |()| {
         let state = config.get_untracked();
@@ -706,10 +943,14 @@ pub fn CloningMethodsPanel(
         <Show when=move||config.get().mode==Mode::Tailing><p class="helper">"Append one declared nucleotide to both actual 3′ ends of an established blunt duplex. This is an ideal endpoint operation; polymerase activity, mixtures and proprietary kit chemistry are not predicted. TA/GC products include two added junction bases."</p><div class="method-shortcuts"><button class="text-tool" on:click=move|_|config.update(|c|{c.vector.base=TailingBase::T;c.insert.base=TailingBase::A;})>"Use T/A pair"</button><button class="text-tool" on:click=move|_|config.update(|c|{c.vector.base=TailingBase::C;c.insert.base=TailingBase::G;})>"Use C/G pair"</button></div><TailFields vector=true config=config query_options=query_options primer_sources list_primers resolve_primer epoch/><TailFields vector=false config=config query_options=query_options primer_sources list_primers resolve_primer epoch/><label class="checkbox-label"><input type="checkbox" aria-label="Allow retained tailing ligation nicks" prop:checked=move||config.get().allow_nicked on:change=move|e|config.update(|c|c.allow_nicked=event_target_checked(&e))/>"Allow explicitly retained nicks"</label><p class="helper">"Exact PCR has 5′ OH termini. A sealed ligation may need an explicit phosphorylation step. Factory-vector chemistry and host nick repair are not inferred."</p></Show>
         <Show when=move||config.get().mode!=Mode::Tailing><Show when=move||config.get().mode==Mode::Overlap><label>"Overlap profile"<select aria-label="Overlap profile method" prop:value=move||format!("{:?}",config.get().method) on:change=move|e|config.update(|c|c.method=match event_target_value(&e).as_str(){"Gibson"=>OverlapMethod::Gibson,"InFusion"=>OverlapMethod::InFusion,_=>OverlapMethod::HiFi})><option value="Gibson">"Gibson"</option><option value="HiFi">"HiFi"</option><option value="InFusion">"In-Fusion"</option></select></label><p class="helper">"Fragments are listed in product order with explicit orientation. Homology geometry is checked exactly; published length guidance is advisory. No reaction completion or unique mixture product is established."</p></Show>
             <Show when=move||config.get().mode==Mode::Ligation><p class="helper">"List fragments in intended ligation order. Preparation, end repair and terminal treatment are explicit source-bound operations. Whole linear DNA retains unknown terminal chemistry; its sequence alone does not imply cleaved or PCR ends. Unknown ends can withhold ligation even after phosphorylation."</p><label class="checkbox-label"><input type="checkbox" aria-label="Allow retained ordered ligation nicks" prop:checked=move||config.get().allow_nicked on:change=move|e|config.update(|c|c.allow_nicked=event_target_checked(&e))/>"Allow explicitly retained nicks"</label></Show>
-            <For each=move||config.with(|c|(0..c.rows.len()).collect::<Vec<_>>()) key=|i|*i children=move|i|view!{<OverlapFields config index=i query_options primer_sources list_primers resolve_primer epoch/>}/>
+            <h3>"1. Choose source fragments and regions"</h3>
+            <For each=move||config.with(|c|(0..c.rows.len()).collect::<Vec<_>>()) key=|i|*i children=move|i|view!{<OverlapFields config index=i query_options primer_sources list_primers resolve_primer epoch selected_region/>}/>
             <button class="button secondary full" disabled=move||{config.with(|c|c.rows.len()>=12)} on:click=move|_|config.update(|c|c.rows.push(OverlapInput::default()))>{move||if config.get().mode==Mode::Ligation{"Add ligation fragment"}else{"Add overlap fragment"}}</button><p class="helper">"This panel supports up to 12 ordered fragments; the typed core has its separate documented work bounds."</p><Show when=move||config.get().mode==Mode::Overlap><label>"Overlap lengths in junction order (bp)"<input aria-label="Profile overlap lengths" prop:value=move||config.get().overlaps on:input=move|e|config.update(|c|c.overlaps=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label="Scan repeated overlap words" prop:checked=move||config.get().scan_repeats on:change=move|e|config.update(|c|c.scan_repeats=event_target_checked(&e))/>"Search supplied fragments for repeated homology words"</label><label>"Repeat comparison budget"<input type="number" min="1" aria-label="Overlap repeat budget" prop:value=move||config.get().comparisons on:input=move|e|config.update(|c|c.comparisons=event_target_value(&e))/></label><label>"Maximum reported homology occurrences"<input type="number" min="1" aria-label="Overlap occurrence limit" prop:value=move||config.get().occurrences on:input=move|e|config.update(|c|c.occurrences=event_target_value(&e))/></label></Show>
         </Show>
-        <label class="checkbox-label"><input type="checkbox" aria-label="Method product circular" prop:checked=move||config.get().circular on:change=move|e|config.update(|c|c.circular=event_target_checked(&e))/>"Circular candidate product"</label><button class="button primary full" disabled=move||busy.get() on:click=move|_|compute.run(())>"Compute method evidence"</button><button class="text-tool" disabled=move||!busy.get() on:click=move|_|{generation.update(|n|*n=n.wrapping_add(1));if let Some(w)=active.get_value(){w.close();}active.set_value(None);busy.set(false);status.set("Method analysis cancelled".into());}>"Cancel method analysis"</button><p class="method-status" role="status">{move||status.get()}</p>
+        <Show when=move||config.get().mode==Mode::Overlap><section class="overlap-primer-planner"><h3>"2. Suggest and review PCR primers"</h3><p class="helper">"Use the selected source regions and order to suggest one primer pair per fragment, including added homology tails. Your current primers stay unchanged until you explicitly apply the proposal. The independent target is never generated or selected by this step."</p><div class="primer-grid"><label>"Junction homology (bp)"<input type="number" min="1" aria-label="Suggested overlap homology bases" prop:value=move||planner_form.with(|f|f.overlap.clone()) on:input=move|e|planner_form.update(|f|f.overlap=event_target_value(&e))/></label><label>"Minimum annealing length"<input type="number" min="1" max="200" aria-label="Suggested primer minimum length" prop:value=move||planner_form.with(|f|f.minimum.clone()) on:input=move|e|planner_form.update(|f|f.minimum=event_target_value(&e))/></label><label>"Maximum annealing length"<input type="number" min="1" max="200" aria-label="Suggested primer maximum length" prop:value=move||planner_form.with(|f|f.maximum.clone()) on:input=move|e|planner_form.update(|f|f.maximum=event_target_value(&e))/></label><label>"Target annealing Tm (°C)"<input type="number" step="0.1" aria-label="Suggested primer target Tm" prop:value=move||planner_form.with(|f|f.tm.clone()) on:input=move|e|planner_form.update(|f|f.tm=event_target_value(&e))/></label></div><p class="helper">"Default filters: GC 20–80%, pair ΔTm ≤5°C, homopolymer run ≤5 and 3′ complementary run ≤3. Tm assumes 50 mM sodium and 500 nM total strands; these are calculations, not reagent or experimental performance predictions."</p><button class="button secondary full" disabled=move||busy.get() on:click=move|_|suggest.run(())>"Suggest PCR primers"</button>
+        {move||suggestions.get().map(|proposal|{let saved=proposal.clone();view!{<div class="overlap-primer-suggestions"><h4>"Proposed primer pairs — not yet applied"</h4>{proposal.report.designs.iter().enumerate().map(|(i,design)|{let interval=proposal.report.request.fragments.get(i);view!{<article><h4>{format!("Fragment {} · {}",i+1,proposal.context.get(i).map(|s|s.name.as_str()).unwrap_or("source unavailable"))}</h4>{interval.map(|region|view!{<p>{format!("Source interval {}–{} (1-based inclusive, unrolled) · {}",region.start+1,region.end,if region.reverse{"reverse in assembly"}else{"forward in assembly"})}</p>})}{design.pairs.first().map(|pair|view!{<pre>{format!("{}\nOrdered 5′→3′: {}{}\nAnnealing 5′→3′: {}\n5′ tail: {}\n\n{}\nOrdered 5′→3′: {}{}\nAnnealing 5′→3′: {}\n5′ tail: {}",pair.forward.primer.name,pair.forward.primer.tail,pair.forward.primer.annealing.as_str(),pair.forward.primer.annealing.as_str(),pair.forward.primer.tail,pair.reverse.primer.name,pair.reverse.primer.tail,pair.reverse.primer.annealing.as_str(),pair.reverse.primer.annealing.as_str(),pair.reverse.primer.tail)}</pre><p>{format!("Annealing Tm: {} / {} · pair ΔTm {:.1}°C · proposed PCR length {} bp",pair.forward.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.reverse.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.tm_difference_c,pair.product_length)}</p>})}{design.warnings.iter().map(|w|view!{<p>{w.clone()}</p>}).collect_view()}</article>}}).collect_view()}{proposal.report.warnings.iter().map(|w|view!{<p>{w.clone()}</p>}).collect_view()}<p class="helper">"A deterministic proposal under these filters is not a unique or experimentally validated primer design. Applying changes the preparation to exact PCR; verify the resulting assembly next."</p><button class="button primary full" disabled=move||busy.get() on:click=move|_|apply_suggestions.run(())>"Apply suggested primers"</button><button class="button secondary full" on:click=move|_|{if config.get_untracked()!=saved.config||planner_form.get_untracked()!=saved.form||source_context.get_untracked()!=Some(saved.context.clone())||target_info.get_untracked()!=saved.target_context||target.get_untracked()!=saved.target||epoch.get_untracked()!=saved.epoch{status.set("Sources or settings changed; request fresh suggestions.".into());return;}match serde_json::to_vec_pretty(&serde_json::json!({"sources":saved.context,"target":saved.target_context,"report":saved.report})){Ok(bytes)=>if let Err(e)=download("overlap-primer-suggestions.json","application/json",&bytes){status.set(e)},Err(e)=>status.set(e.to_string())}}>"Download suggested primer evidence"</button></div>}})}
+        </section></Show><Show when=move||config.get().mode!=Mode::Tailing><h3>"3. Verify the prepared assembly"</h3><p class="helper">"Review the applied preparation and orientation, then compute method evidence against your independent target. Suggested primers alone do not verify a cloning design."</p></Show>
+        <label class="checkbox-label"><input type="checkbox" aria-label="Method product circular" prop:checked=move||config.get().circular on:change=move|e|config.update(|c|c.circular=event_target_checked(&e))/>"Circular candidate product"</label><button class="button primary full" disabled=move||busy.get() on:click=move|_|compute.run(())>"Compute method evidence"</button><button class="text-tool" disabled=move||!busy.get() on:click=move|_|{generation.update(|n|*n=n.wrapping_add(1));if let Some(w)=active.get_value(){w.close();}active.set_value(None);busy.set(false);suggestions.set(None);status.set("Method analysis cancelled".into());}>"Cancel method analysis"</button><p class="method-status" role="status">{move||status.get()}</p>
         {move||evidence.get().map(|proof|{let report=proof.clone();view!{<div class="method-evidence">
             {proof.tails.iter().enumerate().map(|(i,preview)|{let opened=preview.molecule.clone();view!{<article class="tail-evidence"><h3>{format!("{} · {}-tailed duplex",if i==0{"Vector"}else{"Insert"},preview.base.as_str())}</h3><pre>{format!("Top 5′→3′: {}\nBottom 5′→3′: {}\n{}",short(preview.tailing.duplex.top.as_str()),short(preview.tailing.duplex.bottom.as_str()),preview.tailing.duplex.summary().map(|s|s.describe()).unwrap_or_else(|e|e.to_string()))}</pre><details><summary>"Source, additions and assumptions"</summary><pre>{format!("Source top 5′→3′: {}\nSource bottom 5′→3′: {}",short(preview.tailing.source.top.as_str()),short(preview.tailing.source.bottom.as_str()))}</pre>{preview.tailing.additions.iter().map(|a|view!{<p>{format!("New {:?} residue {}–{}: {} (no template ancestry)",a.strand,a.product_start+1,a.product_end,a.sequence)}</p>}).collect_view()}{preview.findings.iter().chain(&preview.tailing.warnings).map(|w|view!{<p>{w.clone()}</p>}).collect_view()}</details><button class="button secondary full" on:click=move|_|match on_products.run(vec![opened.clone()]){Ok(())=>status.set("Reference preview opened; reconstruct its original graph for later physical operations.".into()),Err(e)=>status.set(e)}>{format!("Open {} reference preview",if i==0{"vector"}else{"insert"})}</button></article>}}).collect_view()}
             {proof.ligation.as_ref().map(|preview|view!{<article class="ordered-ligation-evidence"><h3>"Reconstructed ligation evidence"</h3><p>{format!("Preparation reconstructed: {} · independent-target assessment: {}",preview.preparation_complete,method_status(&preview.verification.status))}</p><p class="helper">"These ends and junctions were freshly reconstructed from the original source operations. An end-compatible ordered candidate is not a unique mixture product or demonstrated reaction outcome."</p>{preview.prepared.iter().enumerate().map(|(i,fragment)|view!{<details><summary>{format!("Fragment {} · {} bp · {}",i+1,fragment.sequence.len(),proof.config.rows.get(i).map(OverlapInput::summary).unwrap_or_default())}</summary><pre>{format!("Prepared source before orientation: {}",short(fragment.sequence.as_str()))}</pre><p>{preview.physical.get(i).and_then(Option::as_ref).map(method_duplex).unwrap_or_else(||"Physical end geometry unavailable; no chemistry inferred".into())}</p><p class="helper">"End summary is in assembly orientation, after any explicit terminal treatment."</p></details>}).collect_view()}{preview.junctions.iter().map(|junction|view!{<details><summary>{format!("Junction {} · fragment {} → {}{}",junction.index+1,junction.upstream+1,junction.downstream+1,if junction.closing{" · circle closure"}else{""})}</summary><p>{format!("Upstream right: {}",method_end(junction.upstream_end.as_ref()))}</p><p>{format!("Downstream left: {}",method_end(junction.downstream_end.as_ref()))}</p></details>}).collect_view()}{preview.product_physical.as_ref().map(|physical|view!{<section><h4>"Reconstructed product"</h4><p>{method_duplex(physical)}</p>{physical.nicks.iter().map(|nick|view!{<p>{format!("Retained {} strand nick at top-reference boundary {}",match nick.strand{collagene_core::chemistry::Strand::Top=>"top",collagene_core::chemistry::Strand::Bottom=>"bottom"},nick.position)}</p>}).collect_view()}</section>})}{preview.verification.findings.iter().map(|finding|view!{<p>{finding.clone()}</p>}).collect_view()}</article>})}
@@ -763,10 +1004,13 @@ fn OverlapFields(
         Result<collagene_core::primer_reuse::Resolved, String>,
     >,
     epoch: RwSignal<u64>,
+    selected_region: Callback<(), Option<(usize, usize, usize)>>,
 ) -> impl IntoView {
     let row = move || config.with(|c| c.rows.get(index).cloned().unwrap_or_default());
+    let region_status = RwSignal::new(String::new());
     view! {<fieldset class="overlap-source-row"><legend>{format!("Fragment {}",index+1)}</legend>
         <label>"Original source"<select aria-label=move||format!("{} source {}",if config.get().mode==Mode::Ligation{"Ligation"}else{"Overlap"},index+1) prop:value=move||row().document.to_string() on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.document=event_target_value(&e).parse().unwrap_or(0)})>{move||query_options.get().into_iter().map(|(n,label)|view!{<option value=n.to_string()>{label}</option>}).collect_view()}</select></label>
+        <Show when=move||config.get().mode==Mode::Overlap><button class="button secondary" aria-label=format!("Set fragment {} from sequence selection",index+1) on:click=move|_|{match selected_region.run(()){Some((document,start,end)) if start<end&&start.checked_add(1).is_some()=>{config.update(|c|if let Some(row)=c.rows.get_mut(index){row.document=document;row.interval_start=(start+1).to_string();row.interval_end=end.to_string();});region_status.set("Selected source region copied. Review preparation and orientation; primers have not been changed.".into());},_=>region_status.set("Select one contiguous region in the sequence view first. Compound or origin-spanning feature selections need an explicit interval.".into())}} >"Set from sequence selection"</button><p class="helper" role="status">{move||region_status.get()}</p><label>"Primer design interval start (1-based inclusive)"<input type="number" min="1" aria-label=format!("Overlap interval start {}",index+1) prop:value=move||row().interval_start on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.interval_start=event_target_value(&e)})/></label><label>"Primer design interval end (1-based inclusive; blank = source end)"<input type="number" min="1" aria-label=format!("Overlap interval end {}",index+1) prop:value=move||row().interval_end on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.interval_end=event_target_value(&e)})/></label><p class="helper">"Intervals are used only when suggesting PCR primers. For a circular source, an end beyond its length describes one unrolled origin crossing. Existing whole-source, digest and manual PCR preparations are not silently sliced."</p></Show>
         <label>"Prepare fragment"<select aria-label=move||format!("{} preparation {}",if config.get().mode==Mode::Ligation{"Ligation"}else{"Overlap"},index+1) prop:value=move||match row().preparation{OverlapPreparation::WholeLinear=>"whole",OverlapPreparation::DeclaredDuplex=>"declared",OverlapPreparation::Digest=>"digest",OverlapPreparation::ExactPcr=>"pcr"} on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.preparation=match event_target_value(&e).as_str(){"declared"=>OverlapPreparation::DeclaredDuplex,"digest"=>OverlapPreparation::Digest,"pcr"=>OverlapPreparation::ExactPcr,_=>OverlapPreparation::WholeLinear}})><option value="whole">"Whole linear DNA"</option><option value="declared">"Declare intact linear duplex"</option><option value="digest">"Restriction digest fragment"</option><option value="pcr">"Exact PCR product"</option></select></label>
         <Show when=move||row().preparation==OverlapPreparation::WholeLinear><p class="helper">"Use an already linear source. Circular DNA must first be prepared by restriction digest or exact PCR; its origin is not an assumed cut."</p></Show>
         <Show when=move||row().preparation==OverlapPreparation::DeclaredDuplex><p class="helper">"Operator assumption for an original, intact linear duplex: declare its two terminal groups explicitly. This does not measure chemistry, cut or repair DNA, change its reference sequence, or reuse producer metadata. Circular, single-stranded and imported physical/reference-only intermediate sources are rejected by the core."</p><DeclaredEndFields config index left=true/><DeclaredEndFields config index left=false/><p class="helper">"All groups initially remain unknown. Orientation is applied after this declaration; any ligation terminal treatment remains a separate explicit step."</p></Show>
@@ -1042,4 +1286,121 @@ fn DeclaredEndFields(config: RwSignal<MethodsState>, index: usize, left: bool) -
         <label>"Declared 5′ group"<select aria-label=format!("Fragment {} {side} declared 5 prime",index+1) prop:value=move||match end().five_prime{FivePrime::Phosphate=>"phosphate",FivePrime::Hydroxyl=>"hydroxyl",FivePrime::Unknown=>"unknown"} on:change=move|e|{let value=match event_target_value(&e).as_str(){"phosphate"=>FivePrime::Phosphate,"hydroxyl"=>FivePrime::Hydroxyl,_=>FivePrime::Unknown};config.update(|c|if let Some(row)=c.rows.get_mut(index){if left{row.left_terminus.five_prime=value}else{row.right_terminus.five_prime=value}})}><option value="unknown">"Unknown"</option><option value="phosphate">"Phosphate (P)"</option><option value="hydroxyl">"Hydroxyl (OH)"</option></select></label>
         <label>"Declared 3′ group"<select aria-label=format!("Fragment {} {side} declared 3 prime",index+1) prop:value=move||match end().three_prime{ThreePrime::Hydroxyl=>"hydroxyl",ThreePrime::Blocked=>"blocked",ThreePrime::Unknown=>"unknown"} on:change=move|e|{let value=match event_target_value(&e).as_str(){"hydroxyl"=>ThreePrime::Hydroxyl,"blocked"=>ThreePrime::Blocked,_=>ThreePrime::Unknown};config.update(|c|if let Some(row)=c.rows.get_mut(index){if left{row.left_terminus.three_prime=value}else{row.right_terminus.three_prime=value}})}><option value="unknown">"Unknown"</option><option value="hydroxyl">"Hydroxyl (OH)"</option><option value="blocked">"Blocked"</option></select></label>
     </fieldset>}
+}
+
+fn primer_design_request(
+    state: &MethodsState,
+    inputs: Vec<Molecule>,
+    target: &Molecule,
+    form: &PlannerForm,
+) -> Result<
+    (
+        Vec<PlanInput>,
+        collagene_core::overlap_primer_design::Request,
+    ),
+    String,
+> {
+    use collagene_core::overlap_primer_design::{Fragment, Request};
+    if state.mode != Mode::Overlap
+        || inputs.len() != state.rows.len()
+        || inputs.is_empty()
+        || inputs.len() > 12
+    {
+        return Err("Choose 1–12 ordered source regions for overlap assembly.".into());
+    }
+    if [&form.overlap, &form.minimum, &form.maximum, &form.tm]
+        .iter()
+        .any(|s| s.len() > 32)
+    {
+        return Err("Primer settings exceed their field limits.".into());
+    }
+    let ids = (0..inputs.len())
+        .map(|i| format!("source-{}", i + 1))
+        .collect::<Vec<_>>();
+    let mut fragments = Vec::with_capacity(inputs.len());
+    for (i, (row, molecule)) in state.rows.iter().zip(&inputs).enumerate() {
+        if row.interval_start.len() > 20 || row.interval_end.len() > 20 {
+            return Err("Invalid primer design interval.".into());
+        }
+        let start = row
+            .interval_start
+            .trim()
+            .parse::<usize>()
+            .ok()
+            .and_then(|n| n.checked_sub(1))
+            .ok_or_else(|| {
+                format!(
+                    "Fragment {} start must be a 1-based source position.",
+                    i + 1
+                )
+            })?;
+        let end = if row.interval_end.trim().is_empty() {
+            molecule.sequence.len()
+        } else {
+            row.interval_end
+                .trim()
+                .parse::<usize>()
+                .map_err(|_| format!("Invalid end position for fragment {}.", i + 1))?
+        };
+        fragments.push(Fragment {
+            role: format!("fragment-{}", i + 1),
+            input_id: ids[i].clone(),
+            start,
+            end,
+            reverse: row.reverse,
+        });
+    }
+    let profile_options = ProfileOptions {
+        method: state.method,
+        scan_repeated_overlaps: state.scan_repeats,
+        max_comparisons: state
+            .comparisons
+            .parse()
+            .map_err(|_| "Invalid repeat comparison budget")?,
+        max_occurrences: state
+            .occurrences
+            .parse()
+            .map_err(|_| "Invalid repeat occurrence limit")?,
+    };
+    profile_options.validate().map_err(|e| e.to_string())?;
+    let request = Request {
+        name: format!("Suggested overlap PCR primers for {}", target.name),
+        fragments,
+        overlap: form
+            .overlap
+            .parse()
+            .map_err(|_| "Invalid homology length")?,
+        circular: state.circular,
+        primer_options: collagene_core::primers::DesignOptions {
+            min_length: form
+                .minimum
+                .parse()
+                .map_err(|_| "Invalid minimum annealing length")?,
+            max_length: form
+                .maximum
+                .parse()
+                .map_err(|_| "Invalid maximum annealing length")?,
+            target_tm_c: form.tm.parse().map_err(|_| "Invalid target annealing Tm")?,
+            max_pairs: 1,
+            ..Default::default()
+        },
+        profile_options,
+    };
+    let borrowed = ids
+        .iter()
+        .zip(&inputs)
+        .map(|(id, m)| (id.as_str(), m))
+        .collect::<Vec<_>>();
+    collagene_core::overlap_primer_design::preflight(&borrowed, target, &request)
+        .map_err(|e| e.to_string())?;
+    let bound = ids
+        .into_iter()
+        .zip(inputs)
+        .map(|(id, molecule)| PlanInput {
+            revision: molecule.revision(),
+            id,
+            molecule,
+        })
+        .collect();
+    Ok((bound, request))
 }

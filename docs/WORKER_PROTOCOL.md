@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **34** and reads supported schemas 1–33. Candidate files write schema 10; workspace plan schema is 8; the verifier is science-13.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **35** and reads supported schemas 1–34. Candidate files write schema 10; workspace plan schema is 8; the verifier is science-13.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -384,3 +384,14 @@ Original physical/reference-only markers and ssDNA/circular sources remain
 restrictive. Declaring ends on a step is unsupported, unknown groups stay unknown,
 and a declaration neither repairs material nor creates a methylation-generation
 claim. HTML/PDF retain the explicit operator hypothesis. [Scientific contract](DECLARED_SOURCE_TERMINI.md).
+
+## Source-derived overlap primer suggestions (schema 35)
+
+Append-only job 97 (`DesignOverlapPrimers`) and result 89
+(`OverlapPrimersDesigned`) bind original source IDs/revisions, explicit source
+intervals/orientations, primer/profile settings and the separate target in a
+context revision. Both tags reject pre-35 headers before deserializing the new
+payload. The ordinary 32 MiB cap applies. This is an advisory designer, not a
+verification report; applying a suggestion produces ordinary exact-PCR recipe
+rows for the existing fresh compiler/verifier and protocol exports. No new
+candidate, workspace-plan or scientific-operation layout is introduced.

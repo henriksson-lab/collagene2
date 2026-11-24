@@ -6,7 +6,7 @@ The **Assemble** inspector action opens the ordered overlap workflow. PCR, Assem
 - Restriction digest fragment: state enzyme names and the 1-based fragment number. The compiler records the digest operation and zero-based core index. Optional explicit end repair can fill 5′ overhangs, remove 3′ overhangs or blunt ends; the default retains the actual cohesive state, and repair is a separate typed operation. Cleavage is an explicit model assumption, not experimental activity or reagent/methylation permission.
 - Exact PCR: supply forward/reverse annealing domains separately from their 5′ extensions, all written 5′→3′. Exact binding and competing products are handled by the shared core verifier, not inferred from names or imported primer metadata.
 
-The reverse-complement option acts after preparation. Moving rows changes assembly order. Enter one overlap length per junction, including the closing junction for circular products, and select Gibson, HiFi or In-Fusion advisory guidance. No primer-design engine or external scientific process is called.
+The reverse-complement option acts after preparation. Moving rows changes assembly order. Enter one overlap length per junction, including the closing junction for circular products, and select Gibson, HiFi or In-Fusion advisory guidance. Manual preparation remains available; the source-bound basic primer suggestion route below uses the existing embedded heuristic engine. No external scientific process is called.
 
 Compute method evidence sends original sources, explicit recipe and independent target to the worker. The core reconstructs prepared fragments and checks their oriented end homology. The UI displays prepared reference DNA and actual upstream/downstream junction words; full evidence download retains the compiled preparation graph, source bindings, findings and target assessment. Preparation, sequence consistency and published length guidance are separate findings and do not establish a unique mixture product or experimental success.
 
@@ -23,3 +23,26 @@ reverse names, annealing domains and 5′ extensions are copied together and rem
 editable; no field is selected automatically. The same controls are available
 for PCR preparation in TA/GC workflows. Source event/revision changes invalidate
 the chooser, and changed recipe fields invalidate previous assembly evidence.
+
+
+## Suggest PCR overlap primers
+
+For a PCR-prepared overlap assembly, select the source interval and orientation
+for each ordered fragment, then choose the homology length and basic annealing
+length/Tm settings. **Set from sequence selection** copies the current contiguous
+source selection into a row; numeric source coordinates remain editable.
+**Suggest PCR primers** proposes anchored annealing domains and source-derived
+5′ homology extensions. It does not alter the row's current primers.
+
+Review the ordered oligos and their separate annealing/tail domains, then use
+**Apply suggested primers** to copy the suggestion into the preparation rows.
+Run the existing method/plan check to simulate the actual PCR and assembly and
+compare the product with the independent target. Changed source events, document
+identity, intervals, orientation, settings or target invalidate a suggestion,
+including switching between distinct documents with identical sequence content.
+The suggestions do not establish binding uniqueness or experimental success.
+
+This inspector route is groundwork for the dedicated sequence-centred assembly
+workspace described in [the interaction design](CLONING_INTERACTION_DESIGN.md).
+That workspace must also support declaring intent directly from selected regions
+without first importing an entire expected construct.

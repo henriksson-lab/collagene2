@@ -713,6 +713,29 @@ fn derived(
     if let Some(original) = result.metadata.remove("embl.original_record") {
         retain(&mut result.metadata, EVIDENCE_EMBL, original)?;
     }
+    // The source-bound keyboard edit log addresses its original active header,
+    // not this transformed reference. Retain it once as unverified source data;
+    // later generations with no new active recipe do not create new archives.
+    if let Some(recipe) = result
+        .metadata
+        .remove(crate::model::GENBANK_EDIT_RECIPE_KEY)
+    {
+        if recipe.len() > crate::model::MAX_GENBANK_EDIT_RECIPE_BYTES {
+            return Err(Error::TooLarge);
+        }
+        retain(
+            &mut result.metadata,
+            "annotation_mapping:unverified_genbank_edit_recipe",
+            recipe,
+        )?;
+    }
+    if let Some(scope) = result.metadata.remove("genbank:citation_scope") {
+        retain(
+            &mut result.metadata,
+            "annotation_mapping:ancestral_genbank_citation_scope",
+            scope,
+        )?;
+    }
     for key in [
         "source_record_index",
         "embl.sequence_version",

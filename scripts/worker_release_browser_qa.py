@@ -161,8 +161,8 @@ def assert_worker_release(browser, tape, name, isolated_tags=(19,)):
     # Every worker that actually exchanged an envelope must have become ready.
     assert all(entry['ready'] for entry in entries if entry['outgoing'] or entry['incoming']), entries
     for entry in entries:
-        assert all(item['magic'] == 'CGQ\x00' and item['version'] == 22 for item in entry['outgoing']), entry
-        assert all(item['magic'] == 'CGR\x00' and item['version'] == 22 for item in entry['incoming']), entry
+        assert all(item['magic'] == 'CGQ\x00' and item['version'] == 23 for item in entry['outgoing']), entry
+        assert all(item['magic'] == 'CGR\x00' and item['version'] == 23 for item in entry['incoming']), entry
         for reply in entry['incoming']:
             assert any(request['id'] == reply['id'] and request['revision'] == reply['revision'] for request in entry['outgoing']), entry
     # Stable appended wire identities:19 SaveWorkspace /20 LoadWorkspace (isolated),32 PrepareTracks,
@@ -266,7 +266,7 @@ def main():
         inspect_catalog(browser)
         assert assert_worker_release(browser, tape, 'reload', isolated_tags=(19, 20)) == meta
         browser.screenshot('/tmp/collagene2-worker-release-desktop.png')
-        print('PASS: existing HTTP cache/profile preserved; invalid old fixed URLs armed; full hashed loader/JS/WASM chain matches distribution; all constructors and actual child requests use one release directory; schema22 isolated autosave, retained tracks and catalog operations; missing meta fails closed; reload preserves working release; all startup errors checked')
+        print('PASS: existing HTTP cache/profile preserved; invalid old fixed URLs armed; full hashed loader/JS/WASM chain matches distribution; all constructors and actual child requests use one release directory; schema23 isolated autosave, retained tracks and catalog operations; missing meta fails closed; reload preserves working release; all startup errors checked')
     finally:
         browser.call('Page.removeScriptToEvaluateOnNewDocument', {'identifier': hook})
         browser.call('Fetch.disable')

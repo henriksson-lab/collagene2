@@ -402,6 +402,373 @@ pub struct Molecule {
     pub original_genbank: Option<String>,
 }
 
+/// Unverified source-bound edit log. It cannot authorize citation coordinates
+/// without replay against the actual selected original GenBank record.
+pub const GENBANK_EDIT_RECIPE_KEY: &str = "genbank:sequence_edit_recipe";
+pub const MAX_GENBANK_EDIT_RECIPE_BYTES: usize = 1024 * 1024;
+const MAX_GENBANK_EDIT_STEPS: usize = 1024;
+const MAX_GENBANK_EDIT_BASES: usize = 512 * 1024;
+const MAX_GENBANK_REPLAY_WORK: usize = 64_000_000;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GenbankSequenceEdit {
+    pub start: usize,
+    pub end: usize,
+    pub replacement: String,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GenbankEditRecipe {
+    pub version: u8,
+    pub original_record_blake3: String,
+    pub source_record_index: usize,
+    pub baseline_sequence_blake3: String,
+    pub baseline_length: usize,
+    pub edits: Vec<GenbankSequenceEdit>,
+    pub result_sequence_blake3: String,
+}
+fn gb_edit_error(message: &str) -> Error {
+    Error::Unsupported(format!("GenBank citation editing: {message}"))
+}
+fn gb_sequence_hash(sequence: &Sequence) -> String {
+    blake3::hash(sequence.as_str().as_bytes())
+        .to_hex()
+        .to_string()
+}
+fn gb_record_index(molecule: &Molecule) -> Result<usize, Error> {
+    let index = molecule
+        .metadata
+        .get("source_record_index")
+        .map(|value| {
+            value
+                .parse::<usize>()
+                .map_err(|_| gb_edit_error("invalid selected source record"))
+        })
+        .transpose()?
+        .unwrap_or(0);
+    if index > 100_000 {
+        return Err(Error::TooLarge);
+    }
+    Ok(index)
+}
+fn gb_recipe_shape(recipe: &GenbankEditRecipe, alphabet: Alphabet) -> Result<(), Error> {
+    let hex = |value: &str| {
+        value.len() == 64
+            && value
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    };
+    if recipe.version != 1
+        || recipe.baseline_length == 0
+        || recipe.baseline_length > MAX_SEQUENCE_LEN
+        || recipe.source_record_index > 100_000
+        || recipe.edits.len() > MAX_GENBANK_EDIT_STEPS
+        || !hex(&recipe.original_record_blake3)
+        || !hex(&recipe.baseline_sequence_blake3)
+        || !hex(&recipe.result_sequence_blake3)
+    {
+        return Err(gb_edit_error("unsupported or invalid edit recipe"));
+    }
+    let mut length = recipe.baseline_length;
+    let mut added = 0usize;
+    let mut work = 0usize;
+    for edit in &recipe.edits {
+        added = added
+            .checked_add(edit.replacement.len())
+            .ok_or(Error::TooLarge)?;
+        work = work.checked_add(length).ok_or(Error::TooLarge)?;
+        if edit.start > edit.end
+            || edit.end > length
+            || added > MAX_GENBANK_EDIT_BASES
+            || work > MAX_GENBANK_REPLAY_WORK
+        {
+            return Err(gb_edit_error(
+                "edit log exceeds replay bounds or has invalid intervals",
+            ));
+        }
+        if !edit.replacement.is_empty()
+            && Sequence::new(alphabet, &edit.replacement)?.as_str() != edit.replacement
+        {
+            return Err(gb_edit_error("edit replacement is not canonical sequence"));
+        }
+        length = length
+            .checked_sub(edit.end - edit.start)
+            .and_then(|n| n.checked_add(edit.replacement.len()))
+            .ok_or(Error::TooLarge)?;
+        if length == 0 || length > MAX_SEQUENCE_LEN {
+            return Err(Error::TooLarge);
+        }
+    }
+    Ok(())
+}
+fn gb_read_recipe(molecule: &Molecule) -> Result<Option<GenbankEditRecipe>, Error> {
+    let Some(raw) = molecule.metadata.get(GENBANK_EDIT_RECIPE_KEY) else {
+        return Ok(None);
+    };
+    if raw.len() > MAX_GENBANK_EDIT_RECIPE_BYTES {
+        return Err(Error::TooLarge);
+    }
+    let recipe: GenbankEditRecipe =
+        serde_json::from_str(raw).map_err(|_| gb_edit_error("invalid edit recipe JSON"))?;
+    gb_recipe_shape(&recipe, molecule.sequence.alphabet())?;
+    Ok(Some(recipe))
+}
+fn append_genbank_edit(
+    molecule: &Molecule,
+    start: usize,
+    end: usize,
+    replacement: &str,
+    result: &Sequence,
+) -> Result<GenbankEditRecipe, Error> {
+    let raw = molecule
+        .original_genbank
+        .as_ref()
+        .ok_or_else(|| gb_edit_error("original record is missing"))?;
+    if raw.len() > 32 * 1024 * 1024 {
+        return Err(Error::TooLarge);
+    }
+    if !raw.starts_with("LOCUS")
+        || raw.lines().filter(|line| line.starts_with("LOCUS")).count() != 1
+        || !raw.lines().any(|line| line.trim_end() == "ORIGIN")
+        || !raw.trim_end().ends_with("//")
+    {
+        return Err(gb_edit_error(
+            "ordinary single-record LOCUS/ORIGIN source is required",
+        ));
+    }
+    // The model can accept only ordinary bounded reference headers. Structured
+    // parsing and independent replay still happen at GenBank export time.
+    let mut references = 0usize;
+    for line in raw.lines().filter(|line| line.starts_with("REFERENCE")) {
+        references += 1;
+        if references > 1024 || line.len() > 4096 {
+            return Err(Error::TooLarge);
+        }
+        let description = line.strip_prefix("REFERENCE").unwrap().trim();
+        parse_genbank_reference(description, MAX_SEQUENCE_LEN)?;
+    }
+    let raw_hash = blake3::hash(raw.as_bytes()).to_hex().to_string();
+    let record_index = gb_record_index(molecule)?;
+    let current_hash = gb_sequence_hash(&molecule.sequence);
+    let mut recipe = if let Some(recipe) = gb_read_recipe(molecule)? {
+        if recipe.original_record_blake3 != raw_hash
+            || recipe.source_record_index != record_index
+            || recipe.result_sequence_blake3 != current_hash
+        {
+            return Err(gb_edit_error("stale source or sequence binding"));
+        }
+        recipe
+    } else {
+        GenbankEditRecipe {
+            version: 1,
+            original_record_blake3: raw_hash,
+            source_record_index: record_index,
+            baseline_sequence_blake3: current_hash,
+            baseline_length: molecule.sequence.len(),
+            edits: vec![],
+            result_sequence_blake3: String::new(),
+        }
+    };
+    // Normal consecutive typing/backspace inside the newest replacement is one
+    // bounded edit, rather than a document-length replay for every key press.
+    if let Some(last) = recipe.edits.last_mut().filter(|last| {
+        last.start == last.end && start >= last.start && end <= last.start + last.replacement.len()
+    }) {
+        last.replacement
+            .replace_range(start - last.start..end - last.start, replacement);
+        if last.start == last.end && last.replacement.is_empty() {
+            recipe.edits.pop();
+        }
+    } else {
+        recipe.edits.push(GenbankSequenceEdit {
+            start,
+            end,
+            replacement: replacement.into(),
+        });
+    }
+    recipe.result_sequence_blake3 = gb_sequence_hash(result);
+    gb_recipe_shape(&recipe, molecule.sequence.alphabet())?;
+    let mut scope_work = 0usize;
+    for line in raw.lines().filter(|line| line.starts_with("REFERENCE")) {
+        let description = line.strip_prefix("REFERENCE").unwrap().trim();
+        scope_work = scope_work
+            .checked_add(description.bytes().filter(|&b| b == b';').count() + 1)
+            .ok_or(Error::TooLarge)?;
+        if scope_work > 4096 || scope_work.saturating_mul(recipe.edits.len()) > 1_000_000 {
+            return Err(Error::TooLarge);
+        }
+        // A deleted citation scope is not silently assigned to unrelated bases.
+        remap_genbank_reference(description, &recipe)?;
+    }
+    Ok(recipe)
+}
+
+/// Verify an untrusted recipe by replaying against independently parsed original
+/// source DNA. Hashes alone never waive the original-record/current-DNA check.
+pub fn verified_genbank_edit_recipe(
+    molecule: &Molecule,
+    baseline: &Sequence,
+    record_index: usize,
+) -> Result<Option<GenbankEditRecipe>, Error> {
+    let Some(recipe) = gb_read_recipe(molecule)? else {
+        return Ok(None);
+    };
+    let raw = molecule
+        .original_genbank
+        .as_ref()
+        .ok_or_else(|| gb_edit_error("missing original record"))?;
+    if raw.len() > 32 * 1024 * 1024 {
+        return Err(Error::TooLarge);
+    }
+    if recipe.original_record_blake3 != blake3::hash(raw.as_bytes()).to_hex().as_str()
+        || recipe.source_record_index != record_index
+        || gb_record_index(molecule)? != record_index
+        || recipe.baseline_length != baseline.len()
+        || baseline.alphabet() != molecule.sequence.alphabet()
+        || recipe.baseline_sequence_blake3 != gb_sequence_hash(baseline)
+        || recipe.result_sequence_blake3 != gb_sequence_hash(&molecule.sequence)
+    {
+        return Err(gb_edit_error(
+            "source record, baseline or result binding disagrees",
+        ));
+    }
+    let mut replay = baseline.as_str().to_owned();
+    for edit in &recipe.edits {
+        replay.replace_range(edit.start..edit.end, &edit.replacement);
+    }
+    if replay != molecule.sequence.as_str() {
+        return Err(gb_edit_error(
+            "edit replay does not reconstruct current DNA",
+        ));
+    }
+    Ok(Some(recipe))
+}
+
+fn parse_genbank_reference(
+    description: &str,
+    length: usize,
+) -> Result<(&str, Vec<(usize, usize)>), Error> {
+    if description.len() > 4096 {
+        return Err(Error::TooLarge);
+    }
+    let (number, ranges) = description.split_once("(bases ").ok_or_else(|| {
+        gb_edit_error("only literal REFERENCE n (bases a to b; c to d) is supported")
+    })?;
+    let index = number
+        .trim()
+        .parse::<usize>()
+        .map_err(|_| gb_edit_error("invalid reference number"))?;
+    if index == 0 {
+        return Err(gb_edit_error("invalid reference number"));
+    }
+    let ranges = ranges
+        .trim()
+        .strip_suffix(')')
+        .ok_or_else(|| gb_edit_error("unsupported reference scope"))?;
+    let mut spans = Vec::new();
+    for range in ranges.split(';') {
+        if spans.len() == 256 {
+            return Err(Error::TooLarge);
+        }
+        let (start, end) = range
+            .trim()
+            .split_once(" to ")
+            .ok_or_else(|| gb_edit_error("unsupported reference interval"))?;
+        let start = start
+            .trim()
+            .parse::<usize>()
+            .map_err(|_| gb_edit_error("invalid reference start"))?;
+        let end = end
+            .trim()
+            .parse::<usize>()
+            .map_err(|_| gb_edit_error("invalid reference end"))?;
+        if start == 0 || start > end || end > length {
+            return Err(gb_edit_error("reference interval outside source"));
+        }
+        spans.push((start - 1, end));
+    }
+    Ok((number, spans))
+}
+
+/// Project ordinary citation interval envelopes with the same endpoint policy
+/// as feature editing. This is correspondence, never support for inserted DNA.
+pub fn remap_genbank_reference(
+    description: &str,
+    recipe: &GenbankEditRecipe,
+) -> Result<String, Error> {
+    // This coordinate utility also rejects unsafe native caller inputs. Only
+    // verified_genbank_edit_recipe establishes source/current sequence binding.
+    if recipe.baseline_length == 0
+        || recipe.baseline_length > MAX_SEQUENCE_LEN
+        || recipe.edits.len() > MAX_GENBANK_EDIT_STEPS
+    {
+        return Err(Error::TooLarge);
+    }
+    let mut length = recipe.baseline_length;
+    for edit in &recipe.edits {
+        if edit.start > edit.end
+            || edit.end > length
+            || edit.replacement.len() > MAX_GENBANK_EDIT_BASES
+        {
+            return Err(gb_edit_error("invalid edit interval"));
+        }
+        length = length
+            .checked_sub(edit.end - edit.start)
+            .and_then(|n| n.checked_add(edit.replacement.len()))
+            .filter(|&n| n > 0 && n <= MAX_SEQUENCE_LEN)
+            .ok_or(Error::TooLarge)?;
+    }
+    let (prefix, mut spans) = parse_genbank_reference(description, recipe.baseline_length)?;
+    if spans.len().saturating_mul(recipe.edits.len()) > 1_000_000 {
+        return Err(Error::TooLarge);
+    }
+    let original = spans.clone();
+    for edit in &recipe.edits {
+        let shift =
+            |coordinate: usize| coordinate - (edit.end - edit.start) + edit.replacement.len();
+        for span in &mut spans {
+            let (start, end) = *span;
+            if end <= edit.start {
+                continue;
+            }
+            if start >= edit.end {
+                *span = (shift(start), shift(end));
+                continue;
+            }
+            *span = (
+                if start < edit.start {
+                    start
+                } else {
+                    edit.start
+                },
+                if end > edit.end {
+                    shift(end)
+                } else {
+                    edit.start + edit.replacement.len()
+                },
+            );
+        }
+        spans.retain(|&(start, end)| start < end);
+        if spans.is_empty() {
+            return Err(gb_edit_error(
+                "edit removes the entire cited interval; citation remains in the original source, but automatic export cannot assign a new scope",
+            ));
+        }
+    }
+    if spans == original {
+        return Ok(description.into());
+    }
+    Ok(format!(
+        "{prefix}(bases {})",
+        spans
+            .iter()
+            .map(|&(start, end)| format!("{} to {}", start + 1, end))
+            .collect::<Vec<_>>()
+            .join("; ")
+    ))
+}
+
 impl Molecule {
     pub fn dna(name: impl Into<String>, bases: &str, topology: Topology) -> Result<Self, Error> {
         Ok(Self {
@@ -437,6 +804,19 @@ impl Molecule {
     /// Apply an edit to an explicit half-open, non-wrapping interval.
     /// Intersected annotations are retained with a review flag and stale translations removed.
     pub fn replace(&self, start: usize, end: usize, replacement: &str) -> Result<Self, Error> {
+        // Untrusted source/recipe attachments must be bounded before rich model
+        // cloning, not merely when the optional citation log is decoded later.
+        if self
+            .metadata
+            .get(GENBANK_EDIT_RECIPE_KEY)
+            .is_some_and(|raw| raw.len() > MAX_GENBANK_EDIT_RECIPE_BYTES)
+            || self
+                .original_genbank
+                .as_ref()
+                .is_some_and(|raw| raw.len() > 32 * 1024 * 1024)
+        {
+            return Err(Error::TooLarge);
+        }
         if self.features.iter().any(|f| {
             f.qualifiers.iter().any(|(key, _)| {
                 matches!(
@@ -446,13 +826,6 @@ impl Molecule {
             })
         }) {
             return Err(Error::Unsupported("editing coordinate-bearing feature qualifiers is not implemented; the original document remains intact".into()));
-        }
-        if self
-            .original_genbank
-            .as_ref()
-            .is_some_and(|text| text.lines().any(|line| line.starts_with("REFERENCE")))
-        {
-            return Err(Error::Unsupported("editing GenBank reference ranges is not implemented; keep this document as an input and save designed products separately".into()));
         }
         let len = self.sequence.len();
         if start > end || end > len {
@@ -540,10 +913,27 @@ impl Molecule {
                 )),
             }
         }
-        let mut result = self.clone();
         let mut bases = self.sequence.bases.clone();
         bases.replace_range(start..end, &replacement);
-        result.sequence = Sequence::new(self.sequence.alphabet(), &bases)?;
+        let sequence = Sequence::new(self.sequence.alphabet(), &bases)?;
+        let pending_recipe = if self
+            .original_genbank
+            .as_ref()
+            .is_some_and(|raw| raw.lines().any(|line| line.starts_with("REFERENCE")))
+            || self.metadata.contains_key(GENBANK_EDIT_RECIPE_KEY)
+        {
+            let recipe = append_genbank_edit(self, start, end, &replacement, &sequence)?;
+            let encoded =
+                serde_json::to_string(&recipe).map_err(|e| Error::Format(e.to_string()))?;
+            if encoded.len() > MAX_GENBANK_EDIT_RECIPE_BYTES {
+                return Err(Error::TooLarge);
+            }
+            Some(encoded)
+        } else {
+            None
+        };
+        let mut result = self.clone();
+        result.sequence = sequence;
         result.features.clear();
         for feature in &self.features {
             let (location, touched) = map(&feature.location, start, end, replacement.len())?;
@@ -556,6 +946,10 @@ impl Molecule {
                 }
                 result.features.push(feature);
             }
+        }
+        if let Some(raw) = pending_recipe {
+            result.metadata.insert(GENBANK_EDIT_RECIPE_KEY.into(), raw);
+            result.metadata.insert("genbank:citation_scope".into(), "Original citations require source-bound edit replay and coordinate projection before export; they do not establish support for edited sequence.".into());
         }
         result.validate()?;
         Ok(result)

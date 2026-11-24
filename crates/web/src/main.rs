@@ -47,6 +47,10 @@ mod oligo_import;
 #[cfg(target_arch = "wasm32")]
 mod protein_properties;
 #[cfg(target_arch = "wasm32")]
+mod restriction_map;
+#[cfg(target_arch = "wasm32")]
+mod restriction_view;
+#[cfg(target_arch = "wasm32")]
 mod run_capture;
 #[cfg(target_arch = "wasm32")]
 mod search_view;

@@ -66,7 +66,7 @@ fn dilution() -> Value {
 async fn dilution_exact_units_quantization_achieved_concentration_and_typed_errors() {
     let (c, s) = setup().await;
     let tools = c.list_tools(Default::default()).await.unwrap().tools;
-    assert_eq!(tools.len(), 96);
+    assert_eq!(tools.len(), 97);
     let tool = tools
         .iter()
         .find(|t| t.name == "calculate_dilution")

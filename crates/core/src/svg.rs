@@ -2,7 +2,7 @@
 //! SVG contains no scripts, external resources, raw markup, or executable qualifiers.
 use crate::{Alphabet, Error, Location, Molecule, Topology};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     f64::consts::{FRAC_PI_2, TAU},
     fmt::Write,
 };
@@ -13,6 +13,43 @@ pub const MAX_MAP_LABELS: usize = 32;
 pub const MAX_SVG_BYTES: usize = 2 * 1024 * 1024;
 const LANES: usize = 4;
 const LABEL_CHARS: usize = 28;
+pub const MAX_RESTRICTION_SITES: usize = 10_000;
+pub const MAX_RESTRICTION_LABELS: usize = 64;
+
+struct SvgOutput {
+    text: String,
+    failed: bool,
+}
+impl SvgOutput {
+    fn new(initial: String) -> Self {
+        let mut output = Self {
+            text: String::with_capacity(MAX_SVG_BYTES),
+            failed: false,
+        };
+        output.push_str(&initial);
+        output
+    }
+    fn push_str(&mut self, text: &str) {
+        let _ = self.write_str(text);
+    }
+    fn finish(self) -> Result<String, Error> {
+        if self.failed {
+            Err(Error::TooLarge)
+        } else {
+            Ok(self.text)
+        }
+    }
+}
+impl Write for SvgOutput {
+    fn write_str(&mut self, text: &str) -> std::fmt::Result {
+        if self.failed || text.len() > MAX_SVG_BYTES.saturating_sub(self.text.len()) {
+            self.failed = true;
+            return Err(std::fmt::Error);
+        }
+        self.text.push_str(text);
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureSpan {
@@ -462,7 +499,7 @@ fn description(feature: &MapFeature) -> String {
     }
     text
 }
-fn draw_feature(output: &mut String, scene: &MapScene, feature: &MapFeature) {
+fn draw_feature(output: &mut SvgOutput, scene: &MapScene, feature: &MapFeature) {
     let uncertain = feature.fuzzy || feature.ordered || feature.unresolved || feature.partial;
     let dash = if uncertain {
         " stroke-dasharray=\"6 4\""
@@ -549,9 +586,275 @@ fn units(alphabet: Alphabet) -> &'static str {
     alphabet.map_unit()
 }
 
+fn restriction_preflight(
+    m: &Molecule,
+    sites: &[crate::restriction_inspection::InspectionSite],
+) -> Result<(), Error> {
+    if sites.len() > MAX_RESTRICTION_SITES {
+        return Err(Error::TooLarge);
+    }
+    if m.sequence.alphabet() != Alphabet::Dna || m.sequence.is_empty() {
+        return Err(Error::Unsupported(
+            "restriction SVG requires a nonempty DNA source".into(),
+        ));
+    }
+    let invalid = || Error::Unsupported("invalid restriction SVG coordinate evidence".into());
+    let n = m.sequence.len();
+    let ni = i64::try_from(n).map_err(|_| Error::TooLarge)?;
+    let mut bytes = 0usize;
+    // Bound every text/vector before allocating the unique-ID set or SVG output.
+    for site in sites {
+        bytes = bytes
+            .checked_add(site.enzyme.len())
+            .ok_or(Error::TooLarge)?;
+        if bytes > 256 * 1024 || site.enzyme.len() > 1024 {
+            return Err(Error::TooLarge);
+        }
+        if site.enzyme.trim().is_empty()
+            || site.spans.is_empty()
+            || site.spans.len() > 2
+            || site.recognition_start >= n
+            || site.recognition_length == 0
+            || site.recognition_length > n
+        {
+            return Err(invalid());
+        }
+        let end = site
+            .recognition_start
+            .checked_add(site.recognition_length)
+            .ok_or_else(invalid)?;
+        if m.topology == Topology::Linear && end > n {
+            return Err(invalid());
+        }
+        let expected_parts = if end <= n { 1 } else { 2 };
+        if site.spans.len() != expected_parts
+            || site.spans[0].start != site.recognition_start
+            || site.spans[0].end != end.min(n)
+            || (expected_parts == 2 && (site.spans[1].start != 0 || site.spans[1].end != end - n))
+        {
+            return Err(invalid());
+        }
+        for (position, raw) in [
+            (site.top_cut, site.top_boundary),
+            (site.bottom_cut, site.bottom_boundary),
+        ] {
+            if let Some(position) = position {
+                let valid = if m.topology == Topology::Circular {
+                    position < n && raw.rem_euclid(ni) == position as i64
+                } else {
+                    position <= n && raw == position as i64
+                };
+                if !valid {
+                    return Err(invalid());
+                }
+            }
+        }
+    }
+    let mut ids = BTreeSet::new();
+    for site in sites {
+        if !ids.insert(site.index) {
+            return Err(invalid());
+        }
+    }
+    Ok(())
+}
+
+fn restriction_description(site: &crate::restriction_inspection::InspectionSite) -> String {
+    let cut = |value: Option<usize>, raw: i64| {
+        value
+            .map(|v| format!("boundary {v} (between bases; raw {raw})"))
+            .unwrap_or_else(|| format!("unavailable (raw boundary {raw})"))
+    };
+    format!(
+        "{}; one-based recognition {}; {}; {}; top {}; bottom {}. Provided sequence-coordinate evidence, not experimental cleavage.",
+        site.enzyme,
+        site.spans
+            .iter()
+            .map(|s| format!("{}–{}", s.start + 1, s.end))
+            .collect::<Vec<_>>()
+            .join(", "),
+        if site.reverse {
+            "reverse orientation"
+        } else {
+            "forward orientation"
+        },
+        if site.certain {
+            "certain recognition"
+        } else {
+            "possible recognition"
+        },
+        cut(site.top_cut, site.top_boundary),
+        cut(site.bottom_cut, site.bottom_boundary)
+    )
+}
+
+fn draw_restriction_markers(
+    output: &mut SvgOutput,
+    scene: &MapScene,
+    axis_y: f64,
+    sites: &[crate::restriction_inspection::InspectionSite],
+) -> Result<(), Error> {
+    let _ = write!(
+        output,
+        "<g data-restriction-total=\"{}\" data-restriction-source=\"{}\">",
+        sites.len(),
+        scene.revision
+    );
+    output.push_str("<desc>Only supplied recognition and cut annotations are shown. No motif search, search-completeness inference, enzyme activity or physical cleavage validation is performed.</desc>");
+    for site in sites {
+        let dash = if site.certain {
+            ""
+        } else {
+            " stroke-dasharray=\"4 3\""
+        };
+        let _ = write!(
+            output,
+            "<g data-restriction-index=\"{}\" data-recognition-start=\"{}\" data-recognition-length=\"{}\" data-certain=\"{}\" data-reverse=\"{}\" data-top-boundary=\"{}\" data-bottom-boundary=\"{}\"><title>{}</title>",
+            site.index,
+            site.recognition_start,
+            site.recognition_length,
+            site.certain,
+            site.reverse,
+            site.top_boundary,
+            site.bottom_boundary,
+            escape(&restriction_description(site))
+        );
+        for span in &site.spans {
+            let path = if scene.topology == Topology::Circular {
+                path_arc(span.start as f64, span.end as f64, scene.length, 183.)
+            } else {
+                format!(
+                    "M {:.3} {:.3} L {:.3} {:.3}",
+                    80. + span.start as f64 / scene.length as f64 * 840.,
+                    axis_y - 12.,
+                    80. + span.end as f64 / scene.length as f64 * 840.,
+                    axis_y - 12.
+                )
+            };
+            let _ = write!(
+                output,
+                "<path data-restriction-recognition=\"true\" data-start=\"{}\" data-end=\"{}\" d=\"{path}\" fill=\"none\" stroke=\"#8b5ca4\" stroke-width=\"3\"{dash}/>",
+                span.start, span.end
+            );
+        }
+        for (cut, top) in [(site.top_cut, true), (site.bottom_cut, false)] {
+            let Some(cut) = cut else {
+                continue;
+            };
+            let (a, b) = if scene.topology == Topology::Circular {
+                (
+                    coordinate(cut as f64, scene.length, if top { 184. } else { 174. }),
+                    coordinate(cut as f64, scene.length, if top { 198. } else { 184. }),
+                )
+            } else {
+                let x = 80. + cut as f64 / scene.length as f64 * 840.;
+                (
+                    (x, axis_y + if top { -8. } else { 4. }),
+                    (x, axis_y + if top { 3. } else { 16. }),
+                )
+            };
+            if [a.0, a.1, b.0, b.1].iter().any(|v| !v.is_finite()) {
+                return Err(Error::Unsupported(
+                    "non-finite restriction SVG geometry".into(),
+                ));
+            }
+            let _ = write!(
+                output,
+                "<path data-restriction-cut=\"{}\" data-position=\"{cut}\" d=\"M {:.3} {:.3} L {:.3} {:.3}\" fill=\"none\" stroke=\"{}\" stroke-width=\"2\"{dash}/>",
+                if top { "top" } else { "bottom" },
+                a.0,
+                a.1,
+                b.0,
+                b.1,
+                if top { "#2563a6" } else { "#b45c19" }
+            );
+        }
+        output.push_str("</g>");
+        if output.failed {
+            return Err(Error::TooLarge);
+        }
+    }
+    output.push_str("</g>");
+    Ok(())
+}
+
+fn draw_restriction_legend(
+    output: &mut SvgOutput,
+    sites: &[crate::restriction_inspection::InspectionSite],
+    y: f64,
+) {
+    let shown = sites.len().min(MAX_RESTRICTION_LABELS);
+    let _ = write!(
+        output,
+        "<g data-restriction-labels=\"{shown}\" data-restriction-labels-omitted=\"{}\"><text x=\"24\" y=\"{:.0}\" font-size=\"14\" font-weight=\"600\">Restriction recognition and cut coordinates</text><text x=\"24\" y=\"{:.0}\" font-size=\"11\">Purple: recognition; blue: top boundary; orange: bottom boundary; dashed / ?: possible recognition.</text><text x=\"24\" y=\"{:.0}\" font-size=\"11\">{} markers; {shown} labels; {} labels omitted. Labels abbreviated; full names/ranges are in titles. No cleavage validation.</text>",
+        sites.len() - shown,
+        y + 20.,
+        y + 40.,
+        y + 60.,
+        sites.len(),
+        sites.len() - shown
+    );
+    let mut order: Vec<_> = (0..sites.len()).collect();
+    order.sort_unstable_by_key(|&i| {
+        (
+            sites[i]
+                .top_cut
+                .or(sites[i].bottom_cut)
+                .unwrap_or(sites[i].recognition_start),
+            sites[i].index,
+        )
+    });
+    for i in 0..shown {
+        let rank = ((2 * i + 1) * sites.len()) / (2 * shown);
+        let site = &sites[order[rank]];
+        let x = 24. + (i % 4) as f64 * 242.;
+        let yy = y + 72. + (i / 4) as f64 * 22.;
+        let label = format!(
+            "{} {}{}",
+            abbreviated(&site.enzyme, 24),
+            site.recognition_start + 1,
+            if site.certain { "" } else { " ?" }
+        );
+        let _ = write!(
+            output,
+            "<svg data-restriction-label-index=\"{}\" x=\"{x:.0}\" y=\"{yy:.0}\" width=\"230\" height=\"20\" overflow=\"hidden\"><title>{}</title><text x=\"0\" y=\"14\" font-size=\"11\" fill=\"#674478\">{}</text></svg>",
+            site.index,
+            escape(&restriction_description(site)),
+            escape(&label)
+        );
+    }
+    output.push_str("</g>");
+}
+
 /// Render a standalone safe SVG. The same typed scene can be reused by another renderer.
 pub fn render_map(molecule: &Molecule) -> Result<String, Error> {
     let scene = layout_map(molecule)?;
+    render_scene(molecule, &scene, None)
+}
+
+/// Render supplied restriction-coordinate evidence for this exact source.
+/// Coordinates are validated and displayed, not rescanned or interpreted as
+/// experimental cleavage. All markers render or the export fails at its cap.
+pub fn render_map_with_restriction_sites(
+    molecule: &Molecule,
+    source_revision: &str,
+    sites: &[crate::restriction_inspection::InspectionSite],
+) -> Result<String, Error> {
+    restriction_preflight(molecule, sites)?;
+    let scene = layout_map(molecule)?;
+    if scene.revision != source_revision {
+        return Err(Error::Unsupported(
+            "restriction SVG source revision changed".into(),
+        ));
+    }
+    render_scene(molecule, &scene, Some(sites))
+}
+
+fn render_scene(
+    molecule: &Molecule,
+    scene: &MapScene,
+    sites: Option<&[crate::restriction_inspection::InspectionSite]>,
+) -> Result<String, Error> {
     let axis_y = scene.linear_feature_y + 40.0;
     let legend_y = if scene.topology == Topology::Circular {
         654.0
@@ -559,7 +862,11 @@ pub fn render_map(molecule: &Molecule) -> Result<String, Error> {
         axis_y + 68.0
     };
     let footer_y = legend_y + 66.0;
-    let height = footer_y + 108.0 + scene.warnings.len() as f64 * 20.0;
+    let base_height = footer_y + 108.0 + scene.warnings.len() as f64 * 20.0;
+    let restriction_height = sites.map_or(0., |s| {
+        96. + s.len().min(MAX_RESTRICTION_LABELS).div_ceil(4) as f64 * 22.
+    });
+    let height = base_height + restriction_height;
     let name = abbreviated(&scene.name, 40);
     let label = match scene.alphabet {
         Alphabet::Dna => "DNA",
@@ -571,7 +878,7 @@ pub fn render_map(molecule: &Molecule) -> Result<String, Error> {
     } else {
         "linear"
     };
-    let mut output = format!(
+    let mut output = SvgOutput::new(format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1000\" height=\"{height:.0}\" viewBox=\"0 0 1000 {height:.0}\" role=\"img\" data-revision=\"{}\" aria-label=\"{} sequence map\"><title>{}</title><desc>{} {} {topology} {label}; {} features, {} labels. Coordinates in data attributes are zero-based and half-open. {}</desc><rect width=\"1000\" height=\"{height:.0}\" fill=\"white\"/><g font-family=\"system-ui, sans-serif\" fill=\"#233c35\"><text x=\"500\" y=\"42\" font-size=\"22\" font-weight=\"600\" text-anchor=\"middle\">{}</text>",
         scene.revision,
         escape(&name),
@@ -582,7 +889,7 @@ pub fn render_map(molecule: &Molecule) -> Result<String, Error> {
         scene.labels.len(),
         escape(&scene.warnings.join(" ")),
         escape(&name)
-    );
+    ));
     if scene.topology == Topology::Circular {
         output.push_str("<circle cx=\"500\" cy=\"350\" r=\"190\" fill=\"none\" stroke=\"#c7d5ce\" stroke-width=\"2\"/>");
         let _ = write!(
@@ -629,7 +936,10 @@ pub fn render_map(molecule: &Molecule) -> Result<String, Error> {
         }
     }
     for feature in &scene.features {
-        draw_feature(&mut output, &scene, feature);
+        draw_feature(&mut output, scene, feature);
+    }
+    if let Some(sites) = sites {
+        draw_restriction_markers(&mut output, scene, axis_y, sites)?;
     }
     for map_label in &scene.labels {
         let feature = &scene.features[map_label.feature_index];
@@ -717,9 +1027,9 @@ pub fn render_map(molecule: &Molecule) -> Result<String, Error> {
             escape(warning)
         );
     }
-    output.push_str("</g></svg>");
-    if output.len() > MAX_SVG_BYTES {
-        return Err(Error::TooLarge);
+    if let Some(sites) = sites {
+        draw_restriction_legend(&mut output, sites, base_height);
     }
-    Ok(output)
+    output.push_str("</g></svg>");
+    output.finish()
 }

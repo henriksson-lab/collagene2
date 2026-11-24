@@ -34,6 +34,17 @@ impl Drop for Timer {
         }
     }
 }
+struct DragTimer {
+    id: i32,
+    _callback: Closure<dyn FnMut()>,
+}
+impl Drop for DragTimer {
+    fn drop(&mut self) {
+        if let Some(window) = web_sys::window() {
+            window.clear_interval_with_handle(self.id);
+        }
+    }
+}
 #[derive(Clone)]
 struct HitBox {
     x: f64,
@@ -41,6 +52,61 @@ struct HitBox {
     width: f64,
     height: f64,
     item: TrackItem,
+}
+// The shared selection is half-open. A zero-width range is an insertion caret.
+// Pointer gestures retain their original base; keyboard extensions retain their
+// original boundary, so reversing direction never moves the anchor.
+#[derive(Clone)]
+struct EditCursor {
+    identity: String,
+    revision: String,
+    anchor: usize,
+    caret: usize,
+    range: (usize, usize),
+    pointer_anchor: Option<usize>,
+}
+#[derive(Clone)]
+struct BaseDrag {
+    identity: String,
+    revision: String,
+    pointer_id: i32,
+    anchor: usize,
+}
+fn contiguous_location(mut location: &Location) -> bool {
+    loop {
+        match location {
+            Location::Range { .. } => return true,
+            Location::Complement(inner) => location = inner,
+            _ => return false,
+        }
+    }
+}
+fn base_at(
+    x: f64,
+    y: f64,
+    top: f64,
+    rh: f64,
+    cols: usize,
+    len: usize,
+    dragging: bool,
+) -> Option<usize> {
+    if len == 0 || cols == 0 || rh <= 0. {
+        return None;
+    }
+    let absolute = (y + top).max(0.);
+    let within = absolute % rh;
+    let gx = x - 64.;
+    if !dragging && (gx < 0. || gx >= cols as f64 * 8.5 || !(12. ..=54.).contains(&within)) {
+        return None;
+    }
+    let row = (absolute / rh).floor() as usize;
+    let col = ((gx / 8.5).floor().max(0.) as usize).min(cols - 1);
+    let base = row.saturating_mul(cols).saturating_add(col);
+    if dragging {
+        Some(base.min(len - 1))
+    } else {
+        (base < len).then_some(base)
+    }
 }
 fn lane(item: &TrackItem) -> usize {
     match item.kind {
@@ -104,6 +170,14 @@ fn slot(
         } else {
             layout.primers.placements.get(&feature).copied()
         }
+    } else if group == 2 && item.id.starts_with("restriction:") {
+        Some(
+            item.id
+                .trim_start_matches("restriction:")
+                .parse::<usize>()
+                .unwrap_or(ordinal)
+                % counts[group],
+        )
     } else if group == 3 {
         Some(usize::from(item.frame.unwrap_or(0)) + if item.reverse == Some(true) { 3 } else { 0 })
     } else {
@@ -135,6 +209,13 @@ pub fn SequenceView(
     search_regions: Regions,
     on_show_features: Callback<()>,
     identity: Memo<String>,
+    locked: Memo<bool>,
+    on_edit: Callback<(String, usize, usize, String), Result<(), String>>,
+    on_history: Callback<bool, Result<(), String>>,
+    on_message: Callback<String>,
+    restriction_sites: Memo<Option<Arc<Vec<restriction_inspection::InspectionSite>>>>,
+    restriction_visible: RwSignal<bool>,
+    on_show_restrictions: Callback<()>,
 ) -> impl IntoView {
     let canvas = NodeRef::<html::Canvas>::new();
     let container = NodeRef::<html::Div>::new();
@@ -159,8 +240,86 @@ pub fn SequenceView(
     let prepare_alive = alive.clone();
     let query_alive = alive.clone();
     let source = Memo::new(move |_| molecule.with(|m| m.revision()));
+    let edit_cursor = StoredValue::new(None::<EditCursor>);
+    let base_drag = StoredValue::new(None::<BaseDrag>);
+    let drag_active = RwSignal::new(false);
+    // Coordinates remain in CSS client pixels; each tick resolves them against
+    // the current canvas box, so parent page scrolling cannot move the anchor.
+    let drag_pointer = StoredValue::new(None::<(f64, f64)>);
+    let drag_timer = StoredValue::new_local(None::<DragTimer>);
+    let stop_drag = move || {
+        drag_active.set(false);
+        drag_timer.set_value(None);
+        drag_pointer.set_value(None);
+        let previous = base_drag.get_value();
+        base_drag.set_value(None);
+        if let (Some(previous), Some(canvas)) = (previous, canvas.get_untracked()) {
+            let _ = canvas.release_pointer_capture(previous.pointer_id);
+        }
+    };
+    Effect::new(move |_| {
+        let id = identity.get();
+        let revision = source.get();
+        let len = molecule.with_untracked(|m| m.sequence.len());
+        if selection
+            .get_untracked()
+            .is_some_and(|(a, b)| a > b || b > len)
+        {
+            batch(|| {
+                selection.set(None);
+                selected_feature.set(None);
+                search_regions.set(None);
+                selected_item.set(None);
+            });
+        }
+        if base_drag.with_value(|d| {
+            d.as_ref()
+                .is_some_and(|d| d.identity != id || d.revision != revision)
+        }) {
+            stop_drag();
+        }
+        if edit_cursor.with_value(|c| {
+            c.as_ref()
+                .is_some_and(|c| c.identity != id || c.revision != revision)
+        }) {
+            edit_cursor.set_value(None);
+        }
+    });
+    let set_cursor = Callback::new(
+        move |(anchor, caret, pointer_anchor): (usize, usize, Option<usize>)| {
+            let range = (anchor.min(caret), anchor.max(caret));
+            edit_cursor.set_value(Some(EditCursor {
+                identity: identity.get_untracked(),
+                revision: source.get_untracked(),
+                anchor,
+                caret,
+                range,
+                pointer_anchor,
+            }));
+            batch(|| {
+                search_regions.set(None);
+                selected_item.set(None);
+                selected_feature.set(None);
+                selection.set(Some(range));
+            });
+        },
+    );
+    let current_cursor = move || {
+        edit_cursor.get_value().filter(|c| {
+            c.identity == identity.get_untracked()
+                && c.revision == source.get_untracked()
+                && selection.get_untracked() == Some(c.range)
+                && selected_feature.get_untracked().is_none()
+                && search_regions.get_untracked().is_none()
+        })
+    };
+
     let options = Memo::new(move |_| {
         let mut o = settings.get();
+        // Restriction geometry belongs to the parent's fresh, source-bound scan.
+        // Never run a second starter-enzyme scan through the viewport worker.
+        o.enzyme_recognition = false;
+        o.enzyme_cuts = false;
         molecule.with(|m| {
             if m.sequence.alphabet() != Alphabet::Dna {
                 o.enzyme_recognition = false;
@@ -175,9 +334,133 @@ pub fn SequenceView(
         o
     });
     let lane_counts = Memo::new(move |_| {
-        annotation_layout.with(|layout| lanes(&options.get(), layout.as_ref().as_ref().ok()))
+        annotation_layout.with(|layout| {
+            let mut counts = lanes(&options.get(), layout.as_ref().as_ref().ok());
+            counts[2] = if restriction_visible.get()
+                && molecule.with(|m| m.sequence.alphabet() == Alphabet::Dna)
+            {
+                2
+            } else {
+                0
+            };
+            counts
+        })
     });
     let row_height = Memo::new(move |_| 66. + lane_counts.get().iter().sum::<usize>() as f64 * 18.);
+    let drag_alive = alive.clone();
+    Effect::new(move |_| {
+        let active = drag_active.get();
+        let id = identity.get();
+        let revision = source.get();
+        let is_locked = locked.get();
+        if !active
+            || is_locked
+            || base_drag.with_value(|d| {
+                d.as_ref()
+                    .is_none_or(|d| d.identity != id || d.revision != revision)
+            })
+        {
+            if base_drag.with_value(Option::is_some) || drag_timer.with_value(Option::is_some) {
+                stop_drag();
+            }
+            return;
+        }
+        if drag_timer.with_value(Option::is_some) {
+            return;
+        }
+        let tick_alive = drag_alive.clone();
+        let callback = Closure::<dyn FnMut()>::new(move || {
+            if !tick_alive.load(Ordering::Relaxed) {
+                return;
+            }
+            let Some(drag) = base_drag.get_value() else {
+                drag_active.set(false);
+                return;
+            };
+            if !drag_active.get_untracked()
+                || locked.get_untracked()
+                || drag.identity != identity.get_untracked()
+                || drag.revision != source.get_untracked()
+            {
+                drag_active.set(false);
+                return;
+            }
+            let (Some(canvas), Some(container), Some((client_x, client_y))) = (
+                canvas.get_untracked(),
+                container.get_untracked(),
+                drag_pointer.get_value(),
+            ) else {
+                drag_active.set(false);
+                return;
+            };
+            let rect = canvas.get_bounding_client_rect();
+            if rect.width() < 1.
+                || rect.height() < 1.
+                || container.client_height() < 1
+                || !canvas.has_pointer_capture(drag.pointer_id)
+            {
+                drag_active.set(false);
+                return;
+            }
+            let x = client_x - rect.left();
+            let y = client_y - rect.top();
+            // At most 32 CSS pixels per 32 ms tick (~1000 px/s); no frame loop,
+            // source cloning, DNA scanning, or scroll-dependent annotation layout.
+            let edge = 24.;
+            let speed = if y < edge {
+                -((edge - y) / edge).clamp(0., 1.)
+            } else if y > rect.height() - edge {
+                ((y - (rect.height() - edge)) / edge).clamp(0., 1.)
+            } else {
+                0.
+            };
+            if speed == 0. {
+                return;
+            }
+            let before = container.scroll_top();
+            container.set_scroll_top(
+                (before as f64 + speed * 32.)
+                    .max(0.)
+                    .round()
+                    .min(i32::MAX as f64) as i32,
+            );
+            let top = container.scroll_top();
+            if top == before {
+                return;
+            }
+            scroll.set(top as f64);
+            if let Some(base) = base_at(
+                x,
+                y.clamp(0., (rect.height() - 1.).max(0.)),
+                top as f64,
+                row_height.get_untracked(),
+                columns.get_untracked(),
+                molecule.with_untracked(|m| m.sequence.len()),
+                true,
+            ) {
+                let (a, p) = if base >= drag.anchor {
+                    (drag.anchor, base + 1)
+                } else {
+                    (drag.anchor + 1, base)
+                };
+                set_cursor.run((a, p, Some(drag.anchor)));
+            }
+        });
+        if let Some(window) = web_sys::window() {
+            match window.set_interval_with_callback_and_timeout_and_arguments_0(
+                callback.as_ref().unchecked_ref(),
+                32,
+            ) {
+                Ok(id) => drag_timer.set_value(Some(DragTimer {
+                    id,
+                    _callback: callback,
+                })),
+                Err(_) => stop_drag(),
+            }
+        } else {
+            stop_drag();
+        }
+    });
     let layout_overflow = Memo::new(move |_| {
         annotation_layout.with(|layout| match layout.as_ref() {
             Ok(layout) => {
@@ -232,9 +515,62 @@ pub fn SequenceView(
         let rows = (height.get() / row_height.get()).ceil() as usize + 24;
         let n = molecule.with(|m| m.sequence.len());
         TrackWindow {
-            start: start.min(n - 1),
+            start: start.min(n.saturating_sub(1)),
             end: (start + rows * cols).min(n),
         }
+    });
+    let shared_restrictions = Memo::new(move |_| {
+        if !restriction_visible.get() || molecule.with(|m| m.sequence.alphabet() != Alphabet::Dna) {
+            return Arc::new(Vec::<TrackItem>::new());
+        }
+        let window = window.get();
+        let Some(sites) = restriction_sites.get() else {
+            return Arc::new(Vec::new());
+        };
+        let mut items = Vec::new();
+        for site in sites.iter().filter(|site| {
+            site.spans
+                .iter()
+                .any(|span| span.start < window.end && span.end > window.start)
+                || [site.top_cut, site.bottom_cut]
+                    .into_iter()
+                    .flatten()
+                    .any(|cut| cut >= window.start && cut <= window.end)
+        }) {
+            let label = if site.diagnostics.is_empty() {
+                site.enzyme.clone()
+            } else {
+                format!(
+                    "{} · raw cuts top {} / bottom {} · {:?}",
+                    site.enzyme, site.top_boundary, site.bottom_boundary, site.diagnostics
+                )
+            };
+            items.push(TrackItem {
+                id: format!("restriction:{}", site.index),
+                kind: TrackKind::Enzyme,
+                label,
+                parts: site
+                    .spans
+                    .iter()
+                    .map(|span| ReferencePart {
+                        start: span.start,
+                        end: span.end,
+                    })
+                    .collect(),
+                reverse: Some(site.reverse),
+                source_feature: None,
+                enzyme: Some(site.enzyme.clone()),
+                certain: site.certain,
+                cuts: Some(CutPositions {
+                    top: site.top_cut,
+                    bottom: site.bottom_cut,
+                }),
+                frame: None,
+                protein: None,
+                residues: vec![],
+            });
+        }
+        Arc::new(items)
     });
     let client = StoredValue::new_local(None::<Rc<CachedWorker>>);
     let source_generation = RwSignal::new(0u32);
@@ -395,6 +731,7 @@ pub fn SequenceView(
     });
     // Stop the retained worker as soon as this canvas is unmounted.
     on_cleanup(move || {
+        stop_drag();
         alive.store(false, Ordering::Relaxed);
         timer.set_value(None);
         if let Some(previous) = client.get_value() {
@@ -432,9 +769,196 @@ pub fn SequenceView(
             selected_item.set(Some(item));
         });
     });
+    let press_base = Callback::new(move |(x, y, shift): (f64, f64, bool)| {
+        let len = molecule.with_untracked(|m| m.sequence.len());
+        let Some(base) = base_at(
+            x,
+            y,
+            scroll.get_untracked(),
+            row_height.get_untracked(),
+            columns.get_untracked(),
+            len,
+            false,
+        ) else {
+            return;
+        };
+        let anchor = if shift {
+            current_cursor()
+                .and_then(|c| {
+                    c.pointer_anchor
+                        .or(Some(c.anchor.min(len.saturating_sub(1))))
+                })
+                .or_else(|| {
+                    selection
+                        .get_untracked()
+                        .map(|(a, _)| a.min(len.saturating_sub(1)))
+                })
+                .unwrap_or(base)
+        } else {
+            base
+        };
+        let (a, p) = if base >= anchor {
+            (anchor, base + 1)
+        } else {
+            (anchor + 1, base)
+        };
+        set_cursor.run((a, p, Some(anchor)));
+    });
+    let keydown = move |e: web_sys::KeyboardEvent| {
+        if e.is_composing() || e.alt_key() {
+            return;
+        }
+        let key = e.key();
+        if e.ctrl_key() || e.meta_key() {
+            let shortcut = key.to_ascii_lowercase();
+            let select_all = shortcut == "a" && !e.shift_key();
+            let history = if shortcut == "z" {
+                Some(e.shift_key())
+            } else if shortcut == "y" && e.ctrl_key() && !e.shift_key() {
+                Some(true)
+            } else {
+                None
+            };
+            if !select_all && history.is_none() {
+                return;
+            } // Leave C/X/V and other shortcuts untouched.
+            e.prevent_default();
+            if locked.get_untracked() {
+                return;
+            }
+            stop_drag();
+            if select_all {
+                let len = molecule.with_untracked(|m| m.sequence.len());
+                set_cursor.run((0, len, None));
+            } else if let Some(redo) = history {
+                match on_history.run(redo) {
+                    Ok(()) => edit_cursor.set_value(None),
+                    Err(error) => on_message.run(error),
+                }
+            }
+            return;
+        }
+        if key == "Escape" {
+            e.prevent_default();
+            stop_drag();
+            edit_cursor.set_value(None);
+            batch(|| {
+                selection.set(None);
+                selected_feature.set(None);
+                selected_item.set(None);
+                search_regions.set(None);
+            });
+            return;
+        }
+        let len = molecule.with_untracked(|m| m.sequence.len());
+        let range = selection
+            .get_untracked()
+            .filter(|(a, b)| a <= b && *b <= len);
+        let cursor = current_cursor();
+        let (mut anchor, mut caret) = cursor
+            .as_ref()
+            .map(|c| (c.anchor, c.caret))
+            .unwrap_or_else(|| range.unwrap_or((0, 0)));
+        if e.shift_key() {
+            if let Some(c) = cursor
+                .as_ref()
+                .filter(|c| c.pointer_anchor.is_some() && c.range.1 - c.range.0 == 1)
+            {
+                let base = c.pointer_anchor.unwrap();
+                if matches!(key.as_str(), "ArrowLeft" | "ArrowUp" | "Home") {
+                    anchor = base + 1;
+                    caret = base;
+                } else if matches!(key.as_str(), "ArrowRight" | "ArrowDown" | "End") {
+                    anchor = base;
+                    caret = base + 1;
+                }
+            }
+        }
+        let next = match key.as_str() {
+            "ArrowRight" => Some(if !e.shift_key() && range.is_some_and(|(a, b)| a < b) {
+                range.unwrap().1
+            } else {
+                caret.saturating_add(1).min(len)
+            }),
+            "ArrowLeft" => Some(if !e.shift_key() && range.is_some_and(|(a, b)| a < b) {
+                range.unwrap().0
+            } else {
+                caret.saturating_sub(1)
+            }),
+            "ArrowDown" => Some(caret.saturating_add(columns.get_untracked()).min(len)),
+            "ArrowUp" => Some(caret.saturating_sub(columns.get_untracked())),
+            "Home" => Some(0),
+            "End" => Some(len),
+            _ => None,
+        };
+        if let Some(next) = next {
+            e.prevent_default();
+            stop_drag();
+            set_cursor.run((if e.shift_key() { anchor } else { next }, next, None));
+            return;
+        }
+        let replacement = if key == "Backspace" || key == "Delete" {
+            Some(String::new())
+        } else if key.chars().count() == 1 {
+            Some(key.clone())
+        } else {
+            None
+        };
+        let Some(replacement) = replacement else {
+            return;
+        };
+        e.prevent_default();
+        if locked.get_untracked() {
+            on_message.run("The workspace is busy. Wait before editing the sequence.".into());
+            return;
+        }
+        if key == " " {
+            on_message.run("Type sequence symbols without spaces.".into());
+            return;
+        }
+        let compound = selected_feature.get_untracked().is_some_and(|i| {
+            molecule.with_untracked(|m| {
+                m.features
+                    .get(i)
+                    .is_some_and(|f| !contiguous_location(&f.location))
+            })
+        }) || search_regions
+            .with_untracked(|r| r.as_ref().is_some_and(|(_, parts)| parts.len() != 1));
+        if compound {
+            on_message.run("This annotation has multiple or unresolved parts. Select contiguous reference bases before typing.".into());
+            return;
+        }
+        let Some((mut a, mut b)) = range else {
+            on_message.run("Click a base or place the caret before editing.".into());
+            return;
+        };
+        if a == b {
+            if key == "Backspace" {
+                if a == 0 {
+                    return;
+                }
+                a -= 1;
+            } else if key == "Delete" {
+                if b == len {
+                    return;
+                }
+                b += 1;
+            }
+        }
+        let revision = source.get_untracked();
+        match on_edit.run((revision, a, b, replacement.clone())) {
+            Ok(()) => {
+                stop_drag();
+                set_cursor.run((a + replacement.len(), a + replacement.len(), None));
+                on_message.run(String::new());
+            }
+            Err(error) => on_message.run(error),
+        }
+    };
     Effect::new(move |_| {
         molecule.with(|mol| {
             let selected = highlighted_spans.get();
+            let caret = selection.get().filter(|(a, b)| a == b).map(|(a, _)| a);
             let top = scroll.get();
             let rh = row_height.get();
             let opts = options.get();
@@ -502,6 +1026,7 @@ pub fn SequenceView(
             let cell = 8.5;
             let counts = lane_counts.get();
             let offset = offsets(counts);
+            let shared_items = shared_restrictions.get();
             let mut boxes = vec![];
             let mut painted = 0usize;
             for row in first..first + count {
@@ -550,9 +1075,32 @@ pub fn SequenceView(
                         );
                     }
                 }
-                if let Some(r) = &current {
+                if let Some(p) = caret.filter(|p| *p <= mol.sequence.len()) {
+                    let caret_row = if p > 0 && p == mol.sequence.len() && p % cols == 0 {
+                        (p - 1) / cols
+                    } else {
+                        p / cols
+                    };
+                    if caret_row == row {
+                        let x = start_x + (p - row * cols) as f64 * cell;
+                        ctx.set_stroke_style_str("#195d4f");
+                        ctx.set_line_width(2.);
+                        ctx.begin_path();
+                        ctx.move_to(x, y - 15.);
+                        ctx.line_to(x, y + 23.);
+                        ctx.stroke();
+                    }
+                }
+                {
                     let mut ordinals = [0usize; 6];
-                    for item in &r.items {
+                    // Keep the scientific viewport report unchanged. External RE
+                    // evidence is painted from the shared parent scan separately.
+                    for item in current
+                        .as_ref()
+                        .into_iter()
+                        .flat_map(|r| r.items.iter())
+                        .chain(shared_items.iter())
+                    {
                         let group = lane(item);
                         let ordinal = ordinals[group];
                         ordinals[group] += 1;
@@ -645,21 +1193,67 @@ pub fn SequenceView(
                                 }
                             }
                         }
-                        if opts.enzyme_cuts {
+                        if opts.enzyme_cuts || item.id.starts_with("restriction:") {
                             if let Some(cuts) = &item.cuts {
+                                if item.id.starts_with("restriction:") {
+                                    // Show staggered cleavage against the actual two DNA rows,
+                                    // separately from the labeled recognition track below them.
+                                    if let (Some(top), Some(bottom)) = (cuts.top, cuts.bottom) {
+                                        if top >= start
+                                            && top <= end
+                                            && bottom >= start
+                                            && bottom <= end
+                                        {
+                                            ctx.set_stroke_style_str("#8b5ca4");
+                                            ctx.set_line_width(0.8);
+                                            ctx.begin_path();
+                                            ctx.move_to(
+                                                start_x + (top - start) as f64 * cell,
+                                                y + 5.,
+                                            );
+                                            ctx.line_to(
+                                                start_x + (bottom - start) as f64 * cell,
+                                                y + 5.,
+                                            );
+                                            ctx.stroke();
+                                        }
+                                    }
+                                }
                                 for (pos, bottom) in [(cuts.top, false), (cuts.bottom, true)] {
                                     if let Some(pos) = pos {
                                         if pos >= start && pos <= end {
                                             let x = start_x + (pos - start) as f64 * cell;
                                             ctx.set_stroke_style_str(if bottom {
-                                                "#b55f42"
+                                                "#b45c19"
                                             } else {
-                                                "#334e7c"
+                                                "#2563a6"
                                             });
+                                            ctx.set_line_width(1.2);
+                                            if item.id.starts_with("restriction:") {
+                                                ctx.begin_path();
+                                                ctx.move_to(
+                                                    x,
+                                                    if bottom { y + 5. } else { y - 15. },
+                                                );
+                                                ctx.line_to(
+                                                    x,
+                                                    if bottom { y + 23. } else { y + 5. },
+                                                );
+                                                ctx.stroke();
+                                            }
                                             ctx.begin_path();
                                             ctx.move_to(x, lane_y - 5.);
                                             ctx.line_to(x, lane_y + if bottom { 14. } else { 7. });
                                             ctx.stroke();
+                                            if item.id.starts_with("restriction:") {
+                                                boxes.push(HitBox {
+                                                    x: x - 4.,
+                                                    y: lane_y - 5.,
+                                                    width: 8.,
+                                                    height: 20.,
+                                                    item: item.clone(),
+                                                });
+                                            }
                                         }
                                     }
                                 }
@@ -677,6 +1271,18 @@ pub fn SequenceView(
             let _ = canvas.set_attribute("data-layout-source", &revision);
 
             let _ = canvas.set_attribute("data-painted-tracks", &painted.to_string());
+            let _ = canvas.set_attribute(
+                "data-shared-restriction-count",
+                &shared_items.len().to_string(),
+            );
+            let _ = canvas.set_attribute(
+                "data-shared-restriction-ready",
+                if restriction_sites.with(|sites| sites.is_some()) {
+                    "true"
+                } else {
+                    "false"
+                },
+            );
             let _ = canvas.set_attribute(
                 "data-track-item-count",
                 &current
@@ -696,7 +1302,19 @@ pub fn SequenceView(
         });
     });
     Effect::new(move |_| {
-        if let Some((a, _)) = highlighted_spans.get().first().copied() {
+        let ranges = highlighted_spans.get();
+        let _ = selection.get();
+        if base_drag.get_value().is_some() {
+            return;
+        }
+        let active = current_cursor().map(|c| {
+            if c.caret > c.anchor {
+                c.caret.saturating_sub(1)
+            } else {
+                c.caret
+            }
+        });
+        if let Some(a) = active.or_else(|| ranges.first().map(|(a, _)| *a)) {
             if let Some(c) = container.get() {
                 let rh = row_height.get_untracked();
                 let y = (a / columns.get_untracked()) as f64 * rh;
@@ -709,7 +1327,9 @@ pub fn SequenceView(
         }
     });
     view! {
+        <div class="sequence-editor-hint">"Drag bases to select · type reference symbols to edit · Shift + arrows to extend"</div>
         <div class="track-toolbar"><button class="text-tool" aria-expanded=move||show_controls.get().to_string() on:click=move|_|show_controls.update(|v|*v=!*v)>"Sequence tracks"</button><span class="track-status" role="status">{move||status.get()}</span><button class="text-tool" title="Reload sequence tracks" on:click=move|_|retry.update(|n|*n=n.wrapping_add(1))>"↻"</button></div>
+        <Show when=move||restriction_visible.get()&&molecule.with(|m|m.sequence.alphabet()==Alphabet::Dna)><div class="shared-restriction-status" role="status">{move||restriction_sites.with(|sites|sites.as_ref().map(|sites|format!("Restriction tracks: {} selected sites from the shared source scan.",sites.len())).unwrap_or_else(||"Restriction tracks: shared source scan pending or unavailable.".into()))}</div></Show>
         <Show when=move||{layout_overflow.get()>0 || (annotation_layout.with(|p|p.as_ref().is_err()) && options.with(|o|o.features||o.primers))}>
             <div class="annotation-layout-note" role="status"><span>{move||if annotation_layout.with(|p|p.as_ref().is_err()) {"Annotation display is limited. Inspect source annotations in Features.".to_string()}else{format!("{} additional annotations are available in Features.",layout_overflow.get())}}</span><button class="text-tool" on:click=move|_|on_show_features.run(())>"Inspect annotations"</button></div>
         </Show>
@@ -718,13 +1338,14 @@ pub fn SequenceView(
             <div class="track-toggles">
                 <label><input type="checkbox" aria-label="Feature tracks" prop:checked=move||settings.get().features on:change=move|e|settings.update(|o|o.features=event_target_checked(&e))/><span>"Features"</span></label>
                 <label><input type="checkbox" aria-label="Primer tracks" prop:checked=move||settings.get().primers on:change=move|e|settings.update(|o|o.primers=event_target_checked(&e))/><span>"Primers"</span></label>
-                <label><input type="checkbox" aria-label="Enzyme site tracks" prop:checked=move||options.get().enzyme_recognition disabled=move||molecule.with(|m|m.sequence.alphabet()!=Alphabet::Dna) on:change=move|e|settings.update(|o|o.enzyme_recognition=event_target_checked(&e))/><span>"Recognition sites"</span></label>
-                <label><input type="checkbox" aria-label="Enzyme cut tracks" prop:checked=move||options.get().enzyme_cuts disabled=move||molecule.with(|m|m.sequence.alphabet()!=Alphabet::Dna) on:change=move|e|settings.update(|o|o.enzyme_cuts=event_target_checked(&e))/><span>"Actual cut positions"</span></label>
+                <label><input type="checkbox" aria-label="Restriction site tracks" prop:checked=move||restriction_visible.get() disabled=move||molecule.with(|m|m.sequence.alphabet()!=Alphabet::Dna) on:change=move|e|restriction_visible.set(event_target_checked(&e))/><span>"Restriction sites and cuts"</span></label>
                 <label><input type="checkbox" aria-label="Translation tracks" prop:checked=move||options.get().translations disabled=move||molecule.with(|m|m.sequence.alphabet()==Alphabet::Protein) on:change=move|e|settings.update(|o|o.translations=event_target_checked(&e))/><span>"Six-frame translation"</span></label>
                 <label><input type="checkbox" aria-label="CDS tracks" prop:checked=move||options.get().known_cds==KnownCdsPolicy::Validated disabled=move||molecule.with(|m|m.sequence.alphabet()==Alphabet::Protein) on:change=move|e|settings.update(|o|o.known_cds=if event_target_checked(&e){KnownCdsPolicy::Validated}else{KnownCdsPolicy::Off})/><span>"Reviewed CDS"</span></label>
                 <label><input type="checkbox" aria-label="ORF tracks" prop:checked=move||options.get().orfs disabled=move||molecule.with(|m|m.sequence.alphabet()==Alphabet::Protein) on:change=move|e|settings.update(|o|o.orfs=event_target_checked(&e))/><span>"Predicted ORFs"</span></label>
             </div>
-            <label>"Track enzymes"<input aria-label="Track enzymes" prop:value=move||settings.with(|o|o.enzyme_names.join(", ")) on:change=move|e|settings.update(|o|o.enzyme_names=event_target_value(&e).split(',').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect())/></label>
+            <button class="text-tool" on:click=move|_|on_show_restrictions.run(())>"Choose restriction enzymes"</button>
+            <p class="helper">"Restriction sites and cut boundaries come from the shared source scan. Viewport report downloads contain the sequence worker tracks only."</p>
+            <Show when=move||restriction_visible.get()&&restriction_sites.with(|sites|sites.is_none())><p class="helper" role="status">"Shared restriction sites are not available yet. Choose restriction enzymes to inspect the source scan."</p></Show>
             <label>"Track direction"<select aria-label="Track direction" prop:value=move||format!("{:?}",settings.get().orientation) on:change=move|e|settings.update(|o|o.orientation=match event_target_value(&e).as_str(){"Forward"=>TrackOrientation::Forward,"Reverse"=>TrackOrientation::Reverse,_=>TrackOrientation::Both})><option value="Both">"Both strands"</option><option value="Forward">"Forward"</option><option value="Reverse">"Reverse"</option></select></label>
             <div class="track-toggles">{(0u8..3).map(|frame|view!{<label><input type="checkbox" aria-label=format!("Track frame {}",frame+1) prop:checked=move||settings.with(|o|o.frames.contains(&frame)) on:change=move|e|settings.update(|o|{o.frames.retain(|f|*f!=frame);if event_target_checked(&e){o.frames.push(frame);o.frames.sort_unstable();}})/><span>{format!("Frame {}",frame+1)}</span></label>}).collect_view()}</div>
             <label>"Minimum ORF length (aa)"<input type="number" min="0" max="100000" aria-label="Track minimum ORF length" prop:value=move||settings.get().min_orf_amino_acids.to_string() on:change=move|e|settings.update(|o|o.min_orf_amino_acids=event_target_value(&e).parse::<usize>().unwrap_or(20).min(100000))/></label>
@@ -735,11 +1356,47 @@ pub fn SequenceView(
         {move||selected_item.get().map(|item|view!{<div class="track-selection"><strong>{item.label}</strong><span>{format!(" · {:?}{}",item.kind,if item.certain{""}else{" · possible/review"})}</span><span>{item.cuts.as_ref().map(|c|format!(" · top {}, bottom {}",crate::search_view::boundary_label(c.top),crate::search_view::boundary_label(c.bottom)))}</span></div>})}
         <div class="sequence-scroll" node_ref=container on:scroll=move|_|if let Some(c)=container.get(){scroll.set(c.scroll_top()as f64);}>
             <div class="sequence-spacer" style:height=move||format!("{}px",molecule.with(|m|m.sequence.len()).div_ceil(columns.get())as f64*row_height.get())>
-                <canvas node_ref=canvas class="sequence-canvas" tabindex="0" aria-label="Sequence view. Arrow keys move the selection. Click a base; shift-click another base to select a range. Track items are available in the viewport list." on:keydown=move|e|{let key=e.key();let len=molecule.with_untracked(|m|m.sequence.len());let current=selection.get_untracked().map(|(a,_)|a).unwrap_or(0);let cols=columns.get_untracked();let next=match key.as_str(){"ArrowRight"=>Some((current+1).min(len-1)),"ArrowLeft"=>Some(current.saturating_sub(1)),"ArrowDown"=>Some((current+cols).min(len-1)),"ArrowUp"=>Some(current.saturating_sub(cols)),"Home"=>Some(0),"End"=>Some(len-1),_=>None};if let Some(next)=next{e.prevent_default();search_regions.set(None);selected_item.set(None);selected_feature.set(None);selection.set(Some((next,next+1)));}} on:click=move|e|{if let Some(c)=canvas.get(){let rect=c.get_bounding_client_rect();let x=e.client_x()as f64-rect.left();let y=e.client_y()as f64-rect.top();let hit=hit_boxes.with_value(|boxes|boxes.iter().rev().find(|b|x>=b.x&&x<b.x+b.width&&y>=b.y&&y<b.y+b.height).map(|b|b.item.clone()));if let Some(hit)=hit{choose.run(hit);return;}
-                    search_regions.set(None);selected_item.set(None);selected_feature.set(None);let gx=x-64.;let absolute=y+scroll.get_untracked();let within=absolute%row_height.get_untracked();if gx>=0.&&(12. ..=54.).contains(&within){let row=(absolute/row_height.get_untracked()).floor()as usize;let col=(gx/8.5).floor()as usize;if col<columns.get_untracked(){let base=row*columns.get_untracked()+col;let len=molecule.with_untracked(|m|m.sequence.len());if base<len{selection.set(Some(if e.shift_key(){selection.get_untracked().map(|(a,_)|(a.min(base),a.max(base)+1)).unwrap_or((base,base+1))}else{(base,base+1)}));}}}
-                }}></canvas>
+                <canvas node_ref=canvas class="sequence-canvas" role="textbox" aria-multiline="true" aria-readonly=move||locked.get().to_string() tabindex="0" aria-label="Sequence editor. Drag reference or complement bases to select. Shift extends selection; type to replace reference symbols. Arrow keys move the caret; Shift and arrows extend. Home and End move to document boundaries." on:keydown=keydown
+                    on:pointerdown=move|e:web_sys::PointerEvent|{
+                        if e.button()!=0 || locked.get_untracked(){return;}
+                        if let Some(c)=canvas.get(){
+                            let _=c.focus();let rect=c.get_bounding_client_rect();let x=e.client_x()as f64-rect.left();let y=e.client_y()as f64-rect.top();
+                            let hit=hit_boxes.with_value(|boxes|boxes.iter().rev().find(|b|x>=b.x&&x<b.x+b.width&&y>=b.y&&y<b.y+b.height).map(|b|b.item.clone()));
+                            if let Some(hit)=hit{e.prevent_default();stop_drag();edit_cursor.set_value(None);choose.run(hit);return;}
+                            if base_at(x,y,scroll.get_untracked(),row_height.get_untracked(),columns.get_untracked(),molecule.with_untracked(|m|m.sequence.len()),false).is_some(){
+                                e.prevent_default();press_base.run((x,y,e.shift_key()));
+                                if let Some(cursor)=current_cursor(){base_drag.set_value(Some(BaseDrag{identity:identity.get_untracked(),revision:source.get_untracked(),pointer_id:e.pointer_id(),anchor:cursor.pointer_anchor.unwrap_or(cursor.anchor)}));drag_pointer.set_value(Some((e.client_x()as f64,e.client_y()as f64)));if c.set_pointer_capture(e.pointer_id()).is_ok(){drag_active.set(true);}else{stop_drag();}}
+                            }
+                        }
+                    }
+                    on:pointermove=move|e:web_sys::PointerEvent|{
+                        let Some(drag)=base_drag.get_value()else{return;};
+                        if drag.pointer_id!=e.pointer_id(){return;}if e.buttons()&1==0{stop_drag();return;}
+                        if drag.identity!=identity.get_untracked()||drag.revision!=source.get_untracked()||locked.get_untracked(){stop_drag();return;}
+                        if let Some(c)=canvas.get(){
+                            e.prevent_default();let rect=c.get_bounding_client_rect();let x=e.client_x()as f64-rect.left();let y=e.client_y()as f64-rect.top();
+                            drag_pointer.set_value(Some((e.client_x()as f64,e.client_y()as f64)));
+                            if rect.width()<1.||rect.height()<1.{stop_drag();return;}
+                            if let Some(base)=base_at(x,y.clamp(0.,(rect.height()-1.).max(0.)),scroll.get_untracked(),row_height.get_untracked(),columns.get_untracked(),molecule.with_untracked(|m|m.sequence.len()),true){let(a,p)=if base>=drag.anchor{(drag.anchor,base+1)}else{(drag.anchor+1,base)};set_cursor.run((a,p,Some(drag.anchor)));}
+                        }
+                    }
+                    on:pointerup=move|e:web_sys::PointerEvent|{
+                        let Some(drag)=base_drag.get_value()else{return;};if drag.pointer_id!=e.pointer_id(){return;}
+                        if let Some(c)=canvas.get(){
+                            if drag.identity==identity.get_untracked()&&drag.revision==source.get_untracked()&&!locked.get_untracked(){let rect=c.get_bounding_client_rect();if let Some(base)=base_at(e.client_x()as f64-rect.left(),(e.client_y()as f64-rect.top()).clamp(0.,(rect.height()-1.).max(0.)),scroll.get_untracked(),row_height.get_untracked(),columns.get_untracked(),molecule.with_untracked(|m|m.sequence.len()),true){let(a,p)=if base>=drag.anchor{(drag.anchor,base+1)}else{(drag.anchor+1,base)};set_cursor.run((a,p,Some(drag.anchor)));}}
+                            stop_drag();
+                        }else{stop_drag();}
+                    }
+                    on:pointercancel=move|_|stop_drag()
+                    on:lostpointercapture=move|_|stop_drag()
+                    on:click=move|e:web_sys::MouseEvent|{
+                        // Preserve programmatic/accessibility clicks; a real pointer click
+                        // was already handled on down/up and must not collapse its drag.
+                        if e.detail()!=0 || locked.get_untracked(){return;}
+                        if let Some(c)=canvas.get(){let rect=c.get_bounding_client_rect();let x=e.client_x()as f64-rect.left();let y=e.client_y()as f64-rect.top();let hit=hit_boxes.with_value(|boxes|boxes.iter().rev().find(|b|x>=b.x&&x<b.x+b.width&&y>=b.y&&y<b.y+b.height).map(|b|b.item.clone()));if let Some(hit)=hit{edit_cursor.set_value(None);choose.run(hit);}else{press_base.run((x,y,e.shift_key()));}}
+                    }></canvas>
             </div>
-            <div class="sr-only" aria-live="polite">{move||{if let Some(feature)=selected_feature.get().and_then(|i|molecule.with(|m|m.features.get(i).cloned())){let size=feature.location.spans().iter().try_fold(0usize,|n,(a,b,_)|n.checked_add(b-a)).unwrap_or(usize::MAX);let sequence=if size<=10_000{molecule.with(|m|feature.location.extract(&m.sequence).unwrap_or_else(|e|e.to_string()))}else{"Sequence display limit exceeded".into()};return format!("Selected annotation {}: {}",feature.label(),sequence);}selection.get().map(|(a,b)|molecule.with(|m|{if b.saturating_sub(a)>10_000 {format!("Selected {} {} to {}. Sequence display limit exceeded; use a sequence export for the complete selection.",m.sequence.alphabet().selected_symbols(),a+1,b)}else{format!("Selected {} {} to {}: {}",m.sequence.alphabet().selected_symbols(),a+1,b,m.sequence.as_str().get(a..b).unwrap_or("selection changed"))}})).unwrap_or_else(||format!("{} reference parts highlighted",highlighted_spans.get().len()))}}</div>
+            <div class="sr-only" aria-live="polite">{move||{if let Some(feature)=selected_feature.get().and_then(|i|molecule.with(|m|m.features.get(i).cloned())){let size=feature.location.spans().iter().try_fold(0usize,|n,(a,b,_)|n.checked_add(b-a)).unwrap_or(usize::MAX);let sequence=if size<=10_000{molecule.with(|m|feature.location.extract(&m.sequence).unwrap_or_else(|e|e.to_string()))}else{"Sequence display limit exceeded".into()};return format!("Selected annotation {}: {}",feature.label(),sequence);}selection.get().map(|(a,b)|molecule.with(|m|{if a==b{return format!("Insertion caret at boundary {} of {}. Type to insert reference symbols.",a,m.sequence.len());}if b.saturating_sub(a)>10_000 {format!("Selected {} {} to {}. Sequence display limit exceeded; use a sequence export for the complete selection.",m.sequence.alphabet().selected_symbols(),a+1,b)}else{format!("Selected {} {} to {}: {}",m.sequence.alphabet().selected_symbols(),a+1,b,m.sequence.as_str().get(a..b).unwrap_or("selection changed"))}})).unwrap_or_else(||format!("{} reference parts highlighted",highlighted_spans.get().len()))}}</div>
         </div>
     }
 }

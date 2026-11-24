@@ -2,6 +2,10 @@
 
 The implementation goal is active. The working application covers substantial parts of M0–M3, initial M4 cloning, gel and export workflows, an initial F26 codon-design workflow and F24 dot plots/reference-free read assembly; the complete [project plan](PROJECT_PLAN.md) is not finished. Application/scientific code is independently implemented and MIT licensed. No installed scientific program, downloader or sidecar is invoked at runtime.
 
+## Current editor implementation
+
+Direct sequence typing/deletion, pointer and keyboard range selection, insertion carets and keyboard undo/redo are now implemented in the sequence canvas. A shared source-bound restriction scan drives the enzyme picker, site-count filters, sequence recognition/cut tracks and circular/linear map markers. The scan-only worker job appends schema 23 without reconstructing digest fragments. Browser verification is deliberately deferred until the in-scope code is complete; historical acceptance results below do not validate these new controls. [Controls and remaining boundaries](EDITOR_CONTROLS.md).
+
 ## Working scientific foundation
 
 The independent `collagene-recombination` workspace crate now connects to source annotation projection, typed plans and native history, worker schema 22, MCP and a desktop panel. Explicitly choose two sources, the pinned manufacturer-context profile and a reciprocal component; the separately specified target never selects or repairs a product. Fresh reconstruction, exact source events, reviewed/unmapped annotation evidence and all reciprocal components remain available. Matching results stay **Incomplete**: duplex chemistry, biological repair, efficacy and broader Gateway coverage remain unfinished. Native and GenBank/EMBL reference-only guards prevent later operations from silently establishing chemistry. [Web workflow/example](RECOMBINATION_UI.md) · [Adapter and bounds](RECOMBINATION_ADAPTER.md) · [Scientific model](../crates/recombination/README.md) · [MCP](RECOMBINATION_MCP.md).

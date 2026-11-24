@@ -165,7 +165,7 @@ fn every_new_request_and_result_rejects_pre_ten_labels_without_changing_old_tags
         let ((id, _, tag), _) =
             postcard::take_from_bytes::<(u32, &str, u32)>(&original[42..]).unwrap();
         assert_eq!((id, tag), (91, 34 + index as u32));
-        assert_eq!(&original[4..6], &22u16.to_le_bytes());
+        assert_eq!(&original[4..6], &23u16.to_le_bytes());
         for old in 1..10u16 {
             let mut message = original.clone();
             message[4..6].copy_from_slice(&old.to_le_bytes());

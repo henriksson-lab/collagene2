@@ -64,11 +64,114 @@ async fn artifact(c: &Client, id: &Value) -> Value {
     }
     serde_json::from_str(&text).unwrap()
 }
+
+#[tokio::test]
+async fn scan_sdk_preserves_recognition_uncertainty_and_never_constructs_products() {
+    let (c, s) = setup().await;
+    let tools = c.list_tools(Default::default()).await.unwrap().tools;
+    assert_eq!(tools.len(), 97);
+    let tool = tools.iter().find(|t| t.name == "scan_restriction").unwrap();
+    assert_eq!(tool.input_schema["additionalProperties"], false);
+    assert!(
+        tool.input_schema["properties"]
+            .get("fragment_start")
+            .is_none()
+    );
+    let exact = import(&c, "AAAAGAATTCCCCCGGATCCAAAA").await;
+    let ambiguous = import(&c, "AAAAGAANTCAAAA").await;
+    let edge = import(&c, "GGTCTCA").await;
+    let before = call(&c, "list_documents", json!({})).await;
+    let args = json!({"document":exact,"source_role":"scan-source-event","enzymes":["EcoRI","BamHI","NotI"],"max_sites":1});
+    let first = call(&c, "scan_restriction", args.clone()).await;
+    assert_eq!(first["scan_complete"], true);
+    assert_eq!(first["products_determined"], false);
+    assert_eq!(first["fragment_count"], 0);
+    assert_eq!(first["ref_top_lengths"], Value::Null);
+    assert_eq!(first["site_count"], 2);
+    assert_eq!(first["sites_done"], false);
+    assert_eq!(first["sites"][0]["recognition_start"], 4);
+    assert_eq!(first["sites"][0]["top_cut"], 5);
+    assert_eq!(first["sites"][0]["bottom_cut"], 9);
+    assert_eq!(first["enzyme_counts"][0]["certain_observed"], 1);
+    assert_eq!(first["enzyme_counts"][0]["possible_observed"], 0);
+    assert_eq!(first["enzyme_counts"][0]["single_cutter"], true);
+    assert_eq!(first["enzyme_counts"][2]["exact_site_count"], 0);
+    assert_eq!(first["enzyme_counts"][2]["single_cutter"], false);
+    let evidence = artifact(&c, &first["artifact_id"]).await;
+    let report: RestrictionInspection = serde_json::from_value(evidence["report"].clone()).unwrap();
+    report.validate().unwrap();
+    assert!(
+        report.fragments.is_empty()
+            && report.ref_top_lengths.is_none()
+            && !report.products_determined
+    );
+    assert_eq!(evidence["catalog_pin"], first["catalog_pin"]);
+    assert_eq!(evidence["enzyme_counts"], first["enzyme_counts"]);
+    let mut second = args.clone();
+    second["site_start"] = json!(1);
+    second["catalog_pin"] = first["catalog_pin"].clone();
+    let second = call(&c, "scan_restriction", second).await;
+    assert_eq!(second["artifact_id"], first["artifact_id"]);
+    assert_eq!(second["sites"][0]["recognition_start"], 14);
+    let possible = call(
+        &c,
+        "scan_restriction",
+        json!({"document":ambiguous,"source_role":"scan-source-event","enzymes":["EcoRI"]}),
+    )
+    .await;
+    assert_eq!(possible["scan_complete"], true);
+    assert_eq!(possible["enzyme_counts"][0]["possible_observed"], 1);
+    assert_eq!(possible["enzyme_counts"][0]["exact_site_count"], Value::Null);
+    assert_eq!(possible["enzyme_counts"][0]["single_cutter"], Value::Null);
+    let edge = call(
+        &c,
+        "scan_restriction",
+        json!({"document":edge,"source_role":"scan-source-event","enzymes":["BsaI"]}),
+    )
+    .await;
+    assert_eq!(edge["scan_complete"], true);
+    assert_eq!(edge["sites"][0]["top_cut"], 7);
+    assert_eq!(edge["sites"][0]["bottom_cut"], Value::Null);
+    assert_eq!(edge["sites"][0]["bottom_boundary"], 11);
+    let mut partial = args.clone();
+    let mut options = InspectionOptions::default();
+    options.max_comparisons = 1;
+    partial["options"] = serde_json::to_value(options).unwrap();
+    let partial = call(&c, "scan_restriction", partial).await;
+    assert_eq!(partial["scan_complete"], false);
+    assert_eq!(partial["site_count"], 0);
+    for count in partial["enzyme_counts"].as_array().unwrap() {
+        assert_eq!(count["counts_complete"], false);
+        assert_eq!(count["exact_site_count"], Value::Null);
+        assert_eq!(count["single_cutter"], Value::Null);
+    }
+    for (key, value) in [
+        ("max_sites", json!(0)),
+        ("site_start", json!(999)),
+        ("fragment_start", json!(0)),
+        ("enzymes", json!(["not-an-enzyme"])),
+    ] {
+        let mut invalid = args.clone();
+        invalid[key] = value;
+        reject(&c, "scan_restriction", invalid).await;
+    }
+    let mut stale = args.clone();
+    stale["document"]["revision"] = json!("0".repeat(64));
+    reject(&c, "scan_restriction", stale).await;
+    let mut forged = args;
+    forged["catalog_pin"] = first["catalog_pin"].clone();
+    forged["catalog_pin"]["enzymes"][0]["enzyme"]["top_cut"] = json!(2);
+    reject(&c, "scan_restriction", forged).await;
+    assert_eq!(call(&c, "list_documents", json!({})).await, before);
+    c.cancel().await.unwrap();
+    s.await.unwrap();
+}
+
 #[tokio::test]
 async fn inspection_sdk_pages_exact_geometry_and_source_without_creating_products() {
     let (c, s) = setup().await;
     let tools = c.list_tools(Default::default()).await.unwrap().tools;
-    assert_eq!(tools.len(), 96);
+    assert_eq!(tools.len(), 97);
     let tool = tools
         .iter()
         .find(|t| t.name == "inspect_restriction")

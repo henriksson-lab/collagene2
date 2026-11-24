@@ -663,6 +663,24 @@ pub struct RestrictionInspectionQuery {
     #[serde(default = "default_methylation_page")]
     pub max_fragments: usize,
 }
+/// Recognition/cut-coordinate evidence only; never constructs a physical digest.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RestrictionScanQuery {
+    pub document: DocumentRef,
+    /// Stable explicit source role, independently bound to source revision.
+    pub source_role: String,
+    /// One to 64 exact catalog IDs or uniquely resolved names/aliases, in order.
+    pub enzymes: Vec<String>,
+    /// Optional exact edition/hash/ordered-ID/geometry pin; changed pins fail.
+    pub catalog_pin: Option<collagene_core::catalog_digest::CatalogSelection>,
+    #[serde(default)]
+    pub options: collagene_core::restriction_inspection::InspectionOptions,
+    #[serde(default)]
+    pub site_start: usize,
+    #[serde(default = "default_methylation_page")]
+    pub max_sites: usize,
+}
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DigestQuery {
@@ -3524,6 +3542,81 @@ impl CollageneServer {
         output(
             json!({"enzymes":analysis::starter_enzymes(),"checked_digest_profile_revision":collagene_core::modified_duplex::profile_revision(),"checked_digest_profile_version":collagene_core::modified_duplex::PROFILE_VERSION,"scope":"Legacy starter geometry only; no catalog supplier/formulation facts are inferred.","catalog_discovery":catalog_tools::identity(&catalog_tools::builtin()?),"catalog_lookup_tool":"lookup_enzyme_catalog","catalog_evidence_tool":"resolve_enzyme_evidence"}),
         )
+    }
+    #[tool(
+        description = "Scan an immutable DNA source for restriction recognition spans and reference top/bottom cut boundaries without constructing duplexes, fragments or products. Select ordered exact catalog IDs or uniquely resolved names/aliases, optionally pinning edition/hash/full geometry. Certain and possible recognition are separate; unavailable cuts retain raw boundary diagnostics. Returns bounded site pages, validated source/geometry/options evidence and full JSON artifact. Per-enzyme observed counts are lower bounds when scan_complete=false; exact counts and single-cutter classification are null on incomplete scans, and possible recognition withholds single-cutter certainty. Scan completion describes sequence search only, not enzyme activity, methylation, buffer compatibility or empirical cleavage. Use inspect_restriction separately only when assumed-complete physical digest summaries are wanted."
+    )]
+    async fn scan_restriction(
+        &self,
+        Parameters(args): Parameters<RestrictionScanQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if !(1..=100).contains(&args.max_sites) {
+            return Err(bad("restriction site page size must be 1..100"));
+        }
+        if args.enzymes.is_empty() || args.enzymes.len() > 64 {
+            return Err(bad("select 1..64 embedded enzymes"));
+        }
+        let catalog = catalog_tools::builtin()?;
+        let ids = args
+            .enzymes
+            .iter()
+            .map(|name| match catalog.lookup_enzyme(name) {
+                collagene_enzyme_catalog::Lookup::Unique(enzyme) => Ok(enzyme.id.clone()),
+                collagene_enzyme_catalog::Lookup::Missing => {
+                    Err(bad("unknown enzyme identity; call lookup_enzyme_catalog"))
+                }
+                collagene_enzyme_catalog::Lookup::Ambiguous(_) => {
+                    Err(bad("ambiguous enzyme alias; select exact catalog IDs"))
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let selection = collagene_core::catalog_digest::select(&catalog, &ids).map_err(bad)?;
+        if let Some(pin) = &args.catalog_pin {
+            pin.validate_for(&catalog).map_err(bad)?;
+            if pin != &selection {
+                return Err(bad("catalog pin and ordered enzyme selection differ"));
+            }
+        }
+        let enzymes = selection.resolved_enzymes(&catalog).map_err(bad)?;
+        let server = self.clone();
+        self.compute(move|| {
+            let molecule={
+                let store=server.store.lock().unwrap();
+                let molecule=store.document(&args.document)?;
+                collagene_core::restriction_inspection::source_preflight(&args.source_role,molecule,&enzymes,&args.options).map_err(bad)?;
+                molecule.clone()
+            };
+            let report=collagene_core::restriction_inspection::scan(&args.source_role,&molecule,&enzymes,&args.options).map_err(bad)?;
+            report.validate_bindings_for(&args.source_role,&molecule,&enzymes,&args.options).map_err(bad)?;
+            if args.site_start>report.sites.len() {return Err(bad("restriction page offset exceeds retained evidence count"));}
+            let mut counts=vec![(0usize,0usize);enzymes.len()];
+            for site in &report.sites {
+                let entry=&mut counts[site.enzyme_index];
+                if site.certain {entry.0+=1;}else{entry.1+=1;}
+            }
+            let counts:Vec<_>=counts.into_iter().enumerate().map(|(i,(certain,possible))|json!({
+                "enzyme_index":i,"catalog_id":selection.enzymes[i].id,"enzyme":enzymes[i].name,
+                "counts_complete":report.scan_complete,"certain_observed":certain,"possible_observed":possible,
+                "observed_site_count":certain+possible,
+                "exact_site_count":(report.scan_complete && possible==0).then_some(certain),
+                "single_cutter":if report.scan_complete && possible==0 {Some(certain==1)}else{None},
+            })).collect();
+            let authority="Recognition/cut-coordinate search evidence only; no duplex or fragment construction, no experimental cleavage or reaction-condition authority. Observed counts are lower bounds when scan is incomplete; possible IUPAC matches do not establish exact biological site counts.";
+            let artifact_id=server.text_artifact(bounded_json(&json!({"catalog_pin":selection,"report":report,"enzyme_counts":counts,"authority":authority}))?,"application/json","restriction-scan.json")?;
+            let end=args.site_start.saturating_add(args.max_sites).min(report.sites.len());
+            output(json!({
+                "document":args.document,"source_role":report.source_role,"source_revision":report.source_revision,
+                "source_length":report.source_length,"topology":report.topology,"engine_version":report.engine_version,
+                "batch_revision":report.batch_revision,"geometry_revision":report.geometry_revision,
+                "options_revision":report.options_revision,"options":report.options,"enzymes":report.enzymes,
+                "catalog_pin":selection,"scan_complete":report.scan_complete,"products_determined":false,
+                "fragment_count":0,"ref_top_lengths":null,"comparisons":report.comparisons,
+                "limits":report.limits,"diagnostics":report.diagnostics,"site_count":report.sites.len(),
+                "enzyme_counts":counts,"site_start":args.site_start,"next_site_start":end,
+                "sites_done":end==report.sites.len(),"sites":&report.sites[args.site_start..end],
+                "artifact_id":artifact_id,"authority":authority,
+            }))
+        }).await
     }
     #[tool(
         description = "Inspect an immutable DNA source with one or more exact catalog enzyme identities or uniquely resolved names. Legacy flat report fields and raw artifact_id remain compatible; additive catalog_pin/catalog_batch_revision/catalog_artifact_id expose full edition/hash/ordered-identity/geometry binding. Preserves certain/possible recognition sites, exact origin-split spans, cuts outside substrate, bounded-scan limits and separate scan_complete/products_determined flags. Returns paged site and duplex-fragment summaries plus a complete immutable JSON artifact, bound to source role/revision, exact enzyme geometry and options. Products assume complete cleavage without blocking methylation or conditions; reports are evidence, not experimental activity or permission to release imported products. Existing analyze_restriction retains its strict legacy behavior."

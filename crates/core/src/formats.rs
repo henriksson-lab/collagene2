@@ -977,6 +977,13 @@ fn has_unresolved(l: &Location) -> bool {
 }
 
 pub fn export_genbank(mol: &Molecule) -> Result<String, Error> {
+    if mol
+        .metadata
+        .get(GENBANK_EDIT_RECIPE_KEY)
+        .is_some_and(|raw| raw.len() > MAX_GENBANK_EDIT_RECIPE_BYTES)
+    {
+        return Err(Error::TooLarge);
+    }
     mol.validate()?;
     if mol.sequence.alphabet() == Alphabet::Protein {
         return Err(Error::Unsupported(
@@ -984,6 +991,22 @@ pub fn export_genbank(mol: &Molecule) -> Result<String, Error> {
         ));
     }
     let mut record = if let Some(original) = &mol.original_genbank {
+        if original.len() > MAX_IMPORT_BYTES {
+            return Err(Error::TooLarge);
+        }
+        // Bound the existing parser's LOCUS preallocation before rich parsing.
+        if original
+            .lines()
+            .filter(|line| line.starts_with("LOCUS"))
+            .any(|line| {
+                line.split_whitespace()
+                    .nth(2)
+                    .and_then(|n| n.parse::<usize>().ok())
+                    .is_some_and(|n| n > MAX_SEQUENCE_LEN)
+            })
+        {
+            return Err(Error::TooLarge);
+        }
         let index = mol
             .metadata
             .get("source_record_index")
@@ -996,14 +1019,71 @@ pub fn export_genbank(mol: &Molecule) -> Result<String, Error> {
     } else {
         gb::Seq::empty()
     };
-    if !record.references.is_empty()
-        && !record
-            .seq
-            .iter()
-            .map(|b| b.to_ascii_uppercase())
-            .eq(mol.sequence.as_str().bytes())
-    {
-        return Err(Error::Unsupported("GenBank reference ranges cannot yet be remapped after sequence changes; use the native format to retain the original evidence".into()));
+    let source_differs = !record
+        .seq
+        .iter()
+        .map(|b| b.to_ascii_uppercase())
+        .eq(mol.sequence.as_str().bytes());
+    if mol.metadata.contains_key(GENBANK_EDIT_RECIPE_KEY) {
+        let index = mol
+            .metadata
+            .get("source_record_index")
+            .map(|v| v.parse::<usize>())
+            .transpose()
+            .map_err(|_| Error::Unsupported("Invalid GenBank source record index".into()))?
+            .unwrap_or(0);
+        let original_sequence = Sequence::new(
+            mol.sequence.alphabet(),
+            std::str::from_utf8(&record.seq)
+                .map_err(|_| Error::Format("Original GenBank sequence is not ASCII".into()))?,
+        )?;
+        let recipe = verified_genbank_edit_recipe(mol, &original_sequence, index)?
+            .ok_or_else(|| Error::Unsupported("Missing GenBank edit recipe".into()))?;
+        if record.references.len() > 1024 {
+            return Err(Error::TooLarge);
+        }
+        let mut spans = 0usize;
+        for reference in &record.references {
+            if reference.description.len() > 4096 {
+                return Err(Error::TooLarge);
+            }
+            spans = spans
+                .checked_add(reference.description.bytes().filter(|&b| b == b';').count() + 1)
+                .ok_or(Error::TooLarge)?;
+        }
+        if spans > 4096 || spans.saturating_mul(recipe.edits.len()) > 1_000_000 {
+            return Err(Error::TooLarge);
+        }
+        for reference in &mut record.references {
+            reference.description = remap_genbank_reference(&reference.description, &recipe)?;
+            if !recipe.edits.is_empty() {
+                let review = "Collagene: source citation retained with projected coordinate scope; citation support for edited DNA is unverified. Original record remains immutable in native source history.";
+                let remark = reference.remark.get_or_insert_with(String::new);
+                if !remark.contains(review) {
+                    if !remark.is_empty() {
+                        remark.push(' ');
+                    }
+                    remark.push_str(review);
+                }
+            }
+        }
+    } else if !record.references.is_empty() && source_differs {
+        return Err(Error::Unsupported("GenBank citation coordinates require a verified source-bound edit recipe; retain the original record or use the native format".into()));
+    }
+    if source_differs {
+        for (kind, value) in [
+            ("accession", record.accession.take()),
+            ("version", record.version.take()),
+        ] {
+            if let Some(value) = value {
+                if value.len() > 4096 {
+                    return Err(Error::TooLarge);
+                }
+                record.comments.push(format!(
+                    "Original source {kind} (ancestral provenance only): {value}"
+                ));
+            }
+        }
     }
     record.name = Some(mol.name.replace(char::is_whitespace, "_"));
     record.seq = mol.sequence.as_str().as_bytes().to_vec();

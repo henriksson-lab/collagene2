@@ -75,7 +75,7 @@ async fn assessment_sdk_binds_source_profiles_states_and_full_evidence_pages() {
     let (c, s) = setup().await;
     assert_eq!(
         c.list_tools(Default::default()).await.unwrap().tools.len(),
-        96
+        97
     );
     let imported = call(
         &c,

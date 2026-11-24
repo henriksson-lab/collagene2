@@ -41,7 +41,7 @@ fn run(revision: String, job: J) -> Response {
         job,
     };
     let b = protocol::encode_request(&q).unwrap();
-    assert_eq!(&b[4..6], &22u16.to_le_bytes());
+    assert_eq!(&b[4..6], &23u16.to_le_bytes());
     let r = protocol::decode_response(&protocol::process_request(&b).unwrap()).unwrap();
     assert_eq!(r.id, 701);
     assert_eq!(r.revision, revision);

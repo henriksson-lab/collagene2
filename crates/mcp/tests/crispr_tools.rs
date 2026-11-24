@@ -96,7 +96,7 @@ async fn guide_and_selected_reference_pages_retain_exact_intended_roles_and_all_
     let (c, s) = setup().await;
     assert_eq!(
         c.list_tools(Default::default()).await.unwrap().tools.len(),
-        96
+        97
     );
     let imported = call(&c, "import_document", json!({"text":guide_text()})).await;
     let document = doc(&imported, "reference");

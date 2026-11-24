@@ -24,7 +24,7 @@ fn request(source: &Molecule, job: AnalysisJob) -> Request {
 fn run(request: &Request) -> Response {
     let bytes = encode_request(request).unwrap();
     assert_eq!(&bytes[..4], b"CGQ\0");
-    assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), 22);
+    assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), 23);
     let response_bytes = process_request(&bytes).unwrap();
     assert_eq!(&response_bytes[..4], b"CGR\0");
     assert_eq!(

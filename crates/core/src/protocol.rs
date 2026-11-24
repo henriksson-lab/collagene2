@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
-        b"CGQ\0" | b"CGR\0" => 22,
+        b"CGQ\0" | b"CGR\0" => 23,
         b"CGP\0" => 7,
         _ => 1,
     }
@@ -518,6 +518,13 @@ pub enum AnalysisJob {
         selection: crate::recombination::Selection,
         target: Molecule,
         policy: crate::recombination::reference::TargetPolicy,
+    },
+    /// Recognition scan only; appended to preserve every older wire index.
+    ScanRestriction {
+        source_role: String,
+        molecule: Molecule,
+        enzymes: Vec<Enzyme>,
+        options: crate::restriction_inspection::InspectionOptions,
     },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1317,8 +1324,14 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_restriction_tag(bytes, &[67, 68, 69])?;
     preflight_catalog_tag(bytes, &[70, 71, 72])?;
     preflight_recombination_tag(bytes, &[73, 74, 75])?;
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tag == 76 {
+        check_variant_version(bytes, 23)?;
+    }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::ScanRestriction { .. } => 23,
         AnalysisJob::InspectRecombination { .. }
         | AnalysisJob::CheckRecombinationTarget { .. }
         | AnalysisJob::SelectRecombinationComponent { .. } => 22,
@@ -1596,6 +1609,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::InspectRestriction {
+            source_role,
+            molecule,
+            enzymes,
+            options,
+        }
+        | AnalysisJob::ScanRestriction {
             source_role,
             molecule,
             enzymes,
@@ -1925,6 +1944,13 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             fragment_index,
         )
         .map(AnalysisResult::DigestInstalled),
+        AnalysisJob::ScanRestriction {
+            source_role,
+            molecule,
+            enzymes,
+            options,
+        } => crate::restriction_inspection::scan(&source_role, &molecule, &enzymes, &options)
+            .map(AnalysisResult::RestrictionInspection),
         AnalysisJob::InspectRestriction {
             source_role,
             molecule,

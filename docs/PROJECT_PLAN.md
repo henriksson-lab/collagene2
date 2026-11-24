@@ -12,6 +12,33 @@ The foundation comprises shared `collagene-model` document/location types, a Rus
 
 This is a target specification and implementation proposal. Priority controls delivery order within the agreed scope. Library candidates below need dependency, license, target-build, and correctness checks before adoption.
 
+## Implementation workflow — user instruction, 24 November 2026
+
+Keep the full product objective and all existing scope constraints. Change the
+execution order and validation workflow as follows:
+
+- **Do not run browser checks until the in-scope code is complete.** This applies
+  to automated browser suites, browser smoke checks and repeated GUI acceptance
+  runs during implementation. Do not treat each small checkpoint as permission
+  to resume them.
+- Run compiler checks in the background while continuing useful coding. Do not
+  stop implementation to wait for compilation or repeatedly rebuild optimized
+  WASM after individual fixes. Batch release compilation and broad regression
+  validation after implementation; final scientific/native/WASM verification
+  remains part of completion.
+- Prefer focused, quick scientific checks for new algorithms over repeated full
+  regression runs. Existing passing checks are evidence for unchanged code;
+  compilation and testing must not displace feature implementation.
+- Prioritize usable editor functionality over further pane/layout polish:
+  visible restriction-enzyme recognition ranges and strand-cut positions in
+  sequence and circular/linear maps; enzyme filtering by site count; pointer
+  range selection; keyboard selection and direct sequence typing/deletion with
+  undo/redo and annotation updates. Share the selected enzymes and site evidence
+  across the editor views. Keep uncertainty and incomplete scans explicit.
+
+These instructions change the working method and immediate priorities; they do
+not remove outstanding features or weaken the final completion requirements.
+
 ## Scope constraints
 
 Collagene 2 is licensed under [MIT](../LICENSE). Implement its application, UI, cloning algorithms and verification engine independently. Do not fork, copy, translate or borrow application/scientific code from the surveyed cloning projects, or treat their output as an authoritative correctness oracle.

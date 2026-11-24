@@ -8,6 +8,8 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io::Write};
 pub const ENGINE_VERSION: &str = "restriction-inspection-1";
+const INSPECTION_ASSUMPTIONS: &str = "Recognition and reference top-strand lengths do not establish experimental cleavage. Products assume complete cleavage of intact, unmodified-in-effect duplex DNA; methylation, reagent conditions and reaction success are not assessed.";
+const SCAN_ASSUMPTIONS: &str = "Recognition evidence does not establish experimental cleavage. This scan computes no physical fragments or reference top-strand product lengths; methylation, reagent conditions and reaction success are not assessed.";
 const MAX_SOURCE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_REPORT_BYTES: usize = 16 * 1024 * 1024;
 macro_rules! dto {($($x:tt)*)=>{#[derive(Debug,Clone,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($x)*};}
@@ -298,15 +300,36 @@ fn push_limit(r: &mut RestrictionInspection, l: InspectionLimit) {
         r.limits.push(l);
     }
 }
-/// Complete recognition scan, with explicit bounded partial results. No methylation or kinetics inference.
-pub fn inspect(
+/// Recognition evidence only, with explicit bounded partial results. This never
+/// reconstructs a duplex, computes fragment lengths, or manufactures products.
+/// The same source/geometry/options bindings are used by the full inspection.
+pub fn scan(
     role: &str,
     m: &Molecule,
     es: &[Enzyme],
     o: &InspectionOptions,
 ) -> Result<RestrictionInspection, Error> {
     source_preflight(role, m, es, o)?;
-    let mut r=RestrictionInspection{engine_version:ENGINE_VERSION.into(),source_role:role.into(),source_revision:m.revision(),options_revision:hash(o)?,geometry_revision:hash(&specs(es))?,batch_revision:batch_revision(role,m,es,o)?,source_length:m.sequence.len(),topology:m.topology,enzymes:specs(es),options:o.clone(),sites:vec![],scan_complete:true,products_determined:false,comparisons:0,limits:vec![],ref_top_lengths:None,fragments:vec![],diagnostics:vec!["Recognition and reference top-strand lengths do not establish experimental cleavage. Products assume complete cleavage of intact, unmodified-in-effect duplex DNA; methylation, reagent conditions and reaction success are not assessed.".into()]};
+    let mut r = RestrictionInspection {
+        engine_version: ENGINE_VERSION.into(),
+        source_role: role.into(),
+        source_revision: m.revision(),
+        options_revision: hash(o)?,
+        geometry_revision: hash(&specs(es))?,
+        batch_revision: batch_revision(role, m, es, o)?,
+        source_length: m.sequence.len(),
+        topology: m.topology,
+        enzymes: specs(es),
+        options: o.clone(),
+        sites: vec![],
+        scan_complete: true,
+        products_determined: false,
+        comparisons: 0,
+        limits: vec![],
+        ref_top_lengths: None,
+        fragments: vec![],
+        diagnostics: vec![INSPECTION_ASSUMPTIONS.into()],
+    };
     let n = m.sequence.len();
     let bases = m.sequence.as_str().as_bytes();
     let mut bytes = size(&r, o.max_report_bytes)?; // fixed overhead must fit before scanning
@@ -368,6 +391,24 @@ pub fn inspect(
             }
         }
     }
+    // Keep the historical recognition-loop reserve unchanged for inspect(),
+    // then describe this narrower API without asserting physical preparation.
+    r.diagnostics = vec![SCAN_ASSUMPTIONS.into()];
+    size(&r, o.max_report_bytes)?;
+    r.validate()?;
+    Ok(r)
+}
+
+/// Recognition inspection plus lazily summarized assumed-complete duplex products.
+/// Existing report bindings and physical-product diagnostics remain unchanged.
+pub fn inspect(
+    role: &str,
+    m: &Molecule,
+    es: &[Enzyme],
+    o: &InspectionOptions,
+) -> Result<RestrictionInspection, Error> {
+    let mut r = scan(role, m, es, o)?;
+    r.diagnostics = vec![INSPECTION_ASSUMPTIONS.into()];
     if r.scan_complete
         && r.sites
             .iter()

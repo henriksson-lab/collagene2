@@ -81,3 +81,36 @@
 /* Imported annotation names can be long; keep the inspector's width fixed. */
 .workspace-shell .feature-entry>span { min-width:0; overflow-wrap:anywhere; }
 .workspace-shell .annotation-details h3 { overflow-wrap:anywhere; }
+/* Restriction evidence is shared across the editor rather than hidden in digest setup. */
+.editor-view-bar { justify-content:space-between; gap:10px; }
+.restriction-quick-controls { display:flex; align-items:center; gap:8px; min-width:0; font-size:11px; color:#526d64; }
+.restriction-quick-controls label { display:flex; align-items:center; gap:5px; white-space:nowrap; }
+.restriction-quick-controls input { margin:0; }
+.restriction-quick-controls .text-tool { padding:3px 6px; font-size:11px; }
+.restriction-quick-count { color:#829189; white-space:nowrap; }
+.sequence-editor-hint,.shared-restriction-status { padding:5px 12px; border-bottom:1px solid #e6ece8; font-size:11px; line-height:1.4; color:#6a7e74; flex:none; }
+.sequence-editor-hint { color:#476a5d; background:#f8fbf9; }
+.workspace-shell .sequence-canvas { touch-action:none; }
+.workspace-shell .mvp-inspector-tabs { padding:0 5px; gap:0; }
+.workspace-shell .mvp-inspector-tabs>button { font-size:12px; padding:0 7px; }
+.workspace-shell .mvp-inspector-tabs .more-tools>summary { font-size:11px; padding-left:6px; padding-right:6px; }
+.restriction-panel { overflow-wrap:anywhere; }
+.restriction-panel .restriction-visibility { flex-direction:row; align-items:center; gap:7px; }
+.restriction-panel input[type=checkbox] { width:14px; height:14px; margin:0; padding:0; flex:none; }
+.restriction-enzyme-list { border-top:1px solid #dfe7e2; }
+.restriction-panel .restriction-enzyme { display:flex; flex-direction:row; align-items:center; gap:8px; margin:0; padding:8px 2px; border-bottom:1px solid #edf1ee; font-size:12px; }
+.restriction-enzyme>span:first-of-type { flex:1; min-width:0; }
+.restriction-enzyme strong { display:block; color:#3d5b4d; font-weight:550; }
+.restriction-enzyme small { display:block; color:#87958b; font-size:10px; margin-top:3px; font-family:monospace; }
+.restriction-count { text-align:right; font-size:11px; color:#647f70; font-variant-numeric:tabular-nums; }
+.restriction-picker-actions { display:flex; flex-wrap:wrap; gap:4px; }
+.restriction-picker-actions .text-tool { font-size:11px; padding:5px 7px; }
+.restriction-site-details { margin-top:14px; padding:9px; border:1px solid #dce6df; background:#fafcfb; font-size:12px; line-height:1.5; }
+.restriction-site-details h3 { margin:0 0 5px; }
+.restriction-site-list { margin-top:14px; font-size:12px; }
+.restriction-site-list summary { margin-bottom:9px; cursor:pointer; }
+.restriction-map-note { display:none; position:absolute; bottom:4px; left:12px; right:12px; margin:0; padding:5px 8px; color:#6b7155; background:#fffcefef; font-size:11px; line-height:1.35; pointer-events:none; }
+.map-stage canvas[data-restriction-limited="true"]~.restriction-map-note { display:block; }
+.map-interaction-tools { display:flex; align-items:center; justify-content:center; gap:3px; margin:0 0 5px; }
+.map-mode-button { border:1px solid #d8e3dd; border-radius:4px; padding:3px 9px; color:#6b8076; background:transparent; font-size:11px; }
+.map-mode-button.active { background:#e5efe9; border-color:#c4d8cc; color:#285e48; }

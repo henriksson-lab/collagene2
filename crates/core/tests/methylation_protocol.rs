@@ -31,7 +31,7 @@ fn worker_assessment_binds_source_states_profiles_and_options_without_new_produc
         },
     };
     let bytes = protocol::encode_request(&request).unwrap();
-    assert_eq!(&bytes[4..6], &22u16.to_le_bytes());
+    assert_eq!(&bytes[4..6], &23u16.to_le_bytes());
     let response = protocol::decode_response(&protocol::process_request(&bytes).unwrap()).unwrap();
     assert_eq!(response.revision, revision);
     let AnalysisResult::Methylation(report) = response.result else {

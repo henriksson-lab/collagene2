@@ -1,3 +1,7 @@
+use crate::{
+    annotation_geometry::{self, PreparedGeometry},
+    map_labels::{self, LabelStats, View},
+};
 use collagene_core::{Molecule, Topology, model::Feature};
 use js_sys::Float32Array;
 use std::{
@@ -29,6 +33,12 @@ pub fn css_color(feature: &Feature) -> String {
         (c[1] * 255.) as u8,
         (c[2] * 255.) as u8
     )
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MapHit {
+    pub feature_index: Option<usize>,
+    pub span: (usize, usize),
 }
 
 #[derive(Clone)]
@@ -100,6 +110,21 @@ struct State {
     vertices: i32,
     molecule: Molecule,
     revision: String,
+    geometry: PreparedGeometry,
+    geometry_valid: bool,
+    terminals: Vec<Option<(usize, usize, bool)>>,
+    annotation_total: usize,
+    labels: Option<map_labels::Cache>,
+    label_hits: Vec<map_labels::Hit>,
+    label_stats: Option<LabelStats>,
+    on_labels: Rc<dyn Fn(LabelStats)>,
+    overlay_ctx: Ctx,
+    selected_feature: Option<usize>,
+    rendered_geometry_count: usize,
+    geometry_limited: bool,
+    display_title: String,
+    display_subtitle: String,
+    hit_dataset: String,
     rotation: f64,
     zoom: f64,
     drag: Option<(f64, f64, f64, bool)>,
@@ -121,8 +146,11 @@ fn shader(gl: &Gl, kind: u32, source: &str) -> Result<WebGlShader, String> {
         Err(gl.get_shader_info_log(&shader).unwrap_or_default())
     }
 }
+fn arc_segments(start: f64, end: f64) -> usize {
+    (((end - start).abs() * 32.).ceil() as usize).clamp(1, 128)
+}
 fn arc(out: &mut Vec<f32>, start: f64, end: f64, inner: f64, outer: f64, color: [f32; 4]) {
-    let segments = (((end - start).abs() * 32.).ceil() as usize).clamp(1, 128);
+    let segments = arc_segments(start, end);
     let mut vertex = |angle: f64, radius: f64| {
         out.extend_from_slice(&[
             (angle.cos() * radius) as f32,
@@ -156,7 +184,29 @@ impl MapRenderer {
         canvas: HtmlCanvasElement,
         overlay: HtmlCanvasElement,
         molecule: Molecule,
+        on_labels: Rc<dyn Fn(LabelStats)>,
     ) -> Result<Self, String> {
+        let overlay_ctx = overlay
+            .get_context("2d")
+            .map_err(|_| "Cannot access map label canvas")?
+            .ok_or("Map label canvas is unavailable")?
+            .dyn_into::<Ctx>()
+            .map_err(|_| "Invalid map label context")?;
+        let prepared = annotation_geometry::prepare(&molecule);
+        let geometry_valid = prepared.is_ok();
+        let geometry = prepared.unwrap_or_default();
+        let terminals = prepare_terminals(&molecule, &geometry);
+        let annotation_total = molecule.features.len();
+        // A failed borrowed geometry guard must not be followed by a rich-model hash.
+        let revision = if geometry_valid {
+            molecule.revision()
+        } else {
+            String::new()
+        };
+        let labels =
+            geometry_valid.then(|| map_labels::Cache::prepare(&molecule, &geometry, &overlay_ctx));
+        let display_title = molecule.name.chars().take(28).collect();
+        let display_subtitle = subtitle(&molecule);
         let gl: Gl = canvas
             .get_context("webgl2")
             .map_err(|_| "Cannot access WebGL2")?
@@ -194,8 +244,23 @@ impl MapRenderer {
             program,
             buffer,
             vertices: 0,
-            revision: molecule.revision(),
+            revision,
             molecule,
+            geometry,
+            geometry_valid,
+            terminals,
+            annotation_total,
+            labels,
+            label_hits: Vec::new(),
+            label_stats: None,
+            on_labels,
+            overlay_ctx,
+            selected_feature: None,
+            rendered_geometry_count: 0,
+            geometry_limited: !geometry_valid,
+            display_title,
+            display_subtitle,
+            hit_dataset: String::new(),
             rotation: 0.,
             zoom: 1.,
             drag: None,
@@ -217,17 +282,51 @@ impl MapRenderer {
         molecule: &Molecule,
         revision: &str,
         selection: &[(usize, usize)],
+        selected_feature: Option<usize>,
     ) {
         {
             let mut state = self.0.borrow_mut();
             if state.revision != revision {
-                state.molecule = molecule.clone();
+                // A gesture started on another source cannot select this document.
+                state.drag = None;
+                let prepared = annotation_geometry::prepare(molecule);
+                state.geometry_valid = prepared.is_ok();
+                state.geometry = prepared.unwrap_or_default();
+                state.terminals = prepare_terminals(molecule, &state.geometry);
+                state.annotation_total = molecule.features.len();
+                // Reject the annotation cache without recursively cloning an invalid tree.
+                // This private fallback retains only reference symbols for baseline display.
+                state.molecule = if state.geometry_valid {
+                    molecule.clone()
+                } else {
+                    Molecule {
+                        name: molecule.name.chars().take(28).collect(),
+                        sequence: molecule.sequence.clone(),
+                        topology: molecule.topology,
+                        features: vec![],
+                        metadata: Default::default(),
+                        original_genbank: None,
+                    }
+                };
                 state.revision = revision.into();
+                state.labels = state.geometry_valid.then(|| {
+                    map_labels::Cache::prepare(molecule, &state.geometry, &state.overlay_ctx)
+                });
+                state.label_hits.clear();
+                state.hit_dataset.clear();
+                let _ = state.canvas.remove_attribute("data-label-source");
+                let _ = state.canvas.remove_attribute("title");
+                state.display_title = molecule.name.chars().take(28).collect();
+                state.display_subtitle = subtitle(molecule);
             }
+            state.selected_feature = selected_feature;
         }
         self.update(selection);
     }
     pub fn zoom(&self, factor: f64) {
+        if !factor.is_finite() || factor <= 0. {
+            return;
+        }
         let mut s = self.0.borrow_mut();
         s.zoom = (s.zoom * factor).clamp(0.6, 2.5);
         drop(s);
@@ -241,6 +340,9 @@ impl MapRenderer {
         self.queue_draw();
     }
     pub fn pointer_down(&self, x: f64, y: f64) {
+        if !x.is_finite() || !y.is_finite() {
+            return;
+        }
         let mut s = self.0.borrow_mut();
         let rect = s.canvas.get_bounding_client_rect();
         let angle =
@@ -248,7 +350,27 @@ impl MapRenderer {
         s.drag = Some((angle, x, y, false));
     }
     pub fn pointer_move(&self, x: f64, y: f64) {
+        if !x.is_finite() || !y.is_finite() {
+            return;
+        }
         let mut s = self.0.borrow_mut();
+        let rect = s.canvas.get_bounding_client_rect();
+        let hit = s.label_hits.iter().rev().find(|hit| {
+            x - rect.left() >= hit.rect.x
+                && x - rect.left() < hit.rect.right()
+                && y - rect.top() >= hit.rect.y
+                && y - rect.top() < hit.rect.bottom()
+        });
+        let title = hit
+            .and_then(|hit| s.molecule.features.get(hit.feature_index))
+            .map(Feature::label);
+        if let Some(title) = title {
+            if s.canvas.get_attribute("title").as_deref() != Some(title) {
+                let _ = s.canvas.set_attribute("title", title);
+            }
+        } else {
+            let _ = s.canvas.remove_attribute("title");
+        }
         if let Some((last, initial_x, initial_y, moved)) = s.drag {
             let rect = s.canvas.get_bounding_client_rect();
             let angle =
@@ -262,152 +384,172 @@ impl MapRenderer {
             self.queue_draw();
         }
     }
-    pub fn pointer_up(&self, x: f64, y: f64) -> Option<(usize, usize)> {
+    pub fn pointer_up(&self, x: f64, y: f64) -> Option<MapHit> {
+        if !x.is_finite() || !y.is_finite() {
+            return None;
+        }
         let mut s = self.0.borrow_mut();
         let moved = s.drag.take().map(|v| v.3).unwrap_or(true);
-        if moved {
+        if moved || s.molecule.sequence.is_empty() {
             return None;
         }
         let rect = s.canvas.get_bounding_client_rect();
-        let angle =
-            (y - rect.top() - rect.height() / 2.).atan2(x - rect.left() - rect.width() / 2.);
-        let n = s.molecule.sequence.len();
-        let pos = if s.molecule.topology == Topology::Circular {
-            (((angle - s.rotation + PI / 2.).rem_euclid(TAU)) / TAU * n as f64).floor() as usize
-        } else {
-            let radius = rect.width().min(rect.height()) / 2. * s.zoom;
-            let normalized = ((x - rect.left() - rect.width() / 2.) / radius + 0.8) / 1.6;
-            if !(0.0..=1.0).contains(&normalized) {
-                return None;
+        if rect.width() <= 0. || rect.height() <= 0. {
+            return None;
+        }
+        let local_x = x - rect.left();
+        let local_y = y - rect.top();
+        // Measured text boxes take precedence over the source-coordinate fallback.
+        if let Some(hit) = s.label_hits.iter().rev().find(|hit| {
+            local_x >= hit.rect.x
+                && local_x < hit.rect.right()
+                && local_y >= hit.rect.y
+                && local_y < hit.rect.bottom()
+        }) {
+            let pos = reference_position(&s, local_x, local_y, rect.width(), rect.height(), true)?;
+            return nearest_span(&s, hit.feature_index, pos).map(|span| MapHit {
+                feature_index: Some(hit.feature_index),
+                span,
+            });
+        }
+        let pos = reference_position(&s, local_x, local_y, rect.width(), rect.height(), false)?;
+        for located in s.geometry.located.iter().take(s.rendered_geometry_count) {
+            if let Some(&(a, b, _)) = located.spans.iter().find(|&&(a, b, _)| pos >= a && pos < b) {
+                return Some(MapHit {
+                    feature_index: Some(located.index),
+                    span: (a, b),
+                });
             }
-            (normalized * n as f64).floor() as usize
-        };
-        s.molecule
-            .features
-            .iter()
-            .filter(|f| f.kind != "source")
-            .flat_map(|f| f.location.spans())
-            .find(|(a, b, _)| pos >= *a && pos < *b)
-            .map(|(a, b, _)| (a, b))
-            .or(Some((pos.min(n - 1), (pos + 1).min(n))))
+        }
+        Some(MapHit {
+            feature_index: None,
+            span: (pos, pos + 1),
+        })
     }
     fn update(&self, selection: &[(usize, usize)]) {
         let mut s = self.0.borrow_mut();
-        let mut vertices = vec![];
-        // At most 12 MiB of static geometry. Unlike a fixed feature prefix, this
-        // includes every ordinary dense-fixture feature and reports simplification.
         const MAX_FLOATS: usize = 3_000_000;
-        let mut limited = false;
+        // Reserve only the bounded numeric payload estimate, so an ordinary
+        // plasmid does not allocate the full 12 MB geometry ceiling on selection.
+        let mut vertices = Vec::with_capacity(geometry_capacity(&s, selection, MAX_FLOATS));
+        let mut limited = !s.geometry_valid;
         let mut rendered = 0usize;
-        let n = s.molecule.sequence.len() as f64;
-        if s.molecule.topology == Topology::Linear {
-            quad(
-                &mut vertices,
-                -0.8,
-                0.8,
-                -0.005,
-                0.005,
-                [0.78, 0.83, 0.81, 1.],
-            );
-            'linear_features: for (i, f) in s
-                .molecule
-                .features
-                .iter()
-                .filter(|f| f.kind != "source")
-                .enumerate()
-            {
-                for (a, b, _) in f.location.spans() {
-                    if vertices.len().saturating_add(4626) > MAX_FLOATS {
-                        limited = true;
-                        break 'linear_features;
-                    }
-                    let y = 0.08 + (i % 3) as f64 * 0.12;
-                    quad(
-                        &mut vertices,
-                        a as f64 / n * 1.6 - 0.8,
-                        b as f64 / n * 1.6 - 0.8,
-                        y,
-                        y + 0.045,
-                        color(f),
-                    );
-                }
-                rendered += 1;
+        let n = s.molecule.sequence.len();
+        if n != 0 {
+            let nf = n as f64;
+            if s.molecule.topology == Topology::Linear {
+                quad(
+                    &mut vertices,
+                    -0.8,
+                    0.8,
+                    -0.005,
+                    0.005,
+                    [0.78, 0.83, 0.81, 1.],
+                );
+            } else {
+                arc(&mut vertices, 0., TAU, 0.65, 0.66, [0.78, 0.83, 0.81, 1.]);
             }
-            for &(a, b) in selection {
-                if vertices.len().saturating_add(4626) > MAX_FLOATS {
+            for (ordinal, located) in s.geometry.located.iter().enumerate() {
+                let feature = &s.molecule.features[located.index];
+                let terminal = s.terminals[ordinal];
+                // Admit the complete feature, preserving the prepared prefix used
+                // by the label cache. No half-rendered joined item claims a label.
+                let needed = located
+                    .spans
+                    .iter()
+                    .try_fold(0usize, |sum, &(a, b, reverse)| {
+                        let floats = if s.molecule.topology == Topology::Linear {
+                            36
+                        } else {
+                            let start = a as f64 / nf * TAU - PI / 2.;
+                            let end = b as f64 / nf * TAU - PI / 2.;
+                            let width = end - start;
+                            let segments = arc_segments(start, end);
+                            segments * 36
+                                + usize::from(terminal == Some((a, b, reverse)) && width > 0.035)
+                                    * 18
+                        };
+                        sum.checked_add(floats)
+                    });
+                if needed.is_none_or(|needed| needed > MAX_FLOATS - vertices.len()) {
                     limited = true;
                     break;
                 }
-                quad(
-                    &mut vertices,
-                    a as f64 / n * 1.6 - 0.8,
-                    b as f64 / n * 1.6 - 0.8,
-                    -0.08,
-                    -0.04,
-                    [0.09, 0.30, 0.27, 1.],
-                );
-            }
-        } else {
-            arc(&mut vertices, 0., TAU, 0.65, 0.66, [0.78, 0.83, 0.81, 1.]);
-            let n = s.molecule.sequence.len() as f64;
-            'circular_features: for (i, f) in s
-                .molecule
-                .features
-                .iter()
-                .filter(|f| f.kind != "source")
-                .enumerate()
-            {
-                let terminal =
-                    if s.molecule.sequence.alphabet() == collagene_core::Alphabet::Protein {
-                        None
+                let rgba = color(feature);
+                for &(a, b, reverse) in &located.spans {
+                    if s.molecule.topology == Topology::Linear {
+                        let y = 0.08 + (ordinal % 3) as f64 * 0.12;
+                        quad(
+                            &mut vertices,
+                            a as f64 / nf * 1.6 - 0.8,
+                            b as f64 / nf * 1.6 - 0.8,
+                            y,
+                            y + 0.045,
+                            rgba,
+                        );
                     } else {
-                        collagene_core::tracks::terminal_span(&f.location)
-                    };
-                for (a, b, reverse) in f.location.spans() {
-                    if vertices.len().saturating_add(4626) > MAX_FLOATS {
-                        limited = true;
-                        break 'circular_features;
-                    }
-                    let radius = 0.67 + (i % 3) as f64 * 0.057;
-                    let start = a as f64 / n * TAU - PI / 2.;
-                    let end = b as f64 / n * TAU - PI / 2.;
-                    arc(&mut vertices, start, end, radius, radius + 0.04, color(f));
-                    if terminal == Some((a, b, reverse)) && end - start > 0.035 {
-                        let head = if reverse { start } else { end };
-                        let base = if reverse { start + 0.04 } else { end - 0.04 };
-                        for (angle, r) in [
-                            (head, radius + 0.02),
-                            (base, radius - 0.015),
-                            (base, radius + 0.055),
-                        ] {
-                            vertices.extend_from_slice(&[
-                                (angle.cos() * r) as f32,
-                                (-angle.sin() * r) as f32,
-                                color(f)[0],
-                                color(f)[1],
-                                color(f)[2],
-                                1.,
-                            ]);
+                        let radius = 0.67 + (ordinal % 3) as f64 * 0.057;
+                        let start = a as f64 / nf * TAU - PI / 2.;
+                        let end = b as f64 / nf * TAU - PI / 2.;
+                        arc(&mut vertices, start, end, radius, radius + 0.04, rgba);
+                        if terminal == Some((a, b, reverse)) && end - start > 0.035 {
+                            let head = if reverse { start } else { end };
+                            let base = if reverse { start + 0.04 } else { end - 0.04 };
+                            for (angle, r) in [
+                                (head, radius + 0.02),
+                                (base, radius - 0.015),
+                                (base, radius + 0.055),
+                            ] {
+                                vertices.extend_from_slice(&[
+                                    (angle.cos() * r) as f32,
+                                    (-angle.sin() * r) as f32,
+                                    rgba[0],
+                                    rgba[1],
+                                    rgba[2],
+                                    rgba[3],
+                                ]);
+                            }
                         }
                     }
                 }
                 rendered += 1;
             }
             for &(a, b) in selection {
-                if vertices.len().saturating_add(4626) > MAX_FLOATS {
+                if a >= b || b > n {
+                    continue;
+                }
+                let needed = if s.molecule.topology == Topology::Linear {
+                    36
+                } else {
+                    arc_segments(a as f64 / nf * TAU - PI / 2., b as f64 / nf * TAU - PI / 2.) * 36
+                };
+                if needed > MAX_FLOATS - vertices.len() {
                     limited = true;
                     break;
                 }
-                arc(
-                    &mut vertices,
-                    a as f64 / n * TAU - PI / 2.,
-                    b as f64 / n * TAU - PI / 2.,
-                    0.59,
-                    0.63,
-                    [0.09, 0.30, 0.27, 1.],
-                );
+                if s.molecule.topology == Topology::Linear {
+                    quad(
+                        &mut vertices,
+                        a as f64 / nf * 1.6 - 0.8,
+                        b as f64 / nf * 1.6 - 0.8,
+                        -0.08,
+                        -0.04,
+                        [0.09, 0.30, 0.27, 1.],
+                    );
+                } else {
+                    arc(
+                        &mut vertices,
+                        a as f64 / nf * TAU - PI / 2.,
+                        b as f64 / nf * TAU - PI / 2.,
+                        0.59,
+                        0.63,
+                        [0.09, 0.30, 0.27, 1.],
+                    );
+                }
             }
         }
+        s.rendered_geometry_count = rendered;
+        s.geometry_limited = limited;
         let _ = s
             .canvas
             .set_attribute("data-rendered-feature-count", &rendered.to_string());
@@ -435,7 +577,12 @@ impl MapRenderer {
             if let Some(s) = weak.upgrade() {
                 let mut s = s.borrow_mut();
                 s.queued = false;
-                draw(&mut s);
+                let changed = draw(&mut s);
+                let on_labels = s.on_labels.clone();
+                drop(s);
+                if let Some(stats) = changed {
+                    on_labels(stats);
+                }
             }
         });
         if let Some(window) = web_sys::window() {
@@ -451,19 +598,167 @@ impl Drop for State {
     }
 }
 
-fn draw(s: &mut State) {
+fn prepare_terminals(
+    molecule: &Molecule,
+    geometry: &PreparedGeometry,
+) -> Vec<Option<(usize, usize, bool)>> {
+    geometry
+        .located
+        .iter()
+        .map(|feature| {
+            if molecule.sequence.alphabet() == collagene_core::Alphabet::Protein {
+                None
+            } else {
+                collagene_core::tracks::terminal_span(&molecule.features[feature.index].location)
+            }
+        })
+        .collect()
+}
+
+fn geometry_capacity(s: &State, selection: &[(usize, usize)], cap: usize) -> usize {
+    let n = s.molecule.sequence.len();
+    if n == 0 {
+        return 0;
+    }
+    let nf = n as f64;
+    let circular = s.molecule.topology == Topology::Circular;
+    let mut total = if circular {
+        arc_segments(0., TAU) * 36
+    } else {
+        36
+    };
+    for (ordinal, feature) in s.geometry.located.iter().enumerate() {
+        for &(a, b, reverse) in &feature.spans {
+            let amount = if circular {
+                let start = a as f64 / nf * TAU - PI / 2.;
+                let end = b as f64 / nf * TAU - PI / 2.;
+                arc_segments(start, end) * 36
+                    + usize::from(
+                        s.terminals[ordinal] == Some((a, b, reverse)) && end - start > 0.035,
+                    ) * 18
+            } else {
+                36
+            };
+            total = total.saturating_add(amount);
+            if total >= cap {
+                return cap;
+            }
+        }
+    }
+    for &(a, b) in selection {
+        if a >= b || b > n {
+            continue;
+        }
+        total = total.saturating_add(if circular {
+            arc_segments(a as f64 / nf * TAU - PI / 2., b as f64 / nf * TAU - PI / 2.) * 36
+        } else {
+            36
+        });
+        if total >= cap {
+            return cap;
+        }
+    }
+    total
+}
+
+fn subtitle(m: &Molecule) -> String {
+    match m.topology {
+        Topology::Linear => format!(
+            "{} {} · linear",
+            m.sequence.len(),
+            m.sequence.alphabet().map_unit()
+        ),
+        Topology::Circular => format!(
+            "{} {}",
+            m.sequence.len(),
+            m.sequence.alphabet().short_unit()
+        ),
+    }
+}
+
+fn reference_position(
+    s: &State,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    clamp_linear: bool,
+) -> Option<usize> {
+    let n = s.molecule.sequence.len();
+    if n == 0 || width <= 0. || height <= 0. {
+        return None;
+    }
+    let normalized = if s.molecule.topology == Topology::Circular {
+        ((y - height / 2.).atan2(x - width / 2.) - s.rotation + PI / 2.).rem_euclid(TAU) / TAU
+    } else {
+        let radius = map_labels::radius(View {
+            width,
+            height,
+            rotation: s.rotation,
+            zoom: s.zoom,
+            topology: s.molecule.topology,
+        });
+        if radius <= 0. {
+            return None;
+        }
+        let p = ((x - width / 2.) / radius + 0.8) / 1.6;
+        if !clamp_linear && !(0.0..=1.0).contains(&p) {
+            return None;
+        }
+        p.clamp(0., 1.)
+    };
+    Some(((normalized * n as f64).floor() as usize).min(n - 1))
+}
+
+fn nearest_span(s: &State, index: usize, pos: usize) -> Option<(usize, usize)> {
+    let located = s.geometry.located.get(
+        s.geometry
+            .located
+            .binary_search_by_key(&index, |f| f.index)
+            .ok()?,
+    )?;
+    let n = s.molecule.sequence.len();
+    located
+        .spans
+        .iter()
+        .min_by_key(|&&(a, b, _)| {
+            if pos >= a && pos < b {
+                return 0;
+            }
+            let direct = if pos < a { a - pos } else { pos - (b - 1) };
+            if s.molecule.topology == Topology::Circular {
+                direct.min((pos + n - a) % n).min((b - 1 + n - pos) % n)
+            } else {
+                direct
+            }
+        })
+        .map(|&(a, b, _)| (a, b))
+}
+
+fn draw(s: &mut State) -> Option<LabelStats> {
     let rect = s.canvas.get_bounding_client_rect();
-    let w = rect.width().max(1.);
-    let h = rect.height().max(1.);
+    let w = rect.width().max(0.);
+    let h = rect.height().max(0.);
+    let view = View {
+        width: w,
+        height: h,
+        rotation: s.rotation,
+        zoom: s.zoom,
+        topology: s.molecule.topology,
+    };
+    let radius = map_labels::radius(view);
     let dpr = web_sys::window()
         .map(|w| w.device_pixel_ratio())
+        .filter(|v| v.is_finite() && *v > 0.)
         .unwrap_or(1.)
         .min(2.);
-    let pw = (w * dpr) as u32;
-    let ph = (h * dpr) as u32;
+    let pw = (w * dpr).ceil().max(1.) as u32;
+    let ph = (h * dpr).ceil().max(1.) as u32;
     if s.canvas.width() != pw || s.canvas.height() != ph {
         s.canvas.set_width(pw);
         s.canvas.set_height(ph);
+    }
+    if s.overlay.width() != pw || s.overlay.height() != ph {
         s.overlay.set_width(pw);
         s.overlay.set_height(ph);
     }
@@ -481,8 +776,8 @@ fn draw(s: &mut State) {
     gl.vertex_attrib_pointer_with_i32(color, 4, Gl::FLOAT, false, 24, 8);
     gl.uniform2f(
         gl.get_uniform_location(&s.program, "u_aspect").as_ref(),
-        (w.min(h) / w) as f32,
-        (w.min(h) / h) as f32,
+        if w > 0. { (radius * 2. / w) as f32 } else { 0. },
+        if h > 0. { (radius * 2. / h) as f32 } else { 0. },
     );
     gl.uniform1f(
         gl.get_uniform_location(&s.program, "u_rotation").as_ref(),
@@ -492,150 +787,113 @@ fn draw(s: &mut State) {
             0.
         },
     );
-    gl.uniform1f(
-        gl.get_uniform_location(&s.program, "u_zoom").as_ref(),
-        s.zoom as f32,
-    );
+    gl.uniform1f(gl.get_uniform_location(&s.program, "u_zoom").as_ref(), 1.);
     gl.draw_arrays(Gl::TRIANGLES, 0, s.vertices);
-    let Some(ctx) = s
-        .overlay
-        .get_context("2d")
-        .ok()
-        .flatten()
-        .and_then(|c| c.dyn_into::<Ctx>().ok())
-    else {
-        return;
-    };
-    let _ = ctx.set_transform(dpr, 0., 0., dpr, 0., 0.);
+    let ctx = &s.overlay_ctx;
+    let _ = ctx.set_transform(
+        if w > 0. { pw as f64 / w } else { 1. },
+        0.,
+        0.,
+        if h > 0. { ph as f64 / h } else { 1. },
+        0.,
+        0.,
+    );
     ctx.clear_rect(0., 0., w, h);
-    if s.molecule.topology == Topology::Linear {
-        let radius = w.min(h) / 2. * s.zoom;
-        let n = s.molecule.sequence.len();
+    if w > 0. && h > 0. {
         ctx.set_text_align("center");
         ctx.set_font("600 19px system-ui");
         ctx.set_fill_style_str("#254b44");
+        let linear = s.molecule.topology == Topology::Linear;
         let _ = ctx.fill_text(
-            &s.molecule.name.chars().take(28).collect::<String>(),
+            &s.display_title,
             w / 2.,
-            h / 2. + 85.,
+            h / 2. + if linear { 85. } else { -6. },
         );
         ctx.set_font("14px system-ui");
         ctx.set_fill_style_str("#72817c");
         let _ = ctx.fill_text(
-            &format!("{n} {} · linear", s.molecule.sequence.alphabet().map_unit()),
+            &s.display_subtitle,
             w / 2.,
-            h / 2. + 112.,
+            h / 2. + if linear { 112. } else { 20. },
         );
         ctx.set_font("12px system-ui");
-        for i in 0..=4 {
-            let x = w / 2. + (i as f64 / 4. * 1.6 - 0.8) * radius;
-            let _ = ctx.fill_text(&format!("{}", (i * n / 4).max(1)), x, h / 2. + 28.);
+        ctx.set_fill_style_str("#87938e");
+        let n = s.molecule.sequence.len();
+        if n > 0 {
+            if linear {
+                for i in 0..=4 {
+                    let x = w / 2. + (i as f64 / 4. * 1.6 - 0.8) * radius;
+                    let _ = ctx.fill_text(&(i * n / 4).max(1).to_string(), x, h / 2. + 28.);
+                }
+            } else {
+                for i in 0..8 {
+                    let a = i as f64 / 8. * TAU - PI / 2. + s.rotation;
+                    let _ = ctx.fill_text(
+                        &(i * n / 8 + 1).to_string(),
+                        w / 2. + a.cos() * radius * 0.56,
+                        h / 2. + a.sin() * radius * 0.56 + 4.,
+                    );
+                }
+            }
         }
-        for (i, f) in s
-            .molecule
-            .features
+    }
+    let frame = s
+        .labels
+        .as_mut()
+        .map(|cache| cache.draw(ctx, &view, s.selected_feature, s.rendered_geometry_count));
+    let (hits, mut stats) = if let Some(frame) = frame {
+        (frame.hits, frame.stats)
+    } else {
+        (
+            Vec::new(),
+            LabelStats {
+                total: s.annotation_total,
+                omitted: s.annotation_total,
+                limited: true,
+                ..LabelStats::default()
+            },
+        )
+    };
+    stats.limited |= s.geometry_limited;
+    let hits_changed = s.label_hits.len() != hits.len()
+        || s.label_hits
             .iter()
-            .filter(|f| f.kind != "source")
-            .take(12)
-            .enumerate()
-        {
-            if let Some((a, b, _)) = f.location.spans().first() {
-                let x = w / 2. + ((*a + *b) as f64 / 2. / n as f64 * 1.6 - 0.8) * radius;
-                let y = h / 2. - (0.08 + (i % 3) as f64 * 0.12 + 0.06) * radius;
-                ctx.set_font("14px system-ui");
-                ctx.set_fill_style_str(&css_color(f));
-                let _ = ctx.fill_text(&f.label().chars().take(20).collect::<String>(), x, y);
-            }
-        }
-        return;
+            .zip(&hits)
+            .any(|(a, b)| a.feature_index != b.feature_index || a.rect != b.rect);
+    s.label_hits = hits;
+    // Numeric QA hit rectangles are bounded by the 128-label display budget.
+    // Serialize only when displayed rectangles/identities actually changed.
+    if hits_changed || s.hit_dataset.is_empty() {
+        let dataset = serde_json::to_string(&s.label_hits.iter().map(|hit|serde_json::json!({
+            "index":hit.feature_index,"x":hit.rect.x,"y":hit.rect.y,"width":hit.rect.width,"height":hit.rect.height,
+        })).collect::<Vec<_>>()).unwrap_or_else(|_|"[]".into());
+        let _ = s.canvas.set_attribute("data-label-hits", &dataset);
+        s.hit_dataset = dataset;
     }
-    ctx.set_text_align("center");
-    ctx.set_fill_style_str("#254b44");
-    ctx.set_font("600 19px system-ui");
-    let title: String = s.molecule.name.chars().take(28).collect();
-    let _ = ctx.fill_text(&title, w / 2., h / 2. - 6.);
-    ctx.set_font("14px system-ui");
-    ctx.set_fill_style_str("#72817c");
-    let _ = ctx.fill_text(
-        &format!(
-            "{} {}",
-            s.molecule.sequence.len(),
-            s.molecule.sequence.alphabet().short_unit()
-        ),
-        w / 2.,
-        h / 2. + 20.,
-    );
-    let radius = w.min(h) / 2. * s.zoom;
-    ctx.set_font("12px system-ui");
-    ctx.set_fill_style_str("#87938e");
-    let n = s.molecule.sequence.len();
-    for i in 0..8 {
-        let a = i as f64 / 8. * TAU - PI / 2. + s.rotation;
-        let _ = ctx.fill_text(
-            &format!("{}", i * n / 8 + 1),
-            w / 2. + a.cos() * radius * 0.56,
-            h / 2. + a.sin() * radius * 0.56 + 4.,
+    // Publish the source binding only after the matching frame/hits are ready.
+    // A new source with zero labels must replace the previous source's hit data.
+    if s.canvas.get_attribute("data-label-source").as_deref() != Some(s.revision.as_str()) {
+        let _ = s.canvas.set_attribute("data-label-source", &s.revision);
+    }
+    if s.label_stats.as_ref() != Some(&stats) {
+        for (key, value) in [
+            ("total", stats.total),
+            ("displayed", stats.displayed),
+            ("omitted", stats.omitted),
+            ("abbreviated", stats.abbreviated),
+            ("unplaced", stats.unplaced),
+        ] {
+            let _ = s
+                .canvas
+                .set_attribute(&format!("data-label-{key}"), &value.to_string());
+        }
+        let _ = s.canvas.set_attribute(
+            "data-label-limited",
+            if stats.limited { "true" } else { "false" },
         );
-    }
-    ctx.set_font("14px system-ui");
-    let mut occupied: Vec<(f64, f64, f64, f64)> = vec![];
-    for f in s
-        .molecule
-        .features
-        .iter()
-        .filter(|f| f.kind != "source")
-        .take(12)
-    {
-        if let Some((a, b, _)) = f.location.spans().first() {
-            let angle = (*a + *b) as f64 / 2. / n as f64 * TAU - PI / 2. + s.rotation;
-            let mut label: String = f.label().chars().take(28).collect();
-            let measure = |text: &str| {
-                ctx.measure_text(text)
-                    .map(|m| m.width())
-                    .unwrap_or(text.len() as f64 * 7.5)
-            };
-            let mut shortened = false;
-            while measure(&label) > w * 0.43 && label.chars().count() > 3 {
-                label.pop();
-                shortened = true;
-            }
-            if shortened {
-                label.push('…');
-            }
-            let text_width = measure(&label);
-            let x = (w / 2. + angle.cos() * radius * 0.94).clamp(
-                12. + text_width / 2.,
-                (w - 12. - text_width / 2.).max(12. + text_width / 2.),
-            );
-            let initial_y = h / 2. + angle.sin() * radius * 0.94 + 4.;
-            let placement = [0., -20., 20., -40., 40., -60., 60.]
-                .into_iter()
-                .map(|offset| initial_y + offset)
-                .find(|y| {
-                    *y >= 20.
-                        && *y <= h - 14.
-                        && !occupied.iter().any(|(a, b, c, d)| {
-                            x + text_width / 2. + 5. > *a
-                                && x - text_width / 2. - 5. < *c
-                                && *y + 5. > *b
-                                && *y - 16. < *d
-                        })
-                });
-            let Some(y) = placement else {
-                continue;
-            };
-            occupied.push((x - text_width / 2., y - 16., x + text_width / 2., y + 5.));
-            ctx.set_stroke_style_str("#c8d5cd");
-            ctx.set_line_width(0.8);
-            ctx.begin_path();
-            ctx.move_to(
-                w / 2. + angle.cos() * radius * 0.82,
-                h / 2. + angle.sin() * radius * 0.82,
-            );
-            ctx.line_to(x, y - 6.);
-            ctx.stroke();
-            ctx.set_fill_style_str(&css_color(f));
-            let _ = ctx.fill_text(&label, x, y);
-        }
+        s.label_stats = Some(stats.clone());
+        Some(stats)
+    } else {
+        None
     }
 }

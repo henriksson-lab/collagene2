@@ -1,6 +1,8 @@
 #[cfg(target_arch = "wasm32")]
 mod alignment_view;
 #[cfg(any(target_arch = "wasm32", test))]
+mod annotation_geometry;
+#[cfg(any(target_arch = "wasm32", test))]
 mod annotation_layout;
 #[cfg(target_arch = "wasm32")]
 mod app;
@@ -38,6 +40,8 @@ mod genome_view;
 mod genomes;
 #[cfg(target_arch = "wasm32")]
 mod history_view;
+#[cfg(target_arch = "wasm32")]
+mod map_labels;
 #[cfg(target_arch = "wasm32")]
 mod oligo_import;
 #[cfg(target_arch = "wasm32")]

@@ -405,6 +405,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "collagene-map-label-layout"
+version = "0.1.0"
+
+[[package]]
 name = "collagene-mcp"
 version = "0.1.0"
 dependencies = [
@@ -500,6 +504,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "collagene-core",
+ "collagene-map-label-layout",
  "collagene-sources",
  "collagene-view-layout",
  "futures-channel",

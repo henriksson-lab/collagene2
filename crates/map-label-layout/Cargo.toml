@@ -1,0 +1,9 @@
+[package]
+name = "collagene-map-label-layout"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Bounded deterministic placement of measured map labels"
+
+[dependencies]

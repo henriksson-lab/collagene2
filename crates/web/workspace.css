@@ -65,3 +65,19 @@
 .workspace-shell .document-header { padding:12px; }
  .workspace-shell .editor-toolbar { height:auto; flex-wrap:wrap; padding:8px; }
 }
+
+.editor-view-bar { display:flex; align-items:center; min-height:35px; padding:4px 12px; border-bottom:1px solid #e3e8e9; flex:none; background:#fff; }
+.view-switcher { display:inline-flex; gap:2px; padding:2px; border:1px solid #dce4e2; border-radius:5px; background:#f6f8f7; }
+.view-switcher button { border:0; background:transparent; color:#667975; border-radius:3px; padding:3px 12px; font-size:11px; }
+.view-switcher button:hover { background:#e8eeeb; }
+.view-switcher button.active { color:#225e4d; background:#fff; box-shadow:0 1px 3px #233c3520; }
+.workspace-shell .editor-grid.sequence-only,.workspace-shell .editor-grid.map-only { grid-template-columns:minmax(0,1fr) 310px; }
+.editor-grid.sequence-only>.map-panel,.editor-grid.map-only>.sequence-panel { display:none; }
+.map-label-note { display:flex; align-items:center; justify-content:space-between; gap:6px; padding:5px 12px; font-size:11px; line-height:1.4; color:#69776e; border-top:1px solid #e5eae7; flex:none; }
+.map-label-note .text-tool { padding:4px; font-size:11px; white-space:nowrap; }
+@media(max-width:1099px) {
+ .workspace-shell .editor-grid.sequence-only,.workspace-shell .editor-grid.map-only { grid-template-columns:minmax(0,1fr); }
+}
+/* Imported annotation names can be long; keep the inspector's width fixed. */
+.workspace-shell .feature-entry>span { min-width:0; overflow-wrap:anywhere; }
+.workspace-shell .annotation-details h3 { overflow-wrap:anywhere; }

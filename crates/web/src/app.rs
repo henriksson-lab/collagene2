@@ -714,6 +714,8 @@ pub fn App() -> impl IntoView {
     let label_canvas = NodeRef::<html::Canvas>::new();
     let renderer = StoredValue::new_local(None::<MapRenderer>);
     let render_error = RwSignal::new(String::new());
+    let map_labels = RwSignal::new(crate::map_labels::LabelStats::default());
+    let editor_view = RwSignal::new("split");
     let show_library = RwSignal::new(true);
     let explorer_documents = Memo::new(move |_| {
         documents.with(|docs| {
@@ -1010,14 +1012,28 @@ pub fn App() -> impl IntoView {
     Effect::new(move |_| {
         molecule.with(|current| {
             let selected = highlighted_spans.get();
+            let selected_index = selected_feature.get();
             if let (Some(canvas), Some(overlay)) = (gl_canvas.get(), label_canvas.get()) {
                 if let Some(map) = renderer.get_value() {
-                    map.set_document_spans(current, &molecule_revision.get(), &selected);
+                    map.set_document_spans(
+                        current,
+                        &molecule_revision.get(),
+                        &selected,
+                        selected_index,
+                    );
                 } else {
                     match MapRenderer::new(
                         canvas.unchecked_ref::<HtmlCanvasElement>().clone(),
                         overlay.unchecked_ref::<HtmlCanvasElement>().clone(),
                         current.clone(),
+                        std::rc::Rc::new(move |stats| {
+                            if map_labels
+                                .try_get_untracked()
+                                .is_some_and(|current| current != stats)
+                            {
+                                let _ = map_labels.try_set(stats);
+                            }
+                        }),
                     ) {
                         Ok(map) => renderer.set_value(Some(map)),
                         Err(error) => render_error.set(error),
@@ -2390,12 +2406,18 @@ pub fn App() -> impl IntoView {
                         </div>
                         <Show when=move||!message.get().is_empty()><div class="notice" role="status"><span>{move||message.get()}</span><button class="icon-button" aria-label="Dismiss message" on:click=move|_|message.set(String::new())>"×"</button></div></Show>
                         <Show when=move||molecule.with(|m|m.metadata.get("collagene:example").is_some_and(|value|value=="interface-demonstration"))><div class="demo-note mvp-example"><div><strong>"Explore the example, or open your sequence"</strong><span>"Synthetic annotations illustrate the viewer. Open a GenBank file to inspect your own sequence and simulate a digest."</span></div><button class="button secondary" on:click=move|_|if let Some(input)=file_input.get(){input.click();}>"Open a GenBank file"</button></div></Show>
-                        <div class="editor-grid">
+                        <div class="editor-view-bar"><div class="view-switcher" role="group" aria-label="Editor view">
+                            <button aria-label="Split view" aria-pressed=move||(editor_view.get()=="split").to_string() class:active=move||editor_view.get()=="split" on:click=move|_|editor_view.set("split")>"Split"</button>
+                            <button aria-label="Sequence view" aria-pressed=move||(editor_view.get()=="sequence").to_string() class:active=move||editor_view.get()=="sequence" on:click=move|_|editor_view.set("sequence")>"Sequence"</button>
+                            <button aria-label="Map view" aria-pressed=move||(editor_view.get()=="map").to_string() class:active=move||editor_view.get()=="map" on:click=move|_|editor_view.set("map")>"Map"</button>
+                        </div></div>
+                        <div class="editor-grid" class:sequence-only=move||editor_view.get()=="sequence" class:map-only=move||editor_view.get()=="map">
                             <section class="sequence-panel"><div class="panel-heading"><div><h2>"Sequence"</h2></div><span class="panel-subtitle">{move||molecule.with(|doc|if doc.sequence.alphabet()==Alphabet::Protein{"Amino-acid reference"}else{"Reference & complement"})}</span></div><Show when=move||molecule.with(|doc|doc.metadata.contains_key("legacy:upper_aligned"))><details class="legacy-source-rows"><summary>"Original aligned source rows"</summary><p class="helper">"Upper is stored 5′→3′; lower is aligned 3′→5′. These original rows may describe an earlier document revision. The editor displays the reference and its calculated complement."</p><pre>{move||molecule.with(|doc|format!("{}\n{}",doc.metadata.get("legacy:upper_aligned").map(|value|value.chars().take(2000).collect::<String>()).unwrap_or_default(),doc.metadata.get("legacy:lower_aligned").map(|value|value.chars().take(2000).collect::<String>()).unwrap_or_default()))}</pre><p class="helper">"First 2,000 columns shown; original legacy-file download retains all source evidence."</p></details></Show><Show when=move||molecule.get().metadata.contains_key("trace_original_base64")><button class="text-tool" on:click=move|_|trace_view.update(|v|*v=!*v)>{move||if trace_view.get(){"Show sequence"}else{"Show chromatogram"}}</button></Show><Show when=move||trace_view.get()&&molecule.get().metadata.contains_key("trace_original_base64") fallback=move||view!{<crate::sequence_view::SequenceView molecule=molecule selection=selection selected_feature=selected_feature highlighted_spans=highlighted_spans search_regions=search_regions on_show_features=Callback::new(move|()|panel.set("features")) identity=Memo::new(move|_|documents.with(|docs|format!("{}:{}",workspace_epoch.get(),docs[active.get()].id)))/>}><crate::trace_view::TraceView molecule=molecule selection=selection/></Show></section>
                             <section class="map-panel"><div class="panel-heading"><div><h2>{move||if molecule.get().topology==Topology::Circular{"Plasmid map"}else{"Linear map"}}</h2></div><div class="map-controls"><button class="icon-button" title="Zoom out" on:click=move|_|if let Some(r)=renderer.get_value(){r.zoom(1./1.15);}>"−"</button><button class="icon-button" title="Reset map view" on:click=move|_|if let Some(r)=renderer.get_value(){r.reset();}>"Fit"</button><button class="icon-button" title="Zoom in" on:click=move|_|if let Some(r)=renderer.get_value(){r.zoom(1.15);}>"+"</button></div></div>
-                                <div class="map-stage"><canvas node_ref=gl_canvas aria-label=move||if molecule.with(|m|m.topology==Topology::Circular){"Interactive circular sequence overview; drag to rotate, use zoom buttons, click to select"}else{"Interactive linear sequence overview; use zoom buttons, click to select"} on:pointerdown=move|e|{if let Some(canvas)=gl_canvas.get(){let _=canvas.set_pointer_capture(e.pointer_id());}if let Some(r)=renderer.get_value(){r.pointer_down(e.client_x()as f64,e.client_y()as f64);}} on:pointermove=move|e|if let Some(r)=renderer.get_value(){r.pointer_move(e.client_x()as f64,e.client_y()as f64);} on:pointerup=move|e|if let Some(r)=renderer.get_value(){if let Some(span)=r.pointer_up(e.client_x()as f64,e.client_y()as f64){search_regions.set(None);selected_feature.set(molecule.with_untracked(|m|m.features.iter().position(|f|f.location.spans().iter().any(|(a,b,_)|(*a,*b)==span))));selection.set(Some(span));}} on:wheel=move|e|{e.prevent_default();if let Some(r)=renderer.get_value(){r.zoom(if e.delta_y()>0.{0.95}else{1.05});}}></canvas><canvas node_ref=label_canvas class="map-labels" aria-hidden="true"></canvas><p class="map-geometry-note" role="status">"Overview is simplified. Browse the annotation pages or export the full annotation set."</p>
+                                <div class="map-stage"><canvas node_ref=gl_canvas aria-label=move||if molecule.with(|m|m.topology==Topology::Circular){"Interactive circular sequence overview; drag to rotate, use zoom buttons, click to select"}else{"Interactive linear sequence overview; use zoom buttons, click to select"} on:pointerdown=move|e|{if let Some(canvas)=gl_canvas.get(){let _=canvas.set_pointer_capture(e.pointer_id());}if let Some(r)=renderer.get_value(){r.pointer_down(e.client_x()as f64,e.client_y()as f64);}} on:pointermove=move|e|if let Some(r)=renderer.get_value(){r.pointer_move(e.client_x()as f64,e.client_y()as f64);} on:pointerup=move|e|if let Some(r)=renderer.get_value(){if let Some(hit)=r.pointer_up(e.client_x()as f64,e.client_y()as f64){batch(||{search_regions.set(None);selected_feature.set(hit.feature_index);selection.set(Some(hit.span));if hit.feature_index.is_some(){panel.set("features");}});}} on:wheel=move|e|{e.prevent_default();if let Some(r)=renderer.get_value(){r.zoom(if e.delta_y()>0.{0.95}else{1.05});}}></canvas><canvas node_ref=label_canvas class="map-labels" aria-hidden="true"></canvas><p class="map-geometry-note" role="status">"Overview is simplified. Browse the annotation pages or export the full annotation set."</p>
                                     <Show when=move||!render_error.get().is_empty()><div class="map-error">{move||render_error.get()}</div></Show>
                                 </div><div class="map-caption">{move||if molecule.get().topology==Topology::Circular{"Drag to rotate · scroll to zoom"}else{"Scroll to zoom · click to select"}}</div>
+                                <Show when=move||{let stats=map_labels.get();stats.omitted>0||stats.abbreviated>0||stats.limited}><div class="map-label-note"><span>{move||{let stats=map_labels.get();let mut parts=vec![format!("{} of {} annotation labels shown",stats.displayed,stats.total)];if stats.abbreviated>0{parts.push(format!("{} abbreviated",stats.abbreviated));}if stats.unplaced>0{parts.push(format!("{} without local coordinates",stats.unplaced));}if stats.limited{parts.push("display limit reached".into());}parts.join(" · ")}}</span><button class="text-tool" on:click=move|_|panel.set("features")>"Inspect annotations"</button></div></Show>
                                 <div class="legend"><span><i style="background:#2b8775"></i>"Coding sequence"</span><span><i style="background:#d6933b"></i>"Promoter"</span><span><i style="background:#666bb3"></i>"Origin"</span></div>
                             </section>
                             <aside class="inspector"><crate::desktop_shell::InspectorNavigation panel=panel on_auxiliary=Callback::new(move|action|{use crate::desktop_shell::AuxiliaryAction;modal_error.set(String::new());match action{AuxiliaryAction::ImportUrl=>modal.set("url"),AuxiliaryAction::Alignments=>{pending_alignment.set(None);modal.set("alignments");},AuxiliaryAction::Oligos=>{existing_oligo.set(None);pending_oligo.set(None);modal.set("oligos");}}})/>

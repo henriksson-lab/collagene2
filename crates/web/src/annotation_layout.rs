@@ -1,13 +1,13 @@
 //! Whole-source display lanes. This does not validate annotation biology, hash
 //! source DNA, or derive layout from asynchronously returned viewport tracks.
-use collagene_core::{Location, Molecule};
+#[cfg(test)]
+use crate::annotation_geometry::MAX_NODES;
+use crate::annotation_geometry::{MAX_FEATURES, MAX_SPANS};
+#[cfg(test)]
+use collagene_core::Location;
+use collagene_core::Molecule;
 use collagene_view_layout::{Interval, Item, Limits, Placement};
 use std::collections::BTreeMap;
-
-const MAX_FEATURES: usize = collagene_view_layout::MAX_ITEMS;
-const MAX_SPANS: usize = collagene_view_layout::MAX_INTERVALS;
-const MAX_NODES: usize = 1_000_000;
-const MAX_DEPTH: usize = 32;
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Group {
@@ -22,76 +22,6 @@ pub struct AnnotationLayout {
     pub primers: Group,
     /// Non-source annotations with no known local Range part.
     pub unplaced: Vec<usize>,
-}
-
-#[derive(Default)]
-struct Counts {
-    nodes: usize,
-    spans: usize,
-}
-
-fn preflight_location(
-    location: &Location,
-    length: usize,
-    depth: usize,
-    counts: &mut Counts,
-) -> Result<(), String> {
-    if depth >= MAX_DEPTH {
-        return Err("Annotation layout location depth exceeds 32 levels".into());
-    }
-    counts.nodes = counts
-        .nodes
-        .checked_add(1)
-        .ok_or("Annotation layout node count overflow")?;
-    if counts.nodes > MAX_NODES {
-        return Err("Annotation layout node limit exceeded".into());
-    }
-    match location {
-        Location::Range { start, end, .. } => {
-            counts.spans = counts
-                .spans
-                .checked_add(1)
-                .ok_or("Annotation layout span count overflow")?;
-            if counts.spans > MAX_SPANS {
-                return Err("Annotation layout span limit exceeded".into());
-            }
-            if start >= end || *end > length {
-                return Err(
-                    "Annotation layout range is empty, reversed or outside the source".into(),
-                );
-            }
-        }
-        Location::Complement(inner) => preflight_location(inner, length, depth + 1, counts)?,
-        Location::Join(parts) | Location::Order(parts) => {
-            // Reject a huge flat child list before iterating it. No intermediate
-            // .spans(), cloned location tree, or Items vector is constructed.
-            if parts.len() > MAX_NODES.saturating_sub(counts.nodes) {
-                return Err("Annotation layout node limit exceeded".into());
-            }
-            for part in parts {
-                preflight_location(part, length, depth + 1, counts)?;
-            }
-        }
-        Location::Unresolved(_) => {}
-    }
-    Ok(())
-}
-
-fn collect_spans(location: &Location, spans: &mut Vec<Interval>) {
-    // The complete borrowed tree has already passed depth/node/span bounds.
-    match location {
-        Location::Range { start, end, .. } => spans.push(Interval {
-            start: *start as u64,
-            end: *end as u64,
-        }),
-        Location::Complement(inner) => collect_spans(inner, spans),
-        Location::Join(parts) | Location::Order(parts) => {
-            for part in parts {
-                collect_spans(part, spans);
-            }
-        }
-        Location::Unresolved(_) => {}
-    }
 }
 
 fn group(items: &[Item], source_length: u64, cap: usize) -> Result<Group, String> {
@@ -136,31 +66,22 @@ pub fn prepare(
     {
         return Err("Annotation layout lane cap exceeds the supported limit".into());
     }
-    if molecule.features.len() > MAX_FEATURES {
-        return Err("Annotation layout feature limit exceeded".into());
-    }
-    let mut counts = Counts::default();
-    for feature in &molecule.features {
-        preflight_location(&feature.location, molecule.sequence.len(), 0, &mut counts)?;
-    }
+    let geometry = crate::annotation_geometry::prepare(molecule)?;
     let mut features = Vec::new();
     let mut primers = Vec::new();
-    let mut unplaced = Vec::new();
-    for (index, feature) in molecule.features.iter().enumerate() {
-        if feature.kind.eq_ignore_ascii_case("source") {
-            continue;
-        }
-        let mut spans = Vec::new();
-        collect_spans(&feature.location, &mut spans);
-        if spans.is_empty() {
-            unplaced.push(index);
-            continue;
-        }
+    for located in geometry.located {
         let item = Item {
-            id: index as u64,
-            spans,
+            id: located.index as u64,
+            spans: located
+                .spans
+                .into_iter()
+                .map(|(start, end, _)| Interval {
+                    start: start as u64,
+                    end: end as u64,
+                })
+                .collect(),
         };
-        if feature.kind.eq_ignore_ascii_case("primer_bind") {
+        if located.primer {
             primers.push(item);
         } else {
             features.push(item);
@@ -169,7 +90,7 @@ pub fn prepare(
     Ok(AnnotationLayout {
         features: group(&features, molecule.sequence.len() as u64, feature_cap)?,
         primers: group(&primers, molecule.sequence.len() as u64, primer_cap)?,
-        unplaced,
+        unplaced: geometry.unplaced,
     })
 }
 

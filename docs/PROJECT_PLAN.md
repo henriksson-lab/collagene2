@@ -39,6 +39,39 @@ execution order and validation workflow as follows:
 These instructions change the working method and immediate priorities; they do
 not remove outstanding features or weaken the final completion requirements.
 
+## Current execution order — cloning first, 24 November 2026
+
+This order supersedes the older milestone order and any format-first expansion.
+Keep the full agreed scope, existing feature IDs and scientific architecture;
+finish the cloning application before extending peripheral analysis. Existing
+modules remain available, but their presence does not give them priority.
+
+| Order | Work to finish | Concrete outcome |
+| --- | --- | --- |
+| 1 | Everyday sequence workspace: F01–F06, F19 and the simple document library in F29 | Open, find, edit and annotate constructs; choose enzymes; inspect recognition/cut sites, fragments and ends in synchronized sequence/circular/linear views; preserve edits and history |
+| 2 | Complete ordinary cloning design: F07, F08, F12, F14 and relevant F21 conditions | Select actual source fragments, choose orientations, define PCR primers/tails/mismatches, assemble by restriction/ligation or overlap, inspect junctions and reconstructed products, and check against the intended target |
+| 3 | Finish the end-to-end design workflow: F09–F11, F22 and F23 | Manually authored and AI-proposed designs use the same deterministic verifier; source revisions, intermediate products, alternatives and unresolved assumptions are inspectable; save/reopen and HTML/PDF instructions retain the same design and evidence |
+| 4 | Complete cloning methods and cloning libraries: F13, F15 and cloning-related F27 | Finish Golden Gate, Gateway/TOPO, TA/GC, end repair and method-specific preparation/composition; support practical multi-part and batch cloning with explicit physical rules and product alternatives |
+| 5 | Finish supporting molecular-biology workflows: F16–F20 and cloning-related F33 | Sanger traces, pairwise construct verification, translations/fusion frames, feature/primer reuse, diagnostic digests/gels and Addgene/NCBI imports support a coherent cloning workflow |
+| 6 | Deliver the portable application and remaining agreed features | Finish native/offline Tauri delivery on Windows/macOS/Linux, remaining sharing/review, CRISPR, codon design and other agreed advanced work after the cloning workflows above; keep existing exclusions and deferrals |
+| Last | Further BAM/BAI work and related high-throughput alignment/index expansion | Resume only after the rest of the software is implemented; do not start more BAM/BAI features, indexed browsing, index formats or alignment-host integration now |
+
+The next implementation work must close a concrete gap in source selection,
+cloning preparation/assembly, product/junction inspection, deterministic checking
+or retained protocol/history. Prefer complete user workflows over accumulating
+standalone scientific crates or additional file formats. Keep common cloning
+controls accessible in the main workspace and advanced analyses secondary.
+Parallel workers should work on independent cloning deliverables in this queue;
+spare workers are not a reason to expand deferred BAM/index work.
+
+BAM/BAI is explicitly postponed by the user until the rest of the software is
+done. Existing BAM/BAI/CSI code is retained without further feature development.
+Other NGS/large-reference/variant expansions also sit behind the cloning work;
+necessary fixes to shared code that blocks cloning remain permitted. This changes
+execution priority, not the full goal's completion criteria. Browser checks stay
+deferred until all in-scope implementation is complete, and compiler checks run
+in the background while coding continues.
+
 ## Scope constraints
 
 Collagene 2 is licensed under [MIT](../LICENSE). Implement its application, UI, cloning algorithms and verification engine independently. Do not fork, copy, translate or borrow application/scientific code from the surveyed cloning projects, or treat their output as an authoritative correctness oracle.
@@ -74,9 +107,9 @@ The [original Collagene README](https://github.com/mahogny/collagene#readme) pro
 
 ## Immediate desktop MVP delivery gate
 
-The current priority is a coherent desktop MVP: viewer, GenBank import and virtual restriction digest. [Architecture and scientific interpretation](MVP_DESKTOP.md). Finish and validate that everyday workflow before expanding input providers, advanced analyses or cloning wizards. Existing implemented modules remain available behind a secondary tools entry; the main workflow should not require users to navigate them. The complete feature inventory remains the long-term target.
+The desktop MVP baseline is viewer, GenBank import and virtual restriction digest. The cloning-first execution order above now controls further implementation. [Architecture and scientific interpretation](MVP_DESKTOP.md). Complete remaining editor/digest gaps and proceed through the cloning workflows above; defer browser validation under the current implementation instruction. Existing implemented modules remain available behind a secondary tools entry; the main workflow should not require users to navigate them. The complete feature inventory remains the long-term target.
 
-The user has reviewed the early preview and considers the GUI unfinished, particularly the left side. Prioritize the desktop workspace layout before requesting another GUI review: compact functional navigation, a searchable document explorer, document switching tabs, and a coherent editor toolbar and inspector. Use Benchling's navigation and sequence workspace as visual references while retaining simple document organization. A working viewer and passing scientific tests alone do not establish GUI readiness. Keep mobile design deferred.
+The user has reviewed the early preview and considers the GUI unfinished, particularly the left side. Complete the functional desktop workspace alongside cloning controls before requesting another GUI review: compact functional navigation, a searchable document explorer, document switching tabs, and a coherent editor toolbar and inspector. Use Benchling's navigation and sequence workspace as visual references while retaining simple document organization. A working viewer and passing scientific tests alone do not establish GUI readiness. Keep mobile design deferred.
 
 The MVP must satisfy these acceptance conditions:
 
@@ -465,12 +498,12 @@ Run the same scientific fixtures natively on Windows, macOS and Linux and in bro
 | M2 | Restriction, PCR, ligation/overlap operations and verification reports | Exact products and deliberate error cases pass native/WASM reference tests; alternative/incomplete results stay explicit |
 | M3 | MCP design workflow and HTML/print reports | External client proposes a plan; core verifies it; UI inspects it; export records the same revisions end to end |
 | M4 | Everyday workflows: Addgene/NCBI URL import, basic primer tools, Golden Gate, mutagenesis, traces, pairwise alignment, gel prediction and embedded PDF | Migration corpus and representative laboratory workflows work without undocumented loss or manual sequence repair |
-| M5 | Remaining cloning methods, bulk design, CRISPR, optimization, NGS and collaboration | Method-specific validation and bounded large-job execution are established |
+| M5 | Remaining cloning methods and bulk design first; CRISPR, optimization, NGS and collaboration follow the execution queue above | Method-specific validation and bounded large-job execution are established; further BAM/BAI work waits until the rest of the software is implemented |
 | M6 | Tauri and offline workflows on Windows/macOS/Linux | Cross-platform parity fixtures and real installation/recovery tests pass; scientific processing invokes no external software |
 
 M0 spikes should produce concrete measurements: a GenBank/ApE origin-spanning round trip; SnapGene and trace parser fidelity reports; a rotating/scrolling Leptos-WebGL2 stress view; binary protocol comparisons; portable core builds on Windows/macOS/Linux and WASM; and one typed MCP plan checked by a small deterministic simulator. Audit runtime dependencies for external executable calls. These are bounded experiments before committing to the full dependency stack.
 
-The immediate delivery gate is the desktop viewer/GenBank/virtual-digest MVP above. After it is coherent and validated, M1–M3 expand the end-to-end workflow to target definition, proposed or manually authored cloning plans, deterministic reconstruction/checking and inspectable protocols. These later milestones retain their original scope and build on the same scientific and architectural boundaries.
+The desktop viewer/GenBank/virtual-digest MVP remains the foundation. The current cloning-first execution queue governs implementation across M1–M6, with browser validation deferred until implementation is complete. M1–M3 expand the end-to-end workflow to target definition, proposed or manually authored cloning plans, deterministic reconstruction/checking and inspectable protocols. These later milestones retain their original scope and build on the same scientific and architectural boundaries.
 
 Open product decisions for implementation are the supported browser/device baseline, minimum supported Windows/macOS/Linux versions, initial hosted-versus-local project model, availability of representative legacy files, and database redistribution sources. Until those are resolved, favor portable scientific crates, local browser editing, optional hosted services and explicit dataset provenance.
 

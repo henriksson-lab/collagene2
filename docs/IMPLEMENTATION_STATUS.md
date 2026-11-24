@@ -2,11 +2,23 @@
 
 The implementation goal is active. The working application covers substantial parts of M0–M3, initial M4 cloning, gel and export workflows, an initial F26 codon-design workflow and F24 dot plots/reference-free read assembly; the complete [project plan](PROJECT_PLAN.md) is not finished. Application/scientific code is independently implemented and MIT licensed. No installed scientific program, downloader or sidecar is invoked at runtime.
 
+## Current priority
+
+Finish the cloning application first: editor/maps/digests, PCR and primer handling,
+restriction/ligation and overlap assembly, product/junction inspection, deterministic
+manual/MCP plan verification, retained history and HTML/PDF instructions, then
+remaining cloning methods and practical multi-part/batch workflows. The detailed
+[execution queue](PROJECT_PLAN.md#current-execution-order--cloning-first-24-november-2026)
+overrides the older milestone/format expansion order. Further BAM/BAI/index work
+is postponed until the rest of the software is implemented. Existing modules are
+retained; no more alignment/index features or integration are scheduled now.
+Browser checks remain deferred and compiler checks run alongside coding.
+
 ## Current editor implementation
 
 Direct sequence typing/deletion, pointer and keyboard range selection, insertion carets and keyboard undo/redo are now implemented in the sequence canvas. A shared source-bound restriction scan drives the enzyme picker, site-count filters, sequence recognition/cut tracks and circular/linear map markers. The scan-only worker job appends schema 23 without reconstructing digest fragments. Browser verification is deliberately deferred until the in-scope code is complete; historical acceptance results below do not validate these new controls. [Controls and remaining boundaries](EDITOR_CONTROLS.md).
 
-## Read-alignment integration in progress
+## Existing read-alignment integration — further work deferred
 
 SAM/BAM collections now have an immutable source-backed core adapter, explicit actual-DNA reference checking, four MCP tools (101 total) and schema-24 worker sessions. The browser viewer and raw-source workspace retention/reopening are implemented. These sources are separate from editable molecules; saved reports grant no restored mapping authority. Pane sizes/view choices also have bounded, separately persisted display preferences. Background native core/MCP/asset and WASM web compiler checks passed at this checkpoint; new fixtures have been authored but not executed, and browser checks remain deferred. [Workflow and boundaries](READ_ALIGNMENT_WORKFLOW.md).
 

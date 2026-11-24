@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **35** and reads supported schemas 1–34. Candidate files write schema 10; workspace plan schema is 8; the verifier is science-13.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **36** and reads supported schemas 1–35. Candidate files write schema 10; workspace plan schema is 8; the verifier is science-13.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -395,3 +395,16 @@ payload. The ordinary 32 MiB cap applies. This is an advisory designer, not a
 verification report; applying a suggestion produces ordinary exact-PCR recipe
 rows for the existing fresh compiler/verifier and protocol exports. No new
 candidate, workspace-plan or scientific-operation layout is introduced.
+
+## Frozen assembly design intent (schema 36)
+
+Append-only job 98 (`BuildAssemblyIntent`) and result 90 (`AssemblyIntent`) build
+an expected reference from explicit source regions, order and orientation. The
+request contains actual original inputs and a region request, with no complete
+target or reaction operation. Context binds source IDs/revisions and the request;
+changed regions/topology/source revisions fail stale requests. New tags reject
+pre-36 headers before their payload is decoded, under the ordinary 32 MiB cap.
+The response describes declared intent and contribution coordinates, not a
+scientific verification result. Its reference-only target is separately passed
+to existing preparation/planning and fresh verification. Candidate 10, plan 8
+and science-13 layouts are unchanged.

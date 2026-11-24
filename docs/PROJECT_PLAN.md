@@ -159,6 +159,14 @@ application before fresh verification; MCP uses the same engine. This advances
 ordinary assembly setup while the dedicated sequence-centred assembly workspace
 and region-defined intent remain required. [Planner model](OVERLAP_PRIMER_DESIGN.md).
 
+The first dedicated assembly dock now pins exact source events, captures selected
+regions or circular complements into named slots, builds an expected reference
+independently of reaction simulation, and connects existing preparation/primer
+controls to that fixed target. Draft declarations survive document switching and
+native workspace/autosave restore; fresh evidence is recomputed. Exact cut-pair
+selection, full actual-product/junction editing and the output chooser remain
+required. [Interaction state](CLONING_INTERACTION_DESIGN.md).
+
 Parallel reviews of Benchling's public restriction/Golden Gate, primer/mutagenesis
 and verification/history workflows are complete. The immediate UI work is the
 persistent assembly draft, source-selection/slot connection and central product/

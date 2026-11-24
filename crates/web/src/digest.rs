@@ -14,7 +14,7 @@ use collagene_core::{
     run_lineage::EventBinding,
 };
 use leptos::prelude::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     rc::Rc,
     sync::{
@@ -23,7 +23,7 @@ use std::{
     },
 };
 use wasm_bindgen_futures::spawn_local;
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceInfo {
     pub binding: EventBinding,
     pub name: String,

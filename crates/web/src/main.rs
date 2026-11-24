@@ -6,6 +6,10 @@ mod annotation_geometry;
 mod annotation_layout;
 #[cfg(target_arch = "wasm32")]
 mod app;
+#[cfg(any(target_arch = "wasm32", test))]
+mod assembly_review;
+#[cfg(target_arch = "wasm32")]
+mod assembly_workspace;
 #[cfg(target_arch = "wasm32")]
 mod checked_cloning;
 #[cfg(target_arch = "wasm32")]

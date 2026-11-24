@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 117;
+pub const CURRENT_TOOL_COUNT: usize = 118;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -972,6 +972,14 @@ pub struct Proposal {
     pub inputs: Vec<BoundInput>,
     /// Typed PCR, overlap, digest, terminal treatment or ligation operations. Sources refer to input IDs or earlier steps.
     pub steps: Vec<Operation>,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AssemblyIntentQuery {
+    /// Exact original source snapshots; local IDs match request fragments.
+    pub inputs: Vec<BoundInput>,
+    /// Declared source regions, order and orientation only. No simulator-derived target.
+    pub request: collagene_core::assembly_intent::Request,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -4664,6 +4672,45 @@ impl CollageneServer {
         output(
             json!({"document":args.document,"product_count":products.len(),"products":summaries,"truncated":products.len()>100,"model":"exact non-overlapping binding sites within one template turn; no experimental guarantee"}),
         )
+    }
+    #[tool(
+        description = "Build an intended reference from explicit regions of actual immutable source documents, their order, orientation and desired topology. No pre-existing target is required and no PCR, digest, ligation or assembly simulator supplies expected DNA. Atomically retains an unverified intended-reference target document and full source-placement JSON. Selection is design intent, not evidence a preparation can produce it or chemical/experimental material. Pass returned target DocumentRef with the same inputs to design_overlap_primers and propose_overlap_assembly for separate fresh preparation and verification."
+    )]
+    async fn build_assembly_intent(
+        &self,
+        Parameters(args): Parameters<AssemblyIntentQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.inputs.is_empty() || args.inputs.len() > 128 {
+            return Err(bad("assembly intent requires 1..128 exact source bindings"));
+        }
+        let server = self.clone();
+        self.compute(move || {
+            let inputs={let store=server.store.lock().unwrap();let mut seen=BTreeSet::new();let mut sources=Vec::with_capacity(args.inputs.len());
+                for bound in &args.inputs {
+                    if bound.id.trim().is_empty()||bound.id.len()>128||!seen.insert(bound.id.as_str()) {return Err(bad("empty, oversized or duplicate intent source ID"));}
+                    sources.push((bound.id.as_str(),store.document(&bound.document)?));
+                }
+                collagene_core::assembly_intent::preflight(&sources,&args.request).map_err(bad)?;
+                sources.into_iter().map(|(id,molecule)|PlanInput{id:id.into(),revision:molecule.revision(),molecule:molecule.clone()}).collect::<Vec<_>>()};
+            let report=collagene_core::assembly_intent::build(&inputs,&args.request).map_err(bad)?;
+            let expected=collagene_core::assembly_intent::intent_revision(&inputs,&args.request).map_err(bad)?;
+            report.validate_binding(&expected).map_err(bad)?;
+            #[derive(Serialize)]
+            struct Evidence<'a>{inputs:&'a [BoundInput],report:&'a collagene_core::assembly_intent::Report,interpretation:&'static str}
+            let evidence=Evidence{inputs:&args.inputs,report:&report,
+                interpretation:"Declared source-region/order/orientation intent only, constructed before any preparation simulator. This target is not prepared material, an observed sequence or an independently reconstructed cloning product. Verify actual molecular steps separately against this frozen intent."};
+            let (artifact,target_document)=server.candidate_document_artifact_bounded(&evidence,Some(report.target.clone()),"assembly-intent.json",32*1024*1024)?;
+            let target_document=target_document.ok_or_else(||bad("intended-reference document was not retained"))?;
+            output(json!({"state":"intended-reference","verified":false,"preparation_simulated":false,
+                "inputs":args.inputs,"context_revision":report.context_revision,"request":report.request,
+                "target":{"id":target_document["id"],"revision":target_document["revision"]},
+                "target_summary":target_document,"intended_length":report.target.sequence.len(),"topology":report.target.topology,
+                "fragment_count":report.fragments.len(),"fragments":report.fragments,
+                "warnings":report.warnings.iter().take(100).map(|w|w.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),
+                "warnings_truncated":report.warnings.len()>100||report.warnings.iter().take(100).any(|w|w.chars().count()>1024),
+                "artifact_id":artifact,
+                "authority":"Unverified intended-reference document only. Original source snapshots are unchanged. Region selection does not imply PCR amplification, restriction cuts, compatible ends, sealing, chemistry or experimental success; actual preparation must be reconstructed separately."}))
+        }).await
     }
     #[tool(
         description = "Plan bounded anchored PCR primers for explicitly ordered source intervals and orientations, using exact immutable DNA documents and an independently supplied target. Generates one-sided homology tails from the next actual source interval, never from target DNA, plus a practical overlap recipe and ordered oligos. Existing primer heuristic/conditions and Gibson/HiFi/InFusion advisory profile are explicit. Planner output is advisory and unverified, not a saved candidate or proof of amplification, specificity or target agreement. Pass its recipe and exact inputs/target to propose_overlap_assembly for fresh preparation and verification."

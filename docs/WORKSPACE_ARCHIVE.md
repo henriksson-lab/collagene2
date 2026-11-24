@@ -77,3 +77,19 @@ Plan schema 8 adds explicit original-source terminal hypotheses. Loading refuses
 records. Candidate 10 and worker 34 carry the same operation floor; current
 verification uses science-13. Earlier operation layouts and recorded engine
 identities remain historical data, and the outer archive stays version 1.
+
+## Assembly draft declarations
+
+The web workspace retains its current declared assembly draft as an
+`assembly-draft-v1` JSON attachment under the normal content hash. It contains
+named ordered slots, exact source document/event/revision snapshots, one-turn
+source intervals, orientation, topology and editable preparation/primer settings.
+The web codec caps it at 32 MiB and validates source content and row consistency;
+workspace restore additionally resolves each original source event in the native
+history. There is one active draft attachment. Existing archive/document/plan
+layouts are unchanged.
+
+Frozen intent reports, verification status and private reconstructed chemistry
+are not draft fields. Reopening retains declarations only; reviewing and checking
+uses fresh worker computation. Created intended-reference documents record the
+actual source parents and remain explicitly distinct from simulated material.

@@ -200,3 +200,40 @@
 .workspace-shell .assembly-junction-review>summary { cursor:pointer; font-weight:600; }
 .workspace-shell .assembly-junction { padding:10px 0; border-top:1px solid #e4ebe5; }
 .workspace-shell .assembly-junction-review pre { max-height:200px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.5 monospace; }
+
+/* Assembly remains visible while the main viewer switches between source tabs. */
+.assembly-dock { flex:0 1 44vh; min-height:180px; max-height:52vh; overflow:auto; border-top:2px solid #7eaaa0; background:#fbfcfc; overscroll-behavior:contain; }
+.assembly-dock-bar { position:sticky; top:0; z-index:2; display:flex; align-items:center; justify-content:space-between; padding:7px 16px; border-bottom:1px solid #dce4e2; background:#eef5f3; font-size:12px; font-weight:600; }
+.assembly-workspace { padding:12px 16px 18px; }
+.assembly-workspace-header { display:flex; align-items:baseline; gap:16px; }
+.assembly-workspace h2 { font-size:16px; margin:0 0 8px; }
+.assembly-workspace h3 { font-size:13px; margin:12px 0 8px; }
+.assembly-workspace .helper { font-size:11px; color:#647a75; line-height:1.45; }
+.assembly-workspace .button { padding:6px 10px; font-size:12px; }
+.assembly-draft-settings { display:flex; align-items:center; gap:20px; margin-bottom:10px; }
+.assembly-draft-settings label { display:flex; align-items:center; gap:8px; font-size:12px; }
+.assembly-draft-settings input:not([type=checkbox]) { width:240px; padding:5px 8px; }
+.assembly-slot-list { display:flex; gap:9px; overflow-x:auto; padding:2px 0 10px; }
+.assembly-slot { flex:0 0 260px; border:1px solid #d8e3e0; border-radius:6px; padding:10px; background:#fff; }
+.assembly-slot.active { border-color:#348773; box-shadow:0 0 0 1px #348773; }
+.assembly-slot p { margin:6px 0; font-size:12px; overflow-wrap:anywhere; }
+.assembly-slot details { font-size:11px; overflow-wrap:anywhere; }
+.assembly-slot .checkbox-label { font-size:12px; }
+.assembly-slot .method-row-actions { flex-wrap:wrap; gap:6px; }
+.assembly-slot .text-tool { font-size:11px; padding:3px; }
+.assembly-set-fragment { display:flex; align-items:center; flex-wrap:wrap; gap:8px; border-top:1px solid #e3e9e7; padding:8px 0; }
+.assembly-set-fragment p:first-child { margin:0; font-size:12px; }
+.assembly-set-fragment .helper { flex-basis:100%; margin:0; }
+.assembly-workspace-status { font-size:12px; margin:8px 0; }
+.assembly-workspace .inspector-content { padding:0; }
+.assembly-workspace .method-inputs { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:12px; }
+.assembly-workspace pre { max-width:100%; overflow-wrap:anywhere; white-space:pre-wrap; font-size:11px; }
+.assembly-intended-review { border-top:1px solid #dce7e2; margin-top:12px; padding-top:6px; }
+.assembly-fragment-ribbon { display:flex; gap:2px; overflow-x:auto; padding:8px 0; }
+.assembly-ribbon-fragment { min-width:150px; padding:10px 14px; border:1px solid #b8d6cb; border-radius:4px; background:#e8f3ee; color:#285b4d; font-size:12px; cursor:pointer; }
+.assembly-ribbon-fragment:nth-child(2n) { background:#edf0fa; color:#454b7b; border-color:#c9cee4; }
+.assembly-ribbon-fragment:hover { filter:brightness(.97); }
+.assembly-intended-junction { border-left:3px solid #9dbeb2; padding:4px 12px; margin:8px 0; background:#f1f6f3; }
+.assembly-intended-junction h4 { font-size:12px; margin:5px 0; }
+.assembly-intended-junction pre { font-size:12px; letter-spacing:.4px; }
+.assembly-source-details summary { color:#6b8179; cursor:pointer; }

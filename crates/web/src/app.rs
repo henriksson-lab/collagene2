@@ -16,6 +16,7 @@ use web_sys::{HtmlCanvasElement, HtmlInputElement};
 
 type OpenDocument = collagene_core::history::DocumentHistory;
 const MAX_WORKSPACE_BYTES: usize = 64 * 1024 * 1024;
+const ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v1";
 fn current_event_binding(doc: &OpenDocument) -> collagene_core::run_lineage::EventBinding {
     let revision = doc.head_revision().to_owned();
     collagene_core::run_lineage::EventBinding {
@@ -129,6 +130,7 @@ struct RestoredWorkspace {
     alignments: Vec<crate::alignment_view::AlignmentRevision>,
     runs: Vec<collagene_core::run_lineage::RunSummary>,
     assemblies: Vec<collagene_core::contig_history::AssemblySummary>,
+    assembly_draft: crate::assembly_workspace::Draft,
 }
 fn restore_workspace_state(
     frame: &collagene_core::workspace::Workspace,
@@ -174,7 +176,42 @@ fn restore_workspace_state(
         .filter(|a| a.kind == crate::alignment_view::ATTACHMENT_KIND)
         .map(|a| crate::alignment_view::AlignmentRevision::from_bytes(&a.bytes))
         .collect::<Result<Vec<_>, _>>()?;
+    let draft_assets = frame
+        .attachments
+        .values()
+        .filter(|a| a.kind == ASSEMBLY_DRAFT_KIND)
+        .collect::<Vec<_>>();
+    if draft_assets.len() > 1 {
+        return Err("Workspace contains multiple active assembly drafts.".into());
+    }
+    let assembly_draft = match draft_assets.first() {
+        Some(asset) if asset.media_type == "application/json" => {
+            crate::assembly_workspace::decode(&asset.bytes)?
+        }
+        Some(_) => return Err("Assembly draft has the wrong media type.".into()),
+        None => crate::assembly_workspace::Draft::default(),
+    };
+    for slot in &assembly_draft.slots {
+        if let Some(captured) = &slot.captured {
+            let binding = &captured.source.binding;
+            let source = documents
+                .iter()
+                .find(|d| d.id == binding.document_id)
+                .ok_or("Assembly draft source document is not retained.")?;
+            let exact = source
+                .revision_molecule(&binding.event_id)
+                .map_err(|e| e.to_string())?;
+            if exact.revision() != binding.revision
+                || exact.revision() != captured.molecule.revision()
+            {
+                return Err(
+                    "Assembly draft source event differs from its retained snapshot.".into(),
+                );
+            }
+        }
+    }
     Ok(RestoredWorkspace {
+        assembly_draft,
         runs: collagene_core::run_lineage::list_runs(frame).map_err(|e| e.to_string())?,
         assemblies: collagene_core::contig_history::list(frame).map_err(|e| e.to_string())?,
         name: frame.name.clone(),
@@ -705,6 +742,8 @@ pub fn App() -> impl IntoView {
     let alignments = RwSignal::new(Vec::<crate::alignment_view::AlignmentRevision>::new());
     let pending_alignment = RwSignal::new(None::<crate::alignment_view::PendingAlignment>);
     let method_config = RwSignal::new(crate::cloning_methods::MethodsState::default());
+    let assembly_draft = RwSignal::new(crate::assembly_workspace::Draft::default());
+    let assembly_visible = RwSignal::new(false);
     let annotation_source = RwSignal::new(String::new());
     let annotation_format =
         RwSignal::new(collagene_core::annotation_formats::AnnotationFormat::Gff3);
@@ -1086,6 +1125,8 @@ pub fn App() -> impl IntoView {
         pending_alignment.set(None);
         annotation_source.set(String::new());
         method_config.set(crate::cloning_methods::MethodsState::default());
+        assembly_draft.set(state.assembly_draft);
+        assembly_visible.set(false);
         candidate_events.set(None);
         candidate.set(state.candidate);
         plan_generation.update(|g| *g = g.wrapping_add(1));
@@ -1094,6 +1135,39 @@ pub fn App() -> impl IntoView {
         selection.set(None);
         selected_feature.set(None);
         modal.set("");
+    });
+    Effect::new(move |_| {
+        let draft = assembly_draft.get();
+        if workspace_restoring.get() {
+            return;
+        }
+        match crate::assembly_workspace::encode(&draft) {
+            Ok(bytes) => {
+                let hash = blake3::hash(&bytes).to_hex().to_string();
+                if attachments.with_untracked(|assets| {
+                    assets
+                        .get(&hash)
+                        .is_some_and(|a| a.kind == ASSEMBLY_DRAFT_KIND)
+                }) {
+                    return;
+                }
+                attachments.update(|assets| {
+                    assets.retain(|_, a| a.kind != ASSEMBLY_DRAFT_KIND);
+                    assets.insert(
+                        hash,
+                        collagene_core::workspace::WorkspaceAttachment {
+                            kind: ASSEMBLY_DRAFT_KIND.into(),
+                            name: "assembly-draft.json".into(),
+                            media_type: "application/json".into(),
+                            bytes,
+                        },
+                    );
+                });
+            }
+            Err(error) => {
+                message.set(format!("Assembly draft could not be saved: {error}"));
+            }
+        }
     });
     spawn_local(async move {
         match storage::open().await {
@@ -1814,17 +1888,31 @@ pub fn App() -> impl IntoView {
         let preferences = candidate_events
             .get_untracked()
             .filter(|(revision, _, _, _)| *revision == candidate.plan_revision);
+        let intent_preferences = preferences.is_some()
+            && molecule.with_untracked(|m| {
+                m.metadata
+                    .get("assembly:intent:reference_only")
+                    .is_some_and(|s| s == "true")
+            });
         if let Some((_, epoch, target, sources)) = &preferences {
             let valid = *epoch == workspace_epoch.get_untracked()
                 && documents.with_untracked(|docs| {
                     docs.get(active.get_untracked())
                         .is_some_and(|d| current_event_binding(d) == *target)
-                        && sources
-                            .iter()
-                            .all(|s| docs.iter().any(|d| current_event_binding(d) == s.event))
+                        && sources.iter().all(|s| {
+                            docs.iter().any(|d| {
+                                if intent_preferences {
+                                    d.id == s.event.document_id
+                                        && d.revision_molecule(&s.event.event_id)
+                                            .is_ok_and(|m| m.revision() == s.event.revision)
+                                } else {
+                                    current_event_binding(d) == s.event
+                                }
+                            })
+                        })
                 });
             if !valid {
-                message.set("Reference-exchange source or target events changed. Inspect the current sources again before verification.".into());
+                message.set("Pinned source or target events are unavailable or changed. Inspect the sources again before verification.".into());
                 return;
             }
         }
@@ -1836,7 +1924,19 @@ pub fn App() -> impl IntoView {
                     | Operation::CheckedTopo { .. }
             )
         });
-        let captured = if is_reference {
+        let captured = if intent_preferences {
+            documents.with_untracked(|docs| -> Result<(Molecule, Vec<Molecule>), String> {
+                let target = docs
+                    .get(active.get_untracked())
+                    .ok_or("No active intended reference")?;
+                let sources = &preferences
+                    .as_ref()
+                    .ok_or("Missing pinned source events")?
+                    .3;
+                let originals = crate::assembly_review::retained_inputs(docs, sources, &candidate)?;
+                Ok((target.molecule.clone(), originals))
+            })
+        } else if is_reference {
             documents.with_untracked(|open| -> Result<(Molecule, Vec<Molecule>), String> {
                 let target = open.get(active.get_untracked()).ok_or("No active target")?;
                 if target.head_revision() != candidate.plan.target_revision {
@@ -2245,6 +2345,153 @@ pub fn App() -> impl IntoView {
             .collect();
         run_plan(plan, target, Some(events));
     };
+
+    let review_assembly = Callback::new(
+        move |request: crate::assembly_workspace::ReviewRequest| -> Result<(), String> {
+            if workspace_restoring.get_untracked() {
+                return Err("Wait for the workspace operation to finish.".into());
+            }
+            let frame = documents.with_untracked(|docs| {
+                workspace_snapshot(
+                    docs,
+                    active.get_untracked(),
+                    candidate.get_untracked().as_ref(),
+                    &stored_candidates.get_untracked(),
+                    &attachments.get_untracked(),
+                    &workspace_name.get_untracked(),
+                )
+            })?;
+            let staged = crate::assembly_review::stage(
+                &frame,
+                &request.intent,
+                &request.sources,
+                &request.candidate,
+            )?;
+            let state = restore_workspace_state(&staged.workspace)?;
+            let preferred = (
+                request.candidate.plan_revision.clone(),
+                workspace_epoch.get_untracked(),
+                staged.target,
+                staged.sources,
+            );
+            batch(|| {
+                documents.set(state.documents);
+                active.set(state.active);
+                stored_candidates.set(state.candidates);
+                candidate_events.set(None);
+                candidate.set(Some(request.candidate));
+                candidate_events.set(Some(preferred));
+                plan_report.set(None);
+                last_plan.set(None);
+                last_plan_events.set(None);
+                plan_generation.update(|g| *g = g.wrapping_add(1));
+                assembly_visible.set(false);
+                panel.set("plan");
+                message.set("Opened the intended reference and proposed preparation. Verify the assembly to reconstruct it from the pinned source events.".into());
+            });
+            Ok(())
+        },
+    );
+    let navigate_assembly = Callback::new(
+        move |request: crate::assembly_workspace::SelectionNavigation| {
+            if workspace_restoring.get_untracked() {
+                return;
+            }
+            let opened =
+                documents.with_untracked(|docs| -> Result<(Vec<OpenDocument>, usize), String> {
+                    let index = docs
+                        .iter()
+                        .position(|d| d.id == request.source.document_id)
+                        .ok_or("The pinned source document is unavailable.")?;
+                    let source = &docs[index];
+                    let exact = source
+                        .revision_molecule(&request.source.event_id)
+                        .map_err(|e| e.to_string())?;
+                    if exact.revision() != request.source.revision {
+                        return Err(
+                            "The source event no longer matches the selected fragment.".into()
+                        );
+                    }
+                    if current_event_binding(source) == request.source {
+                        return Ok((docs.clone(), index));
+                    }
+                    if docs.len() >= 1000 {
+                        return Err("The workspace document limit has been reached.".into());
+                    }
+                    let prefix = format!("assembly-source-{}", &request.source.revision[..16]);
+                    let id = (1..=1001)
+                        .map(|n| format!("{prefix}-{n}"))
+                        .find(|id| !docs.iter().any(|d| d.id == *id))
+                        .ok_or("No source document identity is available.")?;
+                    let fork = source
+                        .fork_event(&request.source.event_id, id)
+                        .map_err(|e| e.to_string())?;
+                    let mut staged = docs.clone();
+                    let index = staged.len();
+                    staged.push(fork);
+                    workspace_snapshot(
+                        &staged,
+                        index,
+                        candidate.get_untracked().as_ref(),
+                        &stored_candidates.get_untracked(),
+                        &attachments.get_untracked(),
+                        &workspace_name.get_untracked(),
+                    )?
+                    .validate()
+                    .map_err(|e| e.to_string())?;
+                    Ok((staged, index))
+                });
+            let (staged, index) = match opened {
+                Ok(v) => v,
+                Err(error) => {
+                    message.set(error);
+                    return;
+                }
+            };
+            let expected = staged[index].head_revision().to_owned();
+            batch(|| {
+                documents.set(staged);
+                active.set(index);
+            });
+            let apply = wasm_bindgen::closure::Closure::once_into_js(move || {
+                if documents.with_untracked(|docs| {
+                    docs.get(active.get_untracked())
+                        .is_none_or(|d| d.head_revision() != expected)
+                }) {
+                    return;
+                }
+                let n = molecule.with_untracked(|m| m.sequence.len());
+                if n == 0
+                    || request.start >= n
+                    || request.end <= request.start
+                    || request.end > request.start.saturating_add(n)
+                {
+                    return;
+                }
+                selected_feature.set(None);
+                let parts = if request.end <= n {
+                    vec![(request.start, request.end)]
+                } else {
+                    vec![(request.start, n), (0, request.end - n)]
+                };
+                selection.set(if parts.len() == 1 {
+                    Some(parts[0])
+                } else {
+                    None
+                });
+                search_regions.set(Some((expected, parts)));
+                message.set(if request.reverse {
+                    "Selected the pinned source region; this fragment is reversed in the assembly."
+                        .into()
+                } else {
+                    "Selected the pinned assembly source region.".into()
+                });
+            });
+            if let Some(window) = web_sys::window() {
+                let _ = window.request_animation_frame(apply.unchecked_ref());
+            }
+        },
+    );
 
     let variant_asset =
         move || -> Result<(String, collagene_core::workspace::WorkspaceAttachment), String> {
@@ -2900,6 +3147,7 @@ pub fn App() -> impl IntoView {
                             <crate::digest::DigestProvenance molecule=molecule/>
                             <Show when=move||molecule.with(|m|m.metadata.contains_key("crispr:producer_json"))><div class="crispr-historical"><strong>"CRISPR producer provenance · unverified on opening"</strong><p>"This saved sequence design does not restore a current source/guide/target check or prove cellular editing. Recompute against the exact original source and independent target before reuse."</p><button class="button secondary" on:click=move|_|molecule.with_untracked(|m|{if let Some(json)=m.metadata.get("crispr:producer_json"){if let Err(e)=download("crispr-retained-provenance.json","application/json",json.as_bytes()){message.set(e);}}})>"Download retained CRISPR provenance"</button></div></Show>
                             <div class="editor-toolbar"><div class="tool-group"><button class="icon-button" title="Show documents" disabled=move||!layout.ready.get() on:click=move|_|show_library.update(|v|*v=!*v)>"☷"</button><button class="icon-button" title="Undo" disabled=move||documents.with(|docs|!docs[active.get()].can_undo()) on:click=move|_|documents.update(|docs|{let d=&mut docs[active.get_untracked()];if let Err(error)=d.undo(){message.set(error.to_string());}})>"↶"</button><button class="icon-button" title="Redo" disabled=move||documents.with(|docs|!docs[active.get()].can_redo()) on:click=move|_|documents.update(|docs|{let d=&mut docs[active.get_untracked()];if let Err(error)=d.redo(){message.set(error.to_string());}})>"↷"</button><span class="tool-separator"></span><button class="text-tool" disabled=move||selection.get().is_none()||inspected_feature.get().is_some_and(|f|f.location.spans().len()>1) on:click=move|_|{edit_text.set(selection.get_untracked().and_then(|(a,b)|molecule.get_untracked().sequence.as_str().get(a..b).map(str::to_owned)).unwrap_or_default());modal_error.set(String::new());modal.set("edit");}>"Edit selection"</button></div>
+                                <button class="text-tool" class:active=move||assembly_visible.get() on:click=move|_|assembly_visible.update(|v|*v=!*v)>"Assemble"</button>
                                 <crate::clipboard::ClipboardTools molecule=molecule selection=selection selected_feature=selected_feature locked=workspace_restoring epoch=workspace_epoch identity=Memo::new(move|_|documents.with(|docs|docs.get(active.get()).map(|doc|doc.id.clone()).unwrap_or_default())) on_commit=commit_annotations message=message/>
                                 <crate::search_view::SearchTools molecule=molecule identity=Memo::new(move|_|documents.with(|docs|docs[active.get()].id.clone())) epoch=workspace_epoch selection=selection selected_feature=selected_feature regions=search_regions message=message/>
                             </div>
@@ -2929,7 +3177,7 @@ pub fn App() -> impl IntoView {
                                     <Show when=move||{let stats=map_labels.get();stats.omitted>0||stats.abbreviated>0||stats.limited}><div class="map-label-note"><span>{move||{let stats=map_labels.get();let mut parts=vec![format!("{} of {} annotation labels shown",stats.displayed,stats.total)];if stats.abbreviated>0{parts.push(format!("{} abbreviated",stats.abbreviated));}if stats.unplaced>0{parts.push(format!("{} without local coordinates",stats.unplaced));}if stats.limited{parts.push("display limit reached".into());}parts.join(" · ")}}</span><button class="text-tool" on:click=move|_|panel.set("features")>"Inspect annotations"</button></div></Show>
                                     <div class="legend"><Show when=move||restrictions.visible.get()><span><i style="background:#8b5ca4"></i>"RE recognition"</span><span><i style="background:#2563a6"></i>"Top cut"</span><span><i style="background:#b45c19"></i>"Bottom cut"</span></Show><span><i style="background:#2b8775"></i>"Coding sequence"</span><span><i style="background:#d6933b"></i>"Promoter"</span><span><i style="background:#666bb3"></i>"Origin"</span></div>
                                 </section>
-                                <aside class="inspector"><crate::desktop_shell::InspectorNavigation panel=panel on_assemble=Callback::new(move|()|panel.set("methods")) on_auxiliary=Callback::new(move|action|{use crate::desktop_shell::AuxiliaryAction;modal_error.set(String::new());match action{AuxiliaryAction::ImportUrl=>modal.set("url"),AuxiliaryAction::Alignments=>{pending_alignment.set(None);modal.set("alignments");},AuxiliaryAction::Oligos=>{existing_oligo.set(None);pending_oligo.set(None);modal.set("oligos");}}})/>
+                                <aside class="inspector"><crate::desktop_shell::InspectorNavigation panel=panel on_assemble=Callback::new(move|()|assembly_visible.set(true)) on_auxiliary=Callback::new(move|action|{use crate::desktop_shell::AuxiliaryAction;modal_error.set(String::new());match action{AuxiliaryAction::ImportUrl=>modal.set("url"),AuxiliaryAction::Alignments=>{pending_alignment.set(None);modal.set("alignments");},AuxiliaryAction::Oligos=>{existing_oligo.set(None);pending_oligo.set(None);modal.set("oligos");}}})/>
                                     <Show when=move||panel.get()=="restriction"><crate::restriction_view::RestrictionPanel state=restrictions on_navigate=navigate_restriction/></Show>
                                     <Show when=move||panel.get()=="library"><div class="inspector-content"><crate::feature_tools::FeatureLibraryPanel molecule=molecule selected_feature=selected_feature libraries=libraries on_keep=keep_library on_commit=commit_annotations selection=selection/></div></Show>
                                     <Show when=move||panel.get()=="annotation_files"><div class="inspector-content"><crate::feature_tools::AnnotationFilesPanel molecule=molecule source=annotation_source format=annotation_format on_commit=commit_annotations selection=selection selected_feature=selected_feature/></div></Show>
@@ -2946,7 +3194,7 @@ pub fn App() -> impl IntoView {
         <Show when=move||second_restriction.get()&&restriction_final.get()=="ligate"><RestrictionFields side="Second" enzymes=second_enzymes fragment=second_fragment treatment=second_treatment repair=second_repair reverse=second_reverse/><Show when=move||restriction_policy.get()=="checked"><p class="checked-source-binding">{move||documents.with(|docs|docs.get(second_input.get()).map(|d|format!("Second source: document {} · event {}",d.id,d.head_event())).unwrap_or_else(||"Choose a second source".into()))}</p><crate::checked_cloning::SourceAssumptions side="Second" signals=second_modifications/></Show></Show><Show when=move||restriction_final.get()=="ligate"><label class="checkbox-label"><input type="checkbox" aria-label="Allow restriction ligation nicks" prop:checked=move||allow_nicked.get() on:change=move|e|allow_nicked.set(event_target::<HtmlInputElement>(&e).checked())/>"Allow explicitly reported nicks"</label></Show><p class="helper">"Fragment numbers follow ascending reference-strand cut order, not size. Intact circles cannot ligate. The active document remains the independent target; declared source state is not measured modification evidence."</p></div></Show><Show when=move||plan_method.get()=="overlap"><label>"Junction overlap (bp)"<input type="number" min="1" prop:value=move||overlap.get() on:input=move|e|overlap.set(event_target_value(&e))/></label><Show when=move||molecule.get().topology==Topology::Circular><label>"Circular closure overlap (bp)"<input type="number" min="1" prop:value=move||closure_overlap.get() on:input=move|e|closure_overlap.set(event_target_value(&e))/></label></Show></Show><button class="button primary full" on:click=do_plan>"Reconstruct and verify"</button></Show>{move||plan_report.with(|report|report.as_ref().map(|report|view!{<div class="verification-result"><strong>{format!("{:?}",report.status)}</strong>{report.findings.iter().cloned().map(|f|view!{<p>{f}</p>}).collect_view()}{report.annotation_reports.iter().map(|step|view!{<details class="annotation-evidence"><summary>{format!("Step {} · source annotation correspondence",step.step_index+1)}</summary><p class="helper">"Mapped coordinates follow the actual selected top-reference calls. Review PCR-derived and disrupted annotations. Original unmapped features remain evidence in the reconstruction JSON, not invented product coordinates."</p>{step.evidence.sources.iter().map(|source|view!{<p>{format!("{} · {} projected · {} outside contour · {} unmapped originals · projection supported {}",source.role,source.projected,source.dropped,source.unmapped.len(),source.projection_supported)}</p>}).collect_view()}</details>}).collect_view()}{report.step_reports.iter().filter_map(|step|step.topo.as_ref().map(|topo|{let outcome=match &topo.projection.outcome{collagene_core::topo::physical::projection::Outcome::Proven(contour)=>format!("Paired contour proven; {} nicks retained. No repair is inferred.",contour.nicks.len()),collagene_core::topo::physical::projection::Outcome::Withheld(_)=>"No unique paired contour; physical graph retained and reference withheld.".into()};view!{<details class="physical-evidence"><summary>{format!("Step {} · TOPO physical graph",step.step_index+1)}</summary><p>{outcome}</p><p>{format!("{} physical components · batch {}",topo.projection.physical.product.components.len(),topo.batch_revision)}</p><p class="helper">"Download the reconstruction report for the full physical graph, original source maps and projection evidence. Saved evidence needs fresh replay before use."</p></details>}})).collect_view()}{report.products.iter().enumerate().filter_map(|(i,p)|p.metadata.get("duplex_model").and_then(|s|serde_json::from_str::<chemistry::DuplexSummary>(s).ok()).map(|summary|view!{<details class="physical-evidence"><summary>{format!("Step {} · {}",i+1,p.name)}</summary><pre>{summary.describe()}</pre></details>})).collect_view()}{report.products.iter().enumerate().filter_map(|(i,p)|crate::checked_cloning::modification_summary(p).map(|summary|view!{<details class="checked-modification-summary"><summary>{format!("Step {} · positional modification evidence",i+1)}</summary><p>{summary}</p></details>})).collect_view()}<details><summary>"Assumptions and limits"</summary><ul>{report.assumptions.iter().cloned().map(|a|view!{<li>{a}</li>}).collect_view()}</ul></details><p class="helper">"Alternative assemblies and experimental feasibility are not exhaustively checked."</p></div>}))}<Show when=move||last_plan.with(Option::is_some)><crate::assembly_junctions_view::AssemblyJunctionsPanel capture=capture_junction_plan identity=junction_identity epoch=workspace_epoch/></Show><button class="button secondary full" disabled=move||plan_report.with(Option::is_none) on:click=move|_|{let result=plan_report.with_untracked(|report|report.as_ref().map(crate::checked_cloning::export_report));if let Some(Err(error))=result{message.set(error);}}>"Download reconstruction report"</button><button class="button secondary full" disabled=move||candidate.get().is_none()&&last_plan.get().is_none() on:click=move|_|{let value=candidate.get_untracked().or_else(||last_plan.get_untracked().map(|(plan,_)|transfer::Candidate::new(plan)));if let Some(value)=value {match transfer::save_candidate(&value){Ok(bytes)=>{if let Err(e)=download("candidate.cg2plan","application/octet-stream",&bytes){message.set(e);}},Err(e)=>message.set(e.to_string())}}}>"Save candidate"</button><button class="button secondary full" disabled=move||last_plan.get().is_none() on:click=move|_|{modal_error.set(String::new());modal.set("record_run");}>"Keep reconstructed products"</button><button class="button secondary full" disabled=move||last_plan.get().is_none() on:click=move|_|if let Some((plan,target))=last_plan.get_untracked(){let html=verification::export_protocol_html(&plan,&target);if let Err(e)=download("cloning-protocol.html","text/html",html.as_bytes()){message.set(e);}}>"Export HTML protocol"</button><button class="button secondary full" disabled=move||pdf_busy.get()||last_plan.get().is_none() on:click=export_pdf>"Export PDF protocol"</button></div></Show>
                                     <Show when=move||panel.get()=="primers"><crate::primers::PrimerPanel molecule=molecule selection=selection selected_feature=selected_feature seed=primer_seed.get_untracked() on_use=Callback::new(move|(forward,reverse):(Primer,Primer)|{pcr_forward_name.set(forward.name);pcr_reverse_name.set(reverse.name);pcr_forward.set(forward.annealing.as_str().into());pcr_forward_tail.set(forward.tail);pcr_reverse.set(reverse.annealing.as_str().into());pcr_reverse_tail.set(reverse.tail);panel.set("pcr");message.set("Candidate primers loaded. Compute PCR products to inspect alternative binding geometries.".into());}) on_annotate=Callback::new(move|(base,feature):(String,Feature)|{let current=molecule.get_untracked();if current.revision()!=base{return Err("The document changed; rerun primer analysis before annotating it.".into());}let edited=editing::set_feature(&current,None,feature).map_err(|e|e.to_string())?;commit_document(documents,active,workspace_restoring,&base,edited)})/></Show>
                                     <Show when=move||panel.get()=="gel"><crate::gel::GelPanel molecule=molecule query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone())))/></Show>
-                                    <Show when=move||panel.get()=="methods"><crate::cloning_methods::CloningMethodsPanel molecule=molecule selected_region=Callback::new(move|():()|{if inspected_feature.get_untracked().is_some_and(|f|f.location.spans().len()>1){return None;}selection.get_untracked().filter(|(a,b)|a<b).map(|(a,b)|(active.get_untracked(),a,b))}) target_info=Memo::new(move|_|documents.with(|docs|recombination_source_info(&docs[active.get()]))) source_info=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(recombination_source_info))) primer_sources=primer_sources list_primers=list_saved_primers resolve_primer=resolve_saved_primer query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone()))) config=method_config epoch=workspace_epoch on_candidate=Callback::new(move|value:transfer::Candidate|{
+                                    <Show when=move||panel.get()=="methods"><crate::cloning_methods::CloningMethodsPanel molecule=molecule selected_region=Callback::new(move|():()|{if inspected_feature.get_untracked().is_some_and(|f|f.location.spans().len()>1){return None;}selection.get_untracked().filter(|(a,b)|a<b).map(|(a,b)|(active.get_untracked(),a,b))}) target_info=Memo::new(move|_|crate::cloning_methods::TargetContext::Document(documents.with(|docs|recombination_source_info(&docs[active.get()])))) source_info=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(recombination_source_info))) primer_sources=primer_sources list_primers=list_saved_primers resolve_primer=resolve_saved_primer query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone()))) config=method_config epoch=workspace_epoch on_candidate=Callback::new(move|value:transfer::Candidate|{
                                     if workspace_restoring.get_untracked(){return;}
                                     let state=method_config.get_untracked();
                                     let indices=if state.mode==crate::cloning_methods::Mode::Tailing {vec![state.vector.document,state.insert.document]} else {state.rows.iter().map(|row|row.document).collect::<Vec<_>>()};
@@ -3068,6 +3316,21 @@ pub fn App() -> impl IntoView {
                                     })/></Show><Show when=move||panel.get()=="compare"><crate::compare::ComparePanel molecule=molecule query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone()))) selection=selection/></Show>
                                 </aside>
                             </div>
+                            <Show when=move||assembly_visible.get()><section class="assembly-dock" aria-label="Assembly workspace"><div class="assembly-dock-bar"><span>"Assembly design"</span><button class="text-tool" on:click=move|_|assembly_visible.set(false)>"Hide assembly"</button></div>
+                                <crate::assembly_workspace::AssemblyWorkspace draft=assembly_draft epoch=workspace_epoch
+                                    sources=Memo::new(move|_|documents.with(|docs|docs.iter().map(recombination_source_info).collect()))
+                                    active_source=Memo::new(move|_|documents.with(|docs|recombination_source_info(&docs[active.get()])))
+                                    selected_region=Callback::new(move|():()|{if inspected_feature.get_untracked().is_some_and(|f|f.location.spans().len()>1){return None;}selection.get_untracked().filter(|(a,b)|a<b)})
+                                    get_source=Callback::new(move|binding:collagene_core::run_lineage::EventBinding|documents.with_untracked(|docs|{
+                                        let doc=docs.iter().find(|d|d.id==binding.document_id).ok_or("The selected source document is unavailable.")?;
+                                        let exact=doc.revision_molecule(&binding.event_id).map_err(|e|e.to_string())?;
+                                        if exact.revision()!=binding.revision{return Err("The selected source event changed.".into());}
+                                        Ok(exact)
+                                    }))
+                                    on_navigate=navigate_assembly on_review=review_assembly
+                                    on_products=Callback::new(move|products:Vec<Molecule>|add_documents(documents,active,workspace_restoring,products))
+                                    primer_sources=primer_sources list_primers=list_saved_primers resolve_primer=resolve_saved_primer/>
+                            </section></Show>
                             <footer class="statusbar"><span>{move||save_status.get()}</span><Show when=move||!layout.status.get().is_empty()><span role="status">{move||layout.status.get()}</span></Show><span>{move||selection_status.get()}</span><span>{move||documents.with(|docs|format!("{} {}",docs.len(),if docs.len()==1{"document"}else{"documents"}))}</span></footer>
                             </div>
                         </main>

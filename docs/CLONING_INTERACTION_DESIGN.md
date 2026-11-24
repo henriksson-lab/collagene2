@@ -55,19 +55,28 @@ while the primary flow remains selecting, preparing and reviewing fragments.
 
 ## Current implementation and next gaps
 
-The current methods inspector exposes shared prepared-overlap and ligation plans,
-source-bound verification, saved-primer reuse, terminal hypotheses, junction
-inspection and protocol exports. The next addition suggests PCR primers with
-source-derived homology for explicitly selected intervals; suggestions remain
-editable and require a fresh assembly check.
+The first dedicated assembly dock now retains named backbone/insert slots and
+source-event snapshots while the main viewer switches documents. It can capture a
+contiguous selection, a whole source, or the complementary circular path; reorder
+and reverse slots; build an expected reference from those declarations; and show
+its source contributions and bounded intended-junction windows. Source-derived
+PCR suggestions, saved-primer reuse, preparation and fresh verification use the
+existing methods panel against that frozen expected reference.
 
-The full interaction still requires a dedicated persistent assembly draft,
-source-view selection into active slots, intended-target construction from frozen
-selection intent, a central fragment/junction preview, inline primer editing and
-an output chooser. Numeric interval controls and the existing inspector are
-implementation groundwork, not the finished selection workflow. Finish those
-connections before requesting a new GUI review. Browser checks remain deferred
-until implementation is complete, as instructed.
+Draft declarations and manual preparation settings are saved in the native
+workspace/autosave as an `assembly-draft-v1` attachment. Restoring the draft checks
+its source-event snapshots but does not restore a positive check or frozen
+analysis. Reviewing a proposed preparation creates an intended-reference document
+with exact source parents and opens the existing plan review. Historical source
+navigation opens a separate retained-source document without rewinding its head.
+
+This is the first connected workflow, not full Benchling interaction parity.
+Remaining work includes exact cut-pair/digest-fragment selection into slots,
+central inspection of the actual reconstructed product, editable primer/junction
+geometry and an optional-primer/fragment output chooser. Keep these connections
+central rather than adding more standalone parameter panels. Browser checks remain
+deferred until implementation is complete, as instructed; no GUI acceptance claim
+is made from source or compiler checks alone.
 
 ## Implementation order
 

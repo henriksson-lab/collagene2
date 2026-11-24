@@ -13,6 +13,7 @@ use collagene_core::{
     },
 };
 use leptos::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::{
     rc::Rc,
     sync::{
@@ -22,19 +23,19 @@ use std::{
 };
 use wasm_bindgen_futures::spawn_local;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Mode {
     Tailing,
     Overlap,
     Ligation,
 }
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Treatment {
     Keep,
     Phosphorylate,
     Dephosphorylate,
 }
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TailInput {
     pub document: usize,
     pub pcr: bool,
@@ -103,14 +104,14 @@ impl TailInput {
         }
     }
 }
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OverlapPreparation {
     WholeLinear,
     DeclaredDuplex,
     Digest,
     ExactPcr,
 }
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OverlapInput {
     pub document: usize,
     pub interval_start: String,
@@ -195,19 +196,55 @@ impl OverlapInput {
         )
     }
 }
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MethodsState {
     pub mode: Mode,
     pub vector: TailInput,
     pub insert: TailInput,
     pub circular: bool,
     pub allow_nicked: bool,
+    #[serde(deserialize_with = "deserialize_method_rows")]
     pub rows: Vec<OverlapInput>,
     pub overlaps: String,
     pub method: OverlapMethod,
     pub scan_repeats: bool,
     pub comparisons: String,
     pub occurrences: String,
+}
+fn deserialize_method_rows<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<OverlapInput>, D::Error> {
+    struct Visitor;
+    impl<'de> serde::de::Visitor<'de> for Visitor {
+        type Value = Vec<OverlapInput>;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("at most12 assembly preparation rows")
+        }
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(
+            self,
+            mut seq: A,
+        ) -> Result<Self::Value, A::Error> {
+            if seq.size_hint().is_some_and(|n| n > 12) {
+                return Err(serde::de::Error::custom(
+                    "at most12 assembly preparation rows",
+                ));
+            }
+            let mut rows = Vec::with_capacity(2);
+            while rows.len() < 12 {
+                match seq.next_element()? {
+                    Some(row) => rows.push(row),
+                    None => return Ok(rows),
+                }
+            }
+            if seq.next_element::<serde::de::IgnoredAny>()?.is_some() {
+                return Err(serde::de::Error::custom(
+                    "at most12 assembly preparation rows",
+                ));
+            }
+            Ok(rows)
+        }
+    }
+    deserializer.deserialize_seq(Visitor)
 }
 impl Default for MethodsState {
     fn default() -> Self {
@@ -263,7 +300,7 @@ impl MethodsState {
         Ok((overlaps, options))
     }
 }
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct PlannerForm {
     overlap: String,
     minimum: String,
@@ -280,13 +317,31 @@ impl Default for PlannerForm {
         }
     }
 }
+/// Actual document identity or an explicitly reviewed reference intention.
+/// An intent has no invented document/event ancestry.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TargetContext {
+    Document(crate::digest::SourceInfo),
+    Intent {
+        context_revision: String,
+        revision: String,
+    },
+}
+impl TargetContext {
+    pub fn revision(&self) -> &str {
+        match self {
+            Self::Document(info) => &info.binding.revision,
+            Self::Intent { revision, .. } => revision,
+        }
+    }
+}
 struct Suggestions {
     report: collagene_core::overlap_primer_design::Report,
     config: MethodsState,
     form: PlannerForm,
     context: Vec<crate::digest::SourceInfo>,
     target: String,
-    target_context: crate::digest::SourceInfo,
+    target_context: TargetContext,
     epoch: u64,
 }
 #[derive(Clone)]
@@ -384,7 +439,7 @@ pub fn CloningMethodsPanel(
     query_options: Memo<Vec<(usize, String)>>,
     get_query: Callback<usize, Option<Molecule>>,
     source_info: Callback<usize, Option<crate::digest::SourceInfo>>,
-    target_info: Memo<crate::digest::SourceInfo>,
+    target_info: Memo<TargetContext>,
     selected_region: Callback<(), Option<(usize, usize, usize)>>,
     config: RwSignal<MethodsState>,
     epoch: RwSignal<u64>,
@@ -399,6 +454,7 @@ pub fn CloningMethodsPanel(
         crate::primer_picker::ResolveRequest,
         Result<collagene_core::primer_reuse::Resolved, String>,
     >,
+    #[prop(default = false)] fixed_sources: bool,
 ) -> impl IntoView {
     let source_indices = Memo::new(move |_| {
         config.with(|c| {
@@ -517,7 +573,7 @@ pub fn CloningMethodsPanel(
             }
         };
         let target_revision = bound_target.revision();
-        if target_revision != target_context.binding.revision {
+        if target_revision != target_context.revision() {
             status.set("Target changed before primer planning.".into());
             return;
         }
@@ -939,18 +995,18 @@ pub fn CloningMethodsPanel(
         }));
     });
     view! {<div class="inspector-content cloning-methods-panel"><h2>"Cloning methods"</h2><p class="helper">"The active document is the independently chosen target. Method evidence never selects a target or establishes experimental success."</p>
-        <label>"Method workflow"<select aria-label="Cloning workflow" prop:value=move||match config.get().mode{Mode::Tailing=>"tailing",Mode::Overlap=>"overlap",Mode::Ligation=>"ligation"} on:change=move|e|config.update(|c|c.mode=match event_target_value(&e).as_str(){"overlap"=>Mode::Overlap,"ligation"=>Mode::Ligation,_=>Mode::Tailing})><option value="tailing">"TA / GC tailing and ligation"</option><option value="overlap">"Gibson / HiFi / In-Fusion overlap"</option><option value="ligation">"Ordered multi-fragment ligation"</option></select></label>
+        <label>"Method workflow"<select aria-label="Cloning workflow" prop:value=move||match config.get().mode{Mode::Tailing=>"tailing",Mode::Overlap=>"overlap",Mode::Ligation=>"ligation"} on:change=move|e|config.update(|c|c.mode=match event_target_value(&e).as_str(){"overlap"=>Mode::Overlap,"ligation"=>Mode::Ligation,_=>Mode::Tailing})><option value="tailing" disabled=fixed_sources>"TA / GC tailing and ligation"</option><option value="overlap">"Gibson / HiFi / In-Fusion overlap"</option><option value="ligation">"Ordered multi-fragment ligation"</option></select></label>
         <Show when=move||config.get().mode==Mode::Tailing><p class="helper">"Append one declared nucleotide to both actual 3′ ends of an established blunt duplex. This is an ideal endpoint operation; polymerase activity, mixtures and proprietary kit chemistry are not predicted. TA/GC products include two added junction bases."</p><div class="method-shortcuts"><button class="text-tool" on:click=move|_|config.update(|c|{c.vector.base=TailingBase::T;c.insert.base=TailingBase::A;})>"Use T/A pair"</button><button class="text-tool" on:click=move|_|config.update(|c|{c.vector.base=TailingBase::C;c.insert.base=TailingBase::G;})>"Use C/G pair"</button></div><TailFields vector=true config=config query_options=query_options primer_sources list_primers resolve_primer epoch/><TailFields vector=false config=config query_options=query_options primer_sources list_primers resolve_primer epoch/><label class="checkbox-label"><input type="checkbox" aria-label="Allow retained tailing ligation nicks" prop:checked=move||config.get().allow_nicked on:change=move|e|config.update(|c|c.allow_nicked=event_target_checked(&e))/>"Allow explicitly retained nicks"</label><p class="helper">"Exact PCR has 5′ OH termini. A sealed ligation may need an explicit phosphorylation step. Factory-vector chemistry and host nick repair are not inferred."</p></Show>
         <Show when=move||config.get().mode!=Mode::Tailing><Show when=move||config.get().mode==Mode::Overlap><label>"Overlap profile"<select aria-label="Overlap profile method" prop:value=move||format!("{:?}",config.get().method) on:change=move|e|config.update(|c|c.method=match event_target_value(&e).as_str(){"Gibson"=>OverlapMethod::Gibson,"InFusion"=>OverlapMethod::InFusion,_=>OverlapMethod::HiFi})><option value="Gibson">"Gibson"</option><option value="HiFi">"HiFi"</option><option value="InFusion">"In-Fusion"</option></select></label><p class="helper">"Fragments are listed in product order with explicit orientation. Homology geometry is checked exactly; published length guidance is advisory. No reaction completion or unique mixture product is established."</p></Show>
             <Show when=move||config.get().mode==Mode::Ligation><p class="helper">"List fragments in intended ligation order. Preparation, end repair and terminal treatment are explicit source-bound operations. Whole linear DNA retains unknown terminal chemistry; its sequence alone does not imply cleaved or PCR ends. Unknown ends can withhold ligation even after phosphorylation."</p><label class="checkbox-label"><input type="checkbox" aria-label="Allow retained ordered ligation nicks" prop:checked=move||config.get().allow_nicked on:change=move|e|config.update(|c|c.allow_nicked=event_target_checked(&e))/>"Allow explicitly retained nicks"</label></Show>
             <h3>"1. Choose source fragments and regions"</h3>
-            <For each=move||config.with(|c|(0..c.rows.len()).collect::<Vec<_>>()) key=|i|*i children=move|i|view!{<OverlapFields config index=i query_options primer_sources list_primers resolve_primer epoch selected_region/>}/>
-            <button class="button secondary full" disabled=move||{config.with(|c|c.rows.len()>=12)} on:click=move|_|config.update(|c|c.rows.push(OverlapInput::default()))>{move||if config.get().mode==Mode::Ligation{"Add ligation fragment"}else{"Add overlap fragment"}}</button><p class="helper">"This panel supports up to 12 ordered fragments; the typed core has its separate documented work bounds."</p><Show when=move||config.get().mode==Mode::Overlap><label>"Overlap lengths in junction order (bp)"<input aria-label="Profile overlap lengths" prop:value=move||config.get().overlaps on:input=move|e|config.update(|c|c.overlaps=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label="Scan repeated overlap words" prop:checked=move||config.get().scan_repeats on:change=move|e|config.update(|c|c.scan_repeats=event_target_checked(&e))/>"Search supplied fragments for repeated homology words"</label><label>"Repeat comparison budget"<input type="number" min="1" aria-label="Overlap repeat budget" prop:value=move||config.get().comparisons on:input=move|e|config.update(|c|c.comparisons=event_target_value(&e))/></label><label>"Maximum reported homology occurrences"<input type="number" min="1" aria-label="Overlap occurrence limit" prop:value=move||config.get().occurrences on:input=move|e|config.update(|c|c.occurrences=event_target_value(&e))/></label></Show>
+            <For each=move||config.with(|c|(0..c.rows.len()).collect::<Vec<_>>()) key=|i|*i children=move|i|view!{<OverlapFields config index=i query_options primer_sources list_primers resolve_primer epoch selected_region fixed_sources/>}/>
+            <button class="button secondary full" disabled=move||{fixed_sources||config.with(|c|c.rows.len()>=12)} on:click=move|_|config.update(|c|c.rows.push(OverlapInput::default()))>{move||if config.get().mode==Mode::Ligation{"Add ligation fragment"}else{"Add overlap fragment"}}</button><p class="helper">"This panel supports up to 12 ordered fragments; the typed core has its separate documented work bounds."</p><Show when=move||config.get().mode==Mode::Overlap><label>"Overlap lengths in junction order (bp)"<input aria-label="Profile overlap lengths" prop:value=move||config.get().overlaps on:input=move|e|config.update(|c|c.overlaps=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label="Scan repeated overlap words" prop:checked=move||config.get().scan_repeats on:change=move|e|config.update(|c|c.scan_repeats=event_target_checked(&e))/>"Search supplied fragments for repeated homology words"</label><label>"Repeat comparison budget"<input type="number" min="1" aria-label="Overlap repeat budget" prop:value=move||config.get().comparisons on:input=move|e|config.update(|c|c.comparisons=event_target_value(&e))/></label><label>"Maximum reported homology occurrences"<input type="number" min="1" aria-label="Overlap occurrence limit" prop:value=move||config.get().occurrences on:input=move|e|config.update(|c|c.occurrences=event_target_value(&e))/></label></Show>
         </Show>
         <Show when=move||config.get().mode==Mode::Overlap><section class="overlap-primer-planner"><h3>"2. Suggest and review PCR primers"</h3><p class="helper">"Use the selected source regions and order to suggest one primer pair per fragment, including added homology tails. Your current primers stay unchanged until you explicitly apply the proposal. The independent target is never generated or selected by this step."</p><div class="primer-grid"><label>"Junction homology (bp)"<input type="number" min="1" aria-label="Suggested overlap homology bases" prop:value=move||planner_form.with(|f|f.overlap.clone()) on:input=move|e|planner_form.update(|f|f.overlap=event_target_value(&e))/></label><label>"Minimum annealing length"<input type="number" min="1" max="200" aria-label="Suggested primer minimum length" prop:value=move||planner_form.with(|f|f.minimum.clone()) on:input=move|e|planner_form.update(|f|f.minimum=event_target_value(&e))/></label><label>"Maximum annealing length"<input type="number" min="1" max="200" aria-label="Suggested primer maximum length" prop:value=move||planner_form.with(|f|f.maximum.clone()) on:input=move|e|planner_form.update(|f|f.maximum=event_target_value(&e))/></label><label>"Target annealing Tm (°C)"<input type="number" step="0.1" aria-label="Suggested primer target Tm" prop:value=move||planner_form.with(|f|f.tm.clone()) on:input=move|e|planner_form.update(|f|f.tm=event_target_value(&e))/></label></div><p class="helper">"Default filters: GC 20–80%, pair ΔTm ≤5°C, homopolymer run ≤5 and 3′ complementary run ≤3. Tm assumes 50 mM sodium and 500 nM total strands; these are calculations, not reagent or experimental performance predictions."</p><button class="button secondary full" disabled=move||busy.get() on:click=move|_|suggest.run(())>"Suggest PCR primers"</button>
         {move||suggestions.get().map(|proposal|{let saved=proposal.clone();view!{<div class="overlap-primer-suggestions"><h4>"Proposed primer pairs — not yet applied"</h4>{proposal.report.designs.iter().enumerate().map(|(i,design)|{let interval=proposal.report.request.fragments.get(i);view!{<article><h4>{format!("Fragment {} · {}",i+1,proposal.context.get(i).map(|s|s.name.as_str()).unwrap_or("source unavailable"))}</h4>{interval.map(|region|view!{<p>{format!("Source interval {}–{} (1-based inclusive, unrolled) · {}",region.start+1,region.end,if region.reverse{"reverse in assembly"}else{"forward in assembly"})}</p>})}{design.pairs.first().map(|pair|view!{<pre>{format!("{}\nOrdered 5′→3′: {}{}\nAnnealing 5′→3′: {}\n5′ tail: {}\n\n{}\nOrdered 5′→3′: {}{}\nAnnealing 5′→3′: {}\n5′ tail: {}",pair.forward.primer.name,pair.forward.primer.tail,pair.forward.primer.annealing.as_str(),pair.forward.primer.annealing.as_str(),pair.forward.primer.tail,pair.reverse.primer.name,pair.reverse.primer.tail,pair.reverse.primer.annealing.as_str(),pair.reverse.primer.annealing.as_str(),pair.reverse.primer.tail)}</pre><p>{format!("Annealing Tm: {} / {} · pair ΔTm {:.1}°C · proposed PCR length {} bp",pair.forward.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.reverse.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.tm_difference_c,pair.product_length)}</p>})}{design.warnings.iter().map(|w|view!{<p>{w.clone()}</p>}).collect_view()}</article>}}).collect_view()}{proposal.report.warnings.iter().map(|w|view!{<p>{w.clone()}</p>}).collect_view()}<p class="helper">"A deterministic proposal under these filters is not a unique or experimentally validated primer design. Applying changes the preparation to exact PCR; verify the resulting assembly next."</p><button class="button primary full" disabled=move||busy.get() on:click=move|_|apply_suggestions.run(())>"Apply suggested primers"</button><button class="button secondary full" on:click=move|_|{if config.get_untracked()!=saved.config||planner_form.get_untracked()!=saved.form||source_context.get_untracked()!=Some(saved.context.clone())||target_info.get_untracked()!=saved.target_context||target.get_untracked()!=saved.target||epoch.get_untracked()!=saved.epoch{status.set("Sources or settings changed; request fresh suggestions.".into());return;}match serde_json::to_vec_pretty(&serde_json::json!({"sources":saved.context,"target":saved.target_context,"report":saved.report})){Ok(bytes)=>if let Err(e)=download("overlap-primer-suggestions.json","application/json",&bytes){status.set(e)},Err(e)=>status.set(e.to_string())}}>"Download suggested primer evidence"</button></div>}})}
         </section></Show><Show when=move||config.get().mode!=Mode::Tailing><h3>"3. Verify the prepared assembly"</h3><p class="helper">"Review the applied preparation and orientation, then compute method evidence against your independent target. Suggested primers alone do not verify a cloning design."</p></Show>
-        <label class="checkbox-label"><input type="checkbox" aria-label="Method product circular" prop:checked=move||config.get().circular on:change=move|e|config.update(|c|c.circular=event_target_checked(&e))/>"Circular candidate product"</label><button class="button primary full" disabled=move||busy.get() on:click=move|_|compute.run(())>"Compute method evidence"</button><button class="text-tool" disabled=move||!busy.get() on:click=move|_|{generation.update(|n|*n=n.wrapping_add(1));if let Some(w)=active.get_value(){w.close();}active.set_value(None);busy.set(false);suggestions.set(None);status.set("Method analysis cancelled".into());}>"Cancel method analysis"</button><p class="method-status" role="status">{move||status.get()}</p>
+        <label class="checkbox-label"><input disabled=fixed_sources type="checkbox" aria-label="Method product circular" prop:checked=move||config.get().circular on:change=move|e|config.update(|c|c.circular=event_target_checked(&e))/>"Circular candidate product"</label><button class="button primary full" disabled=move||busy.get() on:click=move|_|compute.run(())>"Compute method evidence"</button><button class="text-tool" disabled=move||!busy.get() on:click=move|_|{generation.update(|n|*n=n.wrapping_add(1));if let Some(w)=active.get_value(){w.close();}active.set_value(None);busy.set(false);suggestions.set(None);status.set("Method analysis cancelled".into());}>"Cancel method analysis"</button><p class="method-status" role="status">{move||status.get()}</p>
         {move||evidence.get().map(|proof|{let report=proof.clone();view!{<div class="method-evidence">
             {proof.tails.iter().enumerate().map(|(i,preview)|{let opened=preview.molecule.clone();view!{<article class="tail-evidence"><h3>{format!("{} · {}-tailed duplex",if i==0{"Vector"}else{"Insert"},preview.base.as_str())}</h3><pre>{format!("Top 5′→3′: {}\nBottom 5′→3′: {}\n{}",short(preview.tailing.duplex.top.as_str()),short(preview.tailing.duplex.bottom.as_str()),preview.tailing.duplex.summary().map(|s|s.describe()).unwrap_or_else(|e|e.to_string()))}</pre><details><summary>"Source, additions and assumptions"</summary><pre>{format!("Source top 5′→3′: {}\nSource bottom 5′→3′: {}",short(preview.tailing.source.top.as_str()),short(preview.tailing.source.bottom.as_str()))}</pre>{preview.tailing.additions.iter().map(|a|view!{<p>{format!("New {:?} residue {}–{}: {} (no template ancestry)",a.strand,a.product_start+1,a.product_end,a.sequence)}</p>}).collect_view()}{preview.findings.iter().chain(&preview.tailing.warnings).map(|w|view!{<p>{w.clone()}</p>}).collect_view()}</details><button class="button secondary full" on:click=move|_|match on_products.run(vec![opened.clone()]){Ok(())=>status.set("Reference preview opened; reconstruct its original graph for later physical operations.".into()),Err(e)=>status.set(e)}>{format!("Open {} reference preview",if i==0{"vector"}else{"insert"})}</button></article>}}).collect_view()}
             {proof.ligation.as_ref().map(|preview|view!{<article class="ordered-ligation-evidence"><h3>"Reconstructed ligation evidence"</h3><p>{format!("Preparation reconstructed: {} · independent-target assessment: {}",preview.preparation_complete,method_status(&preview.verification.status))}</p><p class="helper">"These ends and junctions were freshly reconstructed from the original source operations. An end-compatible ordered candidate is not a unique mixture product or demonstrated reaction outcome."</p>{preview.prepared.iter().enumerate().map(|(i,fragment)|view!{<details><summary>{format!("Fragment {} · {} bp · {}",i+1,fragment.sequence.len(),proof.config.rows.get(i).map(OverlapInput::summary).unwrap_or_default())}</summary><pre>{format!("Prepared source before orientation: {}",short(fragment.sequence.as_str()))}</pre><p>{preview.physical.get(i).and_then(Option::as_ref).map(method_duplex).unwrap_or_else(||"Physical end geometry unavailable; no chemistry inferred".into())}</p><p class="helper">"End summary is in assembly orientation, after any explicit terminal treatment."</p></details>}).collect_view()}{preview.junctions.iter().map(|junction|view!{<details><summary>{format!("Junction {} · fragment {} → {}{}",junction.index+1,junction.upstream+1,junction.downstream+1,if junction.closing{" · circle closure"}else{""})}</summary><p>{format!("Upstream right: {}",method_end(junction.upstream_end.as_ref()))}</p><p>{format!("Downstream left: {}",method_end(junction.downstream_end.as_ref()))}</p></details>}).collect_view()}{preview.product_physical.as_ref().map(|physical|view!{<section><h4>"Reconstructed product"</h4><p>{method_duplex(physical)}</p>{physical.nicks.iter().map(|nick|view!{<p>{format!("Retained {} strand nick at top-reference boundary {}",match nick.strand{collagene_core::chemistry::Strand::Top=>"top",collagene_core::chemistry::Strand::Bottom=>"bottom"},nick.position)}</p>}).collect_view()}</section>})}{preview.verification.findings.iter().map(|finding|view!{<p>{finding.clone()}</p>}).collect_view()}</article>})}
@@ -1005,12 +1061,13 @@ fn OverlapFields(
     >,
     epoch: RwSignal<u64>,
     selected_region: Callback<(), Option<(usize, usize, usize)>>,
+    fixed_sources: bool,
 ) -> impl IntoView {
     let row = move || config.with(|c| c.rows.get(index).cloned().unwrap_or_default());
     let region_status = RwSignal::new(String::new());
     view! {<fieldset class="overlap-source-row"><legend>{format!("Fragment {}",index+1)}</legend>
-        <label>"Original source"<select aria-label=move||format!("{} source {}",if config.get().mode==Mode::Ligation{"Ligation"}else{"Overlap"},index+1) prop:value=move||row().document.to_string() on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.document=event_target_value(&e).parse().unwrap_or(0)})>{move||query_options.get().into_iter().map(|(n,label)|view!{<option value=n.to_string()>{label}</option>}).collect_view()}</select></label>
-        <Show when=move||config.get().mode==Mode::Overlap><button class="button secondary" aria-label=format!("Set fragment {} from sequence selection",index+1) on:click=move|_|{match selected_region.run(()){Some((document,start,end)) if start<end&&start.checked_add(1).is_some()=>{config.update(|c|if let Some(row)=c.rows.get_mut(index){row.document=document;row.interval_start=(start+1).to_string();row.interval_end=end.to_string();});region_status.set("Selected source region copied. Review preparation and orientation; primers have not been changed.".into());},_=>region_status.set("Select one contiguous region in the sequence view first. Compound or origin-spanning feature selections need an explicit interval.".into())}} >"Set from sequence selection"</button><p class="helper" role="status">{move||region_status.get()}</p><label>"Primer design interval start (1-based inclusive)"<input type="number" min="1" aria-label=format!("Overlap interval start {}",index+1) prop:value=move||row().interval_start on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.interval_start=event_target_value(&e)})/></label><label>"Primer design interval end (1-based inclusive; blank = source end)"<input type="number" min="1" aria-label=format!("Overlap interval end {}",index+1) prop:value=move||row().interval_end on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.interval_end=event_target_value(&e)})/></label><p class="helper">"Intervals are used only when suggesting PCR primers. For a circular source, an end beyond its length describes one unrolled origin crossing. Existing whole-source, digest and manual PCR preparations are not silently sliced."</p></Show>
+        <label>"Original source"<select disabled=fixed_sources aria-label=move||format!("{} source {}",if config.get().mode==Mode::Ligation{"Ligation"}else{"Overlap"},index+1) prop:value=move||row().document.to_string() on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.document=event_target_value(&e).parse().unwrap_or(0)})>{move||query_options.get().into_iter().map(|(n,label)|view!{<option value=n.to_string()>{label}</option>}).collect_view()}</select></label>
+        <Show when=move||config.get().mode==Mode::Overlap><button class="button secondary" disabled=fixed_sources aria-label=format!("Set fragment {} from sequence selection",index+1) on:click=move|_|{match selected_region.run(()){Some((document,start,end)) if start<end&&start.checked_add(1).is_some()=>{config.update(|c|if let Some(row)=c.rows.get_mut(index){row.document=document;row.interval_start=(start+1).to_string();row.interval_end=end.to_string();});region_status.set("Selected source region copied. Review preparation and orientation; primers have not been changed.".into());},_=>region_status.set("Select one contiguous region in the sequence view first. Compound or origin-spanning feature selections need an explicit interval.".into())}} >"Set from sequence selection"</button><p class="helper" role="status">{move||region_status.get()}</p><label>"Primer design interval start (1-based inclusive)"<input disabled=fixed_sources type="number" min="1" aria-label=format!("Overlap interval start {}",index+1) prop:value=move||row().interval_start on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.interval_start=event_target_value(&e)})/></label><label>"Primer design interval end (1-based inclusive; blank = source end)"<input disabled=fixed_sources type="number" min="1" aria-label=format!("Overlap interval end {}",index+1) prop:value=move||row().interval_end on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.interval_end=event_target_value(&e)})/></label><p class="helper">"Intervals are used only when suggesting PCR primers. For a circular source, an end beyond its length describes one unrolled origin crossing. Existing whole-source, digest and manual PCR preparations are not silently sliced."</p></Show>
         <label>"Prepare fragment"<select aria-label=move||format!("{} preparation {}",if config.get().mode==Mode::Ligation{"Ligation"}else{"Overlap"},index+1) prop:value=move||match row().preparation{OverlapPreparation::WholeLinear=>"whole",OverlapPreparation::DeclaredDuplex=>"declared",OverlapPreparation::Digest=>"digest",OverlapPreparation::ExactPcr=>"pcr"} on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.preparation=match event_target_value(&e).as_str(){"declared"=>OverlapPreparation::DeclaredDuplex,"digest"=>OverlapPreparation::Digest,"pcr"=>OverlapPreparation::ExactPcr,_=>OverlapPreparation::WholeLinear}})><option value="whole">"Whole linear DNA"</option><option value="declared">"Declare intact linear duplex"</option><option value="digest">"Restriction digest fragment"</option><option value="pcr">"Exact PCR product"</option></select></label>
         <Show when=move||row().preparation==OverlapPreparation::WholeLinear><p class="helper">"Use an already linear source. Circular DNA must first be prepared by restriction digest or exact PCR; its origin is not an assumed cut."</p></Show>
         <Show when=move||row().preparation==OverlapPreparation::DeclaredDuplex><p class="helper">"Operator assumption for an original, intact linear duplex: declare its two terminal groups explicitly. This does not measure chemistry, cut or repair DNA, change its reference sequence, or reuse producer metadata. Circular, single-stranded and imported physical/reference-only intermediate sources are rejected by the core."</p><DeclaredEndFields config index left=true/><DeclaredEndFields config index left=false/><p class="helper">"All groups initially remain unknown. Orientation is applied after this declaration; any ligation terminal treatment remains a separate explicit step."</p></Show>
@@ -1033,10 +1090,10 @@ fn OverlapFields(
             <details><summary>"Review current primer domains"</summary><pre>{move||{let r=row();format!("{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\n5′ tail: {}\n\n{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\n5′ tail: {}",r.forward_name,r.forward_tail,r.forward,r.forward,r.forward_tail,r.reverse_name,r.reverse_tail,r.reverse_primer,r.reverse_primer,r.reverse_tail)}}</pre></details>
             <p class="helper">"Enter annealing domains and added tails separately. Both oligos are written 5′→3′; no primer design or unique amplicon is assumed."</p>
         </Show>
-        <label class="checkbox-label"><input type="checkbox" aria-label=format!("Reverse overlap source {}",index+1) prop:checked=move||row().reverse on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.reverse=event_target_checked(&e)})/>"Reverse complement prepared fragment"</label>
+        <label class="checkbox-label"><input disabled=fixed_sources type="checkbox" aria-label=format!("Reverse overlap source {}",index+1) prop:checked=move||row().reverse on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.reverse=event_target_checked(&e)})/>"Reverse complement prepared fragment"</label>
         <Show when=move||config.get().mode==Mode::Ligation><label>"Explicit 5′ terminal treatment"<select aria-label=format!("Ligation terminal treatment {}",index+1) prop:value=move||match row().treatment{Treatment::Keep=>"none",Treatment::Phosphorylate=>"phosphorylate",Treatment::Dephosphorylate=>"dephosphorylate"} on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.treatment=match event_target_value(&e).as_str(){"phosphorylate"=>Treatment::Phosphorylate,"dephosphorylate"=>Treatment::Dephosphorylate,_=>Treatment::Keep}})><option value="none">"None — keep reconstructed chemistry"</option><option value="phosphorylate">"Add 5′ phosphorylation"</option><option value="dephosphorylate">"Add 5′ dephosphorylation"</option></select></label><p class="helper">"Treatment does not resolve unknown 3′ chemistry, repair ends or imply host nick repair."</p></Show>
         <p class="helper">{move||row().summary()}</p>
-        <div class="method-row-actions"><button class="text-tool" disabled=move||index==0 on:click=move|_|config.update(|c|{if index>0&&index<c.rows.len(){c.rows.swap(index,index-1);}})>"Move up"</button><button class="text-tool" disabled=move||config.with(|c|index+1>=c.rows.len()) on:click=move|_|config.update(|c|{if index+1<c.rows.len(){c.rows.swap(index,index+1);}})>"Move down"</button><button class="text-tool" disabled=move||config.with(|c|c.rows.len()<=1) on:click=move|_|config.update(|c|{if c.rows.len()>1&&index<c.rows.len(){c.rows.remove(index);}})>"Remove fragment"</button></div>
+        <div class="method-row-actions"><button class="text-tool" disabled=move||fixed_sources||index==0 on:click=move|_|config.update(|c|{if index>0&&index<c.rows.len(){c.rows.swap(index,index-1);}})>"Move up"</button><button class="text-tool" disabled=move||fixed_sources||config.with(|c|index+1>=c.rows.len()) on:click=move|_|config.update(|c|{if index+1<c.rows.len(){c.rows.swap(index,index+1);}})>"Move down"</button><button class="text-tool" disabled=move||fixed_sources||config.with(|c|c.rows.len()<=1) on:click=move|_|config.update(|c|{if c.rows.len()>1&&index<c.rows.len(){c.rows.remove(index);}})>"Remove fragment"</button></div>
     </fieldset>}
 }
 

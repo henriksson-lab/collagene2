@@ -143,6 +143,13 @@ annotation/function remain separate findings. [Junction review](ASSEMBLY_JUNCTIO
 Clipped display flanks at known sequence ends are a normal bounded view, not a
 reason to fail otherwise complete junction inspection.
 
+An explicit original-source terminal hypothesis is now available for eligible
+intact linear duplex references. It is a recorded preparation step, not a default
+inference from files or imported physical summaries, and it enables ordinary
+whole-fragment ligation when the operator supplies the required terminal groups.
+[Declaration scope](DECLARED_SOURCE_TERMINI.md). Existing unknown inputs and
+unsupported physical intermediates keep their previous restrictions.
+
 ## Feature inventory and delivery priorities
 
 P0 is the foundation and first usable cloning release. P1 supplies everyday molecular biology workflows. P2 extends scale, specialized workflows, collaboration, and desktop delivery. P3 covers advanced molecular analysis. Each row is an implementation backlog item, not a claim about an existing Collagene 2 feature. Feature IDs are retained when rows are removed.

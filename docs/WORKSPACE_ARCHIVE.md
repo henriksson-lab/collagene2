@@ -23,7 +23,7 @@ Generic attachments are keyed by BLAKE3 of raw bytes and preserve kind, name and
 
 ## Container and content addressing
 
-The ZIP contains exactly one `manifest.json` and entries named `blobs/<64 lowercase hex digits>`. Every file is declared in the manifest, hash/length checked, and reachable from a recognized record. There are no directory entries or extraction paths. The manifest has format `collagene-workspace`, version `1`, molecule schema `1` and plan schema `4` (with compatible plan schemas 1–3 still readable).
+The ZIP contains exactly one `manifest.json` and entries named `blobs/<64 lowercase hex digits>`. Every file is declared in the manifest, hash/length checked, and reachable from a recognized record. There are no directory entries or extraction paths. The manifest has format `collagene-workspace`, version `1`, molecule schema `1` and plan schema `8` (with compatible plan schemas 1–7 still readable).
 
 The manifest maps molecule revisions to molecule-record blobs. A molecule record references separate sequence, name, feature JSON, metadata-value and optional original-GenBank chunks. Sequences use canonical ASCII and carry explicit alphabet/topology. A plan record references existing source revisions and its operations JSON; it does not duplicate source molecules inside each plan. Hash-addressed raw attachments, metadata values and original sequence evidence are shared across revisions.
 
@@ -70,3 +70,10 @@ Plan schema 3 introduced tailing and profiled overlap; plan schema 4 adds tracke
 
 
 A `genome-reference-link-v1` attachment is a bounded typed external-reference link: role, exact manifest/content hashes, declared build identifiers/counts and an optional opaque cache hint. Loading validates its closed schema but does not load genome DNA, open an arbitrary path, restore a semantic-verification receipt or grant coverage authority. Inline/binary worker workspace jobs/results carrying this recognized link require schema 19. Archive format 1 and plan schema 4 remain unchanged. Large-reference bytes stay outside ordinary molecule/workspace payloads.
+
+
+Plan schema 8 adds explicit original-source terminal hypotheses. Loading refuses
+`DeclareSourceTermini` under older plan schemas, including nested retained-run
+records. Candidate 10 and worker 34 carry the same operation floor; current
+verification uses science-13. Earlier operation layouts and recorded engine
+identities remain historical data, and the outer archive stays version 1.

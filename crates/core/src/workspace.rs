@@ -30,7 +30,7 @@ const MAX_ENTRIES: usize = 50_000;
 const MAX_STACK: usize = 1000;
 const FORMAT: &str = "collagene-workspace";
 const VERSION: u32 = 1;
-pub const PLAN_SCHEMA_VERSION: u32 = 7;
+pub const PLAN_SCHEMA_VERSION: u32 = 8;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1048,7 +1048,7 @@ pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
         || header.get("molecule_schema").and_then(|v| v.as_u64()) != Some(1)
         || !matches!(
             header.get("plan_schema").and_then(|v| v.as_u64()),
-            Some(1 | 2 | 3 | 4 | 5 | 6 | 7)
+            Some(1 | 2 | 3 | 4 | 5 | 6 | 7 | 8)
         )
     {
         return Err(Error::Unsupported(
@@ -1210,6 +1210,15 @@ pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
             });
         }
         let steps: Vec<Operation> = json_exact(get(&blobs, &record.steps)?)?;
+        if manifest.plan_schema < 8
+            && steps
+                .iter()
+                .any(|step| matches!(step, Operation::DeclareSourceTermini { .. }))
+        {
+            return Err(Error::Unsupported(
+                "Declared source termini require workspace plan schema 8".into(),
+            ));
+        }
         if manifest.plan_schema < 7
             && steps
                 .iter()

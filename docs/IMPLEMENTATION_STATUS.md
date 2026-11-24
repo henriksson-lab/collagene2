@@ -14,6 +14,29 @@ is postponed until the rest of the software is implemented. Existing modules are
 retained; no more alignment/index features or integration are scheduled now.
 Browser checks remain deferred and compiler checks run alongside coding.
 
+## Explicit starting-material termini
+
+Original intact linear duplex references can now carry explicit operator terminal
+hypotheses as a typed preparation step. Both ends initially remain unknown;
+choices distinguish 5′ P/OH/unknown and 3′ OH/blocked/unknown. Ordinary WholeLinear
+preparation is unchanged. This enables declared starting material to feed ordered
+ligation without pretending that file metadata proves phosphorylation or 3′-OH.
+Source DNA/features/raw citations remain unchanged, and the declared assumptions
+are retained in plan history and HTML/PDF instructions. Imported physical or
+reference-only intermediates cannot be cleared through this declaration.
+
+Worker 34, candidate 10, workspace-plan 8 and science-13 explicitly version the
+new operation/preparation variants. Historical layouts remain supported under
+their original semantics, including readonly old reports; nested declarations
+cannot hide in old worker/candidate/archive headers. Positional modifications
+remain unknown rather than receiving an unmodified-DNA claim. The existing 116
+MCP tools expose the new typed options without adding tools.
+
+Twenty-five focused core/preparation/history/compatibility cases and two MCP
+cases, the full 116-tool stdio smoke and the WASM compiler check passed. Browser
+checks remain deferred. See [model and bounds](DECLARED_SOURCE_TERMINI.md) and
+[declared starting-material example](../fixtures/declared-ends-demo.md).
+
 ## Junction DNA and reading-frame review
 
 The reconstructed-plan panel now offers explicit junction inspection for ordered
@@ -43,7 +66,7 @@ The isolated native-build correction `99c4c02` cleared the compiler failure in
 CI. Its WASM job passed; Linux native tests/build then reached stdio smoke, where
 a stale candidate-schema-7 assertion rejected the current schema-9 writer.
 The script now reads the current writer constant while retaining magic, source
-binding and scientific assertions. A new all-platform CI pass is not yet claimed.
+binding and scientific assertions. The following pushed integration `be78a8a` passed the complete native Windows/macOS/Linux and WASM CI matrix ([run](https://github.com/henriksson-lab/collagene2/actions/runs/45507077269)). Later unpushed terminal-declaration work has separate validation results above.
 
 ## Ordered multi-fragment ligation
 
@@ -212,7 +235,7 @@ WebGL2 supplies circular/linear map geometry, rotation and zoom; sequence text i
 
 The Plan panel can retain a complete reconstructed graph through **Keep reconstructed products**. Exact source events are selected explicitly when identical content is ambiguous; operation inputs become product parents and the independent target stays separate and active. Capture re-verifies before an atomic current/previous workspace installation. History lists saved reconstructions as unverified historical evidence, with explicit current-engine replay, product/status/engine comparison and JSON download. Source heads and undo/redo remain unchanged. This covers retained full plans; standalone preview exports still need equivalent source-event retention. [Run lineage](RUN_LINEAGE.md).
 
-Rust/WASM workers use Postcard and transferable binary buffers, with 30-second job limits and obsolete-result rejection. Worker envelopes write schema version 33 and retain supported historical schemas 1–32, including streamed reference stores, cooperative genomic search, checked digestion and reference recombination. Candidate files write 9, workspace plans 7 and the verifier is science-12. Exact workspace-bearing tags allow bounded 128 MiB payloads; ordinary scientific messages retain 32 MiB limits. Explicit migration handles original verification reports without an engine field, marking that engine as unrecorded. Variants, nested plans and archive bytes cannot conceal operations or reports from a later schema. Document/planning-snapshot and archive formats remain version 1. Historical verification reports remain data; fresh replay/install requires the current engine. Independent legacy structs and literal Postcard bytes exercise backward decoding, field preservation and truncated inputs. Sequence tracks debounce viewport jobs, reject obsolete replies and terminate the retained worker on source replacement/unmount. Large-reference jobs use private retained sessions and bounded owner-block advances with cancellation. A general worker pool, cooperative cancellation for older one-shot analyses and chunked plasmid-document caches remain pending. [Binary protocol](WORKER_PROTOCOL.md).
+Rust/WASM workers use Postcard and transferable binary buffers, with 30-second job limits and obsolete-result rejection. Worker envelopes write schema version 34 and retain supported historical schemas 1–33, including streamed reference stores, cooperative genomic search, checked digestion and reference recombination. Candidate files write 10, workspace plans 8 and the verifier is science-13. Exact workspace-bearing tags allow bounded 128 MiB payloads; ordinary scientific messages retain 32 MiB limits. Explicit migration handles original verification reports without an engine field, marking that engine as unrecorded. Variants, nested plans and archive bytes cannot conceal operations or reports from a later schema. Document/planning-snapshot and archive formats remain version 1. Historical verification reports remain data; fresh replay/install requires the current engine. Independent legacy structs and literal Postcard bytes exercise backward decoding, field preservation and truncated inputs. Sequence tracks debounce viewport jobs, reject obsolete replies and terminate the retained worker on source replacement/unmount. Large-reference jobs use private retained sessions and bounded owner-block advances with cancellation. A general worker pool, cooperative cancellation for older one-shot analyses and chunked plasmid-document caches remain pending. [Binary protocol](WORKER_PROTOCOL.md).
 
 The session-only stdio MCP server uses the official Rust SDK, typed tool schemas, immutable resources and bounded outputs. Browser snapshots can pass through the actual MCP server and return as candidates for UI review, independent current-revision binding and WASM verification. Its 116 tools expose restriction/PCR/duplex analysis, URL import and Addgene sequence choices, translation/CDS/ORFs, primer analysis/design, PDF export, Golden Gate/mismatch-PCR simulation, inverse-PCR candidates, gel/diagnostic artifacts, pairwise/circular comparison, read validation, explicit-encoding FASTQ, oligo collections/selections and full native workspace exchange, versioned feature libraries and GFF3/BED annotation datasets, plus end-repair/oligo-annealing previews, source-bound unified search/viewport tracks, immutable alignment collections/exchange/column inspection/row extraction, protein-property models, explicit tailing previews, oriented overlap-profile checks and immutable retained-run capture/list/replay plus source-bound codon design, independent candidate checking and paginated dot-plot analysis with JSON/SVG artifacts and source-bound read contigs with immutable report/consensus resources, plus paginated methylation assessments, CRISPR guide/off-target reports and independently checked edit-template resources, plus managed streamed reference import/export, global interval reads/guides and private cooperative genome searches. Native workspace upload uses bounded offset/hash-checked chunks and atomic installation, including a tested archive above 8 MiB and a 1,000-document archive with retained history, candidates and evidence. It has no implicit browser/project-write authority. Live synchronization, persistent authorized writes, hosted HTTP and cooperative cancellation for older one-shot scientific analyses remain pending. See [MCP usage](MCP.md).
 

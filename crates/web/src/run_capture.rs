@@ -427,6 +427,7 @@ pub fn RunDetailsPanel(
                             let document=product.document_id.clone();
                             let operation_details=record.plan.steps.get(product.step_index).map(crate::app::describe_step).unwrap_or_default();
                             let operation=record.plan.steps.get(product.step_index).map(|op|match op{
+                                collagene_core::verification::Operation::DeclareSourceTermini{..}=>"Declare original source termini",
                                 collagene_core::verification::Operation::Pcr{..}=>"PCR",
                                 collagene_core::verification::Operation::PcrWithMismatches{..}=>"PCR with mismatches",
                                 collagene_core::verification::Operation::Digest{..}=>"Digest under cleavage assumptions",

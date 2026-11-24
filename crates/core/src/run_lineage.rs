@@ -140,6 +140,9 @@ fn validate_plan(plan: &DesignPlan) -> Result<(), Error> {
             Operation::DeclareSourceModifications {
                 template: Source::Step(_),
                 ..
+            } | Operation::DeclareSourceTermini {
+                template: Source::Step(_),
+                ..
             }
         ) {
             return Err(bad(
@@ -184,13 +187,24 @@ fn validate_texts(values: &[String], limit: usize) -> Result<(), Error> {
 }
 fn validate_record(r: &RunRecord) -> Result<(), Error> {
     if r.schema_version != 1
-        || !matches!(r.plan_schema, 3 | 4 | 5 | 6 | 7)
+        || !matches!(r.plan_schema, 3 | 4 | 5 | 6 | 7 | 8)
         || !digest(&r.run_id)
         || r.assessment.engine_version.is_empty()
         || r.assessment.engine_version.len() > 128
         || r.assessment.status == Status::Invalid
     {
         return Err(bad("invalid schema or assessment"));
+    }
+    if r.plan_schema < 8
+        && (r.assessment.engine_version.ends_with("/science-13")
+            || r.plan
+                .steps
+                .iter()
+                .any(|op| matches!(op, Operation::DeclareSourceTermini { .. })))
+    {
+        return Err(bad(
+            "Declared source termini require workspace plan schema 8",
+        ));
     }
     if r.plan_schema < 7
         && (r.assessment.engine_version.ends_with("/science-12")

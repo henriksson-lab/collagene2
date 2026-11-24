@@ -6,8 +6,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 33;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 9;
+pub const WORKER_SCHEMA_VERSION: u16 = 34;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 10;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
@@ -1013,8 +1013,12 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     };
     let required = match &response.result {
         AnalysisResult::AssemblyJunctionInspection(_) => 33,
-        AnalysisResult::LigationRecipePreview(_) => 32,
-        AnalysisResult::OverlapRecipePreview(_) => 31,
+        AnalysisResult::LigationRecipePreview(report) => {
+            plan_worker_version(&report.compiled.plan).max(32)
+        }
+        AnalysisResult::OverlapRecipePreview(report) => {
+            plan_worker_version(&report.compiled.plan).max(31)
+        }
         AnalysisResult::VariantsPrepared(_)
         | AnalysisResult::VariantPage(_)
         | AnalysisResult::VariantReferenceChecked(_)
@@ -1119,12 +1123,15 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     }
     match &response.result {
         AnalysisResult::AssemblyJunctionInspection(report) => {
+            check_scientific_report_version(bytes, &report.verification.engine_version)?;
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::LigationRecipePreview(report) => {
+            check_scientific_report_version(bytes, &report.verification.engine_version)?;
             report.validate_binding(&response.revision)?;
         }
         AnalysisResult::OverlapRecipePreview(report) => {
+            check_scientific_report_version(bytes, &report.verification.engine_version)?;
             report.validate()?;
             if report.context_revision != response.revision {
                 return Err(Error::Format(
@@ -1497,7 +1504,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             if data.len() > crate::workspace::MAX_ARCHIVE_BYTES {
                 return Err(Error::TooLarge);
             }
-            if u16::from_le_bytes([bytes[4], bytes[5]]) < 19 {
+            if u16::from_le_bytes([bytes[4], bytes[5]]) < WORKER_SCHEMA_VERSION {
                 let workspace = crate::workspace::load_workspace(data)?;
                 check_workspace_version(bytes, &workspace)?;
             }
@@ -1641,6 +1648,9 @@ fn preflight_crispr_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     Ok(())
 }
 fn check_scientific_report_version(bytes: &[u8], engine: &str) -> Result<(), Error> {
+    if engine.ends_with("/science-13") {
+        check_variant_version(bytes, 34)?;
+    }
     if engine.ends_with("/science-12") {
         check_variant_version(bytes, 28)?;
     }
@@ -1675,6 +1685,9 @@ fn check_workspace_version(
             check_variant_version(bytes, plan_worker_version(&record.plan))?;
             if record.plan_schema >= 4 {
                 check_variant_version(bytes, 17)?;
+            }
+            if record.plan_schema >= 8 {
+                check_variant_version(bytes, 34)?;
             }
             if record.plan_schema >= 7 {
                 check_variant_version(bytes, 28)?;
@@ -1756,6 +1769,7 @@ fn plan_worker_version(plan: &crate::verification::DesignPlan) -> u16 {
     plan.steps
         .iter()
         .map(|step| match step {
+            crate::verification::Operation::DeclareSourceTermini { .. } => 34,
             crate::verification::Operation::CheckedTopo { .. } => 28,
             crate::verification::Operation::Topo { .. } => 25,
             crate::verification::Operation::RecombineReference { .. } => 22,
@@ -1807,7 +1821,27 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
-        AnalysisJob::InspectAssemblyJunctions { .. } => 33,
+        AnalysisJob::InspectAssemblyJunctions { plan, .. } => plan_worker_version(plan).max(33),
+        AnalysisJob::PreviewOverlapRecipe { recipe, .. }
+            if recipe.fragments.iter().any(|row| {
+                matches!(
+                    row.preparation,
+                    crate::assembly_recipe::Preparation::DeclaredDuplex { .. }
+                )
+            }) =>
+        {
+            34
+        }
+        AnalysisJob::PreviewLigationRecipe { recipe, .. }
+            if recipe.fragments.iter().any(|row| {
+                matches!(
+                    row.source.preparation,
+                    crate::assembly_recipe::Preparation::DeclaredDuplex { .. }
+                )
+            }) =>
+        {
+            34
+        }
         AnalysisJob::PreviewLigationRecipe { .. } => 32,
         AnalysisJob::PreviewOverlapRecipe { .. } => 31,
         AnalysisJob::PrepareVariants { .. }
@@ -1982,7 +2016,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     if let AnalysisJob::LoadWorkspace { bytes: archive } = &r.job {
         // A valid archive cannot hide new operation semantics in an old envelope.
         // Malformed archives retain the ordinary typed worker-error response below.
-        if u16::from_le_bytes([bytes[4], bytes[5]]) < 22 {
+        if u16::from_le_bytes([bytes[4], bytes[5]]) < WORKER_SCHEMA_VERSION {
             if let Ok(workspace) = crate::workspace::load_workspace(archive) {
                 check_workspace_version(bytes, &workspace)?;
             }

@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **33** and reads supported schemas 1–32. Candidate files write schema 9; workspace plan schema is 7; the verifier is science-12.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **34** and reads supported schemas 1–33. Candidate files write schema 10; workspace plan schema is 8; the verifier is science-13.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -363,3 +363,24 @@ plan/candidate/report layouts remain unchanged; native candidate 9, workspace-pl
 The report is readonly evidence and cannot restore chemistry or verification
 from imported metadata. Frames/translation do not establish expression, reading
 frame intent or biological function.
+
+## Explicit original-source termini (schema 34)
+
+`Operation::DeclareSourceTermini` is appended at operation tag 16. It declares
+left/right `Terminus` hypotheses on an eligible original intact linear DNA input,
+without altering source DNA or inferring chemistry from a file. `Preparation::
+DeclaredDuplex` is appended at preparation tag 3 and compiles to that operation.
+Existing enum tags and serialized struct layouts are unchanged.
+
+New semantics require worker 34, candidate 10, workspace-plan 8 and science-13.
+Checks cover direct Verify/PDF requests, the existing preparation preview jobs,
+nested candidate graphs, inline/native workspace jobs and retained-run records.
+A newer declaration or engine report cannot be relabeled under an older header.
+Historical candidates 1–9, workspace plans 1–7 and worker messages 1–33 remain
+readable within their original semantics; loaded reports never restore chemistry.
+The outer native archive/document formats remain version 1.
+
+Original physical/reference-only markers and ssDNA/circular sources remain
+restrictive. Declaring ends on a step is unsupported, unknown groups stay unknown,
+and a declaration neither repairs material nor creates a methylation-generation
+claim. HTML/PDF retain the explicit operator hypothesis. [Scientific contract](DECLARED_SOURCE_TERMINI.md).

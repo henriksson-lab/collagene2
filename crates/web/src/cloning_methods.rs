@@ -3,7 +3,7 @@ use crate::{app::download, worker::CachedWorker};
 use collagene_core::{
     Molecule,
     analysis::Primer,
-    chemistry::{EndRepairMethod, EndTreatment},
+    chemistry::{EndRepairMethod, EndTreatment, FivePrime, Terminus, ThreePrime},
     overlap_profiles::{OverlapMethod, ProfileOptions, ProfileReport},
     protocol::{AnalysisJob, AnalysisResult, Request},
     tailing::TailingBase,
@@ -106,6 +106,7 @@ impl TailInput {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum OverlapPreparation {
     WholeLinear,
+    DeclaredDuplex,
     Digest,
     ExactPcr,
 }
@@ -115,6 +116,8 @@ pub struct OverlapInput {
     pub reverse: bool,
     pub treatment: Treatment,
     pub preparation: OverlapPreparation,
+    pub left_terminus: Terminus,
+    pub right_terminus: Terminus,
     pub enzymes: String,
     pub fragment: String,
     pub repair: Option<EndRepairMethod>,
@@ -132,6 +135,8 @@ impl Default for OverlapInput {
             reverse: false,
             treatment: Treatment::Keep,
             preparation: OverlapPreparation::WholeLinear,
+            left_terminus: Terminus::UNKNOWN,
+            right_terminus: Terminus::UNKNOWN,
             enzymes: "EcoRV".into(),
             fragment: "1".into(),
             repair: None,
@@ -150,6 +155,11 @@ impl OverlapInput {
             OverlapPreparation::WholeLinear => {
                 "Whole linear source (circular DNA requires preparation)".into()
             }
+            OverlapPreparation::DeclaredDuplex => format!(
+                "Declared intact linear duplex assumption; left {}; right {}",
+                declared_terminus(self.left_terminus),
+                declared_terminus(self.right_terminus)
+            ),
             OverlapPreparation::Digest => format!(
                 "Restriction digest: {}; fragment {} (1-based); {}",
                 self.enzymes,
@@ -757,8 +767,9 @@ fn OverlapFields(
     let row = move || config.with(|c| c.rows.get(index).cloned().unwrap_or_default());
     view! {<fieldset class="overlap-source-row"><legend>{format!("Fragment {}",index+1)}</legend>
         <label>"Original source"<select aria-label=move||format!("{} source {}",if config.get().mode==Mode::Ligation{"Ligation"}else{"Overlap"},index+1) prop:value=move||row().document.to_string() on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.document=event_target_value(&e).parse().unwrap_or(0)})>{move||query_options.get().into_iter().map(|(n,label)|view!{<option value=n.to_string()>{label}</option>}).collect_view()}</select></label>
-        <label>"Prepare fragment"<select aria-label=move||format!("{} preparation {}",if config.get().mode==Mode::Ligation{"Ligation"}else{"Overlap"},index+1) prop:value=move||match row().preparation{OverlapPreparation::WholeLinear=>"whole",OverlapPreparation::Digest=>"digest",OverlapPreparation::ExactPcr=>"pcr"} on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.preparation=match event_target_value(&e).as_str(){"digest"=>OverlapPreparation::Digest,"pcr"=>OverlapPreparation::ExactPcr,_=>OverlapPreparation::WholeLinear}})><option value="whole">"Whole linear DNA"</option><option value="digest">"Restriction digest fragment"</option><option value="pcr">"Exact PCR product"</option></select></label>
+        <label>"Prepare fragment"<select aria-label=move||format!("{} preparation {}",if config.get().mode==Mode::Ligation{"Ligation"}else{"Overlap"},index+1) prop:value=move||match row().preparation{OverlapPreparation::WholeLinear=>"whole",OverlapPreparation::DeclaredDuplex=>"declared",OverlapPreparation::Digest=>"digest",OverlapPreparation::ExactPcr=>"pcr"} on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.preparation=match event_target_value(&e).as_str(){"declared"=>OverlapPreparation::DeclaredDuplex,"digest"=>OverlapPreparation::Digest,"pcr"=>OverlapPreparation::ExactPcr,_=>OverlapPreparation::WholeLinear}})><option value="whole">"Whole linear DNA"</option><option value="declared">"Declare intact linear duplex"</option><option value="digest">"Restriction digest fragment"</option><option value="pcr">"Exact PCR product"</option></select></label>
         <Show when=move||row().preparation==OverlapPreparation::WholeLinear><p class="helper">"Use an already linear source. Circular DNA must first be prepared by restriction digest or exact PCR; its origin is not an assumed cut."</p></Show>
+        <Show when=move||row().preparation==OverlapPreparation::DeclaredDuplex><p class="helper">"Operator assumption for an original, intact linear duplex: declare its two terminal groups explicitly. This does not measure chemistry, cut or repair DNA, change its reference sequence, or reuse producer metadata. Circular, single-stranded and imported physical/reference-only intermediate sources are rejected by the core."</p><DeclaredEndFields config index left=true/><DeclaredEndFields config index left=false/><p class="helper">"All groups initially remain unknown. Orientation is applied after this declaration; any ligation terminal treatment remains a separate explicit step."</p></Show>
         <Show when=move||row().preparation==OverlapPreparation::Digest>
             <label>"Restriction enzymes (comma-separated)"<input aria-label=move||format!("{} digest enzymes {}",if config.get().mode==Mode::Ligation{"Ligation"}else{"Overlap"},index+1) prop:value=move||row().enzymes on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.enzymes=event_target_value(&e)})/></label>
             <label>"Digest fragment number (1-based)"<input type="number" min="1" aria-label=move||format!("{} digest fragment {}",if config.get().mode==Mode::Ligation{"Ligation"}else{"Overlap"},index+1) prop:value=move||row().fragment on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.fragment=event_target_value(&e)})/></label>
@@ -821,6 +832,10 @@ fn prepared_rows(
         }
         let preparation = match row.preparation {
             OverlapPreparation::WholeLinear => Preparation::WholeLinear,
+            OverlapPreparation::DeclaredDuplex => Preparation::DeclaredDuplex {
+                left: row.left_terminus,
+                right: row.right_terminus,
+            },
             OverlapPreparation::Digest => {
                 let enzymes = row
                     .enzymes
@@ -989,4 +1004,42 @@ fn method_duplex(summary: &collagene_core::chemistry::DuplexSummary) -> String {
         summary.nicks.len(),
         summary.covalently_closed_in_model
     )
+}
+
+fn declared_terminus(end: Terminus) -> String {
+    format!(
+        "5′ {}; 3′ {}",
+        match end.five_prime {
+            FivePrime::Phosphate => "phosphate",
+            FivePrime::Hydroxyl => "hydroxyl",
+            FivePrime::Unknown => "unknown",
+        },
+        match end.three_prime {
+            ThreePrime::Hydroxyl => "hydroxyl",
+            ThreePrime::Blocked => "blocked",
+            ThreePrime::Unknown => "unknown",
+        }
+    )
+}
+#[component]
+fn DeclaredEndFields(config: RwSignal<MethodsState>, index: usize, left: bool) -> impl IntoView {
+    let end = move || {
+        config.with(|c| {
+            c.rows
+                .get(index)
+                .map(|row| {
+                    if left {
+                        row.left_terminus
+                    } else {
+                        row.right_terminus
+                    }
+                })
+                .unwrap_or(Terminus::UNKNOWN)
+        })
+    };
+    let side = if left { "Left" } else { "Right" };
+    view! {<fieldset><legend>{format!("{side} source end")}</legend><p class="helper">{if left{"Top-strand 5′ terminus and bottom-strand 3′ terminus, before orientation."}else{"Bottom-strand 5′ terminus and top-strand 3′ terminus, before orientation."}}</p>
+        <label>"Declared 5′ group"<select aria-label=format!("Fragment {} {side} declared 5 prime",index+1) prop:value=move||match end().five_prime{FivePrime::Phosphate=>"phosphate",FivePrime::Hydroxyl=>"hydroxyl",FivePrime::Unknown=>"unknown"} on:change=move|e|{let value=match event_target_value(&e).as_str(){"phosphate"=>FivePrime::Phosphate,"hydroxyl"=>FivePrime::Hydroxyl,_=>FivePrime::Unknown};config.update(|c|if let Some(row)=c.rows.get_mut(index){if left{row.left_terminus.five_prime=value}else{row.right_terminus.five_prime=value}})}><option value="unknown">"Unknown"</option><option value="phosphate">"Phosphate (P)"</option><option value="hydroxyl">"Hydroxyl (OH)"</option></select></label>
+        <label>"Declared 3′ group"<select aria-label=format!("Fragment {} {side} declared 3 prime",index+1) prop:value=move||match end().three_prime{ThreePrime::Hydroxyl=>"hydroxyl",ThreePrime::Blocked=>"blocked",ThreePrime::Unknown=>"unknown"} on:change=move|e|{let value=match event_target_value(&e).as_str(){"hydroxyl"=>ThreePrime::Hydroxyl,"blocked"=>ThreePrime::Blocked,_=>ThreePrime::Unknown};config.update(|c|if let Some(row)=c.rows.get_mut(index){if left{row.left_terminus.three_prime=value}else{row.right_terminus.three_prime=value}})}><option value="unknown">"Unknown"</option><option value="hydroxyl">"Hydroxyl (OH)"</option><option value="blocked">"Blocked"</option></select></label>
+    </fieldset>}
 }

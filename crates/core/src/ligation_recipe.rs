@@ -342,6 +342,7 @@ impl Preview {
                     !matches!(
                         s,
                         Operation::Pcr { .. }
+                            | Operation::DeclareSourceTermini { .. }
                             | Operation::Digest { .. }
                             | Operation::RepairEnds { .. }
                             | Operation::TreatEnds { .. }

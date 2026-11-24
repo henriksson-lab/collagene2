@@ -21,7 +21,7 @@ const MAX_INPUT_BASES: usize = 8 << 20;
 pub(crate) const MAX_ROLE_BASES: usize = 16 << 20;
 const MAX_PREPARATION_WORK: usize = 100_000_000;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
-dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer}}}
+dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus}}}
 dto! {pub struct FragmentSpec {pub role:String,pub input_id:String,pub preparation:Preparation,pub reverse:bool}}
 dto! {pub struct Recipe {pub name:String,pub fragments:Vec<FragmentSpec>,pub overlaps:Vec<usize>,pub circular:bool,pub options:ProfileOptions}}
 dto! {pub struct PreparedRow {pub row_index:usize,pub role:String,pub input_id:String,pub input_revision:String,pub preparation_step:Option<usize>,pub repair_step:Option<usize>,pub prepared_source:Source,pub reverse:bool}}
@@ -179,6 +179,10 @@ pub fn preparation_source_preflight(
             .filter(|n| *n <= MAX_ROLE_BASES)
             .ok_or(Error::TooLarge)?;
         let units = match &row.preparation {
+            Preparation::DeclaredDuplex { .. } => {
+                verification::declared_source_termini_preflight(m)?;
+                0
+            }
             Preparation::WholeLinear => {
                 if m.topology != Topology::Linear {
                     return Err(bad(
@@ -303,6 +307,11 @@ pub fn compile_preparations(
         let input = Source::Input(row.input_id.clone());
         let operation = match &row.preparation {
             Preparation::WholeLinear => None,
+            Preparation::DeclaredDuplex { left, right } => Some(Operation::DeclareSourceTermini {
+                template: input.clone(),
+                left: *left,
+                right: *right,
+            }),
             Preparation::Digest {
                 enzymes,
                 fragment_index,
@@ -558,6 +567,7 @@ impl Preview {
                         Operation::Pcr { .. }
                             | Operation::Digest { .. }
                             | Operation::RepairEnds { .. }
+                            | Operation::DeclareSourceTermini { .. }
                     )
                 })
         {

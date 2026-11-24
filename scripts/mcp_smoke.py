@@ -393,6 +393,19 @@ def main():
         ligation_evidence=full_json_artifact(ligation["artifact_id"])
         assert len(ligation_evidence["junctions"])==3 and ligation_evidence["junctions"][-1]["closing"]
         assert tool("verify_plan",{"plan_revision":ligation["plan_revision"]})["status"]=="ConsistentUnderAssumptions"
+        declared_docs=tool("import_document",{"text":">declared_left\nAAAA\n>declared_right\nCCCC\n>declared_independent_target\nAAAACCCC\n"})["documents"]
+        declared_refs={document["name"]:immutable_ref(document) for document in declared_docs}
+        declared_terminus={"five_prime":"Phosphate","three_prime":"Hydroxyl"}
+        declared_fragments=[{"source":{"role":name,"input_id":name,"preparation":{"DeclaredDuplex":{"left":declared_terminus,"right":declared_terminus}},"reverse":False},"treatment":None} for name in ["declared_left","declared_right"]]
+        declared_args={"inputs":[{"id":name,"document":declared_refs[name]} for name in ["declared_left","declared_right"]],"target":declared_refs["declared_independent_target"],"recipe":{"name":"Explicit original duplex termini","fragments":declared_fragments,"circular":False,"allow_nicked":False}}
+        declared=tool("propose_ligation_assembly",declared_args)
+        assert declared["verification"]["status"]=="ConsistentUnderAssumptions" and declared["verification"]["engine_version"].endswith(current_engine_suffix),declared
+        assert declared["product_physical"]["top_length"]==8 and declared["product_physical"]["nick_count"]==0
+        declared_evidence=full_json_artifact(declared["artifact_id"])
+        assert "DeclareSourceTermini" in declared_evidence["compiled"]["plan"]["steps"][0]
+        omitted_args=json.loads(json.dumps(declared_args))
+        for fragment in omitted_args["recipe"]["fragments"]:fragment["source"]["preparation"]="WholeLinear"
+        assert tool("propose_ligation_assembly",omitted_args)["verification"]["status"]=="Incomplete"
         junction_options={"flank_bases":5,"genetic_code":1,"frames":[{"reverse":reverse,"frame":frame} for reverse in [False,True] for frame in range(3)],"max_junctions":128,"include_cds":True}
         junctions=tool("inspect_assembly_junctions",{"plan_revision":ligation["plan_revision"],"options":junction_options})
         assert junctions["verification_status"]=="ConsistentUnderAssumptions" and junctions["junction_count"]==3 and junctions["product_topology"]=="Circular",junctions

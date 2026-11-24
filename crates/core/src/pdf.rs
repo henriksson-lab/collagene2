@@ -808,6 +808,18 @@ pub fn export_protocol_pdf(plan: &DesignPlan, target: &Molecule) -> Result<PdfRe
     layout.heading("Cloning steps")?;
     for (index, step) in plan.steps.iter().enumerate() {
         let body = match step {
+            Operation::DeclareSourceTermini {
+                template,
+                left,
+                right,
+            } => format!(
+                "Declare original intact linear duplex termini for {}: left 5prime {:?} / 3prime {:?}; right 5prime {:?} / 3prime {:?}. These are explicit source-material assumptions, not measured chemistry, imported proof, synthesis or repair of a physical intermediate.",
+                source_name(template),
+                left.five_prime,
+                left.three_prime,
+                right.five_prime,
+                right.three_prime
+            ),
             Operation::Topo {
                 sources,
                 request,

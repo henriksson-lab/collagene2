@@ -77,7 +77,7 @@ async fn catalog_discovery_is_versioned_and_assay_qualifiers_unknown_and_citatio
     let (c, s) = setup().await;
     assert_eq!(
         c.list_tools(Default::default()).await.unwrap().tools.len(),
-        105
+        collagene_mcp::CURRENT_TOOL_COUNT
     );
     let legacy = call(&c, "list_enzymes", json!({})).await;
     assert_eq!(legacy["enzymes"].as_array().unwrap().len(), 12);

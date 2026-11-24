@@ -69,7 +69,7 @@ async fn artifact(c: &Client, id: &Value) -> Value {
 async fn scan_sdk_preserves_recognition_uncertainty_and_never_constructs_products() {
     let (c, s) = setup().await;
     let tools = c.list_tools(Default::default()).await.unwrap().tools;
-    assert_eq!(tools.len(), 105);
+    assert_eq!(tools.len(), collagene_mcp::CURRENT_TOOL_COUNT);
     let tool = tools.iter().find(|t| t.name == "scan_restriction").unwrap();
     assert_eq!(tool.input_schema["additionalProperties"], false);
     assert!(
@@ -174,7 +174,7 @@ async fn scan_sdk_preserves_recognition_uncertainty_and_never_constructs_product
 async fn inspection_sdk_pages_exact_geometry_and_source_without_creating_products() {
     let (c, s) = setup().await;
     let tools = c.list_tools(Default::default()).await.unwrap().tools;
-    assert_eq!(tools.len(), 105);
+    assert_eq!(tools.len(), collagene_mcp::CURRENT_TOOL_COUNT);
     let tool = tools
         .iter()
         .find(|t| t.name == "inspect_restriction")

@@ -1,0 +1,14 @@
+LOCUS       Reference_DNA              7 bp    DNA     linear   SYN 24-NOV-2026
+DEFINITION  Synthetic actual reference, explicitly mapped to chr_demo.
+FEATURES             Location/Qualifiers
+     misc_feature    2..5
+                     /label="source landmark"
+ORIGIN
+        1 aaccgtt
+//
+LOCUS       Independent_design         8 bp    DNA     linear   SYN 24-NOV-2026
+DEFINITION  Independently specified literal alternative design requirement.
+FEATURES             Location/Qualifiers
+ORIGIN
+        1 aactcgtt
+//

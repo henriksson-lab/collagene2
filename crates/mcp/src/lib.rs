@@ -28,6 +28,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+/// Number of tools in the current native registry (historical manifests remain literal).
+pub const CURRENT_TOOL_COUNT: usize = 112;
+
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
 const MAX_DOCUMENT_REVISIONS: usize = 10_000;
@@ -136,6 +139,75 @@ pub struct AlignmentImport {
 #[serde(deny_unknown_fields)]
 pub struct AlignmentDocumentImport {
     pub data_base64: String,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum VariantFormat {
+    Vcf,
+    Bcf,
+}
+impl VariantFormat {
+    fn core(self) -> collagene_core::variant_reference::exchange::Format {
+        match self {
+            Self::Vcf => collagene_core::variant_reference::exchange::Format::Vcf,
+            Self::Bcf => collagene_core::variant_reference::exchange::Format::Bcf,
+        }
+    }
+}
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum VariantExportFormat {
+    Original,
+    Vcf,
+    Bcf,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct VariantImport {
+    pub data_base64: String,
+    pub format: VariantFormat,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct VariantQuery {
+    pub collection: EvidenceRef,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct VariantPage {
+    pub collection: EvidenceRef,
+    #[serde(default)]
+    pub start: usize,
+    #[serde(default = "read_preview")]
+    pub limit: usize,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct VariantCheck {
+    pub collection: EvidenceRef,
+    pub record_index: usize,
+    pub reference: DocumentRef,
+    /// Explicit file contig to actual immutable reference DNA mapping.
+    pub reference_name: String,
+    /// One-based alternative. Never selected from sample genotype columns.
+    pub alternate_index: usize,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct VariantReplay {
+    /// Exact source hash of a private completed collection; no decoded receipt authority.
+    pub source_id: String,
+    pub reference: DocumentRef,
+    pub design: DocumentRef,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct VariantExport {
+    pub collection: EvidenceRef,
+    pub format: VariantExportFormat,
+    #[serde(default = "read_export_cap")]
+    pub max_bytes: usize,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
@@ -1054,9 +1126,22 @@ struct Store {
     annotation_datasets: BTreeMap<String, annotation_formats::AnnotationImportReport>,
     alignments: BTreeMap<String, Arc<alignment_formats::AlignmentDocument>>,
     read_alignments: BTreeMap<String, Arc<collagene_core::read_alignment_store::Collection>>,
+    variants: BTreeMap<String, Arc<collagene_core::variant_reference::exchange::Collection>>,
     contig_reports: BTreeMap<String, String>,
 }
 impl Store {
+    fn variants(
+        &self,
+        reference: &EvidenceRef,
+    ) -> Result<Arc<collagene_core::variant_reference::exchange::Collection>, ErrorData> {
+        if reference.id != reference.revision {
+            return Err(bad("stale variant collection revision"));
+        }
+        self.variants
+            .get(&reference.id)
+            .cloned()
+            .ok_or_else(|| bad("unknown variant collection"))
+    }
     fn read_alignments(
         &self,
         reference: &EvidenceRef,
@@ -1206,6 +1291,50 @@ fn topo_projection_summary(product: &collagene_core::topo::Product) -> Value {
 }
 fn output(value: Value) -> Result<CallToolResult, ErrorData> {
     Ok(CallToolResult::structured(value))
+}
+fn capture_variant(
+    store: &Store,
+    args: &VariantCheck,
+) -> Result<
+    (
+        Arc<collagene_core::variant_reference::exchange::Collection>,
+        Molecule,
+        collagene_core::variant_reference::Options,
+    ),
+    ErrorData,
+> {
+    if args.reference_name.trim().is_empty()
+        || args.reference_name.len() > 1024
+        || args.reference_name.chars().any(char::is_control)
+        || !(1..=64).contains(&args.alternate_index)
+    {
+        return Err(bad(
+            "explicit bounded contig name and 1-based ALT 1..64 required",
+        ));
+    }
+    let collection = store.variants(&args.collection)?;
+    let reference = store.document(&args.reference)?;
+    collagene_core::model::bounds::model_preflight(&[reference]).map_err(bad)?;
+    if collection.record(args.record_index).is_none() {
+        return Err(bad("variant record index unavailable"));
+    }
+    let options = collagene_core::variant_reference::Options {
+        source_blake3: collection.source_blake3().into(),
+        record_index: args.record_index,
+        reference_name: args.reference_name.clone(),
+        expected_reference_revision: args.reference.revision.clone(),
+        alternate_index: args.alternate_index,
+    };
+    Ok((collection, reference.clone(), options))
+}
+fn variant_summary(collection: &collagene_core::variant_reference::exchange::Collection) -> Value {
+    json!({"collection":{"id":collection.source_blake3(),"revision":collection.source_blake3()},
+        "source_blake3":collection.source_blake3(),"source_bytes":collection.original_bytes().len(),
+        "format":match collection.format(){collagene_core::variant_reference::exchange::Format::Vcf=>"vcf",collagene_core::variant_reference::exchange::Format::Bcf=>"bcf"},
+        "record_count":collection.len(),"sample_column_count":collection.header().sample_names().len(),
+        "sample_columns":collection.header().sample_names().iter().take(32).map(|s|read_name(Some(s))).collect::<Vec<_>>(),
+        "sample_columns_truncated":collection.header().sample_names().len()>32,
+        "authority":"Declared file evidence only; header/build/sample/genotype/INFO assertions are unverified. No implicit DNA reference mapping, variant calling or clinical inference."})
 }
 fn read_alignment_summary(collection: &collagene_core::read_alignment_store::Collection) -> Value {
     let summary = collection.summary();
@@ -2761,6 +2890,177 @@ impl CollageneServer {
             output(summary)
         })
         .await
+    }
+    #[tool(
+        description = "Import complete explicit VCF or BCF/BGZF bytes as base64, <=4 MiB decoded under a fixed bounded MCP parser profile. Publishes a private immutable source-hash collection only after complete parsing. Original lexical bytes, header/sample columns, typed INFO/FORMAT and genotype phasing/missingness remain evidence; no build identity, measured genotype, variant calling or clinical inference. No filesystem paths, reference fetching or external executable."
+    )]
+    async fn import_variants(
+        &self,
+        Parameters(args): Parameters<VariantImport>,
+    ) -> Result<CallToolResult, ErrorData> {
+        const CAP: usize = 4 * 1024 * 1024;
+        if args.data_base64.len() > CAP.div_ceil(3) * 4 {
+            return Err(bad("variant MCP source exceeds 4 MiB decoded"));
+        }
+        let server = self.clone();
+        self.compute(move || {
+            let bytes = STANDARD.decode(args.data_base64).map_err(bad)?;
+            if bytes.len() > CAP {
+                return Err(bad("variant MCP source exceeds 4 MiB decoded"));
+            }
+            let collection = collagene_core::variant_reference::exchange::Collection::import(
+                &bytes,
+                args.format.core(),
+                &collagene_core::variants_session::mcp_limits(),
+            )
+            .map_err(bad)?;
+            let id = collection.source_blake3().to_owned();
+            let response = variant_summary(&collection);
+            let mut store = server.store.lock().unwrap();
+            if let Some(existing) = store.variants.get(&id) {
+                if existing.original_bytes() != collection.original_bytes()
+                    || existing.format() != collection.format()
+                {
+                    return Err(bad("variant collection source identity conflict"));
+                }
+            } else {
+                if store.variants.len() >= MAX_ITEMS {
+                    return Err(bad("at most 128 variant collections"));
+                }
+                store.reserve(collection.retained_charge())?;
+                store.variants.insert(id, Arc::new(collection));
+            }
+            output(response)
+        })
+        .await
+    }
+    #[tool(
+        description = "Inspect at most 100 records from a private complete VCF/BCF collection. Full bounded normalized VCF row evidence is in a JSON artifact, retaining sample columns/missingness/phasing and symbolic/breakend declarations; stdio previews explicitly truncate long lines. Positions are declared 1-based, absent stays absent. Header/sample/build assertions are not validated DNA, inventory, measured genotype or clinical evidence."
+    )]
+    async fn inspect_variants(
+        &self,
+        Parameters(args): Parameters<VariantPage>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if !(1..=100).contains(&args.limit) {
+            return Err(bad("variant pages must be 1..100"));
+        }
+        let server = self.clone();
+        self.compute(move||{
+            let collection=server.store.lock().unwrap().variants(&args.collection)?;
+            let rows=collection.page(args.start,args.limit).map_err(bad)?;
+            let full=rows.iter().map(|r|json!({"index":r.index,"reference_name":r.reference_name,"position_1based":r.position_1based,"vcf":r.vcf})).collect::<Vec<_>>();
+            let evidence=json!({"collection":args.collection,"source_blake3":collection.source_blake3(),"start":args.start,"records":full,"interpretation":"Normalized declared variant rows; exact original lexical bytes remain separately available."});
+            let artifact=server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","variant-record-page.json")?;
+            let mut response=variant_summary(&collection);response["start"]=json!(args.start);response["next_start"]=json!(args.start+rows.len());response["done"]=json!(args.start+rows.len()==collection.len());
+            response["records"]=json!(rows.iter().map(|r|json!({"index":r.index,"reference_name":read_name(Some(&r.reference_name)),"reference_name_truncated":r.reference_name.chars().count()>256,"position_1based":r.position_1based,"vcf_preview":r.vcf.chars().take(1024).collect::<String>(),"vcf_preview_truncated":r.vcf.chars().count()>1024})).collect::<Vec<_>>());response["artifact_id"]=json!(artifact);output(response)
+        }).await
+    }
+    #[tool(
+        description = "Freshly compare one explicitly selected 1-based ALT and declared REF against actual immutable DNA DocumentRef with exact file contig mapping. Requires private collection source hash and current document revision; wrong contig/stale identity rejected. Returns bounded source/record/reference-bound JSON evidence. Match only establishes REF correspondence, never genotype, build identity, sample status or variant validity; no name-based automatic reference lookup."
+    )]
+    async fn check_variant_reference(
+        &self,
+        Parameters(args): Parameters<VariantCheck>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move||{
+            let (collection,reference,options)=capture_variant(&server.store.lock().unwrap(),&args)?;
+            let report=collagene_core::variant_reference::check_record(&collection,&reference,&options).map_err(bad)?;
+            let evidence=json!({"collection":args.collection,"reference":args.reference,"report":report});
+            let artifact=server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","variant-reference-check.json")?;
+            output(json!({"collection":args.collection,"reference":args.reference,"record_index":args.record_index,"alternate_index":args.alternate_index,"revision":report.revision,"outcome":report.outcome,"interpretation":report.interpretation,"artifact_id":artifact}))
+        }).await
+    }
+    #[tool(
+        description = "Freshly check a literal selected variant REF/ALT against an explicitly mapped immutable DNA reference, then create an edited reference-only preview. Symbolic/SV/breakend/ambiguous or mismatching alleles cannot produce a preview. Atomically installs reference-only document plus bounded source/reference-bound JSON artifact; never physical material, confirmed genotype or target-guided variant selection. Original sources remain unchanged."
+    )]
+    async fn preview_variant_allele(
+        &self,
+        Parameters(args): Parameters<VariantCheck>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move||{
+            let (collection,reference,options)=capture_variant(&server.store.lock().unwrap(),&args)?;
+            let preview=collagene_core::variant_reference::preview(&collection,&reference,&options).map_err(bad)?;
+            let evidence=json!({"collection":args.collection,"reference":args.reference,"report":preview.report,"interpretation":"Reference-only explicit selected-allele design; no measured genotype or physical-material authority."});
+            let (artifact,document)=server.candidate_document_artifact_bounded(&evidence,Some(preview.molecule),"variant-allele-preview.json",32*1024*1024)?;
+            output(json!({"collection":args.collection,"reference":args.reference,"record_index":args.record_index,"alternate_index":args.alternate_index,"revision":preview.report.revision,"outcome":preview.report.outcome,"reference_only":true,"document":document,"artifact_id":artifact}))
+        }).await
+    }
+    #[tool(
+        description = "Replay a retained variant reference-only preview from its bounded unverified recipe against the original private collection source_id and actual immutable reference/design DocumentRefs. Freshly reconstructs and compares literal DNA plus topology only. Returns full bounded source/reference/design-bound JSON evidence and claimed/fresh revisions; installs nothing and restores no genotype, physical chemistry, biological function or historical verification authority. Designs without retained recipes require explicit original record/ALT selection instead."
+    )]
+    async fn replay_variant_preview(
+        &self,
+        Parameters(args): Parameters<VariantReplay>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.source_id.len() != 64
+            || !args
+                .source_id
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
+            return Err(bad("source_id must be the exact private collection BLAKE3"));
+        }
+        let server = self.clone();
+        self.compute(move||{
+            let (collection,reference,design)={
+                let store=server.store.lock().unwrap();
+                let collection=store.variants(&EvidenceRef{id:args.source_id.clone(),revision:args.source_id.clone()})?;
+                let reference=store.document(&args.reference)?;let design=store.document(&args.design)?;
+                collagene_core::model::bounds::model_preflight(&[reference,design]).map_err(bad)?;
+                (collection,reference.clone(),design.clone())
+            };
+            let replay=collagene_core::variant_reference::replay_preview(&collection,&reference,&design).map_err(bad)?;
+            let fresh_revision=replay.fresh.molecule.revision();
+            let evidence=json!({"source_id":args.source_id,"reference":args.reference,"design":args.design,"fresh_revision":fresh_revision,"replay":replay});
+            let artifact=server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","variant-preview-replay.json")?;
+            output(json!({"source_id":args.source_id,"reference":args.reference,"design":args.design,
+                "literal_dna_and_topology_match":replay.literal_dna_and_topology_match,"claimed_revision":replay.claimed_revision,"fresh_revision":fresh_revision,"interpretation":replay.interpretation,"artifact_id":artifact}))
+        }).await
+    }
+    #[tool(
+        description = "Export a private completed variant collection as exact original bytes or normalized VCF/BCF, with explicit conversion notices/errors for unsupported representations. Returns bounded binary artifact read via read_artifact; any codec/size/storage failure publishes no partial artifact. No paths or external bcftools. Original is the byte-exact evidence mode."
+    )]
+    async fn export_variants(
+        &self,
+        Parameters(args): Parameters<VariantExport>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.max_bytes == 0 || args.max_bytes > MAX_STORE_BYTES {
+            return Err(bad("variant export byte cap must be 1..64 MiB"));
+        }
+        let server = self.clone();
+        self.compute(move||{
+            use collagene_core::variant_reference::exchange::{Format,ExportFormat};
+            let collection=server.store.lock().unwrap().variants(&args.collection)?;
+            let mode=match args.format{VariantExportFormat::Original=>ExportFormat::Original,VariantExportFormat::Vcf=>ExportFormat::Vcf,VariantExportFormat::Bcf=>ExportFormat::Bcf};
+            let format=match args.format{VariantExportFormat::Original=>collection.format(),VariantExportFormat::Vcf=>Format::Vcf,VariantExportFormat::Bcf=>Format::Bcf};
+            let exported=collection.export(mode,args.max_bytes).map_err(bad)?;let len=exported.bytes.len();
+            let artifact=server.binary_artifact(exported.bytes,"application/octet-stream",if format==Format::Vcf{"variants.vcf"}else{"variants.bcf"})?;
+            output(json!({"collection":args.collection,"source_blake3":collection.source_blake3(),"bytes":len,"format":if format==Format::Vcf{"vcf"}else{"bcf"},"original":matches!(args.format,VariantExportFormat::Original),"notices":exported.notices,"artifact_id":artifact}))
+        }).await
+    }
+    #[tool(
+        description = "Dispose one exact private variant collection source-hash handle, releasing its retained session charge. Existing independent output artifacts/reference previews remain unchanged. A serialized collection summary cannot restore parser authority; reimport exact original bytes explicitly."
+    )]
+    async fn dispose_variants(
+        &self,
+        Parameters(args): Parameters<VariantQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let mut store = self.store.lock().unwrap();
+        let collection = store.variants(&args.collection)?;
+        if Arc::strong_count(&collection) > 2 {
+            return Err(bad(
+                "variant collection is busy; retry disposal after active requests finish",
+            ));
+        }
+        let used = store
+            .used
+            .checked_sub(collection.retained_charge())
+            .ok_or_else(|| bad("variant retained accounting mismatch"))?;
+        store.variants.remove(&args.collection.id);
+        store.used = used;
+        output(json!({"disposed":true,"collection":args.collection}))
     }
     #[tool(
         description = "Import a complete explicit SAM or BAM/BGZF file as base64, up to4MiB decoded under finite source/record/retention limits. Strict EOF/framing/CRC completion publishes an immutable source-hash collection atomically; any parser/resource failure publishes nothing. All records, flags, exact header/dictionary, absent SEQ/QUAL, auxiliary evidence and original bytes remain retained. Parsing is not alignment, reference validation, coverage or variant evidence; no paths, URI/M5 lookup, network fetch or external aligner."

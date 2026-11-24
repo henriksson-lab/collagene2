@@ -124,7 +124,7 @@ async fn fixture(c: &Client) -> (Value, t::Request) {
 async fn topo_sdk_retains_nicks_all_orientations_and_explicit_independent_target_policy() {
     let (c, s) = setup().await;
     let tools = c.list_tools(Default::default()).await.unwrap().tools;
-    assert_eq!(tools.len(), 105);
+    assert_eq!(tools.len(), collagene_mcp::CURRENT_TOOL_COUNT);
     for name in [
         "simulate_topo",
         "inspect_topo_orientations",

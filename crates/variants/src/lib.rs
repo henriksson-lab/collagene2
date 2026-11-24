@@ -118,6 +118,7 @@ pub struct Collection {
     header: vcf::Header,
     records: Vec<Stored>,
     limits: Limits,
+    retained_charge: usize,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Row {
@@ -150,8 +151,12 @@ impl Collection {
             .ok_or_else(|| invalid("size overflow"))?;
         bounded(estimated, limits.retained_bytes)?;
         let decoded;
-        let raw = if format == Format::Bcf && bytes.starts_with(&[31, 139]) {
-            decoded = decode_bgzf(bytes, limits.decoded_bytes)?;
+        let raw = if bytes.starts_with(&[31, 139]) {
+            decoded = if format == Format::Bcf || gzip_has_bc(bytes)? {
+                decode_bgzf(bytes, limits.decoded_bytes)?
+            } else {
+                decode_gzip(bytes, limits.decoded_bytes)?
+            };
             decoded.as_slice()
         } else {
             bounded(bytes.len(), limits.decoded_bytes)?;
@@ -203,7 +208,13 @@ impl Collection {
             header,
             records,
             limits: limits.clone(),
+            retained_charge: estimated,
         })
+    }
+    /// Conservative import reservation, including bounded decode/validation scratch.
+    /// This is a host budget charge, not a measurement of allocator resident bytes.
+    pub fn retained_charge(&self) -> usize {
+        self.retained_charge
     }
     pub fn source_blake3(&self) -> &str {
         &self.hash
@@ -726,6 +737,65 @@ fn decode_bgzf(bytes: &[u8], cap: usize) -> io::Result<Vec<u8>> {
     }
     if !eof {
         return Err(invalid("missing BGZF EOF"));
+    }
+    Ok(out)
+}
+
+// A BC extra subfield opts the entire stream into strict BGZF framing/EOF.
+fn gzip_has_bc(bytes: &[u8]) -> io::Result<bool> {
+    if bytes.len() < 10 || bytes[..3] != [31, 139, 8] || bytes[3] & 0xe0 != 0 {
+        return Err(invalid("gzip header"));
+    }
+    if bytes[3] & 4 == 0 {
+        return Ok(false);
+    }
+    let length = bytes
+        .get(10..12)
+        .ok_or_else(|| invalid("gzip extra header"))?;
+    let end = add(
+        12,
+        u16::from_le_bytes([length[0], length[1]]) as usize,
+        bytes.len(),
+    )?;
+    let mut at = 12;
+    let mut bc = false;
+    while at < end {
+        let h = bytes
+            .get(at..at + 4)
+            .filter(|_| at + 4 <= end)
+            .ok_or_else(|| invalid("gzip extra framing"))?;
+        let next = add(at + 4, u16::from_le_bytes([h[2], h[3]]) as usize, end)?;
+        bc |= &h[..2] == b"BC";
+        at = next;
+    }
+    Ok(bc)
+}
+fn decode_gzip(bytes: &[u8], cap: usize) -> io::Result<Vec<u8>> {
+    let mut remaining = bytes;
+    let mut out = Vec::new();
+    let mut members = 0usize;
+    while !remaining.is_empty() {
+        members += 1;
+        bounded(members, 65_536)?;
+        if gzip_has_bc(remaining)? {
+            return Err(invalid("mixed standard gzip and BGZF members"));
+        }
+        let before = remaining.len();
+        // BufRead over a slice preserves exact member boundaries; the decoder
+        // verifies header/trailer CRC and ISIZE, and trailing data is never ignored.
+        let mut decoder = flate2::bufread::GzDecoder::new(remaining);
+        let room = cap
+            .checked_sub(out.len())
+            .ok_or_else(|| invalid("gzip decoded limit"))?;
+        decoder
+            .by_ref()
+            .take(room as u64 + 1)
+            .read_to_end(&mut out)?;
+        bounded(out.len(), cap)?;
+        remaining = decoder.into_inner();
+        if remaining.len() >= before {
+            return Err(invalid("gzip member made no progress"));
+        }
     }
     Ok(out)
 }

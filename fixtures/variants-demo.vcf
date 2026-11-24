@@ -1,0 +1,9 @@
+##fileformat=VCFv4.3
+##contig=<ID=chr_demo,length=7>
+##ALT=<ID=DEL,Description="Declared symbolic deletion">
+##INFO=<ID=END,Number=1,Type=Integer,Description="Declared end">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Declared allele columns">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	reported_column
+chr_demo	3	insertion_design	CC	CTC	.	PASS	.	GT	0|1
+chr_demo	5	multiallelic	G	A,T	.	PASS	.	GT	./2
+chr_demo	6	symbolic_evidence	T	<DEL>	.	PASS	END=7	GT	./.

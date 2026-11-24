@@ -87,7 +87,7 @@ async fn explicit_profile_discovery_all_reciprocal_components_and_fresh_checked_
     let (c, s) = setup().await;
     assert_eq!(
         c.list_tools(Default::default()).await.unwrap().tools.len(),
-        105
+        collagene_mcp::CURRENT_TOOL_COUNT
     );
     let (sources, request, target) = prepare(&c).await;
     let r = call(

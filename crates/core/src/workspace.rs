@@ -391,6 +391,13 @@ impl Workspace {
                 // mappings must be recreated from the exact bytes on reopening.
                 crate::read_alignment_archive::inspect(attachment)?;
             }
+            if matches!(
+                attachment.kind.as_str(),
+                crate::variants_archive::VCF_SOURCE_KIND | crate::variants_archive::BCF_SOURCE_KIND
+            ) {
+                // Archive membership restores exact source bytes, never parsed calls.
+                crate::variants_archive::inspect(attachment)?;
+            }
             charge(&mut expanded, attachment.bytes.len(), MAX_EXPANDED_BYTES)?;
         }
         crate::run_lineage::validate_workspace_runs(self)?;

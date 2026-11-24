@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 28;
+pub const WORKER_SCHEMA_VERSION: u16 = 29;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 9;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -587,6 +587,33 @@ pub enum AnalysisJob {
         target: Molecule,
         policy: crate::topo::AcceptancePolicy,
     },
+    PrepareVariants {
+        bytes: Vec<u8>,
+        format: crate::variants_session::FileFormat,
+    },
+    VariantPage {
+        source_hash: String,
+        start: usize,
+        count: usize,
+    },
+    CheckVariantReference {
+        source_hash: String,
+        reference: Molecule,
+        options: crate::variant_reference::Options,
+    },
+    PreviewVariantAllele {
+        source_hash: String,
+        reference: Molecule,
+        options: crate::variant_reference::Options,
+    },
+    ExportVariants {
+        source_hash: String,
+        format: crate::variants_session::ExportFormat,
+        max_output_bytes: usize,
+    },
+    DisposeVariants {
+        source_hash: String,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -676,6 +703,12 @@ pub enum AnalysisResult {
     TopoTarget(crate::topo::TargetAssessment),
     AnnotatedTopoProjection(crate::topo::AnnotatedProduct),
     AnnotatedTopoTarget(crate::topo::AnnotatedAssessment),
+    VariantsPrepared(crate::variants_session::Prepared),
+    VariantPage(crate::variants_session::Page),
+    VariantReferenceChecked(crate::variants_session::Checked),
+    VariantAllelePreview(crate::variants_session::Previewed),
+    VariantsExported(crate::variants_session::Exported),
+    VariantsDisposed(crate::variants_session::Disposed),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -904,6 +937,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_read_alignment_tag(bytes, &[69, 70, 71, 72, 73])?;
     preflight_topo_tag(bytes, &[74, 75, 76, 77])?;
     preflight_annotated_topo_tag(bytes, &[78, 79])?;
+    preflight_variants_tag(bytes, &[80, 81, 82, 83, 84, 85])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -957,6 +991,12 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         _ => decode_with_limit(b"CGR\0", bytes, maximum)?,
     };
     let required = match &response.result {
+        AnalysisResult::VariantsPrepared(_)
+        | AnalysisResult::VariantPage(_)
+        | AnalysisResult::VariantReferenceChecked(_)
+        | AnalysisResult::VariantAllelePreview(_)
+        | AnalysisResult::VariantsExported(_)
+        | AnalysisResult::VariantsDisposed(_) => 29,
         AnalysisResult::AnnotatedTopoProjection(_) | AnalysisResult::AnnotatedTopoTarget(_) => 27,
         AnalysisResult::TopoSimulation(_)
         | AnalysisResult::TopoOrientations(_)
@@ -1051,6 +1091,42 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
     }
     match &response.result {
+        AnalysisResult::VariantsPrepared(report) => {
+            report.validate()?;
+            if report.revision != response.revision {
+                return Err(Error::Format("variant response context changed".into()));
+            }
+        }
+        AnalysisResult::VariantPage(report) => {
+            report.validate()?;
+            if report.revision != response.revision {
+                return Err(Error::Format("variant response context changed".into()));
+            }
+        }
+        AnalysisResult::VariantReferenceChecked(report) => {
+            report.validate()?;
+            if report.revision != response.revision {
+                return Err(Error::Format("variant response context changed".into()));
+            }
+        }
+        AnalysisResult::VariantAllelePreview(report) => {
+            report.validate()?;
+            if report.revision != response.revision {
+                return Err(Error::Format("variant response context changed".into()));
+            }
+        }
+        AnalysisResult::VariantsExported(report) => {
+            report.validate()?;
+            if report.revision != response.revision {
+                return Err(Error::Format("variant response context changed".into()));
+            }
+        }
+        AnalysisResult::VariantsDisposed(report) => {
+            report.validate()?;
+            if report.revision != response.revision {
+                return Err(Error::Format("variant response context changed".into()));
+            }
+        }
         AnalysisResult::AnnotatedTopoProjection(report) => {
             crate::topo_worker::validate_annotated_projection(report, &response.revision)?
         }
@@ -1435,6 +1511,14 @@ fn preflight_topo_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     }
     Ok(())
 }
+fn preflight_variants_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 29)?;
+    }
+    Ok(())
+}
 fn preflight_annotated_topo_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -1635,6 +1719,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_read_alignment_tag(bytes, &[77, 78, 79, 80, 81])?;
     preflight_topo_tag(bytes, &[82, 83, 84, 85])?;
     preflight_annotated_topo_tag(bytes, &[86, 87])?;
+    preflight_variants_tag(bytes, &[88, 89, 90, 91, 92, 93])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -1642,6 +1727,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::PrepareVariants { .. }
+        | AnalysisJob::VariantPage { .. }
+        | AnalysisJob::CheckVariantReference { .. }
+        | AnalysisJob::PreviewVariantAllele { .. }
+        | AnalysisJob::ExportVariants { .. }
+        | AnalysisJob::DisposeVariants { .. } => 29,
         AnalysisJob::ProjectAnnotatedTopo { .. } | AnalysisJob::CheckAnnotatedTopoTarget { .. } => {
             27
         }
@@ -1805,6 +1896,16 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let mol = match &r.job {
+        AnalysisJob::PrepareVariants { .. }
+        | AnalysisJob::VariantPage { .. }
+        | AnalysisJob::CheckVariantReference { .. }
+        | AnalysisJob::PreviewVariantAllele { .. }
+        | AnalysisJob::ExportVariants { .. }
+        | AnalysisJob::DisposeVariants { .. } => {
+            return Err(Error::Unsupported(
+                "variant operations require a persistent worker session".into(),
+            ));
+        }
         AnalysisJob::ProjectAnnotatedTopo {
             inputs,
             request,
@@ -2276,6 +2377,14 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let result = match r.job {
+        AnalysisJob::PrepareVariants { .. }
+        | AnalysisJob::VariantPage { .. }
+        | AnalysisJob::CheckVariantReference { .. }
+        | AnalysisJob::PreviewVariantAllele { .. }
+        | AnalysisJob::ExportVariants { .. }
+        | AnalysisJob::DisposeVariants { .. } => Err(Error::Unsupported(
+            "variant operations require a persistent worker session".into(),
+        )),
         AnalysisJob::ProjectAnnotatedTopo {
             inputs,
             request,
@@ -2760,6 +2869,7 @@ pub struct AnalysisSession {
     tracks: Option<crate::view_tracks::PreparedTracks>,
     genomes: crate::genome_session::GenomeSession,
     read_alignments: crate::read_alignment_session::Session,
+    variants: crate::variants_session::Session,
 }
 impl AnalysisSession {
     pub fn process_request(&mut self, bytes: &[u8]) -> Result<Vec<u8>, Error> {
@@ -2773,17 +2883,26 @@ impl AnalysisSession {
         // private worker state; all other jobs use ordinary stateless dispatch.
         let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
             .map_err(|e| Error::Format(e.to_string()))?;
-        if !matches!(tag, 32 | 33 | 53..=66 | 77..=81) {
+        if !matches!(tag, 32 | 33 | 53..=66 | 77..=81 | 88..=93) {
             return process_request(bytes);
         }
         if (53..=66).contains(&tag) {
             check_variant_version(bytes, 19)?;
+        }
+        if (88..=93).contains(&tag) {
+            check_variant_version(bytes, 29)?;
         }
         if (77..=81).contains(&tag) {
             check_variant_version(bytes, 24)?;
         }
         let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
         let result = match r.job {
+            job @ (AnalysisJob::PrepareVariants { .. }
+            | AnalysisJob::VariantPage { .. }
+            | AnalysisJob::CheckVariantReference { .. }
+            | AnalysisJob::PreviewVariantAllele { .. }
+            | AnalysisJob::ExportVariants { .. }
+            | AnalysisJob::DisposeVariants { .. }) => self.variants.process(job, &r.revision)?,
             job @ (AnalysisJob::PrepareReadAlignments { .. }
             | AnalysisJob::ReadAlignmentPage { .. }
             | AnalysisJob::CheckReadAlignment { .. }

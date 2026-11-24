@@ -71,6 +71,10 @@ mod topo_view;
 #[cfg(target_arch = "wasm32")]
 mod trace_validation;
 #[cfg(target_arch = "wasm32")]
+mod variant_source_library;
+#[cfg(target_arch = "wasm32")]
+mod variants_view;
+#[cfg(target_arch = "wasm32")]
 mod workspace_layout;
 #[cfg(any(target_arch = "wasm32", test))]
 mod workspace_preferences;

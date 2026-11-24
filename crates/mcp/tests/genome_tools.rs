@@ -99,7 +99,7 @@ async fn native_sdk_chunked_reference_global_seam_guides_private_search_and_expo
     let (c, s) = setup().await;
     assert_eq!(
         c.list_tools(Default::default()).await.unwrap().tools.len(),
-        105
+        collagene_mcp::CURRENT_TOOL_COUNT
     );
     let (bytes, build) = fixture();
     let before = call(&c, "list_documents", json!({})).await;

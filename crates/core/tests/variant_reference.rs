@@ -68,3 +68,26 @@ fn names_and_symbolic_claims_cannot_authorize_an_edit() {
     );
     assert!(v::preview(&c, &ambiguous, &options(&c, &ambiguous)).is_err());
 }
+
+#[test]
+fn saved_design_recipe_replays_actual_sources_and_rejects_a_changed_result() {
+    let c =
+        exchange::Collection::import(SOURCE, exchange::Format::Vcf, &exchange::Limits::default())
+            .unwrap();
+    let original = Molecule::dna("actual reference", "AACCGTT", Topology::Linear).unwrap();
+    let mut design = v::preview(&c, &original, &options(&c, &original))
+        .unwrap()
+        .molecule;
+    design.name = "renamed historical design".into();
+    let replay = v::replay_preview(&c, &original, &design).unwrap();
+    assert!(replay.literal_dna_and_topology_match);
+    assert_eq!(replay.fresh.molecule.sequence.as_str(), "AACTCGTT");
+    let edited = design.replace(0, 1, "T").unwrap();
+    assert!(
+        !v::replay_preview(&c, &original, &edited)
+            .unwrap()
+            .literal_dna_and_topology_match
+    );
+    let changed_reference = Molecule::dna("actual reference", "AATCGTT", Topology::Linear).unwrap();
+    assert!(v::replay_preview(&c, &changed_reference, &design).is_err());
+}

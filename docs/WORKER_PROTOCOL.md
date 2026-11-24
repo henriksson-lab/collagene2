@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **28** and reads supported schemas 1–27. Candidate files write schema 9; workspace plan schema is 7; the verifier is science-12.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **29** and reads supported schemas 1–28. Candidate files write schema 9; workspace plan schema is 7; the verifier is science-12.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -100,6 +100,12 @@ Postcard enum indexes are append-only. Existing tags and supported historical la
 | 85 | CheckTopoTarget | 26 |
 | 86 | ProjectAnnotatedTopo | 27 |
 | 87 | CheckAnnotatedTopoTarget | 27 |
+| 88 | PrepareVariants | 29 |
+| 89 | VariantPage | 29 |
+| 90 | CheckVariantReference | 29 |
+| 91 | PreviewVariantAllele | 29 |
+| 92 | ExportVariants | 29 |
+| 93 | DisposeVariants | 29 |
 
 Result tags 0–29 retain their selectors (verification gains explicit versioned step evidence in schema 25) (`Search`, `Restriction`, `Error`, `Pcr`, `Verification`, `DuplexDigest`, `Translation`, `CdsTranslation`, `Orfs`, `Alignment`, `PcrDocuments`, `PrimerEvidence`, `PrimerDesign`, `ProtocolPdf`, `GoldenGate`, `MismatchPcr`, `InversePcr`, `Gel`, `DiagnosticDigest`, `MismatchPcrPreview`, `WorkspaceSaved`, `WorkspaceLoaded`, `TraceValidation`, `FeatureLibraryScan`, `AnnotatedDocument`, `AnnotationImport`, `AnnotationExport`, `RepairPreview`, `AnnealPreview`, `PhysicalPreviewDocument`). Schema 9 appends `ViewTracks` at tag 30, `DocumentSearch` at tag 31 and `TracksPrepared` at tag 32. New response variants cannot be decoded under older version labels.
 
@@ -292,3 +298,14 @@ require9, workspace plans require7, and science12 reports require28. No new
 report field or standalone worker job is introduced, preserving the schema27
 report layout. Explicit reverse/rotation policies are also used by native run
 capture; acceptance never promotes a reference view into an intact duplex.
+
+## Variant sessions (schema29)
+
+Results80–85 append completed-source summaries, bounded normalized pages, fresh
+actual-reference checks, fresh selected-allele previews, exports and disposal.
+Source hashes and complete request options bind every result. A private parsed
+Collection is required; JSON summaries and decoded reports cannot reconstitute
+one. Stateless routing rejects session-required jobs. Preview DNA retains its
+chemistry-unmapped design guard and is not a confirmed genotype or prepared
+substrate. Explicit reference-event identity adds a separate browser lifecycle
+boundary, including equal-content documents and workspace replacement.

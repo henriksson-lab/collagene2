@@ -172,3 +172,16 @@
 .sequence-paint-stack { position:sticky; top:0; width:100%; }
 .sequence-paint-stack > .sequence-canvas { position:absolute; inset:0; }
 .sequence-glyph-canvas { position:absolute; inset:0; pointer-events:none; z-index:1; display:none; }
+
+.modal:has(.variants-panel) { width:min(1120px,96vw); max-width:96vw; }
+.variants-panel { min-width:0; overflow-wrap:anywhere; }
+.variant-source-actions,.variant-pages,.variant-export { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:12px 0; }
+.variant-mapping { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:14px 0; }
+.variant-mapping label { display:flex; flex-direction:column; gap:5px; min-width:0; }
+.variant-mapping input,.variant-mapping select,.variant-export select { max-width:100%; }
+.variant-table-wrap { max-height:360px; overflow:auto; border:1px solid #d9e1dc; }
+.variant-rows { width:100%; border-collapse:collapse; font-size:12px; }
+.variant-rows th { position:sticky; top:0; background:#fff; text-align:left; z-index:1; }
+.variant-rows th,.variant-rows td { padding:7px; border-bottom:1px solid #e1e7e2; vertical-align:top; overflow-wrap:anywhere; }
+.variants-panel pre { max-width:100%; max-height:280px; overflow:auto; white-space:pre; background:#f4f7f5; padding:9px; font:12px/1.6 ui-monospace,monospace; }
+.variant-reference-check,.variant-design-preview { padding:12px 0; border-top:1px solid #d9e1dc; }

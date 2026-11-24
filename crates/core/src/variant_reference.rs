@@ -178,6 +178,10 @@ pub fn preview(
     let (Some(start), Some(end)) = (report.start, report.end) else {
         return Err(bad("no checked edit span"));
     };
+    let recipe = serde_json::to_string(options).map_err(|e| bad(e.to_string()))?;
+    if recipe.len() > 4096 {
+        return Err(Error::TooLarge);
+    }
     let mut molecule = reference.replace(start, end, &report.declared_alternative)?;
     // A selected file allele supplies a design requirement, not prepared DNA.
     // Keep it usable as an independent target without materializing chemistry.
@@ -195,6 +199,38 @@ pub fn preview(
         .metadata
         .insert("variant:reference_check".into(), report.revision.clone());
     molecule.metadata.insert("variant:interpretation".into(),"Explicit selected-allele design preview; file evidence is not a measured allele or confirmed genotype".into());
+    molecule
+        .metadata
+        .insert("variant:unverified_recipe".into(), recipe);
     molecule.validate()?;
     Ok(Preview { report, molecule })
+}
+
+dto! {pub struct ReplayedPreview {
+    pub claimed_revision:String,pub literal_dna_and_topology_match:bool,
+    pub fresh:Preview,pub interpretation:String,
+}}
+/// Historical options locate the request, never authorize its result. Both the
+/// original private file collection and exact actual reference are required.
+/// Names/annotations may have been edited after opening a design; comparison
+/// is explicitly limited to literal DNA and topology, not chemical state.
+pub fn replay_preview(
+    collection: &exchange::Collection,
+    reference: &Molecule,
+    claimed: &Molecule,
+) -> Result<ReplayedPreview, Error> {
+    crate::model::bounds::model_preflight(&[reference, claimed])?;
+    claimed.validate()?;
+    if claimed.sequence.alphabet() != Alphabet::Dna {
+        return Err(bad("historical design must be DNA"));
+    }
+    let recipe=claimed.metadata.get("variant:unverified_recipe").ok_or_else(||bad("historical design has no retained allele recipe; select its original record and alternative explicitly"))?;
+    if recipe.len() > 4096 {
+        return Err(Error::TooLarge);
+    }
+    let options: Options = serde_json::from_str(recipe).map_err(|e| bad(e.to_string()))?;
+    let fresh = preview(collection, reference, &options)?;
+    let matches =
+        claimed.topology == fresh.molecule.topology && claimed.sequence == fresh.molecule.sequence;
+    Ok(ReplayedPreview{claimed_revision:claimed.revision(),literal_dna_and_topology_match:matches,fresh,interpretation:"Fresh source-file and actual-reference reconstruction only. Historical recipe text and a matching designed sequence do not restore genotype, biological function, prepared chemistry or earlier verification authority.".into()})
 }

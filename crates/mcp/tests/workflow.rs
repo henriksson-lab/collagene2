@@ -17,7 +17,7 @@ async fn candidate_verification_and_artifact_workflow() {
     });
     let client = ().serve(client_io).await.unwrap();
     let tools = client.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 105);
+    assert_eq!(tools.len(), collagene_mcp::CURRENT_TOOL_COUNT);
     let plan_tool = tools.iter().find(|t| t.name == "propose_plan").unwrap();
     assert_eq!(plan_tool.input_schema["additionalProperties"], false);
     let schema = serde_json::to_string(&plan_tool.input_schema).unwrap();

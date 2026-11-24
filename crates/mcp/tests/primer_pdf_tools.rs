@@ -57,7 +57,7 @@ async fn primer_evidence_design_pdf_artifacts_and_provider_selection_contracts()
         }};
     }
     let tools = client.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 105);
+    assert_eq!(tools.len(), collagene_mcp::CURRENT_TOOL_COUNT);
     for name in [
         "analyze_primer",
         "design_primers",

@@ -100,7 +100,9 @@ ORIGIN
     assert b.evaluate("Number(document.querySelector('.sequence-canvas').dataset.paintedTracks)>0")
     assert b.evaluate("(()=>{const c=document.querySelector('.sequence-canvas');return c.getContext('2d').getImageData(0,0,c.width,c.height).data.some(v=>v!==255&&v!==0)})()")
     # A real canvas click on forward-frame residue 1 maps AAA back to bases1..3.
-    b.evaluate("(()=>{const c=document.querySelector('.sequence-canvas'),r=c.getBoundingClientRect();c.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:r.left+68,clientY:r.top+202}));})()")
+    # Annotation/primer rows are source-dependent; the two requested enzyme
+    # rows precede forward frame0. Keep the literal AAA→K / bases1..3 oracle.
+    b.evaluate("(()=>{const c=document.querySelector('.sequence-canvas'),r=c.getBoundingClientRect(),offset=Number(c.dataset.featureLanes)+Number(c.dataset.primerLanes)+2,y=66+18*offset+10;c.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:r.left+68,clientY:r.top+y}));})()")
     b.wait("document.querySelector('.track-selection')?.textContent.includes('residue 1 (K)')")
     assert b.evaluate("document.querySelector('.statusbar').textContent.includes('1–3')")
     b.screenshot('/tmp/collagene2-sequence-tracks.png')

@@ -12,7 +12,7 @@ import time
 
 
 SUITES = (
-    "worker_release_browser", "workspace_navigation_browser", "renderer_resize_browser", "desktop_mvp_browser", "catalog_digest_browser", "recombination_browser", "browser", "format_browser", "biology_browser",
+    "worker_release_browser", "workspace_navigation_browser", "renderer_resize_browser", "annotation_layout_browser", "desktop_mvp_browser", "catalog_digest_browser", "recombination_browser", "browser", "format_browser", "biology_browser",
     "primer_source_browser", "cloning_gel_browser", "workspace_browser",
     "reads_oligos_browser", "annotation_library_browser", "physical_browser",
     "clipboard_legacy_browser", "search_tracks_browser", "alignment_browser",

@@ -18,6 +18,11 @@
 .rail-spacer { flex:1; min-height:24px; }
 .workspace-shell main { padding:0; background:#fff; }
 .active-document { display:flex; flex-direction:column; min-width:0; min-height:0; flex:1; }
+.annotation-layout-note { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 12px; border-bottom:1px solid #e4e9e7; background:#fafbf8; font-size:11px; color:#64776c; flex:none; }
+.annotation-layout-note .text-tool { font-size:11px; padding:4px 6px; flex:none; }
+.annotation-row-controls { display:flex; flex-wrap:wrap; gap:12px; }
+.annotation-row-controls label { display:flex; align-items:center; gap:7px; font-size:12px; }
+.annotation-row-controls select { width:60px; padding:4px; }
 .workspace-shell .document-header>div:first-child { min-width:0; }
 .workspace-shell .document-header h1 { overflow-wrap:anywhere; }
 .workspace-shell .document-header { padding:15px 20px 13px; gap:12px; border-bottom:1px solid #e3e8e9; flex-shrink:0; }

@@ -43,7 +43,7 @@ impl ResizeListener {
         let active = Rc::new(std::cell::Cell::new(true));
         let active_for_callback = active.clone();
         let observed = element.clone();
-        let previous = std::cell::Cell::new(None::<(i32, i32)>);
+        let previous = std::cell::Cell::new(None::<(i32, i32, u64, u64)>);
         let action = Rc::new(callback);
         let callback =
             Closure::<dyn FnMut(js_sys::Array, web_sys::ResizeObserver)>::new(move |_, _| {
@@ -52,7 +52,13 @@ impl ResizeListener {
                 }
                 // Scrollbars can change the usable viewport while its border
                 // rectangle stays fixed. Match the dimensions the canvas uses.
-                let size = (observed.client_width(), observed.client_height());
+                let rect = observed.get_bounding_client_rect();
+                let size = (
+                    observed.client_width(),
+                    observed.client_height(),
+                    rect.width().to_bits(),
+                    rect.height().to_bits(),
+                );
                 if previous.get() == Some(size) {
                     return;
                 }

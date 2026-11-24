@@ -23,6 +23,35 @@ pointer and keyboard workflow, including native history/source preservation
 across navigation and reload, and an intentional same-ID rename. Passing it is
 a functional gate for this frame, not acceptance of the overall GUI design.
 
+## Annotation display layout
+
+The sequence view prepares a whole-document annotation plan with the independent
+[`collagene-view-layout`](../crates/view-layout/README.md) library. Nonoverlapping
+annotations share rows; every part of a joined or circular-split annotation stays
+in one row. Primer annotations have a separate row budget. Counts reflect rows
+actually used, so empty annotation and primer rows collapse. Source annotations
+remain available in Features; the `source` annotation kind is omitted from the
+sequence tracks, matching the existing scientific viewport index.
+
+**Sequence tracks → Annotation rows / Primer rows** sets display maxima. Additional
+annotations are identified explicitly and remain inspectable in Features and in
+the bounded viewport report. Those reports retain their own completeness and
+warning semantics. Unknown local positions remain unplaced evidence. A display
+row never implies a biological relationship or higher annotation confidence.
+
+The plan is cached by the document and display settings, independently of incoming
+viewport results. Reflow preserves the visible source-base anchor for an unchanged
+document/reference, with normal clamping at the document end. Original DNA,
+annotations, source records and revision history retain their semantics. The
+layout library has bounded sorting, ordered interval indexes and preflight work
+and storage limits; the adapter checks borrowed feature/location bounds before
+constructing interval vectors. Both support the existing 1 Mb/10,000-feature case.
+
+`scripts/annotation_layout_browser_qa.py` uses actual GenBank imports, delayed real
+worker messages, exact source-feature identities, visible annotation/base clicks,
+middle/end reflows and a 1 Mb/10,000-annotation record. It compares native source
+and history before/after navigation and reload.
+
 ## Boundaries retained for later features
 
 - `Molecule`, `Sequence` and `Location` remain the common scientific model. GenBank adapters retain original records, topology, annotations and unsupported evidence; the renderer never owns the biological coordinate model.
@@ -47,9 +76,9 @@ The viewer and format adapters retain their existing limits and extension points
 
 ## Validation checkpoint
 
-The release WASM/web build, native workspace checks (1,021 tests plus 13 doctests), real stdio MCP smoke and all 29 desktop browser workflow suites pass. The dedicated desktop MVP browser suite exercises actual GenBank import, map rotation and sequence navigation, independently specified multi-enzyme products, non-six-base and circular-origin sites, fresh fragment construction/export, exact source history, ambiguous/limited/uncut cases, paged evidence, stale-result cancellation and atomic storage rollback. Desktop widths of 1600, 1280 and 1200 pixels are covered. These are local Chrome/software-renderer observations; they do not establish Firefox/Safari, hardware GPU or installed desktop parity.
+The release WASM/web build, native workspace checks (1,040 tests plus 14 doctests), real stdio MCP smoke and all 30 desktop browser workflow suites pass. The dedicated desktop MVP browser suite exercises actual GenBank import, map rotation and sequence navigation, independently specified multi-enzyme products, non-six-base and circular-origin sites, fresh fragment construction/export, exact source history, ambiguous/limited/uncut cases, paged evidence, stale-result cancellation and atomic storage rollback. Desktop widths of 1600, 1280 and 1200 pixels are covered. These are local Chrome/software-renderer observations; they do not establish Firefox/Safari, hardware GPU or installed desktop parity.
 
-The navigation suite additionally covers 1366×768 and 1280×800 laptop windows, a 101-record import across explorer pages, same-ID rename updates, keyboard tab focus and native source/history preservation. The canvas regression reproduces scrollbar-only client viewport changes without synthetic resize/scroll events, verifies backing/CSS dimensions and exact base selection, and checks natural short/long document switches.
+The navigation suite additionally covers 1366×768 and 1280×800 laptop windows, a 101-record import across explorer pages, same-ID rename updates, keyboard tab focus and native source/history preservation. The canvas regression reproduces scrollbar-only client viewport changes without synthetic resize/scroll events, verifies backing/CSS dimensions and exact base selection, and checks natural short/long document switches. Fractional CSS changes with unchanged rounded client dimensions must also repaint. Backing dimensions round outward to whole pixels, while drawing and hit testing retain CSS-coordinate geometry.
 
 Run the desktop suites against the isolated QA browser and release preview with `python3 scripts/desktop_qa.py`. See the README for prerequisites. Mobile and machine-specific performance acceptance remain separate from this gate.
 

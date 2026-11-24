@@ -5,6 +5,7 @@ Only fixture imports and QA-local CSS change the page. In particular, the
 scrollbar test sends no synthetic resize/scroll/input event to repair the canvas.
 """
 import json
+import math
 import time
 from pathlib import Path
 
@@ -20,7 +21,8 @@ METRICS = '''(()=>{
  const e=document.querySelector('.sequence-scroll'),c=e.querySelector('canvas');
  const r=e.getBoundingClientRect(),cr=c.getBoundingClientRect();
  return {borderWidth:r.width,borderHeight:r.height,clientWidth:e.clientWidth,
- clientHeight:e.clientHeight,offsetWidth:e.offsetWidth,scrollWidth:e.scrollWidth,
+ clientHeight:e.clientHeight,offsetWidth:e.offsetWidth,
+ usableWidth:r.width-(e.offsetWidth-e.clientWidth),usableHeight:r.height-(e.offsetHeight-e.clientHeight),scrollWidth:e.scrollWidth,
  scrollHeight:e.scrollHeight,scrollTop:e.scrollTop,canvasWidth:cr.width,
  canvasHeight:cr.height,backingWidth:c.width,backingHeight:c.height,
  dpr:Math.min(devicePixelRatio,2),documentWidth:document.documentElement.scrollWidth,
@@ -33,10 +35,10 @@ def frames(b, count=5):
 
 
 def correct(m):
-    return (abs(m['canvasWidth'] - m['clientWidth']) <= 1
-            and abs(m['canvasHeight'] - m['clientHeight']) <= 1
-            and m['backingWidth'] == int(m['clientWidth'] * m['dpr'])
-            and m['backingHeight'] == int(m['clientHeight'] * m['dpr'])
+    return (abs(m['canvasWidth'] - m['usableWidth']) <= .1
+            and abs(m['canvasHeight'] - m['usableHeight']) <= .1
+            and m['backingWidth'] == math.ceil(m['usableWidth'] * m['dpr'])
+            and m['backingHeight'] == math.ceil(m['usableHeight'] * m['dpr'])
             and m['scrollWidth'] <= m['clientWidth'] + 1
             and m['documentWidth'] <= m['viewport'] + 1)
 
@@ -136,6 +138,21 @@ def main():
             document(b, name)
             b.wait('document.querySelector(".track-status")?.textContent==="Visible tracks complete"')
             m = settled(b, 'natural switch ' + name, observations)
+            if name == 'RESIZE_SHORT':
+                assert m['offsetWidth'] == m['clientWidth'] and abs(m['borderHeight']-m['usableHeight']) < .1, ('Short record retained unnecessary scrollbars',m)
+                assert m['scrollHeight'] <= m['clientHeight'] + 1, m
+                # Grow only a fraction of a CSS pixel: rounded client sizes stay
+                # unchanged, yet the actual canvas box must follow the observer.
+                b.evaluate('document.querySelector(".sequence-scroll").style.width=' + json.dumps(str(m['clientWidth'] - .25) + 'px'))
+                baseline=settled(b,'fractional viewport baseline',observations)
+                b.evaluate('document.querySelector(".sequence-scroll").style.width=' + json.dumps(str(baseline['borderWidth'] + .125) + 'px'))
+                frames(b)
+                probe=b.evaluate(METRICS)
+                assert probe['clientWidth']==baseline['clientWidth'] and probe['clientHeight']==baseline['clientHeight'], (baseline,probe)
+                assert probe['borderWidth']>baseline['borderWidth'], (baseline,probe)
+                settled(b,'fractional-only viewport growth',observations)
+                b.evaluate('document.querySelector(".sequence-scroll").style.removeProperty("width")')
+                m=settled(b,'fractional viewport restored',observations)
             selected_literal(b, sequence, m['active'])
         assert_unchanged(before, saved_snapshot(b))
         frames(b)

@@ -1,5 +1,6 @@
 //! Virtual sequence canvas with revision-bound, cached-worker viewport tracks.
 use crate::{
+    annotation_layout::AnnotationLayout,
     renderer::{ResizeListener, css_color},
     worker::CachedWorker,
 };
@@ -51,10 +52,18 @@ fn lane(item: &TrackItem) -> usize {
         TrackKind::Orf => 5,
     }
 }
-fn lanes(o: &TrackOptions) -> [usize; 6] {
+fn lanes(o: &TrackOptions, layout: Option<&AnnotationLayout>) -> [usize; 6] {
     [
-        if o.features { 3 } else { 0 },
-        if o.primers { 2 } else { 0 },
+        if o.features {
+            layout.map(|l| l.features.lane_count).unwrap_or(0)
+        } else {
+            0
+        },
+        if o.primers {
+            layout.map(|l| l.primers.lane_count).unwrap_or(0)
+        } else {
+            0
+        },
         if o.enzyme_recognition || o.enzyme_cuts {
             2
         } else {
@@ -69,8 +78,7 @@ fn lanes(o: &TrackOptions) -> [usize; 6] {
         if o.orfs { 2 } else { 0 },
     ]
 }
-fn offsets(o: &TrackOptions) -> [usize; 6] {
-    let counts = lanes(o);
+fn offsets(counts: [usize; 6]) -> [usize; 6] {
     let mut total = 0;
     std::array::from_fn(|i| {
         let at = total;
@@ -78,12 +86,28 @@ fn offsets(o: &TrackOptions) -> [usize; 6] {
         at
     })
 }
-fn slot(item: &TrackItem, ordinal: usize, counts: [usize; 6]) -> usize {
+fn slot(
+    item: &TrackItem,
+    ordinal: usize,
+    counts: [usize; 6],
+    layout: Option<&AnnotationLayout>,
+) -> Option<usize> {
     let group = lane(item);
-    if group == 3 {
-        usize::from(item.frame.unwrap_or(0)) + if item.reverse == Some(true) { 3 } else { 0 }
+    if counts[group] == 0 {
+        return None;
+    }
+    if group == 0 || group == 1 {
+        let layout = layout?;
+        let feature = item.source_feature?;
+        if group == 0 {
+            layout.features.placements.get(&feature).copied()
+        } else {
+            layout.primers.placements.get(&feature).copied()
+        }
+    } else if group == 3 {
+        Some(usize::from(item.frame.unwrap_or(0)) + if item.reverse == Some(true) { 3 } else { 0 })
     } else {
-        ordinal % counts[group].max(1)
+        Some(ordinal % counts[group])
     }
 }
 fn track_color(item: &TrackItem, m: &Molecule) -> String {
@@ -109,6 +133,8 @@ pub fn SequenceView(
     selected_feature: RwSignal<Option<usize>>,
     highlighted_spans: Memo<Vec<(usize, usize)>>,
     search_regions: Regions,
+    on_show_features: Callback<()>,
+    identity: Memo<String>,
 ) -> impl IntoView {
     let canvas = NodeRef::<html::Canvas>::new();
     let container = NodeRef::<html::Div>::new();
@@ -117,6 +143,14 @@ pub fn SequenceView(
     let height = RwSignal::new(500f64);
     let settings = RwSignal::new(TrackOptions::default());
     let show_controls = RwSignal::new(false);
+    let feature_rows = RwSignal::new(3usize);
+    let primer_rows = RwSignal::new(2usize);
+    let annotation_layout =
+        Memo::new(move |_| {
+            Arc::new(molecule.with(|m| {
+                crate::annotation_layout::prepare(m, feature_rows.get(), primer_rows.get())
+            }))
+        });
     let report = RwSignal::new(None::<TrackReport>);
     let status = RwSignal::new("Loading sequence tracks…".to_string());
     let selected_item = RwSignal::new(None::<TrackItem>);
@@ -140,8 +174,56 @@ pub fn SequenceView(
         });
         o
     });
-    let row_height =
-        Memo::new(move |_| 66. + lanes(&options.get()).iter().sum::<usize>() as f64 * 18.);
+    let lane_counts = Memo::new(move |_| {
+        annotation_layout.with(|layout| lanes(&options.get(), layout.as_ref().as_ref().ok()))
+    });
+    let row_height = Memo::new(move |_| 66. + lane_counts.get().iter().sum::<usize>() as f64 * 18.);
+    let layout_overflow = Memo::new(move |_| {
+        annotation_layout.with(|layout| match layout.as_ref() {
+            Ok(layout) => {
+                let o = options.get();
+                usize::from(o.features) * layout.features.overflow.len()
+                    + usize::from(o.primers) * layout.primers.overflow.len()
+            }
+            Err(_) => 0,
+        })
+    });
+    // Display reflow preserves the visible reference position for this document
+    // and unchanged reference symbols. Annotation edits can change row height.
+    let anchor_identity = Memo::new(move |_| {
+        (
+            identity.get(),
+            molecule.with(|m| {
+                blake3::hash(m.sequence.as_str().as_bytes())
+                    .to_hex()
+                    .to_string()
+            }),
+        )
+    });
+    let geometry = StoredValue::new_local(None::<((String, String), usize, f64)>);
+    Effect::new(move |_| {
+        let key = anchor_identity.get();
+        let cols = columns.get();
+        let rh = row_height.get();
+        let previous = geometry.get_value();
+        geometry.set_value(Some((key.clone(), cols, rh)));
+        let Some((old_key, old_cols, old_rh)) = previous else {
+            return;
+        };
+        if old_key != key || (old_cols == cols && old_rh == rh) {
+            return;
+        }
+        let old_top = scroll.get_untracked();
+        let base = (old_top / old_rh).floor() as usize * old_cols;
+        let fraction = (old_top % old_rh) / old_rh;
+        let new_top = ((base / cols) as f64 + fraction) * rh;
+        // Render bindings update spacer geometry before this post-render effect.
+        // Apply immediately so consecutive reflows use the adjusted viewport.
+        if let Some(element) = container.get_untracked() {
+            element.set_scroll_top(new_top.round().min(i32::MAX as f64) as i32);
+            scroll.set(element.scroll_top() as f64);
+        }
+    });
     // Quantized overlapping tiles avoid preparing a chromosome or transferring it per scroll tick.
     let window = Memo::new(move |_| {
         let cols = columns.get();
@@ -356,19 +438,35 @@ pub fn SequenceView(
             let top = scroll.get();
             let rh = row_height.get();
             let opts = options.get();
-            let current = report.get();
+            let revision = source.get();
+            let current = report
+                .get()
+                .filter(|r| r.source_revision == revision && r.options == opts);
+            let packed = annotation_layout.get();
+            let layout = packed.as_ref().as_ref().ok();
             let Some(canvas) = canvas.get() else {
                 return;
             };
             let Some(container) = container.get() else {
                 return;
             };
-            let width = container.client_width().max(200) as f64;
-            let h = container.client_height().max(200) as f64;
+            // DOM client sizes are rounded. A rounded-up canvas can create a
+            // scrollbar, changing the very viewport being measured. Preserve
+            // the fractional usable CSS box and reserve whole backing pixels.
+            let rect = container.get_bounding_client_rect();
+            let width = (rect.width()
+                - f64::from(container.offset_width() - container.client_width()))
+            .max(1.);
+            let h = (rect.height()
+                - f64::from(container.offset_height() - container.client_height()))
+            .max(1.);
             if height.get_untracked() != h {
                 height.set(h);
             }
-            let cols = (((width - 75.) / 8.5).floor() as usize / 10 * 10).clamp(10, 100);
+            let cols =
+                ((((container.client_width().max(200) as f64) - 75.) / 8.5).floor() as usize / 10
+                    * 10)
+                    .clamp(10, 100);
             if columns.get_untracked() != cols {
                 columns.set(cols);
             }
@@ -376,8 +474,8 @@ pub fn SequenceView(
                 .map(|w| w.device_pixel_ratio())
                 .unwrap_or(1.)
                 .min(2.);
-            let pw = (width * dpr) as u32;
-            let ph = (h * dpr) as u32;
+            let pw = (width * dpr).ceil() as u32;
+            let ph = (h * dpr).ceil() as u32;
             if canvas.width() != pw {
                 canvas.set_width(pw);
             }
@@ -395,15 +493,15 @@ pub fn SequenceView(
             else {
                 return;
             };
-            let _ = ctx.set_transform(dpr, 0., 0., dpr, 0., 0.);
+            let _ = ctx.set_transform(f64::from(pw) / width, 0., 0., f64::from(ph) / h, 0., 0.);
             ctx.set_fill_style_str("#ffffff");
             ctx.fill_rect(0., 0., width, h);
             let first = (top / rh).floor() as usize;
             let count = (h / rh).ceil() as usize + 1;
             let start_x = 64.;
             let cell = 8.5;
-            let counts = lanes(&opts);
-            let offset = offsets(&opts);
+            let counts = lane_counts.get();
+            let offset = offsets(counts);
             let mut boxes = vec![];
             let mut painted = 0usize;
             for row in first..first + count {
@@ -458,8 +556,10 @@ pub fn SequenceView(
                         let group = lane(item);
                         let ordinal = ordinals[group];
                         ordinals[group] += 1;
-                        let lane_y =
-                            y + 36. + (offset[group] + slot(item, ordinal, counts)) as f64 * 18.;
+                        let Some(item_slot) = slot(item, ordinal, counts, layout) else {
+                            continue;
+                        };
+                        let lane_y = y + 36. + (offset[group] + item_slot) as f64 * 18.;
                         let color = track_color(item, mol);
                         for part in &item.parts {
                             let left = part.start.max(start);
@@ -570,6 +670,12 @@ pub fn SequenceView(
             }
             hit_boxes.set_value(boxes);
             let _ = canvas.set_attribute("data-row-height", &rh.to_string());
+            let _ = canvas.set_attribute("data-feature-lanes", &counts[0].to_string());
+            let _ = canvas.set_attribute("data-primer-lanes", &counts[1].to_string());
+            let _ =
+                canvas.set_attribute("data-layout-overflow", &layout_overflow.get().to_string());
+            let _ = canvas.set_attribute("data-layout-source", &revision);
+
             let _ = canvas.set_attribute("data-painted-tracks", &painted.to_string());
             let _ = canvas.set_attribute(
                 "data-track-item-count",
@@ -603,8 +709,12 @@ pub fn SequenceView(
         }
     });
     view! {
-        <div class="track-toolbar"><button class="text-tool" aria-expanded=move||show_controls.get() on:click=move|_|show_controls.update(|v|*v=!*v)>"Sequence tracks"</button><span class="track-status" role="status">{move||status.get()}</span><button class="text-tool" title="Reload sequence tracks" on:click=move|_|retry.update(|n|*n=n.wrapping_add(1))>"↻"</button></div>
+        <div class="track-toolbar"><button class="text-tool" aria-expanded=move||show_controls.get().to_string() on:click=move|_|show_controls.update(|v|*v=!*v)>"Sequence tracks"</button><span class="track-status" role="status">{move||status.get()}</span><button class="text-tool" title="Reload sequence tracks" on:click=move|_|retry.update(|n|*n=n.wrapping_add(1))>"↻"</button></div>
+        <Show when=move||{layout_overflow.get()>0 || (annotation_layout.with(|p|p.as_ref().is_err()) && options.with(|o|o.features||o.primers))}>
+            <div class="annotation-layout-note" role="status"><span>{move||if annotation_layout.with(|p|p.as_ref().is_err()) {"Annotation display is limited. Inspect source annotations in Features.".to_string()}else{format!("{} additional annotations are available in Features.",layout_overflow.get())}}</span><button class="text-tool" on:click=move|_|on_show_features.run(())>"Inspect annotations"</button></div>
+        </Show>
         <Show when=move||show_controls.get()><div class="track-controls" aria-label="Sequence track settings">
+            <div class="annotation-row-controls"><label>"Annotation rows"<select aria-label="Annotation rows" prop:value=move||feature_rows.get().to_string() on:change=move|e|feature_rows.set(event_target_value(&e).parse::<usize>().ok().filter(|v|[1,3,6,8].contains(v)).unwrap_or(3))>{[1,3,6,8].map(|n|view!{<option value=n.to_string()>{n.to_string()}</option>})}</select></label><label>"Primer rows"<select aria-label="Primer rows" prop:value=move||primer_rows.get().to_string() on:change=move|e|primer_rows.set(event_target_value(&e).parse::<usize>().ok().filter(|v|[1,2,4,8].contains(v)).unwrap_or(2))>{[1,2,4,8].map(|n|view!{<option value=n.to_string()>{n.to_string()}</option>})}</select></label></div>
             <div class="track-toggles">
                 <label><input type="checkbox" aria-label="Feature tracks" prop:checked=move||settings.get().features on:change=move|e|settings.update(|o|o.features=event_target_checked(&e))/><span>"Features"</span></label>
                 <label><input type="checkbox" aria-label="Primer tracks" prop:checked=move||settings.get().primers on:change=move|e|settings.update(|o|o.primers=event_target_checked(&e))/><span>"Primers"</span></label>
@@ -619,7 +729,7 @@ pub fn SequenceView(
             <div class="track-toggles">{(0u8..3).map(|frame|view!{<label><input type="checkbox" aria-label=format!("Track frame {}",frame+1) prop:checked=move||settings.with(|o|o.frames.contains(&frame)) on:change=move|e|settings.update(|o|{o.frames.retain(|f|*f!=frame);if event_target_checked(&e){o.frames.push(frame);o.frames.sort_unstable();}})/><span>{format!("Frame {}",frame+1)}</span></label>}).collect_view()}</div>
             <label>"Minimum ORF length (aa)"<input type="number" min="0" max="100000" aria-label="Track minimum ORF length" prop:value=move||settings.get().min_orf_amino_acids.to_string() on:change=move|e|settings.update(|o|o.min_orf_amino_acids=event_target_value(&e).parse::<usize>().unwrap_or(20).min(100000))/></label>
             <label>"Track genetic code"<select aria-label="Track genetic code" on:change=move|e|settings.update(|o|o.genetic_code=event_target_value(&e).parse().unwrap_or(1))>{collagene_core::translation::genetic_codes().iter().map(|c|view!{<option value=c.id.to_string()>{format!("{} · {}",c.id,c.name)}</option>}).collect_view()}</select></label>
-            <p class="helper">"Overlapping annotations share lanes; inspect the viewport list for every returned item. Predicted ORFs and ambiguous sites are provisional. Blue/red ticks are reference top/bottom cut boundaries. Tracks are bounded and refresh after scrolling."</p>
+            <p class="helper">"Nonoverlapping annotations share rows. Joined annotations stay together; additional annotations remain in Features and the viewport list. Predicted ORFs and ambiguous sites are provisional. Blue/red ticks are reference top/bottom cut boundaries. Tracks are bounded and refresh after scrolling."</p>
             <details class="viewport-tracks"><summary>"Viewport items and warnings"</summary>{move||report.get().map(|r|{let count=r.items.len();view!{<p class="helper">{format!("{} items · {} work units · {}",count,r.work.used_units,if r.complete{"complete"}else{"incomplete"})}</p>{r.warnings.into_iter().map(|w|view!{<p class="helper">{w}</p>}).collect_view()}{r.items.into_iter().skip(page.get()*50).take(50).map(|item|{let text=format!("{:?} · {} · {}{}",item.kind,item.label,item.parts.iter().map(|p|format!("{}–{}",p.start+1,p.end)).collect::<Vec<_>>().join(", "),if item.certain{""}else{" · possible/review"});view!{<button class="result-entry viewport-item" data-kind=format!("{:?}",item.kind) on:click=move|_|choose.run(item.clone())>{text}</button>}}).collect_view()}<Show when=move||{count>50}><button class="text-tool" disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous track items"</button><button class="text-tool" disabled=move||{(page.get()+1)*50>=count} on:click=move|_|page.update(|p|*p+=1)>"Next track items"</button></Show>}})}<button class="text-tool" disabled=move||report.get().is_none() on:click=move|_|if let Some(r)=report.get_untracked(){match serde_json::to_vec_pretty(&r){Ok(bytes)=>{let _=crate::app::download("viewport-tracks.json","application/json",&bytes);},Err(e)=>status.set(e.to_string())}}>"Download viewport report"</button></details>
         </div></Show>
         {move||selected_item.get().map(|item|view!{<div class="track-selection"><strong>{item.label}</strong><span>{format!(" · {:?}{}",item.kind,if item.certain{""}else{" · possible/review"})}</span><span>{item.cuts.as_ref().map(|c|format!(" · top {}, bottom {}",crate::search_view::boundary_label(c.top),crate::search_view::boundary_label(c.bottom)))}</span></div>})}

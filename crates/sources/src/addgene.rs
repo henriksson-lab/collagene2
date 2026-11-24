@@ -38,13 +38,47 @@ struct SequenceData {
 }
 /// Serializable summary excludes all presigned URLs and raw sequence data.
 /// Keep this immutable value until selecting a sequence from the same response.
+/// Catalog identity, category labels and response evidence cannot be rewritten.
+/// Read-only getters preserve the exact parsed snapshot; owned choice copies are
+/// presentation data and never replace the private import binding.
+///
+/// A caller cannot rewrite the plasmid identity:
+/// ```compile_fail,E0616
+/// fn forge(catalog: &mut collagene_sources::AddgeneCatalog) {
+///     catalog.plasmid_id = 999;
+/// }
+/// ```
+/// Nor can a caller rewrite its name:
+/// ```compile_fail,E0616
+/// fn forge(catalog: &mut collagene_sources::AddgeneCatalog) {
+///     catalog.name = "Different plasmid".into();
+/// }
+/// ```
+/// The response evidence hash is immutable:
+/// ```compile_fail,E0616
+/// fn forge(catalog: &mut collagene_sources::AddgeneCatalog) {
+///     catalog.response_blake3 = "0".repeat(64);
+/// }
+/// ```
+/// The ordered choice collection cannot be replaced:
+/// ```compile_fail,E0616
+/// fn forge(catalog: &mut collagene_sources::AddgeneCatalog) {
+///     catalog.choices = Vec::new();
+/// }
+/// ```
+/// A borrowed choice cannot be relabeled through its getter:
+/// ```compile_fail,E0594
+/// fn forge(catalog: &mut collagene_sources::AddgeneCatalog) {
+///     catalog.choices()[0].origin = collagene_sources::AddgeneSequenceOrigin::Depositor;
+/// }
+/// ```
 #[derive(Clone, Serialize)]
 pub struct AddgeneCatalog {
-    pub plasmid_id: u64,
-    pub name: String,
-    pub choices: Vec<AddgeneSequenceChoice>,
+    plasmid_id: u64,
+    name: String,
+    choices: Vec<AddgeneSequenceChoice>,
     /// Hash of the actual fetched catalog bytes, including its transient link representation.
-    pub response_blake3: String,
+    response_blake3: String,
     #[serde(skip)]
     records: std::sync::Arc<BTreeMap<u64, SequenceData>>,
 }
@@ -223,6 +257,23 @@ pub fn parse_addgene_catalog(plasmid_id: u64, bytes: &[u8]) -> Result<AddgeneCat
     Ok(catalog)
 }
 impl AddgeneCatalog {
+    /// Exact plasmid identity checked against the fetched catalog response.
+    pub fn plasmid_id(&self) -> u64 {
+        self.plasmid_id
+    }
+    /// Provider-supplied name from the same immutable catalog snapshot.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    /// Ordered, read-only provider choices. Clone individual records for display
+    /// if needed; modifying a clone cannot change download/import provenance.
+    pub fn choices(&self) -> &[AddgeneSequenceChoice] {
+        &self.choices
+    }
+    /// BLAKE3 of the fetched response bytes, not proof of provider authenticity.
+    pub fn response_blake3(&self) -> &str {
+        &self.response_blake3
+    }
     /// Transient presigned/provider download URL; do not save or log it.
     pub fn download_url(&self, sequence_id: u64) -> Result<String, SourceError> {
         self.records

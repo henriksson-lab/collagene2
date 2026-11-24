@@ -6,7 +6,7 @@ The implementation goal is active. This repository contains an initial working f
 
 The interface targets desktop use first. Mobile scope and controls will be decided after the finished desktop product has been reviewed and edited; mobile acceptance testing is deferred.
 
-The immediate desktop MVP focuses on the sequence/plasmid viewer, GenBank import and virtual restriction digest. Features and Digest are primary; More tools retains the advanced modules. The scientific model, format adapters, worker API and renderer remain shared foundations for the full product. [MVP model and acceptance](docs/MVP_DESKTOP.md).
+The immediate desktop MVP focuses on the sequence/plasmid viewer, GenBank import and virtual restriction digest. Features and Digest are primary; More tools retains the advanced modules. The shared [molecular model](crates/model/README.md), format adapters, worker API and renderer remain foundations for the full product. [MVP model and acceptance](docs/MVP_DESKTOP.md).
 
 ## Run the web application
 
@@ -71,7 +71,7 @@ See [SnapGene profile](docs/SNAPGENE_FORMAT.md), [EMBL adapter](docs/EMBL_FORMAT
 ## Check the scientific core
 
 ```sh
-cargo test -p collagene-core -p collagene-mcp -p collagene-sources -p collagene-web --locked
+cargo test -p collagene-model -p collagene-core -p collagene-mcp -p collagene-sources -p collagene-web --locked
 cargo test -p collagene-protocol-units -p collagene-enzyme-catalog -p collagene-web-assets --features collagene-protocol-units/serde --locked
 cargo check -p collagene-web -p analysis-worker -p collagene-protocol-units -p collagene-enzyme-catalog --features collagene-protocol-units/serde --target wasm32-unknown-unknown --locked
 cargo fmt --all -- --check

@@ -26,7 +26,7 @@ The viewer and format adapters retain their existing limits and extension points
 
 ## Validation checkpoint
 
-The release WASM/web build, native workspace checks (873 tests plus three doctests), real stdio MCP smoke and all 26 desktop browser workflow suites pass. The dedicated desktop MVP browser suite exercises actual GenBank import, map rotation and sequence navigation, independently specified multi-enzyme products, non-six-base and circular-origin sites, fresh fragment construction/export, exact source history, ambiguous/limited/uncut cases, paged evidence, stale-result cancellation and atomic storage rollback. Desktop widths of 1600, 1280 and 1200 pixels are covered. These are local Chrome/software-renderer observations; they do not establish Firefox/Safari, hardware GPU or installed desktop parity.
+The release WASM/web build, native workspace checks (882 tests plus eight doctests), real stdio MCP smoke and all 26 desktop browser workflow suites pass. The dedicated desktop MVP browser suite exercises actual GenBank import, map rotation and sequence navigation, independently specified multi-enzyme products, non-six-base and circular-origin sites, fresh fragment construction/export, exact source history, ambiguous/limited/uncut cases, paged evidence, stale-result cancellation and atomic storage rollback. Desktop widths of 1600, 1280 and 1200 pixels are covered. These are local Chrome/software-renderer observations; they do not establish Firefox/Safari, hardware GPU or installed desktop parity.
 
 Run the desktop suites against the isolated QA browser and release preview with `python3 scripts/desktop_qa.py`. See the README for prerequisites. Mobile and machine-specific performance acceptance remain separate from this gate.
 

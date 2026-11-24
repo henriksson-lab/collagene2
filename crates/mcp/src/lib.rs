@@ -3205,7 +3205,7 @@ impl CollageneServer {
         let catalog = client.addgene_catalog(&args.url).await.map_err(bad)?;
         let artifact = self.analysis_artifact(&serde_json::to_value(&catalog).map_err(bad)?)?;
         output(
-            json!({"plasmid_id":catalog.plasmid_id,"name":catalog.name,"response_blake3":catalog.response_blake3,"count":catalog.choices.len(),"display_truncated":catalog.choices.len()>100,"choices":catalog.choices.iter().take(100).map(|choice|json!({"sequence_id":choice.sequence_id,"description":choice.description.chars().take(512).collect::<String>(),"description_truncated":choice.description.chars().count()>512,"origin":choice.origin,"completeness":choice.completeness,"length":choice.length,"catalog_sequence_blake3":choice.catalog_sequence_blake3})).collect::<Vec<_>>(),"artifact_id":artifact}),
+            json!({"plasmid_id":catalog.plasmid_id(),"name":catalog.name(),"response_blake3":catalog.response_blake3(),"count":catalog.choices().len(),"display_truncated":catalog.choices().len()>100,"choices":catalog.choices().iter().take(100).map(|choice|json!({"sequence_id":choice.sequence_id,"description":choice.description.chars().take(512).collect::<String>(),"description_truncated":choice.description.chars().count()>512,"origin":choice.origin,"completeness":choice.completeness,"length":choice.length,"catalog_sequence_blake3":choice.catalog_sequence_blake3})).collect::<Vec<_>>(),"artifact_id":artifact}),
         )
     }
     #[tool(

@@ -298,6 +298,7 @@ dependencies = [
  "base64 0.22.1",
  "blake3",
  "collagene-enzyme-catalog",
+ "collagene-model",
  "csv",
  "gb-io",
  "pdf-writer",
@@ -335,6 +336,18 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "collagene-model"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "postcard",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

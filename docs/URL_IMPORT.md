@@ -31,14 +31,14 @@ Addgene uses `Config::with_addgene_api_token(...)` or `COLLAGENE_ADDGENE_API_TOK
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 let client = SourceClient::new(Config::from_env()?)?;
 let catalog = client.addgene_catalog("https://www.addgene.org/12345/").await?;
-// Present catalog.choices to the user. Do not choose by array order or first full record.
+// Present catalog.choices() to the user. Do not choose by array order or first full record.
 let selected_sequence_id = 42; // replace with the user's explicit choice
 let report = client.import_addgene_selection(&catalog, selected_sequence_id).await?;
 # let _ = report;
 # Ok(()) }
 ```
 
-`import_url_selected(input, Some(sequence_id))` refreshes the catalog before retrieving that selected record. The existing `import_url(input)` returns `AddgeneSelectionRequired` with the count, or `AddgeneNoSequences`, after an authorized catalog discovery. `AddgeneCatalog` serialization/debug output contains only public summaries and response hashes; transient signed URLs and raw bases remain private. `download_url(sequence_id)` deliberately returns a transient URL for a browser adapter, never provenance.
+`import_url_selected(input, Some(sequence_id))` refreshes the catalog before retrieving that selected record. The existing `import_url(input)` returns `AddgeneSelectionRequired` with the count, or `AddgeneNoSequences`, after an authorized catalog discovery. `AddgeneCatalog` is an immutable parsed snapshot: `plasmid_id()`, `name()`, `choices()` and `response_blake3()` provide read-only access, with no mutable accessor. Choice records may be cloned for presentation; modifying an owned clone does not relabel the retained import binding. Serialization keeps the same JSON fields (`plasmid_id`, `name`, `choices`, `response_blake3`) and debug output contains only public summaries and response hashes; transient signed URLs and raw bases remain private. `download_url(sequence_id)` deliberately returns a transient URL for a browser adapter, never provenance.
 
 The native client uses a process-wide 350 ms NCBI request interval, conservatively below three requests/second even with a configured API key. It surfaces `Retry-After` and applies NCBI 429/503 cooldowns. There are no automatic HTTP retries. Downloads are streamed with a 32 MiB limit, 30-second request timeout, 60-second whole-chain timeout and at most five redirects. HTTP status failures, partial bodies, missing records, returned identifier mismatches and ambiguous NCBI responses are distinct typed errors.
 
@@ -64,7 +64,7 @@ annotate_import(&mut report, &source, raw, "2026-11-23T18:00:00Z")?;
 
 Native DNS/IP enforcement cannot be reproduced by ordinary browser fetch. A browser CORS/network failure is not resolved by changing the URL parser or exposing credentials; protected/non-CORS providers need an authenticated native/local or hosted adapter. The source helpers do not create that bridge, issue Addgene tokens, or bypass authentication.
 
-The portable Addgene API comprises `addgene_catalog_url`, `parse_addgene_catalog`, the safe catalog summary, and `catalog.import_download`. The web **Import URL** dialog accepts an optional password-type token kept only in component memory. **Import source** first discovers the catalog, then displays an unselected sequence list; choose a record and click again to retrieve it. Editing source/token aborts the request, discards pending responses and clears prior choices. Authorization-bearing browser requests reject redirects because browser fetch cannot inspect cross-origin redirect locations safely; use native/MCP retrieval if the provider returns its authenticated redirect route or lacks CORS. Signed external download URLs carry no Authorization header. No login cookies are sent.
+The portable Addgene API comprises `addgene_catalog_url`, `parse_addgene_catalog`, the safe catalog summary, and `catalog.import_download`. The web **Import URL** dialog accepts an optional password-type token kept only in component memory. **Import source** first discovers the catalog, then displays an unselected sequence list; choose a record and click again to retrieve it. Editing source/token aborts the request, discards pending responses and clears prior choices. Authorization-bearing browser requests reject redirects because browser fetch cannot inspect cross-origin redirect locations safely; use native/MCP retrieval if the provider returns its authenticated redirect route or lacks CORS. Signed external download URLs carry no Authorization header. No login cookies are sent. A token alone does not resolve browser CORS: the live localhost preflight described below failed, so the current observed route requires authorized native/MCP retrieval or a file personally downloaded through the provider account.
 
 ## Provenance and evidence
 
@@ -108,3 +108,62 @@ ENA/DDBJ adapter foundations and independent offline fixtures are now present in
 | iGEM | The [rebuilt Registry](https://registry.igem.org/about/whats-new) advertises annotated GenBank, FASTA and SBOL exports. Current parts use pages such as `https://registry.igem.org/parts/BBa_B0015`; an [API documentation shell](https://api.registry.igem.org/docs) exists. Exact export endpoints and anonymous API access still need verification. Do not assume the legacy XML interface describes the rebuilt service. |
 
 Browser CORS remains unverified for these routes; public pages and server-side retrieval do not establish cross-origin browser access. Preserve provider identity/version, retrieval evidence and attribution, keep multiple/partial records explicit, and disclose annotation loss for sequence-only fallbacks. Large remote chromosomes must stream into the separate reference store rather than bypass ordinary document limits. No other cloning application's source code was consulted for these adapters.
+
+## Addgene anonymous-access audit (2026-11-24)
+
+Small, unauthenticated read-only requests to official Addgene hosts established a
+current access boundary. No account, token, cookies, protected file URL guessing,
+or authenticated session was used. This is an access/interoperability audit, not
+a successful live sequence import.
+
+| Official resource | Observed response | Publicly visible evidence |
+|---|---|---|
+| `https://www.addgene.org/52961/` | 200, HTML, 237,587 bytes | Canonical plasmid identity/name, map and sequence-list navigation; sequence access login notice. |
+| `https://www.addgene.org/52961/sequences/` | 200, HTML, 214,958 bytes | Ten analyzer links: Addgene full 1 and partial 9. Full sequence ID 244694 is publicly listed, but no GenBank or DNA download anchor is offered anonymously. |
+| `https://www.addgene.org/125752/sequences/` | 200, HTML, 206,467 bytes | Addgene full 1 (ID 249038) and depositor full 1 (ID 240779), with the same login requirement and no anonymous sequence-file link. |
+| `https://api.developers.addgene.org/catalog/plasmid-with-sequences/52961/` | 401, JSON, 58 bytes; `WWW-Authenticate: Token` | No anonymous catalog/sequence response. |
+
+The public sequence-list sections distinguish Addgene/depositor and full/partial
+categories, but analyzer links and map images are not sequence-file authority.
+Both sampled lists and the linked analyzer pages explicitly require login for
+sequence access. Addgene's [official access help](https://help.addgene.org/hc/en-us/articles/44210206209549-Are-there-any-requirements-for-viewing-plasmid-sequence-data-on-the-Addgene-website)
+confirms this boundary; its [August 2026 explanation](https://blog.addgene.org/protecting-the-science-you-share-why-sequence-data-requires-a-login)
+describes the change from historical anonymous downloads. Its
+[developer access options](https://developers.addgene.org/access-options/) require
+approved scopes and data-access license acceptance for programmatic sequence
+access. Consequently, constructing alternative backing-file URLs from public
+map filenames is not an implemented or validated anonymous import strategy.
+
+The native responses above had no `Access-Control-Allow-Origin` header when sent
+an `Origin: http://localhost:8080` header. A separate API authorization preflight
+(`OPTIONS`, origin `http://127.0.0.1:8080`, requested method `GET`, requested header
+`authorization`) returned 401 with `WWW-Authenticate: Token`, allowed methods
+`GET, HEAD, OPTIONS`, and no CORS permission header. This preflight fails for that
+browser origin. It does not establish how an approved authenticated response or
+another explicitly permitted origin behaves. The native Rust client is unaffected
+by browser CORS; the browser dialog's mocked success is not evidence of live
+cross-origin API interoperability.
+
+Audit retrieval times were 2026-11-24T13:04:59Z–13:06:28Z. SHA-256 identifiers of
+the exact observed response bodies (not redistributions or authenticity signatures):
+
+- Plasmid 52961 HTML: `25d2a65c1f0a1731e9cbe8ddf59846d218d73f25ba90a368013b748112b3c506`.
+- Plasmid 52961 sequence-list HTML: `be6c81347b7cc9d3f8d5c9aa4bcce8b6f4645a0b3603fbc613bb7906075f4a35`.
+- Plasmid 125752 sequence-list HTML: `9b379cbb2db621fa7a1ee9478cbf18f36698a3892a4dd4c94af714fe8695471b`.
+- Unauthenticated API 401 body: `dbff0849bc109eee7f9b7b1fe12e40fc8add21823b2f1fb600b37f620cbd7862`.
+
+A safe future public-page adapter could expose bounded, hashed **metadata only**:
+canonical plasmid identity, public sequence IDs, provider category, analyzer URL,
+and an explicit login-required capability state. It must remain separate from
+`AddgeneCatalog`'s authenticated sequence/download evidence and cannot manufacture
+a download URL, base/length agreement, or verified file identity. Public-page
+schema changes, absent identity evidence and unavailable CORS must fail explicitly.
+There is no automatic fallback from a rejected protected API call to a different
+public sequence or another sequence category.
+
+The current safe sequence-import choices remain the approved native API with an
+explicit catalog sequence selection, or a GenBank/SnapGene file personally
+downloaded through the provider's normal account flow and opened locally. A
+user-supplied official temporary file link remains a bounded direct-file import;
+its filename alone cannot establish plasmid/category identity. Live authenticated
+API/download behavior still requires an authorized interoperability check.

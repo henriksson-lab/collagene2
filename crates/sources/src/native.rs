@@ -339,7 +339,7 @@ async fn retrieve_addgene_selection<T: Transport>(
         Url::parse(&catalog.download_url(sequence_id)?).map_err(|_| SourceError::AddgeneSchema)?;
     if url.host_str() == Some(addgene::API_HOST) && config.addgene_api_token.is_none() {
         return Err(SourceError::AddgeneAccessRequired {
-            plasmid_id: catalog.plasmid_id,
+            plasmid_id: catalog.plasmid_id(),
         });
     }
     let bytes = tokio::time::timeout(
@@ -387,14 +387,14 @@ impl SourceClient {
         if matches!(source, Source::Addgene { .. }) {
             let catalog = self.addgene_catalog(input).await?;
             let id = sequence_id.ok_or_else(|| {
-                if catalog.choices.is_empty() {
+                if catalog.choices().is_empty() {
                     SourceError::AddgeneNoSequences {
-                        plasmid_id: catalog.plasmid_id,
+                        plasmid_id: catalog.plasmid_id(),
                     }
                 } else {
                     SourceError::AddgeneSelectionRequired {
-                        plasmid_id: catalog.plasmid_id,
-                        sequences: catalog.choices.len(),
+                        plasmid_id: catalog.plasmid_id(),
+                        sequences: catalog.choices().len(),
                     }
                 }
             })?;
@@ -658,7 +658,7 @@ mod tests {
             status:200,content_type:Some("text/plain".into()),body:b"LOCUS       fixture                    4 bp    DNA     circular SYN 01-JAN-2026\nFEATURES             Location/Qualifiers\nORIGIN\n        1 acgt\n//\n".to_vec(),..Default::default()
         }]);
         let catalog = discover_addgene(&mock, 12345, &config).await.unwrap();
-        assert_eq!(catalog.choices.len(), 1);
+        assert_eq!(catalog.choices().len(), 1);
         let report = retrieve_addgene_selection(&mock, &catalog, 42, &config)
             .await
             .unwrap();

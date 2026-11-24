@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+collagene-model = { path = "../model" }
 collagene-enzyme-catalog = { path = "../enzyme-catalog" }
 serde.workspace = true
 serde_json.workspace = true
@@ -21,7 +22,7 @@ csv = "=1.4.0"
 zip = { version = "=4.6.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [features]
-json-schema = ["dep:schemars"]
+json-schema = ["dep:schemars", "collagene-model/json-schema"]
 
 [dependencies.schemars]
 version = "1.2"

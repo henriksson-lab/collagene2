@@ -5,7 +5,7 @@ use collagene_core::{
     analysis::Primer,
     chemistry::{EndRepairMethod, EndTreatment},
     overlap_profiles::{OverlapMethod, ProfileOptions, ProfileReport},
-    protocol::{self, AnalysisJob, AnalysisResult, Request},
+    protocol::{AnalysisJob, AnalysisResult, Request},
     tailing::TailingBase,
     transfer::Candidate,
     verification::{
@@ -40,6 +40,8 @@ pub struct TailInput {
     pub enzymes: String,
     pub fragment: String,
     pub blunt: bool,
+    pub forward_name: String,
+    pub reverse_name: String,
     pub forward: String,
     pub reverse: String,
     pub forward_tail: String,
@@ -56,6 +58,8 @@ impl TailInput {
             enzymes: "EcoRV".into(),
             fragment: "1".into(),
             blunt: false,
+            forward_name: "Forward".into(),
+            reverse_name: "Reverse".into(),
             forward: String::new(),
             reverse: String::new(),
             forward_tail: String::new(),
@@ -68,9 +72,9 @@ impl TailInput {
     fn recipe(&self) -> Result<TailSubstrate, String> {
         if self.pcr {
             Ok(TailSubstrate::ExactPcr {
-                forward: Primer::new("Forward", &self.forward, &self.forward_tail)
+                forward: Primer::new(&self.forward_name, &self.forward, &self.forward_tail)
                     .map_err(|e| e.to_string())?,
-                reverse: Primer::new("Reverse", &self.reverse, &self.reverse_tail)
+                reverse: Primer::new(&self.reverse_name, &self.reverse, &self.reverse_tail)
                     .map_err(|e| e.to_string())?,
             })
         } else {
@@ -112,6 +116,8 @@ pub struct OverlapInput {
     pub enzymes: String,
     pub fragment: String,
     pub repair: Option<EndRepairMethod>,
+    pub forward_name: String,
+    pub reverse_name: String,
     pub forward: String,
     pub reverse_primer: String,
     pub forward_tail: String,
@@ -126,6 +132,8 @@ impl Default for OverlapInput {
             enzymes: "EcoRV".into(),
             fragment: "1".into(),
             repair: None,
+            forward_name: "Forward".into(),
+            reverse_name: "Reverse".into(),
             forward: String::new(),
             reverse_primer: String::new(),
             forward_tail: String::new(),
@@ -335,6 +343,15 @@ pub fn CloningMethodsPanel(
     epoch: RwSignal<u64>,
     on_candidate: Callback<Candidate>,
     on_products: Callback<Vec<Molecule>, Result<(), String>>,
+    primer_sources: Memo<Vec<crate::digest::SourceInfo>>,
+    list_primers: Callback<
+        collagene_core::run_lineage::EventBinding,
+        Result<collagene_core::primer_reuse::List, String>,
+    >,
+    resolve_primer: Callback<
+        crate::primer_picker::ResolveRequest,
+        Result<collagene_core::primer_reuse::Resolved, String>,
+    >,
 ) -> impl IntoView {
     let source_indices = Memo::new(move |_| {
         config.with(|c| {
@@ -625,9 +642,9 @@ pub fn CloningMethodsPanel(
     });
     view! {<div class="inspector-content cloning-methods-panel"><h2>"Cloning methods"</h2><p class="helper">"The active document is the independently chosen target. Method evidence never selects a target or establishes experimental success."</p>
         <label>"Method workflow"<select aria-label="Cloning workflow" prop:value=move||if config.get().mode==Mode::Tailing{"tailing"}else{"overlap"} on:change=move|e|config.update(|c|c.mode=if event_target_value(&e)=="overlap"{Mode::Overlap}else{Mode::Tailing})><option value="tailing">"TA / GC tailing and ligation"</option><option value="overlap">"Gibson / HiFi / In-Fusion overlap"</option></select></label>
-        <Show when=move||config.get().mode==Mode::Tailing><p class="helper">"Append one declared nucleotide to both actual 3′ ends of an established blunt duplex. This is an ideal endpoint operation; polymerase activity, mixtures and proprietary kit chemistry are not predicted. TA/GC products include two added junction bases."</p><div class="method-shortcuts"><button class="text-tool" on:click=move|_|config.update(|c|{c.vector.base=TailingBase::T;c.insert.base=TailingBase::A;})>"Use T/A pair"</button><button class="text-tool" on:click=move|_|config.update(|c|{c.vector.base=TailingBase::C;c.insert.base=TailingBase::G;})>"Use C/G pair"</button></div><TailFields vector=true config=config query_options=query_options/><TailFields vector=false config=config query_options=query_options/><label class="checkbox-label"><input type="checkbox" aria-label="Allow retained tailing ligation nicks" prop:checked=move||config.get().allow_nicked on:change=move|e|config.update(|c|c.allow_nicked=event_target_checked(&e))/>"Allow explicitly retained nicks"</label><p class="helper">"Exact PCR has 5′ OH termini. A sealed ligation may need an explicit phosphorylation step. Factory-vector chemistry and host nick repair are not inferred."</p></Show>
+        <Show when=move||config.get().mode==Mode::Tailing><p class="helper">"Append one declared nucleotide to both actual 3′ ends of an established blunt duplex. This is an ideal endpoint operation; polymerase activity, mixtures and proprietary kit chemistry are not predicted. TA/GC products include two added junction bases."</p><div class="method-shortcuts"><button class="text-tool" on:click=move|_|config.update(|c|{c.vector.base=TailingBase::T;c.insert.base=TailingBase::A;})>"Use T/A pair"</button><button class="text-tool" on:click=move|_|config.update(|c|{c.vector.base=TailingBase::C;c.insert.base=TailingBase::G;})>"Use C/G pair"</button></div><TailFields vector=true config=config query_options=query_options primer_sources list_primers resolve_primer epoch/><TailFields vector=false config=config query_options=query_options primer_sources list_primers resolve_primer epoch/><label class="checkbox-label"><input type="checkbox" aria-label="Allow retained tailing ligation nicks" prop:checked=move||config.get().allow_nicked on:change=move|e|config.update(|c|c.allow_nicked=event_target_checked(&e))/>"Allow explicitly retained nicks"</label><p class="helper">"Exact PCR has 5′ OH termini. A sealed ligation may need an explicit phosphorylation step. Factory-vector chemistry and host nick repair are not inferred."</p></Show>
         <Show when=move||config.get().mode==Mode::Overlap><label>"Overlap profile"<select aria-label="Overlap profile method" prop:value=move||format!("{:?}",config.get().method) on:change=move|e|config.update(|c|c.method=match event_target_value(&e).as_str(){"Gibson"=>OverlapMethod::Gibson,"InFusion"=>OverlapMethod::InFusion,_=>OverlapMethod::HiFi})><option value="Gibson">"Gibson"</option><option value="HiFi">"HiFi"</option><option value="InFusion">"In-Fusion"</option></select></label><p class="helper">"Fragments are listed in product order with explicit orientation. Homology geometry is checked exactly; published length guidance is advisory. No reaction completion or unique mixture product is established."</p>
-            <For each=move||config.with(|c|(0..c.rows.len()).collect::<Vec<_>>()) key=|i|*i children=move|i|view!{<OverlapFields config index=i query_options/>}/>
+            <For each=move||config.with(|c|(0..c.rows.len()).collect::<Vec<_>>()) key=|i|*i children=move|i|view!{<OverlapFields config index=i query_options primer_sources list_primers resolve_primer epoch/>}/>
             <button class="button secondary full" disabled=move||{config.with(|c|c.rows.len()>=12)} on:click=move|_|config.update(|c|c.rows.push(OverlapInput::default()))>"Add overlap fragment"</button><p class="helper">"This panel supports up to 12 ordered fragments; the typed core has its separate documented work bounds."</p><label>"Overlap lengths in junction order (bp)"<input aria-label="Profile overlap lengths" prop:value=move||config.get().overlaps on:input=move|e|config.update(|c|c.overlaps=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label="Scan repeated overlap words" prop:checked=move||config.get().scan_repeats on:change=move|e|config.update(|c|c.scan_repeats=event_target_checked(&e))/>"Search supplied fragments for repeated homology words"</label><label>"Repeat comparison budget"<input type="number" min="1" aria-label="Overlap repeat budget" prop:value=move||config.get().comparisons on:input=move|e|config.update(|c|c.comparisons=event_target_value(&e))/></label><label>"Maximum reported homology occurrences"<input type="number" min="1" aria-label="Overlap occurrence limit" prop:value=move||config.get().occurrences on:input=move|e|config.update(|c|c.occurrences=event_target_value(&e))/></label>
         </Show>
         <label class="checkbox-label"><input type="checkbox" aria-label="Method product circular" prop:checked=move||config.get().circular on:change=move|e|config.update(|c|c.circular=event_target_checked(&e))/>"Circular candidate product"</label><button class="button primary full" disabled=move||busy.get() on:click=move|_|compute.run(())>"Compute method evidence"</button><button class="text-tool" disabled=move||!busy.get() on:click=move|_|{generation.update(|n|*n=n.wrapping_add(1));if let Some(w)=active.get_value(){w.close();}active.set_value(None);busy.set(false);status.set("Method analysis cancelled".into());}>"Cancel method analysis"</button><p class="method-status" role="status">{move||status.get()}</p>
@@ -645,12 +662,27 @@ fn TailFields(
     vector: bool,
     config: RwSignal<MethodsState>,
     query_options: Memo<Vec<(usize, String)>>,
+    primer_sources: Memo<Vec<crate::digest::SourceInfo>>,
+    list_primers: Callback<
+        collagene_core::run_lineage::EventBinding,
+        Result<collagene_core::primer_reuse::List, String>,
+    >,
+    resolve_primer: Callback<
+        crate::primer_picker::ResolveRequest,
+        Result<collagene_core::primer_reuse::Resolved, String>,
+    >,
+    epoch: RwSignal<u64>,
 ) -> impl IntoView {
     let label = if vector { "Vector" } else { "Insert" };
     view! {<fieldset class="tail-source-fields"><legend>{label}</legend><label>"Source document"<select aria-label=format!("{label} tailing source") prop:value=move||config.with(|c|c.input(vector).document.to_string()) on:change=move|e|config.update(|c|c.input_mut(vector).document=event_target_value(&e).parse().unwrap_or(0))>{move||query_options.get().into_iter().map(|(i,name)|view!{<option value=i.to_string()>{name}</option>}).collect_view()}</select></label><label>"Preparation"<select aria-label=format!("{label} tailing preparation") prop:value=move||if config.with(|c|c.input(vector).pcr){"pcr"}else{"digest"} on:change=move|e|config.update(|c|c.input_mut(vector).pcr=event_target_value(&e)=="pcr")><option value="digest">"Restriction fragment"</option><option value="pcr">"Unique exact PCR product"</option></select></label>
-    <Show when=move||!config.with(|c|c.input(vector).pcr)><label>"Restriction enzymes"<input aria-label=format!("{label} tailing enzymes") prop:value=move||config.with(|c|c.input(vector).enzymes.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).enzymes=event_target_value(&e))/></label><label>"Digest fragment (cut order, 1-based)"<input type="number" min="1" aria-label=format!("{label} tailing fragment") prop:value=move||config.with(|c|c.input(vector).fragment.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).fragment=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label=format!("{label} blunt before tailing") prop:checked=move||config.with(|c|c.input(vector).blunt) on:change=move|e|config.update(|c|c.input_mut(vector).blunt=event_target_checked(&e))/>"Blunt staggered ends before tailing"</label></Show>
-    <Show when=move||config.with(|c|c.input(vector).pcr)><label>"Forward annealing sequence 5′→3′"<input aria-label=format!("{label} tailing forward primer") prop:value=move||config.with(|c|c.input(vector).forward.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).forward=event_target_value(&e))/></label><label>"Reverse annealing sequence 5′→3′"<input aria-label=format!("{label} tailing reverse primer") prop:value=move||config.with(|c|c.input(vector).reverse.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).reverse=event_target_value(&e))/></label><label>"Forward primer 5′ extension"<input aria-label=format!("{label} tailing forward extension") prop:value=move||config.with(|c|c.input(vector).forward_tail.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).forward_tail=event_target_value(&e))/></label><label>"Reverse primer 5′ extension"<input aria-label=format!("{label} tailing reverse extension") prop:value=move||config.with(|c|c.input(vector).reverse_tail.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).reverse_tail=event_target_value(&e))/></label></Show>
-    <label>"One nucleotide added to BOTH 3′ ends"<select aria-label=format!("{label} tailing base") prop:value=move||config.with(|c|c.input(vector).base.as_str()) on:change=move|e|config.update(|c|c.input_mut(vector).base=match event_target_value(&e).as_str(){"C"=>TailingBase::C,"G"=>TailingBase::G,"T"=>TailingBase::T,_=>TailingBase::A})><option value="A">"A"</option><option value="C">"C"</option><option value="G">"G"</option><option value="T">"T"</option></select></label><label>"Explicit terminal treatment after tailing"<select aria-label=format!("{label} tailing terminal treatment") prop:value=move||config.with(|c|match c.input(vector).treatment{Treatment::Keep=>"keep",Treatment::Phosphorylate=>"phosphorylate",Treatment::Dephosphorylate=>"dephosphorylate"}) on:change=move|e|config.update(|c|c.input_mut(vector).treatment=match event_target_value(&e).as_str(){"phosphorylate"=>Treatment::Phosphorylate,"dephosphorylate"=>Treatment::Dephosphorylate,_=>Treatment::Keep})><option value="keep">"Keep reconstructed 5′ chemistry"</option><option value="phosphorylate">"Add 5′ phosphorylation"</option><option value="dephosphorylate">"Add 5′ dephosphorylation"</option></select></label><label class="checkbox-label"><input type="checkbox" aria-label=format!("Reverse {label} tailing product") prop:checked=move||config.with(|c|c.input(vector).reversed) on:change=move|e|config.update(|c|c.input_mut(vector).reversed=event_target_checked(&e))/>"Reverse fragment for ligation"</label></fieldset>}
+        <Show when=move||!config.with(|c|c.input(vector).pcr)><label>"Restriction enzymes"<input aria-label=format!("{label} tailing enzymes") prop:value=move||config.with(|c|c.input(vector).enzymes.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).enzymes=event_target_value(&e))/></label><label>"Digest fragment (cut order, 1-based)"<input type="number" min="1" aria-label=format!("{label} tailing fragment") prop:value=move||config.with(|c|c.input(vector).fragment.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).fragment=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label=format!("{label} blunt before tailing") prop:checked=move||config.with(|c|c.input(vector).blunt) on:change=move|e|config.update(|c|c.input_mut(vector).blunt=event_target_checked(&e))/>"Blunt staggered ends before tailing"</label></Show>
+        <Show when=move||config.with(|c|c.input(vector).pcr)>
+        <crate::primer_picker::PrimerPicker label=format!("{label} tailing forward") sources=primer_sources list_primers resolve_primer epoch on_copy=Callback::new(move|primer:Primer|config.update(|c|{let r=c.input_mut(vector);r.forward_name=primer.name;r.forward=primer.annealing.as_str().into();r.forward_tail=primer.tail;}))/>
+        <label>"Forward primer name"<input maxlength="256" aria-label=format!("{label} tailing forward primer name") prop:value=move||config.with(|c|c.input(vector).forward_name.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).forward_name=event_target_value(&e))/></label>
+        <crate::primer_picker::PrimerPicker label=format!("{label} tailing reverse") sources=primer_sources list_primers resolve_primer epoch on_copy=Callback::new(move|primer:Primer|config.update(|c|{let r=c.input_mut(vector);r.reverse_name=primer.name;r.reverse=primer.annealing.as_str().into();r.reverse_tail=primer.tail;}))/>
+        <label>"Reverse primer name"<input maxlength="256" aria-label=format!("{label} tailing reverse primer name") prop:value=move||config.with(|c|c.input(vector).reverse_name.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).reverse_name=event_target_value(&e))/></label>
+    <label>"Forward annealing sequence 5′→3′"<input aria-label=format!("{label} tailing forward primer") prop:value=move||config.with(|c|c.input(vector).forward.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).forward=event_target_value(&e))/></label><label>"Reverse annealing sequence 5′→3′"<input aria-label=format!("{label} tailing reverse primer") prop:value=move||config.with(|c|c.input(vector).reverse.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).reverse=event_target_value(&e))/></label><label>"Forward primer 5′ extension"<input aria-label=format!("{label} tailing forward extension") prop:value=move||config.with(|c|c.input(vector).forward_tail.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).forward_tail=event_target_value(&e))/></label><label>"Reverse primer 5′ extension"<input aria-label=format!("{label} tailing reverse extension") prop:value=move||config.with(|c|c.input(vector).reverse_tail.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).reverse_tail=event_target_value(&e))/></label><details><summary>"Review current primer domains"</summary><pre>{move||config.with(|c|{let r=c.input(vector);format!("{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\n5′ tail: {}\n\n{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\n5′ tail: {}",r.forward_name,r.forward_tail,r.forward,r.forward,r.forward_tail,r.reverse_name,r.reverse_tail,r.reverse,r.reverse,r.reverse_tail)})}</pre></details></Show>
+        <label>"One nucleotide added to BOTH 3′ ends"<select aria-label=format!("{label} tailing base") prop:value=move||config.with(|c|c.input(vector).base.as_str()) on:change=move|e|config.update(|c|c.input_mut(vector).base=match event_target_value(&e).as_str(){"C"=>TailingBase::C,"G"=>TailingBase::G,"T"=>TailingBase::T,_=>TailingBase::A})><option value="A">"A"</option><option value="C">"C"</option><option value="G">"G"</option><option value="T">"T"</option></select></label><label>"Explicit terminal treatment after tailing"<select aria-label=format!("{label} tailing terminal treatment") prop:value=move||config.with(|c|match c.input(vector).treatment{Treatment::Keep=>"keep",Treatment::Phosphorylate=>"phosphorylate",Treatment::Dephosphorylate=>"dephosphorylate"}) on:change=move|e|config.update(|c|c.input_mut(vector).treatment=match event_target_value(&e).as_str(){"phosphorylate"=>Treatment::Phosphorylate,"dephosphorylate"=>Treatment::Dephosphorylate,_=>Treatment::Keep})><option value="keep">"Keep reconstructed 5′ chemistry"</option><option value="phosphorylate">"Add 5′ phosphorylation"</option><option value="dephosphorylate">"Add 5′ dephosphorylation"</option></select></label><label class="checkbox-label"><input type="checkbox" aria-label=format!("Reverse {label} tailing product") prop:checked=move||config.with(|c|c.input(vector).reversed) on:change=move|e|config.update(|c|c.input_mut(vector).reversed=event_target_checked(&e))/>"Reverse fragment for ligation"</label></fieldset>}
 }
 
 #[component]
@@ -658,6 +690,16 @@ fn OverlapFields(
     config: RwSignal<MethodsState>,
     index: usize,
     query_options: Memo<Vec<(usize, String)>>,
+    primer_sources: Memo<Vec<crate::digest::SourceInfo>>,
+    list_primers: Callback<
+        collagene_core::run_lineage::EventBinding,
+        Result<collagene_core::primer_reuse::List, String>,
+    >,
+    resolve_primer: Callback<
+        crate::primer_picker::ResolveRequest,
+        Result<collagene_core::primer_reuse::Resolved, String>,
+    >,
+    epoch: RwSignal<u64>,
 ) -> impl IntoView {
     let row = move || config.with(|c| c.rows.get(index).cloned().unwrap_or_default());
     view! {<fieldset class="overlap-source-row"><legend>{format!("Fragment {}",index+1)}</legend>
@@ -671,10 +713,16 @@ fn OverlapFields(
             <p class="helper">"Fragments are reconstructed in core digest order using the stated complete-cleavage assumption. This is not evidence of enzyme activity, methylation permission or reagent compatibility."</p>
         </Show>
         <Show when=move||row().preparation==OverlapPreparation::ExactPcr>
+            <crate::primer_picker::PrimerPicker label=format!("Overlap forward {}",index+1) sources=primer_sources list_primers resolve_primer epoch on_copy=Callback::new(move|primer:Primer|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.forward_name=primer.name;r.forward=primer.annealing.as_str().into();r.forward_tail=primer.tail;}))/>
+            <label>"Forward primer name"<input maxlength="256" aria-label=format!("Overlap forward primer name {}",index+1) prop:value=move||row().forward_name on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.forward_name=event_target_value(&e)})/></label>
+            <crate::primer_picker::PrimerPicker label=format!("Overlap reverse {}",index+1) sources=primer_sources list_primers resolve_primer epoch on_copy=Callback::new(move|primer:Primer|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.reverse_name=primer.name;r.reverse_primer=primer.annealing.as_str().into();r.reverse_tail=primer.tail;}))/>
+            <label>"Reverse primer name"<input maxlength="256" aria-label=format!("Overlap reverse primer name {}",index+1) prop:value=move||row().reverse_name on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.reverse_name=event_target_value(&e)})/></label>
+
             <label>"Forward annealing sequence 5′→3′"<input aria-label=format!("Overlap forward primer {}",index+1) prop:value=move||row().forward on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.forward=event_target_value(&e)})/></label>
             <label>"Forward primer 5′ extension"<input aria-label=format!("Overlap forward extension {}",index+1) prop:value=move||row().forward_tail on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.forward_tail=event_target_value(&e)})/></label>
             <label>"Reverse annealing sequence 5′→3′"<input aria-label=format!("Overlap reverse primer {}",index+1) prop:value=move||row().reverse_primer on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.reverse_primer=event_target_value(&e)})/></label>
             <label>"Reverse primer 5′ extension"<input aria-label=format!("Overlap reverse extension {}",index+1) prop:value=move||row().reverse_tail on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.reverse_tail=event_target_value(&e)})/></label>
+            <details><summary>"Review current primer domains"</summary><pre>{move||{let r=row();format!("{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\n5′ tail: {}\n\n{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\n5′ tail: {}",r.forward_name,r.forward_tail,r.forward,r.forward,r.forward_tail,r.reverse_name,r.reverse_tail,r.reverse_primer,r.reverse_primer,r.reverse_tail)}}</pre></details>
             <p class="helper">"Enter annealing domains and added tails separately. Both oligos are written 5′→3′; no primer design or unique amplicon is assumed."</p>
         </Show>
         <label class="checkbox-label"><input type="checkbox" aria-label=format!("Reverse overlap source {}",index+1) prop:checked=move||row().reverse on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.reverse=event_target_checked(&e)})/>"Reverse complement prepared fragment"</label>
@@ -738,9 +786,9 @@ fn overlap_request(
                 }
             }
             OverlapPreparation::ExactPcr => Preparation::ExactPcr {
-                forward: Primer::new("Forward", &row.forward, &row.forward_tail)
+                forward: Primer::new(&row.forward_name, &row.forward, &row.forward_tail)
                     .map_err(|e| e.to_string())?,
-                reverse: Primer::new("Reverse", &row.reverse_primer, &row.reverse_tail)
+                reverse: Primer::new(&row.reverse_name, &row.reverse_primer, &row.reverse_tail)
                     .map_err(|e| e.to_string())?,
             },
         };

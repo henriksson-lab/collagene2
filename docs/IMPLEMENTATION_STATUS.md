@@ -14,6 +14,29 @@ is postponed until the rest of the software is implemented. Existing modules are
 retained; no more alignment/index features or integration are scheduled now.
 Browser checks remain deferred and compiler checks run alongside coding.
 
+## Saved primer reuse and PCR template history
+
+The shared `core::primer_reuse` resolver validates explicit saved primer sequence
+fields, rejects duplicate/conflicting qualifiers, preserves names and 5′ tails,
+and uses exact current geometry only when required fields are absent. Stored
+mismatch primers remain explicit sequence data with warnings. Actual imported
+oligo annotations are supported; bare DNA does not invent a primer partition.
+
+PCR and both overlap/TA–GC PCR preparation rows now offer an explicit saved-primer
+picker across open documents. Selection is bound to the exact document/head event
+and actual revision, with bounded searchable lists and full domain/tail review.
+Copied fields remain editable and downstream binding/reconstruction is fresh.
+MCP `resolve_primer` provides the same immutable resolution; the registry now has
+114 tools. No worker/candidate/plan schema change is needed for literal primers.
+
+Direct PCR previews now retain their actual template event as a parent, stage all
+products before workspace validation/publication, preserve named ordered primers,
+and reject asynchronous results after template identity, event, workspace epoch
+or primer fields change. This closes the previous source-parent omission in this
+UI path. Four focused core fixtures and one MCP resolution/PCR fixture passed.
+WASM checking continues in the background; browser acceptance remains deferred. See [reuse contract](PRIMER_REUSE.md) and
+[explicit-tail example](../fixtures/primer-reuse-demo.md).
+
 ## Prepared overlap cloning workflow
 
 The shared `core::assembly_recipe` compiler now connects original source roles to
@@ -26,10 +49,10 @@ Assemble and Plan now sit directly beside the editor/digest inspector controls.
 
 MCP `propose_overlap_assembly` uses the same compiler and verifier, atomically
 retaining a candidate and complete evidence artifact for existing verification
-and HTML/PDF exports. The MCP registry now has 113 tools; worker schema 31 appends
+and HTML/PDF exports. Worker schema 31 appends
 only preview job/result tags, while candidate/plan/scientific versions stay
-unchanged. Six focused core/worker fixtures passed; MCP and WASM checks are
-running in the background. Browser checks remain deferred. See [workflow](ASSEMBLY_WORKFLOW.md), [core contract](ASSEMBLY_RECIPES.md)
+unchanged. Six focused core/worker fixtures and the MCP preparation/protocol fixture passed.
+The following primer-reuse integration has separate native/WASM check results. Browser checks remain deferred. See [workflow](ASSEMBLY_WORKFLOW.md), [core contract](ASSEMBLY_RECIPES.md)
 and [literal PCR/digest example](../fixtures/prepared-overlap-demo.md).
 
 ## Current editor implementation
@@ -141,7 +164,7 @@ The Plan panel can retain a complete reconstructed graph through **Keep reconstr
 
 Rust/WASM workers use Postcard and transferable binary buffers, with 30-second job limits and obsolete-result rejection. Worker envelopes write schema version 31 and retain supported historical schemas 1–30, including streamed reference stores, cooperative genomic search, checked digestion and reference recombination. Candidate files write 9, workspace plans 7 and the verifier is science-12. Exact workspace-bearing tags allow bounded 128 MiB payloads; ordinary scientific messages retain 32 MiB limits. Explicit migration handles original verification reports without an engine field, marking that engine as unrecorded. Variants, nested plans and archive bytes cannot conceal operations or reports from a later schema. Document/planning-snapshot and archive formats remain version 1. Historical verification reports remain data; fresh replay/install requires the current engine. Independent legacy structs and literal Postcard bytes exercise backward decoding, field preservation and truncated inputs. Sequence tracks debounce viewport jobs, reject obsolete replies and terminate the retained worker on source replacement/unmount. Large-reference jobs use private retained sessions and bounded owner-block advances with cancellation. A general worker pool, cooperative cancellation for older one-shot analyses and chunked plasmid-document caches remain pending. [Binary protocol](WORKER_PROTOCOL.md).
 
-The session-only stdio MCP server uses the official Rust SDK, typed tool schemas, immutable resources and bounded outputs. Browser snapshots can pass through the actual MCP server and return as candidates for UI review, independent current-revision binding and WASM verification. Its 113 tools expose restriction/PCR/duplex analysis, URL import and Addgene sequence choices, translation/CDS/ORFs, primer analysis/design, PDF export, Golden Gate/mismatch-PCR simulation, inverse-PCR candidates, gel/diagnostic artifacts, pairwise/circular comparison, read validation, explicit-encoding FASTQ, oligo collections/selections and full native workspace exchange, versioned feature libraries and GFF3/BED annotation datasets, plus end-repair/oligo-annealing previews, source-bound unified search/viewport tracks, immutable alignment collections/exchange/column inspection/row extraction, protein-property models, explicit tailing previews, oriented overlap-profile checks and immutable retained-run capture/list/replay plus source-bound codon design, independent candidate checking and paginated dot-plot analysis with JSON/SVG artifacts and source-bound read contigs with immutable report/consensus resources, plus paginated methylation assessments, CRISPR guide/off-target reports and independently checked edit-template resources, plus managed streamed reference import/export, global interval reads/guides and private cooperative genome searches. Native workspace upload uses bounded offset/hash-checked chunks and atomic installation, including a tested archive above 8 MiB and a 1,000-document archive with retained history, candidates and evidence. It has no implicit browser/project-write authority. Live synchronization, persistent authorized writes, hosted HTTP and cooperative cancellation for older one-shot scientific analyses remain pending. See [MCP usage](MCP.md).
+The session-only stdio MCP server uses the official Rust SDK, typed tool schemas, immutable resources and bounded outputs. Browser snapshots can pass through the actual MCP server and return as candidates for UI review, independent current-revision binding and WASM verification. Its 114 tools expose restriction/PCR/duplex analysis, URL import and Addgene sequence choices, translation/CDS/ORFs, primer analysis/design, PDF export, Golden Gate/mismatch-PCR simulation, inverse-PCR candidates, gel/diagnostic artifacts, pairwise/circular comparison, read validation, explicit-encoding FASTQ, oligo collections/selections and full native workspace exchange, versioned feature libraries and GFF3/BED annotation datasets, plus end-repair/oligo-annealing previews, source-bound unified search/viewport tracks, immutable alignment collections/exchange/column inspection/row extraction, protein-property models, explicit tailing previews, oriented overlap-profile checks and immutable retained-run capture/list/replay plus source-bound codon design, independent candidate checking and paginated dot-plot analysis with JSON/SVG artifacts and source-bound read contigs with immutable report/consensus resources, plus paginated methylation assessments, CRISPR guide/off-target reports and independently checked edit-template resources, plus managed streamed reference import/export, global interval reads/guides and private cooperative genome searches. Native workspace upload uses bounded offset/hash-checked chunks and atomic installation, including a tested archive above 8 MiB and a 1,000-document archive with retained history, candidates and evidence. It has no implicit browser/project-write authority. Live synchronization, persistent authorized writes, hosted HTTP and cooperative cancellation for older one-shot scientific analyses remain pending. See [MCP usage](MCP.md).
 
 The History inspector now renders recorded event DAG branches/merges and exact parent links with bounded SVG/DOM pages, keyboard inspection, navigation-stack badges and external-parent details. Equal-content events remain distinct. Opening an old event as a new document retains its exact source-event parent through native archive/reload. Graph content/candidate matches carry no scientific verification authority. [History graph](HISTORY_GRAPH.md).
 

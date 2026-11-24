@@ -396,3 +396,10 @@ The response retains `state: "candidate"` and `verified: false`, plus a fresh de
 Use the returned `plan_revision` with existing `verify_plan`, `export_candidate`, `export_protocol` and `export_protocol_pdf`; verification and protocol export reconstruct again. Saved artifacts and source annotations never restore scientific authority. Successful exact agreement is conditional on declared preparation assumptions, not laboratory success or an exhaustive reaction search.
 
 The source-authored SDK fixture specifies a literal PCR left fragment and EcoRV-prepared right fragment sharing 15 bases, with an independently supplied target. It preserves strict equality checks and covers wrong targets, explicit reverse orientation, stale sources, unchanged original documents, candidate reuse and HTML/PDF export. The stdio smoke also exercises a WholeLinear recipe through the actual tool. Execution results are recorded separately; adding these fixtures does not assert that they have run.
+
+
+### Saved primer reuse
+
+`resolve_primer` resolves one `primer_bind` feature from an exact immutable `{document: {id, revision}, feature_index}`. It returns the actual `resolved.primer` (name, annealing domain and explicit 5′ tail), current source revision, feature index, sequence origin and warnings through the same strict Rust resolver as the web primer controls. Repeated/conflicting sequence qualifiers, inconsistent ordered/domain splits, unsupported missing-field geometry and stale sources reject. An explicitly stored mismatch remains a literal oligo with a warning; it is not corrected against the template. Generic missing-field inference requires supported exact strand-oriented geometry. The 200-base oligo bound and IUPAC ambiguity are preserved.
+
+Resolution creates no document or proof. Explicitly pass the returned `primer` into `simulate_pcr` or `analyze_primer` with the actual current template to reconstruct binding/products independently. Saved locations and historical analysis do not establish amplification, specificity, chemical preparation or thermodynamic conditions. See [primer reuse](PRIMERS.md#reuse-from-mcp).

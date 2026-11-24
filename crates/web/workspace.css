@@ -190,3 +190,8 @@
 .workspace-shell .mvp-inspector-tabs { grid-template-columns:repeat(3,minmax(0,1fr)); }
 .workspace-shell .mvp-inspector-tabs>.more-tools { grid-column:1 / -1; border-top:1px solid #e4ebe5; }
 .workspace-shell .mvp-inspector-tabs>.more-tools>summary { min-height:36px; flex-direction:row; align-items:center; justify-content:space-between; }
+
+.workspace-shell .saved-primer-picker { margin:10px 0; padding:10px; border:1px solid #dce3dd; border-radius:5px; }
+.workspace-shell .saved-primer-picker summary { cursor:pointer; font-size:13px; font-weight:600; }
+.workspace-shell .saved-primer-choice { padding:8px 0; border-bottom:1px solid #e4ebe5; overflow-wrap:anywhere; }
+.workspace-shell .saved-primer-picker pre { max-height:160px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.5 monospace; }

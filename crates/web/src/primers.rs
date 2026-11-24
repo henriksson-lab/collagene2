@@ -38,53 +38,6 @@ fn annotation(
         needs_review: review,
     }
 }
-fn reused_primer(feature: &Feature, molecule: &Molecule) -> Result<Primer, String> {
-    let value = |key: &str| {
-        feature
-            .qualifiers
-            .iter()
-            .find(|(k, _)| k == key)
-            .and_then(|(_, v)| v.clone())
-    };
-    let tail = value("5prime_tail").unwrap_or_default();
-    let annealing = if let Some(sequence) = value("annealing_sequence") {
-        sequence
-    } else if let Some(ordered) = value("oligo_sequence") {
-        let ordered = collagene_core::Sequence::dna(&ordered).map_err(|e| e.to_string())?;
-        let normalized_tail = if tail.trim().is_empty() {
-            String::new()
-        } else {
-            collagene_core::Sequence::dna(&tail)
-                .map_err(|e| e.to_string())?
-                .as_str()
-                .to_owned()
-        };
-        ordered
-            .as_str()
-            .strip_prefix(&normalized_tail)
-            .ok_or("Stored oligo does not start with its declared 5′ tail")?
-            .to_string()
-    } else {
-        feature
-            .location
-            .extract(&molecule.sequence)
-            .map_err(|e| e.to_string())?
-    };
-    let primer = Primer::new(feature.label(), &annealing, &tail).map_err(|e| e.to_string())?;
-    if primer.ordered_sequence().len() > 200 {
-        return Err("Stored primer exceeds this tool's 200-base limit".into());
-    }
-    if let Some(ordered) = value("oligo_sequence") {
-        if collagene_core::Sequence::dna(&ordered)
-            .map_err(|e| e.to_string())?
-            .as_str()
-            != primer.ordered_sequence()
-        {
-            return Err("Stored annealing/tail fields disagree with the ordered oligo".into());
-        }
-    }
-    Ok(primer)
-}
 #[component]
 pub fn PrimerPanel(
     molecule: Memo<Molecule>,
@@ -114,6 +67,18 @@ pub fn PrimerPanel(
     let forward_tail = RwSignal::new(String::new());
     let reverse_tail = RwSignal::new(String::new());
     let reuse_index = RwSignal::new(String::new());
+    let reuse_notice = RwSignal::new(String::new());
+    let saved_primers =
+        RwSignal::new(None::<Result<Arc<collagene_core::primer_reuse::List>, String>>);
+    Effect::new(move |_| {
+        let result = molecule
+            .with(|source| collagene_core::primer_reuse::list(source, 1000))
+            .map(Arc::new)
+            .map_err(|error| error.to_string());
+        saved_primers.set(Some(result));
+        reuse_index.set(String::new());
+        reuse_notice.set(String::new());
+    });
     let kept_forward = RwSignal::new(None::<Primer>);
     let kept_reverse = RwSignal::new(None::<Primer>);
     let evidence = RwSignal::new(None::<PrimerEvidence>);
@@ -244,24 +209,32 @@ pub fn PrimerPanel(
         }
     };
     let reuse = move |_| {
-        let source = molecule.get_untracked();
-        let result = reuse_index
-            .get_untracked()
-            .parse::<usize>()
-            .ok()
-            .and_then(|i| source.features.get(i))
-            .filter(|f| f.kind.eq_ignore_ascii_case("primer_bind"))
-            .ok_or_else(|| "Select a saved primer annotation".to_string())
-            .and_then(|feature| reused_primer(feature, &source));
+        let result = (|| -> Result<collagene_core::primer_reuse::Resolved, String> {
+            let index = reuse_index
+                .get_untracked()
+                .parse::<usize>()
+                .map_err(|_| "Select a reusable saved primer annotation".to_string())?;
+            let list = saved_primers
+                .get_untracked()
+                .ok_or("Saved primer list is not ready")??;
+            molecule
+                .with_untracked(|source| {
+                    collagene_core::primer_reuse::resolve_at_revision(
+                        source,
+                        index,
+                        &list.source_revision,
+                    )
+                })
+                .map_err(|error| error.to_string())
+        })();
         match result {
-            Ok(primer) => {
+            Ok(resolved) => {
+                let primer = resolved.primer;
                 name.set(primer.name);
                 annealing.set(primer.annealing.as_str().into());
                 tail.set(primer.tail);
-                status.set(
-                    "Stored oligo loaded. Analyze binding against the current document before use."
-                        .into(),
-                );
+                reuse_notice.set(format!("Saved oligo loaded from feature {} at exact source revision {}. Analyze binding against the current template before use. {}",
+                    resolved.feature_index,resolved.source_revision,resolved.warnings.iter().take(20).cloned().collect::<Vec<_>>().join(" ")));
             }
             Err(error) => status.set(error),
         }
@@ -302,7 +275,7 @@ pub fn PrimerPanel(
         <style>".primer-panel .primer-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.primer-panel .primer-grid label{margin:0}.primer-panel pre{font:11px/1.6 monospace;white-space:pre-wrap;overflow-wrap:anywhere;background:#f2f6f2;padding:8px;max-height:220px;overflow:auto}.primer-panel .primer-hit,.primer-panel .primer-pair{padding:10px 0;border-bottom:1px solid #e1e7e0;font-size:12px;line-height:1.6}.primer-panel .primer-actions{display:flex;gap:6px;flex-wrap:wrap}.primer-panel .primer-actions button{font-size:11px;padding:6px 8px}.primer-panel ul{padding-left:18px}.primer-status{font-size:12px;line-height:1.6;overflow-wrap:anywhere}"</style>
         <div class="inspector-content primer-panel"><h2>"Primers & oligos"</h2><p class="helper">"All oligos are written 5′→3′. Initial binding and Tm use the annealing domain; structure screens include tails."</p>
         <details open><summary>"Calculation conditions"</summary><div class="primer-grid"><label>"Sodium (mM)"<input aria-label="Primer sodium mM" type="number" prop:value=move||sodium.get() on:input=move|e|sodium.set(event_target_value(&e))/></label><label>"Total strands (nM)"<input aria-label="Primer total strands nM" type="number" prop:value=move||concentration.get() on:input=move|e|concentration.set(event_target_value(&e))/></label></div><p class="helper">"Perfect DNA-duplex model; magnesium, dNTPs and additives are not inferred. Tm is not a recommended PCR temperature."</p></details>
-        <h3>"Analyze one primer"</h3><label>"Saved primer annotations"<select aria-label="Saved primer annotations" prop:value=move||reuse_index.get() on:change=move|e|reuse_index.set(event_target_value(&e))><option value="">"Choose a saved primer…"</option>{move||molecule.get().features.into_iter().enumerate().filter(|(_,f)|f.kind.eq_ignore_ascii_case("primer_bind")).take(1000).map(|(i,f)|view!{<option value=i.to_string()>{f.label().to_string()}</option>}).collect_view()}</select></label><button class="button secondary full" on:click=reuse>"Load saved primer"</button><label>"Name"<input aria-label="Primer name" prop:value=move||name.get() on:input=move|e|name.set(event_target_value(&e))/></label><label>"Annealing domain"<input aria-label="Primer annealing domain" prop:value=move||annealing.get() on:input=move|e|annealing.set(event_target_value(&e))/></label><label>"5′ tail"<input aria-label="Primer tail" prop:value=move||tail.get() on:input=move|e|tail.set(event_target_value(&e))/></label>
+        <h3>"Analyze one primer"</h3><label>"Saved primer annotations"<select aria-label="Saved primer annotations" prop:value=move||reuse_index.get() on:change=move|e|reuse_index.set(event_target_value(&e))><option value="">"Choose a saved primer…"</option>{move||saved_primers.get().and_then(Result::ok).map(|list|list.primers.iter().map(|entry|{let title=entry.diagnostic.clone().unwrap_or_default();view!{<option value=entry.feature_index.to_string() disabled=!entry.reusable title=title>{format!("{}{}",entry.name,if entry.reusable{""}else{" · cannot reuse"})}</option>}}).collect_view())}</select></label><button class="button secondary full" on:click=reuse>"Load saved primer"</button><p class="helper">{move||match saved_primers.get(){Some(Ok(list)) if list.omitted>0=>format!("Showing {} of {} saved primers; {} omitted by the bounded list.",list.primers.len(),list.total,list.omitted),Some(Err(error))=>error,_=>String::new()}}</p><p class="helper primer-reuse-notice" role="status">{move||reuse_notice.get()}</p><label>"Name"<input aria-label="Primer name" prop:value=move||name.get() on:input=move|e|name.set(event_target_value(&e))/></label><label>"Annealing domain"<input aria-label="Primer annealing domain" prop:value=move||annealing.get() on:input=move|e|annealing.set(event_target_value(&e))/></label><label>"5′ tail"<input aria-label="Primer tail" prop:value=move||tail.get() on:input=move|e|tail.set(event_target_value(&e))/></label>
         <button class="button secondary full" disabled=move||selection.get().is_none() on:click=move|_|{if let Some((a,b))=selection.get_untracked(){if let Some(text)=molecule.get_untracked().sequence.as_str().get(a..b){annealing.set(text.to_string());}}}>"Use selected reference bases"</button>
         <div class="primer-grid"><label>"Allowed mismatches"<input aria-label="Primer allowed mismatches" type="number" min="0" prop:value=move||mismatches.get() on:input=move|e|mismatches.set(event_target_value(&e))/></label><label>"Required exact 3′ bases"<input aria-label="Primer exact 3prime bases" type="number" min="0" prop:value=move||three_prime.get() on:input=move|e|three_prime.set(event_target_value(&e))/></label></div>
         <button class="button primary full" disabled=move||busy.get()||molecule.get().sequence.alphabet()!=Alphabet::Dna on:click=analyze>"Analyze primer & binding"</button>

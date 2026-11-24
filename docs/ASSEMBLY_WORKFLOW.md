@@ -15,3 +15,11 @@ Review method candidate recompiles the same source-bound recipe into a typed pla
 The desktop form supports up to12 rows. Focused core/MCP and WASM checks run in the background during implementation. Browser checks remain deferred until the full in-scope implementation is complete. Mobile work remains deferred.
 
 A [small PCR + EcoRV example](../fixtures/prepared-overlap-demo.md) provides independently specified fragments, a 15-base junction and correct/wrong targets.
+
+
+Exact-PCR rows also support explicit saved-primer copying from any open document
+with usable primer annotations, including imported oligo documents. Forward and
+reverse names, annealing domains and 5′ extensions are copied together and remain
+editable; no field is selected automatically. The same controls are available
+for PCR preparation in TA/GC workflows. Source event/revision changes invalidate
+the chooser, and changed recipe fields invalidate previous assembly evidence.

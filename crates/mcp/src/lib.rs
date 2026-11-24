@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 113;
+pub const CURRENT_TOOL_COUNT: usize = 114;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -568,6 +568,13 @@ pub struct CodonCheckQuery {
     pub source: DocumentRef,
     pub candidate: DocumentRef,
     pub options: collagene_core::codon_design::DesignOptions,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SavedPrimerQuery {
+    pub document: DocumentRef,
+    /// Exact zero-based primer_bind feature index in this document revision.
+    pub feature_index: usize,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -4089,6 +4096,21 @@ impl CollageneServer {
             let report=collagene_core::gel::diagnostic_digests(&sources,&args.options).map_err(bad)?;
             let artifact=server.analysis_artifact(&json!({"documents":args.documents,"engine_version":verification::ENGINE_VERSION,"diagnostic_digests":report}))?;
             output(json!({"documents":args.documents,"source_revisions":report.source_revisions,"evaluated_digests":report.evaluated_digests,"work_bases":report.work_bases,"exhaustive_search":report.exhaustive_search,"warnings":report.warnings,"display_truncated":report.candidates.len()>20,"candidates":report.candidates.iter().take(20).map(|c|json!({"enzymes":c.enzymes,"distinguished_pairs":c.distinguished_pairs,"indistinguishable_pairs":c.indistinguishable_pairs,"unknown_pairs":c.unknown_pairs,"minimum_diagnostic_separation":c.minimum_diagnostic_separation})).collect::<Vec<_>>(),"artifact_id":artifact}))
+        }).await
+    }
+    #[tool(
+        description = "Resolve a saved primer_bind annotation at its exact immutable document revision and zero-based feature index. Uses shared strict oligo/annealing/5-prime-tail consistency checks; missing fields may be inferred only from exact supported strand-oriented geometry, never fuzzy/unresolved/reviewed geometry. Returns the actual ordered Primer, sequence origin and warnings, preserving deliberate mismatches/IUPAC and historical source qualifiers as evidence. No binding, PCR, thermodynamic or experimental proof; pass the returned primer explicitly to simulate_pcr/analyze_primer."
+    )]
+    async fn resolve_primer(
+        &self,
+        Parameters(args): Parameters<SavedPrimerQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || {
+            let resolved={let store=server.store.lock().unwrap();let source=store.document(&args.document)?;
+                collagene_core::primer_reuse::resolve_at_revision(source,args.feature_index,&args.document.revision).map_err(bad)?};
+            output(json!({"document":args.document,"resolved":resolved,
+                "authority":"Saved oligo identity only. Current template binding and exact PCR products must be recomputed independently; source location and historical analysis are not amplification evidence."}))
         }).await
     }
     #[tool(

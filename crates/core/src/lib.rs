@@ -91,3 +91,6 @@ pub mod genome_crispr;
 pub mod genome_session;
 
 pub mod restriction_history;
+
+/// Explicit source-backed physical TOPO preparation and reconstruction.
+pub mod topo;

@@ -1168,3 +1168,6 @@ pub fn orientations(
     report_size(&report, l.max_report_bytes)?;
     Ok(report)
 }
+
+/// Source-bound paired-contour proof, preserving the full physical graph.
+pub mod projection;

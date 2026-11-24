@@ -373,6 +373,7 @@ dependencies = [
  "collagene-enzyme-catalog",
  "collagene-model",
  "collagene-recombination",
+ "collagene-topo",
  "csv",
  "gb-io",
  "pdf-writer",

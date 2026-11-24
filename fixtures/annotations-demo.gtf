@@ -1,0 +1,3 @@
+# Synthetic GTF rows for variants-demo.gb (chr_demo; AACCGTT), not a gene model.
+chr_demo	Collagene_fixture	exon	2	5	.	-	.	gene_id "g_demo"; transcript_id "t_demo"; exon_number 1; tag "synthetic"; tag "coordinate_fixture";
+chr_demo	Collagene_fixture	CDS	2	4	.	-	0	gene_id "g_demo"; transcript_id "t_demo"; note "reported phase only";

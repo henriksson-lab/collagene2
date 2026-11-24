@@ -96,6 +96,7 @@ pub mod restriction_history;
 pub mod topo;
 pub mod topo_annotations;
 
+pub mod indexed_bam;
 pub mod read_alignment_reference;
 pub mod read_alignment_store;
 

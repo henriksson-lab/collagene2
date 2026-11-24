@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 29;
+pub const WORKER_SCHEMA_VERSION: u16 = 30;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 9;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -1070,6 +1070,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         _ => 5,
     };
     check_variant_version(bytes, required)?;
+    if let AnalysisResult::AnnotationImport(report) = &response.result {
+        check_annotation_format_version(bytes, report.format)?;
+    }
     if let AnalysisResult::WorkspaceLoaded(workspace) = &response.result {
         check_workspace_version(bytes, workspace)?;
         if workspace
@@ -1629,6 +1632,18 @@ fn check_workspace_version(
     }
     Ok(())
 }
+// AnnotationFormat is append-only inside existing jobs/reports. A new selector
+// must not acquire semantics under an older envelope, even when the outer tag
+// predates it. Historical GFF3/BED payloads retain their schema-7 contract.
+fn check_annotation_format_version(
+    bytes: &[u8],
+    format: crate::annotation_formats::AnnotationFormat,
+) -> Result<(), Error> {
+    if format == crate::annotation_formats::AnnotationFormat::Gtf {
+        check_variant_version(bytes, 30)?;
+    }
+    Ok(())
+}
 fn check_variant_version(bytes: &[u8], required: u16) -> Result<(), Error> {
     if u16::from_le_bytes([bytes[4], bytes[5]]) < required {
         return Err(Error::Unsupported(format!(
@@ -1816,6 +1831,16 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         _ => 5,
     };
     check_variant_version(bytes, required)?;
+    match &r.job {
+        AnalysisJob::ImportAnnotations { format, .. }
+        | AnalysisJob::ExportAnnotations { format, .. } => {
+            check_annotation_format_version(bytes, *format)?;
+        }
+        AnalysisJob::ApplyAnnotations { report, .. } => {
+            check_annotation_format_version(bytes, report.format)?;
+        }
+        _ => {}
+    }
     if let AnalysisJob::SaveWorkspace { workspace } = &r.job {
         check_workspace_version(bytes, workspace)?;
         if workspace

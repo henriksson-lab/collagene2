@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **29** and reads supported schemas 1–28. Candidate files write schema 9; workspace plan schema is 7; the verifier is science-12.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **30** and reads supported schemas 1–29. Candidate files write schema 9; workspace plan schema is 7; the verifier is science-12.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -309,3 +309,7 @@ one. Stateless routing rejects session-required jobs. Preview DNA retains its
 chemistry-unmapped design guard and is not a confirmed genotype or prepared
 substrate. Explicit reference-event identity adds a separate browser lifecycle
 boundary, including equal-content documents and workspace replacement.
+
+## GTF annotation selector (schema 30)
+
+The append-only `AnnotationFormat::Gtf` selector is 2; GFF3 remains 0 and BED remains 1. Existing annotation jobs 24–26 and import report tag retain their layouts. GTF import/export, applying a GTF report and receiving a GTF import report require schema 30; rewriting their envelope as schema 29 or earlier is rejected. GFF3/BED retain their schema-7 contract. Retained source text remains unverified annotation evidence; applying it freshly reconstructs the report against the chosen reference.

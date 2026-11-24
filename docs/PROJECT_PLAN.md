@@ -18,12 +18,12 @@ Keep the full product objective and all existing scope constraints. Change the
 execution order and validation workflow as follows:
 
 - **Do not run browser checks until the in-scope code is complete.** This applies
-  to automated browser suites, browser smoke checks and repeated GUI acceptance
-  runs during implementation. Do not treat each small checkpoint as permission
-  to resume them.
+  to automated browser suites, browser smoke checks, screenshots, browser
+  performance checks and GUI acceptance runs during implementation. Completion
+  means the full in-scope product implementation, not an individual checkpoint.
 - Run compiler checks in the background while continuing useful coding. Do not
-  stop implementation to wait for compilation or repeatedly rebuild optimized
-  WASM after individual fixes. Batch release compilation and broad regression
+  stop implementation to wait or poll for compilation, or repeatedly rebuild
+  optimized WASM after individual fixes. Batch release compilation and broad regression
   validation after implementation; final scientific/native/WASM verification
   remains part of completion.
 - Prefer focused, quick scientific checks for new algorithms over repeated full
@@ -151,9 +151,9 @@ Import and export must be tracked separately. A format parser is only one part o
 | EMBL/ENA `.embl`, `.emb`; GenPept/UniProt text | P1/P2 | Yes | Target | Map feature/translation semantics; GenBank parser alone does not supply these adapters |
 | Aligned FASTA, CLUSTAL `.aln`, Stockholm; native `.cg2aln` | P1/P2 | Yes | Yes | Preserve gaps, identifiers and alignment metadata where expressible; explicit alphabet, original bytes, typed retained collections and export-loss review; no alignment engine |
 | PHYLIP, MSF, NEXUS, PIR, GDE, Selex | P2 | Target | Selected formats | Add by migration demand; document truncation or loss of names/metadata |
-| GFF3, GTF, BED | P2 | Yes | Yes | Coordinate conversion and reference identity are mandatory; use selected `noodles` crates |
+| GFF3, GTF, BED | P2 | Yes | Yes | Independent GFF3/GTF/BED profiles implemented; explicit reference identity and coordinate conversion are mandatory; GTF rows retain attributes without inferred transcript assembly |
 | Large reference `.cgref` | P2 foundation | Yes | Yes | Separate streamed packed IUPAC blocks and bounded hash manifest; canonical DNA/readback verification, global coordinates and portable links; no imported coverage authority |
-| SAM/BAM/CRAM, VCF/BCF and their indexes | P2 | Yes | Selected/derived | Independent bounded SAM/BAM exchange and source-bound inspection implemented; VCF/BCF exchange, bounded browser/MCP inspection and explicit REF/ALT-to-DNA design checking implemented; CRAM and indexes remain pending; [workflow](READ_ALIGNMENT_WORKFLOW.md) |
+| SAM/BAM/CRAM, VCF/BCF and their indexes | P2 | Yes | Selected/derived | Independent bounded SAM/BAM exchange and source-bound inspection implemented; VCF/BCF exchange, bounded browser/MCP inspection and explicit REF/ALT-to-DNA design checking implemented; bounded BAI/CSI readers and source-bound retained-BAM selection are implemented; CRAM and streamed indexed browsing remain pending; [workflow](READ_ALIGNMENT_WORKFLOW.md) |
 | SBOL | P2 | Target | Target | Select a specific SBOL version/profile; components and design relationships exceed GenBank semantics |
 | Benchling sequence exports and API data | P1 files; P2 connector | Yes | Standard exchange/API later | GenBank/FASTA for sequence transfer; permissioned API adapter for richer records; do not assume a complete workspace export |
 | Clone Manager, Vector NTI, Geneious, CLC, Lasergene, MacVector and other legacy containers | P2 migration backlog | Target by demand | Usually standard exchange | Classify exact format/version; accept intermediate GenBank/FASTA when native fidelity is unavailable |

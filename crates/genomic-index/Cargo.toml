@@ -1,0 +1,7 @@
+[package]
+name = "collagene-genomic-index"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+description = "Bounded BAI/CSI parsing and declared-source BGZF chunk lookup"

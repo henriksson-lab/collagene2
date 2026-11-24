@@ -760,6 +760,7 @@ pub struct FeatureLibraryApply {
 pub struct AnnotationImport {
     pub document: DocumentRef,
     pub text: String,
+    /// Explicit annotation syntax: Gff3, Gtf or Bed. No name-based reference mapping.
     pub format: annotation_formats::AnnotationFormat,
     pub seqid: String,
 }
@@ -774,6 +775,7 @@ pub struct AnnotationApply {
 #[serde(deny_unknown_fields)]
 pub struct AnnotationExport {
     pub document: DocumentRef,
+    /// Explicit annotation syntax: Gff3, Gtf or Bed. No name-based reference mapping.
     pub format: annotation_formats::AnnotationFormat,
     pub seqid: String,
 }
@@ -3533,7 +3535,7 @@ impl CollageneServer {
         self.compute(move||{let (document,library,report)={let store=server.store.lock().unwrap();(store.document(&args.document)?.clone(),store.feature_library(&args.library)?.clone(),store.feature_scan(&args.scan)?.clone())};let annotated=feature_library::apply_selected(&document,&library,&report,&args.selected).map_err(bad)?;server.insert_documents(vec![annotated],vec!["Feature proposals installed only in a new immutable document; inferred annotations still require review.".into()])}).await
     }
     #[tool(
-        description = "Parse GFF3 or BED annotation evidence using an explicit source seqid and an exact imported reference revision. Coordinate/phase/strand/compound semantics are checked by the embedded parser; unrelated seqids remain explicit. Returns an immutable proposal dataset. No existing annotations are changed; <=8MiB source."
+        description = "Parse GFF3, GTF or BED annotation evidence using an explicit source seqid and an exact imported reference revision. Coordinate/phase/strand/compound semantics are checked by the embedded parser; unrelated seqids remain explicit. Returns an immutable proposal dataset. No existing annotations are changed; <=8MiB source."
     )]
     async fn import_annotations(
         &self,
@@ -3552,7 +3554,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Apply explicitly selected indices from an immutable GFF3/BED dataset to a NEW document at its exact bound reference revision. Revalidates retained source and selected coordinates; no silent replacement, external write or inherited scientific verification."
+        description = "Apply explicitly selected indices from an immutable GFF3/GTF/BED dataset to a NEW document at its exact bound reference revision. Revalidates retained source and selected coordinates; no silent replacement, external write or inherited scientific verification."
     )]
     async fn apply_annotations(
         &self,
@@ -3562,17 +3564,17 @@ impl CollageneServer {
         self.compute(move||{let (document,report)={let store=server.store.lock().unwrap();(store.document(&args.document)?.clone(),store.annotation_dataset(&args.dataset)?.clone())};let annotated=annotation_formats::apply_annotations(&document,&report,&args.selected).map_err(bad)?;server.insert_documents(vec![annotated],vec!["Selected source annotations appended in a new immutable document; source evidence is retained and no cloning verification is implied.".into()])}).await
     }
     #[tool(
-        description = "Export supported annotations from an exact document as GFF3 or BED with an explicit output seqid. Phase, discontinuous/reverse locations and format losses follow the embedded strict profile; unsupported semantics fail rather than being invented. Full text artifact includes loss diagnostics separately."
+        description = "Export supported annotations from an exact document as GFF3, GTF or BED with an explicit output seqid. Phase, discontinuous/reverse locations and format losses follow the embedded strict profile; unsupported semantics fail rather than being invented. Full text artifact includes loss diagnostics separately."
     )]
     async fn export_annotations(
         &self,
         Parameters(args): Parameters<AnnotationExport>,
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
-        self.compute(move||{let document=server.store.lock().unwrap().document(&args.document)?.clone();let report=annotation_formats::export_annotations(&document,args.format,&args.seqid).map_err(bad)?;let length=report.text.len();let artifact=server.text_artifact(report.text,"text/plain","annotations.table")?;output(json!({"document":args.document,"format":args.format,"seqid":args.seqid,"bytes":length,"warnings":report.warnings,"artifact_id":artifact}))}).await
+        self.compute(move||{let document=server.store.lock().unwrap().document(&args.document)?.clone();let report=annotation_formats::export_annotations(&document,args.format,&args.seqid).map_err(bad)?;let length=report.text.len();let filename=match args.format { annotation_formats::AnnotationFormat::Gff3=>"annotations.gff3",annotation_formats::AnnotationFormat::Gtf=>"annotations.gtf",annotation_formats::AnnotationFormat::Bed=>"annotations.bed" };let artifact=server.text_artifact(report.text,"text/plain",filename)?;output(json!({"document":args.document,"format":args.format,"seqid":args.seqid,"bytes":length,"warnings":report.warnings,"artifact_id":artifact}))}).await
     }
     #[tool(
-        description = "Export the complete immutable GFF3/BED proposal dataset and exact original source bytes as two artifacts. Includes explicit reference/seqid mapping and every row/proposal; this is evidence, not an automatic document edit or trusted verification."
+        description = "Export the complete immutable GFF3/GTF/BED proposal dataset and exact original source bytes as two artifacts. Includes explicit reference/seqid mapping and every row/proposal; this is evidence, not an automatic document edit or trusted verification."
     )]
     async fn export_annotation_dataset(
         &self,
@@ -3588,7 +3590,7 @@ impl CollageneServer {
             let added=usize::from(new_text)+usize::from(new_original);if store.artifacts.len()+added>MAX_ITEMS{return Err(bad("annotation artifacts exceed item limit; no outputs created"));}
             let bytes=(if new_text{text.len()}else{0usize}).checked_add(if new_original{original.len()}else{0}).ok_or_else(||bad("session accounting overflow"))?;store.reserve(bytes)?;
             store.artifacts.entry(text_id.clone()).or_insert(Artifact{data:ArtifactData::Text(text),mime_type:"application/json",encoding:"utf-8",filename:"annotation-dataset.json"});
-            store.artifacts.entry(original_id.clone()).or_insert(Artifact{data:ArtifactData::Binary(original),mime_type:"application/octet-stream",encoding:"base64",filename:"original-annotations.table"});
+            store.artifacts.entry(original_id.clone()).or_insert(Artifact{data:ArtifactData::Binary(original),mime_type:"application/octet-stream",encoding:"base64",filename:match report.format { annotation_formats::AnnotationFormat::Gff3=>"original-annotations.gff3",annotation_formats::AnnotationFormat::Gtf=>"original-annotations.gtf",annotation_formats::AnnotationFormat::Bed=>"original-annotations.bed" }});
             output(json!({"dataset":args.dataset,"dataset_artifact_id":text_id,"original_artifact_id":original_id}))
         }).await
     }

@@ -1,9 +1,10 @@
-//! Independent, reference-bound GFF3/BED annotation exchange.
+//! Independent, reference-bound GFF3/BED/GTF annotation exchange.
 //! Original input is evidence; external annotations are never scientific verification.
 use crate::{Alphabet, Error, Feature, Location, Molecule, Topology, formats::ExportReport};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
+mod gtf;
 
 pub const MAX_ANNOTATION_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_ANNOTATION_ROWS: usize = 10_000;
@@ -23,6 +24,7 @@ fn unsupported(message: impl Into<String>) -> Error {
 pub enum AnnotationFormat {
     Gff3,
     Bed,
+    Gtf,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -918,6 +920,7 @@ pub fn import_annotations(
     let (mut proposals, skipped_seqids, directives) = match format {
         AnnotationFormat::Gff3 => parse_gff(reference, text, seqid)?,
         AnnotationFormat::Bed => parse_bed(reference, text, seqid)?,
+        AnnotationFormat::Gtf => gtf::parse(reference, text, seqid)?,
     };
     if proposals.is_empty() {
         return Err(bad(
@@ -1213,6 +1216,12 @@ pub fn export_annotations(
             }
             let reconstructed = match source.format {
                 AnnotationFormat::Gff3 => gff_proposal(source.gff.clone(), reference)?.feature,
+                AnnotationFormat::Gtf => {
+                    if source.gff.len() != 1 || source.bed.is_some() {
+                        return Err(bad("GTF evidence must retain exactly one row"));
+                    }
+                    gtf::proposal(source.gff[0].clone(), reference)?.feature
+                }
                 AnnotationFormat::Bed => {
                     let row = source
                         .bed
@@ -1242,6 +1251,17 @@ pub fn export_annotations(
         } else {
             None
         };
+        if let Some(source) = &source {
+            if source.format == AnnotationFormat::Gtf && format == AnnotationFormat::Gtf {
+                push(&mut out, &gtf::line(seqid, &source.gff[0])?)?;
+                warnings.push(format!("Feature {} preserves GTF row coordinates, strand, frame and repeated attributes as source evidence. Quotation/numeric lexical form is normalized; no transcript or splice model is inferred.",index+1));
+                continue;
+            }
+        }
+        if format == AnnotationFormat::Gtf {
+            gtf::generic(feature, reference, seqid, index, &mut out, &mut warnings)?;
+            continue;
+        }
         if let Some(source) = &source {
             if source.format == AnnotationFormat::Gff3 && format == AnnotationFormat::Gff3 {
                 for row in &source.gff {
@@ -1499,6 +1519,9 @@ pub fn export_annotations(
         // Reparse our bounded output to catch missing Parent IDs, duplicated IDs,
         // illegal points/phases and contradictory row grouping before returning it.
         let _ = parse_gff(reference, &out, seqid)?;
+    }
+    if format == AnnotationFormat::Gtf && !reference.features.is_empty() {
+        let _ = gtf::parse(reference, &out, seqid)?;
     }
     warnings.sort();
     warnings.dedup();

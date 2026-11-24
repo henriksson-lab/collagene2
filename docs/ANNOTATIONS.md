@@ -39,3 +39,15 @@ A one-fragment overlap closure identifies two source homology copies. Its intern
 Product metadata retains unprojectable features by source revision rather than copying arbitrary input attachments into every intermediate. The immutable plan inputs/intermediates carry source evidence. An annotation absent from a digest fragment's top reference but present on its opposite-strand protrusion is currently not restored automatically when that protrusion later becomes top reference after reversal; the original graph and omission warning remain available. Restoring it requires explicit ancestral strand provenance.
 
 `cargo test -p collagene-core --test annotation_verification --locked` covers manually specified PCR tail origins and competing geometries, circular digest clipping, reversed staggered ligation, linear/circular overlap closure, self-circular homology collapse, unresolved source evidence and bounded metadata duplication.
+
+## MCP annotation exchange, including GTF
+
+The existing `import_annotations`, `apply_annotations`, `export_annotations` and `export_annotation_dataset` tools accept GTF through the explicit `format: "Gtf"` enum value. Tool count and dataset schema remain unchanged. See [the GTF format profile](GTF.md) for supported syntax and format limitations.
+
+Import requires an exact document reference (`id` and `revision`) and an explicit `seqid`; a matching chromosome label does not authorize a reference mapping. For example, `{"document":{"id":"…","revision":"…"},"format":"Gtf","seqid":"chr1","text":"…"}` returns a proposal dataset without changing that document. Select proposal indices explicitly with `apply_annotations` to create a new immutable annotated document. A stale reference or a dataset bound to another document is rejected.
+
+GTF coordinates are one-based closed on input and become half-open model coordinates. Quoted attributes, phase and original row evidence are retained; the parser does not invent transcript joins. Normalized GTF export preserves supported source semantics. Exporting arbitrary annotations requires explicit GTF gene/transcript attributes and, for CDS, phase information; unsupported hierarchy or origin wrapping fails rather than being guessed. Normalized syntax is not a byte-preserving source export.
+
+Annotation text remains limited to 8 MiB. Proposal previews remain bounded, while `export_annotation_dataset` exposes complete JSON evidence and the exact original bytes separately. Export artifact names use `.gff3`, `.gtf` or `.bed`, including `original-annotations.gtf` for the original GTF byte artifact. Applied annotations remain source assertions, not biological or cloning verification.
+
+The GTF SDK fixture supplies literal reverse-strand coordinates independently, checks exact original bytes and artifact names, explicitly applies to a new document, reimports normalized output, and checks malformed syntax, out-of-reference coordinates, duplicate selections and stale bindings. It is source-authored coverage; results must be reported separately after execution.

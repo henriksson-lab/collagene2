@@ -1360,7 +1360,7 @@ pub fn App() -> impl IntoView {
                     modal.set("alignments");
                     return;
                 }
-                if matches!(extension.as_str(), "gff3" | "gff" | "bed") {
+                if matches!(extension.as_str(), "gff3" | "gff" | "gtf" | "bed") {
                     if bytes.len() > collagene_core::annotation_formats::MAX_ANNOTATION_BYTES {
                         message.set("Annotation source exceeds the 8 MiB import limit.".into());
                         return;
@@ -1372,10 +1372,10 @@ pub fn App() -> impl IntoView {
                     match String::from_utf8(bytes) {
                         Ok(text) => {
                             annotation_source.set(text);
-                            annotation_format.set(if extension == "bed" {
-                                collagene_core::annotation_formats::AnnotationFormat::Bed
-                            } else {
-                                collagene_core::annotation_formats::AnnotationFormat::Gff3
+                            annotation_format.set(match extension.as_str() {
+                                "bed" => collagene_core::annotation_formats::AnnotationFormat::Bed,
+                                "gtf" => collagene_core::annotation_formats::AnnotationFormat::Gtf,
+                                _ => collagene_core::annotation_formats::AnnotationFormat::Gff3,
                             });
                             panel.set("annotation_files");
                             message.set("Choose the exact annotation reference ID and review the proposed coordinates before applying.".into());
@@ -2727,7 +2727,7 @@ pub fn App() -> impl IntoView {
                     <a class="brand" href="#" aria-label="Collagene workspace"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" stroke-width="3"/><path d="M9 7L23 25M7 10L11 6M21 26L25 22" stroke="currentColor" stroke-width="3"/></svg><span>"collagene"</span><span class="version">"2"</span></a>
                     <div class="top-divider"></div><span class="workspace-label">{move||workspace_name.get()}</span>
                     <div class="top-actions"><button class="button secondary" on:click=move|_|{modal_error.set(String::new());modal.set("workspace");}>"Workspace"</button><button class="button secondary" on:click=move|_|{modal_error.set(String::new());modal.set("import");}>"Paste sequence"</button><button class="button primary" on:click=move|_|if let Some(input)=file_input.get(){input.click();}>"Open files"</button></div>
-                    <input node_ref=file_input type="file" multiple accept=".gb,.gbk,.gbff,.genbank,.ape,.fa,.fasta,.fna,.faa,.txt,.cg2,.cg2design,.cg2plan,.dna,.embl,.emb,.ab1,.abi,.scf,.fastq,.fq,.csv,.tsv,.gff3,.gff,.bed,.xml,.collagene,.seqfile,.xdna,.xdgn,.xprt,.aln,.clustal,.sto,.stockholm,.afa,.afasta,.cg2aln,.sam,.bam,.vcf,.bcf,.gz" style="display:none" on:change=open_file/>
+                    <input node_ref=file_input type="file" multiple accept=".gb,.gbk,.gbff,.genbank,.ape,.fa,.fasta,.fna,.faa,.txt,.cg2,.cg2design,.cg2plan,.dna,.embl,.emb,.ab1,.abi,.scf,.fastq,.fq,.csv,.tsv,.gff3,.gff,.gtf,.bed,.xml,.collagene,.seqfile,.xdna,.xdgn,.xprt,.aln,.clustal,.sto,.stockholm,.afa,.afasta,.cg2aln,.sam,.bam,.vcf,.bcf,.gz" style="display:none" on:change=open_file/>
                 </header>
                 <div class="body-layout" class:library-hidden=move||!show_library.get()>
                     <nav class="workspace-rail" aria-label="Workspace navigation">

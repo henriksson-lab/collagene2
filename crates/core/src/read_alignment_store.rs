@@ -252,6 +252,9 @@ impl Collection {
             flag_counts: flags,
         })
     }
+    pub fn format(&self) -> Format {
+        self.completion.format
+    }
     pub fn header(&self) -> &Header {
         &self.header
     }

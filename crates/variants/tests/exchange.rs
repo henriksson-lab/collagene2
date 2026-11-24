@@ -12,6 +12,9 @@ fn lexical_original_typed_headers_and_phased_missing_multiallelic_and_breakend_a
     assert!(rows[0].vcf.contains("0|2:9\t./.:."));
     assert!(rows[0].vcf.contains("C,G"));
     assert!(rows[1].vcf.contains("G]chr1:30]"));
+    assert!(rows[1].vcf.ends_with("\t1/0\t.\n"));
+    let normalized_vcf = c.export(ExportFormat::Vcf, 1 << 20).unwrap();
+    assert!(normalized_vcf.bytes.ends_with(b"\t1/0\t.\n"));
     assert_eq!(
         c.export(ExportFormat::Original, VCF.len()).unwrap().bytes,
         VCF
@@ -153,4 +156,32 @@ fn wholly_missing_info_conversion_reports_codec_limitation_without_dropping_fiel
         c.export(ExportFormat::Original, raw.len()).unwrap().bytes,
         raw
     );
+}
+
+#[test]
+fn bcf_missing_gt_is_not_a_called_allele_and_codec_limits_fail_atomically() {
+    let header = "##fileformat=VCFv4.3\n##contig=<ID=chr,length=9>\n##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ta\tb\n";
+    // '.' is one missing GT field, './.' is explicitly two missing alleles;
+    // neither permits inventing a call or duplicating ploidy from another sample.
+    for (a, b) in [("0|2:9", ".:."), (".:.", "./.:."), ("1:7", "0/2:.")] {
+        let raw = format!("{header}chr\t1\t.\tA\tC,G\t.\t.\t.\tGT:DP\t{a}\t{b}\n");
+        let original = Collection::import(raw.as_bytes(), Format::Vcf, &Limits::default()).unwrap();
+        let expected = original.page(0, 100).unwrap();
+        let encoded = original.export(ExportFormat::Bcf, 1 << 20).unwrap();
+        let reopened = Collection::import(&encoded.bytes, Format::Bcf, &Limits::default()).unwrap();
+        assert_eq!(reopened.page(0, 100).unwrap(), expected);
+        assert_eq!(original.original_bytes(), raw.as_bytes());
+    }
+    // Both are valid source evidence, but the pinned BCF codec cannot safely
+    // encode these GT shapes. Exact source and normalized VCF remain available.
+    for (alt, a, b) in [
+        ("C".to_owned(), "0/1", "0/0/1"),
+        (vec!["C"; 63].join(","), "63", "."),
+    ] {
+        let raw = format!("{header}chr\t1\t.\tA\t{alt}\t.\t.\t.\tGT\t{a}\t{b}\n");
+        let source = Collection::import(raw.as_bytes(), Format::Vcf, &Limits::default()).unwrap();
+        assert!(source.export(ExportFormat::Bcf, 1 << 20).is_err());
+        assert!(source.export(ExportFormat::Vcf, 1 << 20).is_ok());
+        assert_eq!(source.original_bytes(), raw.as_bytes());
+    }
 }

@@ -277,10 +277,17 @@ impl Collection {
             ExportFormat::Vcf => {
                 let mut w = vcf::io::Writer::new(Sink::new(max_bytes));
                 w.write_header(&self.header)?;
+                let mut sink = w.into_inner();
                 for r in &self.records {
-                    w.write_variant_record(&self.header, r.record())?;
+                    let remaining = max_bytes.saturating_sub(sink.bytes.len());
+                    let record = render(
+                        &self.header,
+                        r.record(),
+                        self.limits.record_bytes.min(remaining),
+                    )?;
+                    sink.write_all(&record)?;
                 }
-                w.into_inner().bytes
+                sink.bytes
             }
             ExportFormat::Bcf => {
                 let mut sink = Sink::new(max_bytes);
@@ -298,9 +305,12 @@ impl Collection {
                                 ));
                             }
                         }
-                        w.write_variant_record(&self.header, r.record())?;
+                        let record = bcf_record(&self.header, r.record())?;
+                        w.write_variant_record(&self.header, &record)?;
                     }
-                    w.try_finish()?;
+                    // Consume the BGZF writer: try_finish followed by Drop
+                    // appends a second EOF in the pinned implementation.
+                    w.into_inner().finish()?;
                 }
                 sink.bytes
             }
@@ -308,10 +318,91 @@ impl Collection {
         Ok(Export { bytes, notices })
     }
 }
+/// The upstream BCF encoder requires a GT value for every sample, whereas VCF
+/// represents an entirely missing GT as None. Materialize only this bounded
+/// record and supply the literal missing allele ".", never a called allele or
+/// an inferred ploidy. Other missing FORMAT fields remain missing.
+fn bcf_record(
+    header: &vcf::Header,
+    record: &dyn vcf::variant::Record,
+) -> io::Result<vcf::variant::RecordBuf> {
+    use vcf::variant::record_buf::{Samples, samples::sample::Value};
+    let mut output = vcf::variant::RecordBuf::try_from_variant_record(header, record)?;
+    let samples = output.samples();
+    let keys = samples.keys().clone();
+    if let Some(gt) = keys.as_ref().get_index_of("GT") {
+        let values: Vec<Vec<Option<Value>>> = samples
+            .values()
+            .map(|sample| {
+                let mut values = sample.values().to_vec();
+                values.resize_with(keys.as_ref().len(), || None);
+                if values[gt].is_none() {
+                    values[gt] = Some(Value::from("."));
+                }
+                values
+            })
+            .collect();
+        // Noodles 0.85 encodes GT as int8 and pads inside its allele loop.
+        // Reject shapes that would hit reserved integer codes/overflow or emit
+        // repeated vector-end padding, rather than corrupting a valid source.
+        let mut ploidies = Vec::with_capacity(values.len());
+        for sample in &values {
+            let ploidy = match sample[gt].as_ref() {
+                Some(Value::Genotype(genotype)) => {
+                    if genotype
+                        .as_ref()
+                        .iter()
+                        .any(|allele| allele.position().is_some_and(|p| p > 62))
+                    {
+                        return Err(invalid(
+                            "BCF GT allele index above62 is unsupported by this codec; use Original or VCF",
+                        ));
+                    }
+                    genotype.as_ref().len()
+                }
+                Some(Value::String(value)) if value == "." => 1,
+                _ => {
+                    return Err(invalid(
+                        "unsupported BCF GT representation; use Original or VCF",
+                    ));
+                }
+            };
+            if ploidy == 0 {
+                return Err(invalid("empty BCF GT representation"));
+            }
+            ploidies.push(ploidy);
+        }
+        let max_ploidy = ploidies.iter().copied().max().unwrap_or(0);
+        if ploidies.iter().any(|n| *n > 1 && *n < max_ploidy) {
+            return Err(invalid(
+                "BCF conversion of mixed nonhaploid GT lengths is unsupported by this codec; use Original or VCF",
+            ));
+        }
+        *output.samples_mut() = Samples::new(keys, values);
+    }
+    Ok(output)
+}
+
 fn render(h: &vcf::Header, r: &dyn vcf::variant::Record, cap: usize) -> io::Result<Vec<u8>> {
     let mut w = vcf::io::Writer::new(Sink::new(cap));
     w.write_variant_record(h, r)?;
-    Ok(w.into_inner().bytes)
+    let bytes = w.into_inner().bytes;
+    // Noodles emits an empty sample column when its lazy VCF sample iterator
+    // has no values (the source field was wholly missing). VCF requires a dot,
+    // including when FORMAT itself is missing. Normalize only empty sample
+    // columns, never individual values, GT ploidy, INFO or source bytes. Use a
+    // second bounded sink so added markers cannot bypass the record/page cap.
+    let mut normalized = Sink::new(cap);
+    for (column, field) in bytes.split(|b| *b == b'\t').enumerate() {
+        if column > 0 {
+            normalized.write_all(b"\t")?;
+        }
+        if column >= 9 && (field.is_empty() || field == b"\n") {
+            normalized.write_all(b".")?;
+        }
+        normalized.write_all(field)?;
+    }
+    Ok(normalized.bytes)
 }
 fn validate_record(h: &vcf::Header, r: &dyn vcf::variant::Record, cap: usize) -> io::Result<()> {
     render(h, r, cap).map(|_| ())

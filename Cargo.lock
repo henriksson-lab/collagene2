@@ -371,6 +371,7 @@ dependencies = [
  "base64 0.22.1",
  "blake3",
  "collagene-enzyme-catalog",
+ "collagene-genomic-index",
  "collagene-model",
  "collagene-read-alignments",
  "collagene-recombination",
@@ -397,6 +398,10 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "collagene-genomic-index"
+version = "0.1.0"
 
 [[package]]
 name = "collagene-local-storage"

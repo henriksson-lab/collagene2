@@ -396,3 +396,113 @@ async fn feature_library_item_capacity_is_atomic_and_existing_refs_still_work() 
     drop(client);
     server.abort();
 }
+
+#[tokio::test]
+async fn gtf_quoted_evidence_exact_mapping_and_new_document_roundtrip() {
+    let (client, server) = setup().await;
+    let target = import(&client, ">gtf_reference\nAAAACCCCGGGGTTTT\n").await;
+    let original = molecule(&client, &target).await;
+    let text = "# independently supplied GTF fixture\nchr1\tfixture\texon\t3\t6\t.\t-\t.\tgene_id \"g1\"; transcript_id \"t1\"; exon_number \"1\";\nchr2\tfixture\texon\t1\t2\t.\t+\t.\tgene_id \"g2\"; transcript_id \"t2\";\n";
+    let imported = call(
+        &client,
+        "import_annotations",
+        json!({"document":target,"text":text,"format":"Gtf","seqid":"chr1"}),
+    )
+    .await;
+    assert_eq!(imported["format"], "Gtf");
+    assert_eq!(imported["applied"], false);
+    assert_eq!(imported["proposal_count"], 1);
+    assert_eq!(imported["skipped_seqids"], json!(["chr2"]));
+    let dataset = imported["dataset"].clone();
+    let evidence = call(
+        &client,
+        "export_annotation_dataset",
+        json!({"dataset":dataset}),
+    )
+    .await;
+    assert_eq!(
+        artifact(&client, &evidence["original_artifact_id"]).await,
+        text.as_bytes()
+    );
+    let original_chunk = call(
+        &client,
+        "read_artifact",
+        json!({"artifact_id":evidence["original_artifact_id"],"start":0,"max_bytes":16384}),
+    )
+    .await;
+    assert_eq!(original_chunk["filename"], "original-annotations.gtf");
+    let full: AnnotationImportReport =
+        serde_json::from_slice(&artifact(&client, &evidence["dataset_artifact_id"]).await).unwrap();
+    full.validate(&original).unwrap();
+    assert_eq!(full.format, AnnotationFormat::Gtf);
+    assert_eq!(full.proposals[0].source_rows, vec![2]);
+    // GTF 3..6 inclusive is forward-reference [2,6), reverse oriented.
+    assert_eq!(
+        full.proposals[0].feature.location.spans(),
+        vec![(2, 6, true)]
+    );
+    reject(
+        &client,
+        "apply_annotations",
+        json!({"document":target,"dataset":dataset,"selected":[0,0]}),
+    )
+    .await;
+    let mut stale = target.clone();
+    stale["revision"] = json!("stale");
+    reject(
+        &client,
+        "import_annotations",
+        json!({"document":stale,"text":text,"format":"Gtf","seqid":"chr1"}),
+    )
+    .await;
+    reject(&client, "import_annotations", json!({"document":target,"text":"chr1\tfixture\texon\t1\t17\t.\t+\t.\tgene_id \"g1\"; transcript_id \"t1\";\n","format":"Gtf","seqid":"chr1"})).await;
+    reject(&client, "import_annotations", json!({"document":target,"text":"chr1\tfixture\texon\t1\t2\t.\t+\t.\tgene_id=g1;transcript_id=t1\n","format":"Gtf","seqid":"chr1"})).await;
+    assert_eq!(call(&client, "list_documents", json!({})).await["total"], 1);
+    let applied = call(
+        &client,
+        "apply_annotations",
+        json!({"document":target,"dataset":dataset,"selected":[0]}),
+    )
+    .await;
+    let annotated_ref = reference(&applied["documents"][0]);
+    let annotated = molecule(&client, &annotated_ref).await;
+    assert_eq!(annotated.sequence, original.sequence);
+    assert_eq!(annotated.features.len(), 1);
+    assert_eq!(annotated.features[0].location.spans(), vec![(2, 6, true)]);
+    assert!(molecule(&client, &target).await.features.is_empty());
+    reject(
+        &client,
+        "apply_annotations",
+        json!({"document":annotated_ref,"dataset":dataset,"selected":[0]}),
+    )
+    .await;
+    let exported = call(
+        &client,
+        "export_annotations",
+        json!({"document":annotated_ref,"format":"Gtf","seqid":"chr1"}),
+    )
+    .await;
+    let chunk = call(
+        &client,
+        "read_artifact",
+        json!({"artifact_id":exported["artifact_id"],"start":0,"max_bytes":16384}),
+    )
+    .await;
+    assert_eq!(chunk["filename"], "annotations.gtf");
+    let output = String::from_utf8(artifact(&client, &exported["artifact_id"]).await).unwrap();
+    let reopened = collagene_core::annotation_formats::import_annotations(
+        &original,
+        &output,
+        AnnotationFormat::Gtf,
+        "chr1",
+    )
+    .unwrap();
+    assert_eq!(reopened.proposals.len(), 1);
+    assert_eq!(
+        reopened.proposals[0].feature.location.spans(),
+        vec![(2, 6, true)]
+    );
+    assert_eq!(call(&client, "list_documents", json!({})).await["total"], 2);
+    drop(client);
+    server.abort();
+}

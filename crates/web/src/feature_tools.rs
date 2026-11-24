@@ -554,6 +554,7 @@ pub fn AnnotationFilesPanel(
                 Ok(AnalysisResult::AnnotationExport(value)) => {
                     let (name, mime) = match selected_format {
                         AnnotationFormat::Gff3 => ("annotations.gff3", "text/plain"),
+                        AnnotationFormat::Gtf => ("annotations.gtf", "text/plain"),
                         AnnotationFormat::Bed => ("annotations.bed", "text/plain"),
                     };
                     match crate::app::download(name, mime, value.text.as_bytes()) {
@@ -570,11 +571,11 @@ pub fn AnnotationFilesPanel(
             }
         });
     };
-    view! {<section class="annotation-files-panel"><h2>"Annotation files"</h2><p class="helper">"Import GFF3 or BED annotations onto the active reference. Enter its exact sequence ID from the file; matching names are never guessed. Other reference IDs are reported separately. Coordinates are reviewed before anything is added."</p>
-        <label>"Annotation format"<select aria-label="Annotation file format" prop:value=move||match format.get(){AnnotationFormat::Gff3=>"gff3",AnnotationFormat::Bed=>"bed"} on:change=move|e|format.set(if event_target_value(&e)=="bed"{AnnotationFormat::Bed}else{AnnotationFormat::Gff3})><option value="gff3">"GFF3"</option><option value="bed">"BED"</option></select></label>
-        <label>"Reference sequence ID in file"<input aria-label="Annotation reference ID" prop:value=move||seqid.get() on:input=move|e|seqid.set(event_target_value(&e)) placeholder="Exact GFF3 seqid / BED chrom"/></label>
-        <button class="button secondary" on:click=move|_|if let Some(element)=input.get(){element.click();}>"Choose annotation file"</button><input node_ref=input type="file" accept=".gff3,.gff,.bed,.txt" style="display:none" on:change=read/>
-        <textarea aria-label="Annotation source text" rows="8" prop:value=move||source.get() on:input=move|e|source.set(event_target_value(&e)) placeholder="Paste GFF3 or BED rows"></textarea>
+    view! {<section class="annotation-files-panel"><h2>"Annotation files"</h2><p class="helper">"Import GFF3, GTF or BED annotations onto the active reference. Enter its exact sequence ID from the file; matching names are never guessed. Other reference IDs are reported separately. Coordinates are reviewed before anything is added."</p>
+        <label>"Annotation format"<select aria-label="Annotation file format" prop:value=move||match format.get(){AnnotationFormat::Gff3=>"gff3",AnnotationFormat::Gtf=>"gtf",AnnotationFormat::Bed=>"bed"} on:change=move|e|format.set(match event_target_value(&e).as_str(){"bed"=>AnnotationFormat::Bed,"gtf"=>AnnotationFormat::Gtf,_=>AnnotationFormat::Gff3})><option value="gff3">"GFF3"</option><option value="gtf">"GTF"</option><option value="bed">"BED"</option></select></label>
+        <label>"Reference sequence ID in file"<input aria-label="Annotation reference ID" prop:value=move||seqid.get() on:input=move|e|seqid.set(event_target_value(&e)) placeholder="Exact GFF3 seqid / GTF seqname / BED chrom"/></label>
+        <button class="button secondary" on:click=move|_|if let Some(element)=input.get(){element.click();}>"Choose annotation file"</button><input node_ref=input type="file" accept=".gff3,.gff,.gtf,.bed,.txt" style="display:none" on:change=read/>
+        <textarea aria-label="Annotation source text" rows="8" prop:value=move||source.get() on:input=move|e|source.set(event_target_value(&e)) placeholder="Paste GFF3, GTF or BED rows"></textarea>
         <button class="button primary full" disabled=move||busy.get()||seqid.with(|s|s.trim().is_empty()) on:click=import>"Review annotation import"</button><button class="button secondary full" disabled=move||busy.get()||seqid.with(|s|s.trim().is_empty()) on:click=export>"Export current annotations"</button>
         <p class="annotation-file-status" role="status">{move||status.get()}</p>
         <Show when=move||retained_sources.with(|sources|!sources.is_empty())><details class="retained-annotation-sources"><summary>"Retained original annotation sources"</summary><p class="helper">"These are original input files. Their coordinates may describe an earlier document revision."</p>{move||retained_sources.get().into_iter().map(|hash|{let label=format!("Download retained annotation source {}",hash.chars().take(10).collect::<String>());view!{<button class="button secondary full" on:click=move|_|match collagene_core::annotation_formats::original_annotation_source(&molecule.get_untracked(),&hash){Ok(bytes)=>if let Err(error)=crate::app::download("retained-annotations.txt","text/plain",&bytes){status.set(error)},Err(error)=>status.set(error.to_string())}>{label}</button>}}).collect_view()}</details></Show>

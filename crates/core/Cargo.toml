@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+collagene-genomic-index = { path = "../genomic-index" }
 collagene-model = { path = "../model" }
 collagene-read-alignments = { path = "../read-alignments" }
 collagene-variants = { path = "../variants" }

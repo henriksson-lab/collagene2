@@ -1,3 +1,5 @@
+pub mod bounds;
+
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 

@@ -1,9 +1,9 @@
 //! Defined two-site reciprocal reference-sequence exchange, not experimental Gateway prediction.
 //! Products retain every source reference base. Seven-base overlap provenance is co-sourced,
 //! and does not identify physical-strand ancestry. Caller profiles are hypotheses, not authority.
-mod bounds;
-use bounds::ModelBudget;
-use collagene_model::{Alphabet, Error, Feature, Molecule, Sequence, Topology};
+use collagene_model::bounds::ModelBudget;
+pub use collagene_model::bounds::{feature_preflight, model_preflight};
+use collagene_model::{Alphabet, Error, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 pub const ENGINE: &str = "two-site-reciprocal-reference-exchange-v1";
@@ -334,34 +334,6 @@ fn hard_limits(l: &Limits) -> Result<(), Error> {
 pub fn preflight(inputs: &[Input], profile: &Profile, l: &Limits) -> Result<(), Error> {
     preflight_models(inputs, profile, l, None)
 }
-/// Inspect borrowed annotation trees and strings before cloning, recursive validation,
-/// serialization or hashing. This is a resource guard, not molecular validation.
-/// All supplied models share one aggregate budget.
-pub fn model_preflight(molecules: &[&Molecule]) -> Result<(), Error> {
-    if molecules.len() > 1024 {
-        return Err(Error::TooLarge);
-    }
-    let mut budget = ModelBudget::default();
-    for molecule in molecules {
-        budget.molecule(molecule)?;
-    }
-    Ok(())
-}
-
-/// Guard retained original feature evidence without copying it into a dummy model.
-/// Groups share one aggregate feature/tree/string budget. This grants no annotation
-/// mapping or molecular validity to the evidence.
-pub fn feature_preflight(groups: &[&[Feature]]) -> Result<(), Error> {
-    if groups.len() > 1024 {
-        return Err(Error::TooLarge);
-    }
-    let mut budget = ModelBudget::default();
-    for features in groups {
-        budget.features(features)?;
-    }
-    Ok(())
-}
-
 /// Validate borrowed sources and an optional independent target before copying them
 /// into owned inputs. Source role identity is checked separately by `preflight`.
 pub fn source_preflight(

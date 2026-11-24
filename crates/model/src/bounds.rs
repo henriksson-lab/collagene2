@@ -1,9 +1,9 @@
 //! Borrowed native-model guards. No serialization, cloning, recursive traversal or
 //! unbounded child stack is used before these aggregate limits have been checked.
-use collagene_model::{Error, Feature, Location, Molecule};
-pub(crate) const MAX_DEPTH: usize = 32;
+use crate::{Error, Feature, Location, Molecule};
+pub const MAX_DEPTH: usize = 32;
 #[derive(Default)]
-pub(crate) struct ModelBudget {
+pub struct ModelBudget {
     features: usize,
     nodes: usize,
     qualifiers: usize,
@@ -24,7 +24,7 @@ impl ModelBudget {
         }
         Self::add(&mut self.text, s.len(), 8 * 1024 * 1024)
     }
-    pub(crate) fn molecule(&mut self, m: &Molecule) -> Result<(), Error> {
+    pub fn molecule(&mut self, m: &Molecule) -> Result<(), Error> {
         self.text(&m.name, 1024)?;
         Self::add(&mut self.metadata, m.metadata.len(), 4096)?;
         for (k, v) in &m.metadata {
@@ -36,7 +36,7 @@ impl ModelBudget {
         }
         self.features(&m.features)
     }
-    pub(crate) fn features(&mut self, features: &[Feature]) -> Result<(), Error> {
+    pub fn features(&mut self, features: &[Feature]) -> Result<(), Error> {
         Self::add(&mut self.features, features.len(), 4096)?;
         for feature in features {
             self.text(&feature.kind, 256)?;
@@ -104,4 +104,32 @@ impl ModelBudget {
         }
         Ok(())
     }
+}
+
+/// Inspect borrowed annotation trees and strings before cloning, recursive validation,
+/// serialization or hashing. This is a resource guard, not molecular validation.
+/// All supplied models share one aggregate budget.
+pub fn model_preflight(molecules: &[&Molecule]) -> Result<(), Error> {
+    if molecules.len() > 1024 {
+        return Err(Error::TooLarge);
+    }
+    let mut budget = ModelBudget::default();
+    for molecule in molecules {
+        budget.molecule(molecule)?;
+    }
+    Ok(())
+}
+
+/// Guard retained original feature evidence without copying it into a dummy model.
+/// Groups share one aggregate feature/tree/string budget. This grants no annotation
+/// mapping or molecular validity to the evidence.
+pub fn feature_preflight(groups: &[&[Feature]]) -> Result<(), Error> {
+    if groups.len() > 1024 {
+        return Err(Error::TooLarge);
+    }
+    let mut budget = ModelBudget::default();
+    for features in groups {
+        budget.features(features)?;
+    }
+    Ok(())
 }

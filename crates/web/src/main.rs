@@ -1,5 +1,7 @@
 #[cfg(target_arch = "wasm32")]
 mod alignment_view;
+#[cfg(any(target_arch = "wasm32", test))]
+mod annotation_layout;
 #[cfg(target_arch = "wasm32")]
 mod app;
 #[cfg(target_arch = "wasm32")]

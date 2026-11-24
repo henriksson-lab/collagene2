@@ -491,12 +491,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "collagene-view-layout"
+version = "0.1.0"
+
+[[package]]
 name = "collagene-web"
 version = "0.1.0"
 dependencies = [
  "blake3",
  "collagene-core",
  "collagene-sources",
+ "collagene-view-layout",
  "futures-channel",
  "js-sys",
  "leptos",

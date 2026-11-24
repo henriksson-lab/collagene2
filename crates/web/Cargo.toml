@@ -7,6 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 collagene-core = { path = "../core" }
+collagene-view-layout = { path = "../view-layout" }
 collagene-sources = { path = "../sources" }
 serde_json.workspace = true
 serde.workspace = true

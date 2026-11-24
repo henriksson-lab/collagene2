@@ -646,6 +646,18 @@ pub fn export_protocol_pdf(plan: &DesignPlan, target: &Molecule) -> Result<PdfRe
     layout.heading("Cloning steps")?;
     for (index, step) in plan.steps.iter().enumerate() {
         let body = match step {
+            Operation::RecombineReference {
+                sources,
+                request,
+                selection,
+            } => format!(
+                "Reference-only {:?} exchange of {} and {}. Pinned full profile, data, work and annotation limits: {}. Explicit selected candidate/component: {}. All reciprocal components are reconstructed; reference sequence matching does not establish physical chemistry, biological repair, efficacy or experimental selection.",
+                request.reaction,
+                source_name(&sources[0]),
+                source_name(&sources[1]),
+                serde_json::to_string(request).map_err(|e| Error::Format(e.to_string()))?,
+                serde_json::to_string(selection).map_err(|e| Error::Format(e.to_string()))?
+            ),
             Operation::DeclareSourceModifications {
                 template,
                 assumptions,

@@ -14,6 +14,9 @@ from pathlib import Path
 
 import websocket
 
+QA_ORIGIN = os.environ.get("COLLAGENE_QA_ORIGIN", 'http://127.0.0.1:8080').rstrip("/")
+QA_DIST = Path(os.environ.get("COLLAGENE_QA_DIST", str(Path(__file__).resolve().parents[1] / "dist")))
+
 
 def mobile_enabled():
     """Mobile acceptance is deferred; opt in explicitly after desktop review."""
@@ -131,7 +134,7 @@ class Browser:
 
 
 def main():
-    with urllib.request.urlopen("http://127.0.0.1:8080",timeout=3) as response:
+    with urllib.request.urlopen(QA_ORIGIN,timeout=3) as response:
         assert response.status==200, "Local preview is not ready"
     browser = Browser()
     downloads=Path("/tmp/collagene2-qa-downloads")
@@ -140,8 +143,8 @@ def main():
         (downloads/name).unlink(missing_ok=True)
     browser.call("Browser.setDownloadBehavior", {"behavior":"allow","downloadPath":str(downloads)})
     browser.call("Emulation.setDeviceMetricsOverride", {"width": 1600, "height": 1000, "deviceScaleFactor": 1, "mobile": False})
-    browser.call("Storage.clearDataForOrigin", {"origin":"http://127.0.0.1:8080","storageTypes":"indexeddb"})
-    browser.call("Page.navigate", {"url": "http://127.0.0.1:8080"})
+    browser.call("Storage.clearDataForOrigin", {"origin":QA_ORIGIN,"storageTypes":"indexeddb"})
+    browser.call("Page.navigate", {"url": QA_ORIGIN})
     browser.wait("document.querySelector('h1')?.textContent==='pCG_demo'")
     browser.wait("document.body.innerText.includes('Saved in this browser')")
     browser.wait("document.querySelectorAll('canvas').length===3")
@@ -330,7 +333,7 @@ def main():
     pdf=base64.b64decode(browser.call("Page.printToPDF", {"printBackground":True})["data"])
     assert pdf.startswith(b"%PDF-") and len(pdf)>1000
     Path("/tmp/collagene2-protocol.pdf").write_bytes(pdf)
-    browser.call("Page.navigate", {"url":"http://127.0.0.1:8080"})
+    browser.call("Page.navigate", {"url":QA_ORIGIN})
     browser.wait("document.querySelector('h1')?.textContent==='target'")
     # Run the same manually specified tailed-PCR fixture as the native scientific test.
     browser.evaluate("Array.from(document.querySelectorAll('.document-entry')).find(b=>b.textContent.includes('pcr_template')).click()")

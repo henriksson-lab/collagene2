@@ -77,8 +77,38 @@ def main():
         assert initialized["protocolVersion"] == "2025-11-25", initialized
         send("notifications/initialized", {}, notification=True)
         tools = send("tools/list", {})["tools"]
-        assert len(tools) == 93, len(tools)
-        assert {"lookup_enzyme_catalog", "resolve_enzyme_evidence", "calculate_dilution", "balance_mixture", "calculate_dna_molar_ratios", "inspect_restriction", "propose_plan", "verify_plan", "read_sequence_region", "validate_reads", "import_fastq", "export_oligos", "import_workspace_archive", "export_workspace_archive", "begin_workspace_upload", "append_workspace_upload", "finalize_workspace_upload", "abort_workspace_upload", "create_feature_library", "import_feature_library", "export_feature_library", "scan_feature_library", "apply_feature_library", "import_annotations", "apply_annotations", "export_annotations", "export_annotation_dataset", "simulate_end_repair", "simulate_oligo_annealing", "search_document", "view_tracks", "import_alignment", "import_alignment_document", "list_alignments", "read_alignment", "export_alignment", "extract_alignment_rows", "analyze_protein", "design_codons", "check_codon_design", "analyze_dotplot", "assemble_contigs", "assess_methylation", "design_crispr_guides", "search_crispr_off_targets", "design_edit_template", "check_edit_template", "begin_genome_import", "append_genome_import", "finish_genome_import", "inspect_genome", "read_genome_export", "read_genome_interval", "design_genome_interval_guides", "start_genome_off_target_search", "advance_genome_off_target_search", "read_genome_off_target_hits", "cancel_genome_job", "simulate_tailing", "check_overlap_profile", "record_workspace_run", "list_workspace_runs", "replay_workspace_run"} <= {t["name"] for t in tools}
+        assert len(tools) == 96, len(tools)
+        assert {"inspect_recombination", "check_recombination_target", "select_recombination_component", "lookup_enzyme_catalog", "resolve_enzyme_evidence", "calculate_dilution", "balance_mixture", "calculate_dna_molar_ratios", "inspect_restriction", "propose_plan", "verify_plan", "read_sequence_region", "validate_reads", "import_fastq", "export_oligos", "import_workspace_archive", "export_workspace_archive", "begin_workspace_upload", "append_workspace_upload", "finalize_workspace_upload", "abort_workspace_upload", "create_feature_library", "import_feature_library", "export_feature_library", "scan_feature_library", "apply_feature_library", "import_annotations", "apply_annotations", "export_annotations", "export_annotation_dataset", "simulate_end_repair", "simulate_oligo_annealing", "search_document", "view_tracks", "import_alignment", "import_alignment_document", "list_alignments", "read_alignment", "export_alignment", "extract_alignment_rows", "analyze_protein", "design_codons", "check_codon_design", "analyze_dotplot", "assemble_contigs", "assess_methylation", "design_crispr_guides", "search_crispr_off_targets", "design_edit_template", "check_edit_template", "begin_genome_import", "append_genome_import", "finish_genome_import", "inspect_genome", "read_genome_export", "read_genome_interval", "design_genome_interval_guides", "start_genome_off_target_search", "advance_genome_off_target_search", "read_genome_off_target_hits", "cancel_genome_job", "simulate_tailing", "check_overlap_profile", "record_workspace_run", "list_workspace_runs", "replay_workspace_run"} <= {t["name"] for t in tools}
+        profile_resource=send("resources/read",{"uri":"collagene://recombination/profile/manufacturer-context-v1"})
+        recombination_profile=json.loads(profile_resource["contents"][0]["text"])["snapshot"]
+        recombination_docs=tool("import_document",{"text":(root/"fixtures/recombination-bp-demo.gb").read_text()})["documents"]
+        def immutable_ref(d): return {"id":d["id"],"revision":d["revision"]}
+        def recombination_named(name): return next(d for d in recombination_docs if d["name"].split()[0]==name)
+        assert recombination_named("BP_insert")["length"]==59 and recombination_named("BP_donor")["length"]==4761
+        recombination_sources=[{"role":"insert","document":immutable_ref(recombination_named("BP_insert"))},{"role":"donor","document":immutable_ref(recombination_named("BP_donor"))}]
+        recombination_request={"profile":recombination_profile,"reaction":"BP","limits":{"max_input_bases":1000000,"max_comparisons":20000000,"max_sites":256,"max_combinations":4096,"max_candidates":64,"max_components_per_candidate":4,"max_product_bases":4000000,"max_report_bytes":16777216},"annotation_limits":{"max_work":4000000,"max_copy_bytes":16777216,"max_features":16384,"max_report_bytes":33554432}}
+        recombination=tool("inspect_recombination",{"sources":recombination_sources,"request":recombination_request,"limit":1})
+        assert recombination["complete"] and recombination["candidate_count"]==1
+        assert sorted(p["length"] for p in recombination["candidates"][0]["components"])==[2267,2553]
+        recombination_target=immutable_ref(recombination_named("BP_target"))
+        recombination_policy={"allow_reverse_complement":False}
+        checked=tool("check_recombination_target",{"sources":recombination_sources,"request":recombination_request,"target":recombination_target,"policy":recombination_policy})
+        matches=checked["assessment"]["reference"]["matches"]
+        assert len(matches)==1 and matches[0]["fully_specified_dna"]
+        selection={"batch_revision":recombination["batch_revision"],"candidate_id":matches[0]["candidate"],"component_id":matches[0]["product"]}
+        selected=tool("select_recombination_component",{"sources":recombination_sources,"request":recombination_request,"selection":selection,"target":recombination_target,"policy":recombination_policy})
+        assert selected["document"]["length"]==2553 and len(selected["reciprocal_components"])==2
+        selected_evidence=full_json_artifact(selected["artifact_id"])
+        assert selected_evidence["product"]["molecule"]["metadata"]["recombination:reference_only"]=="true"
+        assert selected_evidence["product"]["molecule"]["metadata"]["source:legacy:chemistry_unmapped"]
+        plan_sources=[{"Input":"recombination_insert"},{"Input":"recombination_donor"}]
+        plan_inspection=tool("inspect_recombination",{"sources":recombination_sources,"request":recombination_request,"plan_sources":plan_sources})
+        plan_check=tool("check_recombination_target",{"sources":recombination_sources,"request":recombination_request,"plan_sources":plan_sources,"target":recombination_target,"policy":recombination_policy})
+        plan_match=plan_check["assessment"]["reference"]["matches"][0]
+        plan_selection={"batch_revision":plan_inspection["batch_revision"],"candidate_id":plan_match["candidate"],"component_id":plan_match["product"]}
+        reference_plan=tool("propose_plan",{"name":"Stdio reference-only BP","target":recombination_target,"inputs":[{"id":"recombination_insert","document":recombination_sources[0]["document"]},{"id":"recombination_donor","document":recombination_sources[1]["document"]}],"steps":[{"RecombineReference":{"sources":plan_sources,"request":recombination_request,"selection":plan_selection}}]})
+        reference_report=tool("verify_plan",{"plan_revision":reference_plan["plan_revision"]})
+        assert reference_report["status"]=="Incomplete" and reference_report["engine_version"].endswith("/science-9"),reference_report
         catalog=tool("lookup_enzyme_catalog",{"query":"HaeIII","mode":"Enzyme"})
         assert catalog["status"]=="Unique" and catalog["enzymes"][0]["id"]=="haeiii" and catalog["enzymes"][0]["geometry"]=={"recognition":"GGCC","top_cut":2,"bottom_cut":2}
         resource=send("resources/read",{"uri":catalog["catalog_resource_uri"]})
@@ -316,7 +346,7 @@ def main():
         tracked_steps=[{"DeclareSourceModifications":{"template":{"Input":"s"},"assumptions":{"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"}}},{"CheckedDigest":{"template":{"Step":0},"enzymes":["EcoRI"],"profile_revision":tracked_profile,"fragment_index":0}}]
         tracked=tool("propose_plan",{"name":"Stdio checked digest","target":tracked_refs["tracked_target"],"inputs":[{"id":"s","document":tracked_refs["tracked_source"]}],"steps":tracked_steps})
         tracked_report=tool("verify_plan",{"plan_revision":tracked["plan_revision"]})
-        assert tracked_report["status"]=="ConsistentUnderAssumptions" and tracked_report["engine_version"].endswith("/science-8"),tracked_report
+        assert tracked_report["status"]=="ConsistentUnderAssumptions" and tracked_report["engine_version"].endswith("/science-9"),tracked_report
         assert tracked_report["products"][1]["length"]==5 and tracked_report["products"][1]["tracked_modifications"]["generation"]
         candidate = tool("propose_plan", {"name": "Stdio assembly", "target": ref("target"), "inputs": [{"id": name, "document": ref(name)} for name in ["left", "right"]], "steps": [{"Overlap": {"fragments": [{"Input": "left"}, {"Input": "right"}], "overlaps": [4], "circular": False}}]})
         assert candidate["verified"] is False
@@ -340,7 +370,7 @@ def main():
                 break
             offset=chunk["next_start"]
         candidate_bytes=base64.b64decode(encoded,validate=True)
-        assert candidate_bytes.startswith(b"CGP\0") and candidate_bytes[4:6]==bytes([6,0])
+        assert candidate_bytes.startswith(b"CGP\0") and candidate_bytes[4:6]==bytes([7,0])
         if args.candidate:
             args.candidate.write_bytes(candidate_bytes)
         # Route source-bound annotation/library tools over the actual stdio executable.

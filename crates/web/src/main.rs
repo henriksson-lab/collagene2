@@ -66,6 +66,8 @@ mod mutagenesis;
 #[cfg(target_arch = "wasm32")]
 mod primers;
 #[cfg(target_arch = "wasm32")]
+mod recombination;
+#[cfg(target_arch = "wasm32")]
 mod renderer;
 #[cfg(target_arch = "wasm32")]
 mod source_import;

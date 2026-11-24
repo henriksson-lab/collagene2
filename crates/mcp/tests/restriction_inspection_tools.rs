@@ -68,7 +68,7 @@ async fn artifact(c: &Client, id: &Value) -> Value {
 async fn inspection_sdk_pages_exact_geometry_and_source_without_creating_products() {
     let (c, s) = setup().await;
     let tools = c.list_tools(Default::default()).await.unwrap().tools;
-    assert_eq!(tools.len(), 93);
+    assert_eq!(tools.len(), 96);
     let tool = tools
         .iter()
         .find(|t| t.name == "inspect_restriction")

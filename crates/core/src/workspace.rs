@@ -613,7 +613,7 @@ pub fn save_workspace(workspace: &Workspace) -> Result<Vec<u8>, Error> {
         format: FORMAT.into(),
         version: VERSION,
         molecule_schema: 1,
-        plan_schema: 4,
+        plan_schema: 5,
         name: workspace.name.clone(),
         active_document: workspace.active_document.clone(),
         documents: workspace.documents.clone(),
@@ -1031,7 +1031,7 @@ pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
         || header.get("molecule_schema").and_then(|v| v.as_u64()) != Some(1)
         || !matches!(
             header.get("plan_schema").and_then(|v| v.as_u64()),
-            Some(1 | 2 | 3 | 4)
+            Some(1 | 2 | 3 | 4 | 5)
         )
     {
         return Err(Error::Unsupported(
@@ -1193,6 +1193,15 @@ pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
             });
         }
         let steps: Vec<Operation> = json_exact(get(&blobs, &record.steps)?)?;
+        if manifest.plan_schema < 5
+            && steps
+                .iter()
+                .any(|step| matches!(step, Operation::RecombineReference { .. }))
+        {
+            return Err(Error::Unsupported(
+                "reference recombination requires workspace plan schema 5".into(),
+            ));
+        }
         if manifest.plan_schema < 4
             && steps.iter().any(|step| {
                 matches!(

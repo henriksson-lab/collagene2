@@ -4,7 +4,7 @@ Development-only Chrome CDP helper; no external scientific runtime dependencies.
 import json
 import time
 from pathlib import Path
-from browser_qa import Browser, mobile_enabled
+from browser_qa import QA_ORIGIN, Browser, mobile_enabled
 
 
 def set_value(browser, selector, value, event="input"):
@@ -50,9 +50,9 @@ def main():
     d=Path('/tmp/collagene2-search-tracks-downloads');d.mkdir(exist_ok=True)
     b.call('Browser.setDownloadBehavior', {'behavior':'allow','downloadPath':str(d)})
     b.call('Emulation.setDeviceMetricsOverride',{'width':1600,'height':1000,'deviceScaleFactor':1,'mobile':False})
-    b.call('Storage.clearDataForOrigin',{'origin':'http://127.0.0.1:8080','storageTypes':'indexeddb'})
+    b.call('Storage.clearDataForOrigin',{'origin':QA_ORIGIN,'storageTypes':'indexeddb'})
     b.call('Page.addScriptToEvaluateOnNewDocument',{'source':'''window.__wire=[];(()=>{let next=0;const ids=new WeakMap(),original=Worker.prototype.postMessage;Worker.prototype.postMessage=function(data,...args){if(!ids.has(this))ids.set(this,++next);if(data instanceof Uint8Array)window.__wire.push({worker:ids.get(this),bytes:data.length,version:data[4]+256*data[5]});return original.call(this,data,...args);};})();'''})
-    b.call('Page.navigate',{'url':'http://127.0.0.1:8080'})
+    b.call('Page.navigate',{'url':QA_ORIGIN})
     b.wait("document.body?.innerText.includes('Saved in this browser')")
     sequence='AAAAGAATTCTTTTATGAAACCCGGGTAA'
     gb=f'''LOCUS       track_fixture {len(sequence)} bp DNA linear
@@ -127,7 +127,7 @@ ORIGIN
     follow=b.evaluate('window.__wire.slice('+str(len(initial))+')')
     cached=[x for x in follow if x['worker']==worker]
     assert cached and all(x['bytes']<512 for x in cached),cached
-    assert all(x['version']==21 for x in initial+follow),initial+follow
+    assert all(x['version']==22 for x in initial+follow),initial+follow
     # Rapid scroll/option changes must settle on the latest viewport and frame settings.
     b.evaluate("(()=>{const e=document.querySelector('.sequence-scroll');for(let i=0;i<30;i++){e.scrollTop=i*1000;e.dispatchEvent(new Event('scroll'));}})()")
     toggle(b,'Translation tracks')

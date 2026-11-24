@@ -3,7 +3,7 @@
 import json
 import time
 from pathlib import Path
-from browser_qa import Browser
+from browser_qa import QA_ORIGIN, Browser
 
 
 def field(b, aria, value, event='input'):
@@ -23,8 +23,8 @@ def main():
         if path.is_file():path.unlink()
     b.call('Browser.setDownloadBehavior',{'behavior':'allow','downloadPath':str(directory)})
     b.call('Emulation.setDeviceMetricsOverride',{'width':1600,'height':1000,'deviceScaleFactor':1,'mobile':False})
-    b.call('Storage.clearDataForOrigin',{'origin':'http://127.0.0.1:8080','storageTypes':'indexeddb'})
-    b.call('Page.navigate',{'url':'http://127.0.0.1:8080'})
+    b.call('Storage.clearDataForOrigin',{'origin':QA_ORIGIN,'storageTypes':'indexeddb'})
+    b.call('Page.navigate',{'url':QA_ORIGIN})
     b.wait("document.body?.innerText.includes('Saved in this browser')")
     paste(b,'>read_reference\nTTTCGATACGGG\n')
     b.wait("document.querySelector('h1')?.textContent==='read_reference'")

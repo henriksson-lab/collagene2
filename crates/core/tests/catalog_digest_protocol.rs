@@ -33,7 +33,7 @@ fn run(revision: String, job: J) -> Response {
         job,
     };
     let b = protocol::encode_request(&r).unwrap();
-    assert_eq!(&b[4..6], &21u16.to_le_bytes());
+    assert_eq!(&b[4..6], &22u16.to_le_bytes());
     let reply = protocol::decode_response(
         &protocol::AnalysisSession::default()
             .process_request(&b)

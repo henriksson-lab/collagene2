@@ -6,7 +6,7 @@ import json
 import time
 import zipfile
 from pathlib import Path
-from browser_qa import Browser, mobile_enabled
+from browser_qa import QA_ORIGIN, Browser, mobile_enabled
 from workspace_browser_qa import wait_file
 
 ROOT=Path('/tmp/collagene2-alignment-qa')
@@ -64,8 +64,8 @@ def main():
         if p.is_file():p.unlink()
     b=Browser();b.call('Browser.setDownloadBehavior',{'behavior':'allow','downloadPath':str(ROOT)})
     b.call('Emulation.setDeviceMetricsOverride',{'width':1600,'height':1000,'deviceScaleFactor':1,'mobile':False})
-    b.call('Storage.clearDataForOrigin',{'origin':'http://127.0.0.1:8080','storageTypes':'indexeddb'})
-    b.call('Page.navigate',{'url':'http://127.0.0.1:8080'})
+    b.call('Storage.clearDataForOrigin',{'origin':QA_ORIGIN,'storageTypes':'indexeddb'})
+    b.call('Page.navigate',{'url':QA_ORIGIN})
     b.wait('document.body?.innerText.includes("Saved in this browser")')
     source=ROOT/'literal.sto';source.write_text(STOCKHOLM)
     open_file(b,source)

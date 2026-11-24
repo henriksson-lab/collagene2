@@ -1207,6 +1207,14 @@ impl CollageneServer {
         report: &T,
         donor: Option<Molecule>,
     ) -> Result<(String, Option<Value>), ErrorData> {
+        self.candidate_document_artifact(report, donor, "edit-template.json")
+    }
+    fn candidate_document_artifact<T: Serialize>(
+        &self,
+        report: &T,
+        donor: Option<Molecule>,
+        filename: &'static str,
+    ) -> Result<(String, Option<Value>), ErrorData> {
         let text = bounded_json(report)?;
         let artifact_id = blake3::hash(text.as_bytes()).to_hex().to_string();
         let donor = donor
@@ -1221,11 +1229,9 @@ impl CollageneServer {
             Some(a) => {
                 if !matches!(a.data, ArtifactData::Text(_))
                     || a.mime_type != "application/json"
-                    || a.filename != "edit-template.json"
+                    || a.filename != filename
                 {
-                    return Err(bad(
-                        "edit-template artifact already has another representation",
-                    ));
+                    return Err(bad("candidate artifact already has another representation"));
                 }
                 false
             }
@@ -1256,7 +1262,7 @@ impl CollageneServer {
                     data: ArtifactData::Text(text),
                     mime_type: "application/json",
                     encoding: "utf-8",
-                    filename: "edit-template.json",
+                    filename,
                 },
             );
         }
@@ -1603,6 +1609,11 @@ impl ServerHandler for CollageneServer {
         let catalog = catalog_tools::builtin()?;
         let mut resources = vec![
             Resource::new(
+                recombination_tools::PROFILE_URI,
+                "Explicit manufacturer-context recombination profile",
+            )
+            .with_mime_type("application/json"),
+            Resource::new(
                 catalog_tools::resource_uri(&catalog),
                 format!(
                     "Documentary restriction catalog {}",
@@ -1643,7 +1654,9 @@ impl ServerHandler for CollageneServer {
         request: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResponse, ErrorData> {
-        let value = if request.uri.starts_with("collagene://enzyme-catalog/") {
+        let value = if request.uri == recombination_tools::PROFILE_URI {
+            recombination_tools::profile()?
+        } else if request.uri.starts_with("collagene://enzyme-catalog/") {
             let catalog = catalog_tools::builtin()?;
             if request.uri != catalog_tools::resource_uri(&catalog) {
                 return Err(bad(
@@ -1972,6 +1985,33 @@ impl CollageneServer {
             output(json!({"id":args.id,"removed":removed,"kind":"import"}))
         })
         .await
+    }
+    #[tool(
+        description = "Inspect explicitly profiled BP/LR reciprocal reference-sequence alternatives from exactly two ordered immutable source roles. Mandatory full profile snapshot and resource limits; all reciprocal components and uncertainty retained in immutable JSON. Bounded candidate page only, no automatic winner or product installation, no chemical activity claims."
+    )]
+    async fn inspect_recombination(
+        &self,
+        Parameters(args): Parameters<recombination_tools::InspectQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.recombination_inspect(args).await
+    }
+    #[tool(
+        description = "Freshly compare independently supplied target DNA against all explicitly profiled BP/LR reference components. Preserves possible sites, unsupported geometry, ambiguity and incomplete-search flags; no-match claims are scoped to the declared full-site profile. The target is noncausal and never supplies product DNA."
+    )]
+    async fn check_recombination_target(
+        &self,
+        Parameters(args): Parameters<recombination_tools::CheckQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.recombination_check(args).await
+    }
+    #[tool(
+        description = "Freshly reconstruct one exact candidate/component pinned to its source/profile batch and require a fully specified independent target match. Atomically installs its immutable reference-only document and full checked JSON; all reciprocal component identities retained. No physical reaction, strand state, efficacy or experimental winner is inferred. Native history uses the typed plan/run workflow."
+    )]
+    async fn select_recombination_component(
+        &self,
+        Parameters(args): Parameters<recombination_tools::SelectQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.recombination_select(args).await
     }
     #[tool(
         description = "Design a literal source-derived homology editing donor against an independently supplied immutable target. Explicit edit/deletion/replacement/arm/orientation options and an optional exact source-bound guide are independently checked base by base. The target is a noncausal requirement, never donor source DNA. Returns bounded donor/edited-reference previews and full immutable JSON; installs an immutable donor document only when the independent check is consistent, atomically with the artifact. Sequence consistency is not cellular HDR, nuclease activity or editing success. No physical operation or persistent application writes."
@@ -3811,3 +3851,4 @@ mod genome_store;
 mod unit_tools;
 
 mod catalog_tools;
+mod recombination_tools;

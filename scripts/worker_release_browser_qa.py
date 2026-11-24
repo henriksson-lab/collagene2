@@ -13,12 +13,12 @@ import re
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
-from browser_qa import Browser
+from browser_qa import QA_DIST, QA_ORIGIN, Browser
 import desktop_mvp_browser_qa as mvp
 
 ROOT = Path(__file__).resolve().parents[1]
 DIRECTORY = Path('/tmp/collagene2-worker-release-qa')
-ORIGIN = 'http://127.0.0.1:8080'
+ORIGIN = QA_ORIGIN
 NAMES = ('analysis-worker_loader.js', 'analysis-worker.js', 'analysis-worker_bg.wasm')
 OLD_URLS = {ORIGIN + '/' + name for name in NAMES}
 PATTERNS = [{'urlPattern': url + '*', 'requestStage': 'Request'} for url in sorted(OLD_URLS)]
@@ -161,8 +161,8 @@ def assert_worker_release(browser, tape, name, isolated_tags=(19,)):
     # Every worker that actually exchanged an envelope must have become ready.
     assert all(entry['ready'] for entry in entries if entry['outgoing'] or entry['incoming']), entries
     for entry in entries:
-        assert all(item['magic'] == 'CGQ\x00' and item['version'] == 21 for item in entry['outgoing']), entry
-        assert all(item['magic'] == 'CGR\x00' and item['version'] == 21 for item in entry['incoming']), entry
+        assert all(item['magic'] == 'CGQ\x00' and item['version'] == 22 for item in entry['outgoing']), entry
+        assert all(item['magic'] == 'CGR\x00' and item['version'] == 22 for item in entry['incoming']), entry
         for reply in entry['incoming']:
             assert any(request['id'] == reply['id'] and request['revision'] == reply['revision'] for request in entry['outgoing']), entry
     # Stable appended wire identities:19 SaveWorkspace /20 LoadWorkspace (isolated),32 PrepareTracks,
@@ -244,7 +244,7 @@ def main():
             url = asset_directory + filename
             result = browser.evaluate('(async()=>{const response=await fetch(' + json.dumps(url) + ',{cache:"force-cache"});if(!response.ok)throw Error("Missing staged worker asset");const bytes=await response.arrayBuffer();const hash=await crypto.subtle.digest("SHA-256",bytes);return {length:bytes.byteLength,hash:Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,"0")).join("")}})()')
             relative = urlparse(url).path.lstrip('/')
-            staged = ROOT / 'dist' / relative
+            staged = QA_DIST / relative
             payload = staged.read_bytes()
             assert result == {'length': len(payload), 'hash': hashlib.sha256(payload).hexdigest()}, (filename, result)
         loader = browser.evaluate('(async()=>await(await fetch(' + json.dumps(asset_directory + NAMES[0]) + ',{cache:"force-cache"})).text())()')
@@ -266,7 +266,7 @@ def main():
         inspect_catalog(browser)
         assert assert_worker_release(browser, tape, 'reload', isolated_tags=(19, 20)) == meta
         browser.screenshot('/tmp/collagene2-worker-release-desktop.png')
-        print('PASS: existing HTTP cache/profile preserved; invalid old fixed URLs armed; full hashed loader/JS/WASM chain matches distribution; all constructors and actual child requests use one release directory; schema21 isolated autosave, retained tracks and catalog operations; missing meta fails closed; reload preserves working release; all startup errors checked')
+        print('PASS: existing HTTP cache/profile preserved; invalid old fixed URLs armed; full hashed loader/JS/WASM chain matches distribution; all constructors and actual child requests use one release directory; schema22 isolated autosave, retained tracks and catalog operations; missing meta fails closed; reload preserves working release; all startup errors checked')
     finally:
         browser.call('Page.removeScriptToEvaluateOnNewDocument', {'identifier': hook})
         browser.call('Fetch.disable')

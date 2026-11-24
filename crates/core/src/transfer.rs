@@ -44,12 +44,17 @@ pub struct Candidate {
 impl Candidate {
     pub fn new(plan: DesignPlan) -> Self {
         Self {
-            plan_revision: plan_revision(&plan),
+            plan_revision: if crate::verification::validate_reference_steps(&plan).is_ok() {
+                plan_revision(&plan)
+            } else {
+                String::new()
+            },
             plan,
         }
     }
     pub fn validate(&self) -> Result<(), Error> {
         let plan = &self.plan;
+        crate::verification::validate_reference_steps(plan)?;
         if plan.name.trim().is_empty()
             || plan.name.len() > 1024
             || plan.steps.is_empty()
@@ -118,6 +123,18 @@ pub fn save_candidate(candidate: &Candidate) -> Result<Vec<u8>, Error> {
 }
 pub fn load_candidate(bytes: &[u8]) -> Result<Candidate, Error> {
     let candidate: Candidate = protocol::decode(b"CGP\0", bytes)?;
+    if u16::from_le_bytes([bytes[4], bytes[5]]) < 7
+        && candidate.plan.steps.iter().any(|step| {
+            matches!(
+                step,
+                crate::verification::Operation::RecombineReference { .. }
+            )
+        })
+    {
+        return Err(Error::Unsupported(
+            "reference recombination requires candidate schema 7".into(),
+        ));
+    }
     if u16::from_le_bytes([bytes[4], bytes[5]]) < 6
         && candidate.plan.steps.iter().any(|step| {
             matches!(

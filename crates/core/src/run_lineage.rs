@@ -112,22 +112,7 @@ pub fn workspace_fingerprint(w: &Workspace) -> Result<String, Error> {
     ))
 }
 fn sources(op: &Operation) -> Vec<&Source> {
-    match op {
-        Operation::Pcr { template, .. }
-        | Operation::PcrWithMismatches { template, .. }
-        | Operation::DeclareSourceModifications { template, .. }
-        | Operation::CheckedDigest { template, .. }
-        | Operation::Digest { template, .. }
-        | Operation::TreatEnds { template, .. }
-        | Operation::RepairEnds { template, .. }
-        | Operation::Tail3Prime { template, .. } => vec![template],
-        Operation::Overlap { fragments, .. } => fragments.iter().collect(),
-        Operation::GoldenGate { templates, .. } => templates.iter().collect(),
-        Operation::Ligate { fragments, .. } | Operation::ProfiledOverlap { fragments, .. } => {
-            fragments.iter().map(|s| &s.source).collect()
-        }
-        Operation::AnnealOligos { top, bottom, .. } => vec![top, bottom],
-    }
+    verification::operation_sources(op)
 }
 fn target_matches(p: &Molecule, t: &Molecule) -> bool {
     p.topology == t.topology
@@ -155,6 +140,7 @@ fn resolve<'a>(w: &'a Workspace, b: &EventBinding) -> Result<&'a Molecule, Error
         .ok_or_else(|| bad("revision unavailable"))
 }
 fn validate_plan(plan: &DesignPlan) -> Result<(), Error> {
+    verification::validate_reference_steps(plan)?;
     encoded(plan)?;
     Candidate::new(plan.clone()).validate()?;
     for (i, op) in plan.steps.iter().enumerate() {
@@ -207,13 +193,24 @@ fn validate_texts(values: &[String], limit: usize) -> Result<(), Error> {
 }
 fn validate_record(r: &RunRecord) -> Result<(), Error> {
     if r.schema_version != 1
-        || !matches!(r.plan_schema, 3 | 4)
+        || !matches!(r.plan_schema, 3 | 4 | 5)
         || !digest(&r.run_id)
         || r.assessment.engine_version.is_empty()
         || r.assessment.engine_version.len() > 128
         || r.assessment.status == Status::Invalid
     {
         return Err(bad("invalid schema or assessment"));
+    }
+    if r.plan_schema < 5
+        && (r.assessment.engine_version.ends_with("/science-9")
+            || r.plan
+                .steps
+                .iter()
+                .any(|op| matches!(op, Operation::RecombineReference { .. })))
+    {
+        return Err(bad(
+            "reference recombination requires workspace plan schema 5",
+        ));
     }
     if r.plan_schema < 4
         && (r.assessment.engine_version.ends_with("/science-8")
@@ -441,7 +438,7 @@ pub fn record_run(
     }
     let mut r = RunRecord {
         schema_version: 1,
-        plan_schema: 4,
+        plan_schema: 5,
         run_id: String::new(),
         plan_revision: report.plan_revision.clone(),
         plan: plan.clone(),

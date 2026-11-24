@@ -106,6 +106,12 @@ pub enum Operation {
         profile_revision: String,
         fragment_index: usize,
     },
+    /// Bounded reference-sequence exchange only. No chemical duplex state is established.
+    RecombineReference {
+        sources: [Source; 2],
+        request: crate::recombination::Request,
+        selection: crate::recombination::Selection,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -137,7 +143,7 @@ pub struct VerificationReport {
     pub exhaustive_alternative_search: bool,
 }
 
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-8");
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-9");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrDocument {
@@ -323,11 +329,137 @@ pub fn plan_revision(plan: &DesignPlan) -> String {
         .to_string()
 }
 
+pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
+    if plan.steps.len() > 1000 || plan.inputs.len() > 1000 {
+        return Err(Error::TooLarge);
+    }
+    let mut count = 0usize;
+    for step in &plan.steps {
+        if let Operation::RecombineReference {
+            sources,
+            request,
+            selection,
+        } = step
+        {
+            count += 1;
+            if count > 64
+                || selection.batch_revision.len() != 64
+                || !selection
+                    .batch_revision
+                    .bytes()
+                    .all(|b| b.is_ascii_hexdigit())
+            {
+                return Err(Error::TooLarge);
+            }
+            request.validate()?;
+            if selection.candidate_id >= request.limits.max_candidates
+                || selection.component_id >= request.limits.max_components_per_candidate
+                || sources.iter().any(
+                    |s| matches!(s, Source::Input(id) if id.len() > 128 || id.trim().is_empty()),
+                )
+            {
+                return Err(Error::Format(
+                    "invalid reference-exchange selection or source shape".into(),
+                ));
+            }
+        }
+    }
+    if count > 0 {
+        if plan.name.len() > 1024 || plan.target_revision.len() != 64 {
+            return Err(Error::TooLarge);
+        }
+        let mut bases = 0usize;
+        for input in &plan.inputs {
+            if input.id.len() > 128 || input.revision.len() != 64 {
+                return Err(Error::TooLarge);
+            }
+            bases = bases
+                .checked_add(input.molecule.sequence.len())
+                .filter(|n| *n <= 32_000_000)
+                .ok_or(Error::TooLarge)?;
+        }
+        crate::recombination::reference::model_preflight(
+            &plan.inputs.iter().map(|i| &i.molecule).collect::<Vec<_>>(),
+        )?;
+    }
+    Ok(())
+}
+
+/// Actual typed dependencies; producer metadata never supplies graph authority.
+pub(crate) fn operation_sources(op: &Operation) -> Vec<&Source> {
+    match op {
+        Operation::RecombineReference { sources, .. } => sources.iter().collect(),
+        Operation::Pcr { template, .. }
+        | Operation::PcrWithMismatches { template, .. }
+        | Operation::Digest { template, .. }
+        | Operation::CheckedDigest { template, .. }
+        | Operation::DeclareSourceModifications { template, .. }
+        | Operation::TreatEnds { template, .. }
+        | Operation::RepairEnds { template, .. }
+        | Operation::Tail3Prime { template, .. } => vec![template],
+        Operation::Overlap { fragments, .. }
+        | Operation::GoldenGate {
+            templates: fragments,
+            ..
+        } => fragments.iter().collect(),
+        Operation::Ligate { fragments, .. } | Operation::ProfiledOverlap { fragments, .. } => {
+            fragments.iter().map(|f| &f.source).collect()
+        }
+        Operation::AnnealOligos { top, bottom, .. } => vec![top, bottom],
+    }
+}
+
+/// Roles bind ordered slots and typed ancestry, independently of molecule display names.
+pub fn recombination_inputs(
+    sources: &[Source; 2],
+    molecules: [&Molecule; 2],
+    request: &crate::recombination::Request,
+) -> Result<Vec<crate::recombination::reference::Input>, Error> {
+    crate::recombination::source_preflight(molecules, request)?;
+    if sources
+        .iter()
+        .any(|s| matches!(s, Source::Input(id) if id.len() > 128 || id.trim().is_empty()))
+    {
+        return Err(Error::TooLarge);
+    }
+    sources
+        .iter()
+        .zip(molecules)
+        .enumerate()
+        .map(|(slot, (source, molecule))| {
+            let bytes = serde_json::to_vec(&("plan-reference-exchange-source-v1", slot, source))
+                .map_err(|e| Error::Format(e.to_string()))?;
+            Ok(crate::recombination::reference::Input {
+                role: blake3::hash(&bytes).to_hex().to_string(),
+                molecule: molecule.clone(),
+            })
+        })
+        .collect()
+}
+
 pub fn verify(plan: &DesignPlan, target: &Molecule) -> VerificationReport {
+    // New embedded profile snapshots are bounded before hashing their public native DTOs.
+    let preflight = validate_reference_steps(plan).and_then(|()| {
+        if plan
+            .steps
+            .iter()
+            .any(|s| matches!(s, Operation::RecombineReference { .. }))
+        {
+            let mut models = plan.inputs.iter().map(|i| &i.molecule).collect::<Vec<_>>();
+            models.push(target);
+            crate::recombination::reference::model_preflight(&models)?;
+        }
+        Ok(())
+    });
+    if let Err(error) = preflight {
+        return VerificationReport { plan_revision: String::new(), target_revision: String::new(), engine_version: ENGINE_VERSION.into(), status: Status::Invalid,
+            findings: vec![error.to_string()], assumptions: vec!["Reference exchange request rejected before plan hashing; no current result binding established.".into()], products: vec![], exhaustive_alternative_search: false };
+    }
     let mut report = VerificationReport {
         plan_revision: plan_revision(plan), target_revision: target.revision(), engine_version: ENGINE_VERSION.into(),
         status: Status::Invalid, findings: vec![], products: vec![], exhaustive_alternative_search: false,
         assumptions: vec!["Exact annealing/overlap model; no experimental outcome is guaranteed.".into(),
+            "RecombineReference is a bounded full-site-profile reciprocal reference exchange. All components are computed before an explicit selection; neither its selected DNA nor target agreement establishes chemical strand state, biological repair, efficacy or a selected experimental winner. Reference-only ancestry cannot supply physical PCR or annealing material.".into(),
             "Exact-PCR operations consider exact non-overlapping binding sites within one template turn, including competing oligo orientations and single-oligo products. Intentional-mismatch PCR uses its separately recorded mismatch and 3′ policy; ambiguous and overlapping-domain products remain incomplete previews.".into(),
             "Golden Gate enumerates a bounded one-copy fragment pool under explicit options; recut paths, carryover and alternative source histories remain evidence, not a claim of exhaustive kinetic mixture uniqueness.".into(),
             "Legacy digest and Golden Gate cleavage remain explicit complete-cleavage assumptions. CheckedDigest evaluates the pinned positional modification profile only; reaction conditions, secondary structure and genome-wide specificity are not established.".into(),
@@ -875,6 +1007,10 @@ fn declared_oligo(source: &Molecule) -> Result<(), Error> {
     if source.metadata.contains_key("duplex_model")
         || source
             .metadata
+            .get("source:legacy:chemistry_unmapped")
+            .is_some_and(|value| value == "true")
+        || source
+            .metadata
             .get("source:snapgene:chemistry_unmapped")
             .is_some_and(|value| value == "true")
     {
@@ -1163,10 +1299,25 @@ fn reconstruct(
         }
     }
     let mut physical: Vec<Option<TrackedDuplex>> = vec![];
+    let mut reference_only: Vec<bool> = vec![];
     let mut product_bases = 0usize;
     let mut product_bytes = 0usize;
     let mut incomplete = Vec::new();
     for (index, step) in plan.steps.iter().enumerate() {
+        let inherited_reference_only = operation_sources(step).iter().any(|source| match source {
+            Source::Step(i) => reference_only.get(*i).copied().unwrap_or(false),
+            Source::Input(_) => false,
+        });
+        if inherited_reference_only
+            && matches!(
+                step,
+                Operation::Pcr { .. }
+                    | Operation::PcrWithMismatches { .. }
+                    | Operation::AnnealOligos { .. }
+            )
+        {
+            return Err(Error::Unsupported("Reference-only recombination ancestry cannot establish a physical PCR/annealing substrate; no chemical template or oligo materialization assumption is modeled.".into()));
+        }
         let resolve = |source: &Source| -> Result<&Molecule, Error> {
             match source {
                 Source::Input(id) => inputs
@@ -1191,6 +1342,34 @@ fn reconstruct(
             |source: &Source| -> Result<Duplex, Error> { Ok(resolve_tracked(source)?.duplex) };
         let mut next_physical = None;
         let mut product = match step {
+            Operation::RecombineReference {
+                sources,
+                request,
+                selection,
+            } => {
+                let molecules = [resolve(&sources[0])?, resolve(&sources[1])?];
+                // Borrowed preflight happens before cloning the immutable source snapshots.
+                let inputs = recombination_inputs(sources, molecules, request)?;
+                let fresh = crate::recombination::simulate(&inputs, request)?;
+                if fresh.batch_revision != selection.batch_revision {
+                    return Err(Error::Format("Reference component selection belongs to a different source/profile/options request".into()));
+                }
+                findings.push(format!("Step {} reference search: {} candidate(s), {} site(s), complete under declared profile: {}. Profile snapshot {} retains all reciprocal components; selected candidate {} component {} only.", index+1, fresh.reference.candidates.len(), fresh.reference.sites.len(), fresh.reference.complete, request.profile.revision, selection.candidate_id, selection.component_id));
+                findings.extend(fresh.reference.diagnostics);
+                findings.extend(fresh.warnings);
+                let selected = fresh
+                    .documents
+                    .into_iter()
+                    .find(|p| &p.selection == selection)
+                    .ok_or_else(|| {
+                        Error::Format(
+                            "Selected reference candidate/component was not reconstructed".into(),
+                        )
+                    })?;
+                findings.extend(selected.warnings.iter().cloned());
+                incomplete.push(format!("Step {} selects candidate {} component {} under pinned reference profile {} / {} ({}). All reciprocal components were reconstructed; this establishes reference sequence only, not recombinase efficacy, physical strand/modification states, cellular repair, selection or chemical uniqueness.", index + 1, selection.candidate_id, selection.component_id, request.profile.profile.id, request.profile.profile.edition, request.profile.revision));
+                selected.molecule
+            }
             Operation::Pcr {
                 template,
                 forward,
@@ -1802,6 +1981,22 @@ fn reconstruct(
                 product
             }
         };
+        let is_reference_only =
+            inherited_reference_only || matches!(step, Operation::RecombineReference { .. });
+        if is_reference_only {
+            if next_physical.is_some() {
+                return Err(Error::Unsupported("Reference-only ancestry cannot acquire chemical authority without a modeled materialization assumption".into()));
+            }
+            // Restrictive portable evidence only. Actual graph authority lives in the private flag.
+            product.metadata.insert(
+                crate::recombination::REFERENCE_ONLY_KEY.into(),
+                "true".into(),
+            );
+            product.metadata.insert(
+                crate::recombination::CHEMISTRY_UNMAPPED_KEY.into(),
+                "true".into(),
+            );
+        }
         if let Some(tracked) = &next_physical {
             let summary = modified_duplex::summary(tracked)?;
             product.metadata.insert(
@@ -1839,6 +2034,7 @@ fn reconstruct(
         }
         products.push(product);
         physical.push(next_physical);
+        reference_only.push(is_reference_only);
     }
     Ok(incomplete)
 }
@@ -1919,6 +2115,7 @@ pub fn export_protocol_html(plan: &DesignPlan, target: &Molecule) -> String {
     };
     for (step_index, step) in plan.steps.iter().enumerate() {
         match step {
+            Operation::RecombineReference { sources, request, selection } => body.push_str(&format!("<li>Reference-only {:?} exchange of {} and {}. Pinned full profile/data, work/annotation limits: <code>{}</code>. Explicit component selection: <code>{}</code>. All reciprocal components are computed; selected reference DNA does not establish chemical state, efficacy, repair or experimental selection.</li>",request.reaction,source(&sources[0]),source(&sources[1]),e(&serde_json::to_string(request).unwrap_or_default()),e(&serde_json::to_string(selection).unwrap_or_default()))),
             Operation::PcrWithMismatches{template,forward,reverse,options}=>body.push_str(&format!("<li>Intentional-mismatch PCR of {}. Oligos 5′→3′: <code>{}</code> and <code>{}</code>. Binding/search policy: <code>{}</code>. Primer-derived changes are reconstructed; amplification is not established.</li>",source(template),e(&forward.ordered_sequence()),e(&reverse.ordered_sequence()),e(&serde_json::to_string(options).unwrap_or_default()))),
             Operation::GoldenGate{templates,options,candidate_index}=>body.push_str(&format!("<li>Golden Gate with {:?}, inputs {}. Explicit zero-based candidate {} under policy <code>{}</code>. Cleavage, orientation, cohesive ends and recognition-site removal are checked. Finite one-copy fragment search does not establish exhaustive mixture uniqueness; conditions and quantities are unspecified.</li>",options.enzyme,templates.iter().map(source).collect::<Vec<_>>().join(", "),candidate_index,e(&serde_json::to_string(options).unwrap_or_default()))),
             Operation::Pcr { template, forward, reverse } => body.push_str(&format!("<li>PCR of {} with {}: <code>{}</code> and {}: <code>{}</code>. Primers shown 5′→3′. Reaction conditions and quantities are unspecified.</li>",source(template),e(&forward.name),e(&forward.ordered_sequence()),e(&reverse.name),e(&reverse.ordered_sequence()))),

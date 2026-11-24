@@ -7,7 +7,7 @@ these local measurements do not establish hardware/browser-wide acceptance.
 import argparse
 import json
 from pathlib import Path
-from browser_qa import Browser
+from browser_qa import QA_ORIGIN, Browser
 
 
 def fixture(path, length, features):
@@ -27,8 +27,8 @@ def main():
     b=Browser();directory=Path('/tmp/collagene2-performance');directory.mkdir(exist_ok=True)
     b.call('Page.addScriptToEvaluateOnNewDocument',{'source':"window.__perfLongTasks=[];try{new PerformanceObserver(l=>window.__perfLongTasks.push(...l.getEntries().map(e=>({start:e.startTime,duration:e.duration})))).observe({type:'longtask',buffered:true})}catch(e){}"})
     b.call('Emulation.setDeviceMetricsOverride',{'width':1600,'height':1000,'deviceScaleFactor':1,'mobile':False})
-    b.call('Storage.clearDataForOrigin',{'origin':'http://127.0.0.1:8080','storageTypes':'indexeddb'})
-    b.call('Page.navigate',{'url':'http://127.0.0.1:8080'});b.wait("document.querySelector('h1')?.textContent==='pCG_demo'");b.wait("document.body.innerText.includes('Saved in this browser')")
+    b.call('Storage.clearDataForOrigin',{'origin':QA_ORIGIN,'storageTypes':'indexeddb'})
+    b.call('Page.navigate',{'url':QA_ORIGIN});b.wait("document.querySelector('h1')?.textContent==='pCG_demo'");b.wait("document.body.innerText.includes('Saved in this browser')")
     result={'environment':b.evaluate("(()=>{const c=document.createElement('canvas'),g=c.getContext('webgl2'),d=g?.getExtension('WEBGL_debug_renderer_info');return{userAgent:navigator.userAgent,hardwareConcurrency:navigator.hardwareConcurrency,viewport:[innerWidth,innerHeight],renderer:d?g.getParameter(d.UNMASKED_RENDERER_WEBGL):'unavailable',devicePixelRatio}})()"),'cases':[]}
     cpu=Path('/proc/cpuinfo')
     if cpu.exists():result['environment']['cpu']=next((line.split(':',1)[1].strip() for line in cpu.read_text().splitlines() if line.startswith('model name')),'unknown')

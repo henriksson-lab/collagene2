@@ -8,12 +8,12 @@ import json
 import time
 import zipfile
 from pathlib import Path
-from browser_qa import Browser, mobile_enabled
+from browser_qa import QA_ORIGIN, Browser, mobile_enabled
 from methods_browser_qa import record,fill,check,active
 from workspace_browser_qa import wait_file,manifest,slots
 
 DIRECTORY=Path('/tmp/collagene2-crispr-qa')
-ORIGIN='http://127.0.0.1:8080'
+ORIGIN=QA_ORIGIN
 MASK={'A':1,'C':2,'G':4,'T':8,'R':5,'Y':10,'S':6,'W':9,'K':12,'M':3,'B':14,'D':13,'H':11,'V':7,'N':15}
 COMP=str.maketrans('ACGTRYSWKMBDHVN','TGCAYRSWMKVHDBN')
 

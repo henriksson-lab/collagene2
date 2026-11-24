@@ -3,12 +3,13 @@
 //! and does not identify physical-strand ancestry. Caller profiles are hypotheses, not authority.
 mod bounds;
 use bounds::ModelBudget;
-use collagene_model::{Alphabet, Error, Molecule, Sequence, Topology};
+use collagene_model::{Alphabet, Error, Feature, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 pub const ENGINE: &str = "two-site-reciprocal-reference-exchange-v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Family {
     B,
     P,
@@ -16,6 +17,7 @@ pub enum Family {
     R,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Reaction {
     BP,
     LR,
@@ -29,6 +31,7 @@ impl Reaction {
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SourceRecord {
     pub id: String,
     pub url: String,
@@ -42,6 +45,7 @@ pub struct SourceRecord {
     pub map_sha256: String,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SiteVariant {
     pub id: String,
     pub family: Family,
@@ -51,6 +55,7 @@ pub struct SiteVariant {
     pub source_id: String,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Profile {
     pub id: String,
     pub edition: String,
@@ -139,11 +144,13 @@ impl Profile {
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Input {
     pub role: String,
     pub molecule: Molecule,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Limits {
     pub max_input_bases: usize,
     pub max_comparisons: u64,
@@ -169,6 +176,7 @@ impl Default for Limits {
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SiteHit {
     pub input: usize,
     pub variant_id: String,
@@ -184,6 +192,7 @@ pub struct SiteHit {
     pub overlap_positions: Vec<usize>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SegmentMap {
     pub output_start: usize,
     pub output_end: usize,
@@ -193,6 +202,7 @@ pub struct SegmentMap {
     pub reverse: bool,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Junction {
     pub output_boundary: usize,
     pub product_overlap_positions: Vec<usize>,
@@ -203,18 +213,21 @@ pub struct Junction {
     pub matched_output_variants: Vec<String>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Product {
     pub molecule: Molecule,
     pub segments: Vec<SegmentMap>,
     pub junctions: Vec<Junction>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Candidate {
     pub id: usize,
     pub sites: [SiteHit; 4],
     pub products: Vec<Product>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Report {
     pub engine: String,
     pub batch_revision: String,
@@ -321,6 +334,77 @@ fn hard_limits(l: &Limits) -> Result<(), Error> {
 pub fn preflight(inputs: &[Input], profile: &Profile, l: &Limits) -> Result<(), Error> {
     preflight_models(inputs, profile, l, None)
 }
+/// Inspect borrowed annotation trees and strings before cloning, recursive validation,
+/// serialization or hashing. This is a resource guard, not molecular validation.
+/// All supplied models share one aggregate budget.
+pub fn model_preflight(molecules: &[&Molecule]) -> Result<(), Error> {
+    if molecules.len() > 1024 {
+        return Err(Error::TooLarge);
+    }
+    let mut budget = ModelBudget::default();
+    for molecule in molecules {
+        budget.molecule(molecule)?;
+    }
+    Ok(())
+}
+
+/// Guard retained original feature evidence without copying it into a dummy model.
+/// Groups share one aggregate feature/tree/string budget. This grants no annotation
+/// mapping or molecular validity to the evidence.
+pub fn feature_preflight(groups: &[&[Feature]]) -> Result<(), Error> {
+    if groups.len() > 1024 {
+        return Err(Error::TooLarge);
+    }
+    let mut budget = ModelBudget::default();
+    for features in groups {
+        budget.features(features)?;
+    }
+    Ok(())
+}
+
+/// Validate borrowed sources and an optional independent target before copying them
+/// into owned inputs. Source role identity is checked separately by `preflight`.
+pub fn source_preflight(
+    molecules: [&Molecule; 2],
+    profile: &Profile,
+    l: &Limits,
+    target: Option<&Molecule>,
+) -> Result<(), Error> {
+    hard_limits(l)?;
+    profile.validate()?;
+    let mut total = 0usize;
+    for molecule in molecules {
+        total = total
+            .checked_add(molecule.sequence.len())
+            .filter(|n| *n <= l.max_input_bases)
+            .ok_or(Error::TooLarge)?;
+        if molecule.sequence.alphabet() != Alphabet::Dna {
+            return Err(Error::Unsupported("DNA required".into()));
+        }
+    }
+    if let Some(t) = target {
+        if t.sequence.len() > l.max_input_bases {
+            return Err(Error::TooLarge);
+        }
+        if t.sequence.alphabet() != Alphabet::Dna {
+            return Err(Error::Unsupported("DNA target required".into()));
+        }
+        model_preflight(&[molecules[0], molecules[1], t])?;
+    } else {
+        model_preflight(&molecules)?;
+    }
+    // All borrowed trees/strings, including the target, are bounded before recursion.
+    for molecule in molecules {
+        molecule.validate()?;
+    }
+    if let Some(t) = target {
+        t.validate()?;
+        encoded_len(t, 16 * 1024 * 1024)?;
+    }
+    encoded_len(&molecules, 16 * 1024 * 1024)?;
+    Ok(())
+}
+
 fn preflight_models(
     inputs: &[Input],
     profile: &Profile,
@@ -335,40 +419,19 @@ fn preflight_models(
         ));
     }
     let mut roles = BTreeSet::new();
-    let mut total = 0usize;
-    let mut budget = ModelBudget::default();
     for i in inputs {
         if i.role.len() > 256 || i.role.trim().is_empty() || !roles.insert(i.role.as_str()) {
             return Err(Error::Format(
                 "distinct bounded source roles required".into(),
             ));
         }
-        total = total
-            .checked_add(i.molecule.sequence.len())
-            .filter(|n| *n <= l.max_input_bases)
-            .ok_or(Error::TooLarge)?;
-        if i.molecule.sequence.alphabet() != Alphabet::Dna {
-            return Err(Error::Unsupported("DNA required".into()));
-        }
-        budget.molecule(&i.molecule)?;
     }
-    if let Some(t) = target {
-        if t.sequence.len() > l.max_input_bases {
-            return Err(Error::TooLarge);
-        }
-        if t.sequence.alphabet() != Alphabet::Dna {
-            return Err(Error::Unsupported("DNA target required".into()));
-        }
-        budget.molecule(t)?;
-    }
-    // All borrowed trees/strings, including the target, are bounded before recursion.
-    for i in inputs {
-        i.molecule.validate()?;
-    }
-    if let Some(t) = target {
-        t.validate()?;
-        encoded_len(t, 16 * 1024 * 1024)?;
-    }
+    source_preflight(
+        [&inputs[0].molecule, &inputs[1].molecule],
+        profile,
+        l,
+        target,
+    )?;
     encoded_len(inputs, 16 * 1024 * 1024)?;
     Ok(())
 }
@@ -1330,15 +1393,18 @@ pub fn replay(
     Ok(())
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct TargetPolicy {
     pub allow_reverse_complement: bool,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum TargetApplicability {
     DeclaredFullSiteProfileOnly,
     Unresolved,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct TargetMatch {
     pub candidate: usize,
     pub product: usize,
@@ -1348,6 +1414,7 @@ pub struct TargetMatch {
     pub fully_specified_dna: bool,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct TargetCheck {
     pub batch_revision: String,
     pub target_revision: String,
@@ -1365,6 +1432,25 @@ pub struct TargetCheck {
     pub policy: TargetPolicy,
     pub warnings: Vec<String>,
 }
+/// Compute the exact target-check request binding without searching for products.
+/// This identifies a request; it does not validate an imported answer.
+pub fn check_batch_revision(
+    inputs: &[Input],
+    profile: &Profile,
+    reaction: Reaction,
+    limits: &Limits,
+    target: &Molecule,
+    policy: TargetPolicy,
+) -> Result<String, Error> {
+    preflight_models(inputs, profile, limits, Some(target))?;
+    hash(&(
+        "target-check-v2",
+        batch_revision(inputs, profile, reaction, limits)?,
+        target.revision(),
+        policy,
+    ))
+}
+
 /// Target is an independently supplied requirement. No target DNA is copied into products.
 pub fn check_target(
     inputs: &[Input],

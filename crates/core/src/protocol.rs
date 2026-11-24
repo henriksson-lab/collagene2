@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
-        b"CGQ\0" | b"CGR\0" => 21,
-        b"CGP\0" => 6,
+        b"CGQ\0" | b"CGR\0" => 22,
+        b"CGP\0" => 7,
         _ => 1,
     }
 }
@@ -77,9 +77,7 @@ fn envelope_info(magic: &[u8; 4], bytes: &[u8], maximum: usize) -> Result<(u16, 
         ));
     }
     let version = u16::from_le_bytes([bytes[4], bytes[5]]);
-    if version != current_version(magic)
-        && !(version >= 1 && version < current_version(magic) && current_version(magic) <= 21)
-    {
+    if version != current_version(magic) && !(version >= 1 && version < current_version(magic)) {
         return Err(Error::Unsupported(format!(
             "binary schema version {version}"
         )));
@@ -504,6 +502,23 @@ pub enum AnalysisJob {
         options: crate::restriction_inspection::InspectionOptions,
         fragment_index: usize,
     },
+    InspectRecombination {
+        inputs: Vec<crate::recombination::reference::Input>,
+        request: crate::recombination::Request,
+    },
+    CheckRecombinationTarget {
+        inputs: Vec<crate::recombination::reference::Input>,
+        request: crate::recombination::Request,
+        target: Molecule,
+        policy: crate::recombination::reference::TargetPolicy,
+    },
+    SelectRecombinationComponent {
+        inputs: Vec<crate::recombination::reference::Input>,
+        request: crate::recombination::Request,
+        selection: crate::recombination::Selection,
+        target: Molecule,
+        policy: crate::recombination::reference::TargetPolicy,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -579,6 +594,9 @@ pub enum AnalysisResult {
     CatalogRestrictionInspection(crate::catalog_digest::CatalogRestrictionInspection),
     CatalogDigestProduct(crate::catalog_digest::CatalogDigestProduct),
     CatalogDigestInstalled(crate::catalog_digest::CatalogDigestInstalled),
+    RecombinationInspection(crate::recombination::RecombinationReport),
+    RecombinationTargetCheck(crate::recombination::TargetAssessment),
+    RecombinationProduct(crate::recombination::CheckedProduct),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -711,6 +729,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_genome_tag(bytes, &[51, 52, 53, 54, 55, 56, 57, 58, 59])?;
     preflight_restriction_tag(bytes, &[60, 61, 62])?;
     preflight_catalog_tag(bytes, &[63, 64, 65])?;
+    preflight_recombination_tag(bytes, &[66, 67, 68])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -732,6 +751,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         _ => decode_with_limit(b"CGR\0", bytes, maximum)?,
     };
     let required = match &response.result {
+        AnalysisResult::RecombinationInspection(_)
+        | AnalysisResult::RecombinationTargetCheck(_)
+        | AnalysisResult::RecombinationProduct(_) => 22,
         AnalysisResult::CatalogRestrictionInspection(_)
         | AnalysisResult::CatalogDigestProduct(_)
         | AnalysisResult::CatalogDigestInstalled(_) => 21,
@@ -813,6 +835,30 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
     }
     match &response.result {
+        AnalysisResult::RecombinationInspection(report) => {
+            report.validate()?;
+            if report.batch_revision != response.revision {
+                return Err(Error::Format(
+                    "recombination response binding mismatch".into(),
+                ));
+            }
+        }
+        AnalysisResult::RecombinationTargetCheck(report) => {
+            report.validate()?;
+            if report.batch_revision != response.revision {
+                return Err(Error::Format(
+                    "recombination response binding mismatch".into(),
+                ));
+            }
+        }
+        AnalysisResult::RecombinationProduct(report) => {
+            report.validate()?;
+            if report.batch_revision != response.revision {
+                return Err(Error::Format(
+                    "recombination response binding mismatch".into(),
+                ));
+            }
+        }
         AnalysisResult::CatalogRestrictionInspection(report) => {
             report.validate()?;
             if report.batch_revision != response.revision {
@@ -1107,6 +1153,14 @@ fn preflight_methylation_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     }
     Ok(())
 }
+fn preflight_recombination_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 22)?;
+    }
+    Ok(())
+}
 fn preflight_catalog_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -1140,6 +1194,9 @@ fn preflight_crispr_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     Ok(())
 }
 fn check_scientific_report_version(bytes: &[u8], engine: &str) -> Result<(), Error> {
+    if engine.ends_with("/science-9") {
+        check_variant_version(bytes, 22)?;
+    }
     if engine.ends_with("/science-8") {
         check_variant_version(bytes, 17)?;
     }
@@ -1149,7 +1206,7 @@ fn check_workspace_version(
     bytes: &[u8],
     workspace: &crate::workspace::Workspace,
 ) -> Result<(), Error> {
-    if u16::from_le_bytes([bytes[4], bytes[5]]) >= 19 {
+    if u16::from_le_bytes([bytes[4], bytes[5]]) >= 22 {
         return Ok(());
     }
     for candidate in &workspace.candidates {
@@ -1162,6 +1219,9 @@ fn check_workspace_version(
             check_variant_version(bytes, plan_worker_version(&record.plan))?;
             if record.plan_schema >= 4 {
                 check_variant_version(bytes, 17)?;
+            }
+            if record.plan_schema >= 5 {
+                check_variant_version(bytes, 22)?;
             }
             check_scientific_report_version(bytes, &record.assessment.engine_version)?;
         } else if attachment.kind == crate::genome::WORKSPACE_ATTACHMENT_KIND {
@@ -1222,6 +1282,7 @@ fn plan_worker_version(plan: &crate::verification::DesignPlan) -> u16 {
     plan.steps
         .iter()
         .map(|step| match step {
+            crate::verification::Operation::RecombineReference { .. } => 22,
             crate::verification::Operation::DeclareSourceModifications { .. }
             | crate::verification::Operation::CheckedDigest { .. } => 17,
             crate::verification::Operation::Tail3Prime { .. }
@@ -1255,8 +1316,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     )?;
     preflight_restriction_tag(bytes, &[67, 68, 69])?;
     preflight_catalog_tag(bytes, &[70, 71, 72])?;
+    preflight_recombination_tag(bytes, &[73, 74, 75])?;
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::InspectRecombination { .. }
+        | AnalysisJob::CheckRecombinationTarget { .. }
+        | AnalysisJob::SelectRecombinationComponent { .. } => 22,
         AnalysisJob::InspectCatalogRestriction { .. }
         | AnalysisJob::MaterializeCatalogDigestFragment { .. }
         | AnalysisJob::InstallCatalogDigestFragment { .. } => 21,
@@ -1397,13 +1462,50 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     if let AnalysisJob::LoadWorkspace { bytes: archive } = &r.job {
         // A valid archive cannot hide new operation semantics in an old envelope.
         // Malformed archives retain the ordinary typed worker-error response below.
-        if u16::from_le_bytes([bytes[4], bytes[5]]) < 19 {
+        if u16::from_le_bytes([bytes[4], bytes[5]]) < 22 {
             if let Ok(workspace) = crate::workspace::load_workspace(archive) {
                 check_workspace_version(bytes, &workspace)?;
             }
         }
     }
     let mol = match &r.job {
+        AnalysisJob::InspectRecombination { inputs, request } => {
+            if crate::recombination::batch_revision(inputs, request)? != r.revision {
+                return Err(Error::Format(
+                    "recombination source/profile/options changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::CheckRecombinationTarget {
+            inputs,
+            request,
+            target,
+            policy,
+        } => {
+            if crate::recombination::check_revision(inputs, request, target, policy)? != r.revision
+            {
+                return Err(Error::Format("recombination target binding changed".into()));
+            }
+            None
+        }
+        AnalysisJob::SelectRecombinationComponent {
+            inputs,
+            request,
+            selection,
+            target,
+            policy,
+        } => {
+            if crate::recombination::checked_product_revision(
+                inputs, request, selection, target, policy,
+            )? != r.revision
+            {
+                return Err(Error::Format(
+                    "recombination selected component binding changed".into(),
+                ));
+            }
+            None
+        }
         AnalysisJob::InspectCatalogRestriction {
             selection,
             source_role,
@@ -1743,6 +1845,25 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let result = match r.job {
+        AnalysisJob::InspectRecombination { inputs, request } => {
+            crate::recombination::simulate(&inputs, &request)
+                .map(AnalysisResult::RecombinationInspection)
+        }
+        AnalysisJob::CheckRecombinationTarget {
+            inputs,
+            request,
+            target,
+            policy,
+        } => crate::recombination::check_target(&inputs, &request, &target, &policy)
+            .map(AnalysisResult::RecombinationTargetCheck),
+        AnalysisJob::SelectRecombinationComponent {
+            inputs,
+            request,
+            selection,
+            target,
+            policy,
+        } => crate::recombination::checked_product(&inputs, &request, &selection, &target, &policy)
+            .map(AnalysisResult::RecombinationProduct),
         AnalysisJob::InspectCatalogRestriction {
             selection,
             source_role,

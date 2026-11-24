@@ -550,7 +550,7 @@ fn new_chemical_operations_require_explicit_workspace_plan_schema_two() {
     let old = save_workspace(&simple()).unwrap();
     let supported_old = mutate_manifest(&old, |manifest| manifest["plan_schema"] = json!(1));
     assert!(load_workspace(&supported_old).is_ok());
-    let future = mutate_manifest(&old, |manifest| manifest["plan_schema"] = json!(5));
+    let future = mutate_manifest(&old, |manifest| manifest["plan_schema"] = json!(6));
     assert!(matches!(
         load_workspace(&future),
         Err(Error::Unsupported(_))
@@ -601,7 +601,7 @@ fn tailing_and_profiled_overlaps_require_plan_schema_three() {
         }],
     }));
     let b = save_workspace(&w).unwrap();
-    let _ = mutate_manifest(&b, |m| assert_eq!(m["plan_schema"], json!(4)));
+    let _ = mutate_manifest(&b, |m| assert_eq!(m["plan_schema"], json!(5)));
     for version in [1, 2] {
         let changed = mutate_manifest(&b, |m| m["plan_schema"] = json!(version));
         assert!(matches!(

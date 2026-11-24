@@ -8,12 +8,12 @@ import subprocess
 import time
 import zipfile
 from pathlib import Path
-from browser_qa import Browser, mobile_enabled
+from browser_qa import QA_ORIGIN, Browser, mobile_enabled
 from methods_browser_qa import record,fill,check,source,active
 from workspace_browser_qa import wait_file,manifest
 
 DIRECTORY=Path('/tmp/collagene2-checked-restriction-qa')
-ORIGIN='http://127.0.0.1:8080'
+ORIGIN=QA_ORIGIN
 
 
 def close(b):
@@ -127,7 +127,7 @@ def main():
     assert events[run['products'][1]['event_id']]['parents']==[run['products'][0]['event_id']]
     assert events[run['products'][2]['event_id']]['parents']==[run['products'][1]['event_id']]
     for d in before['documents']:assert next(n for n in saved['documents']if n['id']==d['id'])==d
-    assert saved['plan_schema']==4
+    assert saved['plan_schema']==5
     # Native reopening retains historical evidence and the exact operation DAG,
     # then reconstructs positional state on explicit replay.
     portable=DIRECTORY/'checked-native.cg2workspace';portable.write_bytes(saved_data)
@@ -165,7 +165,7 @@ def main():
     assert summaries[-1]['top_length']==18 and summaries[-1]['bottom_length']==18
     assert summaries[-1]['known_unmodified']-summaries[0]['known_unmodified']==4
     assert len(tracked['products'][-1]['sequence']['bases'])==18 and tracked['products'][-1]['sequence']['bases'] in 'AATTCAAAAGATCGAATT'*2
-    b.click('Save candidate');candidate=wait_file(DIRECTORY/'candidate.cg2plan');assert candidate[4:6]==bytes([6,0])
+    b.click('Save candidate');candidate=wait_file(DIRECTORY/'candidate.cg2plan');assert candidate[4:6]==bytes([7,0])
     # Readable new operation descriptions survive candidate transfer; the target
     # is never silently replaced with the reconstructed output.
     open_file(b,DIRECTORY/'candidate.cg2plan');b.wait('!!document.querySelector(".candidate-review")')

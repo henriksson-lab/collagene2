@@ -58,7 +58,7 @@ fn schema_eleven_tail_and_profile_jobs_bind_every_source_and_option() {
         },
     };
     let bytes = protocol::encode_request(&req).unwrap();
-    assert_eq!(&bytes[4..6], &21u16.to_le_bytes());
+    assert_eq!(&bytes[4..6], &22u16.to_le_bytes());
     let response = protocol::decode_response(&protocol::process_request(&bytes).unwrap()).unwrap();
     let AnalysisResult::TailPreview(p) = response.result else {
         panic!()
@@ -110,7 +110,7 @@ fn newer_operations_cannot_hide_in_old_candidates_verify_pdf_or_workspace_messag
     let plan = plan(&m);
     let c = Candidate::new(plan.clone());
     let bytes = collagene_core::transfer::save_candidate(&c).unwrap();
-    assert_eq!(&bytes[4..6], &6u16.to_le_bytes());
+    assert_eq!(&bytes[4..6], &7u16.to_le_bytes());
     for v in 1..5 {
         assert!(collagene_core::transfer::load_candidate(&envelope(b"CGP\0", v, &c)).is_err());
     }

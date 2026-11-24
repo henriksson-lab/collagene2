@@ -7,6 +7,7 @@ pub mod chemistry;
 pub mod formats;
 pub mod model;
 pub mod protocol;
+pub mod recombination;
 pub mod restriction_inspection;
 pub mod transfer;
 pub mod verification;

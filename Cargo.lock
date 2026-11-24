@@ -299,6 +299,7 @@ dependencies = [
  "blake3",
  "collagene-enzyme-catalog",
  "collagene-model",
+ "collagene-recombination",
  "csv",
  "gb-io",
  "pdf-writer",
@@ -364,6 +365,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "collagene-model",
+ "schemars",
  "serde",
  "serde_json",
 ]

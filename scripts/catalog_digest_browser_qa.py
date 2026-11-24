@@ -10,13 +10,13 @@ import re
 import zipfile
 from pathlib import Path
 
-from browser_qa import Browser
+from browser_qa import QA_ORIGIN, Browser
 from methods_browser_qa import fill
 from workspace_browser_qa import slots
 import desktop_mvp_browser_qa as mvp
 
 DIRECTORY = Path('/tmp/collagene2-catalog-digest-qa')
-ORIGIN = 'http://127.0.0.1:8080'
+ORIGIN = QA_ORIGIN
 STARTER = ['EcoRI', 'BamHI', 'HindIII', 'EcoRV', 'SmaI', 'NotI', 'XbaI', 'BsaI', 'PstI', 'BsmBI', 'BbsI', 'SapI']
 GEOMETRY = {
     'XhoI': ('CTCGAG', 1, 5), 'HpaII': ('CCGG', 1, 3), 'MspI': ('CCGG', 1, 3),

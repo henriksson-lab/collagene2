@@ -1,6 +1,6 @@
 //! Borrowed native-model guards. No serialization, cloning, recursive traversal or
 //! unbounded child stack is used before these aggregate limits have been checked.
-use collagene_model::{Error, Location, Molecule};
+use collagene_model::{Error, Feature, Location, Molecule};
 pub(crate) const MAX_DEPTH: usize = 32;
 #[derive(Default)]
 pub(crate) struct ModelBudget {
@@ -26,7 +26,6 @@ impl ModelBudget {
     }
     pub(crate) fn molecule(&mut self, m: &Molecule) -> Result<(), Error> {
         self.text(&m.name, 1024)?;
-        Self::add(&mut self.features, m.features.len(), 4096)?;
         Self::add(&mut self.metadata, m.metadata.len(), 4096)?;
         for (k, v) in &m.metadata {
             self.text(k, 4096)?;
@@ -35,7 +34,11 @@ impl ModelBudget {
         if let Some(s) = &m.original_genbank {
             self.text(s, 4 * 1024 * 1024)?;
         }
-        for feature in &m.features {
+        self.features(&m.features)
+    }
+    pub(crate) fn features(&mut self, features: &[Feature]) -> Result<(), Error> {
+        Self::add(&mut self.features, features.len(), 4096)?;
+        for feature in features {
             self.text(&feature.kind, 256)?;
             Self::add(&mut self.qualifiers, feature.qualifiers.len(), 16384)?;
             for (k, v) in &feature.qualifiers {

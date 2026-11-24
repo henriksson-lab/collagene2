@@ -432,6 +432,7 @@ pub fn RunDetailsPanel(
                                 collagene_core::verification::Operation::Digest{..}=>"Digest under cleavage assumptions",
                                 collagene_core::verification::Operation::DeclareSourceModifications{..}=>"Declare original source modifications",
                                 collagene_core::verification::Operation::CheckedDigest{..}=>"Checked restriction digest",
+                                collagene_core::verification::Operation::RecombineReference{..}=>"Reference-only BP/LR exchange",
                                 collagene_core::verification::Operation::TreatEnds{..}=>"Treat ends",
                                 collagene_core::verification::Operation::RepairEnds{..}=>"Repair ends",
                                 collagene_core::verification::Operation::Ligate{..}=>"Ligate",

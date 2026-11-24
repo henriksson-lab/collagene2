@@ -9,12 +9,12 @@ import time
 import zipfile
 from pathlib import Path
 
-from browser_qa import Browser, mobile_enabled
+from browser_qa import QA_ORIGIN, Browser, mobile_enabled
 from methods_browser_qa import fill, check
 from workspace_browser_qa import slots, wait_file, manifest
 
 DIRECTORY=Path('/tmp/collagene2-contig-qa')
-ORIGIN='http://127.0.0.1:8080'
+ORIGIN=QA_ORIGIN
 
 
 def reverse(text):

@@ -67,6 +67,10 @@
 .genome-heading { justify-content:space-between; }
 .genome-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
 .genome-panel label { min-width:0; }
+.recombination-panel{min-width:0;overflow-wrap:anywhere}
+.recombination-panel .checkbox-label{flex-direction:row;gap:8px;align-items:flex-start;line-height:1.6}
+.recombination-panel .checkbox-label input{width:auto;flex:0 0 auto;margin-top:3px}
+.recombination-panel .button{max-width:100%;white-space:normal}
 .genome-panel input,.genome-panel select,.genome-panel textarea { max-width:100%; box-sizing:border-box; }
 .genome-panel textarea { min-height:110px; font-family:var(--mono,monospace); font-size:12px; }
 .genome-panel details { margin:12px 0; border:1px solid var(--border,#dce3e8); border-radius:9px; padding:10px; }

@@ -11,10 +11,10 @@ import time
 import zipfile
 from pathlib import Path
 
-from browser_qa import Browser
+from browser_qa import QA_ORIGIN, Browser
 
 
-ORIGIN = "http://127.0.0.1:8080"
+ORIGIN = QA_ORIGIN
 DIRECTORY = Path("/tmp/collagene2-workspace-qa")
 
 

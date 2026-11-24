@@ -2,6 +2,8 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
+The current registry has 96 tools. Reference recombination adds explicit profile discovery, source inspection, independent target checking and fresh selected-component reconstruction. The optional `plan_sources` bridge binds a returned selection to typed plan sources without requiring a client to reproduce internal hash recipes. [Recombination tool contracts](RECOMBINATION_MCP.md).
+
 Build and configure:
 
 ```sh
@@ -152,7 +154,7 @@ Model details: [Golden Gate](GOLDEN_GATE.md), [mutagenesis](MUTAGENESIS.md), [ge
 
 ## Reusable feature libraries and annotation exchange
 
-The server has 93 tools. These ten tools extend session-only, immutable evidence handling:
+The server has 96 tools. These ten tools extend session-only, immutable evidence handling:
 
 - `create_feature_library` takes `{name, version, features: [{document, feature_index}]}`. Each source is an exact imported `DocumentRef`; biological extraction handles supported compound/reverse locations. A collection may combine features from several documents. Duplicate selections, unsupported extraction or size limits reject the entire operation. No proprietary feature database is bundled.
 - `import_feature_library` takes `{data_base64}` containing validated library JSON, at most 8 MiB decoded. `list_feature_libraries` lists bounded summaries. `export_feature_library` takes `{library: {id, revision}}` and returns the complete source/version/entry JSON artifact.
@@ -297,7 +299,7 @@ All sources and aggregate reference sets are preflighted while borrowed, before 
 
 ## File-backed large references and cooperative genome searches
 
-The server now exposes 93 tools. Large references use managed private scratchfiles, outside the 64 MiB small-document store. No tool accepts an arbitrary filesystem path. Normal disposal closes handles before deleting owned files, including on Windows. The backend supports two active imports, four published datasets and four live searches, with a separate 64 GiB managed-byte reservation budget.
+The server now exposes 96 tools. Large references use managed private scratchfiles, outside the 64 MiB small-document store. No tool accepts an arbitrary filesystem path. Normal disposal closes handles before deleting owned files, including on Windows. The backend supports two active imports, four published datasets and four live searches, with a separate 64 GiB managed-byte reservation budget.
 
 The eleven new tools are:
 
@@ -320,7 +322,7 @@ The native tests stream 70 MiB of FASTA into a `.cgref` larger than 32 MiB, expo
 
 ## Desktop restriction inspection
 
-The server exposes 93 tools. `inspect_restriction {document, source_role, enzymes, catalog_pin?, options?, site_start?, max_sites?, fragment_start?, max_fragments?}` inspects an exact immutable DNA document with 1–64 embedded catalog enzyme IDs or uniquely resolved names/aliases. Names resolve case-insensitively; aliases that name multiple identities fail rather than choosing one. The report pins the exact resolved geometry, ordered selection, source role/revision and computational limits. Additive catalog fields bind actual edition/hash and exact identities; the original flat fields and raw report artifact remain compatible. Each site/fragment page contains at most 100 records (default 20); a complete immutable JSON artifact is available through `read_artifact`. Repeating the same request with different page offsets yields the same artifact. Invalid offsets, stale document revisions and extra authority fields fail before an artifact is installed.
+The server exposes 96 tools. `inspect_restriction {document, source_role, enzymes, catalog_pin?, options?, site_start?, max_sites?, fragment_start?, max_fragments?}` inspects an exact immutable DNA document with 1–64 embedded catalog enzyme IDs or uniquely resolved names/aliases. Names resolve case-insensitively; aliases that name multiple identities fail rather than choosing one. The report pins the exact resolved geometry, ordered selection, source role/revision and computational limits. Additive catalog fields bind actual edition/hash and exact identities; the original flat fields and raw report artifact remain compatible. Each site/fragment page contains at most 100 records (default 20); a complete immutable JSON artifact is available through `read_artifact`. Repeating the same request with different page offsets yields the same artifact. Invalid offsets, stale document revisions and extra authority fields fail before an artifact is installed.
 
 The tool preserves possible recognition sites, exact origin-split spans, cuts outside substrate and bounded-search diagnostics. `scan_complete` describes recognition enumeration; `products_determined` separately describes whether the assumed-complete duplex product set exists. Neither empirical cleavage nor methylation/condition permission is inferred. Fragment summaries use stable source-cut-order indices, original strand boundaries and explicit end geometry; reference-strand lengths are a separate view. Limited scans and possible/edge evidence do not authorize releasing a product. The tool creates no sequence documents or persistent history. Browser product opening uses fresh source-event-bound worker reconstruction and native history installation.
 
@@ -329,7 +331,7 @@ The existing strict `analyze_restriction` and `digest_fragments` behaviors remai
 
 ## Exact protocol arithmetic
 
-Three stateless tools use `collagene-protocol-units` directly: `calculate_dilution`, `balance_mixture` and `calculate_dna_molar_ratios`. The server has **93 tools**. These calculations neither inspect inventory nor verify chemistry, measured stock concentrations or reaction success. They do not create documents, plans or artifacts. No source DNA, network call or external program is required.
+Three stateless tools use `collagene-protocol-units` directly: `calculate_dilution`, `balance_mixture` and `calculate_dna_molar_ratios`. The server has **96 tools**. These calculations neither inspect inventory nor verify chemistry, measured stock concentrations or reaction success. They do not create documents, plans or artifacts. No source DNA, network call or external program is required.
 
 Quantity values are nonnegative **decimal strings**, at most 64 bytes and 19 fractional digits, without exponent notation. Volume units are the closed enum `nL`, `uL`, `mL`; mass units are `ng`, `ug`; molar concentration units are `nM`, `uM`. Mass concentrations specify separate `mass_unit` and `volume_unit`. Input dimensions cannot be interchanged. Exact outputs use canonical units (`nL`, `ng`, `pmol`, `ng/nL`, `pmol/nL`) and `{numerator: "…", denominator: "…"}` string pairs, avoiding floating-point loss. Arithmetic that cannot fit the bounded reduced rational returns an explicit overflow error.
 
@@ -363,3 +365,7 @@ The existing `list_enzymes` fields still describe the original12-enzyme geometry
 Fresh catalog fragment products retain the old recipe1 plus separate catalog selection/engine/product-revision producer fields. GenBank COMMENT and EMBL CC export preserve them in bounded physical-producer marker chunks. Reimport stores only `source:restriction_catalog:*` claims and marks chemistry unmapped; it never promotes comments into native fresh-product keys. Invalid/truncated claims stay disclosed and cannot restore physical or scientific authority. FASTA remains sequence-only. Current source-event ancestry and a fresh embedded calculation are required for product installation, using worker21 without changing candidate6/plan4/science8.
 
 Independent protocol fixtures cover appended tags, exact selection and source binding, old literal schema20 reports, ordinary32MiB versus installation-only128MiB budgets and fresh native event ancestry. Format fixtures cover both annotated text formats, exact claims, malformed/truncated producer data and nonrestoration of chemistry. Actual SDK fixtures cover versioned resource discovery, old starter scope, contextual/unknown evidence with citations, expanded geometry, paired-compatible artifacts and atomic capacity rejection. A separate adapter fixture preserves conflicting/context-dependent evidence without modifying the installed runtime catalog.
+
+## Reference-only BP/LR exchange
+
+`inspect_recombination`, `check_recombination_target` and `select_recombination_component` require two ordered immutable source roles and a mandatory pinned full-site profile/reaction/limits request. Selection replays source-derived reference DNA and independently checks the specifically selected component before atomic session installation. All reciprocal components and uncertainty remain evidence; no biochemical activity or experimental winner is inferred. Explicit profile discovery is available through `collagene://recombination/profile/manufacturer-context-v1`. See [contracts, privacy and limits](RECOMBINATION_MCP.md). Worker22/candidate7/plan5/science9 support the typed reference-only operation while retaining historical layouts.

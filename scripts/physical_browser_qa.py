@@ -3,7 +3,7 @@
 import json
 import subprocess
 from pathlib import Path
-from browser_qa import Browser
+from browser_qa import QA_ORIGIN, Browser
 from format_browser_qa import wait_file
 
 
@@ -13,8 +13,8 @@ def main():
         if path.is_file():path.unlink()
     b.call('Browser.setDownloadBehavior',{'behavior':'allow','downloadPath':str(directory)})
     b.call('Emulation.setDeviceMetricsOverride',{'width':1600,'height':1000,'deviceScaleFactor':1,'mobile':False})
-    b.call('Storage.clearDataForOrigin',{'origin':'http://127.0.0.1:8080','storageTypes':'indexeddb'})
-    b.call('Page.navigate',{'url':'http://127.0.0.1:8080'});b.wait("document.body?.innerText.includes('Saved in this browser')")
+    b.call('Storage.clearDataForOrigin',{'origin':QA_ORIGIN,'storageTypes':'indexeddb'})
+    b.call('Page.navigate',{'url':QA_ORIGIN});b.wait("document.body?.innerText.includes('Saved in this browser')")
     def field(label,value,event='input'):
         selector=json.dumps('[aria-label='+json.dumps(label)+']')
         b.evaluate(f'(()=>{{const e=document.querySelector({selector});if(!e)throw Error("Missing {label}");e.value={json.dumps(value)};e.dispatchEvent(new Event({json.dumps(event)},{{bubbles:true}}));}})()')
@@ -45,7 +45,7 @@ def main():
     b.click('Review repaired-product candidate');b.click('Verify candidate')
     b.wait("document.querySelector('.verification-result')?.textContent.includes('ConsistentUnderAssumptions')")
     b.click('Export HTML protocol');assert b'End repair' in wait_file(directory/'cloning-protocol.html')
-    b.click('Save candidate');assert wait_file(directory/'candidate.cg2plan')[4:6]==bytes([6,0])
+    b.click('Save candidate');assert wait_file(directory/'candidate.cg2plan')[4:6]==bytes([7,0])
     choose('wrong_target');b.click('Verify candidate');b.wait("document.querySelector('.notice')?.textContent.includes('active target differs')")
     configure_repair('chew_target','chew_source','PstI')
     b.click('Review repaired-product candidate');b.click('Verify candidate')

@@ -40,7 +40,7 @@ fn new_repair_and_anneal_jobs_bind_sources_and_preserve_explicit_evidence() {
             method: EndRepairMethod::Blunt,
         },
     );
-    assert_eq!(&bytes[4..6], &21u16.to_le_bytes());
+    assert_eq!(&bytes[4..6], &22u16.to_le_bytes());
     let result = response(&bytes);
     assert_eq!(result.id, 73);
     assert_eq!(result.revision, m.revision());
@@ -170,7 +170,7 @@ fn candidates_and_nested_plan_jobs_reject_new_operations_under_old_schema_labels
     let (plan, target) = repair_plan();
     let candidate = transfer::Candidate::new(plan.clone());
     let bytes = transfer::save_candidate(&candidate).unwrap();
-    assert_eq!(&bytes[4..6], &6u16.to_le_bytes());
+    assert_eq!(&bytes[4..6], &7u16.to_le_bytes());
     assert_eq!(
         transfer::load_candidate(&bytes).unwrap().plan_revision,
         candidate.plan_revision

@@ -5,7 +5,7 @@ import json
 import subprocess
 import time
 from pathlib import Path
-from browser_qa import Browser, mobile_enabled
+from browser_qa import QA_ORIGIN, Browser, mobile_enabled
 from workspace_browser_qa import wait_file,manifest
 
 DIRECTORY=Path('/tmp/collagene2-methods-qa')
@@ -59,8 +59,8 @@ def main():
         if p.is_file():p.unlink()
     b=Browser();b.call('Browser.setDownloadBehavior',{'behavior':'allow','downloadPath':str(DIRECTORY)})
     b.call('Emulation.setDeviceMetricsOverride',{'width':1600,'height':1000,'deviceScaleFactor':1,'mobile':False})
-    b.call('Storage.clearDataForOrigin',{'origin':'http://127.0.0.1:8080','storageTypes':'indexeddb'})
-    b.call('Page.navigate',{'url':'http://127.0.0.1:8080'});b.wait('document.body?.innerText.includes("Saved in this browser")')
+    b.call('Storage.clearDataForOrigin',{'origin':QA_ORIGIN,'storageTypes':'indexeddb'})
+    b.call('Page.navigate',{'url':QA_ORIGIN});b.wait('document.body?.innerText.includes("Saved in this browser")')
     # EcoRV cuts AT[GAT|ATC]GG at reference5. Rotated blunt vector is
     # ATCGGATGAT. Two ordered T/A junctions retain BOTH added reference bases.
     fixtures=[('ta_vector','ATGATATCGG',True),('pcr_template','ACGACCCCGGGGTAAC',False),('ta_target','ATCGGATGATTACGACCCCGGGGTAACA',True),('gc_target','ATCGGATGATCACGACCCCGGGGTAACG',True),('missing_tails','ATCGGATGATACGACCCCGGGGTAAC',True),('ov_left','AACCTTGCAAACGTAGCTACGATTC',False),('ov_right_rc','TAAGGATCCGAATCGTAGCTACGT',False),('ov_target','AACCTTGCAAACGTAGCTACGATTCGGATCCTTA',False),('short_left','AAAACCCC',False),('short_right','CCCCGGGG',False),('short_target','AAAACCCCGGGG',False)]
@@ -95,7 +95,7 @@ def main():
     fill(b,'Insert tailing terminal treatment','phosphorylate','change');compute(b);verify(b,'ConsistentUnderAssumptions')
     text=b.evaluate('document.querySelector(".verification-result").textContent')
     assert '28 nt' in text and 'Covalently closed in this model: true' in text,text
-    b.click('Save candidate');assert wait_file(DIRECTORY/'candidate.cg2plan')[4:6]==bytes([6,0])
+    b.click('Save candidate');assert wait_file(DIRECTORY/'candidate.cg2plan')[4:6]==bytes([7,0])
     b.click('Export HTML protocol');html=wait_file(DIRECTORY/'cloning-protocol.html').decode();assert 'ACGA' in html and 'GTTA' in html and 'tail' in html.lower()
     b.click('Export PDF protocol');pdf=DIRECTORY/'cloning-protocol.pdf';wait_file(pdf)
     extracted=subprocess.check_output(['pdftotext',str(pdf),'-'],text=True)
@@ -109,7 +109,7 @@ def main():
     text=b.evaluate('document.querySelector(".verification-result").textContent')
     assert 'Covalently closed in this model: false' in text and 'Retained nicks' in text,text
     # Nativearchives retain the new operation semantics underplan_schema3.
-    b.click('Workspace');b.click('Save workspace file');archive=wait_file(DIRECTORY/'collagene-workspace.cg2workspace');assert manifest(archive)['plan_schema']==4
+    b.click('Workspace');b.click('Save workspace file');archive=wait_file(DIRECTORY/'collagene-workspace.cg2workspace');assert manifest(archive)['plan_schema']==5
     b.evaluate('document.querySelector('+json.dumps('button[aria-label="Close dialog"]')+').click()')
     # Reverse-complement the supplied right source explicitly. The checker gives
     # ORIGINAL-reference coordinates, then verifier independently joins theDNA.

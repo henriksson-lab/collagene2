@@ -8,12 +8,12 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from PIL import Image
-from browser_qa import Browser, mobile_enabled
+from browser_qa import QA_ORIGIN, Browser, mobile_enabled
 from methods_browser_qa import fill, record, check, active
 from workspace_browser_qa import wait_file
 
 DIRECTORY=Path('/tmp/collagene2-dotplot-qa')
-ORIGIN='http://127.0.0.1:8080'
+ORIGIN=QA_ORIGIN
 DNA={c:set(v) for c,v in {'A':'A','C':'C','G':'G','T':'T','U':'T','R':'AG','Y':'CT','S':'CG','W':'AT','K':'GT','M':'AC','B':'CGT','D':'AGT','H':'ACT','V':'ACG','N':'ACGT'}.items()}
 RC=str.maketrans('ACGTRYSWKMBDHVN','TGCAYRSWMKVHDBN')
 AA={c:{c} for c in 'ACDEFGHIKLMNPQRSTVWYOU*'}

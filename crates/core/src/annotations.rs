@@ -12,6 +12,7 @@ const EVIDENCE_GENBANK: &str = "annotation_mapping:original_genbank";
 const EVIDENCE_EMBL: &str = "annotation_mapping:original_embl";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct MappingSegment {
     pub source_start: usize,
     pub source_end: usize,

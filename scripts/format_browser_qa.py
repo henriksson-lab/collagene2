@@ -5,7 +5,7 @@ import json
 import struct
 import time
 from pathlib import Path
-from browser_qa import Browser, mobile_enabled
+from browser_qa import QA_ORIGIN, Browser, mobile_enabled
 
 
 def packet(kind,data):
@@ -57,8 +57,8 @@ def main():
     source,embl,scf=fixtures(directory)
     b.call('Browser.setDownloadBehavior',{'behavior':'allow','downloadPath':str(directory)})
     b.call('Emulation.setDeviceMetricsOverride',{'width':1600,'height':1000,'deviceScaleFactor':1,'mobile':False})
-    b.call('Storage.clearDataForOrigin',{'origin':'http://127.0.0.1:8080','storageTypes':'indexeddb'})
-    b.call('Page.navigate',{'url':'http://127.0.0.1:8080'})
+    b.call('Storage.clearDataForOrigin',{'origin':QA_ORIGIN,'storageTypes':'indexeddb'})
+    b.call('Page.navigate',{'url':QA_ORIGIN})
     b.wait("document.querySelector('h1')?.textContent==='pCG_demo'")
     b.wait("document.body?.innerText.includes('Saved in this browser')")
     b.wait("document.body.innerText.includes('Saved in this browser')")

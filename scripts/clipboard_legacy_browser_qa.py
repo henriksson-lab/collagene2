@@ -4,7 +4,7 @@ import json
 import struct
 import time
 from pathlib import Path
-from browser_qa import Browser, mobile_enabled
+from browser_qa import QA_ORIGIN, Browser, mobile_enabled
 from format_browser_qa import wait_file
 
 
@@ -12,7 +12,7 @@ def main():
     b=Browser();directory=Path('/tmp/collagene2-clipboard-legacy-qa');directory.mkdir(exist_ok=True)
     for path in directory.iterdir():
         if path.is_file():path.unlink()
-    origin='http://127.0.0.1:8080'
+    origin=QA_ORIGIN
     b.call('Browser.setDownloadBehavior',{'behavior':'allow','downloadPath':str(directory)})
     b.call('Browser.grantPermissions',{'origin':origin,'permissions':['clipboardReadWrite','clipboardSanitizedWrite']})
     b.call('Emulation.setDeviceMetricsOverride',{'width':1600,'height':1000,'deviceScaleFactor':1,'mobile':False})

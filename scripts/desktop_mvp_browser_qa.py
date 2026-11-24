@@ -9,12 +9,12 @@ import re
 import time
 import zipfile
 from pathlib import Path
-from browser_qa import Browser
+from browser_qa import QA_ORIGIN, Browser
 from methods_browser_qa import fill
 from workspace_browser_qa import wait_file,slots
 
 DIRECTORY=Path('/tmp/collagene2-desktop-mvp-qa')
-ORIGIN='http://127.0.0.1:8080'
+ORIGIN=QA_ORIGIN
 ENZYMES={'EcoRI':('GAATTC',1,5),'BamHI':('GGATCC',1,5),'NotI':('GCGGCCGC',2,6),'SapI':('GCTCTTC',8,11)}
 COMP=str.maketrans('ACGT','TGCA')
 

@@ -87,6 +87,14 @@ impl DocumentHistory {
     pub fn head_event(&self) -> &str {
         &self.head
     }
+    /// Revision of the immutable current event, without cloning history summaries.
+    pub fn head_revision(&self) -> &str {
+        &self
+            .node(&self.head)
+            .expect("history head is a retained event")
+            .event
+            .revision
+    }
     /// Exact reversible navigation event identities, oldest entry first and next
     /// operation last. These stacks describe navigation, not biological ancestry.
     pub fn navigation_event_ids(&self) -> (Vec<String>, Vec<String>) {

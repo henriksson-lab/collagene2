@@ -434,7 +434,7 @@ fn parse_record(record: &str) -> Result<(Molecule, Vec<String>), Error> {
     molecule.metadata.remove("source_record_index");
     molecule.metadata.insert(ORIGINAL.into(), record.to_owned());
     if formats::retain_digest_producer_comments(&mut molecule, record) {
-        warnings.push("Sequence-only digest producer comments were retained as unverified source data; strand/end chemistry was not restored.".into());
+        warnings.push("Sequence-only producer comments were retained as unverified source data; reference provenance and strand/end chemistry were not restored.".into());
     }
     let molecule_type = if id.legacy {
         id.molecule_type

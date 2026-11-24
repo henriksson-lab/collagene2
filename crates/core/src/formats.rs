@@ -8,6 +8,8 @@ use std::borrow::Cow;
 pub const MAX_IMPORT_BYTES: usize = 32 * 1024 * 1024;
 const DIGEST_PRODUCER_MARKER: &str =
     "Collagene physical product v1: unverified sequence-only evidence";
+const REFERENCE_PRODUCER_MARKER: &str =
+    "Collagene reference-only v1: unverified sequence-only evidence";
 const DIGEST_CLAIM_BYTES: usize = 32 * 1024;
 
 fn digest_claim_comments(out: &mut Vec<String>, prefix: &str, value: &str) {
@@ -37,16 +39,29 @@ pub(crate) fn retain_digest_producer_comments(m: &mut Molecule, raw: &str) -> bo
         line.strip_prefix("COMMENT     ")
             .or_else(|| line.strip_prefix("CC   "))
     }
-    if !raw
+    let reference_only = raw
         .lines()
         .filter_map(comment)
-        .any(|s| s.trim_end() == DIGEST_PRODUCER_MARKER)
+        .any(|s| s.trim_end() == REFERENCE_PRODUCER_MARKER);
+    if !reference_only
+        && !raw
+            .lines()
+            .filter_map(comment)
+            .any(|s| s.trim_end() == DIGEST_PRODUCER_MARKER)
     {
         return false;
     }
     m.metadata
         .insert("source:legacy:chemistry_unmapped".into(), "true".into());
+    if reference_only {
+        m.metadata
+            .insert("source:recombination:reference_only".into(), "true".into());
+    }
     for (prefix, key) in [
+        (
+            "CG-RECOMB-REF-v1 ",
+            "source:recombination:unverified_recipe",
+        ),
         (
             "CG-DIGEST-RECIPE-v1 ",
             "source:restriction_inspection:recipe",
@@ -273,11 +288,40 @@ pub fn provenance_comments(molecule: &Molecule) -> Vec<String> {
                 .metadata
                 .get("source:restriction_catalog:batch_revision")
         });
+    let reference_recipe = molecule
+        .metadata
+        .get(crate::recombination::RECIPE_KEY)
+        .or_else(|| {
+            molecule
+                .metadata
+                .get("source:recombination:unverified_recipe")
+        });
+    let reference_only = molecule
+        .metadata
+        .get(crate::recombination::REFERENCE_ONLY_KEY)
+        .is_some_and(|s| s == "true")
+        || molecule
+            .metadata
+            .get("source:recombination:reference_only")
+            .is_some_and(|s| s == "true")
+        || reference_recipe.is_some();
+    let unmapped = molecule
+        .metadata
+        .get("source:legacy:chemistry_unmapped")
+        .is_some_and(|s| s == "true");
+    if reference_only {
+        comments.push(REFERENCE_PRODUCER_MARKER.into());
+        comments.push("Reference recombination recipes are unverified producer claims. These bases do not establish physical strand states, methylation, recombinase activity or cellular repair. Retain native source/profile history and reconstruct afresh.".into());
+        if let Some(value) = reference_recipe {
+            digest_claim_comments(&mut comments, "CG-RECOMB-REF-v1", value);
+        }
+    }
     if recipe.is_some()
         || ends.is_some()
         || catalog.is_some()
         || catalog_engine.is_some()
         || catalog_revision.is_some()
+        || (unmapped && !reference_only)
     {
         comments.push(DIGEST_PRODUCER_MARKER.into());
         comments.push("Complete enzyme geometry, options and end summaries are unverified producer data. Sequence text cannot restore strand/end chemistry or a passing scientific check; retain native source-event ancestry and recompute.".into());
@@ -501,6 +545,25 @@ pub fn export_with_report(molecule: &Molecule, format: TextFormat) -> Result<Exp
     }
     if molecule.metadata.contains_key("duplex_model") {
         warnings.push("This is a reference-strand sequence export. Duplex end states/nicks are report evidence and must be reconstructed from their originating plan.".into());
+    }
+    if molecule
+        .metadata
+        .contains_key(crate::recombination::REFERENCE_ONLY_KEY)
+        || molecule
+            .metadata
+            .contains_key("source:recombination:reference_only")
+        || molecule
+            .metadata
+            .contains_key(crate::recombination::RECIPE_KEY)
+        || molecule
+            .metadata
+            .contains_key("source:recombination:unverified_recipe")
+        || molecule
+            .metadata
+            .get("source:legacy:chemistry_unmapped")
+            .is_some_and(|s| s == "true")
+    {
+        warnings.push("Reference-only or unmapped producer evidence cannot restore physical chemistry on text reimport. Recombination recipes are bounded unverified claims; retain native source/profile history and reconstruct afresh. FASTA is sequence-only.".into());
     }
     if molecule
         .metadata
@@ -863,7 +926,7 @@ pub fn import_genbank(text: &str) -> Result<ImportReport, Error> {
                 .to_string(),
         );
         if retain_digest_producer_comments(&mut mol, raw_records[index]) {
-            warnings.push("Sequence-only digest producer comments were retained as unverified source data; strand/end chemistry was not restored.".into());
+            warnings.push("Sequence-only producer comments were retained as unverified source data; reference provenance and strand/end chemistry were not restored.".into());
         }
         mol.metadata
             .insert("source_record_index".into(), "0".into());

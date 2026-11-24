@@ -143,7 +143,7 @@ fn invalid_step_indices_render_diagnostics_without_integer_overflow() {
 fn previous_candidate_and_worker_versions_remain_readable() {
     let (workspace, candidate) = fixture();
     let mut bytes = save_candidate(&candidate).unwrap();
-    assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), 6);
+    assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), 7);
     // Old candidates contain the same original PCR/overlap variants and field layout.
     bytes[4..6].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(

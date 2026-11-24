@@ -10,3 +10,11 @@ collagene-model = { path = "../model" }
 serde.workspace = true
 serde_json.workspace = true
 blake3.workspace = true
+
+[features]
+default = []
+json-schema = ["dep:schemars", "collagene-model/json-schema"]
+
+[dependencies.schemars]
+version = "1.2"
+optional = true

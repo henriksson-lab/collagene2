@@ -457,7 +457,7 @@ fn worker(source: &Molecule, job: AnalysisJob) -> protocol::Response {
         job,
     };
     let bytes = protocol::encode_request(&request).unwrap();
-    assert_eq!(&bytes[4..6], &21u16.to_le_bytes());
+    assert_eq!(&bytes[4..6], &22u16.to_le_bytes());
     let response = protocol::decode_response(&protocol::process_request(&bytes).unwrap()).unwrap();
     assert_eq!(response.id, 912);
     assert_eq!(response.revision, source.revision());
@@ -517,7 +517,7 @@ fn old_envelopes_cannot_smuggle_new_steps_or_new_worker_results() {
     ] {
         let candidate = Candidate::new(p.clone());
         let current = transfer::save_candidate(&candidate).unwrap();
-        assert_eq!(&current[4..6], &6u16.to_le_bytes());
+        assert_eq!(&current[4..6], &7u16.to_le_bytes());
         for old in [1u16, 2] {
             let mut bytes = current.clone();
             bytes[4..6].copy_from_slice(&old.to_le_bytes());

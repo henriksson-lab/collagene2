@@ -5,13 +5,13 @@ import time
 import zipfile
 import io
 from pathlib import Path
-from browser_qa import Browser
+from browser_qa import QA_ORIGIN, Browser
 from methods_browser_qa import fill, check
 from workspace_browser_qa import wait_file
 from crispr_browser_qa import reverse, brute_hits, guide_oracle
 
 DIRECTORY=Path('/tmp/collagene2-genome-qa')
-ORIGIN='http://127.0.0.1:8080'
+ORIGIN=QA_ORIGIN
 FILE='input[aria-label="Genome reference file"]'
 SPACER='ACGTTAGCTAGTCAGTACGA'
 FINAL='GCTATCGATACGTCAGTGCA'

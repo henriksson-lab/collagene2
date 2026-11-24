@@ -95,6 +95,7 @@ mod golden_gate;
 mod methylation;
 #[cfg(target_arch = "wasm32")]
 mod mutagenesis;
+#[cfg(target_arch = "wasm32")]
 mod primer_picker;
 #[cfg(target_arch = "wasm32")]
 mod primers;

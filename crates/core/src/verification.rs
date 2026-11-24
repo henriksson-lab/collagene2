@@ -685,6 +685,31 @@ pub fn recombination_inputs(
 }
 
 pub fn verify(plan: &DesignPlan, target: &Molecule) -> VerificationReport {
+    evaluate(plan, target).0
+}
+
+/// Fresh private material state from the same reconstruction as the report.
+/// Only in-process recipe adapters can access it; serialized product metadata or
+/// imported reports cannot supply this vector. A failed step leaves only the
+/// actually reconstructed leading prefix, aligned with report.products.
+pub(crate) fn verify_with_physical(
+    plan: &DesignPlan,
+    target: &Molecule,
+) -> (VerificationReport, Vec<Option<Duplex>>) {
+    let (report, physical) = evaluate(plan, target);
+    (
+        report,
+        physical
+            .into_iter()
+            .map(|state| state.map(|tracked| tracked.duplex))
+            .collect(),
+    )
+}
+
+fn evaluate(
+    plan: &DesignPlan,
+    target: &Molecule,
+) -> (VerificationReport, Vec<Option<TrackedDuplex>>) {
     // New embedded profile snapshots are bounded before hashing their public native DTOs.
     let preflight = validate_reference_steps(plan).and_then(|()| {
         if plan.steps.iter().any(|s| {
@@ -702,8 +727,8 @@ pub fn verify(plan: &DesignPlan, target: &Molecule) -> VerificationReport {
         Ok(())
     });
     if let Err(error) = preflight {
-        return VerificationReport { plan_revision: String::new(), target_revision: String::new(), engine_version: ENGINE_VERSION.into(), status: Status::Invalid,
-            findings: vec![error.to_string()], assumptions: vec!["Reference/TOPO request rejected before plan hashing; no current result binding established.".into()], products: vec![], exhaustive_alternative_search: false, step_reports: vec![], annotation_reports: vec![] };
+        return (VerificationReport { plan_revision: String::new(), target_revision: String::new(), engine_version: ENGINE_VERSION.into(), status: Status::Invalid,
+            findings: vec![error.to_string()], assumptions: vec!["Reference/TOPO request rejected before plan hashing; no current result binding established.".into()], products: vec![], exhaustive_alternative_search: false, step_reports: vec![], annotation_reports: vec![] }, Vec::new());
     }
     let mut report = VerificationReport {
         plan_revision: plan_revision(plan), target_revision: target.revision(), engine_version: ENGINE_VERSION.into(),
@@ -722,6 +747,7 @@ pub fn verify(plan: &DesignPlan, target: &Molecule) -> VerificationReport {
             "Product annotations are projected from source coordinates; clipped, interrupted and uncertain features require review. Unmapped annotations remain source-graph evidence. Imported metadata cannot assert end chemistry.".into()],
     };
     let plan_hash = report.plan_revision.clone();
+    let mut physical = Vec::new();
     match reconstruct(
         plan,
         target,
@@ -730,6 +756,7 @@ pub fn verify(plan: &DesignPlan, target: &Molecule) -> VerificationReport {
         &mut report.findings,
         &mut report.step_reports,
         &mut report.annotation_reports,
+        &mut physical,
     ) {
         Ok(incomplete) => {
             let product = report.products.last().expect("nonempty reconstructed plan");
@@ -758,7 +785,7 @@ pub fn verify(plan: &DesignPlan, target: &Molecule) -> VerificationReport {
         }
         Err(error) => report.findings.push(error.to_string()),
     }
-    report
+    (report, physical)
 }
 
 /// Coordinate comparison only; this helper confers no physical or report authority.
@@ -1554,6 +1581,7 @@ fn reconstruct(
     findings: &mut Vec<String>,
     step_reports: &mut Vec<StepReport>,
     annotation_reports: &mut Vec<AnnotationStepReport>,
+    physical: &mut Vec<Option<TrackedDuplex>>,
 ) -> Result<Vec<String>, Error> {
     target.validate()?;
     if plan.target_revision != target.revision() {
@@ -1577,7 +1605,6 @@ fn reconstruct(
             return Err(Error::Format(format!("stale input revision: {}", input.id)));
         }
     }
-    let mut physical: Vec<Option<TrackedDuplex>> = vec![];
     let mut reference_only: Vec<bool> = vec![];
     let mut product_bases = 0usize;
     let mut product_bytes = 0usize;

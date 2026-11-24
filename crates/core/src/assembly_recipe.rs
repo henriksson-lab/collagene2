@@ -16,9 +16,9 @@ use std::{
 };
 pub const ENGINE_VERSION: &str = "overlap-recipe-1";
 pub const MAX_ROWS: usize = 128;
-const MAX_BYTES: usize = 32 << 20;
+pub(crate) const MAX_BYTES: usize = 32 << 20;
 const MAX_INPUT_BASES: usize = 8 << 20;
-const MAX_ROLE_BASES: usize = 16 << 20;
+pub(crate) const MAX_ROLE_BASES: usize = 16 << 20;
 const MAX_PREPARATION_WORK: usize = 100_000_000;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
 dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer}}}
@@ -63,7 +63,7 @@ impl Write for Hash {
         Ok(())
     }
 }
-fn hash(v: &impl Serialize) -> Result<String, Error> {
+pub(crate) fn hash(v: &impl Serialize) -> Result<String, Error> {
     let mut w = Hash {
         hash: blake3::Hasher::new(),
         bytes: 0,
@@ -98,15 +98,10 @@ pub fn source_preflight(
     target: &Molecule,
     recipe: &Recipe,
 ) -> Result<(), Error> {
-    if inputs.is_empty()
-        || inputs.len() > MAX_ROWS
-        || recipe.fragments.is_empty()
-        || recipe.fragments.len() > MAX_ROWS
-    {
+    recipe.options.validate()?;
+    if recipe.fragments.is_empty() || recipe.fragments.len() > MAX_ROWS {
         return Err(Error::TooLarge);
     }
-    token(&recipe.name, 1024)?;
-    recipe.options.validate()?;
     if recipe.overlaps.len() != recipe.fragments.len() - 1 + usize::from(recipe.circular)
         || recipe.overlaps.iter().any(|n| *n == 0 || *n > 10_000)
     {
@@ -121,6 +116,25 @@ pub fn source_preflight(
     if total_homology > 1_000_000 || total_homology > recipe.options.max_comparisons {
         return Err(Error::TooLarge);
     }
+    preparation_source_preflight(inputs, target, &recipe.name, &recipe.fragments)?;
+    hash(recipe)?;
+    Ok(())
+}
+/// Shared pure preparation guard; independent of overlap/ligation chemistry.
+pub fn preparation_source_preflight(
+    inputs: &[(&str, &Molecule)],
+    target: &Molecule,
+    name: &str,
+    fragments: &[FragmentSpec],
+) -> Result<(), Error> {
+    if inputs.is_empty()
+        || inputs.len() > MAX_ROWS
+        || fragments.is_empty()
+        || fragments.len() > MAX_ROWS
+    {
+        return Err(Error::TooLarge);
+    }
+    token(name, 1024)?;
     let mut models = inputs.iter().map(|(_, m)| *m).collect::<Vec<_>>();
     models.push(target);
     crate::model::bounds::model_preflight(&models)?;
@@ -148,7 +162,7 @@ pub fn source_preflight(
     let mut role_bases = 0usize;
     let mut work = 0usize;
     let catalog = crate::analysis::starter_enzymes();
-    for row in &recipe.fragments {
+    for row in fragments {
         token(&row.role, 128)?;
         token(&row.input_id, 128)?;
         if !roles.insert(row.role.as_str()) {
@@ -210,10 +224,13 @@ pub fn source_preflight(
             .filter(|n| *n <= MAX_PREPARATION_WORK)
             .ok_or(Error::TooLarge)?;
     }
-    hash(recipe)?;
+    hash(&(inputs, target, name, fragments))?;
     Ok(())
 }
 pub fn preflight(inputs: &[PlanInput], target: &Molecule, recipe: &Recipe) -> Result<(), Error> {
+    if inputs.is_empty() || inputs.len() > MAX_ROWS {
+        return Err(Error::TooLarge);
+    }
     source_preflight(
         &inputs
             .iter()
@@ -227,7 +244,7 @@ pub fn preflight(inputs: &[PlanInput], target: &Molecule, recipe: &Recipe) -> Re
     }
     Ok(())
 }
-fn bound_revisions(inputs: &[PlanInput], target: &Molecule) -> Result<String, Error> {
+pub(crate) fn bound_revisions(inputs: &[PlanInput], target: &Molecule) -> Result<String, Error> {
     let target_revision = hash(target)?;
     for input in inputs {
         let actual = hash(&input.molecule)?;
@@ -247,17 +264,38 @@ pub fn preview_revision(
     hash(&(ENGINE_VERSION, "preview", inputs, target, recipe))
 }
 /// Pure compilation: a structurally valid plan is not a verified assembly.
-pub fn compile(
+/// Original immutable inputs and actual preparation operations, before assembly.
+pub struct PreparedCompilation {
+    pub inputs: Vec<PlanInput>,
+    pub target_revision: String,
+    pub steps: Vec<Operation>,
+    pub rows: Vec<PreparedRow>,
+}
+pub fn compile_preparations(
     inputs: &[PlanInput],
     target: &Molecule,
-    recipe: &Recipe,
-) -> Result<Compiled, Error> {
-    preflight(inputs, target, recipe)?;
+    name: &str,
+    fragments: &[FragmentSpec],
+) -> Result<PreparedCompilation, Error> {
+    if inputs.is_empty() || inputs.len() > MAX_ROWS {
+        return Err(Error::TooLarge);
+    }
+    preparation_source_preflight(
+        &inputs
+            .iter()
+            .map(|i| (i.id.as_str(), &i.molecule))
+            .collect::<Vec<_>>(),
+        target,
+        name,
+        fragments,
+    )?;
+    if inputs.iter().any(|i| !hex(&i.revision)) {
+        return Err(bad("source revisions must be explicit canonical hashes"));
+    }
     let target_revision = bound_revisions(inputs, target)?;
     let mut steps = Vec::new();
-    let mut rows = Vec::with_capacity(recipe.fragments.len());
-    let mut fragments = Vec::with_capacity(recipe.fragments.len());
-    for (index, row) in recipe.fragments.iter().enumerate() {
+    let mut rows = Vec::with_capacity(fragments.len());
+    for (index, row) in fragments.iter().enumerate() {
         let original = inputs
             .iter()
             .find(|i| i.id == row.input_id)
@@ -313,11 +351,30 @@ pub fn compile(
             prepared_source: prepared_source.clone(),
             reverse: row.reverse,
         });
-        fragments.push(OrientedSource {
-            source: prepared_source,
-            reverse: row.reverse,
-        });
     }
+    Ok(PreparedCompilation {
+        inputs: inputs.to_vec(),
+        target_revision,
+        steps,
+        rows,
+    })
+}
+pub fn compile(
+    inputs: &[PlanInput],
+    target: &Molecule,
+    recipe: &Recipe,
+) -> Result<Compiled, Error> {
+    preflight(inputs, target, recipe)?;
+    let prepared = compile_preparations(inputs, target, &recipe.name, &recipe.fragments)?;
+    let mut steps = prepared.steps;
+    let rows = prepared.rows;
+    let fragments = rows
+        .iter()
+        .map(|row| OrientedSource {
+            source: row.prepared_source.clone(),
+            reverse: row.reverse,
+        })
+        .collect();
     let assembly_step = steps.len();
     steps.push(Operation::ProfiledOverlap {
         fragments,
@@ -328,8 +385,8 @@ pub fn compile(
     let compiled = Compiled {
         plan: DesignPlan {
             name: recipe.name.clone(),
-            target_revision,
-            inputs: inputs.to_vec(),
+            target_revision: prepared.target_revision,
+            inputs: prepared.inputs,
             steps,
         },
         rows,

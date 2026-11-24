@@ -129,6 +129,13 @@ consume that same graph. [Current workflow](ASSEMBLY_WORKFLOW.md). This is progr
 on cloning priorities 2–3 above; broader physical preparation/composition,
 alternative-product handling and the remaining product scope are still required.
 
+Ordered multi-fragment ligation now shares the same original-source preparation
+compiler, adding explicit terminal treatments, orientation and nick policy. Fresh
+physical ends/junctions come from the verifier's live material state, and method
+candidates retain exact source-event bindings for later history capture.
+[Current ligation workflow](LIGATION_WORKFLOW.md). These ordinary cloning paths
+remain the priority over deferred alignment/index expansion.
+
 ## Feature inventory and delivery priorities
 
 P0 is the foundation and first usable cloning release. P1 supplies everyday molecular biology workflows. P2 extends scale, specialized workflows, collaboration, and desktop delivery. P3 covers advanced molecular analysis. Each row is an implementation backlog item, not a claim about an existing Collagene 2 feature. Feature IDs are retained when rows are removed.

@@ -115,3 +115,5 @@ pub mod variants_session;
 pub mod assembly_recipe;
 
 pub mod primer_reuse;
+
+pub mod ligation_recipe;

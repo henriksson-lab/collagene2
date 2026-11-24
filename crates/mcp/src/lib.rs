@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 114;
+pub const CURRENT_TOOL_COUNT: usize = 115;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -982,6 +982,16 @@ pub struct OverlapAssemblyProposal {
     pub target: DocumentRef,
     /// Ordered preparations, orientation, explicit homology lengths and method profile.
     pub recipe: collagene_core::assembly_recipe::Recipe,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LigationAssemblyProposal {
+    /// Original immutable DNA sources; preparations never replace these inputs.
+    pub inputs: Vec<BoundInput>,
+    /// Independent desired reference, not a sequence inferred from a ligated product.
+    pub target: DocumentRef,
+    /// Explicit ordered physical preparations, end treatments and ligation policy.
+    pub recipe: collagene_core::ligation_recipe::Recipe,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -4702,6 +4712,78 @@ impl CollageneServer {
             store.reserve(bytes)?;
             if new_plan {store.plans.insert(revision,StoredPlan{plan:preview.compiled.plan,target});}
             if new_artifact {store.artifacts.insert(artifact_id,Artifact{data:ArtifactData::Text(text),mime_type:"application/json",encoding:"utf-8",filename:"overlap-assembly-recipe.json"});}
+            Ok(response)
+        }).await
+    }
+    #[tool(
+        description = "Compile an explicit ordered ligation cloning recipe from immutable DNA source revisions and an independent target. Each fragment declares WholeLinear, complete Digest with optional end repair, or actual ExactPcr preparation, explicit terminal treatment and orientation; circular and allow_nicked policies are explicit. Freshly reconstructs physical strands, oriented ends, junctions and retained nicks through the deterministic verifier. Atomically stores a candidate and full preparation/physical/verification JSON, including failed drafts. No metadata-derived chemistry authority, automatic treatment/repair, experimental guarantee or source mutation. Reuse verify_plan and HTML/PDF exports with plan_revision."
+    )]
+    async fn propose_ligation_assembly(
+        &self,
+        Parameters(args): Parameters<LigationAssemblyProposal>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.inputs.is_empty() || args.inputs.len() > 128 {
+            return Err(bad(
+                "ligation recipe requires 1..128 explicit source inputs",
+            ));
+        }
+        let server = self.clone();
+        self.compute(move || {
+            let (inputs,target) = {
+                let store = server.store.lock().unwrap();
+                let target = store.document(&args.target)?;
+                let mut seen = BTreeSet::new();
+                let mut sources = Vec::with_capacity(args.inputs.len());
+                for bound in &args.inputs {
+                    if bound.id.trim().is_empty() || bound.id.len()>128 || !seen.insert(bound.id.as_str()) {
+                        return Err(bad("empty, oversized or duplicate recipe input ID"));
+                    }
+                    sources.push((bound.id.as_str(),store.document(&bound.document)?));
+                }
+                collagene_core::ligation_recipe::source_preflight(&sources,target,&args.recipe).map_err(bad)?;
+                let inputs = sources.into_iter().map(|(id,molecule)|PlanInput {
+                    id:id.into(),revision:molecule.revision(),molecule:molecule.clone()
+                }).collect::<Vec<_>>();
+                (inputs,target.clone())
+            };
+            let preview = collagene_core::ligation_recipe::preview(&inputs,&target,&args.recipe).map_err(bad)?;
+            let expected = collagene_core::ligation_recipe::preview_revision(&inputs,&target,&args.recipe).map_err(bad)?;
+            preview.validate_binding(&expected).map_err(bad)?;
+            // Serialize all outputs and capacity-check before either is published.
+            let text = bounded_json_limit(&preview,32*1024*1024)?;
+            let artifact_id = blake3::hash(text.as_bytes()).to_hex().to_string();
+            let revision = verification::plan_revision(&preview.compiled.plan);
+            if revision.is_empty() {return Err(bad("compiled plan has no bounded canonical revision"));}
+            let plan_bytes = bounded_json(&preview.compiled.plan)?.len().checked_add(bounded_json(&target)?.len()).ok_or_else(||bad("candidate storage accounting overflow"))?;
+            let result = json!({"plan_revision":revision,"state":"candidate","verified":false,
+                "target":args.target,"inputs":args.inputs,"context_revision":preview.context_revision,
+                "preparation_complete":preview.preparation_complete,"ligation_step":preview.compiled.ligation_step,
+                "fragment_count":preview.compiled.rows.len(),"junction_count":preview.junctions.len(),
+                "product_physical":preview.product_physical.as_ref().map(|physical|json!({"top_length":physical.top_length,"bottom_length":physical.bottom_length,"topology":physical.topology,"nick_count":physical.nicks.len(),"covalently_closed_in_model":physical.covalently_closed_in_model})),
+                "verification":{"status":preview.verification.status,"engine_version":preview.verification.engine_version,
+                    "findings":preview.verification.findings.iter().take(100).collect::<Vec<_>>(),
+                    "findings_truncated":preview.verification.findings.len()>100,
+                    "assumptions":preview.verification.assumptions.iter().take(100).collect::<Vec<_>>(),
+                    "assumptions_truncated":preview.verification.assumptions.len()>100,
+                    "exhaustive_alternative_search":preview.verification.exhaustive_alternative_search},
+                "artifact_id":artifact_id,
+                "authority":"Fresh deterministic strand/end/junction reconstruction under explicit preparation and terminal-treatment assumptions. Saving remains a candidate; sequence agreement is not laboratory success or exhaustive mixture uniqueness. Full physical components, junctions and nick evidence are retained in the artifact."});
+            let response = output(result)?;
+            let mut store=server.store.lock().unwrap();
+            let new_plan=!store.plans.contains_key(&revision);
+            let new_artifact=!store.artifacts.contains_key(&artifact_id);
+            if let Some(existing)=store.artifacts.get(&artifact_id) {
+                if !matches!(existing.data,ArtifactData::Text(_)) || existing.mime_type!="application/json" || existing.filename!="ligation-assembly-recipe.json" {
+                    return Err(bad("assembly evidence already has another artifact representation"));
+                }
+            }
+            if (new_plan && store.plans.len()>=MAX_ITEMS) || (new_artifact && store.artifacts.len()>=MAX_ITEMS) {
+                return Err(bad("candidate/artifact item limit; no assembly outputs created"));
+            }
+            let bytes=(if new_plan {plan_bytes}else{0}).checked_add(if new_artifact{text.len()}else{0}).ok_or_else(||bad("session storage accounting overflow"))?;
+            store.reserve(bytes)?;
+            if new_plan {store.plans.insert(revision,StoredPlan{plan:preview.compiled.plan,target});}
+            if new_artifact {store.artifacts.insert(artifact_id,Artifact{data:ArtifactData::Text(text),mime_type:"application/json",encoding:"utf-8",filename:"ligation-assembly-recipe.json"});}
             Ok(response)
         }).await
     }

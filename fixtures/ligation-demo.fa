@@ -1,0 +1,10 @@
+>ligation-left
+AAACCC
+>ligation-middle
+GGGTTT
+>ligation-right
+ATGCGT
+>ligation-target
+AAACCCGGGTTTATGCGT
+>ligation-wrong-target
+AAACCCGGGTTTATGCGA

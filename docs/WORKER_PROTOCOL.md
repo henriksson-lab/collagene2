@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **31** and reads supported schemas 1–30. Candidate files write schema 9; workspace plan schema is 7; the verifier is science-12.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **32** and reads supported schemas 1–31. Candidate files write schema 9; workspace plan schema is 7; the verifier is science-12.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -329,3 +329,18 @@ candidate (9), workspace-plan (7) and scientific-engine (science-12) versions st
 unchanged because the compiler emits existing operations. Imported preview data
 cannot recreate private chemistry or bypass a fresh plan check. Ordinary 32 MiB
 message limits apply; no oversized workspace-message exemption is added.
+
+## Prepared ordered ligation (schema 32)
+
+Job 95, `PreviewLigationRecipe`, carries actual original `PlanInput` roles, an
+independent target and ordered preparation/treatment/orientation/nick policy.
+Result 87, `LigationRecipePreview`, retains the compiled existing-operation plan,
+fresh verifier results, oriented preparation-end summaries, junctions and actual
+product nick state. The physical summaries come from private material state in
+the same verifier execution, not from deserialized product metadata. Unknown
+terminal chemistry remains unknown; nick acceptance does not invent a bond.
+
+Context binds all source/target revisions and recipe options. Selectors require
+schema 32 before payload decoding. Existing overlap schema-31 DTOs are unchanged;
+candidate 9, workspace-plan 7 and science-12 remain unchanged because both recipe
+compilers emit existing scientific operations. Ordinary 32 MiB limits apply.

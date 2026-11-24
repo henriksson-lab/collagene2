@@ -469,3 +469,250 @@ pub fn validate_target(
     hash(report, MAX_BYTES)?;
     Ok(())
 }
+
+/// Annotated revisions bind the existing physical request plus the independent
+/// coordinate-projection engine. These helpers do not reconstruct either layer.
+pub fn annotated_projection_revision(
+    inputs: &[topo::Input],
+    request: &topo::Request,
+    selection: &topo::Selection,
+) -> Result<String, Error> {
+    topo::annotated_product_revision(inputs, request, selection)
+}
+pub fn annotated_target_revision(
+    inputs: &[topo::Input],
+    request: &topo::Request,
+    selection: &topo::Selection,
+    target: &Molecule,
+    policy: &topo::AcceptancePolicy,
+) -> Result<String, Error> {
+    topo::annotated_target_revision(inputs, request, selection, target, policy)
+}
+fn annotation_shape(
+    evidence: &crate::topo_annotations::AnnotationEvidence,
+    physical: &topo::Product,
+    length: usize,
+) -> Result<(), Error> {
+    if evidence.sources.len() != physical.sources.len()
+        || evidence.sources.len() > 32
+        || evidence.features.len() > 4096
+        || evidence.warnings.len() > 65
+        || evidence.warnings.iter().any(|s| s.len() > 4096)
+    {
+        return Err(Error::TooLarge);
+    }
+    let mut feature_budget = collagene_model::bounds::ModelBudget::default();
+    feature_budget.features(&evidence.features)?;
+    let (mut maps, mut projected, mut retained) = (0usize, 0usize, 0usize);
+    for (source, identity) in evidence.sources.iter().zip(&physical.sources) {
+        if source.role != identity.role
+            || source.source_revision != identity.revision
+            || source.maps.len() > 4096
+            || source.unmapped.len() > 4096
+            || source.projected > 4096
+            || source.dropped > 4096
+            || source.warnings.len() > 65
+            || source.warnings.iter().any(|s| s.len() > 4096)
+            || !source.projection_supported && source.projected != 0
+        {
+            return Err(bad("annotation role/status/count binding changed"));
+        }
+        maps = maps
+            .checked_add(source.maps.len())
+            .filter(|n| *n <= 4096)
+            .ok_or(Error::TooLarge)?;
+        projected = projected
+            .checked_add(source.projected)
+            .filter(|n| *n <= 4096)
+            .ok_or(Error::TooLarge)?;
+        retained = retained
+            .checked_add(source.unmapped.len())
+            .filter(|n| *n <= 4096)
+            .ok_or(Error::TooLarge)?;
+        for map in &source.maps {
+            if map.source_start >= map.source_end
+                || map.source_end > 100_000
+                || map
+                    .destination_start
+                    .checked_add(map.source_end - map.source_start)
+                    .is_none_or(|end| end > length)
+            {
+                return Err(bad("invalid annotation correspondence map"));
+            }
+        }
+        for feature in &source.unmapped {
+            if feature.source_index >= 4096
+                || feature.reason.len() > 4096
+                || feature.reason.trim().is_empty()
+                || !feature.feature.needs_review
+            {
+                return Err(bad("unmapped source annotation lost review evidence"));
+            }
+            feature_budget.features(std::slice::from_ref(&feature.feature))?;
+        }
+    }
+    if projected != evidence.features.len() {
+        return Err(bad("projected feature count differs from evidence"));
+    }
+    hash(&evidence.features, 4 * 1024 * 1024)?;
+    hash(evidence, 16 * 1024 * 1024)?;
+    Ok(())
+}
+/// Readonly shape/source/recipe consistency. A decoded wrapper never authorizes
+/// annotation projection or restores terminal/duplex/modification chemistry.
+pub fn validate_annotated_projection(
+    product: &topo::AnnotatedProduct,
+    expected_revision: &str,
+) -> Result<(), Error> {
+    binding(&product.batch_revision, expected_revision)?;
+    if product.engine_version != topo::ANNOTATION_ENGINE_VERSION {
+        return Err(bad("annotation engine mismatch"));
+    }
+    // Guard every native feature tree before recursive validation/hashing.
+    if let Some(reference) = &product.reference {
+        collagene_model::bounds::model_preflight(&[reference])?;
+        if reference.sequence.len() > 100_000 {
+            return Err(Error::TooLarge);
+        }
+    }
+    if let Some(evidence) = &product.annotations {
+        annotation_shape(
+            evidence,
+            &product.physical,
+            product.reference.as_ref().map_or(0, |r| r.sequence.len()),
+        )?;
+    }
+    validate_projection(&product.physical, &product.physical.batch_revision)?;
+    binding(
+        &product.batch_revision,
+        &hash(
+            &(
+                topo::ANNOTATION_ENGINE_VERSION,
+                "annotated-product",
+                &product.physical.batch_revision,
+            ),
+            MAX_BYTES,
+        )?,
+    )?;
+    match (
+        &product.physical.reference,
+        &product.annotations,
+        &product.reference,
+    ) {
+        (Some(bare), Some(evidence), Some(reference)) => {
+            if reference.name != bare.name
+                || reference.sequence != bare.sequence
+                || reference.topology != bare.topology
+                || reference.features != evidence.features
+                || reference.original_genbank.is_some()
+                || reference
+                    .metadata
+                    .get("topo:annotation_engine")
+                    .map(String::as_str)
+                    != Some(topo::ANNOTATION_ENGINE_VERSION)
+                || reference.metadata.get("topo:annotation_revision")
+                    != Some(&product.batch_revision)
+            {
+                return Err(bad(
+                    "annotated reference disagrees with its physical view/evidence",
+                ));
+            }
+            for (key, value) in &bare.metadata {
+                if reference.metadata.get(key) != Some(value) {
+                    return Err(bad(
+                        "annotated reference removed physical restriction metadata",
+                    ));
+                }
+            }
+            for (key, value) in &reference.metadata {
+                if !matches!(
+                    key.as_str(),
+                    "topo:annotation_engine" | "topo:annotation_revision" | "topo:annotation_scope"
+                ) && bare.metadata.get(key) != Some(value)
+                {
+                    return Err(bad(
+                        "annotation metadata cannot add new inherited authority",
+                    ));
+                }
+            }
+            reference.validate()?;
+        }
+        (None, None, None) => {}
+        _ => {
+            return Err(bad(
+                "annotated evidence/reference presence disagrees with contour",
+            ));
+        }
+    }
+    hash(product, MAX_BYTES)?;
+    Ok(())
+}
+pub fn validate_annotated_target(
+    report: &topo::AnnotatedAssessment,
+    expected_revision: &str,
+) -> Result<(), Error> {
+    binding(&report.batch_revision, expected_revision)?;
+    if report.engine_version != topo::ANNOTATION_ENGINE_VERSION || !hex(&report.target_revision) {
+        return Err(bad("invalid annotated target engine/revision"));
+    }
+    validate_annotated_projection(&report.product, &report.product.batch_revision)?;
+    binding(
+        &report.batch_revision,
+        &hash(
+            &(
+                topo::ANNOTATION_ENGINE_VERSION,
+                "annotated-target",
+                &report.product.batch_revision,
+                &report.target_revision,
+                &report.policy,
+            ),
+            MAX_BYTES,
+        )?,
+    )?;
+    match &report.outcome {
+        topo::TargetOutcome::AcceptedUnderDeclaredGraph => {
+            let projection::Outcome::Proven(view) = &report.product.physical.projection.outcome
+            else {
+                return Err(bad("accepted annotated target has no paired contour"));
+            };
+            if !report.policy.allow_nicks && !view.nicks.is_empty()
+                || !report.policy.allow_unknown_terminal_chemistry
+                    && !view.fully_known_terminal_chemistry
+                || !report.policy.allow_unapplied_transfers && !view.all_requested_transfers_applied
+                || !report.policy.allow_other_components
+                    && report
+                        .product
+                        .physical
+                        .projection
+                        .physical
+                        .product
+                        .components
+                        .len()
+                        != 1
+            {
+                return Err(bad(
+                    "accepted annotated target conflicts with explicit physical policy",
+                ));
+            }
+        }
+        topo::TargetOutcome::Rejected { reasons } => {
+            if reasons.is_empty() || reasons.len() > 16 || reasons.iter().any(|s| s.len() > 4096) {
+                return Err(Error::TooLarge);
+            }
+        }
+        topo::TargetOutcome::Withheld { reason } => {
+            if reason.len() > 4096
+                || !matches!(
+                    &report.product.physical.projection.outcome,
+                    projection::Outcome::Withheld(_)
+                )
+            {
+                return Err(bad(
+                    "withheld annotated target disagrees with physical contour",
+                ));
+            }
+        }
+    }
+    hash(report, MAX_BYTES)?;
+    Ok(())
+}

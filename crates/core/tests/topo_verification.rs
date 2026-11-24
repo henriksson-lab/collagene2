@@ -279,3 +279,50 @@ fn html_pcr_preparation_includes_actual_ordered_oligos_and_explicit_physical_ass
     assert!(html.contains("<code>CCTGCATCGG</code>"));
     assert!(html.contains("unique exact PCR geometry"));
 }
+
+#[test]
+fn genuine_pre_annotation_reports_preserve_physical_graph_without_inventing_feature_evidence() {
+    use collagene_core::protocol;
+    let (plan, target) = plan(false);
+    let fresh = verify(&plan, &target);
+    assert_eq!(fresh.step_reports.len(), 1);
+    // Independently spell the schema25/26 positional fields; today's report has
+    // an additional annotation_reports field and must not be relabeled as old.
+    let old = (
+        &fresh.plan_revision,
+        &fresh.target_revision,
+        "0.1.0/science-10",
+        fresh.status,
+        &fresh.findings,
+        &fresh.assumptions,
+        &fresh.products,
+        fresh.exhaustive_alternative_search,
+        &fresh.step_reports,
+    );
+    let payload = postcard::to_allocvec(&(41u32, target.revision(), 4u32, old)).unwrap();
+    for version in [25u16, 26] {
+        let mut bytes = b"CGR\0".to_vec();
+        bytes.extend(version.to_le_bytes());
+        bytes.extend((payload.len() as u32).to_le_bytes());
+        bytes.extend(blake3::hash(&payload).as_bytes());
+        bytes.extend(&payload);
+        let response = protocol::decode_response(&bytes).unwrap();
+        let protocol::AnalysisResult::Verification(decoded) = response.result else {
+            panic!()
+        };
+        assert_eq!(decoded.engine_version, "0.1.0/science-10");
+        assert_eq!(decoded.step_reports.len(), 1);
+        assert_eq!(
+            decoded.step_reports[0]
+                .topo
+                .as_ref()
+                .unwrap()
+                .batch_revision,
+            fresh.step_reports[0].topo.as_ref().unwrap().batch_revision
+        );
+        assert!(
+            decoded.annotation_reports.is_empty(),
+            "an old graph cannot invent annotation provenance"
+        );
+    }
+}

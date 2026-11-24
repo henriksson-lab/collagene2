@@ -6,6 +6,7 @@ use physical::projection;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io::Write};
 pub const ENGINE_VERSION: &str = "topo-source-adapter-1";
+pub const ANNOTATION_ENGINE_VERSION: &str = "topo-annotated-reference-1";
 pub const MAX_REPORT_BYTES: usize = 32 * 1024 * 1024;
 pub const RECIPE_KEY: &str = "topo:unverified_generation";
 macro_rules! dto { ($($t:tt)*) => { #[derive(Debug,Clone,Serialize,Deserialize)] #[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))] #[serde(deny_unknown_fields)] $($t)* }; }
@@ -39,6 +40,11 @@ dto! {pub struct Product {pub engine_version:String,pub batch_revision:String,pu
 dto! {#[derive(Default)] pub struct AcceptancePolicy {pub allow_nicks:bool,pub allow_unknown_terminal_chemistry:bool,pub allow_unapplied_transfers:bool,pub allow_other_components:bool,pub allow_circular_rotation:bool,pub allow_reverse_complement:bool}}
 dto! {pub enum TargetOutcome {AcceptedUnderDeclaredGraph,Rejected{reasons:Vec<String>},Withheld{reason:String}}}
 dto! {pub struct TargetAssessment {pub engine_version:String,pub batch_revision:String,pub target_revision:String,pub policy:AcceptancePolicy,pub product:Product,pub outcome:TargetOutcome}}
+// Additive envelopes: Product/TargetAssessment remain unchanged for old wire
+// consumers. These fields describe correspondence, never chemical ancestry.
+dto! {pub struct AnnotatedProduct {pub engine_version:String,pub batch_revision:String,pub physical:Product,pub annotations:Option<crate::topo_annotations::AnnotationEvidence>,pub reference:Option<Molecule>}}
+dto! {pub struct AnnotatedAssessment {pub engine_version:String,pub batch_revision:String,pub target_revision:String,pub policy:AcceptancePolicy,pub product:AnnotatedProduct,pub outcome:TargetOutcome}}
+
 fn bad(s: &str) -> Error {
     Error::Unsupported(format!("TOPO source adapter: {s}"))
 }
@@ -83,6 +89,52 @@ fn hash<T: Serialize>(v: &T) -> Result<String, Error> {
     let mut h = Hasher(blake3::Hasher::new());
     serde_json::to_writer(&mut h, v).map_err(|_| Error::TooLarge)?;
     Ok(h.0.finalize().to_hex().to_string())
+}
+struct AnnotationHash {
+    hash: blake3::Hasher,
+    bytes: usize,
+}
+impl Write for AnnotationHash {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.bytes = self
+            .bytes
+            .checked_add(bytes.len())
+            .filter(|&n| n <= MAX_REPORT_BYTES)
+            .ok_or_else(|| std::io::Error::other("bounded annotated TOPO binding"))?;
+        self.hash.update(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+fn annotation_hash(value: &impl Serialize) -> Result<String, Error> {
+    let mut writer = AnnotationHash {
+        hash: blake3::Hasher::new(),
+        bytes: 0,
+    };
+    serde_json::to_writer(&mut writer, value).map_err(|_| Error::TooLarge)?;
+    Ok(writer.hash.finalize().to_hex().to_string())
+}
+fn annotated_product_binding(physical_revision: &str) -> Result<String, Error> {
+    annotation_hash(&(
+        ANNOTATION_ENGINE_VERSION,
+        "annotated-product",
+        physical_revision,
+    ))
+}
+fn annotated_target_binding(
+    product_revision: &str,
+    target_revision: &str,
+    policy: &AcceptancePolicy,
+) -> Result<String, Error> {
+    annotation_hash(&(
+        ANNOTATION_ENGINE_VERSION,
+        "annotated-target",
+        product_revision,
+        target_revision,
+        policy,
+    ))
 }
 fn engine_error(e: impl std::fmt::Display) -> Error {
     bad(&e.to_string())
@@ -608,6 +660,109 @@ pub fn product(inputs: &[Input], r: &Request, s: &Selection) -> Result<Product, 
     };
     bounded(&p, MAX_REPORT_BYTES)?;
     Ok(p)
+}
+/// Borrowed source/request/selection binding only; no graph reconstruction or
+/// annotation projection. Annotation changes already alter the physical source
+/// revision, and this separate domain pins annotation-transform semantics.
+pub fn annotated_product_revision(
+    inputs: &[Input],
+    request: &Request,
+    selection: &Selection,
+) -> Result<String, Error> {
+    // Reuse the existing bounded streaming implementation of the legacy
+    // physical product domain. It hashes borrowed inputs and dispatches no job.
+    annotated_product_binding(&crate::topo_worker::projection_revision(
+        inputs, request, selection,
+    )?)
+}
+/// This private handoff accepts only a Product freshly built in this module.
+/// External serialized Product values are never accepted as annotation authority.
+fn annotate_fresh_product(inputs: &[Input], physical: Product) -> Result<AnnotatedProduct, Error> {
+    let batch_revision = annotated_product_binding(&physical.batch_revision)?;
+    let (annotations, reference) = match (&physical.projection.outcome, &physical.reference) {
+        (projection::Outcome::Proven(view), Some(destination)) => {
+            let evidence =
+                crate::topo_annotations::project(inputs, &physical.preparation, view, destination)?;
+            let mut reference = destination.clone();
+            reference.features = evidence.features.clone();
+            reference.metadata.insert(
+                "topo:annotation_engine".into(),
+                ANNOTATION_ENGINE_VERSION.into(),
+            );
+            reference
+                .metadata
+                .insert("topo:annotation_revision".into(), batch_revision.clone());
+            reference.metadata.insert("topo:annotation_scope".into(),"Source-coordinate correspondence only; not inherited chemical ancestry or biological validity. Unmapped/review evidence remains in the full annotated product.".into());
+            reference.validate()?;
+            (Some(evidence), Some(reference))
+        }
+        (projection::Outcome::Withheld(_), None) => (None, None),
+        _ => return Err(bad("fresh contour/reference presence disagrees")),
+    };
+    let result = AnnotatedProduct {
+        engine_version: ANNOTATION_ENGINE_VERSION.into(),
+        batch_revision,
+        physical,
+        annotations,
+        reference,
+    };
+    bounded(&result, MAX_REPORT_BYTES)?;
+    Ok(result)
+}
+/// Fresh physical reconstruction plus separately retained conservative annotation
+/// correspondence. The original physical Product stays annotation-free unchanged.
+pub fn annotated_product(
+    inputs: &[Input],
+    request: &Request,
+    selection: &Selection,
+) -> Result<AnnotatedProduct, Error> {
+    let fresh = product(inputs, request, selection)?;
+    annotate_fresh_product(inputs, fresh)
+}
+/// Independently bound target/policy request; this hashes borrowed data only.
+pub fn annotated_target_revision(
+    inputs: &[Input],
+    request: &Request,
+    selection: &Selection,
+    target: &Molecule,
+    policy: &AcceptancePolicy,
+) -> Result<String, Error> {
+    target_preflight(target)?;
+    annotated_target_binding(
+        &annotated_product_revision(inputs, request, selection)?,
+        &annotation_hash(target)?,
+        policy,
+    )
+}
+/// Reconstruct/check the physical target exactly once. Annotation correspondence
+/// enriches that same fresh graph, without changing its target-policy outcome.
+pub fn check_target_annotated(
+    inputs: &[Input],
+    request: &Request,
+    selection: &Selection,
+    target: &Molecule,
+    policy: &AcceptancePolicy,
+) -> Result<AnnotatedAssessment, Error> {
+    let TargetAssessment {
+        product,
+        policy,
+        target_revision,
+        outcome,
+        ..
+    } = check_target(inputs, request, selection, target, policy)?;
+    let product = annotate_fresh_product(inputs, product)?;
+    let batch_revision =
+        annotated_target_binding(&product.batch_revision, &target_revision, &policy)?;
+    let result = AnnotatedAssessment {
+        engine_version: ANNOTATION_ENGINE_VERSION.into(),
+        batch_revision,
+        target_revision,
+        policy,
+        product,
+        outcome,
+    };
+    bounded(&result, MAX_REPORT_BYTES)?;
+    Ok(result)
 }
 fn target_preflight(target: &Molecule) -> Result<(), Error> {
     collagene_model::bounds::model_preflight(&[target])?;

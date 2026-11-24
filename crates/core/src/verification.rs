@@ -160,6 +160,9 @@ pub struct VerificationReport {
     /// Full per-step scientific evidence, including withheld TOPO contours.
     #[serde(default)]
     pub step_reports: Vec<StepReport>,
+    /// Conservative annotation correspondence, separate from physical graph evidence.
+    #[serde(default)]
+    pub annotation_reports: Vec<AnnotationStepReport>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -171,7 +174,15 @@ pub struct StepReport {
     pub topo: Option<crate::topo::Product>,
 }
 
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-10");
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct AnnotationStepReport {
+    pub step_index: usize,
+    pub evidence: crate::topo_annotations::AnnotationEvidence,
+}
+
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-11");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrDocument {
@@ -674,11 +685,11 @@ pub fn verify(plan: &DesignPlan, target: &Molecule) -> VerificationReport {
     });
     if let Err(error) = preflight {
         return VerificationReport { plan_revision: String::new(), target_revision: String::new(), engine_version: ENGINE_VERSION.into(), status: Status::Invalid,
-            findings: vec![error.to_string()], assumptions: vec!["Reference/TOPO request rejected before plan hashing; no current result binding established.".into()], products: vec![], exhaustive_alternative_search: false, step_reports: vec![] };
+            findings: vec![error.to_string()], assumptions: vec!["Reference/TOPO request rejected before plan hashing; no current result binding established.".into()], products: vec![], exhaustive_alternative_search: false, step_reports: vec![], annotation_reports: vec![] };
     }
     let mut report = VerificationReport {
         plan_revision: plan_revision(plan), target_revision: target.revision(), engine_version: ENGINE_VERSION.into(),
-        status: Status::Invalid, findings: vec![], products: vec![], exhaustive_alternative_search: false, step_reports: vec![],
+        status: Status::Invalid, findings: vec![], products: vec![], exhaustive_alternative_search: false, step_reports: vec![], annotation_reports: vec![],
         assumptions: vec!["Exact annealing/overlap model; no experimental outcome is guaranteed.".into(),
             "RecombineReference is a bounded full-site-profile reciprocal reference exchange. All components are computed before an explicit selection; neither its selected DNA nor target agreement establishes chemical strand state, biological repair, efficacy or a selected experimental winner. Reference-only ancestry cannot supply physical PCR or annealing material.".into(),
             "TOPO reconstructs explicitly declared strands, pairing and elementary transfers. Its full physical graph is retained; a selected proven paired contour supplies a restrictive reference view only. No implicit target acceptance policy, nick/flap repair, supplier-kit state or experimental success is asserted. Downstream physical graph consumption is not yet modeled.".into(),
@@ -700,6 +711,7 @@ pub fn verify(plan: &DesignPlan, target: &Molecule) -> VerificationReport {
         &mut report.products,
         &mut report.findings,
         &mut report.step_reports,
+        &mut report.annotation_reports,
     ) {
         Ok(incomplete) => {
             let product = report.products.last().expect("nonempty reconstructed plan");
@@ -1499,6 +1511,7 @@ fn reconstruct(
     products: &mut Vec<Molecule>,
     findings: &mut Vec<String>,
     step_reports: &mut Vec<StepReport>,
+    annotation_reports: &mut Vec<AnnotationStepReport>,
 ) -> Result<Vec<String>, Error> {
     target.validate()?;
     if plan.target_revision != target.revision() {
@@ -1580,21 +1593,41 @@ fn reconstruct(
                 let inputs = topo_inputs(sources, &molecules, request)?;
                 // Only a fresh source-backed reconstruction may populate this
                 // evidence. Imported Product/Selection data grants no authority.
-                let fresh = crate::topo::product(&inputs, request, selection).map_err(|error| {
-                    Error::Format(format!("TOPO reconstruction rejected: {error}"))
-                })?;
-                let size = evidence_bytes(&fresh, crate::topo::MAX_REPORT_BYTES)?;
+                let fresh = crate::topo::annotated_product(&inputs, request, selection).map_err(
+                    |error| Error::Format(format!("TOPO reconstruction rejected: {error}")),
+                )?;
+                let physical_bytes =
+                    evidence_bytes(&fresh.physical, crate::topo::MAX_REPORT_BYTES)?;
+                let annotation_bytes = fresh
+                    .annotations
+                    .as_ref()
+                    .map(|evidence| evidence_bytes(evidence, crate::topo::MAX_REPORT_BYTES))
+                    .transpose()?
+                    .unwrap_or(0);
                 step_evidence_bytes = step_evidence_bytes
-                    .checked_add(size)
+                    .checked_add(physical_bytes)
+                    .and_then(|bytes| bytes.checked_add(annotation_bytes))
                     .ok_or(Error::TooLarge)?;
                 if step_evidence_bytes > 32 * 1024 * 1024 {
                     return Err(Error::Unsupported("TOPO full-graph evidence exceeds the plan's 32 MiB evidence budget; no reference-only substitute is published".into()));
                 }
-                let preview = fresh.reference.clone();
+                let crate::topo::AnnotatedProduct {
+                    physical,
+                    annotations,
+                    reference: preview,
+                    ..
+                } = fresh;
                 step_reports.push(StepReport {
                     step_index: index,
-                    topo: Some(fresh),
+                    topo: Some(physical),
                 });
+                if let Some(evidence) = annotations {
+                    findings.push(format!("Step {} retains {} projected TOPO annotations and per-role unmapped/review evidence. These are source-coordinate correspondences, not inherited chemical ancestry or biological validity.",index+1,evidence.features.len()));
+                    annotation_reports.push(AnnotationStepReport {
+                        step_index: index,
+                        evidence,
+                    });
+                }
                 findings.push(format!("Step {} retains its complete freshly reconstructed TOPO preparation, transfer graph, all physical components and paired-contour proof. A selected reference view does not seal nicks, remove flaps or establish experimental success.",index+1));
                 let Some(preview) = preview else {
                     return Err(Error::Unsupported(format!(
@@ -2468,6 +2501,27 @@ pub fn export_protocol_html(plan: &DesignPlan, target: &Molecule) -> String {
                     body.push_str(&format!("<li>{}</li>", e(assumption)));
                 }
                 body.push_str("</ul></li>");
+            }
+        }
+        body.push_str("</ul>");
+    }
+    if !report.annotation_reports.is_empty() {
+        body.push_str("<h2>TOPO annotation correspondence</h2><p>Projected source coordinates establish neither inherited chemical ancestry nor biological feature validity. Unmapped annotations remain original source evidence.</p><ul>");
+        for annotation in &report.annotation_reports {
+            let mut offset = 0usize;
+            for role in &annotation.evidence.sources {
+                let end = offset.saturating_add(role.projected);
+                // The projector emits each role's features in source-role order.
+                let reviewed = annotation
+                    .evidence
+                    .features
+                    .get(offset..end)
+                    .unwrap_or(&[])
+                    .iter()
+                    .filter(|feature| feature.needs_review)
+                    .count();
+                body.push_str(&format!("<li>Step {}, role {}: {} projected ({} require review), {} original annotations retained unmapped, {} outside selected correspondence. Projection supported: {}.</li>",annotation.step_index+1,e(&role.role),role.projected,reviewed,role.unmapped.len(),role.dropped,role.projection_supported));
+                offset = end;
             }
         }
         body.push_str("</ul>");

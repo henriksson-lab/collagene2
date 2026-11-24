@@ -202,7 +202,8 @@ fn validate_record(r: &RunRecord) -> Result<(), Error> {
         return Err(bad("invalid schema or assessment"));
     }
     if r.plan_schema < 6
-        && (r.assessment.engine_version.ends_with("/science-10")
+        && ((r.assessment.engine_version.ends_with("/science-10")
+            || r.assessment.engine_version.ends_with("/science-11"))
             || r.plan
                 .steps
                 .iter()

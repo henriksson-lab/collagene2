@@ -1002,6 +1002,19 @@ pub fn export_protocol_pdf(plan: &DesignPlan, target: &Molecule) -> Result<PdfRe
         {
             layout.paragraph_size(&topo_evidence_text(topo)?, 9.0, INK)?;
         }
+        if let Some(annotations) = report
+            .annotation_reports
+            .iter()
+            .find(|entry| entry.step_index == index)
+        {
+            layout.paragraph_size("TOPO annotation correspondence follows actual top-reference source calls. It is not inherited chemical state or experimental validation.",9.0,INK)?;
+            for source in &annotations.evidence.sources {
+                layout.paragraph_size(&format!("Source role {} (revision {}): {} projected, {} outside this selected contour, {} retained only as original unmapped evidence. Projection supported: {}. Review all disrupted/PCR-derived annotations.",source.role,source.source_revision,source.projected,source.dropped,source.unmapped.len(),source.projection_supported),9.0,INK)?;
+                for warning in source.warnings.iter().take(8) {
+                    layout.paragraph_size(warning, 9.0, INK)?;
+                }
+            }
+        }
         if let Some(product) = report.products.get(index) {
             layout.paragraph_size(
                 &format!(

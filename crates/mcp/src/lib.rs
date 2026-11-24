@@ -1178,6 +1178,18 @@ fn topo_summary(report: &collagene_core::topo::physical::Report) -> Value {
         "chain_lengths":report.product.chains.iter().take(64).map(|c|c.sequence.len()).collect::<Vec<_>>(),
         "chains_truncated":report.product.chains.len()>64})
 }
+fn topo_annotation_summary(
+    evidence: Option<&collagene_core::topo_annotations::AnnotationEvidence>,
+) -> Value {
+    match evidence {
+        None => {
+            json!({"state":"withheld_without_paired_reference","authority":"No annotation coordinates or chemical state inferred."})
+        }
+        Some(evidence) => {
+            json!({"state":"source_correspondence_only","features":evidence.features.len(),"sources":evidence.sources.iter().map(|source|json!({"role":source.role,"revision":source.source_revision,"projection_supported":source.projection_supported,"projected":source.projected,"dropped_from_selected_reference":source.dropped,"unmapped_original_features":source.unmapped.len(),"warnings":source.warnings.iter().take(8).collect::<Vec<_>>() })).collect::<Vec<_>>(),"authority":"Review disrupted/PCR-derived annotations; retained source features are not chemical ancestry or restored physical authority."})
+        }
+    }
+}
 fn topo_projection_summary(product: &collagene_core::topo::Product) -> Value {
     use collagene_core::topo::physical::projection::Outcome;
     match &product.projection.outcome {
@@ -2349,7 +2361,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Freshly reconstruct one explicitly selected TOPO component and source-call seed pinned to the source/recipe batch. Projection is withheld unless a supported paired contour can be proven; retains full physical graph, nicks, unpaired DNA, residual components and unapplied transfers. A projected immutable sequence document is a chemistry-unmapped view only, atomically installed with <=32MiB evidence; it cannot substitute for graph replay or independent target comparison. Imported reports/products are never accepted as physical state."
+        description = "Freshly reconstruct one explicitly selected TOPO component and source-call seed pinned to the source/recipe batch. Projection is withheld unless a supported paired contour can be proven; retains full physical graph, nicks, unpaired DNA, residual components and unapplied transfers. A projected immutable sequence document carries conservative source-coordinate annotations and remains a chemistry-unmapped view, atomically installed with <=32MiB full graph/annotation evidence; it cannot substitute for graph replay or independent target comparison. Imported reports/products are never accepted as physical state."
     )]
     async fn project_topo_product(
         &self,
@@ -2358,13 +2370,13 @@ impl CollageneServer {
         let server = self.clone();
         self.compute(move||{
             let(inputs,_)=server.topo_sources(&args.sources,&args.request,None)?;
-            let product=collagene_core::topo::product(&inputs,&args.request,&args.selection).map_err(bad)?;
+            let product=collagene_core::topo::annotated_product(&inputs,&args.request,&args.selection).map_err(bad)?;
             let evidence=TopoEvidence{source_bindings:&args.sources,request:&args.request,target_requirement:None,report:&product,
                 binding_scope:"Source-backed physical reconstruction; sequence view is not standalone chemistry authority."};
             let (artifact,document)=server.candidate_document_artifact_bounded(&evidence,product.reference.clone(),"topo-projection.json",collagene_core::topo::MAX_REPORT_BYTES)?;
             output(json!({"sources":args.sources,"selection":args.selection,"engine_version":product.engine_version,
-                "batch_revision":product.batch_revision,"projection":topo_projection_summary(&product),
-                "physical":topo_summary(&product.projection.physical),"document":document,"artifact_id":artifact,
+                "batch_revision":product.batch_revision,"projection":topo_projection_summary(&product.physical),
+                "physical":topo_summary(&product.physical.projection.physical),"annotations":topo_annotation_summary(product.annotations.as_ref()),"document":document,"artifact_id":artifact,
                 "authority":"Explicit component/seed only; no target-guided path selection, nick repair or standalone physical authority from the projected reference."}))
         }).await
     }
@@ -2379,14 +2391,14 @@ impl CollageneServer {
         self.compute(move||{
             let(inputs,target)=server.topo_sources(&args.sources,&args.request,Some(&args.target))?;
             let target=target.ok_or_else(||bad("explicit independent TOPO target required"))?;
-            let report=collagene_core::topo::check_target(&inputs,&args.request,&args.selection,&target,&args.policy).map_err(bad)?;
+            let report=collagene_core::topo::check_target_annotated(&inputs,&args.request,&args.selection,&target,&args.policy).map_err(bad)?;
             let evidence=TopoEvidence{source_bindings:&args.sources,request:&args.request,target_requirement:Some(&args.target),report:&report,
                 binding_scope:"Independent target is a noncausal requirement, not an ancestry parent or source of generated DNA."};
             let artifact=server.text_artifact(bounded_json_limit(&evidence,collagene_core::topo::MAX_REPORT_BYTES)?,"application/json","topo-target-check.json")?;
             output(json!({"sources":args.sources,"target":args.target,"selection":args.selection,"policy":args.policy,
                 "engine_version":report.engine_version,"batch_revision":report.batch_revision,"target_revision":report.target_revision,
-                "outcome":report.outcome,"projection":topo_projection_summary(&report.product),
-                "physical":topo_summary(&report.product.projection.physical),"artifact_id":artifact,
+                "outcome":report.outcome,"projection":topo_projection_summary(&report.product.physical),
+                "physical":topo_summary(&report.product.physical.projection.physical),"artifact_id":artifact,"annotations":topo_annotation_summary(report.product.annotations.as_ref()),
                 "authority":"Conditional comparison under declared physical graph and explicit allowances, not a repaired molecule or experimental verification."}))
         }).await
     }

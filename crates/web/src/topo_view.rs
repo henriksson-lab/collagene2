@@ -88,11 +88,11 @@ struct Projected {
     choice: Choice,
     request: topo::Request,
     selection: topo::Selection,
-    product: Arc<topo::Product>,
+    product: Arc<topo::AnnotatedProduct>,
 }
 struct Checked {
     projected: Arc<Projected>,
-    report: Arc<topo::TargetAssessment>,
+    report: Arc<topo::AnnotatedAssessment>,
 }
 struct BoundedJson(Vec<u8>);
 impl Write for BoundedJson {
@@ -176,8 +176,8 @@ fn physical_text(report: &physical::Report) -> String {
         text
     }
 }
-fn projection_text(product: &topo::Product) -> String {
-    match &product.projection.outcome {
+fn projection_text(product: &topo::AnnotatedProduct) -> String {
+    match &product.physical.projection.outcome {
         projection::Outcome::Proven(view) => format!(
             "Paired contour: {:?}; top {} bases / actual bottom {} bases; source seed {:?}; seed reference position {}; {} retained nicks; ends {:?}; known terminal chemistry {}. A circular contour is not covalent closure or host repair.",
             view.topology,
@@ -193,6 +193,34 @@ fn projection_text(product: &topo::Product) -> String {
             "Contour withheld: {reason:?}. Full graph and all reciprocal components remain available; no target-derived DNA or repair is substituted."
         ),
     }
+}
+#[component]
+fn AnnotationReview(product: Arc<topo::AnnotatedProduct>) -> impl IntoView {
+    let count = product
+        .reference
+        .as_ref()
+        .map_or(0, |reference| reference.features.len());
+    let reviewed = product.reference.as_ref().map_or(0, |reference| {
+        reference
+            .features
+            .iter()
+            .filter(|feature| feature.needs_review)
+            .count()
+    });
+    view! {<section class="topo-annotation-review"><h3>"Source annotation correspondence"</h3>
+        <p class="helper">"Annotations follow the selected top-reference source calls only. Bottom pairing is not a second source copy. Projected coordinates do not establish inherited chemistry or biological validity; unmapped originals remain in the evidence."</p>
+        <p>{format!("{count} projected reference annotations; {reviewed} marked for review.")}</p>
+        {product.annotations.as_ref().map(|evidence|view!{<div>
+            {evidence.warnings.iter().take(16).map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view()}
+            {evidence.sources.iter().map(|source|view!{<details><summary>{format!("{} · supported {} · projected {} · dropped {} · retained unmapped {}",source.role,source.projection_supported,source.projected,source.dropped,source.unmapped.len())}</summary><code>{source.source_revision.clone()}</code>
+                <p class="helper">"Dropped counts refer to coordinate projection; the same original can remain in retained unmapped evidence. Candidate correspondence maps must not be applied when projection is unsupported."</p>
+                {source.warnings.iter().take(16).map(|warning|view!{<p>{warning.clone()}</p>}).collect_view()}
+                {source.unmapped.iter().take(8).map(|item|view!{<p>{format!("Original feature {} · {} · {}",item.source_index,item.feature.label().chars().take(80).collect::<String>(),item.reason.chars().take(400).collect::<String>())}</p>}).collect_view()}
+                <p class="helper">{format!("Showing at most8 retained originals and16 warnings here; download full bounded evidence for all{} originals and exact locations/qualifiers.",source.unmapped.len())}</p>
+            </details>}).collect_view()}
+        </div>})}
+        {product.annotations.is_none().then(||view!{<p>"No annotation projection is released because no paired reference contour is available."</p>})}
+    </section>}
 }
 async fn analyze(
     worker: Rc<CachedWorker>,
@@ -523,14 +551,17 @@ pub fn TopoPanel(
                 return;
             }
         };
-        let revision =
-            match topo_worker::projection_revision(&b.captured.inputs, &request, &selection) {
-                Ok(value) => value,
-                Err(error) => {
-                    status.set(error.to_string());
-                    return;
-                }
-            };
+        let revision = match topo_worker::annotated_projection_revision(
+            &b.captured.inputs,
+            &request,
+            &selection,
+        ) {
+            Ok(value) => value,
+            Err(error) => {
+                status.set(error.to_string());
+                return;
+            }
+        };
         let (worker, ticket) = match start() {
             Ok(value) => value,
             Err(error) => {
@@ -550,7 +581,7 @@ pub fn TopoPanel(
                 worker,
                 ticket,
                 revision.clone(),
-                AnalysisJob::ProjectTopoProduct {
+                AnalysisJob::ProjectAnnotatedTopo {
                     inputs: b.captured.inputs.clone(),
                     request: request.clone(),
                     selection: selection.clone(),
@@ -568,8 +599,8 @@ pub fn TopoPanel(
                 return;
             }
             match result {
-                Ok(AnalysisResult::TopoProjection(value)) => {
-                    match topo_worker::validate_projection(&value, &revision) {
+                Ok(AnalysisResult::AnnotatedTopoProjection(value)) => {
+                    match topo_worker::validate_annotated_projection(&value, &revision) {
                         Ok(()) => {
                             projected.set(Some(Arc::new(Projected {
                                 bound: b,
@@ -597,7 +628,7 @@ pub fn TopoPanel(
             return;
         };
         let policy = p.choice.policies.policy();
-        let revision = match topo_worker::target_revision(
+        let revision = match topo_worker::annotated_target_revision(
             &p.bound.captured.inputs,
             &p.request,
             &p.selection,
@@ -626,7 +657,7 @@ pub fn TopoPanel(
                 worker,
                 ticket,
                 revision.clone(),
-                AnalysisJob::CheckTopoTarget {
+                AnalysisJob::CheckAnnotatedTopoTarget {
                     inputs: p.bound.captured.inputs.clone(),
                     request: p.request.clone(),
                     selection: p.selection.clone(),
@@ -646,8 +677,8 @@ pub fn TopoPanel(
                 return;
             }
             match result {
-                Ok(AnalysisResult::TopoTarget(value)) => {
-                    match topo_worker::validate_target(&value, &revision) {
+                Ok(AnalysisResult::AnnotatedTopoTarget(value)) => {
+                    match topo_worker::validate_annotated_target(&value, &revision) {
                         Ok(()) => {
                             checked.set(Some(Arc::new(Checked {
                                 projected: p,
@@ -735,8 +766,8 @@ pub fn TopoPanel(
             request: &'a topo::Request,
             orientations: &'a topo::OrientationInspection,
             selection: Option<&'a topo::Selection>,
-            projection: Option<&'a topo::Product>,
-            assessment: Option<&'a topo::TargetAssessment>,
+            projection: Option<&'a topo::AnnotatedProduct>,
+            assessment: Option<&'a topo::AnnotatedAssessment>,
         }
         let evidence = Evidence {
             interpretation: "Saved source-bound declared-graph evidence. Reconstruct with original source events before reuse; no kit efficacy, physical-target authority, host repair or imported-chemistry restoration.",
@@ -791,7 +822,7 @@ pub fn TopoPanel(
                 <label class="checkbox-label"><input type="checkbox" disabled=move||locked.get() prop:checked=move||policies.with(|p|p.rotation) on:change=move|e|policies.update(|p|p.rotation=event_target_checked(&e))/>"Allow circular-origin rotation when comparing target"</label>
                 <label class="checkbox-label"><input type="checkbox" disabled=move||locked.get() prop:checked=move||policies.with(|p|p.reverse) on:change=move|e|policies.update(|p|p.reverse=event_target_checked(&e))/>"Allow reverse-complement target comparison"</label>
             </fieldset>
-            {move||current_projection().map(|p|view!{<section class="topo-projection"><h3>"Fresh selected component"</h3><p>{projection_text(&p.product)}</p><details><summary>"Retained full-graph summary"</summary><pre>{physical_text(&p.product.projection.physical)}</pre></details><button class="button primary full" disabled=move||busy.get()||locked.get() on:click=move|_|check.run(())>"Check independent target"</button></section>})}
+            {move||current_projection().map(|p|view!{<section class="topo-projection"><h3>"Fresh selected component"</h3><p>{projection_text(&p.product)}</p><AnnotationReview product=p.product.clone()/><details><summary>"Retained full-graph summary"</summary><pre>{physical_text(&p.product.physical.projection.physical)}</pre></details><button class="button primary full" disabled=move||busy.get()||locked.get() on:click=move|_|check.run(())>"Check independent target"</button></section>})}
             {move||current_check().map(|c|{let accepted=matches!(&c.report.outcome,topo::TargetOutcome::AcceptedUnderDeclaredGraph);view!{<section class="topo-target"><h3>"Fresh independent-target assessment"</h3><p>{format!("{:?}",c.report.outcome)}</p><p class="helper">"Agreement applies only to this source/event/recipe/component and explicit policy. The plan retains full physical evidence and remains incomplete without a typed physical-target acceptance operation; this does not install DNA or chemical authority."</p><label class="checkbox-label"><input type="checkbox" prop:checked=move||reviewed.get() on:change=move|e|reviewed.set(event_target_checked(&e))/>"I reviewed the preparation assumptions, both paths, all components, nicks and acceptance policy."</label><button class="button secondary full" disabled=move||busy.get()||locked.get()||!accepted||!reviewed.get() on:click=move|_|candidate.run(())>"Review source-bound TOPO candidate in Plan"</button></section>}})}
         </div>
     }

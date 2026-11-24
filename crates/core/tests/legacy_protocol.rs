@@ -256,6 +256,7 @@ fn version_three_report_with_recorded_engine_is_not_migrated_as_unrecorded() {
         products: vec![molecule()],
         exhaustive_alternative_search: false,
         step_reports: vec![],
+        annotation_reports: vec![],
     };
     // Independently preserve the actual pre-25 positional report layout.
     let historical_report = (

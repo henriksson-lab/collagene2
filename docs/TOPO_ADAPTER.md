@@ -48,8 +48,7 @@ The optional `reference` molecule is a coordinate view with projected top DNA,
 not a replacement physical substrate. It carries the existing generic
 `source:legacy:chemistry_unmapped=true` guard. Full graph, actual bottom DNA,
 source-call maps, activations, nick chemistry and end chemistry remain in the
-product envelope. No parent annotations are silently copied into this initial
-adapter; its source correspondence and immutable originals remain evidence.
+product envelope. The original physical Product remains annotation-free. The additive annotated wrapper composes actual selected top-call correspondence into conservative feature mappings; immutable originals and unmapped source features remain separate evidence.
 
 `check_target` accepts a separately supplied target and explicit acceptance policy.
 DNA/topology comparison is independent of component reconstruction, orientation
@@ -94,11 +93,12 @@ implicit physical target-acceptance policy and remains Incomplete; standalone
 
 The browser can review and verify imported TOPO candidates and download the full
 physical reconstruction evidence. Existing source-event run capture/replay
-retains source recipes and immutable inputs, not a restored proof. Candidate
-schema8/workspace plan schema6/worker schema25 and science10 identify the new
-semantics; older worker verification layouts migrate without invented graphs.
+retains source recipes and immutable inputs, not a restored proof. The initial plan integration introduced candidate
+schema8/workspace plan schema6/worker schema25 and science10. Annotated views
+add worker schema27/science11; older verification layouts migrate without invented
+graphs or annotation evidence.
 
-Kit-specific preparation wizards, full annotation projection and downstream
+Broader kit-specific preparation controls, repeated-source annotation copies and downstream
 physical graph composition remain implementation work. No contour preview can
 be used as an intact-duplex substrate by silently dropping its graph. The
 underlying engine and its bounded elementary-transfer model are documented by
@@ -106,3 +106,30 @@ underlying engine and its bounded elementary-transfer model are documented by
 validation; browser checks remain deferred until in-scope code is complete.
 
 The source-bound [web preparation workflow](TOPO_WEB_WORKFLOW.md) adds an explicit TA form and worker-backed orientation/projection/target inspection. Its recipe builder does not run science or choose a winner on the main thread.
+
+## Source-coordinate annotations
+
+`annotated_product` freshly reconstructs the physical graph, then derives a
+separate reference view and `AnnotationEvidence`. `check_target_annotated` reuses
+one fresh independent-target reconstruction, never a caller-supplied product.
+The old physical `Product` and `TargetAssessment` layouts remain unchanged.
+
+Projection composes each selected top-call span through the preparation maps.
+It supports explicit forward/reverse source intervals and one circular wrap,
+and maps PCR template intervals while excluding primer tails and newly added
+terminal bases. Pairing alone supplies no second annotation parent. Because PCR
+provenance does not identify every primer-derived coordinate, all PCR-derived
+features are conservatively reviewed and stale translation/frame assertions are
+removed. Repeated source copies that would assign conflicting destination
+coordinates withhold that role's annotations and retain reviewed originals;
+other supported roles can still project. Unresolved and otherwise unsupported
+features remain original-source evidence with an explicit reason.
+
+The annotation helper has separate one-million-operation, segment, feature-copy
+and output bounds; capacity failure is explicit. Its evidence is source-coordinate
+correspondence, not chemical inheritance, validated function or permission to
+restore a physical state. A missing paired contour yields no annotated DNA.
+The verifier retains annotations separately in `annotation_reports`; historical
+worker25/26 reports retain their actual graph and gain no invented mapping report.
+
+The per-role `dropped` count describes features absent from the selected top-reference intervals. Their reviewed originals also remain in `unmapped`; these two counts overlap and do not assert global deletion from the physical graph.

@@ -94,6 +94,7 @@ pub mod restriction_history;
 
 /// Explicit source-backed physical TOPO preparation and reconstruction.
 pub mod topo;
+pub mod topo_annotations;
 
 pub mod read_alignment_reference;
 pub mod read_alignment_store;

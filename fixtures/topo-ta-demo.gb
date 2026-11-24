@@ -3,6 +3,8 @@ DEFINITION  Actual declared vector top strand, written 5-prime to 3-prime.
 COMMENT     Synthetic geometry fixture; no commercial preparation or functional
             construct is asserted. Explicit chemistry must be declared separately.
 FEATURES             Location/Qualifiers
+     misc_feature    1..6
+                     /label="vector reference landmark"
 ORIGIN
         1 aggggcatcc ctt
 //
@@ -19,6 +21,8 @@ DEFINITION  Synthetic exact-PCR template; forward CGA and reverse CAT.
 COMMENT     Synthetic geometry fixture; no commercial preparation or functional
             construct is asserted. Explicit chemistry must be declared separately.
 FEATURES             Location/Qualifiers
+     misc_feature    1..6
+                     /label="PCR template landmark"
 ORIGIN
         1 cgaatg
 //

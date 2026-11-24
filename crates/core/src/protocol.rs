@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 26;
+pub const WORKER_SCHEMA_VERSION: u16 = 27;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 8;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -575,6 +575,18 @@ pub enum AnalysisJob {
         target: Molecule,
         policy: crate::topo::AcceptancePolicy,
     },
+    ProjectAnnotatedTopo {
+        inputs: Vec<crate::topo::Input>,
+        request: crate::topo::Request,
+        selection: crate::topo::Selection,
+    },
+    CheckAnnotatedTopoTarget {
+        inputs: Vec<crate::topo::Input>,
+        request: crate::topo::Request,
+        selection: crate::topo::Selection,
+        target: Molecule,
+        policy: crate::topo::AcceptancePolicy,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -662,6 +674,8 @@ pub enum AnalysisResult {
     TopoOrientations(crate::topo::OrientationInspection),
     TopoProjection(crate::topo::Product),
     TopoTarget(crate::topo::TargetAssessment),
+    AnnotatedTopoProjection(crate::topo::AnnotatedProduct),
+    AnnotatedTopoTarget(crate::topo::AnnotatedAssessment),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -706,6 +720,7 @@ impl From<LegacyVerificationReport> for crate::verification::VerificationReport 
             products: old.products,
             exhaustive_alternative_search: old.exhaustive_alternative_search,
             step_reports: Vec::new(),
+            annotation_reports: Vec::new(),
         }
     }
 }
@@ -750,6 +765,52 @@ impl From<LegacyVerificationReportV24> for crate::verification::VerificationRepo
             products: old.products,
             exhaustive_alternative_search: old.exhaustive_alternative_search,
             step_reports: Vec::new(),
+            annotation_reports: Vec::new(),
+        }
+    }
+}
+// Schemas25/26 retain physical step reports but predate annotation evidence.
+// Their positional payload is migrated explicitly, without inventing mappings.
+#[derive(Deserialize)]
+struct LegacyVerificationReportV26 {
+    plan_revision: String,
+    target_revision: String,
+    engine_version: String,
+    status: crate::verification::Status,
+    findings: Vec<String>,
+    assumptions: Vec<String>,
+    products: Vec<Molecule>,
+    exhaustive_alternative_search: bool,
+    step_reports: Vec<crate::verification::StepReport>,
+}
+#[derive(Deserialize)]
+#[allow(dead_code)]
+enum LegacyVerificationResultV26 {
+    Search(Vec<Match>),
+    Restriction(Vec<CutSite>),
+    Error(String),
+    Pcr(Vec<crate::analysis::PcrProduct>),
+    Verification(LegacyVerificationReportV26),
+}
+#[derive(Deserialize)]
+struct LegacyVerificationResponseV26 {
+    id: u32,
+    revision: String,
+    result: LegacyVerificationResultV26,
+}
+impl From<LegacyVerificationReportV26> for crate::verification::VerificationReport {
+    fn from(old: LegacyVerificationReportV26) -> Self {
+        Self {
+            plan_revision: old.plan_revision,
+            target_revision: old.target_revision,
+            engine_version: old.engine_version,
+            status: old.status,
+            findings: old.findings,
+            assumptions: old.assumptions,
+            products: old.products,
+            exhaustive_alternative_search: old.exhaustive_alternative_search,
+            step_reports: old.step_reports,
+            annotation_reports: Vec::new(),
         }
     }
 }
@@ -842,6 +903,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_recombination_tag(bytes, &[66, 67, 68])?;
     preflight_read_alignment_tag(bytes, &[69, 70, 71, 72, 73])?;
     preflight_topo_tag(bytes, &[74, 75, 76, 77])?;
+    preflight_annotated_topo_tag(bytes, &[78, 79])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -876,9 +938,26 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
                 result: AnalysisResult::Verification(report.into()),
             }
         }
+        Some(25 | 26)
+            if postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+                .is_ok_and(|((_, _, tag), _)| tag == 4) =>
+        {
+            let old: LegacyVerificationResponseV26 = decode_with_limit(b"CGR\0", bytes, maximum)?;
+            let LegacyVerificationResultV26::Verification(report) = old.result else {
+                return Err(Error::Format(
+                    "historical physical verification selector mismatch".into(),
+                ));
+            };
+            Response {
+                id: old.id,
+                revision: old.revision,
+                result: AnalysisResult::Verification(report.into()),
+            }
+        }
         _ => decode_with_limit(b"CGR\0", bytes, maximum)?,
     };
     let required = match &response.result {
+        AnalysisResult::AnnotatedTopoProjection(_) | AnalysisResult::AnnotatedTopoTarget(_) => 27,
         AnalysisResult::TopoSimulation(_)
         | AnalysisResult::TopoOrientations(_)
         | AnalysisResult::TopoProjection(_)
@@ -972,6 +1051,12 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
     }
     match &response.result {
+        AnalysisResult::AnnotatedTopoProjection(report) => {
+            crate::topo_worker::validate_annotated_projection(report, &response.revision)?
+        }
+        AnalysisResult::AnnotatedTopoTarget(report) => {
+            crate::topo_worker::validate_annotated_target(report, &response.revision)?
+        }
         AnalysisResult::TopoSimulation(report) => {
             crate::topo_worker::validate_simulation(report, &response.revision)?
         }
@@ -1350,6 +1435,14 @@ fn preflight_topo_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     }
     Ok(())
 }
+fn preflight_annotated_topo_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 27)?;
+    }
+    Ok(())
+}
 fn preflight_read_alignment_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -1399,6 +1492,9 @@ fn preflight_crispr_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     Ok(())
 }
 fn check_scientific_report_version(bytes: &[u8], engine: &str) -> Result<(), Error> {
+    if engine.ends_with("/science-11") {
+        check_variant_version(bytes, 27)?;
+    }
     if engine.ends_with("/science-10") {
         check_variant_version(bytes, 25)?;
     }
@@ -1531,6 +1627,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_recombination_tag(bytes, &[73, 74, 75])?;
     preflight_read_alignment_tag(bytes, &[77, 78, 79, 80, 81])?;
     preflight_topo_tag(bytes, &[82, 83, 84, 85])?;
+    preflight_annotated_topo_tag(bytes, &[86, 87])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -1538,6 +1635,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::ProjectAnnotatedTopo { .. } | AnalysisJob::CheckAnnotatedTopoTarget { .. } => {
+            27
+        }
         AnalysisJob::SimulateTopo { .. }
         | AnalysisJob::InspectTopoOrientations { .. }
         | AnalysisJob::ProjectTopoProduct { .. }
@@ -1698,6 +1798,37 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let mol = match &r.job {
+        AnalysisJob::ProjectAnnotatedTopo {
+            inputs,
+            request,
+            selection,
+        } => {
+            if crate::topo_worker::annotated_projection_revision(inputs, request, selection)?
+                != r.revision
+            {
+                return Err(Error::Format(
+                    "annotated TOPO projection context changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::CheckAnnotatedTopoTarget {
+            inputs,
+            request,
+            selection,
+            target,
+            policy,
+        } => {
+            if crate::topo_worker::annotated_target_revision(
+                inputs, request, selection, target, policy,
+            )? != r.revision
+            {
+                return Err(Error::Format(
+                    "annotated TOPO target/policy context changed".into(),
+                ));
+            }
+            None
+        }
         AnalysisJob::SimulateTopo { inputs, request } => {
             if crate::topo_worker::simulation_revision(inputs, request)? != r.revision {
                 return Err(Error::Format("TOPO simulation context changed".into()));
@@ -2138,6 +2269,20 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let result = match r.job {
+        AnalysisJob::ProjectAnnotatedTopo {
+            inputs,
+            request,
+            selection,
+        } => crate::topo::annotated_product(&inputs, &request, &selection)
+            .map(AnalysisResult::AnnotatedTopoProjection),
+        AnalysisJob::CheckAnnotatedTopoTarget {
+            inputs,
+            request,
+            selection,
+            target,
+            policy,
+        } => crate::topo::check_target_annotated(&inputs, &request, &selection, &target, &policy)
+            .map(AnalysisResult::AnnotatedTopoTarget),
         AnalysisJob::SimulateTopo { inputs, request } => {
             crate::topo::simulate(&inputs, &request).map(AnalysisResult::TopoSimulation)
         }

@@ -11,7 +11,11 @@ fn main() -> std::process::ExitCode {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let staging = std::env::var_os("TRUNK_STAGING_DIR").ok_or("TRUNK_STAGING_DIR is required")?;
     let public = std::env::var("TRUNK_PUBLIC_URL").unwrap_or_else(|_| "/".into());
-    let m = collagene_web_assets::package_worker(&PathBuf::from(staging), &public)?;
+    let staging = PathBuf::from(staging);
+    for (name, before, after) in collagene_web_assets::strip_debug_names(&staging)? {
+        eprintln!("Stripped WebAssembly debug names: {name}: {before} -> {after} bytes");
+    }
+    let m = collagene_web_assets::package_worker(&staging, &public)?;
     println!("{}", m.loader_url);
     Ok(())
 }

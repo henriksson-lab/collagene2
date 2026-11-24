@@ -33,7 +33,10 @@ fn run(revision: String, job: J) -> Response {
         job,
     };
     let b = protocol::encode_request(&r).unwrap();
-    assert_eq!(&b[4..6], &23u16.to_le_bytes());
+    assert_eq!(
+        &b[4..6],
+        &collagene_core::protocol::WORKER_SCHEMA_VERSION.to_le_bytes()
+    );
     let reply = protocol::decode_response(
         &protocol::AnalysisSession::default()
             .process_request(&b)

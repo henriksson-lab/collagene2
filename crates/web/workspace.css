@@ -114,3 +114,44 @@
 .map-interaction-tools { display:flex; align-items:center; justify-content:center; gap:3px; margin:0 0 5px; }
 .map-mode-button { border:1px solid #d8e3dd; border-radius:4px; padding:3px 9px; color:#6b8076; background:transparent; font-size:11px; }
 .map-mode-button.active { background:#e5efe9; border-color:#c4d8cc; color:#285e48; }
+/* Pane sizes are display preferences, separate from the molecular workspace. */
+.explorer-frame { position:relative; min-width:0; min-height:0; height:100%; }
+.workspace-shell .library-hidden .explorer-frame { display:none; }
+.pane-resize { padding:0; border:0; border-radius:0; background:transparent; touch-action:none; user-select:none; cursor:col-resize; z-index:5; }
+.pane-resize:hover,.pane-resize:focus-visible { background:#6f9c8b55; }
+.pane-resize:focus-visible { outline:2px solid #528873; outline-offset:-2px; }
+.pane-resize-documents { position:absolute; top:0; bottom:0; right:-3px; width:6px; height:100%; }
+.pane-resize-sequence { width:6px; height:100%; min-width:6px; }
+.selection-toolbar { display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:6px 12px; padding:7px 12px; background:#f1f7f3; border-bottom:1px solid #dce8e0; flex:none; }
+.selection-toolbar-summary { display:flex; flex-direction:column; gap:3px; min-width:0; font-size:11px; color:#728579; }
+.selection-toolbar-summary strong { font-weight:550; color:#365c49; overflow-wrap:anywhere; }
+.selection-toolbar-actions { display:flex; flex-wrap:wrap; gap:3px; }
+.selection-toolbar-actions .text-tool { font-size:11px; padding:5px 7px; }
+@media(min-width:1100px) {
+ .workspace-shell .body-layout { grid-template-columns:48px clamp(180px,var(--document-width,244px),min(360px,max(180px,calc(100vw - 828px)))) minmax(0,1fr); }
+ .workspace-shell .body-layout.library-hidden { grid-template-columns:48px minmax(0,1fr); }
+ .workspace-shell .editor-grid { grid-template-columns:minmax(210px,var(--sequence-fr,524fr)) 6px minmax(220px,var(--map-fr,476fr)) 310px; }
+ .workspace-shell .editor-grid>.sequence-panel { grid-column:1; }
+ .workspace-shell .editor-grid>.pane-resize-sequence { grid-column:2; }
+ .workspace-shell .editor-grid>.map-panel { grid-column:3; }
+ .workspace-shell .editor-grid>.inspector { grid-column:4; }
+ .workspace-shell .editor-grid.sequence-only,.workspace-shell .editor-grid.map-only { grid-template-columns:minmax(0,1fr) 310px; }
+ .workspace-shell .editor-grid.sequence-only>.sequence-panel,.workspace-shell .editor-grid.map-only>.map-panel { grid-column:1; }
+ .workspace-shell .editor-grid.sequence-only>.inspector,.workspace-shell .editor-grid.map-only>.inspector { grid-column:2; }
+}
+@media(max-width:1099px) { .pane-resize { display:none!important; } }
+@media(max-width:850px) { .explorer-frame { display:none; } }
+
+/* Source evidence keeps long names/CIGAR/text scrollable within the dialog. */
+.modal:has(.read-alignments-panel) { width:min(1180px,96vw); max-width:96vw; }
+.read-alignments-panel { min-width:0; }
+.read-alignment-actions,.read-alignment-pages,.read-alignment-reference,.read-alignment-export { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:12px 0; }
+.read-alignment-summary,.read-alignment-status,.read-alignment-check,.saved-read-sources { overflow-wrap:anywhere; }
+.read-alignment-table-wrap { max-height:360px; overflow:auto; border:1px solid var(--border,#d9dfe7); }
+.read-alignment-records { width:100%; border-collapse:collapse; font-size:12px; }
+.read-alignment-records th { position:sticky; top:0; background:var(--panel,#fff); text-align:left; z-index:1; }
+.read-alignment-records td,.read-alignment-records th { padding:7px; border-bottom:1px solid var(--border,#d9dfe7); max-width:280px; overflow-wrap:anywhere; vertical-align:top; }
+.read-alignment-records tr.active { background:#e7f2ff; }
+.read-alignments-panel pre { max-width:100%; overflow:auto; max-height:320px; padding:10px; background:#f6f8fb; font:12px/1.6 ui-monospace,monospace; white-space:pre; }
+.read-alignments-panel select { max-width:100%; }
+.saved-read-sources article { padding:10px 0; border-bottom:1px solid var(--border,#d9dfe7); }

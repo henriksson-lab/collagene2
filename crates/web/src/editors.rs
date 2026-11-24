@@ -37,6 +37,7 @@ pub fn FeatureEditor(
     molecule: Molecule,
     index: Option<usize>,
     selection: Option<(usize, usize)>,
+    #[prop(optional_no_strip)] initial_location: Option<Location>,
     on_commit: Commit,
 ) -> impl IntoView {
     let original = index.and_then(|i| molecule.features.get(i).cloned());
@@ -54,6 +55,7 @@ pub fn FeatureEditor(
     let initial_location = original
         .as_ref()
         .map(|f| f.location.clone())
+        .or(initial_location)
         .unwrap_or_else(|| {
             let (a, b) = selection.unwrap_or((0, molecule.sequence.len()));
             Location::range(a, b)

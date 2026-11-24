@@ -33,6 +33,7 @@ const MAX_ITEMS: usize = 128;
 const MAX_DOCUMENT_REVISIONS: usize = 10_000;
 const MAX_UPLOADS: usize = 4;
 const MAX_UPLOAD_CHUNK: usize = 256 * 1024;
+const MAX_READ_ALIGNMENT_SOURCE: usize = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -88,6 +89,107 @@ pub struct AlignmentImport {
 #[serde(deny_unknown_fields)]
 pub struct AlignmentDocumentImport {
     pub data_base64: String,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ReadAlignmentFormat {
+    Sam,
+    Bam,
+}
+impl ReadAlignmentFormat {
+    fn core(self) -> collagene_core::read_alignment_store::Format {
+        match self {
+            Self::Sam => collagene_core::read_alignment_store::Format::Sam,
+            Self::Bam => collagene_core::read_alignment_store::Format::Bam,
+        }
+    }
+}
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ReadAlignmentExportFormat {
+    Original,
+    Sam,
+    Bam,
+}
+fn read_source_cap() -> usize {
+    MAX_READ_ALIGNMENT_SOURCE
+}
+fn read_retained_cap() -> usize {
+    32 * 1024 * 1024
+}
+fn read_record_cap() -> usize {
+    10_000
+}
+fn read_preview() -> usize {
+    20
+}
+fn read_export_cap() -> usize {
+    8 * 1024 * 1024
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReadAlignmentImport {
+    /// Complete SAM or BAM/BGZF bytes, base64; at most4MiB decoded. No paths or URLs.
+    pub data_base64: String,
+    pub format: ReadAlignmentFormat,
+    #[serde(default = "read_source_cap")]
+    pub max_source_bytes: usize,
+    /// Managed retention charge, capped at64MiB and remaining shared session budget.
+    #[serde(default = "read_retained_cap")]
+    pub max_retained_bytes: usize,
+    #[serde(default = "read_record_cap")]
+    pub max_records: usize,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReadAlignmentPage {
+    /// Source BLAKE3 returned only after complete validated file parsing.
+    pub collection: EvidenceRef,
+    #[serde(default)]
+    pub start: usize,
+    #[serde(default = "read_preview")]
+    pub limit: usize,
+    #[serde(default)]
+    pub reference_start: usize,
+    #[serde(default = "read_preview")]
+    pub reference_limit: usize,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReadAlignmentCheck {
+    pub collection: EvidenceRef,
+    pub record_index: usize,
+    /// Explicit actual DNA reference; its revision supplies expected_reference_revision.
+    pub reference: DocumentRef,
+    /// Explicit SAM/BAM dictionary mapping, never inferred from document name/M5/UR.
+    pub reference_name: String,
+    #[serde(default = "default_read_check_columns")]
+    pub max_columns: usize,
+    #[serde(default = "default_read_check_work")]
+    pub max_work: u64,
+    #[serde(default = "default_read_check_report")]
+    pub max_report_bytes: usize,
+    #[serde(default = "read_preview")]
+    pub preview_columns: usize,
+}
+fn default_read_check_columns() -> usize {
+    100_000
+}
+fn default_read_check_work() -> u64 {
+    128_000_000
+}
+fn default_read_check_report() -> usize {
+    16 * 1024 * 1024
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReadAlignmentExport {
+    pub collection: EvidenceRef,
+    /// original is byte-exact; BAM conversion may reframe BGZF and returns notices.
+    pub format: ReadAlignmentExportFormat,
+    #[serde(default = "read_export_cap")]
+    pub max_bytes: usize,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -904,9 +1006,22 @@ struct Store {
     feature_scans: BTreeMap<String, feature_library::ScanReport>,
     annotation_datasets: BTreeMap<String, annotation_formats::AnnotationImportReport>,
     alignments: BTreeMap<String, Arc<alignment_formats::AlignmentDocument>>,
+    read_alignments: BTreeMap<String, Arc<collagene_core::read_alignment_store::Collection>>,
     contig_reports: BTreeMap<String, String>,
 }
 impl Store {
+    fn read_alignments(
+        &self,
+        reference: &EvidenceRef,
+    ) -> Result<Arc<collagene_core::read_alignment_store::Collection>, ErrorData> {
+        if reference.id != reference.revision {
+            return Err(bad("stale read alignment collection revision"));
+        }
+        self.read_alignments
+            .get(&reference.id)
+            .cloned()
+            .ok_or_else(|| bad("unknown read alignment collection"))
+    }
     fn alignment(
         &self,
         reference: &EvidenceRef,
@@ -998,6 +1113,19 @@ fn bounded_json<T: Serialize>(value: &T) -> Result<String, ErrorData> {
 }
 fn output(value: Value) -> Result<CallToolResult, ErrorData> {
     Ok(CallToolResult::structured(value))
+}
+fn read_alignment_summary(collection: &collagene_core::read_alignment_store::Collection) -> Value {
+    let summary = collection.summary();
+    json!({"collection":{"id":summary.source_blake3,"revision":summary.source_blake3},
+        "source_blake3":summary.source_blake3,"source_bytes":summary.source_bytes,"format":summary.format,
+        "record_count":summary.records,"reference_count":summary.references.len(),
+        "flag_unmapped":summary.flag_unmapped,"flag_secondary":summary.flag_secondary,"flag_supplementary":summary.flag_supplementary,
+        "retained_charge":collection.retained_charge(),"file_complete":true,
+        "warnings":summary.warnings.iter().take(20).map(|s|s.chars().take(512).collect::<String>()).collect::<Vec<_>>(),
+        "warnings_omitted":summary.warnings.len().saturating_sub(20),"interpretation":summary.interpretation})
+}
+fn read_name(value: Option<&str>) -> Option<String> {
+    value.map(|s| s.chars().take(256).collect())
 }
 fn summary(id: &str, m: &Molecule) -> Value {
     let source = m
@@ -2382,6 +2510,181 @@ impl CollageneServer {
             output(summary)
         })
         .await
+    }
+    #[tool(
+        description = "Import a complete explicit SAM or BAM/BGZF file as base64, up to4MiB decoded under finite source/record/retention limits. Strict EOF/framing/CRC completion publishes an immutable source-hash collection atomically; any parser/resource failure publishes nothing. All records, flags, exact header/dictionary, absent SEQ/QUAL, auxiliary evidence and original bytes remain retained. Parsing is not alignment, reference validation, coverage or variant evidence; no paths, URI/M5 lookup, network fetch or external aligner."
+    )]
+    async fn import_read_alignments(
+        &self,
+        Parameters(args): Parameters<ReadAlignmentImport>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.max_source_bytes == 0
+            || args.max_source_bytes > MAX_READ_ALIGNMENT_SOURCE
+            || args.max_retained_bytes == 0
+            || args.max_retained_bytes > MAX_STORE_BYTES
+            || args.max_records == 0
+            || args.max_records > 100_000
+            || args.data_base64.len() > args.max_source_bytes.div_ceil(3) * 4
+        {
+            return Err(bad(
+                "read alignment import exceeds explicit4MiB source/64MiB retention/100000 record ceilings",
+            ));
+        }
+        let server = self.clone();
+        self.compute(move || {
+            let bytes = STANDARD.decode(args.data_base64).map_err(bad)?;
+            if bytes.len() > args.max_source_bytes {
+                return Err(bad("read alignment source byte limit"));
+            }
+            let mut limits = collagene_core::read_alignment_store::ImportLimits::default();
+            limits.max_source_bytes = args.max_source_bytes;
+            limits.max_retained_bytes = args.max_retained_bytes;
+            limits.max_records = args.max_records;
+            limits.reader.max_input_bytes = args.max_source_bytes as u64;
+            limits.reader.max_records = args.max_records as u64;
+            let collection = collagene_core::read_alignment_store::Collection::import(
+                &bytes,
+                args.format.core(),
+                &limits,
+            )
+            .map_err(bad)?;
+            let id = collection.source_blake3().to_owned();
+            let response = read_alignment_summary(&collection);
+            let mut store = server.store.lock().unwrap();
+            if let Some(existing) = store.read_alignments.get(&id) {
+                if existing.original_bytes() != collection.original_bytes() {
+                    return Err(bad("read alignment source identity conflict"));
+                }
+            } else {
+                if store.read_alignments.len() >= MAX_ITEMS {
+                    return Err(bad("at most128 read alignment collections"));
+                }
+                store.reserve(collection.retained_charge())?;
+                store.read_alignments.insert(id, Arc::new(collection));
+            }
+            output(response)
+        })
+        .await
+    }
+    #[tool(
+        description = "Inspect an immutable completed SAM/BAM collection with bounded record/dictionary pages, each at most100. Reports raw flags, reference positions, CIGAR previews, MAPQ/mate fields, absent sequence/quality and exact record hashes; original symbols/tags remain in source export. Sequence/quality cells and huge tag arrays are not returned. Dictionary/build/M5/UR and CIGAR/MD/NM are imported assertions, not actual reference validation or unique coverage. No automatic reference lookup."
+    )]
+    async fn inspect_read_alignments(
+        &self,
+        Parameters(args): Parameters<ReadAlignmentPage>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if !(1..=100).contains(&args.limit) || !(1..=100).contains(&args.reference_limit) {
+            return Err(bad("read alignment record/reference pages must be1..100"));
+        }
+        let server = self.clone();
+        self.compute(move|| {
+            let collection=server.store.lock().unwrap().read_alignments(&args.collection)?;
+            let records=collection.page(args.start,args.limit).map_err(bad)?;
+            let references=collection.header().references();
+            if args.reference_start>references.len() {return Err(bad("reference dictionary page offset"));}
+            let reference_end=args.reference_start.saturating_add(args.reference_limit).min(references.len());
+            let page:Vec<_>=records.iter().enumerate().map(|(offset,record)| {
+                let f=record.fields();
+                json!({"index":args.start+offset,"record_blake3":record.original_blake3(),
+                    "name":read_name(f.name.as_deref()),"name_truncated":f.name.as_ref().is_some_and(|s|s.chars().count()>256),
+                    "flags":f.flags,"reverse":f.flags&16!=0,"unmapped":f.flags&4!=0,"secondary":f.flags&256!=0,"supplementary":f.flags&2048!=0,
+                    "reference_name":read_name(f.reference.as_deref()),"reference_name_truncated":f.reference.as_ref().is_some_and(|s|s.chars().count()>256),
+                    "reported_reference_start":f.start,"mapping_quality":f.mapping_quality,
+                    "cigar_op_count":f.cigar.len(),"cigar_truncated":f.cigar.len()>64,
+                    "cigar":f.cigar.iter().take(64).map(|op|json!({"length":op.len,"operation":op.kind.symbol().to_string()})).collect::<Vec<_>>(),
+                    "sequence_present":f.sequence.is_some(),"sequence_length":f.sequence.as_ref().map(String::len),
+                    "qualities_present":f.qualities.is_some(),"qualities_length":f.qualities.as_ref().map(Vec::len),
+                    "mate_reference":read_name(f.mate_reference.as_deref()),"mate_start":f.mate_start,"template_length":f.template_length,
+                    "aux_tag_count":f.aux.len(),"aux_tags":f.aux.iter().take(32).map(|a|String::from_utf8_lossy(&a.tag).into_owned()).collect::<Vec<_>>(),"aux_tags_truncated":f.aux.len()>32,
+                    "virtual_offset":record.virtual_offset().map(|v|json!({"compressed":v.compressed.to_string(),"uncompressed":v.uncompressed})),
+                })
+            }).collect();
+            let mut response=read_alignment_summary(&collection);
+            response["start"]=json!(args.start);response["next_start"]=json!(args.start+records.len());response["done"]=json!(args.start+records.len()==collection.len());response["records"]=json!(page);
+            response["reference_start"]=json!(args.reference_start);response["next_reference_start"]=json!(reference_end);response["references_done"]=json!(reference_end==references.len());
+            response["references"]=json!(references[args.reference_start..reference_end].iter().map(|r|json!({"name":read_name(Some(&r.name)),"name_truncated":r.name.chars().count()>256,"length":r.length,"circular":r.circular,"authority":"imported dictionary assertion"})).collect::<Vec<_>>());
+            output(response)
+        }).await
+    }
+    #[tool(
+        description = "Check one sealed imported SAM/BAM record against an explicitly selected immutable DNA DocumentRef and exact header reference name. Expected reference revision is taken from that DocumentRef; wrong/stale dictionary mappings are rejected. Returns a full source/record/reference-bound JSON artifact plus bounded column preview, distinguishing actual observed agreement/mismatch, reference-derived '=' symbols, insertions/deletions/skips/clips and missing sequence/quality. Does not validate MAPQ/M5/UR/MD/NM, infer unique placement, coverage, consensus, variants or experimental truth. No reference fetch."
+    )]
+    async fn check_read_alignment(
+        &self,
+        Parameters(args): Parameters<ReadAlignmentCheck>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.preview_columns > 100 || args.reference_name.is_empty() {
+            return Err(bad(
+                "explicit reference name and at most100 preview columns required",
+            ));
+        }
+        let options = collagene_core::read_alignment_reference::Options {
+            reference_name: args.reference_name.clone(),
+            expected_reference_revision: args.reference.revision.clone(),
+            max_columns: args.max_columns,
+            max_work: args.max_work,
+            max_report_bytes: args.max_report_bytes,
+            ..Default::default()
+        };
+        options.validate().map_err(bad)?;
+        let server = self.clone();
+        self.compute(move|| {
+            let (collection,reference)={
+                let store=server.store.lock().unwrap();let collection=store.read_alignments(&args.collection)?;
+                let reference=store.document(&args.reference)?;
+                collagene_core::model::bounds::model_preflight(&[reference]).map_err(bad)?;
+                let record=collection.record(args.record_index).ok_or_else(||bad("unknown read alignment record index"))?;
+                let named=collection.header().reference(&args.reference_name).ok_or_else(||bad("explicit reference name is absent from imported dictionary"))?;
+                if record.fields().reference.as_ref().is_some_and(|name|name!=&args.reference_name)
+                    || named.length as usize!=reference.sequence.len()
+                    || named.circular!=(reference.topology==collagene_core::Topology::Circular) {
+                    return Err(bad("read alignment dictionary/reference mapping differs"));
+                }
+                (collection,reference.clone())
+            };
+            let checked=collection.check_reference(args.record_index,&reference,&options).map_err(bad)?;
+            let artifact=server.text_artifact(bounded_json(&checked)?,"application/json","read-alignment-reference-check.json")?;
+            let report=&checked.report;
+            output(json!({"collection":args.collection,"record_index":args.record_index,"reference":args.reference,
+                "source_blake3":checked.source_blake3,"record_blake3":checked.record_blake3,"engine_version":report.engine_version,
+                "revision":report.revision,"binding":report.binding,"reference_bound":report.reference_bound,"complete":report.complete,
+                "incomplete":report.incomplete,"summary":report.summary,"warnings":report.warnings,
+                "sequence_present":report.sequence_present,"qualities_present":report.qualities_present,"reverse":report.reverse,
+                "run_count":report.runs.len(),"column_count":report.columns.len(),"columns":report.columns.iter().take(args.preview_columns).collect::<Vec<_>>(),
+                "columns_truncated":report.columns.len()>args.preview_columns,"artifact_id":artifact}))
+        }).await
+    }
+    #[tool(
+        description = "Export an immutable SAM/BAM collection as exact original bytes or through bounded SAM/BAM writers. Original retains lexical SAM and exact BAM/BGZF framing; conversions expose loss/framing notices and preserve missing SEQ/QUAL. Returns a standard binary artifact read in bounded base64 chunks. Conversion/capacity failure publishes no partial artifact; no arbitrary filesystem paths or external samtools."
+    )]
+    async fn export_read_alignments(
+        &self,
+        Parameters(args): Parameters<ReadAlignmentExport>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.max_bytes == 0 || args.max_bytes > MAX_STORE_BYTES {
+            return Err(bad("read alignment export cap must be1..64MiB"));
+        }
+        let server = self.clone();
+        self.compute(move|| {
+            use collagene_core::read_alignment_store::{Format,ImportLimits};
+            let collection=server.store.lock().unwrap().read_alignments(&args.collection)?;
+            let (bytes,format,notices)=match args.format {
+                ReadAlignmentExportFormat::Original=>{
+                    if collection.original_bytes().len()>args.max_bytes {return Err(bad("original read alignment export exceeds byte cap"));}
+                    let format=if collection.header().original_bam_header().is_some(){Format::Bam}else{Format::Sam};
+                    (collection.original_bytes().to_vec(),format,Vec::<String>::new())
+                }
+                mode=>{
+                    let format=match mode{ReadAlignmentExportFormat::Sam=>Format::Sam,ReadAlignmentExportFormat::Bam=>Format::Bam,_=>unreachable!()};
+                    let exported=collection.export(format,ImportLimits::default().reader,args.max_bytes).map_err(bad)?;
+                    (exported.bytes,format,exported.notices.iter().map(|n|format!("{n:?}")).collect())
+                }
+            };
+            let length=bytes.len();let format=match format{Format::Sam=>"sam",Format::Bam=>"bam"};
+            let artifact=server.binary_artifact(bytes,"application/octet-stream",if format=="sam"{"read-alignments.sam"}else{"read-alignments.bam"})?;
+            output(json!({"collection":args.collection,"source_blake3":collection.source_blake3(),"format":format,
+                "original":matches!(args.format,ReadAlignmentExportFormat::Original),"bytes":length,"notices":notices,"artifact_id":artifact}))
+        }).await
     }
     #[tool(
         description = "Import an existing aligned FASTA, CLUSTAL or Stockholm file as exact base64 bytes with explicit DNA/RNA/protein alphabet. Strict bounded parsing retains original bytes, stable rows, gaps and supported metadata; no alignment engine is invoked. Creates immutable session evidence only."

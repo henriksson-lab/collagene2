@@ -30,7 +30,10 @@ fn raw(magic: &[u8; 4], version: u16, p: &[u8]) -> Vec<u8> {
 }
 fn run(request: &Request) -> Response {
     let bytes = protocol::encode_request(request).unwrap();
-    assert_eq!(&bytes[4..6], &23u16.to_le_bytes());
+    assert_eq!(
+        &bytes[4..6],
+        &collagene_core::protocol::WORKER_SCHEMA_VERSION.to_le_bytes()
+    );
     protocol::decode_response(&protocol::process_request(&bytes).unwrap()).unwrap()
 }
 #[test]

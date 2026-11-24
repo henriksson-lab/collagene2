@@ -69,7 +69,7 @@ async fn artifact(c: &Client, id: &Value) -> Value {
 async fn scan_sdk_preserves_recognition_uncertainty_and_never_constructs_products() {
     let (c, s) = setup().await;
     let tools = c.list_tools(Default::default()).await.unwrap().tools;
-    assert_eq!(tools.len(), 97);
+    assert_eq!(tools.len(), 101);
     let tool = tools.iter().find(|t| t.name == "scan_restriction").unwrap();
     assert_eq!(tool.input_schema["additionalProperties"], false);
     assert!(
@@ -121,7 +121,10 @@ async fn scan_sdk_preserves_recognition_uncertainty_and_never_constructs_product
     .await;
     assert_eq!(possible["scan_complete"], true);
     assert_eq!(possible["enzyme_counts"][0]["possible_observed"], 1);
-    assert_eq!(possible["enzyme_counts"][0]["exact_site_count"], Value::Null);
+    assert_eq!(
+        possible["enzyme_counts"][0]["exact_site_count"],
+        Value::Null
+    );
     assert_eq!(possible["enzyme_counts"][0]["single_cutter"], Value::Null);
     let edge = call(
         &c,
@@ -171,7 +174,7 @@ async fn scan_sdk_preserves_recognition_uncertainty_and_never_constructs_product
 async fn inspection_sdk_pages_exact_geometry_and_source_without_creating_products() {
     let (c, s) = setup().await;
     let tools = c.list_tools(Default::default()).await.unwrap().tools;
-    assert_eq!(tools.len(), 97);
+    assert_eq!(tools.len(), 101);
     let tool = tools
         .iter()
         .find(|t| t.name == "inspect_restriction")

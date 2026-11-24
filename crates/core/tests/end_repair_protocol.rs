@@ -40,7 +40,10 @@ fn new_repair_and_anneal_jobs_bind_sources_and_preserve_explicit_evidence() {
             method: EndRepairMethod::Blunt,
         },
     );
-    assert_eq!(&bytes[4..6], &23u16.to_le_bytes());
+    assert_eq!(
+        &bytes[4..6],
+        &collagene_core::protocol::WORKER_SCHEMA_VERSION.to_le_bytes()
+    );
     let result = response(&bytes);
     assert_eq!(result.id, 73);
     assert_eq!(result.revision, m.revision());

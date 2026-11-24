@@ -175,3 +175,75 @@ pub async fn replace_workspace_cancellable(
     pending.borrow_mut().take();
     result
 }
+
+const VIEW_PREFERENCES_KEY: &str = "view-preferences-v1";
+const MAX_VIEW_PREFERENCES_BYTES: usize = 1024;
+
+/// Display settings occupy their own bounded record, outside workspace recovery
+/// slots. Read a genuine typed array; never coerce arbitrary stored JS values.
+pub async fn load_view_preferences(db: &IdbDatabase) -> Result<Option<Vec<u8>>, String> {
+    let tx = db
+        .transaction_with_str("workspace")
+        .map_err(|_| "Cannot read workspace view preferences")?;
+    let pending = (|| {
+        tx.object_store("workspace")
+            .map_err(|_| "Cannot access workspace view preference store")?
+            .get(&JsValue::from_str(VIEW_PREFERENCES_KEY))
+            .map_err(|_| "Cannot read workspace view preference record")
+    })();
+    let pending = match pending {
+        Ok(pending) => pending,
+        Err(error) => {
+            let _ = tx.abort();
+            return Err(error.into());
+        }
+    };
+    let value = match request(&pending).await {
+        Ok(value) => value,
+        Err(error) => {
+            let _ = tx.abort();
+            return Err(error);
+        }
+    };
+    committed(&tx)
+        .await
+        .map_err(|_| "Workspace view preference read did not complete")?;
+    if value.is_undefined() {
+        return Ok(None);
+    }
+    let bytes = value
+        .dyn_into::<js_sys::Uint8Array>()
+        .map_err(|_| "Workspace view preferences are not a byte array")?;
+    if bytes.length() as usize > MAX_VIEW_PREFERENCES_BYTES {
+        return Err("Workspace view preferences exceed 1024 bytes".into());
+    }
+    Ok(Some(bytes.to_vec()))
+}
+
+/// Save only the independent preference key. Completion, rather than request
+/// queueing, is the success point; synchronous request failures abort explicitly.
+pub async fn save_view_preferences(db: &IdbDatabase, bytes: &[u8]) -> Result<(), String> {
+    if bytes.len() > MAX_VIEW_PREFERENCES_BYTES {
+        return Err("Workspace view preferences exceed 1024 bytes".into());
+    }
+    let tx = db
+        .transaction_with_str_and_mode("workspace", IdbTransactionMode::Readwrite)
+        .map_err(|_| "Cannot start workspace view preference save")?;
+    let queued = (|| {
+        tx.object_store("workspace")
+            .map_err(|_| "Cannot access workspace view preference store")?
+            .put_with_key(
+                &js_sys::Uint8Array::from(bytes),
+                &JsValue::from_str(VIEW_PREFERENCES_KEY),
+            )
+            .map_err(|_| "Cannot write workspace view preferences")?;
+        Ok::<_, &str>(())
+    })();
+    if let Err(error) = queued {
+        let _ = tx.abort();
+        return Err(error.into());
+    }
+    committed(&tx)
+        .await
+        .map_err(|_| "Workspace view preference save did not complete".into())
+}

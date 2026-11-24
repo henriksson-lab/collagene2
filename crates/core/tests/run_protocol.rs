@@ -73,7 +73,10 @@ fn record_replay_source_binding_and_schema_twelve_roundtrip() {
     let original = workspace_fingerprint(&w).unwrap();
     let req = record(w, p, t, i);
     let encoded = protocol::encode_request(&req).unwrap();
-    assert_eq!(&encoded[4..6], &23u16.to_le_bytes());
+    assert_eq!(
+        &encoded[4..6],
+        &collagene_core::protocol::WORKER_SCHEMA_VERSION.to_le_bytes()
+    );
     for v in 1..12 {
         assert!(protocol::process_request(&envelope(b"CGQ\0", v, &req)).is_err());
     }

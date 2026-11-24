@@ -7,3 +7,5 @@ license.workspace = true
 description = "Content-addressed immutable Trunk worker bundle packaging"
 [dependencies]
 blake3.workspace = true
+sha2 = "0.10"
+base64 = "0.22"

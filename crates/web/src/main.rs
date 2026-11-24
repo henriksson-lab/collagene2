@@ -47,6 +47,10 @@ mod oligo_import;
 #[cfg(target_arch = "wasm32")]
 mod protein_properties;
 #[cfg(target_arch = "wasm32")]
+mod read_alignments_view;
+#[cfg(target_arch = "wasm32")]
+mod read_source_library;
+#[cfg(target_arch = "wasm32")]
 mod restriction_map;
 #[cfg(target_arch = "wasm32")]
 mod restriction_view;
@@ -55,9 +59,15 @@ mod run_capture;
 #[cfg(target_arch = "wasm32")]
 mod search_view;
 #[cfg(target_arch = "wasm32")]
+mod selection_toolbar;
+#[cfg(target_arch = "wasm32")]
 mod sequence_view;
 #[cfg(target_arch = "wasm32")]
 mod trace_validation;
+#[cfg(target_arch = "wasm32")]
+mod workspace_layout;
+#[cfg(any(target_arch = "wasm32", test))]
+mod workspace_preferences;
 #[cfg(target_arch = "wasm32")]
 mod workspace_view;
 

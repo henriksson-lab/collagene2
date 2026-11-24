@@ -268,7 +268,10 @@ fn append_only_literals_and_legacy_envelopes_preserve_old_operations_but_reject_
         );
     }
     let response = protocol::process_request(&protocol::encode_request(&q).unwrap()).unwrap();
-    assert_eq!(&response[4..6], &23u16.to_le_bytes());
+    assert_eq!(
+        &response[4..6],
+        &collagene_core::protocol::WORKER_SCHEMA_VERSION.to_le_bytes()
+    );
     assert!(matches!(
         protocol::decode_response(&response).unwrap().result,
         AnalysisResult::Verification(_)

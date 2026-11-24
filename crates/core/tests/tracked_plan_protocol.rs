@@ -76,7 +76,10 @@ fn appended_operations_require_candidate_six_and_worker_seventeen_in_nested_plan
             assert!(protocol::process_request(&wire(b"CGQ\0", version, &request)).is_err());
         }
         let bytes = protocol::encode_request(&request).unwrap();
-        assert_eq!(&bytes[4..6], &23u16.to_le_bytes());
+        assert_eq!(
+            &bytes[4..6],
+            &collagene_core::protocol::WORKER_SCHEMA_VERSION.to_le_bytes()
+        );
         protocol::decode_response(&protocol::process_request(&bytes).unwrap()).unwrap();
     }
 }

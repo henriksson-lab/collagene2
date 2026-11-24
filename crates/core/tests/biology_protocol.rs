@@ -3,8 +3,8 @@
 use collagene_core::{
     alignment::{AlignmentMode, AlignmentOptions, DifferenceKind},
     protocol::{
-        AnalysisJob, AnalysisResult, Request, Response, decode_response, encode_request,
-        process_request,
+        AnalysisJob, AnalysisResult, Request, Response, WORKER_SCHEMA_VERSION, decode_response,
+        encode_request, process_request,
     },
     translation::{InitiationPolicy, OrfOptions, TranslationOptions},
     *,
@@ -24,12 +24,15 @@ fn request(source: &Molecule, job: AnalysisJob) -> Request {
 fn run(request: &Request) -> Response {
     let bytes = encode_request(request).unwrap();
     assert_eq!(&bytes[..4], b"CGQ\0");
-    assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), 23);
+    assert_eq!(
+        u16::from_le_bytes([bytes[4], bytes[5]]),
+        WORKER_SCHEMA_VERSION
+    );
     let response_bytes = process_request(&bytes).unwrap();
     assert_eq!(&response_bytes[..4], b"CGR\0");
     assert_eq!(
         u16::from_le_bytes([response_bytes[4], response_bytes[5]]),
-        22
+        WORKER_SCHEMA_VERSION
     );
     let response = decode_response(&response_bytes).unwrap();
     assert_eq!(response.id, request.id);
@@ -349,7 +352,7 @@ fn unsupported_worker_versions_and_corrupt_payloads_are_transport_errors() {
     ))
     .unwrap();
     let valid_response = process_request(&valid).unwrap();
-    for version in [0u16, 23, u16::MAX] {
+    for version in [0u16, WORKER_SCHEMA_VERSION + 1, u16::MAX] {
         let mut bytes = valid.clone();
         bytes[4..6].copy_from_slice(&version.to_le_bytes());
         assert!(matches!(

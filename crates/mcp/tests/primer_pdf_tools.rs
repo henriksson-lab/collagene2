@@ -57,7 +57,7 @@ async fn primer_evidence_design_pdf_artifacts_and_provider_selection_contracts()
         }};
     }
     let tools = client.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 97);
+    assert_eq!(tools.len(), 101);
     for name in [
         "analyze_primer",
         "design_primers",

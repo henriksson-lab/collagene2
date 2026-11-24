@@ -39,7 +39,10 @@ fn dotplot_native_worker_roundtrip_binds_both_sources_options_and_original_rever
         },
     };
     let bytes = protocol::encode_request(&req).unwrap();
-    assert_eq!(&bytes[4..6], &23u16.to_le_bytes());
+    assert_eq!(
+        &bytes[4..6],
+        &collagene_core::protocol::WORKER_SCHEMA_VERSION.to_le_bytes()
+    );
     let response = protocol::decode_response(&protocol::process_request(&bytes).unwrap()).unwrap();
     assert_eq!(response.id, 91);
     assert_eq!(response.revision, req.revision);

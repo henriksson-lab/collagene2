@@ -372,6 +372,7 @@ dependencies = [
  "blake3",
  "collagene-enzyme-catalog",
  "collagene-model",
+ "collagene-read-alignments",
  "collagene-recombination",
  "collagene-topo",
  "csv",
@@ -521,7 +522,9 @@ dependencies = [
 name = "collagene-web-assets"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "blake3",
+ "sha2 0.10.9",
 ]
 
 [[package]]

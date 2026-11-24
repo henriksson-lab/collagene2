@@ -381,6 +381,15 @@ impl Workspace {
                 }
                 crate::genome::load_link(&attachment.bytes)?;
             }
+            if matches!(
+                attachment.kind.as_str(),
+                crate::read_alignment_archive::SAM_SOURCE_KIND
+                    | crate::read_alignment_archive::BAM_SOURCE_KIND
+            ) {
+                // Source metadata is validated here; parsed collections and checked
+                // mappings must be recreated from the exact bytes on reopening.
+                crate::read_alignment_archive::inspect(attachment)?;
+            }
             charge(&mut expanded, attachment.bytes.len(), MAX_EXPANDED_BYTES)?;
         }
         crate::run_lineage::validate_workspace_runs(self)?;

@@ -153,7 +153,7 @@ Import and export must be tracked separately. A format parser is only one part o
 | PHYLIP, MSF, NEXUS, PIR, GDE, Selex | P2 | Target | Selected formats | Add by migration demand; document truncation or loss of names/metadata |
 | GFF3, GTF, BED | P2 | Yes | Yes | Coordinate conversion and reference identity are mandatory; use selected `noodles` crates |
 | Large reference `.cgref` | P2 foundation | Yes | Yes | Separate streamed packed IUPAC blocks and bounded hash manifest; canonical DNA/readback verification, global coordinates and portable links; no imported coverage authority |
-| SAM/BAM/CRAM, VCF/BCF and their indexes | P2 | Yes | Selected/derived | `noodles`; CRAM reference resolution, indexed ranges and large-file limits need design |
+| SAM/BAM/CRAM, VCF/BCF and their indexes | P2 | Yes | Selected/derived | Independent bounded SAM/BAM exchange, source-backed inspection and explicit DNA reference checks implemented/in integration; CRAM, variants and indexes remain pending; [workflow](READ_ALIGNMENT_WORKFLOW.md) |
 | SBOL | P2 | Target | Target | Select a specific SBOL version/profile; components and design relationships exceed GenBank semantics |
 | Benchling sequence exports and API data | P1 files; P2 connector | Yes | Standard exchange/API later | GenBank/FASTA for sequence transfer; permissioned API adapter for richer records; do not assume a complete workspace export |
 | Clone Manager, Vector NTI, Geneious, CLC, Lasergene, MacVector and other legacy containers | P2 migration backlog | Target by demand | Usually standard exchange | Classify exact format/version; accept intermediate GenBank/FASTA when native fidelity is unavailable |

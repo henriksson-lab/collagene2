@@ -169,7 +169,10 @@ fn append_only_worker_scan_tag_and_version_guard_preserve_old_wire_indices() {
         },
     };
     let encoded = protocol::encode_request(&request).unwrap();
-    assert_eq!(&encoded[4..6], &23u16.to_le_bytes());
+    assert_eq!(
+        &encoded[4..6],
+        &collagene_core::protocol::WORKER_SCHEMA_VERSION.to_le_bytes()
+    );
     let ((id, binding, tag), _) =
         postcard::take_from_bytes::<(u32, &str, u32)>(&encoded[42..]).unwrap();
     assert_eq!((id, binding, tag), (7, revision.as_str(), 76));

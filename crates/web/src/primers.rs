@@ -92,9 +92,10 @@ pub fn PrimerPanel(
     selected_feature: RwSignal<Option<usize>>,
     on_use: Callback<(Primer, Primer)>,
     on_annotate: Callback<(String, Feature), Result<(), String>>,
+    #[prop(optional_no_strip)] seed: Option<String>,
 ) -> impl IntoView {
     let name = RwSignal::new("primer".to_string());
-    let annealing = RwSignal::new(String::new());
+    let annealing = RwSignal::new(seed.unwrap_or_default());
     let tail = RwSignal::new(String::new());
     let sodium = RwSignal::new("50".to_string());
     let concentration = RwSignal::new("500".to_string());

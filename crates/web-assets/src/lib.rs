@@ -585,3 +585,242 @@ pub fn package_worker(staging: &Path, public_url: &str) -> Result<Manifest> {
         files,
     })
 }
+
+/// Remove only the optional, non-executable WebAssembly `name` custom section.
+/// Core sections, exports, split metadata and target features remain byte-exact.
+/// This keeps non-LTO development previews small without optimizing their code.
+pub fn strip_debug_names(staging: &Path) -> Result<Vec<(String, u64, u64)>> {
+    use base64::Engine;
+    use sha2::{Digest, Sha384};
+    use std::io::{Seek, SeekFrom};
+    directory(staging)?;
+    let root = fs::canonicalize(staging)?;
+    let mut stripped = Vec::new();
+    let mut integrity = Vec::new();
+    for (index, entry) in fs::read_dir(&root)?.enumerate() {
+        if index >= 4096 {
+            return Err(Error::TooLarge("staging entries"));
+        }
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str().filter(|s| s.ends_with(".wasm")) else {
+            continue;
+        };
+        if !name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+        {
+            return Err(Error::UnsafePath);
+        }
+        let path = entry.path();
+        let before = fs::symlink_metadata(&path)?;
+        if reparse(&before) || !before.is_file() {
+            return Err(Error::UnsafePath);
+        }
+        if before.len() > 1024 * 1024 * 1024 {
+            return Err(Error::TooLarge("compiled WebAssembly"));
+        }
+        let mut input = File::open(&path)?;
+        let mut header = [0u8; 8];
+        input.read_exact(&mut header)?;
+        if &header != b"\0asm\x01\0\0\0" {
+            return Err(Error::InvalidWasm);
+        }
+        let mut remove = Vec::new();
+        let mut sections = 0usize;
+        loop {
+            let start = input.stream_position()?;
+            if start == before.len() {
+                break;
+            }
+            sections += 1;
+            if sections > 10_000 {
+                return Err(Error::InvalidWasm);
+            }
+            let mut id = [0u8; 1];
+            input.read_exact(&mut id)?;
+            let length = wasm_u32(&mut input)? as u64;
+            let end = input
+                .stream_position()?
+                .checked_add(length)
+                .filter(|n| *n <= before.len())
+                .ok_or(Error::InvalidWasm)?;
+            if id[0] == 0 {
+                let name_length = wasm_u32(&mut input)? as u64;
+                let at = input.stream_position()?;
+                if name_length > end.saturating_sub(at) || at > end {
+                    return Err(Error::InvalidWasm);
+                }
+                if name_length == 4 {
+                    let mut custom = [0u8; 4];
+                    input.read_exact(&mut custom)?;
+                    if &custom == b"name" {
+                        remove.push((start, end));
+                    }
+                }
+            }
+            input.seek(SeekFrom::Start(end))?;
+        }
+        if remove.is_empty() {
+            continue;
+        }
+        let temp = unique(&root, "wasm-names", false)?;
+        let mut output = OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&temp.path)?;
+        input.seek(SeekFrom::Start(0))?;
+        let mut at = 0;
+        for (start, end) in remove {
+            copy_wasm_bytes(&mut input, &mut output, start - at)?;
+            input.seek(SeekFrom::Start(end))?;
+            at = end;
+        }
+        copy_wasm_bytes(&mut input, &mut output, before.len() - at)?;
+        output.sync_all()?;
+        let after = output.metadata()?.len();
+        drop(output);
+        drop(input);
+        let unchanged = fs::symlink_metadata(&path)?;
+        if reparse(&unchanged)
+            || unchanged.len() != before.len()
+            || unchanged.modified().ok() != before.modified().ok()
+        {
+            return Err(Error::ChangedInput);
+        }
+        fs::rename(&temp.path, &path)?;
+        let mut digest = Sha384::new();
+        let mut file = File::open(&path)?;
+        let mut buffer = [0u8; 64 * 1024];
+        loop {
+            let n = file.read(&mut buffer)?;
+            if n == 0 {
+                break;
+            }
+            digest.update(&buffer[..n]);
+        }
+        integrity.push((
+            name.to_owned(),
+            format!(
+                "sha384-{}",
+                base64::engine::general_purpose::STANDARD.encode(digest.finalize())
+            ),
+        ));
+        stripped.push((name.to_owned(), before.len(), after));
+    }
+    if !integrity.is_empty() {
+        let path = root.join("index.html");
+        let bytes = read_file(&path, MAX_HTML_BYTES, "index.html")?;
+        let html = std::str::from_utf8(&bytes).map_err(|_| Error::InvalidHtml)?;
+        let mut replacements = Vec::new();
+        let mut cursor = 0;
+        while let Some(offset) = html[cursor..].find("<link") {
+            let start = cursor + offset;
+            let end = tag_end(html.as_bytes(), start + 5).ok_or(Error::InvalidHtml)?;
+            let tag = &html[start..=end];
+            let attributes = link_attributes(tag)?;
+            if let (Some(href), Some(sri)) = (
+                attributes.iter().find(|a| a.0 == "href"),
+                attributes.iter().find(|a| a.0 == "integrity"),
+            ) {
+                if let Some((_, hash)) = integrity
+                    .iter()
+                    .find(|(name, _)| tag[href.1..href.2].ends_with(name))
+                {
+                    replacements.push((start + sri.1, start + sri.2, hash.clone()));
+                }
+            }
+            cursor = end + 1;
+        }
+        let mut html = html.to_owned();
+        for (start, end, value) in replacements.into_iter().rev() {
+            html.replace_range(start..end, &value);
+        }
+        if html.as_bytes() != bytes {
+            let temp = unique(&root, "wasm-integrity", false)?;
+            {
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .truncate(true)
+                    .open(&temp.path)?;
+                file.write_all(html.as_bytes())?;
+                file.sync_all()?;
+            }
+            fs::rename(&temp.path, path)?;
+        }
+    }
+    Ok(stripped)
+}
+fn wasm_u32(reader: &mut impl Read) -> Result<u32> {
+    let mut value = 0u32;
+    for shift in (0..35).step_by(7) {
+        let mut b = [0u8; 1];
+        reader.read_exact(&mut b)?;
+        if shift == 28 && b[0] & 0xf0 != 0 {
+            return Err(Error::InvalidWasm);
+        }
+        value |= u32::from(b[0] & 0x7f) << shift;
+        if b[0] & 0x80 == 0 {
+            return Ok(value);
+        }
+    }
+    Err(Error::InvalidWasm)
+}
+fn copy_wasm_bytes(reader: &mut File, writer: &mut File, length: u64) -> Result<()> {
+    if std::io::copy(&mut reader.take(length), writer)? != length {
+        return Err(Error::InvalidWasm);
+    }
+    Ok(())
+}
+// Trunk emits quoted link attributes. Preserve every value except the matching
+// WASM preload integrity value; stylesheet/JavaScript integrity stays untouched.
+fn link_attributes(tag: &str) -> Result<Vec<(&str, usize, usize)>> {
+    let b = tag.as_bytes();
+    let mut at = 5;
+    let mut out = Vec::new();
+    while at < b.len() {
+        while b.get(at).is_some_and(u8::is_ascii_whitespace) {
+            at += 1;
+        }
+        if matches!(b.get(at), Some(b'>') | Some(b'/') | None) {
+            break;
+        }
+        let start = at;
+        while b
+            .get(at)
+            .is_some_and(|v| v.is_ascii_alphanumeric() || b"_:-".contains(v))
+        {
+            at += 1;
+        }
+        if at == start {
+            return Err(Error::InvalidHtml);
+        }
+        let name = &tag[start..at];
+        while b.get(at).is_some_and(u8::is_ascii_whitespace) {
+            at += 1;
+        }
+        if b.get(at) != Some(&b'=') {
+            continue;
+        }
+        at += 1;
+        while b.get(at).is_some_and(u8::is_ascii_whitespace) {
+            at += 1;
+        }
+        let quote = b
+            .get(at)
+            .copied()
+            .filter(|v| matches!(v, b'\'' | b'"'))
+            .ok_or(Error::InvalidHtml)?;
+        at += 1;
+        let value = at;
+        while b.get(at).is_some_and(|v| *v != quote) {
+            at += 1;
+        }
+        if at >= b.len() {
+            return Err(Error::InvalidHtml);
+        }
+        out.push((name, value, at));
+        at += 1;
+    }
+    Ok(out)
+}

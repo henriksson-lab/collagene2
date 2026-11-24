@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-const MAX_OLIGO: usize = 200;
+pub const MAX_OLIGO: usize = 200;
 const MAX_BINDING_WORK: usize = 200_000_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

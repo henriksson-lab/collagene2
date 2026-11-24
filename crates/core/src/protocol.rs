@@ -6,9 +6,11 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
+pub const WORKER_SCHEMA_VERSION: u16 = 24;
+
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
-        b"CGQ\0" | b"CGR\0" => 23,
+        b"CGQ\0" | b"CGR\0" => WORKER_SCHEMA_VERSION,
         b"CGP\0" => 7,
         _ => 1,
     }
@@ -526,6 +528,29 @@ pub enum AnalysisJob {
         enzymes: Vec<Enzyme>,
         options: crate::restriction_inspection::InspectionOptions,
     },
+    PrepareReadAlignments {
+        bytes: Vec<u8>,
+        format: crate::read_alignment_session::FileFormat,
+    },
+    ReadAlignmentPage {
+        source_hash: String,
+        start: usize,
+        count: usize,
+    },
+    CheckReadAlignment {
+        source_hash: String,
+        index: usize,
+        reference: Molecule,
+        options: crate::read_alignment_reference::Options,
+    },
+    ExportReadAlignments {
+        source_hash: String,
+        format: crate::read_alignment_session::FileFormat,
+        max_output_bytes: usize,
+    },
+    DisposeReadAlignments {
+        source_hash: String,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -604,6 +629,11 @@ pub enum AnalysisResult {
     RecombinationInspection(crate::recombination::RecombinationReport),
     RecombinationTargetCheck(crate::recombination::TargetAssessment),
     RecombinationProduct(crate::recombination::CheckedProduct),
+    ReadAlignmentsPrepared(crate::read_alignment_session::Prepared),
+    ReadAlignmentPage(crate::read_alignment_session::Page),
+    ReadAlignmentChecked(crate::read_alignment_session::Checked),
+    ReadAlignmentsExported(crate::read_alignment_session::Exported),
+    ReadAlignmentsDisposed(crate::read_alignment_session::Disposed),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -737,6 +767,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_restriction_tag(bytes, &[60, 61, 62])?;
     preflight_catalog_tag(bytes, &[63, 64, 65])?;
     preflight_recombination_tag(bytes, &[66, 67, 68])?;
+    preflight_read_alignment_tag(bytes, &[69, 70, 71, 72, 73])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -758,6 +789,11 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         _ => decode_with_limit(b"CGR\0", bytes, maximum)?,
     };
     let required = match &response.result {
+        AnalysisResult::ReadAlignmentsPrepared(_)
+        | AnalysisResult::ReadAlignmentPage(_)
+        | AnalysisResult::ReadAlignmentChecked(_)
+        | AnalysisResult::ReadAlignmentsExported(_)
+        | AnalysisResult::ReadAlignmentsDisposed(_) => 24,
         AnalysisResult::RecombinationInspection(_)
         | AnalysisResult::RecombinationTargetCheck(_)
         | AnalysisResult::RecombinationProduct(_) => 22,
@@ -842,6 +878,46 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
     }
     match &response.result {
+        AnalysisResult::ReadAlignmentsPrepared(report) => {
+            report.validate()?;
+            if report.revision != response.revision {
+                return Err(Error::Format(
+                    "read alignment preparation response mismatch".into(),
+                ));
+            }
+        }
+        AnalysisResult::ReadAlignmentPage(report) => {
+            report.validate()?;
+            if report.revision != response.revision {
+                return Err(Error::Format(
+                    "read alignment page response mismatch".into(),
+                ));
+            }
+        }
+        AnalysisResult::ReadAlignmentChecked(report) => {
+            report.validate()?;
+            if report.revision != response.revision {
+                return Err(Error::Format(
+                    "read alignment check response mismatch".into(),
+                ));
+            }
+        }
+        AnalysisResult::ReadAlignmentsExported(report) => {
+            report.validate()?;
+            if report.revision != response.revision {
+                return Err(Error::Format(
+                    "read alignment export response mismatch".into(),
+                ));
+            }
+        }
+        AnalysisResult::ReadAlignmentsDisposed(report) => {
+            report.validate()?;
+            if report.revision != response.revision {
+                return Err(Error::Format(
+                    "read alignment disposal response mismatch".into(),
+                ));
+            }
+        }
         AnalysisResult::RecombinationInspection(report) => {
             report.validate()?;
             if report.batch_revision != response.revision {
@@ -1160,6 +1236,14 @@ fn preflight_methylation_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     }
     Ok(())
 }
+fn preflight_read_alignment_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 24)?;
+    }
+    Ok(())
+}
 fn preflight_recombination_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -1324,6 +1408,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_restriction_tag(bytes, &[67, 68, 69])?;
     preflight_catalog_tag(bytes, &[70, 71, 72])?;
     preflight_recombination_tag(bytes, &[73, 74, 75])?;
+    preflight_read_alignment_tag(bytes, &[77, 78, 79, 80, 81])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -1331,6 +1416,11 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::PrepareReadAlignments { .. }
+        | AnalysisJob::ReadAlignmentPage { .. }
+        | AnalysisJob::CheckReadAlignment { .. }
+        | AnalysisJob::ExportReadAlignments { .. }
+        | AnalysisJob::DisposeReadAlignments { .. } => 24,
         AnalysisJob::ScanRestriction { .. } => 23,
         AnalysisJob::InspectRecombination { .. }
         | AnalysisJob::CheckRecombinationTarget { .. }
@@ -1482,6 +1572,15 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let mol = match &r.job {
+        AnalysisJob::PrepareReadAlignments { .. }
+        | AnalysisJob::ReadAlignmentPage { .. }
+        | AnalysisJob::CheckReadAlignment { .. }
+        | AnalysisJob::ExportReadAlignments { .. }
+        | AnalysisJob::DisposeReadAlignments { .. } => {
+            return Err(Error::Unsupported(
+                "read alignment operations require a persistent worker session".into(),
+            ));
+        }
         AnalysisJob::InspectRecombination { inputs, request } => {
             if crate::recombination::batch_revision(inputs, request)? != r.revision {
                 return Err(Error::Format(
@@ -1864,6 +1963,13 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let result = match r.job {
+        AnalysisJob::PrepareReadAlignments { .. }
+        | AnalysisJob::ReadAlignmentPage { .. }
+        | AnalysisJob::CheckReadAlignment { .. }
+        | AnalysisJob::ExportReadAlignments { .. }
+        | AnalysisJob::DisposeReadAlignments { .. } => Err(Error::Unsupported(
+            "read alignment operations require a persistent worker session".into(),
+        )),
         AnalysisJob::InspectRecombination { inputs, request } => {
             crate::recombination::simulate(&inputs, &request)
                 .map(AnalysisResult::RecombinationInspection)
@@ -2300,6 +2406,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
 pub struct AnalysisSession {
     tracks: Option<crate::view_tracks::PreparedTracks>,
     genomes: crate::genome_session::GenomeSession,
+    read_alignments: crate::read_alignment_session::Session,
 }
 impl AnalysisSession {
     pub fn process_request(&mut self, bytes: &[u8]) -> Result<Vec<u8>, Error> {
@@ -2309,17 +2416,28 @@ impl AnalysisSession {
             &[(19, 6), (20, 6), (42, 12), (43, 12), (69, 20), (72, 21)],
         )?;
         // Route by a borrowed prefix so ordinary jobs are not fully decoded twice.
-        // Stable append-only tags 32/33 are the only session-specific variants.
+        // Stable append-only track, genome and read-alignment variants retain
+        // private worker state; all other jobs use ordinary stateless dispatch.
         let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
             .map_err(|e| Error::Format(e.to_string()))?;
-        if !matches!(tag, 32 | 33 | 53..=66) {
+        if !matches!(tag, 32 | 33 | 53..=66 | 77..=81) {
             return process_request(bytes);
         }
         if (53..=66).contains(&tag) {
             check_variant_version(bytes, 19)?;
         }
+        if (77..=81).contains(&tag) {
+            check_variant_version(bytes, 24)?;
+        }
         let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
         let result = match r.job {
+            job @ (AnalysisJob::PrepareReadAlignments { .. }
+            | AnalysisJob::ReadAlignmentPage { .. }
+            | AnalysisJob::CheckReadAlignment { .. }
+            | AnalysisJob::ExportReadAlignments { .. }
+            | AnalysisJob::DisposeReadAlignments { .. }) => {
+                self.read_alignments.process(job, &r.revision)?
+            }
             job @ (AnalysisJob::BeginGenomeFasta { .. }
             | AnalysisJob::PushGenomeFasta { .. }
             | AnalysisJob::FinishGenomeFasta { .. }

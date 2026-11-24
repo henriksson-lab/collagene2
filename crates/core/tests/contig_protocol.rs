@@ -44,7 +44,10 @@ fn assemble_contigs_is_bound_to_ordered_read_roles_revisions_and_all_options() {
         },
     };
     let bytes = protocol::encode_request(&request).unwrap();
-    assert_eq!(&bytes[4..6], &23u16.to_le_bytes());
+    assert_eq!(
+        &bytes[4..6],
+        &collagene_core::protocol::WORKER_SCHEMA_VERSION.to_le_bytes()
+    );
     let response = protocol::decode_response(&protocol::process_request(&bytes).unwrap()).unwrap();
     assert_eq!(response.id, 301);
     assert_eq!(response.revision, revision);

@@ -15,7 +15,10 @@ fn run(s: &mut AnalysisSession, revision: &str, job: J) -> R {
         job,
     })
     .unwrap();
-    assert_eq!(&b[4..6], &23u16.to_le_bytes());
+    assert_eq!(
+        &b[4..6],
+        &collagene_core::protocol::WORKER_SCHEMA_VERSION.to_le_bytes()
+    );
     protocol::decode_response(&s.process_request(&b).unwrap())
         .unwrap()
         .result

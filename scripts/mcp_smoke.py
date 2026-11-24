@@ -5,6 +5,7 @@ import base64
 import json
 import os
 import queue
+import re
 import subprocess
 import sys
 import threading
@@ -81,8 +82,10 @@ def main():
         assert initialized["protocolVersion"] == "2025-11-25", initialized
         send("notifications/initialized", {}, notification=True)
         tools = send("tools/list", {})["tools"]
-        assert len(tools) == 112, len(tools)
-        assert {"replay_variant_preview", "import_variants", "inspect_variants", "check_variant_reference", "preview_variant_allele", "export_variants", "dispose_variants", "simulate_topo", "inspect_topo_orientations", "project_topo_product", "check_topo_target", "inspect_recombination", "check_recombination_target", "select_recombination_component", "lookup_enzyme_catalog", "resolve_enzyme_evidence", "calculate_dilution", "balance_mixture", "calculate_dna_molar_ratios", "inspect_restriction", "propose_plan", "verify_plan", "read_sequence_region", "validate_reads", "import_fastq", "export_oligos", "import_workspace_archive", "export_workspace_archive", "begin_workspace_upload", "append_workspace_upload", "finalize_workspace_upload", "abort_workspace_upload", "create_feature_library", "import_feature_library", "export_feature_library", "scan_feature_library", "apply_feature_library", "import_annotations", "apply_annotations", "export_annotations", "export_annotation_dataset", "simulate_end_repair", "simulate_oligo_annealing", "search_document", "view_tracks", "import_alignment", "import_alignment_document", "list_alignments", "read_alignment", "export_alignment", "extract_alignment_rows", "analyze_protein", "design_codons", "check_codon_design", "analyze_dotplot", "assemble_contigs", "assess_methylation", "design_crispr_guides", "search_crispr_off_targets", "design_edit_template", "check_edit_template", "begin_genome_import", "append_genome_import", "finish_genome_import", "inspect_genome", "read_genome_export", "read_genome_interval", "design_genome_interval_guides", "start_genome_off_target_search", "advance_genome_off_target_search", "read_genome_off_target_hits", "cancel_genome_job", "simulate_tailing", "check_overlap_profile", "record_workspace_run", "list_workspace_runs", "replay_workspace_run"} <= {t["name"] for t in tools}
+        count_source = (root / "crates/mcp/src/lib.rs").read_text()
+        current_tool_count = int(re.search(r"pub const CURRENT_TOOL_COUNT: usize = (\d+);", count_source).group(1))
+        assert len(tools) == current_tool_count, len(tools)
+        assert {"propose_overlap_assembly", "replay_variant_preview", "import_variants", "inspect_variants", "check_variant_reference", "preview_variant_allele", "export_variants", "dispose_variants", "simulate_topo", "inspect_topo_orientations", "project_topo_product", "check_topo_target", "inspect_recombination", "check_recombination_target", "select_recombination_component", "lookup_enzyme_catalog", "resolve_enzyme_evidence", "calculate_dilution", "balance_mixture", "calculate_dna_molar_ratios", "inspect_restriction", "propose_plan", "verify_plan", "read_sequence_region", "validate_reads", "import_fastq", "export_oligos", "import_workspace_archive", "export_workspace_archive", "begin_workspace_upload", "append_workspace_upload", "finalize_workspace_upload", "abort_workspace_upload", "create_feature_library", "import_feature_library", "export_feature_library", "scan_feature_library", "apply_feature_library", "import_annotations", "apply_annotations", "export_annotations", "export_annotation_dataset", "simulate_end_repair", "simulate_oligo_annealing", "search_document", "view_tracks", "import_alignment", "import_alignment_document", "list_alignments", "read_alignment", "export_alignment", "extract_alignment_rows", "analyze_protein", "design_codons", "check_codon_design", "analyze_dotplot", "assemble_contigs", "assess_methylation", "design_crispr_guides", "search_crispr_off_targets", "design_edit_template", "check_edit_template", "begin_genome_import", "append_genome_import", "finish_genome_import", "inspect_genome", "read_genome_export", "read_genome_interval", "design_genome_interval_guides", "start_genome_off_target_search", "advance_genome_off_target_search", "read_genome_off_target_hits", "cancel_genome_job", "simulate_tailing", "check_overlap_profile", "record_workspace_run", "list_workspace_runs", "replay_workspace_run"} <= {t["name"] for t in tools}
         profile_resource=send("resources/read",{"uri":"collagene://recombination/profile/manufacturer-context-v1"})
         recombination_profile=json.loads(profile_resource["contents"][0]["text"])["snapshot"]
         recombination_docs=tool("import_document",{"text":(root/"fixtures/recombination-bp-demo.gb").read_text()})["documents"]
@@ -354,6 +357,20 @@ def main():
         assert tracked_report["products"][1]["length"]==5 and tracked_report["products"][1]["tracked_modifications"]["generation"]
         candidate = tool("propose_plan", {"name": "Stdio assembly", "target": ref("target"), "inputs": [{"id": name, "document": ref(name)} for name in ["left", "right"]], "steps": [{"Overlap": {"fragments": [{"Input": "left"}, {"Input": "right"}], "overlaps": [4], "circular": False}}]})
         assert candidate["verified"] is False
+        recipe_candidate=tool("propose_overlap_assembly",{
+            "inputs":[{"id":name,"document":ref(name)} for name in ["left","right"]],
+            "target":ref("target"),
+            "recipe":{"name":"Stdio prepared overlap recipe","fragments":[
+                {"role":"left-fragment","input_id":"left","preparation":"WholeLinear","reverse":False},
+                {"role":"right-fragment","input_id":"right","preparation":"WholeLinear","reverse":False}],
+                "overlaps":[4],"circular":False,
+                "options":{"method":"HiFi","scan_repeated_overlaps":False,"max_comparisons":10000,"max_occurrences":100}}})
+        assert recipe_candidate["verified"] is False and recipe_candidate["preparation_complete"],recipe_candidate
+        assert recipe_candidate["verification"]["status"]=="ConsistentUnderAssumptions",recipe_candidate
+        recipe_evidence=full_json_artifact(recipe_candidate["artifact_id"])
+        assert len(recipe_evidence["compiled"]["rows"])==2 and len(recipe_evidence["prepared"])==2
+        assert recipe_evidence["profile"]["geometry_valid"] and not recipe_evidence["profile"]["exhaustive_alternative_search"]
+        assert tool("verify_plan",{"plan_revision":recipe_candidate["plan_revision"]})["status"]=="ConsistentUnderAssumptions"
         plan = {"plan_revision": candidate["plan_revision"]}
         report = tool("verify_plan", plan)
         assert report["status"] == "ConsistentUnderAssumptions", report

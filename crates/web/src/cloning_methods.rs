@@ -98,10 +98,77 @@ impl TailInput {
         }
     }
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum OverlapPreparation {
+    WholeLinear,
+    Digest,
+    ExactPcr,
+}
 #[derive(Clone, PartialEq, Eq)]
 pub struct OverlapInput {
     pub document: usize,
     pub reverse: bool,
+    pub preparation: OverlapPreparation,
+    pub enzymes: String,
+    pub fragment: String,
+    pub repair: Option<EndRepairMethod>,
+    pub forward: String,
+    pub reverse_primer: String,
+    pub forward_tail: String,
+    pub reverse_tail: String,
+}
+impl Default for OverlapInput {
+    fn default() -> Self {
+        Self {
+            document: 0,
+            reverse: false,
+            preparation: OverlapPreparation::WholeLinear,
+            enzymes: "EcoRV".into(),
+            fragment: "1".into(),
+            repair: None,
+            forward: String::new(),
+            reverse_primer: String::new(),
+            forward_tail: String::new(),
+            reverse_tail: String::new(),
+        }
+    }
+}
+impl OverlapInput {
+    fn summary(&self) -> String {
+        let preparation = match self.preparation {
+            OverlapPreparation::WholeLinear => {
+                "Whole linear source (circular DNA requires preparation)".into()
+            }
+            OverlapPreparation::Digest => format!(
+                "Restriction digest: {}; fragment {} (1-based); {}",
+                self.enzymes,
+                self.fragment,
+                match self.repair {
+                    None => "cohesive ends retained",
+                    Some(EndRepairMethod::FillFivePrimeOverhangs) => "explicit 5′ overhang fill-in",
+                    Some(EndRepairMethod::RemoveThreePrimeOverhangs) =>
+                        "explicit 3′ overhang removal",
+                    Some(EndRepairMethod::Blunt) => "explicit blunting",
+                }
+            ),
+            OverlapPreparation::ExactPcr => format!(
+                "Exact PCR: annealing {} / {} bp; 5′ extensions {} / {} bp",
+                self.forward.len(),
+                self.reverse_primer.len(),
+                self.forward_tail.len(),
+                self.reverse_tail.len()
+            ),
+        };
+        format!(
+            "{} · {}",
+            preparation,
+            if self.reverse {
+                "reverse complement after preparation"
+            } else {
+                "forward after preparation"
+            }
+        )
+    }
 }
 #[derive(Clone, PartialEq, Eq)]
 pub struct MethodsState {
@@ -125,16 +192,7 @@ impl Default for MethodsState {
             insert: TailInput::new(true, TailingBase::A),
             circular: true,
             allow_nicked: false,
-            rows: vec![
-                OverlapInput {
-                    document: 0,
-                    reverse: false,
-                },
-                OverlapInput {
-                    document: 0,
-                    reverse: false,
-                },
-            ],
+            rows: vec![OverlapInput::default(), OverlapInput::default()],
             overlaps: "20".into(),
             method: OverlapMethod::HiFi,
             scan_repeats: true,
@@ -188,6 +246,7 @@ struct Evidence {
     epoch: u64,
     tails: Vec<TailPreview>,
     profile: Option<ProfileReport>,
+    overlap: Option<collagene_core::assembly_recipe::Preview>,
 }
 fn guidance(minimum: Option<usize>, maximum: Option<usize>) -> String {
     match (minimum, maximum) {
@@ -277,14 +336,18 @@ pub fn CloningMethodsPanel(
     on_candidate: Callback<Candidate>,
     on_products: Callback<Vec<Molecule>, Result<(), String>>,
 ) -> impl IntoView {
+    let source_indices = Memo::new(move |_| {
+        config.with(|c| {
+            if c.mode == Mode::Tailing {
+                vec![c.vector.document, c.insert.document]
+            } else {
+                c.rows.iter().map(|r| r.document).collect()
+            }
+        })
+    });
     let sources = Memo::new(move |_| {
-        let c = config.get();
-        let indexes = if c.mode == Mode::Tailing {
-            vec![c.vector.document, c.insert.document]
-        } else {
-            c.rows.iter().map(|r| r.document).collect()
-        };
-        indexes
+        source_indices
+            .get()
             .into_iter()
             .map(|i| get_query.run(i))
             .collect::<Option<Vec<_>>>()
@@ -375,38 +438,40 @@ pub fn CloningMethodsPanel(
         evidence.set(None);
         status.set("Reconstructing method evidence…".into());
         let bound_target = target.get_untracked();
+        let bound_target_molecule = molecule.get_untracked();
         let bound_epoch = epoch.get_untracked();
         let alive = alive.clone();
         spawn_local(async move {
             let revs = inputs.iter().map(Molecule::revision).collect::<Vec<_>>();
             let result = async {
                 if let Some((overlaps, options)) = profile {
-                    let reverse = state.rows.iter().map(|r| r.reverse).collect::<Vec<_>>();
-                    let revision = protocol::overlap_profile_revision(
-                        &inputs,
-                        &reverse,
-                        &overlaps,
-                        state.circular,
-                        &options,
+                    let _ = (overlaps, options); // shared recipe reuses the exact parsed profile.
+                    let (bound_inputs, recipe) =
+                        overlap_request(&state, inputs, &bound_target_molecule)?;
+                    let revision = collagene_core::assembly_recipe::preview_revision(
+                        &bound_inputs,
+                        &bound_target_molecule,
+                        &recipe,
                     )
                     .map_err(|e| e.to_string())?;
                     let response = ask(
                         &worker,
-                        AnalysisJob::CheckOverlapProfile {
-                            molecules: inputs,
-                            reverse,
-                            overlaps,
-                            circular: state.circular,
-                            options,
+                        AnalysisJob::PreviewOverlapRecipe {
+                            inputs: bound_inputs,
+                            target: bound_target_molecule,
+                            recipe,
                         },
-                        revision,
+                        revision.clone(),
                         token,
                     )
                     .await?;
-                    if let AnalysisResult::OverlapProfile(report) = response {
-                        Ok((vec![], Some(report)))
+                    if let AnalysisResult::OverlapRecipePreview(preview) = response {
+                        preview
+                            .validate_binding(&revision)
+                            .map_err(|e| e.to_string())?;
+                        Ok((vec![], preview.profile.clone(), Some(preview)))
                     } else {
-                        Err("Unexpected overlap profile response".into())
+                        Err("Unexpected overlap preparation response".into())
                     }
                 } else {
                     let mut previews = vec![];
@@ -436,7 +501,7 @@ pub fn CloningMethodsPanel(
                             return Err("Unexpected tailing preview response".into());
                         }
                     }
-                    Ok((previews, None))
+                    Ok((previews, None, None))
                 }
             }
             .await;
@@ -453,7 +518,7 @@ pub fn CloningMethodsPanel(
             active.set_value(None);
             busy.set(false);
             match result {
-                Ok((tails, profile)) => {
+                Ok((tails, profile, overlap)) => {
                     evidence.set(Some(Arc::new(Evidence {
                         config: state,
                         revisions: revs,
@@ -461,6 +526,7 @@ pub fn CloningMethodsPanel(
                         epoch: bound_epoch,
                         tails,
                         profile,
+                        overlap,
                     })));
                     status.set("Evidence ready. Review assumptions and build a candidate against the independently selected target.".into());
                 }
@@ -524,32 +590,23 @@ pub fn CloningMethodsPanel(
                 allow_nicked: state.allow_nicked,
             });
         } else {
-            let (overlaps, options) = match state.profile() {
-                Ok(p) => p,
+            let (bound, recipe) = match overlap_request(&state, inputs, &current_target) {
+                Ok(v) => v,
                 Err(e) => {
                     status.set(e);
                     return;
                 }
             };
-            let mut fragments = vec![];
-            for (i, (mol, row)) in inputs.into_iter().zip(&state.rows).enumerate() {
-                let id = format!("fragment-{}", i + 1);
-                fragments.push(OrientedSource {
-                    source: Source::Input(id.clone()),
-                    reverse: row.reverse,
-                });
-                bound_inputs.push(PlanInput {
-                    id,
-                    revision: mol.revision(),
-                    molecule: mol,
-                });
+            match collagene_core::assembly_recipe::compile(&bound, &current_target, &recipe) {
+                Ok(compiled) => {
+                    on_candidate.run(Candidate::new(compiled.plan));
+                    return;
+                }
+                Err(error) => {
+                    status.set(error.to_string());
+                    return;
+                }
             }
-            steps.push(Operation::ProfiledOverlap {
-                fragments,
-                overlaps,
-                circular: state.circular,
-                options,
-            });
         }
         on_candidate.run(Candidate::new(DesignPlan {
             name: format!(
@@ -570,14 +627,15 @@ pub fn CloningMethodsPanel(
         <label>"Method workflow"<select aria-label="Cloning workflow" prop:value=move||if config.get().mode==Mode::Tailing{"tailing"}else{"overlap"} on:change=move|e|config.update(|c|c.mode=if event_target_value(&e)=="overlap"{Mode::Overlap}else{Mode::Tailing})><option value="tailing">"TA / GC tailing and ligation"</option><option value="overlap">"Gibson / HiFi / In-Fusion overlap"</option></select></label>
         <Show when=move||config.get().mode==Mode::Tailing><p class="helper">"Append one declared nucleotide to both actual 3′ ends of an established blunt duplex. This is an ideal endpoint operation; polymerase activity, mixtures and proprietary kit chemistry are not predicted. TA/GC products include two added junction bases."</p><div class="method-shortcuts"><button class="text-tool" on:click=move|_|config.update(|c|{c.vector.base=TailingBase::T;c.insert.base=TailingBase::A;})>"Use T/A pair"</button><button class="text-tool" on:click=move|_|config.update(|c|{c.vector.base=TailingBase::C;c.insert.base=TailingBase::G;})>"Use C/G pair"</button></div><TailFields vector=true config=config query_options=query_options/><TailFields vector=false config=config query_options=query_options/><label class="checkbox-label"><input type="checkbox" aria-label="Allow retained tailing ligation nicks" prop:checked=move||config.get().allow_nicked on:change=move|e|config.update(|c|c.allow_nicked=event_target_checked(&e))/>"Allow explicitly retained nicks"</label><p class="helper">"Exact PCR has 5′ OH termini. A sealed ligation may need an explicit phosphorylation step. Factory-vector chemistry and host nick repair are not inferred."</p></Show>
         <Show when=move||config.get().mode==Mode::Overlap><label>"Overlap profile"<select aria-label="Overlap profile method" prop:value=move||format!("{:?}",config.get().method) on:change=move|e|config.update(|c|c.method=match event_target_value(&e).as_str(){"Gibson"=>OverlapMethod::Gibson,"InFusion"=>OverlapMethod::InFusion,_=>OverlapMethod::HiFi})><option value="Gibson">"Gibson"</option><option value="HiFi">"HiFi"</option><option value="InFusion">"In-Fusion"</option></select></label><p class="helper">"Fragments are listed in product order with explicit orientation. Homology geometry is checked exactly; published length guidance is advisory. No reaction completion or unique mixture product is established."</p>
-            {move||config.get().rows.into_iter().enumerate().map(|(i,row)|view!{<fieldset class="overlap-source-row"><legend>{format!("Fragment {}",i+1)}</legend><label>"Source"<select aria-label=format!("Overlap source {}",i+1) prop:value=move||config.with(|c|c.rows.get(i).map(|r|r.document).unwrap_or(0).to_string()) on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(i){r.document=event_target_value(&e).parse().unwrap_or(0)})>{move||query_options.get().into_iter().map(|(n,label)|view!{<option value=n.to_string()>{label}</option>}).collect_view()}</select></label><label class="checkbox-label"><input type="checkbox" aria-label=format!("Reverse overlap source {}",i+1) prop:checked=row.reverse on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(i){r.reverse=event_target_checked(&e)})/>"Reverse complement"</label><div class="method-row-actions"><button class="text-tool" disabled=move||i==0 on:click=move|_|config.update(|c|{if i>0&&i<c.rows.len(){c.rows.swap(i,i-1);}})>"Move up"</button><button class="text-tool" disabled=move||{config.with(|c|i+1>=c.rows.len())} on:click=move|_|config.update(|c|{if i+1<c.rows.len(){c.rows.swap(i,i+1);}})>"Move down"</button><button class="text-tool" disabled=move||config.with(|c|c.rows.len()<=1) on:click=move|_|config.update(|c|{if c.rows.len()>1&&i<c.rows.len(){c.rows.remove(i);}})>"Remove fragment"</button></div></fieldset>}).collect_view()}
-            <button class="button secondary full" disabled=move||{config.with(|c|c.rows.len()>=12)} on:click=move|_|config.update(|c|c.rows.push(OverlapInput{document:0,reverse:false}))>"Add overlap fragment"</button><p class="helper">"This panel supports up to 12 ordered fragments; the typed core has its separate documented work bounds."</p><label>"Overlap lengths in junction order (bp)"<input aria-label="Profile overlap lengths" prop:value=move||config.get().overlaps on:input=move|e|config.update(|c|c.overlaps=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label="Scan repeated overlap words" prop:checked=move||config.get().scan_repeats on:change=move|e|config.update(|c|c.scan_repeats=event_target_checked(&e))/>"Search supplied fragments for repeated homology words"</label><label>"Repeat comparison budget"<input type="number" min="1" aria-label="Overlap repeat budget" prop:value=move||config.get().comparisons on:input=move|e|config.update(|c|c.comparisons=event_target_value(&e))/></label><label>"Maximum reported homology occurrences"<input type="number" min="1" aria-label="Overlap occurrence limit" prop:value=move||config.get().occurrences on:input=move|e|config.update(|c|c.occurrences=event_target_value(&e))/></label>
+            <For each=move||config.with(|c|(0..c.rows.len()).collect::<Vec<_>>()) key=|i|*i children=move|i|view!{<OverlapFields config index=i query_options/>}/>
+            <button class="button secondary full" disabled=move||{config.with(|c|c.rows.len()>=12)} on:click=move|_|config.update(|c|c.rows.push(OverlapInput::default()))>"Add overlap fragment"</button><p class="helper">"This panel supports up to 12 ordered fragments; the typed core has its separate documented work bounds."</p><label>"Overlap lengths in junction order (bp)"<input aria-label="Profile overlap lengths" prop:value=move||config.get().overlaps on:input=move|e|config.update(|c|c.overlaps=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label="Scan repeated overlap words" prop:checked=move||config.get().scan_repeats on:change=move|e|config.update(|c|c.scan_repeats=event_target_checked(&e))/>"Search supplied fragments for repeated homology words"</label><label>"Repeat comparison budget"<input type="number" min="1" aria-label="Overlap repeat budget" prop:value=move||config.get().comparisons on:input=move|e|config.update(|c|c.comparisons=event_target_value(&e))/></label><label>"Maximum reported homology occurrences"<input type="number" min="1" aria-label="Overlap occurrence limit" prop:value=move||config.get().occurrences on:input=move|e|config.update(|c|c.occurrences=event_target_value(&e))/></label>
         </Show>
         <label class="checkbox-label"><input type="checkbox" aria-label="Method product circular" prop:checked=move||config.get().circular on:change=move|e|config.update(|c|c.circular=event_target_checked(&e))/>"Circular candidate product"</label><button class="button primary full" disabled=move||busy.get() on:click=move|_|compute.run(())>"Compute method evidence"</button><button class="text-tool" disabled=move||!busy.get() on:click=move|_|{generation.update(|n|*n=n.wrapping_add(1));if let Some(w)=active.get_value(){w.close();}active.set_value(None);busy.set(false);status.set("Method analysis cancelled".into());}>"Cancel method analysis"</button><p class="method-status" role="status">{move||status.get()}</p>
         {move||evidence.get().map(|proof|{let report=proof.clone();view!{<div class="method-evidence">
             {proof.tails.iter().enumerate().map(|(i,preview)|{let opened=preview.molecule.clone();view!{<article class="tail-evidence"><h3>{format!("{} · {}-tailed duplex",if i==0{"Vector"}else{"Insert"},preview.base.as_str())}</h3><pre>{format!("Top 5′→3′: {}\nBottom 5′→3′: {}\n{}",short(preview.tailing.duplex.top.as_str()),short(preview.tailing.duplex.bottom.as_str()),preview.tailing.duplex.summary().map(|s|s.describe()).unwrap_or_else(|e|e.to_string()))}</pre><details><summary>"Source, additions and assumptions"</summary><pre>{format!("Source top 5′→3′: {}\nSource bottom 5′→3′: {}",short(preview.tailing.source.top.as_str()),short(preview.tailing.source.bottom.as_str()))}</pre>{preview.tailing.additions.iter().map(|a|view!{<p>{format!("New {:?} residue {}–{}: {} (no template ancestry)",a.strand,a.product_start+1,a.product_end,a.sequence)}</p>}).collect_view()}{preview.findings.iter().chain(&preview.tailing.warnings).map(|w|view!{<p>{w.clone()}</p>}).collect_view()}</details><button class="button secondary full" on:click=move|_|match on_products.run(vec![opened.clone()]){Ok(())=>status.set("Reference preview opened; reconstruct its original graph for later physical operations.".into()),Err(e)=>status.set(e)}>{format!("Open {} reference preview",if i==0{"vector"}else{"insert"})}</button></article>}}).collect_view()}
+            {proof.overlap.as_ref().map(|preview|view!{<article class="overlap-preparation-evidence"><h3>"Prepared fragments from original sources"</h3><p>{format!("Preparation reconstructed: {} · independent-target assessment: {:?}",preview.preparation_complete,preview.verification.status)}</p><p class="helper">"Prepared reference sequences below are reconstructed from the declared originals. They are not substituted as plan inputs, confirmed amplicons or physical reaction outcomes."</p>{preview.prepared.iter().enumerate().map(|(i,fragment)|view!{<details><summary>{format!("Fragment {} · {} bp · {}",i+1,fragment.sequence.len(),proof.config.rows.get(i).map(OverlapInput::summary).unwrap_or_default())}</summary><pre>{format!("Prepared source 5′→3′ (before orientation): {}",short(fragment.sequence.as_str()))}</pre></details>}).collect_view()}{preview.verification.findings.iter().map(|finding|view!{<p>{finding.clone()}</p>}).collect_view()}</article>})}
             {proof.profile.as_ref().map(|p|view!{<article class="overlap-profile-evidence"><h3>"Overlap evidence"</h3><p>{format!("Geometry consistent: {} · analysis complete: {} · published length guidance: {}",p.geometry_valid,p.complete,match p.recommendation_compliant{Some(true)=>"met",Some(false)=>"outside published guidance",None=>"not established"})}</p><p class="helper">{format!("{} comparisons; no exhaustive alternative-product search",p.comparisons)}</p>{p.junctions.iter().map(|j|view!{<details class="profile-junction"><summary>{format!("Junction {} · {}bp · {}",j.index+1,j.overlap_bases,if j.exact_match{"exact end homology"}else{"incompatible homology"})}</summary><pre>{format!("Upstream {}\nDownstream {}",j.homology,j.downstream_homology)}</pre><p>{format!("GC: {} · advisory length: {} · repeat search complete: {}",j.gc_fraction.map(|f|format!("{:.1}%",f*100.)).unwrap_or_else(||"unavailable".into()),guidance(j.recommended_min,j.recommended_max),j.repeat_search_complete)}</p>{j.occurrences.iter().take(40).map(|o|view!{<p>{format!("Source {} · {}–{}{}{}",o.fragment+1,o.start+1,o.end,if o.reverse{" reverse"}else{" forward"},if o.assigned_junction{" · assigned end"}else{" · additional occurrence"})}</p>}).collect_view()}<p class="helper">"Up to 40 occurrence positions shown; full evidence download retains every reported position."</p></details>}).collect_view()}<details><summary>"Profile findings and assumptions"</summary>{p.findings.iter().chain(&p.warnings).map(|w|view!{<p>{w.clone()}</p>}).collect_view()}</details></article>})}
-            <button class="button primary full" on:click=move|_|review.run(())>"Review method candidate"</button><button class="button secondary full" on:click=move|_|{let result=if let Some(profile)=&report.profile{serde_json::to_vec_pretty(profile)}else{serde_json::to_vec_pretty(&report.tails)};match result{Ok(bytes)=>if let Err(e)=download("cloning-method-evidence.json","application/json",&bytes){status.set(e)},Err(e)=>status.set(e.to_string())}}>"Download method evidence"</button>
+            <button class="button primary full" on:click=move|_|review.run(())>"Review method candidate"</button><button class="button secondary full" on:click=move|_|{let result=if let Some(preview)=&report.overlap{serde_json::to_vec_pretty(preview)}else if let Some(profile)=&report.profile{serde_json::to_vec_pretty(profile)}else{serde_json::to_vec_pretty(&report.tails)};match result{Ok(bytes)=>if let Err(e)=download("cloning-method-evidence.json","application/json",&bytes){status.set(e)},Err(e)=>status.set(e.to_string())}}>"Download method evidence"</button>
         </div>}})}
     </div>}
 }
@@ -593,4 +651,128 @@ fn TailFields(
     <Show when=move||!config.with(|c|c.input(vector).pcr)><label>"Restriction enzymes"<input aria-label=format!("{label} tailing enzymes") prop:value=move||config.with(|c|c.input(vector).enzymes.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).enzymes=event_target_value(&e))/></label><label>"Digest fragment (cut order, 1-based)"<input type="number" min="1" aria-label=format!("{label} tailing fragment") prop:value=move||config.with(|c|c.input(vector).fragment.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).fragment=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label=format!("{label} blunt before tailing") prop:checked=move||config.with(|c|c.input(vector).blunt) on:change=move|e|config.update(|c|c.input_mut(vector).blunt=event_target_checked(&e))/>"Blunt staggered ends before tailing"</label></Show>
     <Show when=move||config.with(|c|c.input(vector).pcr)><label>"Forward annealing sequence 5′→3′"<input aria-label=format!("{label} tailing forward primer") prop:value=move||config.with(|c|c.input(vector).forward.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).forward=event_target_value(&e))/></label><label>"Reverse annealing sequence 5′→3′"<input aria-label=format!("{label} tailing reverse primer") prop:value=move||config.with(|c|c.input(vector).reverse.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).reverse=event_target_value(&e))/></label><label>"Forward primer 5′ extension"<input aria-label=format!("{label} tailing forward extension") prop:value=move||config.with(|c|c.input(vector).forward_tail.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).forward_tail=event_target_value(&e))/></label><label>"Reverse primer 5′ extension"<input aria-label=format!("{label} tailing reverse extension") prop:value=move||config.with(|c|c.input(vector).reverse_tail.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).reverse_tail=event_target_value(&e))/></label></Show>
     <label>"One nucleotide added to BOTH 3′ ends"<select aria-label=format!("{label} tailing base") prop:value=move||config.with(|c|c.input(vector).base.as_str()) on:change=move|e|config.update(|c|c.input_mut(vector).base=match event_target_value(&e).as_str(){"C"=>TailingBase::C,"G"=>TailingBase::G,"T"=>TailingBase::T,_=>TailingBase::A})><option value="A">"A"</option><option value="C">"C"</option><option value="G">"G"</option><option value="T">"T"</option></select></label><label>"Explicit terminal treatment after tailing"<select aria-label=format!("{label} tailing terminal treatment") prop:value=move||config.with(|c|match c.input(vector).treatment{Treatment::Keep=>"keep",Treatment::Phosphorylate=>"phosphorylate",Treatment::Dephosphorylate=>"dephosphorylate"}) on:change=move|e|config.update(|c|c.input_mut(vector).treatment=match event_target_value(&e).as_str(){"phosphorylate"=>Treatment::Phosphorylate,"dephosphorylate"=>Treatment::Dephosphorylate,_=>Treatment::Keep})><option value="keep">"Keep reconstructed 5′ chemistry"</option><option value="phosphorylate">"Add 5′ phosphorylation"</option><option value="dephosphorylate">"Add 5′ dephosphorylation"</option></select></label><label class="checkbox-label"><input type="checkbox" aria-label=format!("Reverse {label} tailing product") prop:checked=move||config.with(|c|c.input(vector).reversed) on:change=move|e|config.update(|c|c.input_mut(vector).reversed=event_target_checked(&e))/>"Reverse fragment for ligation"</label></fieldset>}
+}
+
+#[component]
+fn OverlapFields(
+    config: RwSignal<MethodsState>,
+    index: usize,
+    query_options: Memo<Vec<(usize, String)>>,
+) -> impl IntoView {
+    let row = move || config.with(|c| c.rows.get(index).cloned().unwrap_or_default());
+    view! {<fieldset class="overlap-source-row"><legend>{format!("Fragment {}",index+1)}</legend>
+        <label>"Original source"<select aria-label=format!("Overlap source {}",index+1) prop:value=move||row().document.to_string() on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.document=event_target_value(&e).parse().unwrap_or(0)})>{move||query_options.get().into_iter().map(|(n,label)|view!{<option value=n.to_string()>{label}</option>}).collect_view()}</select></label>
+        <label>"Prepare fragment"<select aria-label=format!("Overlap preparation {}",index+1) prop:value=move||match row().preparation{OverlapPreparation::WholeLinear=>"whole",OverlapPreparation::Digest=>"digest",OverlapPreparation::ExactPcr=>"pcr"} on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.preparation=match event_target_value(&e).as_str(){"digest"=>OverlapPreparation::Digest,"pcr"=>OverlapPreparation::ExactPcr,_=>OverlapPreparation::WholeLinear}})><option value="whole">"Whole linear DNA"</option><option value="digest">"Restriction digest fragment"</option><option value="pcr">"Exact PCR product"</option></select></label>
+        <Show when=move||row().preparation==OverlapPreparation::WholeLinear><p class="helper">"Use an already linear source. Circular DNA must first be prepared by restriction digest or exact PCR; its origin is not an assumed cut."</p></Show>
+        <Show when=move||row().preparation==OverlapPreparation::Digest>
+            <label>"Restriction enzymes (comma-separated)"<input aria-label=format!("Overlap digest enzymes {}",index+1) prop:value=move||row().enzymes on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.enzymes=event_target_value(&e)})/></label>
+            <label>"Digest fragment number (1-based)"<input type="number" min="1" aria-label=format!("Overlap digest fragment {}",index+1) prop:value=move||row().fragment on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.fragment=event_target_value(&e)})/></label>
+            <label>"Optional explicit end repair"<select aria-label=format!("Overlap end repair {}",index+1) prop:value=move||match row().repair{None=>"none",Some(EndRepairMethod::FillFivePrimeOverhangs)=>"fill",Some(EndRepairMethod::RemoveThreePrimeOverhangs)=>"remove",Some(EndRepairMethod::Blunt)=>"blunt"} on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.repair=match event_target_value(&e).as_str(){"fill"=>Some(EndRepairMethod::FillFivePrimeOverhangs),"remove"=>Some(EndRepairMethod::RemoveThreePrimeOverhangs),"blunt"=>Some(EndRepairMethod::Blunt),_=>None}})><option value="none">"None — retain cohesive ends"</option><option value="fill">"Fill 5′ overhangs"</option><option value="remove">"Remove 3′ overhangs"</option><option value="blunt">"Blunt ends"</option></select></label>
+            <p class="helper">"Fragments are reconstructed in core digest order using the stated complete-cleavage assumption. This is not evidence of enzyme activity, methylation permission or reagent compatibility."</p>
+        </Show>
+        <Show when=move||row().preparation==OverlapPreparation::ExactPcr>
+            <label>"Forward annealing sequence 5′→3′"<input aria-label=format!("Overlap forward primer {}",index+1) prop:value=move||row().forward on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.forward=event_target_value(&e)})/></label>
+            <label>"Forward primer 5′ extension"<input aria-label=format!("Overlap forward extension {}",index+1) prop:value=move||row().forward_tail on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.forward_tail=event_target_value(&e)})/></label>
+            <label>"Reverse annealing sequence 5′→3′"<input aria-label=format!("Overlap reverse primer {}",index+1) prop:value=move||row().reverse_primer on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.reverse_primer=event_target_value(&e)})/></label>
+            <label>"Reverse primer 5′ extension"<input aria-label=format!("Overlap reverse extension {}",index+1) prop:value=move||row().reverse_tail on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.reverse_tail=event_target_value(&e)})/></label>
+            <p class="helper">"Enter annealing domains and added tails separately. Both oligos are written 5′→3′; no primer design or unique amplicon is assumed."</p>
+        </Show>
+        <label class="checkbox-label"><input type="checkbox" aria-label=format!("Reverse overlap source {}",index+1) prop:checked=move||row().reverse on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.reverse=event_target_checked(&e)})/>"Reverse complement prepared fragment"</label>
+        <p class="helper">{move||row().summary()}</p>
+        <div class="method-row-actions"><button class="text-tool" disabled=move||index==0 on:click=move|_|config.update(|c|{if index>0&&index<c.rows.len(){c.rows.swap(index,index-1);}})>"Move up"</button><button class="text-tool" disabled=move||config.with(|c|index+1>=c.rows.len()) on:click=move|_|config.update(|c|{if index+1<c.rows.len(){c.rows.swap(index,index+1);}})>"Move down"</button><button class="text-tool" disabled=move||config.with(|c|c.rows.len()<=1) on:click=move|_|config.update(|c|{if c.rows.len()>1&&index<c.rows.len(){c.rows.remove(index);}})>"Remove fragment"</button></div>
+    </fieldset>}
+}
+
+fn overlap_request(
+    state: &MethodsState,
+    inputs: Vec<Molecule>,
+    target: &Molecule,
+) -> Result<(Vec<PlanInput>, collagene_core::assembly_recipe::Recipe), String> {
+    use collagene_core::assembly_recipe::{FragmentSpec, Preparation, Recipe};
+    if inputs.len() != state.rows.len() || inputs.is_empty() || inputs.len() > 12 {
+        return Err("Choose 1–12 ordered original sources".into());
+    }
+    let (overlaps, options) = state.profile()?;
+    let ids = (0..inputs.len())
+        .map(|i| format!("source-{}", i + 1))
+        .collect::<Vec<_>>();
+    let mut fragments = Vec::with_capacity(inputs.len());
+    for (i, row) in state.rows.iter().enumerate() {
+        if [
+            &row.enzymes,
+            &row.forward,
+            &row.reverse_primer,
+            &row.forward_tail,
+            &row.reverse_tail,
+        ]
+        .iter()
+        .any(|s| s.len() > 65536)
+        {
+            return Err("Preparation fields exceed the 64 KiB field limit".into());
+        }
+        let preparation = match row.preparation {
+            OverlapPreparation::WholeLinear => Preparation::WholeLinear,
+            OverlapPreparation::Digest => {
+                let enzymes = row
+                    .enzymes
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>();
+                if enzymes.is_empty() || enzymes.len() > 64 || enzymes.iter().any(|e| e.len() > 256)
+                {
+                    return Err("Choose 1–64 explicit restriction enzyme names".into());
+                }
+                let fragment_index = row
+                    .fragment
+                    .trim()
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|n| n.checked_sub(1))
+                    .ok_or("Digest fragment numbers start at 1")?;
+                Preparation::Digest {
+                    enzymes,
+                    fragment_index,
+                    repair: row.repair,
+                }
+            }
+            OverlapPreparation::ExactPcr => Preparation::ExactPcr {
+                forward: Primer::new("Forward", &row.forward, &row.forward_tail)
+                    .map_err(|e| e.to_string())?,
+                reverse: Primer::new("Reverse", &row.reverse_primer, &row.reverse_tail)
+                    .map_err(|e| e.to_string())?,
+            },
+        };
+        fragments.push(FragmentSpec {
+            role: format!("fragment-{}", i + 1),
+            input_id: ids[i].clone(),
+            preparation,
+            reverse: row.reverse,
+        });
+    }
+    let recipe = Recipe {
+        name: format!("Profiled overlap assembly to {}", target.name),
+        fragments,
+        overlaps,
+        circular: state.circular,
+        options,
+    };
+    let borrowed = ids
+        .iter()
+        .zip(&inputs)
+        .map(|(id, m)| (id.as_str(), m))
+        .collect::<Vec<_>>();
+    collagene_core::assembly_recipe::source_preflight(&borrowed, target, &recipe)
+        .map_err(|e| e.to_string())?;
+    let bound = ids
+        .into_iter()
+        .zip(inputs)
+        .map(|(id, molecule)| PlanInput {
+            revision: molecule.revision(),
+            id,
+            molecule,
+        })
+        .collect();
+    Ok((bound, recipe))
 }

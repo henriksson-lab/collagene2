@@ -111,3 +111,5 @@ pub mod variant_reference;
 pub mod variants_archive;
 
 pub mod variants_session;
+
+pub mod assembly_recipe;

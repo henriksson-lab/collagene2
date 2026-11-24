@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 30;
+pub const WORKER_SCHEMA_VERSION: u16 = 31;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 9;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -614,6 +614,11 @@ pub enum AnalysisJob {
     DisposeVariants {
         source_hash: String,
     },
+    PreviewOverlapRecipe {
+        inputs: Vec<crate::verification::PlanInput>,
+        target: Molecule,
+        recipe: crate::assembly_recipe::Recipe,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -709,6 +714,7 @@ pub enum AnalysisResult {
     VariantAllelePreview(crate::variants_session::Previewed),
     VariantsExported(crate::variants_session::Exported),
     VariantsDisposed(crate::variants_session::Disposed),
+    OverlapRecipePreview(crate::assembly_recipe::Preview),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -938,6 +944,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_topo_tag(bytes, &[74, 75, 76, 77])?;
     preflight_annotated_topo_tag(bytes, &[78, 79])?;
     preflight_variants_tag(bytes, &[80, 81, 82, 83, 84, 85])?;
+    preflight_overlap_recipe_tag(bytes, &[86])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -991,6 +998,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         _ => decode_with_limit(b"CGR\0", bytes, maximum)?,
     };
     let required = match &response.result {
+        AnalysisResult::OverlapRecipePreview(_) => 31,
         AnalysisResult::VariantsPrepared(_)
         | AnalysisResult::VariantPage(_)
         | AnalysisResult::VariantReferenceChecked(_)
@@ -1094,6 +1102,14 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
     }
     match &response.result {
+        AnalysisResult::OverlapRecipePreview(report) => {
+            report.validate()?;
+            if report.context_revision != response.revision {
+                return Err(Error::Format(
+                    "overlap preparation response context changed".into(),
+                ));
+            }
+        }
         AnalysisResult::VariantsPrepared(report) => {
             report.validate()?;
             if report.revision != response.revision {
@@ -1514,6 +1530,14 @@ fn preflight_topo_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     }
     Ok(())
 }
+fn preflight_overlap_recipe_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 31)?;
+    }
+    Ok(())
+}
 fn preflight_variants_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -1735,6 +1759,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_topo_tag(bytes, &[82, 83, 84, 85])?;
     preflight_annotated_topo_tag(bytes, &[86, 87])?;
     preflight_variants_tag(bytes, &[88, 89, 90, 91, 92, 93])?;
+    preflight_overlap_recipe_tag(bytes, &[94])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -1742,6 +1767,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::PreviewOverlapRecipe { .. } => 31,
         AnalysisJob::PrepareVariants { .. }
         | AnalysisJob::VariantPage { .. }
         | AnalysisJob::CheckVariantReference { .. }
@@ -1921,6 +1947,18 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let mol = match &r.job {
+        AnalysisJob::PreviewOverlapRecipe {
+            inputs,
+            target,
+            recipe,
+        } => {
+            if crate::assembly_recipe::preview_revision(inputs, target, recipe)? != r.revision {
+                return Err(Error::Format(
+                    "overlap preparation source/target/options changed".into(),
+                ));
+            }
+            None
+        }
         AnalysisJob::PrepareVariants { .. }
         | AnalysisJob::VariantPage { .. }
         | AnalysisJob::CheckVariantReference { .. }
@@ -2402,6 +2440,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let result = match r.job {
+        AnalysisJob::PreviewOverlapRecipe {
+            inputs,
+            target,
+            recipe,
+        } => crate::assembly_recipe::preview(&inputs, &target, &recipe)
+            .map(AnalysisResult::OverlapRecipePreview),
         AnalysisJob::PrepareVariants { .. }
         | AnalysisJob::VariantPage { .. }
         | AnalysisJob::CheckVariantReference { .. }

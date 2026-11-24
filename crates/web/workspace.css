@@ -185,3 +185,8 @@
 .variant-rows th,.variant-rows td { padding:7px; border-bottom:1px solid #e1e7e2; vertical-align:top; overflow-wrap:anywhere; }
 .variants-panel pre { max-width:100%; max-height:280px; overflow:auto; white-space:pre; background:#f4f7f5; padding:9px; font:12px/1.6 ui-monospace,monospace; }
 .variant-reference-check,.variant-design-preview { padding:12px 0; border-top:1px solid #d9e1dc; }
+
+/* Everyday cloning stays beside editing and digestion. */
+.workspace-shell .mvp-inspector-tabs { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.workspace-shell .mvp-inspector-tabs>.more-tools { grid-column:1 / -1; border-top:1px solid #e4ebe5; }
+.workspace-shell .mvp-inspector-tabs>.more-tools>summary { min-height:36px; flex-direction:row; align-items:center; justify-content:space-between; }

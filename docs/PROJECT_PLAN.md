@@ -122,6 +122,13 @@ The MVP must satisfy these acceptance conditions:
 
 Mobile design, feature selection and acceptance remain deferred until the finished desktop product has been reviewed and edited by the user. Broader P0/P1/P2 work resumes after this MVP gate; passing it does not complete the full product goal.
 
+The current prepared-overlap implementation connects original source documents to
+explicit PCR/digest/end-repair steps and ordered Gibson/HiFi/In-Fusion profiles in
+both the UI and MCP. Existing deterministic plan verification and HTML/PDF exports
+consume that same graph. [Current workflow](ASSEMBLY_WORKFLOW.md). This is progress
+on cloning priorities 2–3 above; broader physical preparation/composition,
+alternative-product handling and the remaining product scope are still required.
+
 ## Feature inventory and delivery priorities
 
 P0 is the foundation and first usable cloning release. P1 supplies everyday molecular biology workflows. P2 extends scale, specialized workflows, collaboration, and desktop delivery. P3 covers advanced molecular analysis. Each row is an implementation backlog item, not a claim about an existing Collagene 2 feature. Feature IDs are retained when rows are removed.

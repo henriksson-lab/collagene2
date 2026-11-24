@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 32;
+pub const WORKER_SCHEMA_VERSION: u16 = 33;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 9;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -624,6 +624,11 @@ pub enum AnalysisJob {
         target: Molecule,
         recipe: crate::ligation_recipe::Recipe,
     },
+    InspectAssemblyJunctions {
+        plan: crate::verification::DesignPlan,
+        target: Molecule,
+        options: crate::assembly_junctions::Options,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -721,6 +726,7 @@ pub enum AnalysisResult {
     VariantsDisposed(crate::variants_session::Disposed),
     OverlapRecipePreview(crate::assembly_recipe::Preview),
     LigationRecipePreview(crate::ligation_recipe::Preview),
+    AssemblyJunctionInspection(crate::assembly_junctions::Report),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -952,6 +958,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_variants_tag(bytes, &[80, 81, 82, 83, 84, 85])?;
     preflight_overlap_recipe_tag(bytes, &[86])?;
     preflight_ligation_recipe_tag(bytes, &[87])?;
+    preflight_assembly_junctions_tag(bytes, &[88])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1005,6 +1012,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         _ => decode_with_limit(b"CGR\0", bytes, maximum)?,
     };
     let required = match &response.result {
+        AnalysisResult::AssemblyJunctionInspection(_) => 33,
         AnalysisResult::LigationRecipePreview(_) => 32,
         AnalysisResult::OverlapRecipePreview(_) => 31,
         AnalysisResult::VariantsPrepared(_)
@@ -1110,6 +1118,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
     }
     match &response.result {
+        AnalysisResult::AssemblyJunctionInspection(report) => {
+            report.validate_binding(&response.revision)?
+        }
         AnalysisResult::LigationRecipePreview(report) => {
             report.validate_binding(&response.revision)?;
         }
@@ -1541,6 +1552,14 @@ fn preflight_topo_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     }
     Ok(())
 }
+fn preflight_assembly_junctions_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 33)?;
+    }
+    Ok(())
+}
 fn preflight_ligation_recipe_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -1780,6 +1799,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_variants_tag(bytes, &[88, 89, 90, 91, 92, 93])?;
     preflight_overlap_recipe_tag(bytes, &[94])?;
     preflight_ligation_recipe_tag(bytes, &[95])?;
+    preflight_assembly_junctions_tag(bytes, &[96])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -1787,6 +1807,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::InspectAssemblyJunctions { .. } => 33,
         AnalysisJob::PreviewLigationRecipe { .. } => 32,
         AnalysisJob::PreviewOverlapRecipe { .. } => 31,
         AnalysisJob::PrepareVariants { .. }
@@ -1968,6 +1989,19 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let mol = match &r.job {
+        AnalysisJob::InspectAssemblyJunctions {
+            plan,
+            target,
+            options,
+        } => {
+            if crate::assembly_junctions::inspection_revision(plan, target, options)? != r.revision
+            {
+                return Err(Error::Format(
+                    "assembly junction plan/target/options changed".into(),
+                ));
+            }
+            None
+        }
         AnalysisJob::PreviewLigationRecipe {
             inputs,
             target,
@@ -2473,6 +2507,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let result = match r.job {
+        AnalysisJob::InspectAssemblyJunctions {
+            plan,
+            target,
+            options,
+        } => crate::assembly_junctions::inspect_plan(&plan, &target, &options)
+            .map(AnalysisResult::AssemblyJunctionInspection),
         AnalysisJob::PreviewLigationRecipe {
             inputs,
             target,

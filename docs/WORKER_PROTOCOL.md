@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **32** and reads supported schemas 1–31. Candidate files write schema 9; workspace plan schema is 7; the verifier is science-12.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **33** and reads supported schemas 1–32. Candidate files write schema 9; workspace plan schema is 7; the verifier is science-12.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -344,3 +344,22 @@ Context binds all source/target revisions and recipe options. Selectors require
 schema 32 before payload decoding. Existing overlap schema-31 DTOs are unchanged;
 candidate 9, workspace-plan 7 and science-12 remain unchanged because both recipe
 compilers emit existing scientific operations. Ordinary 32 MiB limits apply.
+
+## Assembly junction inspection (schema 33)
+
+Job 96, `InspectAssemblyJunctions`, accepts the actual typed plan, independently
+bound target and explicit flank/genetic-code/frame/inspection limits. Result 88,
+`AssemblyJunctionInspection`, carries fresh verification, reconstructed product
+identity, bounded actual DNA windows, shared-homology intervals and requested
+window-relative peptide/CDS evidence. Final reconstruction must have succeeded
+before a product can be inspected; an earlier preparation cannot substitute.
+A completed product that disagrees with its independent target remains visible
+alongside the invalid verification outcome.
+
+The context binds the whole original plan, actual target and options. Both new
+selectors require schema 33 before decoding their scientific payloads. Existing
+plan/candidate/report layouts remain unchanged; native candidate 9, workspace-plan
+7 and science-12 still apply. The ordinary 32 MiB message budget is retained.
+The report is readonly evidence and cannot restore chemistry or verification
+from imported metadata. Frames/translation do not establish expression, reading
+frame intent or biological function.

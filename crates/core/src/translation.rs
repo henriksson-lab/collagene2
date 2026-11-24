@@ -105,6 +105,7 @@ impl Default for TranslationOptions {
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct TranslationReport {
     pub options: TranslationOptions,
     pub code_name: String,

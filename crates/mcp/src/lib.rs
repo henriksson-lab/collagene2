@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 115;
+pub const CURRENT_TOOL_COUNT: usize = 116;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -998,6 +998,14 @@ pub struct LigationAssemblyProposal {
 pub struct PlanRef {
     /// Exact immutable plan revision returned by propose_plan.
     pub plan_revision: String,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AssemblyJunctionQuery {
+    /// Exact immutable saved candidate; its separately bound target is reused.
+    pub plan_revision: String,
+    /// Explicit bounded sequence flanks and genetic-code inspection policy.
+    pub options: collagene_core::assembly_junctions::Options,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -4859,6 +4867,55 @@ impl CollageneServer {
         output(
             json!({"plan_revision":revision,"state":"candidate","verified":false,"target":args.target}),
         )
+    }
+    #[tool(
+        description = "Freshly inspect DNA junctions of an exact saved ordered overlap/ligation candidate and its stored independent target. Explicit bounded flanks, genetic code, six-frame choices and CDS inspection options. Reports actual product boundary/homology/orientation/circular-origin windows, boundary-crossing codons, conditional source-CDS evidence and physical ends/nicks where supported. Full target verification and unsupported final-method diagnostics remain visible. Immutable JSON evidence only: no source edits, candidate promotion, inferred fusion function or experimental guarantee."
+    )]
+    async fn inspect_assembly_junctions(
+        &self,
+        Parameters(args): Parameters<AssemblyJunctionQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || {
+            // Borrow actual saved source/target snapshots. No source or plan copy
+            // precedes the core's bounded native-model preflight.
+            let report={let store=server.store.lock().unwrap();
+                let saved=store.plans.get(&args.plan_revision).ok_or_else(||bad("unknown plan revision"))?;
+                collagene_core::assembly_junctions::source_preflight(&saved.plan,&saved.target).map_err(bad)?;
+                let expected=collagene_core::assembly_junctions::inspection_revision(&saved.plan,&saved.target,&args.options).map_err(bad)?;
+                let report=collagene_core::assembly_junctions::inspect_plan(&saved.plan,&saved.target,&args.options).map_err(bad)?;
+                report.validate_binding(&expected).map_err(bad)?;
+                report};
+            let artifact=server.text_artifact(bounded_json_limit(&report,32*1024*1024)?,"application/json","assembly-junctions.json")?;
+            let junctions=report.junctions.iter().take(10).map(|junction|json!({
+                "index":junction.index,"upstream":junction.upstream,"downstream":junction.downstream,
+                "closing":junction.closing,"boundary":junction.boundary,"homology":junction.homology,
+                "window":junction.window,
+                "frames":junction.frames.iter().take(6).map(|frame|json!({"spec":frame.spec,
+                    "crossing_codon":frame.crossing_codon,
+                    "protein_preview":frame.translation.protein.chars().take(100).collect::<String>(),
+                    "protein_truncated":frame.translation.protein.len()>100})).collect::<Vec<_>>(),
+                "cds_count":junction.cds.len(),"cds_omitted":junction.cds_omitted,
+                "cds":junction.cds.iter().take(10).map(|cds|json!({"feature_index":cds.feature_index,
+                    "label":cds.label.chars().take(256).collect::<String>(),"label_truncated":cds.label.chars().count()>256,
+                    "needs_review":cds.needs_review,"spans_boundary":cds.spans_boundary,
+                    "warning":cds.warning.as_ref().map(|warning|warning.chars().take(1024).collect::<String>()),
+                    "warning_truncated":cds.warning.as_ref().is_some_and(|warning|warning.chars().count()>1024)})).collect::<Vec<_>>(),
+                "cds_preview_truncated":junction.cds.len()>10,
+                "physical":junction.physical.as_ref().map(|physical|json!({"upstream_end":physical.upstream_end,"downstream_end":physical.downstream_end,"nick_count":physical.product_nicks.len()}))
+            })).collect::<Vec<_>>();
+            output(json!({"plan_revision":report.plan_revision,"target_revision":report.target_revision,
+                "context_revision":report.context_revision,"engine_version":report.engine_version,"options":report.options,
+                "verification_status":report.verification.status,"verification_findings":report.verification.findings.iter().take(100).map(|finding|finding.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),
+                "verification_findings_truncated":report.verification.findings.len()>100 || report.verification.findings.iter().take(100).any(|f|f.chars().count()>1024),
+                "product_revision":report.product_revision,"product_length":report.product_length,"product_topology":report.product_topology,
+                "method":report.method,"complete":report.complete,"omitted_junctions":report.omitted_junctions,
+                "junction_count":report.junctions.len(),"junctions":junctions,"junction_preview_truncated":report.junctions.len()>10,
+                "warnings":report.warnings.iter().take(100).map(|w|w.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),
+                "warnings_truncated":report.warnings.len()>100 || report.warnings.iter().take(100).any(|w|w.chars().count()>1024),
+                "artifact_id":artifact,
+                "authority":"Fresh declared-model junction DNA and conditional annotation/frame evidence only. Local codons do not prove a functional fusion or alter full target verification; saved evidence never promotes this candidate or repairs physical strands."}))
+        }).await
     }
     #[tool(
         description = "Reconstruct an exact saved plan revision against its separately bound target with the scientific core. Returns findings, assumptions and bounded product summaries. Never trusts AI claimed products or status."

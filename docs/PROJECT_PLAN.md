@@ -136,6 +136,13 @@ candidates retain exact source-event bindings for later history capture.
 [Current ligation workflow](LIGATION_WORKFLOW.md). These ordinary cloning paths
 remain the priority over deferred alignment/index expansion.
 
+Explicit junction review now reconstructs the actual plan before displaying DNA
+flanks, shared homology, requested local reading frames and available CDS coding
+windows. Independent-target mismatch, retained physical nicks and uncertain
+annotation/function remain separate findings. [Junction review](ASSEMBLY_JUNCTION_REVIEW.md).
+Clipped display flanks at known sequence ends are a normal bounded view, not a
+reason to fail otherwise complete junction inspection.
+
 ## Feature inventory and delivery priorities
 
 P0 is the foundation and first usable cloning release. P1 supplies everyday molecular biology workflows. P2 extends scale, specialized workflows, collaboration, and desktop delivery. P3 covers advanced molecular analysis. Each row is an implementation backlog item, not a claim about an existing Collagene 2 feature. Feature IDs are retained when rows are removed.

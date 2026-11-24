@@ -121,3 +121,6 @@ fn main() {
 fn main() {
     println!("Build the web application with: trunk serve crates/web/index.html");
 }
+
+#[cfg(target_arch = "wasm32")]
+mod assembly_junctions_view;

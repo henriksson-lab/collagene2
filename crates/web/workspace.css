@@ -195,3 +195,8 @@
 .workspace-shell .saved-primer-picker summary { cursor:pointer; font-size:13px; font-weight:600; }
 .workspace-shell .saved-primer-choice { padding:8px 0; border-bottom:1px solid #e4ebe5; overflow-wrap:anywhere; }
 .workspace-shell .saved-primer-picker pre { max-height:160px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.5 monospace; }
+
+.workspace-shell .assembly-junction-review { margin:12px 0; border-top:1px solid #dce3dd; padding-top:12px; }
+.workspace-shell .assembly-junction-review>summary { cursor:pointer; font-weight:600; }
+.workspace-shell .assembly-junction { padding:10px 0; border-top:1px solid #e4ebe5; }
+.workspace-shell .assembly-junction-review pre { max-height:200px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.5 monospace; }

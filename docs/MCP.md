@@ -422,3 +422,16 @@ steps or 385 ligation-preparation/treatment steps. They still use existing typed
 operations, fresh verification, bounded candidate storage, 32 MiB evidence
 artifacts and the shared 64 MiB managed session budget. Generated plans do not
 bypass those storage/resource checks or establish experimental success.
+
+### Assembly junction inspection
+
+`inspect_assembly_junctions` accepts an exact saved `plan_revision` and explicit bounded flank/genetic-code `options`. It reuses that plan's actual immutable source inputs and separately stored independent target; a caller cannot substitute a newly claimed product or target during inspection. Fresh verifier reconstruction remains part of inspection. Supported final ordered overlap/ligation methods expose actual reference-coordinate junction DNA and available CDS/frame context. Unsupported final operations are reported explicitly rather than converted into guessed junctions.
+
+The response is a bounded summary with a complete immutable JSON artifact. DNA homology, boundary-crossing codons and CDS annotations describe the declared reconstruction model and current annotation evidence. They do not establish expression, fusion-protein function, a validated biological reading frame, experimental success or an exhaustive assembly search. Source annotations retain uncertainty/review status. A wrong independent target remains a failed verification even if locally reconstructed junction DNA can still be inspected.
+
+Inspection changes no source, candidate or verification authority. Existing `verify_plan`, HTML and PDF protocol exports remain the way to recompute and review the saved candidate. Complete evidence is downloadable through `read_artifact` in bounded chunks; imported artifact contents cannot recreate scientific authority.
+
+
+Junction options explicitly specify `flank_bases` (at most 150 per side), `genetic_code` (1, 2 or 11), `frames: [{reverse, frame}]` (frame 0, 1 or 2 in each selected orientation), `max_junctions` and `include_cds`. Frame offsets are relative to the displayed window or its reverse complement, not a silently inferred full-product CDS frame. Boundary-crossing codons expose the oriented-window offset; source-CDS context is separately conditional on exact location, strand, phase and review status. Circular windows retain their ordered origin-crossing coordinate parts, while shared overlap homology remains an explicit interval, not duplicated DNA.
+
+Inline previews retain at most ten junctions, six local frames and ten CDS descriptions per junction, with explicit omissions/truncation; full translations, original verifier findings and physical evidence remain in `assembly-junctions.json` (32 MiB cap). A physical junction's nick count refers to the complete fresh product nick state; it is not an inferred bond-by-bond seal proof. Literal source-authored SDK fixtures cover a GAA codon crossing an actual phosphorylated-PCR ligation boundary, wrong target, reversed preparation, shared overlap homology and cohesive circular-origin closure. Adding these fixtures does not assert their execution.

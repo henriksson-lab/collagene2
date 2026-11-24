@@ -86,8 +86,10 @@ def main():
         current_tool_count = int(re.search(r"pub const CURRENT_TOOL_COUNT: usize = (\d+);", count_source).group(1))
         engine_source = (root / "crates/core/src/verification.rs").read_text()
         current_engine_suffix = re.search(r'pub const ENGINE_VERSION: &str = concat!\(env!\("CARGO_PKG_VERSION"\), "([^"]+)"\);', engine_source).group(1)
+        protocol_source = (root / "crates/core/src/protocol.rs").read_text()
+        current_candidate_schema = int(re.search(r"pub const CANDIDATE_SCHEMA_VERSION: u16 = (\d+);", protocol_source).group(1))
         assert len(tools) == current_tool_count, len(tools)
-        assert {"propose_ligation_assembly", "resolve_primer", "propose_overlap_assembly", "replay_variant_preview", "import_variants", "inspect_variants", "check_variant_reference", "preview_variant_allele", "export_variants", "dispose_variants", "simulate_topo", "inspect_topo_orientations", "project_topo_product", "check_topo_target", "inspect_recombination", "check_recombination_target", "select_recombination_component", "lookup_enzyme_catalog", "resolve_enzyme_evidence", "calculate_dilution", "balance_mixture", "calculate_dna_molar_ratios", "inspect_restriction", "propose_plan", "verify_plan", "read_sequence_region", "validate_reads", "import_fastq", "export_oligos", "import_workspace_archive", "export_workspace_archive", "begin_workspace_upload", "append_workspace_upload", "finalize_workspace_upload", "abort_workspace_upload", "create_feature_library", "import_feature_library", "export_feature_library", "scan_feature_library", "apply_feature_library", "import_annotations", "apply_annotations", "export_annotations", "export_annotation_dataset", "simulate_end_repair", "simulate_oligo_annealing", "search_document", "view_tracks", "import_alignment", "import_alignment_document", "list_alignments", "read_alignment", "export_alignment", "extract_alignment_rows", "analyze_protein", "design_codons", "check_codon_design", "analyze_dotplot", "assemble_contigs", "assess_methylation", "design_crispr_guides", "search_crispr_off_targets", "design_edit_template", "check_edit_template", "begin_genome_import", "append_genome_import", "finish_genome_import", "inspect_genome", "read_genome_export", "read_genome_interval", "design_genome_interval_guides", "start_genome_off_target_search", "advance_genome_off_target_search", "read_genome_off_target_hits", "cancel_genome_job", "simulate_tailing", "check_overlap_profile", "record_workspace_run", "list_workspace_runs", "replay_workspace_run"} <= {t["name"] for t in tools}
+        assert {"inspect_assembly_junctions", "propose_ligation_assembly", "resolve_primer", "propose_overlap_assembly", "replay_variant_preview", "import_variants", "inspect_variants", "check_variant_reference", "preview_variant_allele", "export_variants", "dispose_variants", "simulate_topo", "inspect_topo_orientations", "project_topo_product", "check_topo_target", "inspect_recombination", "check_recombination_target", "select_recombination_component", "lookup_enzyme_catalog", "resolve_enzyme_evidence", "calculate_dilution", "balance_mixture", "calculate_dna_molar_ratios", "inspect_restriction", "propose_plan", "verify_plan", "read_sequence_region", "validate_reads", "import_fastq", "export_oligos", "import_workspace_archive", "export_workspace_archive", "begin_workspace_upload", "append_workspace_upload", "finalize_workspace_upload", "abort_workspace_upload", "create_feature_library", "import_feature_library", "export_feature_library", "scan_feature_library", "apply_feature_library", "import_annotations", "apply_annotations", "export_annotations", "export_annotation_dataset", "simulate_end_repair", "simulate_oligo_annealing", "search_document", "view_tracks", "import_alignment", "import_alignment_document", "list_alignments", "read_alignment", "export_alignment", "extract_alignment_rows", "analyze_protein", "design_codons", "check_codon_design", "analyze_dotplot", "assemble_contigs", "assess_methylation", "design_crispr_guides", "search_crispr_off_targets", "design_edit_template", "check_edit_template", "begin_genome_import", "append_genome_import", "finish_genome_import", "inspect_genome", "read_genome_export", "read_genome_interval", "design_genome_interval_guides", "start_genome_off_target_search", "advance_genome_off_target_search", "read_genome_off_target_hits", "cancel_genome_job", "simulate_tailing", "check_overlap_profile", "record_workspace_run", "list_workspace_runs", "replay_workspace_run"} <= {t["name"] for t in tools}
         profile_resource=send("resources/read",{"uri":"collagene://recombination/profile/manufacturer-context-v1"})
         recombination_profile=json.loads(profile_resource["contents"][0]["text"])["snapshot"]
         recombination_docs=tool("import_document",{"text":(root/"fixtures/recombination-bp-demo.gb").read_text()})["documents"]
@@ -391,6 +393,13 @@ def main():
         ligation_evidence=full_json_artifact(ligation["artifact_id"])
         assert len(ligation_evidence["junctions"])==3 and ligation_evidence["junctions"][-1]["closing"]
         assert tool("verify_plan",{"plan_revision":ligation["plan_revision"]})["status"]=="ConsistentUnderAssumptions"
+        junction_options={"flank_bases":5,"genetic_code":1,"frames":[{"reverse":reverse,"frame":frame} for reverse in [False,True] for frame in range(3)],"max_junctions":128,"include_cds":True}
+        junctions=tool("inspect_assembly_junctions",{"plan_revision":ligation["plan_revision"],"options":junction_options})
+        assert junctions["verification_status"]=="ConsistentUnderAssumptions" and junctions["junction_count"]==3 and junctions["product_topology"]=="Circular",junctions
+        junction_evidence=full_json_artifact(junctions["artifact_id"])
+        assert junction_evidence["junctions"][-1]["closing"] and junction_evidence["junctions"][-1]["boundary"]==0
+        assert all(len(junction["window"]["dna"])==10 for junction in junction_evidence["junctions"])
+        reject_tool("inspect_assembly_junctions",{"plan_revision":"not-a-saved-plan","options":junction_options})
         plan = {"plan_revision": candidate["plan_revision"]}
         report = tool("verify_plan", plan)
         assert report["status"] == "ConsistentUnderAssumptions", report
@@ -411,7 +420,7 @@ def main():
                 break
             offset=chunk["next_start"]
         candidate_bytes=base64.b64decode(encoded,validate=True)
-        assert candidate_bytes.startswith(b"CGP\0") and candidate_bytes[4:6]==bytes([7,0])
+        assert candidate_bytes.startswith(b"CGP\0") and int.from_bytes(candidate_bytes[4:6], "little")==current_candidate_schema
         if args.candidate:
             args.candidate.write_bytes(candidate_bytes)
         # Route source-bound annotation/library tools over the actual stdio executable.

@@ -1,0 +1,32 @@
+LOCUS       TA_vector_top             13 bp    DNA     linear   SYN 24-NOV-2026
+DEFINITION  Actual declared vector top strand, written 5-prime to 3-prime.
+COMMENT     Synthetic geometry fixture; no commercial preparation or functional
+            construct is asserted. Explicit chemistry must be declared separately.
+FEATURES             Location/Qualifiers
+ORIGIN
+        1 aggggcatcc ctt
+//
+LOCUS       TA_vector_bottom          13 bp    DNA     linear   SYN 24-NOV-2026
+DEFINITION  Actual declared vector bottom strand, written 5-prime to 3-prime.
+COMMENT     Synthetic geometry fixture; no commercial preparation or functional
+            construct is asserted. Explicit chemistry must be declared separately.
+FEATURES             Location/Qualifiers
+ORIGIN
+        1 agggatgccc ctt
+//
+LOCUS       TA_PCR_template            6 bp    DNA     linear   SYN 24-NOV-2026
+DEFINITION  Synthetic exact-PCR template; forward CGA and reverse CAT.
+COMMENT     Synthetic geometry fixture; no commercial preparation or functional
+            construct is asserted. Explicit chemistry must be declared separately.
+FEATURES             Location/Qualifiers
+ORIGIN
+        1 cgaatg
+//
+LOCUS       TA_independent_target     20 bp    DNA     circular SYN 24-NOV-2026
+DEFINITION  Independent literal target; does not supply a reconstruction path.
+COMMENT     Synthetic geometry fixture; no commercial preparation or functional
+            construct is asserted. Explicit chemistry must be declared separately.
+FEATURES             Location/Qualifiers
+ORIGIN
+        1 aggggcatcc cttcgaatga
+//

@@ -45,6 +45,11 @@ const TOOLS: &[Tool] = &[
         target: Target::Panel("golden_gate"),
     },
     Tool {
+        label: "TOPO",
+        group: "Cloning",
+        target: Target::Panel("topo"),
+    },
+    Tool {
         label: "Recombination",
         group: "Cloning",
         target: Target::Panel("recombination"),

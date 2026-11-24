@@ -48,12 +48,19 @@ fn same_length_substitution_keeps_numbered_scope_but_marks_ancestral_citation_su
         output.references[0].description,
         "1  (bases 3 to 8; 10 to 12)"
     );
+    // GenBank REMARK text is wrapped at column79; gb-io preserves those line
+    // breaks when parsing. Test citation semantics independently of wrapping.
+    let remark = output.references[0]
+        .remark
+        .as_deref()
+        .unwrap()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(remark.contains("projected coordinate scope"), "{remark}");
     assert!(
-        output.references[0]
-            .remark
-            .as_deref()
-            .unwrap()
-            .contains("projected coordinate scope")
+        remark.contains("citation support for edited DNA is unverified"),
+        "{remark}"
     );
     assert_eq!(
         output

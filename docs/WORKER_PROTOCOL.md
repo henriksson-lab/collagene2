@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **25** and reads supported schemas 1–24. Candidate files write schema 8; workspace plan schema is 6; the verifier is science-10.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **26** and reads supported schemas 1–25. Candidate files write schema 8; workspace plan schema is 6; the verifier is science-10.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -94,6 +94,10 @@ Postcard enum indexes are append-only. Existing tags and supported historical la
 | 79 | CheckReadAlignment | 24 |
 | 80 | ExportReadAlignments | 24 |
 | 81 | DisposeReadAlignments | 24 |
+| 82 | SimulateTopo | 26 |
+| 83 | InspectTopoOrientations | 26 |
+| 84 | ProjectTopoProduct | 26 |
+| 85 | CheckTopoTarget | 26 |
 
 Result tags 0–29 retain their selectors (verification gains explicit versioned step evidence in schema 25) (`Search`, `Restriction`, `Error`, `Pcr`, `Verification`, `DuplexDigest`, `Translation`, `CdsTranslation`, `Orfs`, `Alignment`, `PcrDocuments`, `PrimerEvidence`, `PrimerDesign`, `ProtocolPdf`, `GoldenGate`, `MismatchPcr`, `InversePcr`, `Gel`, `DiagnosticDigest`, `MismatchPcrPreview`, `WorkspaceSaved`, `WorkspaceLoaded`, `TraceValidation`, `FeatureLibraryScan`, `AnnotatedDocument`, `AnnotationImport`, `AnnotationExport`, `RepairPreview`, `AnnealPreview`, `PhysicalPreviewDocument`). Schema 9 appends `ViewTracks` at tag 30, `DocumentSearch` at tag 31 and `TracksPrepared` at tag 32. New response variants cannot be decoded under older version labels.
 
@@ -251,3 +255,16 @@ current verification authority. `science-10` reports require schema 25.
 SAM/BAM result tags 69–73 were appended in schema 24; these remain stable.
 Read collections stay private to a worker session and decoded JSON or binary
 receipts cannot reinstall parsed records or checked biological authority.
+
+## Standalone TOPO inspection (schema 26)
+
+Result tags 74–77 append fresh physical simulation, orientation inspection,
+selected-component projection and independent target assessment. Request
+revision helpers hash bounded original input identities, full recipe and limits,
+ordered strand indexes or component/seed selection, and the actual target and
+all acceptance-policy flags where applicable. Hashing a request performs no
+scientific reconstruction. The worker compares that binding before running the
+engine; decoding a report checks readonly shape and context, not biological
+truth or experimental success. Reopening historical JSON cannot install graph
+state. Browser source-event/epoch checks provide a separate identity boundary
+for equal-content documents and changed histories.

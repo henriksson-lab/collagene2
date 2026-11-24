@@ -104,3 +104,5 @@ be used as an intact-duplex substrate by silently dropping its graph. The
 underlying engine and its bounded elementary-transfer model are documented by
 `collagene-topo`. Compiler validation is separate from scientific/runtime
 validation; browser checks remain deferred until in-scope code is complete.
+
+The source-bound [web preparation workflow](TOPO_WEB_WORKFLOW.md) adds an explicit TA form and worker-backed orientation/projection/target inspection. Its recipe builder does not run science or choose a winner on the main thread.

@@ -62,6 +62,10 @@ mod search_view;
 mod selection_toolbar;
 #[cfg(target_arch = "wasm32")]
 mod sequence_view;
+#[cfg(any(target_arch = "wasm32", test))]
+mod topo_preparation;
+#[cfg(target_arch = "wasm32")]
+mod topo_view;
 #[cfg(target_arch = "wasm32")]
 mod trace_validation;
 #[cfg(target_arch = "wasm32")]

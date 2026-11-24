@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 25;
+pub const WORKER_SCHEMA_VERSION: u16 = 26;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 8;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -552,6 +552,29 @@ pub enum AnalysisJob {
     DisposeReadAlignments {
         source_hash: String,
     },
+    SimulateTopo {
+        inputs: Vec<crate::topo::Input>,
+        request: crate::topo::Request,
+    },
+    InspectTopoOrientations {
+        inputs: Vec<crate::topo::Input>,
+        request: crate::topo::Request,
+        vector: [usize; 2],
+        insert: [usize; 2],
+        directional: bool,
+    },
+    ProjectTopoProduct {
+        inputs: Vec<crate::topo::Input>,
+        request: crate::topo::Request,
+        selection: crate::topo::Selection,
+    },
+    CheckTopoTarget {
+        inputs: Vec<crate::topo::Input>,
+        request: crate::topo::Request,
+        selection: crate::topo::Selection,
+        target: Molecule,
+        policy: crate::topo::AcceptancePolicy,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -635,6 +658,10 @@ pub enum AnalysisResult {
     ReadAlignmentChecked(crate::read_alignment_session::Checked),
     ReadAlignmentsExported(crate::read_alignment_session::Exported),
     ReadAlignmentsDisposed(crate::read_alignment_session::Disposed),
+    TopoSimulation(crate::topo::TopoReport),
+    TopoOrientations(crate::topo::OrientationInspection),
+    TopoProjection(crate::topo::Product),
+    TopoTarget(crate::topo::TargetAssessment),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -814,6 +841,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_catalog_tag(bytes, &[63, 64, 65])?;
     preflight_recombination_tag(bytes, &[66, 67, 68])?;
     preflight_read_alignment_tag(bytes, &[69, 70, 71, 72, 73])?;
+    preflight_topo_tag(bytes, &[74, 75, 76, 77])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -851,6 +879,10 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         _ => decode_with_limit(b"CGR\0", bytes, maximum)?,
     };
     let required = match &response.result {
+        AnalysisResult::TopoSimulation(_)
+        | AnalysisResult::TopoOrientations(_)
+        | AnalysisResult::TopoProjection(_)
+        | AnalysisResult::TopoTarget(_) => 26,
         AnalysisResult::ReadAlignmentsPrepared(_)
         | AnalysisResult::ReadAlignmentPage(_)
         | AnalysisResult::ReadAlignmentChecked(_)
@@ -940,6 +972,18 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
     }
     match &response.result {
+        AnalysisResult::TopoSimulation(report) => {
+            crate::topo_worker::validate_simulation(report, &response.revision)?
+        }
+        AnalysisResult::TopoOrientations(report) => {
+            crate::topo_worker::validate_orientations(report, &response.revision)?
+        }
+        AnalysisResult::TopoProjection(report) => {
+            crate::topo_worker::validate_projection(report, &response.revision)?
+        }
+        AnalysisResult::TopoTarget(report) => {
+            crate::topo_worker::validate_target(report, &response.revision)?
+        }
         AnalysisResult::ReadAlignmentsPrepared(report) => {
             report.validate()?;
             if report.revision != response.revision {
@@ -1298,6 +1342,14 @@ fn preflight_methylation_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     }
     Ok(())
 }
+fn preflight_topo_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 26)?;
+    }
+    Ok(())
+}
 fn preflight_read_alignment_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -1478,6 +1530,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_catalog_tag(bytes, &[70, 71, 72])?;
     preflight_recombination_tag(bytes, &[73, 74, 75])?;
     preflight_read_alignment_tag(bytes, &[77, 78, 79, 80, 81])?;
+    preflight_topo_tag(bytes, &[82, 83, 84, 85])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -1485,6 +1538,10 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::SimulateTopo { .. }
+        | AnalysisJob::InspectTopoOrientations { .. }
+        | AnalysisJob::ProjectTopoProduct { .. }
+        | AnalysisJob::CheckTopoTarget { .. } => 26,
         AnalysisJob::PrepareReadAlignments { .. }
         | AnalysisJob::ReadAlignmentPage { .. }
         | AnalysisJob::CheckReadAlignment { .. }
@@ -1641,6 +1698,55 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let mol = match &r.job {
+        AnalysisJob::SimulateTopo { inputs, request } => {
+            if crate::topo_worker::simulation_revision(inputs, request)? != r.revision {
+                return Err(Error::Format("TOPO simulation context changed".into()));
+            }
+            None
+        }
+        AnalysisJob::InspectTopoOrientations {
+            inputs,
+            request,
+            vector,
+            insert,
+            directional,
+        } => {
+            if crate::topo_worker::orientations_revision(
+                inputs,
+                request,
+                *vector,
+                *insert,
+                *directional,
+            )? != r.revision
+            {
+                return Err(Error::Format("TOPO orientation context changed".into()));
+            }
+            None
+        }
+        AnalysisJob::ProjectTopoProduct {
+            inputs,
+            request,
+            selection,
+        } => {
+            if crate::topo_worker::projection_revision(inputs, request, selection)? != r.revision {
+                return Err(Error::Format("TOPO projection context changed".into()));
+            }
+            None
+        }
+        AnalysisJob::CheckTopoTarget {
+            inputs,
+            request,
+            selection,
+            target,
+            policy,
+        } => {
+            if crate::topo_worker::target_revision(inputs, request, selection, target, policy)?
+                != r.revision
+            {
+                return Err(Error::Format("TOPO target/policy context changed".into()));
+            }
+            None
+        }
         AnalysisJob::PrepareReadAlignments { .. }
         | AnalysisJob::ReadAlignmentPage { .. }
         | AnalysisJob::CheckReadAlignment { .. }
@@ -2032,6 +2138,32 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let result = match r.job {
+        AnalysisJob::SimulateTopo { inputs, request } => {
+            crate::topo::simulate(&inputs, &request).map(AnalysisResult::TopoSimulation)
+        }
+        AnalysisJob::InspectTopoOrientations {
+            inputs,
+            request,
+            vector,
+            insert,
+            directional,
+        } => crate::topo::inspect_orientations(&inputs, &request, vector, insert, directional)
+            .map(AnalysisResult::TopoOrientations),
+        AnalysisJob::ProjectTopoProduct {
+            inputs,
+            request,
+            selection,
+        } => {
+            crate::topo::product(&inputs, &request, &selection).map(AnalysisResult::TopoProjection)
+        }
+        AnalysisJob::CheckTopoTarget {
+            inputs,
+            request,
+            selection,
+            target,
+            policy,
+        } => crate::topo::check_target(&inputs, &request, &selection, &target, &policy)
+            .map(AnalysisResult::TopoTarget),
         AnalysisJob::PrepareReadAlignments { .. }
         | AnalysisJob::ReadAlignmentPage { .. }
         | AnalysisJob::CheckReadAlignment { .. }

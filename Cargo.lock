@@ -311,18 +311,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "collagene-enzyme-catalog"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "collagene-mcp"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "blake3",
  "collagene-core",
+ "collagene-protocol-units",
  "collagene-sources",
  "rmcp",
  "schemars",
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "collagene-protocol-units"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

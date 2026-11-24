@@ -152,7 +152,7 @@ Model details: [Golden Gate](GOLDEN_GATE.md), [mutagenesis](MUTAGENESIS.md), [ge
 
 ## Reusable feature libraries and annotation exchange
 
-The server has 88 tools. These ten tools extend session-only, immutable evidence handling:
+The server has 91 tools. These ten tools extend session-only, immutable evidence handling:
 
 - `create_feature_library` takes `{name, version, features: [{document, feature_index}]}`. Each source is an exact imported `DocumentRef`; biological extraction handles supported compound/reverse locations. A collection may combine features from several documents. Duplicate selections, unsupported extraction or size limits reject the entire operation. No proprietary feature database is bundled.
 - `import_feature_library` takes `{data_base64}` containing validated library JSON, at most 8 MiB decoded. `list_feature_libraries` lists bounded summaries. `export_feature_library` takes `{library: {id, revision}}` and returns the complete source/version/entry JSON artifact.
@@ -297,7 +297,7 @@ All sources and aggregate reference sets are preflighted while borrowed, before 
 
 ## File-backed large references and cooperative genome searches
 
-The server now exposes 88 tools. Large references use managed private scratchfiles, outside the 64 MiB small-document store. No tool accepts an arbitrary filesystem path. Normal disposal closes handles before deleting owned files, including on Windows. The backend supports two active imports, four published datasets and four live searches, with a separate 64 GiB managed-byte reservation budget.
+The server now exposes 91 tools. Large references use managed private scratchfiles, outside the 64 MiB small-document store. No tool accepts an arbitrary filesystem path. Normal disposal closes handles before deleting owned files, including on Windows. The backend supports two active imports, four published datasets and four live searches, with a separate 64 GiB managed-byte reservation budget.
 
 The eleven new tools are:
 
@@ -320,8 +320,31 @@ The native tests stream 70 MiB of FASTA into a `.cgref` larger than 32 MiB, expo
 
 ## Desktop restriction inspection
 
-The server exposes 88 tools. `inspect_restriction {document, source_role, enzymes, options?, site_start?, max_sites?, fragment_start?, max_fragments?}` inspects an exact immutable DNA document with 1–64 embedded enzyme names from `list_enzymes`. Name lookup is case-insensitive; the report pins the exact resolved enzyme geometry, ordered selection, source role/revision and computational limits. Each site/fragment page contains at most 100 records (default 20); a complete immutable JSON artifact is available through `read_artifact`. Repeating the same request with different page offsets yields the same artifact. Invalid offsets, stale document revisions and extra authority fields fail before an artifact is installed.
+The server exposes 91 tools. `inspect_restriction {document, source_role, enzymes, options?, site_start?, max_sites?, fragment_start?, max_fragments?}` inspects an exact immutable DNA document with 1–64 embedded enzyme names from `list_enzymes`. Name lookup is case-insensitive; the report pins the exact resolved enzyme geometry, ordered selection, source role/revision and computational limits. Each site/fragment page contains at most 100 records (default 20); a complete immutable JSON artifact is available through `read_artifact`. Repeating the same request with different page offsets yields the same artifact. Invalid offsets, stale document revisions and extra authority fields fail before an artifact is installed.
 
 The tool preserves possible recognition sites, exact origin-split spans, cuts outside substrate and bounded-search diagnostics. `scan_complete` describes recognition enumeration; `products_determined` separately describes whether the assumed-complete duplex product set exists. Neither empirical cleavage nor methylation/condition permission is inferred. Fragment summaries use stable source-cut-order indices, original strand boundaries and explicit end geometry; reference-strand lengths are a separate view. Limited scans and possible/edge evidence do not authorize releasing a product. The tool creates no sequence documents or persistent history. Browser product opening uses fresh source-event-bound worker reconstruction and native history installation.
 
 The existing strict `analyze_restriction` and `digest_fragments` behaviors remain compatible. Actual SDK tests cover the new tool's negotiation/schema, exact multi-enzyme evidence, immutable artifact pages, stale source/role changes, malformed pages, unchanged document inventory, possible/edge evidence and computational limits. Protocol tests exercise the same native/WASM dispatch kernel, append-only schema20 guards, ordinary message caps, fresh product derivation and exact source-event installation. A real executable stdio smoke also exercises the new tool; test results are recorded in the implementation status after execution.
+
+
+## Exact protocol arithmetic
+
+Three stateless tools use `collagene-protocol-units` directly: `calculate_dilution`, `balance_mixture` and `calculate_dna_molar_ratios`. The server has **91 tools**. These calculations neither inspect inventory nor verify chemistry, measured stock concentrations or reaction success. They do not create documents, plans or artifacts. No source DNA, network call or external program is required.
+
+Quantity values are nonnegative **decimal strings**, at most 64 bytes and 19 fractional digits, without exponent notation. Volume units are the closed enum `nL`, `uL`, `mL`; mass units are `ng`, `ug`; molar concentration units are `nM`, `uM`. Mass concentrations specify separate `mass_unit` and `volume_unit`. Input dimensions cannot be interchanged. Exact outputs use canonical units (`nL`, `ng`, `pmol`, `ng/nL`, `pmol/nL`) and `{numerator: "…", denominator: "…"}` string pairs, avoiding floating-point loss. Arithmetic that cannot fit the bounded reduced rational returns an explicit overflow error.
+
+`calculate_dilution` accepts `stock`, `target`, `final_volume` and optional `quantization`. Stock and target use either `{kind: "molar", value: "10", unit: "uM"}` or `{kind: "mass", value: "50", mass_unit: "ng", volume_unit: "uL"}`. Missing concentrations/volume remain missing-input errors; mixed mass/molar dimensions fail. The model is `C1*V1=C2*V2`, additive volumes and zero-concentration diluent. For example:
+
+```json
+{"stock":{"kind":"molar","value":"10","unit":"uM"},"target":{"kind":"molar","value":"100","unit":"nM"},"final_volume":{"value":"20","unit":"uL"}}
+```
+
+This needs exactly 200 nL stock and 19,800 nL diluent. Optional `quantization: {increment: {value: "0.3", unit: "uL"}, mode: "NearestTiesUp"}` rounds stock to 300 nL, refills diluent to 19,700 nL and reports 150 nM achieved concentration (`3/20000 pmol/nL`), a 100 nL absolute volume deviation and `target_reached: false`. Modes are `ExactOnly`, `Floor`, `Ceiling`, `NearestTiesUp`. No quantization is applied unless requested. `ExactOnly` rejects inexact increments; a rounded stock volume exceeding the final volume fails rather than returning a negative diluent.
+
+`balance_mixture` accepts `final_volume` and up to 128 `{role, volume}` components. Roles must be unique nonblank identifiers of at most 128 bytes. Volumes are additive, with one remaining fill diluent. Missing component volumes retain their component index; duplicate roles and overfilled mixtures fail. This is volume balance alone; it does not infer dilution, compatibility or the diluent identity.
+
+`calculate_dna_molar_ratios` requires `model`, `anchor`, `targets` and `require_stock_volumes`. The model explicitly supplies `model_id`, positive decimal `grams_per_mole_per_base_pair`, nonblank `assumptions` (at most 2048 bytes), and optional descriptive `source`. There is **no implicit 660 coefficient**. The anchor supplies `role`, positive integer-string `length_bp`, `mass` and optional `stock` mass concentration. Each of up to 127 targets supplies `role`, integer-string `length_bp`, positive decimal `molar_ratio` and optional `stock`. Ratios are duplex molecule ratios relative to the anchor, not end counts or recommended experimental ratios. Missing stocks yield absent volumes only when `require_stock_volumes` is false; true preserves indexed missing-stock errors.
+
+For a synthetic declared coefficient of 650 g/mol/bp, a 3000 bp anchor weighing 50 ng is exactly `1/39 pmol`. A 1000 bp target at an explicit 3:1 molecule ratio needs 50 ng (`1/13 pmol`). With declared 25 ng/uL anchor stock and 10 ng/uL target stock, volumes are exactly 2000 nL and 5000 nL. The full caller model and assumptions remain in the returned recipe. Changing the coefficient changes molecular amounts; it cannot establish empirical mass, sequence-dependent chemistry or ligation success.
+
+Library errors retain typed MCP error data `{domain: "protocol_units", code: "…"}`. `MissingInput` also retains `field` and zero-based `component_index` (null for unindexed dilution fields). Unsupported enum units, malformed schemas and undeclared extra fields are rejected by the MCP parameter parser. SDK tests use independent literal arithmetic, exercise exact/quantized results, dimensions, missing models/stocks, impossible dilution, overfill and overflow; the executable stdio smoke exercises all three tools too.

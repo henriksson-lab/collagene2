@@ -1,0 +1,18 @@
+[package]
+name = "collagene-protocol-units"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Exact bounded unit-aware dilution, mixture and declared DNA molar-ratio calculations"
+
+
+[features]
+default = []
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json.workspace = true

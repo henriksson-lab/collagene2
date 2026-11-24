@@ -1665,6 +1665,33 @@ impl ServerHandler for CollageneServer {
 #[tool_router]
 impl CollageneServer {
     #[tool(
+        description = "Calculate exact single-stock dilution from decimal-string quantities and explicit mass or molar units. Missing values and mixed dimensions are errors. Optional explicit stock-volume quantization reports absolute rounding deviation, refill diluent and achieved concentration; omitted quantization never rounds. Assumes C1*V1=C2*V2, additive volumes and zero-concentration diluent. No stock inventory lookup, solvent compatibility or reaction verification."
+    )]
+    fn calculate_dilution(
+        &self,
+        Parameters(args): Parameters<unit_tools::DilutionQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        output(unit_tools::calculate_dilution(args)?)
+    }
+    #[tool(
+        description = "Balance up to 128 uniquely named declared component volumes against an explicit final volume, returning exact specified and remaining fill-diluent volumes. Uses decimal strings and nL/uL/mL unit enums; missing component volumes, overfill and bounded arithmetic overflow remain errors. Additive volume arithmetic only, without concentration, inventory or chemical-compatibility inference."
+    )]
+    fn balance_mixture(
+        &self,
+        Parameters(args): Parameters<unit_tools::MixtureQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        output(unit_tools::balance_mixture(args)?)
+    }
+    #[tool(
+        description = "Calculate duplex-DNA molecule-ratio masses, amounts and optional stock volumes for one weighed anchor and up to 127 explicitly named targets. Requires a caller-declared positive g/mol/base-pair mass coefficient, model identity and assumptions; no implicit 660 coefficient or recommended ratio. Exact decimal-string inputs and rational-string outputs, with explicit missing-stock/invalid/overflow errors. Amounts count molecules, not ends; no sequence chemistry, stock inventory or reaction success is verified."
+    )]
+    fn calculate_dna_molar_ratios(
+        &self,
+        Parameters(args): Parameters<unit_tools::DnaRatioQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        output(unit_tools::calculate_dna_molar_ratios(args)?)
+    }
+    #[tool(
         description = "Begin a session-owned large-reference import from bounded FASTA or native .cgref bytes. Pin the exact declared input byte length and optional BLAKE3; build/options apply only to FASTA. Returns an opaque import handle, never a filesystem path. Data are streamed into managed scratchfiles outside the small-document store; no giant Molecule or whole-file RAM buffer. Finish requires full private semantic readback before publication."
     )]
     async fn begin_genome_import(
@@ -3721,3 +3748,5 @@ impl CollageneServer {
 }
 
 mod genome_store;
+
+mod unit_tools;

@@ -6,8 +6,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 27;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 8;
+pub const WORKER_SCHEMA_VERSION: u16 = 28;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 9;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
@@ -1492,6 +1492,9 @@ fn preflight_crispr_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     Ok(())
 }
 fn check_scientific_report_version(bytes: &[u8], engine: &str) -> Result<(), Error> {
+    if engine.ends_with("/science-12") {
+        check_variant_version(bytes, 28)?;
+    }
     if engine.ends_with("/science-11") {
         check_variant_version(bytes, 27)?;
     }
@@ -1523,6 +1526,9 @@ fn check_workspace_version(
             check_variant_version(bytes, plan_worker_version(&record.plan))?;
             if record.plan_schema >= 4 {
                 check_variant_version(bytes, 17)?;
+            }
+            if record.plan_schema >= 7 {
+                check_variant_version(bytes, 28)?;
             }
             if record.plan_schema >= 6 {
                 check_variant_version(bytes, 25)?;
@@ -1589,6 +1595,7 @@ fn plan_worker_version(plan: &crate::verification::DesignPlan) -> u16 {
     plan.steps
         .iter()
         .map(|step| match step {
+            crate::verification::Operation::CheckedTopo { .. } => 28,
             crate::verification::Operation::Topo { .. } => 25,
             crate::verification::Operation::RecombineReference { .. } => 22,
             crate::verification::Operation::DeclareSourceModifications { .. }

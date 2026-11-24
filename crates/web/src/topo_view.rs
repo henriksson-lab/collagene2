@@ -707,6 +707,17 @@ pub fn TopoPanel(
         ) {
             return;
         }
+        if !c
+            .report
+            .product
+            .physical
+            .projection
+            .physical
+            .fully_specified_dna
+        {
+            status.set("The full physical graph contains unresolved DNA; a final checked candidate requires fully specified source calls.".into());
+            return;
+        }
         let b = &c.projected.bound;
         let inputs = b
             .captured
@@ -740,10 +751,11 @@ pub fn TopoPanel(
             name: "Explicit TA TOPO candidate".into(),
             target_revision: b.captured.target.revision(),
             inputs,
-            steps: vec![Operation::Topo {
+            steps: vec![Operation::CheckedTopo {
                 sources,
                 request: c.projected.request.clone(),
                 selection: c.projected.selection.clone(),
+                policy: c.report.policy.clone(),
             }],
         });
         if let Err(error) = candidate.validate() {
@@ -823,7 +835,7 @@ pub fn TopoPanel(
                 <label class="checkbox-label"><input type="checkbox" disabled=move||locked.get() prop:checked=move||policies.with(|p|p.reverse) on:change=move|e|policies.update(|p|p.reverse=event_target_checked(&e))/>"Allow reverse-complement target comparison"</label>
             </fieldset>
             {move||current_projection().map(|p|view!{<section class="topo-projection"><h3>"Fresh selected component"</h3><p>{projection_text(&p.product)}</p><AnnotationReview product=p.product.clone()/><details><summary>"Retained full-graph summary"</summary><pre>{physical_text(&p.product.physical.projection.physical)}</pre></details><button class="button primary full" disabled=move||busy.get()||locked.get() on:click=move|_|check.run(())>"Check independent target"</button></section>})}
-            {move||current_check().map(|c|{let accepted=matches!(&c.report.outcome,topo::TargetOutcome::AcceptedUnderDeclaredGraph);view!{<section class="topo-target"><h3>"Fresh independent-target assessment"</h3><p>{format!("{:?}",c.report.outcome)}</p><p class="helper">"Agreement applies only to this source/event/recipe/component and explicit policy. The plan retains full physical evidence and remains incomplete without a typed physical-target acceptance operation; this does not install DNA or chemical authority."</p><label class="checkbox-label"><input type="checkbox" prop:checked=move||reviewed.get() on:change=move|e|reviewed.set(event_target_checked(&e))/>"I reviewed the preparation assumptions, both paths, all components, nicks and acceptance policy."</label><button class="button secondary full" disabled=move||busy.get()||locked.get()||!accepted||!reviewed.get() on:click=move|_|candidate.run(())>"Review source-bound TOPO candidate in Plan"</button></section>}})}
+            {move||current_check().map(|c|{let accepted=matches!(&c.report.outcome,topo::TargetOutcome::AcceptedUnderDeclaredGraph)&&c.report.product.physical.projection.physical.fully_specified_dna;view!{<section class="topo-target"><h3>"Fresh independent-target assessment"</h3><p>{format!("{:?}",c.report.outcome)}</p><p class="helper">"Agreement applies only to this source/event/recipe/component and explicit policy. A final checked TOPO plan can verify as consistent under declared graph assumptions when the full DNA is specified. This does not predict experimental success, repair retained nicks or flaps, validate annotation biology, or promote the graph into downstream generic chemistry."</p><label class="checkbox-label"><input type="checkbox" prop:checked=move||reviewed.get() on:change=move|e|reviewed.set(event_target_checked(&e))/>"I reviewed the preparation assumptions, both paths, all components and nicks, and accept this explicit policy for final target checking."</label><button class="button secondary full" disabled=move||busy.get()||locked.get()||!accepted||!reviewed.get() on:click=move|_|candidate.run(())>"Review checked TOPO candidate in Plan"</button></section>}})}
         </div>
     }
 }

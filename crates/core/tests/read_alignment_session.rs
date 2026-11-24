@@ -15,7 +15,10 @@ fn encoded(revision: String, job: Job) -> Vec<u8> {
 }
 fn run(session: &mut AnalysisSession, revision: String, job: Job) -> (ResultValue, u32) {
     let request = encoded(revision.clone(), job);
-    assert_eq!(&request[4..6], &24u16.to_le_bytes());
+    assert_eq!(
+        &request[4..6],
+        &protocol::WORKER_SCHEMA_VERSION.to_le_bytes()
+    );
     let response = session.process_request(&request).unwrap();
     let ((id, binding, tag), _) =
         postcard::take_from_bytes::<(u32, &str, u32)>(&response[42..]).unwrap();

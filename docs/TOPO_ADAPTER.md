@@ -133,3 +133,22 @@ The verifier retains annotations separately in `annotation_reports`; historical
 worker25/26 reports retain their actual graph and gain no invented mapping report.
 
 The per-role `dropped` count describes features absent from the selected top-reference intervals. Their reviewed originals also remain in `unmapped`; these two counts overlap and do not assert global deletion from the physical graph.
+
+## Explicit final graph acceptance
+
+`Operation::CheckedTopo` carries all six physical/comparison policy flags and
+checks an independently bound final target with one fresh annotated physical
+assessment. A fully specified accepted result can be
+`ConsistentUnderAssumptions`; strict-policy rejection is Invalid, and a missing
+contour or unsupported scope remains Incomplete. Physical and annotation
+evidence survives rejection or withholding. Rotation and reverse-complement
+comparison follow the explicit policy in both verification and native run
+capture. The target never supplies a path, source call, component or repair.
+
+This is a final-only operation. The older `Topo` operation remains a restrictive
+reference preview, and neither operation silently supplies intact-duplex state
+for a later digest, PCR or ligation. Exported sequence views keep their chemistry
+restriction; allowing nicks or residual components does not remove them.
+Candidate9/workspace plan7/worker28/science12 identify the checked operation;
+report layouts remain unchanged from schema27. Full experimental success and
+unmodeled downstream graph composition remain outside this acceptance claim.

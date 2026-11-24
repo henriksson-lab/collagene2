@@ -22,8 +22,6 @@ and retained components before accepting any graph comparison.
 
 This is a small synthetic coordinate/chemistry example. It establishes no
 commercial kit identity, cloning efficiency, cellular repair, functional DNA or
-experimental recommendation. The ordered plan currently remains Incomplete
-because downstream physical graph composition and plan-level physical target
-acceptance are still separate implementation work. Browser validation is deferred.
+experimental recommendation. The reviewed candidate uses final `CheckedTopo` acceptance: with explicitly allowed nicks and otherwise satisfied policy, it can be consistent under those declared graph assumptions. Nicks remain in the physical report and the exported sequence view retains its chemistry restriction. Downstream physical graph composition remains separate implementation work. Browser validation is deferred.
 
 Vector-top and template landmark annotations demonstrate source correspondence. PCR-derived annotations require review; original source locations and qualifiers remain in reconstruction evidence. The bottom strand is not automatically duplicated as a second annotation parent.

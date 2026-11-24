@@ -114,15 +114,6 @@ pub fn workspace_fingerprint(w: &Workspace) -> Result<String, Error> {
 fn sources(op: &Operation) -> Vec<&Source> {
     verification::operation_sources(op)
 }
-fn target_matches(p: &Molecule, t: &Molecule) -> bool {
-    p.topology == t.topology
-        && p.sequence.alphabet() == t.sequence.alphabet()
-        && if t.topology == crate::Topology::Circular {
-            crate::analysis::rotation_offset(p.sequence.as_str(), t.sequence.as_str()).is_some()
-        } else {
-            p.sequence == t.sequence
-        }
-}
 fn operation_label(run_id: &str, index: usize) -> String {
     format!("Cloning run {run_id} step {}", index + 1)
 }
@@ -193,13 +184,24 @@ fn validate_texts(values: &[String], limit: usize) -> Result<(), Error> {
 }
 fn validate_record(r: &RunRecord) -> Result<(), Error> {
     if r.schema_version != 1
-        || !matches!(r.plan_schema, 3 | 4 | 5 | 6)
+        || !matches!(r.plan_schema, 3 | 4 | 5 | 6 | 7)
         || !digest(&r.run_id)
         || r.assessment.engine_version.is_empty()
         || r.assessment.engine_version.len() > 128
         || r.assessment.status == Status::Invalid
     {
         return Err(bad("invalid schema or assessment"));
+    }
+    if r.plan_schema < 7
+        && (r.assessment.engine_version.ends_with("/science-12")
+            || r.plan
+                .steps
+                .iter()
+                .any(|op| matches!(op, Operation::CheckedTopo { .. })))
+    {
+        return Err(bad(
+            "Explicit TOPO target acceptance requires workspace plan schema 7",
+        ));
     }
     if r.plan_schema < 6
         && ((r.assessment.engine_version.ends_with("/science-10")
@@ -440,7 +442,7 @@ pub fn record_run(
         || !report
             .products
             .last()
-            .is_some_and(|p| target_matches(p, target))
+            .is_some_and(|p| verification::plan_target_matches(plan, p, target))
         || report.status == Status::Invalid
         || (report.status == Status::Incomplete && !allow_incomplete)
     {

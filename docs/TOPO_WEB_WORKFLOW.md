@@ -36,8 +36,7 @@ physical acceptance policy is explicit: retained nicks, unknown terminal
 chemistry, unapplied transfers, other components, circular rotation and reverse
 complement comparison. An accepted result means agreement under that declared
 graph policy; it does not establish reaction efficiency or experimental success.
-Download source-bound JSON evidence or open a candidate for ordered-plan review
-and HTML/PDF protocol export. Source/event changes revoke pending results and
+Download source-bound JSON evidence or, after explicit review of an accepted fully specified graph, open a `CheckedTopo` candidate for ordered-plan verification and HTML/PDF protocol export. The plan freshly checks the same explicit policy; a match can be consistent under its declared graph assumptions. Source/event changes revoke pending results and
 require fresh inspection. Imported reports cannot reinstall physical authority.
 
 The first form covers the declared TA geometry above. The general core/MCP

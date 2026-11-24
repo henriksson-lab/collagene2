@@ -114,6 +114,7 @@ fn topo_step_text(
     sources: &[verification::TopoSource],
     request: &crate::topo::Request,
     selection: &crate::topo::Selection,
+    policy: Option<&crate::topo::AcceptancePolicy>,
     plan: &DesignPlan,
     report: &verification::VerificationReport,
 ) -> Result<String, Error> {
@@ -171,7 +172,14 @@ fn topo_step_text(
             }
         }
     }
-    writeln!(out,"\nAll reciprocal components, open nicks, retained flaps/free strands and unreleased activations remain in the physical graph. A paired contour is not covalent closure or host repair. Kit conditions, quantities, enzyme recycling, mixture kinetics and laboratory efficacy are unspecified. This plan has no implicit physical-target acceptance policy.").map_err(|_|Error::TooLarge)?;
+    writeln!(out,"\nAll reciprocal components, open nicks, retained flaps/free strands and unreleased activations remain in the physical graph. A paired contour is not covalent closure or host repair. Kit conditions, quantities, enzyme recycling, mixture kinetics and laboratory efficacy are unspecified.").map_err(|_|Error::TooLarge)?;
+    if let Some(policy) = policy {
+        writeln!(out,"Final-only checked TOPO target policy: accept nicks {}; accept unknown terminal chemistry {}; accept unapplied transfers {}; accept other components {}; allow circular-origin rotation {}; allow reverse-complement comparison {}.",policy.allow_nicks,policy.allow_unknown_terminal_chemistry,policy.allow_unapplied_transfers,policy.allow_other_components,policy.allow_circular_rotation,policy.allow_reverse_complement).map_err(|_|Error::TooLarge)?;
+        out.json(policy)?;
+        writeln!(out,"\nThe final step reconstructs the graph and checks the independent target afresh. Acceptance establishes consistency under these declared assumptions only; it does not repair termini/nicks/flaps, establish experimental confidence or authorize downstream generic chemical transformations. Fully specified graph DNA is required. Annotation correspondence and review evidence do not validate biological function.").map_err(|_|Error::TooLarge)?;
+    } else {
+        writeln!(out,"Preview-only TOPO operation: no physical-target acceptance policy is supplied; plan verification remains incomplete.").map_err(|_|Error::TooLarge)?;
+    }
     out.finish()
 }
 fn topo_evidence_text(product: &crate::topo::Product) -> Result<String, Error> {
@@ -804,7 +812,13 @@ pub fn export_protocol_pdf(plan: &DesignPlan, target: &Molecule) -> Result<PdfRe
                 sources,
                 request,
                 selection,
-            } => topo_step_text(sources, request, selection, plan, &report)?,
+            } => topo_step_text(sources, request, selection, None, plan, &report)?,
+            Operation::CheckedTopo {
+                sources,
+                request,
+                selection,
+                policy,
+            } => topo_step_text(sources, request, selection, Some(policy), plan, &report)?,
             Operation::RecombineReference {
                 sources,
                 request,

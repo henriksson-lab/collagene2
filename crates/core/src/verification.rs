@@ -128,6 +128,14 @@ pub enum Operation {
         request: crate::topo::Request,
         selection: crate::topo::Selection,
     },
+    /// Final-only independent-target acceptance under an explicit physical policy.
+    /// Accepted reference coordinates never establish downstream duplex authority.
+    CheckedTopo {
+        sources: Vec<TopoSource>,
+        request: crate::topo::Request,
+        selection: crate::topo::Selection,
+        policy: crate::topo::AcceptancePolicy,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -182,7 +190,7 @@ pub struct AnnotationStepReport {
     pub evidence: crate::topo_annotations::AnnotationEvidence,
 }
 
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-11");
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-12");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrDocument {
@@ -548,6 +556,12 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
             sources,
             request,
             selection,
+        }
+        | Operation::CheckedTopo {
+            sources,
+            request,
+            selection,
+            ..
         } = step
         {
             count += 1;
@@ -619,7 +633,9 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
 pub(crate) fn operation_sources(op: &Operation) -> Vec<&Source> {
     match op {
         Operation::RecombineReference { sources, .. } => sources.iter().collect(),
-        Operation::Topo { sources, .. } => sources.iter().map(|s| &s.source).collect(),
+        Operation::Topo { sources, .. } | Operation::CheckedTopo { sources, .. } => {
+            sources.iter().map(|s| &s.source).collect()
+        }
         Operation::Pcr { template, .. }
         | Operation::PcrWithMismatches { template, .. }
         | Operation::Digest { template, .. }
@@ -674,7 +690,9 @@ pub fn verify(plan: &DesignPlan, target: &Molecule) -> VerificationReport {
         if plan.steps.iter().any(|s| {
             matches!(
                 s,
-                Operation::RecombineReference { .. } | Operation::Topo { .. }
+                Operation::RecombineReference { .. }
+                    | Operation::Topo { .. }
+                    | Operation::CheckedTopo { .. }
             )
         }) {
             let mut models = plan.inputs.iter().map(|i| &i.molecule).collect::<Vec<_>>();
@@ -715,21 +733,18 @@ pub fn verify(plan: &DesignPlan, target: &Molecule) -> VerificationReport {
     ) {
         Ok(incomplete) => {
             let product = report.products.last().expect("nonempty reconstructed plan");
-            let matches = product.topology == target.topology
-                && product.sequence.alphabet() == target.sequence.alphabet()
-                && if target.topology == Topology::Circular {
-                    analysis::rotation_offset(product.sequence.as_str(), target.sequence.as_str())
-                        .is_some()
-                } else {
-                    product.sequence == target.sequence
-                };
+            let matches = plan_target_matches(plan, product, target);
             if matches {
                 report.status = if incomplete.is_empty() {
                     Status::ConsistentUnderAssumptions
                 } else {
                     Status::Incomplete
                 };
-                report.findings.push("Reconstructed product matches the separately bound target sequence and topology. Orientation is preserved.".into());
+                report.findings.push(if matches!(plan.steps.last(), Some(Operation::CheckedTopo { .. })) {
+                    "Fresh final TOPO graph satisfies the explicitly declared physical and independent-target comparison policy. Coordinate agreement and declared graph assumptions do not establish experimental success or repaired chemistry.".into()
+                } else {
+                    "Reconstructed product matches the separately bound target sequence and topology. Orientation is preserved.".into()
+                });
             } else {
                 report.findings.push(
                     "Reconstructed product does not match the target sequence and topology.".into(),
@@ -744,6 +759,33 @@ pub fn verify(plan: &DesignPlan, target: &Molecule) -> VerificationReport {
         Err(error) => report.findings.push(error.to_string()),
     }
     report
+}
+
+/// Coordinate comparison only; this helper confers no physical or report authority.
+/// Callers bind and bound models separately. Legacy plans retain their oriented
+/// comparison; final CheckedTopo uses only its explicitly declared allowances.
+pub fn plan_target_matches(plan: &DesignPlan, product: &Molecule, target: &Molecule) -> bool {
+    if product.topology != target.topology
+        || product.sequence.alphabet() != target.sequence.alphabet()
+    {
+        return false;
+    }
+    let policy = match plan.steps.last() {
+        Some(Operation::CheckedTopo { policy, .. }) => Some(policy),
+        _ => None,
+    };
+    let same = |candidate: &str| {
+        candidate == target.sequence.as_str()
+            || target.topology == Topology::Circular
+                && policy.is_none_or(|p| p.allow_circular_rotation)
+                && analysis::rotation_offset(candidate, target.sequence.as_str()).is_some()
+    };
+    same(product.sequence.as_str())
+        || policy.is_some_and(|p| p.allow_reverse_complement)
+            && product
+                .sequence
+                .reverse_complement()
+                .is_ok_and(|rc| same(rc.as_str()))
 }
 
 fn region_map(
@@ -1542,6 +1584,9 @@ fn reconstruct(
     let mut step_evidence_bytes = 0usize;
     let mut incomplete = Vec::new();
     for (index, step) in plan.steps.iter().enumerate() {
+        if matches!(step, Operation::CheckedTopo { .. }) && index + 1 != plan.steps.len() {
+            return Err(Error::Unsupported("CheckedTopo independent-target acceptance is supported only as the final plan step; intermediate target acceptance and downstream physical graph consumption are not modeled.".into()));
+        }
         let inherited_reference_only = operation_sources(step).iter().any(|source| match source {
             Source::Step(i) => reference_only.get(*i).copied().unwrap_or(false),
             Source::Input(_) => false,
@@ -1553,6 +1598,7 @@ fn reconstruct(
                     | Operation::PcrWithMismatches { .. }
                     | Operation::AnnealOligos { .. }
                     | Operation::Topo { .. }
+                    | Operation::CheckedTopo { .. }
             )
         {
             return Err(Error::Unsupported("Reference-only ancestry cannot establish a physical PCR/annealing/TOPO substrate. Its full originating graph must be consumed by an explicit supported physical operation; no materialization or graph repair is inferred.".into()));
@@ -1585,6 +1631,12 @@ fn reconstruct(
                 sources,
                 request,
                 selection,
+            }
+            | Operation::CheckedTopo {
+                sources,
+                request,
+                selection,
+                ..
             } => {
                 let molecules = sources
                     .iter()
@@ -1593,9 +1645,23 @@ fn reconstruct(
                 let inputs = topo_inputs(sources, &molecules, request)?;
                 // Only a fresh source-backed reconstruction may populate this
                 // evidence. Imported Product/Selection data grants no authority.
-                let fresh = crate::topo::annotated_product(&inputs, request, selection).map_err(
-                    |error| Error::Format(format!("TOPO reconstruction rejected: {error}")),
-                )?;
+                let (fresh, outcome) = if let Operation::CheckedTopo { policy, .. } = step {
+                    let assessment = crate::topo::check_target_annotated(
+                        &inputs, request, selection, target, policy,
+                    )
+                    .map_err(|error| {
+                        Error::Format(format!("TOPO target assessment rejected: {error}"))
+                    })?;
+                    (assessment.product, Some(assessment.outcome))
+                } else {
+                    (
+                        crate::topo::annotated_product(&inputs, request, selection).map_err(
+                            |error| Error::Format(format!("TOPO reconstruction rejected: {error}")),
+                        )?,
+                        None,
+                    )
+                };
+                let fully_specified = fresh.physical.projection.physical.fully_specified_dna;
                 let physical_bytes =
                     evidence_bytes(&fresh.physical, crate::topo::MAX_REPORT_BYTES)?;
                 let annotation_bytes = fresh
@@ -1629,13 +1695,21 @@ fn reconstruct(
                     });
                 }
                 findings.push(format!("Step {} retains its complete freshly reconstructed TOPO preparation, transfer graph, all physical components and paired-contour proof. A selected reference view does not seal nicks, remove flaps or establish experimental success.",index+1));
+                match &outcome {
+                    Some(crate::topo::TargetOutcome::Rejected { reasons }) => return Err(Error::Format(format!("CheckedTopo independent-target policy rejected: {}", reasons.join("; ")))),
+                    Some(crate::topo::TargetOutcome::Withheld { reason }) => return Err(Error::Unsupported(format!("CheckedTopo target assessment withheld: {reason}"))),
+                    Some(crate::topo::TargetOutcome::AcceptedUnderDeclaredGraph) if !fully_specified => return Err(Error::Unsupported("CheckedTopo graph retains ambiguous DNA; target agreement cannot establish fully determined sequence.".into())),
+                    _ => {}
+                }
                 let Some(preview) = preview else {
                     return Err(Error::Unsupported(format!(
                         "Step {} has no uniquely proven paired TOPO contour. Its full physical graph is retained; no product DNA or target-derived path is invented.",
                         index + 1
                     )));
                 };
-                incomplete.push(format!("Step {} TOPO contour matches only an explicitly selected reference path. No physical target-acceptance policy was supplied, and downstream graph consumption is not modeled; nicks, other components and transfer outcomes remain in full step evidence.",index+1));
+                if outcome.is_none() {
+                    incomplete.push(format!("Step {} TOPO contour matches only an explicitly selected reference path. No physical target-acceptance policy was supplied, and downstream graph consumption is not modeled; nicks, other components and transfer outcomes remain in full step evidence.",index+1));
+                }
                 preview
             }
             Operation::RecombineReference {
@@ -2280,7 +2354,9 @@ fn reconstruct(
         let is_reference_only = inherited_reference_only
             || matches!(
                 step,
-                Operation::RecombineReference { .. } | Operation::Topo { .. }
+                Operation::RecombineReference { .. }
+                    | Operation::Topo { .. }
+                    | Operation::CheckedTopo { .. }
             );
         if is_reference_only {
             if next_physical.is_some() {
@@ -2414,8 +2490,11 @@ pub fn export_protocol_html(plan: &DesignPlan, target: &Molecule) -> String {
     };
     for (step_index, step) in plan.steps.iter().enumerate() {
         match step {
-            Operation::Topo { sources, request, selection } => {
+            Operation::Topo { sources, request, selection } | Operation::CheckedTopo { sources, request, selection, .. } => {
                 body.push_str(&format!("<li>Source-backed TOPO elementary-transfer graph with explicit ordered roles: {}. Preparation/transfers/limits <code>{}</code>; selection <code>{}</code>. Full physical evidence is retained; a paired-contour reference view does not establish nick repair, flap removal, supplier state, target acceptance or experimental success.<ul>",sources.iter().map(|s|format!("{} = {}",e(&s.role),source(&s.source))).collect::<Vec<_>>().join(", "),e(&serde_json::to_string(request).unwrap_or_default()),e(&serde_json::to_string(selection).unwrap_or_default())));
+                if let Operation::CheckedTopo { policy, .. } = step {
+                    body.push_str(&format!("<li>Final-only independent-target physical policy: <code>{}</code>. Acceptance is conditional on this declared graph and fully specified DNA. Rotation/reverse comparison is allowed only as explicitly listed; source-coordinate annotation correspondence does not establish chemical ancestry, graph repair or experimental success.</li>", e(&serde_json::to_string(policy).unwrap_or_default())));
+                }
                 for material in &request.recipe.materials {
                     match material {
                         crate::topo::MaterialRecipe::Prepared {declaration_id,assumption,..} => body.push_str(&format!("<li>Preparation {}: {}</li>",e(declaration_id),e(assumption))),

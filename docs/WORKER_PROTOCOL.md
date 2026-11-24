@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **27** and reads supported schemas 1–26. Candidate files write schema 8; workspace plan schema is 6; the verifier is science-11.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **28** and reads supported schemas 1–27. Candidate files write schema 9; workspace plan schema is 7; the verifier is science-12.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -281,3 +281,14 @@ Reports append `annotation_reports`; explicit positional migration for schemas25
 and26 retains their existing step graphs with an empty annotation-evidence list.
 The current science11 verifier requires schema27. JSON defaults are for historical
 representation only and cannot reconstruct proof or grant scientific authority.
+
+## Final checked TOPO plans (schema 28)
+
+Operation tag15 appends `CheckedTopo` with explicit source roles, preparation,
+component/seed and all six acceptance flags. It is final-only and compares an
+independent bound target via fresh physical reconstruction. Older job tags
+Verify/PDF cannot hide the operation beneath a pre28 envelope. Candidate files
+require9, workspace plans require7, and science12 reports require28. No new
+report field or standalone worker job is introduced, preserving the schema27
+report layout. Explicit reverse/rotation policies are also used by native run
+capture; acceptance never promotes a reference view into an intact duplex.

@@ -6,12 +6,13 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 24;
+pub const WORKER_SCHEMA_VERSION: u16 = 25;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 8;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
         b"CGQ\0" | b"CGR\0" => WORKER_SCHEMA_VERSION,
-        b"CGP\0" => 7,
+        b"CGP\0" => CANDIDATE_SCHEMA_VERSION,
         _ => 1,
     }
 }
@@ -677,6 +678,51 @@ impl From<LegacyVerificationReport> for crate::verification::VerificationReport 
             assumptions: old.assumptions,
             products: old.products,
             exhaustive_alternative_search: old.exhaustive_alternative_search,
+            step_reports: Vec::new(),
+        }
+    }
+}
+// Versions 3–24 include engine provenance but no per-step physical graph.
+// Keep this positional layout separate: serde defaults do not extend postcard
+// structs at EOF. Historical reports gain no invented physical evidence.
+#[derive(Deserialize)]
+struct LegacyVerificationReportV24 {
+    plan_revision: String,
+    target_revision: String,
+    engine_version: String,
+    status: crate::verification::Status,
+    findings: Vec<String>,
+    assumptions: Vec<String>,
+    products: Vec<Molecule>,
+    exhaustive_alternative_search: bool,
+}
+#[derive(Deserialize)]
+#[allow(dead_code)] // Positional selectors 0–3 precede the historical verification layout.
+enum LegacyVerificationResultV24 {
+    Search(Vec<Match>),
+    Restriction(Vec<CutSite>),
+    Error(String),
+    Pcr(Vec<crate::analysis::PcrProduct>),
+    Verification(LegacyVerificationReportV24),
+}
+#[derive(Deserialize)]
+struct LegacyVerificationResponseV24 {
+    id: u32,
+    revision: String,
+    result: LegacyVerificationResultV24,
+}
+impl From<LegacyVerificationReportV24> for crate::verification::VerificationReport {
+    fn from(old: LegacyVerificationReportV24) -> Self {
+        Self {
+            plan_revision: old.plan_revision,
+            target_revision: old.target_revision,
+            engine_version: old.engine_version,
+            status: old.status,
+            findings: old.findings,
+            assumptions: old.assumptions,
+            products: old.products,
+            exhaustive_alternative_search: old.exhaustive_alternative_search,
+            step_reports: Vec::new(),
         }
     }
 }
@@ -784,6 +830,22 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
                 id: old.id,
                 revision: old.revision,
                 result: old.result.into(),
+            }
+        }
+        Some(3..=24)
+            if postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+                .is_ok_and(|((_, _, tag), _)| tag == 4) =>
+        {
+            let old: LegacyVerificationResponseV24 = decode_with_limit(b"CGR\0", bytes, maximum)?;
+            let LegacyVerificationResultV24::Verification(report) = old.result else {
+                return Err(Error::Format(
+                    "historical verification selector mismatch".into(),
+                ));
+            };
+            Response {
+                id: old.id,
+                revision: old.revision,
+                result: AnalysisResult::Verification(report.into()),
             }
         }
         _ => decode_with_limit(b"CGR\0", bytes, maximum)?,
@@ -1285,6 +1347,9 @@ fn preflight_crispr_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     Ok(())
 }
 fn check_scientific_report_version(bytes: &[u8], engine: &str) -> Result<(), Error> {
+    if engine.ends_with("/science-10") {
+        check_variant_version(bytes, 25)?;
+    }
     if engine.ends_with("/science-9") {
         check_variant_version(bytes, 22)?;
     }
@@ -1297,7 +1362,7 @@ fn check_workspace_version(
     bytes: &[u8],
     workspace: &crate::workspace::Workspace,
 ) -> Result<(), Error> {
-    if u16::from_le_bytes([bytes[4], bytes[5]]) >= 22 {
+    if u16::from_le_bytes([bytes[4], bytes[5]]) >= WORKER_SCHEMA_VERSION {
         return Ok(());
     }
     for candidate in &workspace.candidates {
@@ -1310,6 +1375,9 @@ fn check_workspace_version(
             check_variant_version(bytes, plan_worker_version(&record.plan))?;
             if record.plan_schema >= 4 {
                 check_variant_version(bytes, 17)?;
+            }
+            if record.plan_schema >= 6 {
+                check_variant_version(bytes, 25)?;
             }
             if record.plan_schema >= 5 {
                 check_variant_version(bytes, 22)?;
@@ -1373,6 +1441,7 @@ fn plan_worker_version(plan: &crate::verification::DesignPlan) -> u16 {
     plan.steps
         .iter()
         .map(|step| match step {
+            crate::verification::Operation::Topo { .. } => 25,
             crate::verification::Operation::RecombineReference { .. } => 22,
             crate::verification::Operation::DeclareSourceModifications { .. }
             | crate::verification::Operation::CheckedDigest { .. } => 17,

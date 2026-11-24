@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **22** and reads supported schemas 1–21. Candidate files write schema 7; workspace plan schema is 5; the verifier is science-9.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **25** and reads supported schemas 1–24. Candidate files write schema 8; workspace plan schema is 6; the verifier is science-10.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -88,8 +88,14 @@ Postcard enum indexes are append-only. Existing tags and supported historical la
 | 73 | InspectRecombination | 22 |
 | 74 | CheckRecombinationTarget | 22 |
 | 75 | SelectRecombinationComponent | 22 |
+| 76 | ScanRestriction | 23 |
+| 77 | PrepareReadAlignments | 24 |
+| 78 | ReadAlignmentPage | 24 |
+| 79 | CheckReadAlignment | 24 |
+| 80 | ExportReadAlignments | 24 |
+| 81 | DisposeReadAlignments | 24 |
 
-Result tags 0–29 retain their previous layouts (`Search`, `Restriction`, `Error`, `Pcr`, `Verification`, `DuplexDigest`, `Translation`, `CdsTranslation`, `Orfs`, `Alignment`, `PcrDocuments`, `PrimerEvidence`, `PrimerDesign`, `ProtocolPdf`, `GoldenGate`, `MismatchPcr`, `InversePcr`, `Gel`, `DiagnosticDigest`, `MismatchPcrPreview`, `WorkspaceSaved`, `WorkspaceLoaded`, `TraceValidation`, `FeatureLibraryScan`, `AnnotatedDocument`, `AnnotationImport`, `AnnotationExport`, `RepairPreview`, `AnnealPreview`, `PhysicalPreviewDocument`). Schema 9 appends `ViewTracks` at tag 30, `DocumentSearch` at tag 31 and `TracksPrepared` at tag 32. New response variants cannot be decoded under older version labels.
+Result tags 0–29 retain their selectors (verification gains explicit versioned step evidence in schema 25) (`Search`, `Restriction`, `Error`, `Pcr`, `Verification`, `DuplexDigest`, `Translation`, `CdsTranslation`, `Orfs`, `Alignment`, `PcrDocuments`, `PrimerEvidence`, `PrimerDesign`, `ProtocolPdf`, `GoldenGate`, `MismatchPcr`, `InversePcr`, `Gel`, `DiagnosticDigest`, `MismatchPcrPreview`, `WorkspaceSaved`, `WorkspaceLoaded`, `TraceValidation`, `FeatureLibraryScan`, `AnnotatedDocument`, `AnnotationImport`, `AnnotationExport`, `RepairPreview`, `AnnealPreview`, `PhysicalPreviewDocument`). Schema 9 appends `ViewTracks` at tag 30, `DocumentSearch` at tag 31 and `TracksPrepared` at tag 32. New response variants cannot be decoded under older version labels.
 
 Schemas 1/2 had verification reports without an engine identity; their actual historical response layouts migrate to the explicit `unrecorded/legacy-worker-v1-v2` marker. Old reports never acquire the current engine. Nested plans in Verify/PDF jobs are also checked against the schema that introduced their operations, preventing newer operations from hiding inside an older outer job.
 
@@ -223,3 +229,25 @@ Jobs 73–75 append `InspectRecombination {inputs, request}`, `CheckRecombinatio
 The inspection retains every reciprocal component and reviewed/unmapped source annotations. Target checking reconstructs sources afresh without selecting a component. Selected-product reconstruction requires the explicit candidate/component plus an independent target match. Lightweight DTO checks bind actual DNA, source identities, exact request/profile, annotation accounting and uncertainty; these checks do not confer positive scientific authority on imported reports. Fresh source-based reconstruction remains required.
 
 `RecombineReference` is appended to the operation enum, requiring candidate 7, workspace plan 5, worker 22 and science-9. Historical candidate 1–6, workspace plan 1–4 and worker 1–21 layouts remain readable. New operations or engine claims cannot hide under older nested headers; the native archive container remains 1. Reference-only lineage stays chemically incomplete through descendants. Imported generated GenBank/EMBL markers can restrict interpretation but cannot restore a physical state. [Core model and bounds](RECOMBINATION_ADAPTER.md) · [Desktop workflow](RECOMBINATION_UI.md) · [MCP](RECOMBINATION_MCP.md).
+
+## TOPO plan graphs (schema 25)
+
+`Operation::Topo` appends operation tag 14, with explicit ordered source-role
+bindings, a versioned generation/transfer request and a batch-bound component
+selection. Existing Verify and ExportProtocolPdf jobs carry these plans; nested
+TOPO operations require schema 25 even though their outer job tags are older.
+Candidate schema 8 and workspace plan schema 6 prevent relabeling the operation
+as an older plan. The physical graph is freshly reconstructed from source DNA,
+not restored from a report. No unique paired contour means no invented reference
+DNA. A contour preview retains restrictive chemistry boundaries; the initial plan
+integration remains Incomplete without a physical acceptance/downstream model.
+
+Verification reports append `step_reports` with complete source-backed TOPO
+physical evidence. Worker schemas 3–24 decode their actual previous positional
+report layout and gain an empty evidence list; schemas 1–2 additionally retain the
+unrecorded engine marker. A historical report never gains a current graph or
+current verification authority. `science-10` reports require schema 25.
+
+SAM/BAM result tags 69–73 were appended in schema 24; these remain stable.
+Read collections stay private to a worker session and decoded JSON or binary
+receipts cannot reinstall parsed records or checked biological authority.

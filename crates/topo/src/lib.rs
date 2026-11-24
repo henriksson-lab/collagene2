@@ -8,6 +8,7 @@ use std::fmt;
 pub const ENGINE: &str = "topo-explicit-strand-transfer-1";
 pub const PRIMARY_MODEL: &str = "vaccinia-tyr274-explicit-graph-ta-cacc-1";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum FivePrime {
     Hydroxyl,
     Phosphate,
@@ -15,11 +16,13 @@ pub enum FivePrime {
     Unknown,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Enzyme {
     VacciniaTypeIBTyr274,
     Uncharacterized,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum ThreePrime {
     Hydroxyl,
     Phosphate,
@@ -31,6 +34,7 @@ pub enum ThreePrime {
     },
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Strand {
     pub role: String,
@@ -42,6 +46,7 @@ pub struct Strand {
 /// Both intervals use actual 5′→3′ source indices. a[start+k] pairs with
 /// b[start+length-1-k]; the strands are antiparallel.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct PairSpan {
     pub strand_a: usize,
@@ -51,12 +56,14 @@ pub struct PairSpan {
     pub length: usize,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Substrates {
     pub strands: Vec<Strand>,
     pub pairing: Vec<PairSpan>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Geometry {
     /// Religation across an actual nick, templated by a continuous opposite backbone.
     NickReseal,
@@ -67,6 +74,7 @@ pub enum Geometry {
 /// Original source strands only. This consumes the donor's actual terminal3′
 /// activation and acceptor's actual terminal5′OH; it is not an end search.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Transfer {
     pub donor: usize,
@@ -74,6 +82,7 @@ pub struct Transfer {
     pub geometry: Geometry,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Limits {
     pub max_source_bases: usize,
@@ -100,6 +109,7 @@ impl Default for Limits {
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Budget {
     SourceBases,
     Strands,
@@ -309,17 +319,20 @@ pub fn batch_revision(s: &Substrates, steps: &[Transfer], l: &Limits) -> Result<
     hash(&(ENGINE, PRIMARY_MODEL, s, steps, l))
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Call {
     pub strand: usize,
     pub index: usize,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct CallPair {
     pub a: Call,
     pub b: Call,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Outcome {
     Applied,
     BlockedUnderDeclaredModel,
@@ -330,12 +343,14 @@ pub enum Outcome {
 /// The complete-displacement and unpaired-continuation cases are declared graph
 /// extensions, not assertions of commercial-kit geometry or efficiency.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum DisplacementKind {
     DuplexAnchoredThreePrimeFlap,
     FreeDisplacedChain,
     UnpairedTailExtension,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Displacement {
     pub kind: DisplacementKind,
@@ -344,6 +359,7 @@ pub struct Displacement {
     pub continuation_pair: Option<Call>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct TransferEvidence {
     pub step: usize,
@@ -358,6 +374,7 @@ pub struct TransferEvidence {
     pub displacement: Option<Displacement>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct SourcePlacement {
     pub source_strand: usize,
@@ -366,6 +383,7 @@ pub struct SourcePlacement {
     pub output_start: usize,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum ChainEnds {
     Linear {
         five_prime: FivePrime,
@@ -374,6 +392,7 @@ pub enum ChainEnds {
     CovalentlyCircular,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Chain {
     pub sequence: Sequence,
@@ -381,6 +400,7 @@ pub struct Chain {
     pub sources: Vec<SourcePlacement>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Nick {
     pub three: Call,
@@ -391,6 +411,7 @@ pub struct Nick {
 /// A source-call run not currently paired. This includes retained displaced
 /// terminal flaps, unreacted overhangs and declared ssDNA; none are deleted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct UnpairedRun {
     pub chain: usize,
@@ -401,6 +422,7 @@ pub struct UnpairedRun {
     pub displaced_by: Vec<usize>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Component {
     pub chains: Vec<usize>,
@@ -411,6 +433,7 @@ pub struct Component {
 /// Pairing and nick Call coordinates remain immutable SOURCE-strand indices.
 /// Chain.sources provides the exact source→output-coordinate translation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ProductGraph {
     pub chains: Vec<Chain>,
@@ -421,6 +444,7 @@ pub struct ProductGraph {
     pub released_activations: Vec<String>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Report {
     pub engine: String,
@@ -1101,6 +1125,7 @@ pub fn replay(s: &Substrates, steps: &[Transfer], l: &Limits, r: &Report) -> Res
     Ok(())
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct OrientationCandidates {
     pub engine: String,

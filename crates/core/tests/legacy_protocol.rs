@@ -255,16 +255,33 @@ fn version_three_report_with_recorded_engine_is_not_migrated_as_unrecorded() {
         assumptions: vec![],
         products: vec![molecule()],
         exhaustive_alternative_search: false,
+        step_reports: vec![],
     };
-    let bytes = wire(
-        b"CGR\0",
-        3,
-        &Response {
-            id: 19,
-            revision: "revision".into(),
-            result: AnalysisResult::Verification(report.clone()),
-        },
+    // Independently preserve the actual pre-25 positional report layout.
+    let historical_report = (
+        &report.plan_revision,
+        &report.target_revision,
+        &report.engine_version,
+        &report.status,
+        &report.findings,
+        &report.assumptions,
+        &report.products,
+        report.exhaustive_alternative_search,
     );
+    let bytes = wire(b"CGR\0", 3, &(19u32, "revision", 4u32, historical_report));
+    for historical_version in 3u16..=24 {
+        let mut historical = bytes.clone();
+        historical[4..6].copy_from_slice(&historical_version.to_le_bytes());
+        let decoded = decode_response(&historical).unwrap();
+        let AnalysisResult::Verification(value) = decoded.result else {
+            panic!("historical verification changed selector")
+        };
+        assert_eq!(value.engine_version, "historical-engine/science-3");
+        assert!(
+            value.step_reports.is_empty(),
+            "historical evidence cannot invent a physical graph"
+        );
+    }
     let response = decode_response(&bytes).unwrap();
     let AnalysisResult::Verification(decoded) = response.result else {
         panic!()

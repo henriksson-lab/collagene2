@@ -249,7 +249,10 @@ fn append_only_literals_and_legacy_envelopes_preserve_old_operations_but_reject_
     let (target, plan) = fixture(false);
     let c = Candidate::new(plan.clone());
     let bytes = transfer::save_candidate(&c).unwrap();
-    assert_eq!(&bytes[4..6], &7u16.to_le_bytes());
+    assert_eq!(
+        &bytes[4..6],
+        &collagene_core::protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
+    );
     for v in 1..7 {
         assert!(transfer::load_candidate(&wire(b"CGP\0", v, &c)).is_err());
     }
@@ -313,7 +316,10 @@ fn native_capture_is_explicitly_incomplete_has_exact_two_parents_and_replays() {
     c.validate().unwrap();
     assert_eq!(serde_json::to_value(&w).unwrap(), before);
     let run = run_lineage::load_run(&c.workspace, &c.receipt.run_id).unwrap();
-    assert_eq!(run.plan_schema, 5);
+    assert_eq!(
+        run.plan_schema,
+        collagene_core::workspace::PLAN_SCHEMA_VERSION
+    );
     assert_eq!(run.assessment.status, Status::Incomplete);
     let pe = c
         .workspace
@@ -387,7 +393,10 @@ fn native_manifest_cannot_downcast_reference_graph_even_with_valid_step_blobs() 
             entry.read_to_end(&mut data).unwrap();
             if name == "manifest.json" {
                 let mut manifest: serde_json::Value = serde_json::from_slice(&data).unwrap();
-                assert_eq!(manifest["plan_schema"], 5);
+                assert_eq!(
+                    manifest["plan_schema"],
+                    collagene_core::workspace::PLAN_SCHEMA_VERSION
+                );
                 manifest["plan_schema"] = schema.into();
                 data = serde_json::to_vec(&manifest).unwrap();
             }

@@ -11,6 +11,7 @@ use std::fmt;
 
 pub const ENGINE: &str = "topo-paired-contour-proof-1";
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Selection {
     pub source_batch_revision: String,
@@ -18,6 +19,7 @@ pub struct Selection {
     pub reference_seed: Call,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ProjectionLimits {
     pub max_pairs: usize,
@@ -38,6 +40,7 @@ impl Default for ProjectionLimits {
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Options {
     /// Geometry inspection can describe a retained-state branch even when an
@@ -48,28 +51,33 @@ pub struct Options {
     pub limits: ProjectionLimits,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum ContourTopology {
     Linear,
     Circular,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum ReferenceStrand {
     Top,
     Bottom,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct EndChemistry {
     pub five_prime: FivePrime,
     pub three_prime: ThreePrime,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct DuplexEnds {
     pub left: EndChemistry,
     pub right: EndChemistry,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ProjectedNick {
     pub strand: ReferenceStrand,
@@ -82,6 +90,7 @@ pub struct ProjectedNick {
 /// For reference coordinate r=start+k, top is source top_start+k and bottom is
 /// source bottom_start+length-1-k. Both source strands use actual5′→3′ indices.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct PairedSourceMap {
     pub reference_start: usize,
@@ -92,6 +101,7 @@ pub struct PairedSourceMap {
     pub bottom_start: usize,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct DuplexView {
     pub topology: ContourTopology,
@@ -108,6 +118,7 @@ pub struct DuplexView {
     pub all_requested_transfers_applied: bool,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum LimitKind {
     Pairs,
     WorkCells,
@@ -115,6 +126,7 @@ pub enum LimitKind {
     MappingSegments,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub enum Withheld {
     UnpairedNucleotides {
@@ -154,12 +166,14 @@ pub enum Withheld {
     InconsistentGraph,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub enum Outcome {
     Proven(DuplexView),
     Withheld(Withheld),
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ProjectionReport {
     pub engine: String,

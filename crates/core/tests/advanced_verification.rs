@@ -520,7 +520,10 @@ fn old_envelopes_cannot_smuggle_new_steps_or_new_worker_results() {
     ] {
         let candidate = Candidate::new(p.clone());
         let current = transfer::save_candidate(&candidate).unwrap();
-        assert_eq!(&current[4..6], &7u16.to_le_bytes());
+        assert_eq!(
+            &current[4..6],
+            &collagene_core::protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
+        );
         for old in [1u16, 2] {
             let mut bytes = current.clone();
             bytes[4..6].copy_from_slice(&old.to_le_bytes());

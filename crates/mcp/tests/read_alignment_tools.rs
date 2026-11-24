@@ -86,7 +86,7 @@ async fn document(c: &Client, dna: &str) -> Value {
 async fn sam_bam_sdk_preserves_original_flags_missing_calls_and_actual_reference_evidence() {
     let (client, server) = setup().await;
     let tools = client.list_tools(Default::default()).await.unwrap().tools;
-    assert_eq!(tools.len(), 101);
+    assert_eq!(tools.len(), 105);
     for name in [
         "import_read_alignments",
         "inspect_read_alignments",

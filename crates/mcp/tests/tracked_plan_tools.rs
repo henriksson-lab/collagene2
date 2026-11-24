@@ -79,7 +79,7 @@ async fn checked_digest_plans_pin_profiles_rebuild_physical_state_and_export_wit
         report["engine_version"]
             .as_str()
             .unwrap()
-            .ends_with("/science-9")
+            .ends_with("/science-10")
     );
     assert_eq!(report["products"].as_array().unwrap().len(), 2);
     assert!(report["products"][1]["tracked_modifications"].is_object());
@@ -90,7 +90,7 @@ async fn checked_digest_plans_pin_profiles_rebuild_physical_state_and_export_wit
         json!({"artifact_id":html["artifact_id"],"start":0,"max_bytes":16384}),
     )
     .await;
-    assert!(html["text"].as_str().unwrap().contains("science-9"));
+    assert!(html["text"].as_str().unwrap().contains("science-10"));
     let pdf = call(&c, "export_protocol_pdf", plan.clone()).await;
     let pdf = call(
         &c,
@@ -112,7 +112,10 @@ async fn checked_digest_plans_pin_profiles_rebuild_physical_state_and_export_wit
     )
     .await;
     let bytes = STANDARD.decode(bytes["text"].as_str().unwrap()).unwrap();
-    assert_eq!(&bytes[4..6], &7u16.to_le_bytes());
+    assert_eq!(
+        &bytes[4..6],
+        &collagene_core::protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
+    );
     collagene_core::transfer::load_candidate(&bytes).unwrap();
     let mut wrong_profile = steps.clone();
     wrong_profile[1]["CheckedDigest"]["profile_revision"] = json!("0".repeat(64));

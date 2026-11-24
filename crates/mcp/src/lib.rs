@@ -24,7 +24,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     sync::{Arc, Mutex},
 };
 
@@ -42,6 +42,53 @@ pub struct DocumentRef {
     pub id: String,
     /// Exact expected revision, returned by import_document or list_documents.
     pub revision: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TopoSourceRef {
+    pub role: String,
+    pub document: DocumentRef,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TopoSimulateQuery {
+    pub sources: Vec<TopoSourceRef>,
+    pub request: collagene_core::topo::Request,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TopoOrientationQuery {
+    pub sources: Vec<TopoSourceRef>,
+    pub request: collagene_core::topo::Request,
+    /// Exact prepared-strand indexes; not source-document indexes or a kit guess.
+    pub vector: [usize; 2],
+    pub insert: [usize; 2],
+    pub directional: bool,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TopoProjectQuery {
+    pub sources: Vec<TopoSourceRef>,
+    pub request: collagene_core::topo::Request,
+    pub selection: collagene_core::topo::Selection,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TopoTargetQuery {
+    pub sources: Vec<TopoSourceRef>,
+    pub request: collagene_core::topo::Request,
+    pub selection: collagene_core::topo::Selection,
+    pub target: DocumentRef,
+    /// Every allowance is explicit; the target never chooses a component/seed.
+    pub policy: collagene_core::topo::AcceptancePolicy,
+}
+#[derive(Serialize)]
+struct TopoEvidence<'a, T: Serialize> {
+    source_bindings: &'a [TopoSourceRef],
+    request: &'a collagene_core::topo::Request,
+    target_requirement: Option<&'a DocumentRef>,
+    report: &'a T,
+    binding_scope: &'static str,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1092,24 +1139,58 @@ fn bad(message: impl ToString) -> ErrorData {
 }
 // Bound temporary JSON materialization before session accounting, including binary arrays.
 fn bounded_json<T: Serialize>(value: &T) -> Result<String, ErrorData> {
-    struct Sink(Vec<u8>);
+    bounded_json_limit(value, MAX_STORE_BYTES)
+}
+fn bounded_json_limit<T: Serialize>(value: &T, cap: usize) -> Result<String, ErrorData> {
+    struct Sink {
+        bytes: Vec<u8>,
+        cap: usize,
+    }
     impl std::io::Write for Sink {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            if bytes.len() > MAX_STORE_BYTES.saturating_sub(self.0.len()) {
+            if bytes.len() > self.cap.saturating_sub(self.bytes.len()) {
                 return Err(std::io::Error::other(
                     "JSON artifact exceeds session budget",
                 ));
             }
-            self.0.extend_from_slice(bytes);
+            self.bytes.extend_from_slice(bytes);
             Ok(bytes.len())
         }
         fn flush(&mut self) -> std::io::Result<()> {
             Ok(())
         }
     }
-    let mut sink = Sink(Vec::new());
+    let mut sink = Sink {
+        bytes: Vec::new(),
+        cap,
+    };
     serde_json::to_writer(&mut sink, value).map_err(bad)?;
-    String::from_utf8(sink.0).map_err(bad)
+    String::from_utf8(sink.bytes).map_err(bad)
+}
+fn topo_summary(report: &collagene_core::topo::physical::Report) -> Value {
+    json!({"engine":report.engine,"model":report.model,"physical_batch_revision":report.batch_revision,
+        "work_complete":report.work_complete,"all_requested_transfers_applied":report.all_requested_transfers_applied,
+        "unsupported_or_unknown":report.unsupported_or_unknown,"fully_specified_dna":report.fully_specified_dna,
+        "step_count":report.steps.len(),"component_count":report.product.components.len(),"chain_count":report.product.chains.len(),
+        "nick_count":report.product.nicks.len(),"unpaired_run_count":report.product.unpaired.len(),"released_activation_count":report.product.released_activations.len(),
+        "components":report.product.components.iter().take(64).enumerate().map(|(i,c)|json!({"component":i,"chains":c.chains,"paired_nucleotides":c.paired_nucleotides,"unpaired_nucleotides":c.unpaired_nucleotides,"covalently_closed":c.covalently_closed})).collect::<Vec<_>>(),
+        "components_truncated":report.product.components.len()>64,
+        "chain_lengths":report.product.chains.iter().take(64).map(|c|c.sequence.len()).collect::<Vec<_>>(),
+        "chains_truncated":report.product.chains.len()>64})
+}
+fn topo_projection_summary(product: &collagene_core::topo::Product) -> Value {
+    use collagene_core::topo::physical::projection::Outcome;
+    match &product.projection.outcome {
+        Outcome::Proven(view) => {
+            json!({"state":"paired_contour","topology":view.topology,"length":view.top.len(),
+            "nick_count":view.nicks.len(),"fully_known_terminal_chemistry":view.fully_known_terminal_chemistry,
+            "all_requested_transfers_applied":view.all_requested_transfers_applied,
+            "reference_available":product.reference.is_some(),"source_map_count":view.source_maps.len()})
+        }
+        Outcome::Withheld(reason) => {
+            json!({"state":"withheld","reason":reason,"reference_available":false})
+        }
+    }
 }
 fn output(value: Value) -> Result<CallToolResult, ErrorData> {
     Ok(CallToolResult::structured(value))
@@ -1197,6 +1278,70 @@ pub struct CollageneServer {
     genomes: Arc<Mutex<GenomeResources>>,
 }
 impl CollageneServer {
+    fn topo_sources(
+        &self,
+        sources: &[TopoSourceRef],
+        request: &collagene_core::topo::Request,
+        target: Option<&DocumentRef>,
+    ) -> Result<(Vec<collagene_core::topo::Input>, Option<Molecule>), ErrorData> {
+        if sources.is_empty()
+            || sources.len() > 32
+            || request.recipe.schema_version != 1
+            || request.recipe.materials.is_empty()
+            || request.recipe.materials.len() > 16
+            || request.transfers.len() > 16
+        {
+            return Err(bad(
+                "TOPO requires1..32 explicit sources and bounded version1 recipe/materials/transfers",
+            ));
+        }
+        let mut roles = BTreeSet::new();
+        for source in sources {
+            if source.role.trim().is_empty()
+                || source.role.len() > 256
+                || source.role.chars().any(char::is_control)
+                || !roles.insert(source.role.as_str())
+            {
+                return Err(bad(
+                    "TOPO roles must be unique nonblank bounded identifiers",
+                ));
+            }
+        }
+        let store = self.store.lock().unwrap();
+        let borrowed = sources
+            .iter()
+            .map(|s| store.document(&s.document))
+            .collect::<Result<Vec<_>, _>>()?;
+        let target = target.map(|t| store.document(t)).transpose()?;
+        let mut aggregate = borrowed.clone();
+        aggregate.extend(target);
+        collagene_core::model::bounds::model_preflight(&aggregate).map_err(bad)?;
+        let mut bases = 0usize;
+        for molecule in &borrowed {
+            if molecule.sequence.alphabet() != collagene_core::Alphabet::Dna {
+                return Err(bad("TOPO requires explicit DNA sources"));
+            }
+            bases = bases
+                .checked_add(molecule.sequence.len())
+                .filter(|n| *n <= 100_000)
+                .ok_or_else(|| bad("TOPO source aggregate exceeds100000 bases"))?;
+        }
+        if target.is_some_and(|m| {
+            m.sequence.len() > 100_000 || m.sequence.alphabet() != collagene_core::Alphabet::Dna
+        }) {
+            return Err(bad("TOPO independent target requires bounded DNA"));
+        }
+        let inputs = sources
+            .iter()
+            .zip(borrowed)
+            .map(|(s, m)| collagene_core::topo::Input {
+                role: s.role.clone(),
+                molecule: m.clone(),
+            })
+            .collect::<Vec<_>>();
+        collagene_core::topo::source_preflight(&inputs, request).map_err(bad)?;
+        Ok((inputs, target.cloned()))
+    }
     fn text_artifact(
         &self,
         text: String,
@@ -1361,7 +1506,16 @@ impl CollageneServer {
         donor: Option<Molecule>,
         filename: &'static str,
     ) -> Result<(String, Option<Value>), ErrorData> {
-        let text = bounded_json(report)?;
+        self.candidate_document_artifact_bounded(report, donor, filename, MAX_STORE_BYTES)
+    }
+    fn candidate_document_artifact_bounded<T: Serialize>(
+        &self,
+        report: &T,
+        donor: Option<Molecule>,
+        filename: &'static str,
+        max_report_bytes: usize,
+    ) -> Result<(String, Option<Value>), ErrorData> {
+        let text = bounded_json_limit(report, max_report_bytes)?;
         let artifact_id = blake3::hash(text.as_bytes()).to_hex().to_string();
         let donor = donor
             .map(|m| {
@@ -2150,6 +2304,91 @@ impl CollageneServer {
             output(json!({"id":args.id,"removed":removed,"kind":"import"}))
         })
         .await
+    }
+    #[tool(
+        description = "Freshly reconstruct TOPO strand preparation from explicit immutable source roles, source intervals or exact PCR/tailing, declared end chemistry/activation, pairing and requested transfers. No imported molecule metadata or foreign physical product grants activation/state. Returns bounded component/nick/unpaired/transfer summaries and a full <=32MiB source/request-bound JSON artifact, retaining every component. A declared graph computation is not kit efficacy, kinetics, manufacturing conservation or experimental success."
+    )]
+    async fn simulate_topo(
+        &self,
+        Parameters(args): Parameters<TopoSimulateQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move||{
+            let(inputs,_)=server.topo_sources(&args.sources,&args.request,None)?;
+            let report=collagene_core::topo::simulate(&inputs,&args.request).map_err(bad)?;
+            let evidence=TopoEvidence{source_bindings:&args.sources,request:&args.request,target_requirement:None,report:&report,
+                binding_scope:"Exact immutable MCP document roles/revisions; native event parents require the typed plan/run workflow."};
+            let artifact=server.text_artifact(bounded_json_limit(&evidence,collagene_core::topo::MAX_REPORT_BYTES)?,"application/json","topo-simulation.json")?;
+            output(json!({"sources":args.sources,"engine_version":report.engine_version,"batch_revision":report.batch_revision,
+                "source_identities":report.sources,"preparation_assumptions":report.preparation.assumptions,
+                "unrepresented_reference_interval_count":report.preparation.not_represented.len(),"physical":topo_summary(&report.physical),
+                "artifact_id":artifact,"authority":"Fresh computation under explicit preparation/activation declarations; no inferred kit state, winner or experimental validation."}))
+        }).await
+    }
+    #[tool(
+        description = "Inspect both declared TOPO vector/insert orientations from freshly reconstructed sources. Explicit prepared-strand indexes and directional flag; input transfers must be empty. Retains all physical components, failed transfers and alternative orientation graphs in full <=32MiB JSON. Returns exact orientation transfer requests and fresh source batch pins for explicit later projection, without choosing a winner or using target DNA; two orientations are not an exhaustive biochemical mixture search."
+    )]
+    async fn inspect_topo_orientations(
+        &self,
+        Parameters(args): Parameters<TopoOrientationQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move||{
+            let(inputs,_)=server.topo_sources(&args.sources,&args.request,None)?;
+            let report=collagene_core::topo::inspect_orientations(&inputs,&args.request,args.vector,args.insert,args.directional).map_err(bad)?;
+            let candidates=report.reference.candidates.iter().zip(&report.candidate_requests).enumerate().map(|(index,(physical,request))|{
+                Ok::<_,ErrorData>(json!({"index":index,"batch_revision":collagene_core::topo::batch_revision(&inputs,request).map_err(bad)?,"transfers":request.transfers,"physical":topo_summary(physical)}))
+            }).collect::<Result<Vec<_>,_>>()?;
+            let evidence=TopoEvidence{source_bindings:&args.sources,request:&args.request,target_requirement:None,report:&report,
+                binding_scope:"Exact immutable MCP roles/revisions; complete candidate requests are retained, never target-selected."};
+            let artifact=server.text_artifact(bounded_json_limit(&evidence,collagene_core::topo::MAX_REPORT_BYTES)?,"application/json","topo-orientations.json")?;
+            output(json!({"sources":args.sources,"engine_version":report.engine_version,"batch_revision":report.batch_revision,
+                "orientation_search_complete":report.reference.orientation_search_complete,"biochemical_mixture_exhaustive":report.reference.biochemical_mixture_exhaustive,
+                "candidate_count":candidates.len(),"candidates":candidates,"artifact_id":artifact,
+                "authority":"All declared orientation alternatives retained; no preferred winner, target-derived selection or exhaustive mixture claim."}))
+        }).await
+    }
+    #[tool(
+        description = "Freshly reconstruct one explicitly selected TOPO component and source-call seed pinned to the source/recipe batch. Projection is withheld unless a supported paired contour can be proven; retains full physical graph, nicks, unpaired DNA, residual components and unapplied transfers. A projected immutable sequence document is a chemistry-unmapped view only, atomically installed with <=32MiB evidence; it cannot substitute for graph replay or independent target comparison. Imported reports/products are never accepted as physical state."
+    )]
+    async fn project_topo_product(
+        &self,
+        Parameters(args): Parameters<TopoProjectQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move||{
+            let(inputs,_)=server.topo_sources(&args.sources,&args.request,None)?;
+            let product=collagene_core::topo::product(&inputs,&args.request,&args.selection).map_err(bad)?;
+            let evidence=TopoEvidence{source_bindings:&args.sources,request:&args.request,target_requirement:None,report:&product,
+                binding_scope:"Source-backed physical reconstruction; sequence view is not standalone chemistry authority."};
+            let (artifact,document)=server.candidate_document_artifact_bounded(&evidence,product.reference.clone(),"topo-projection.json",collagene_core::topo::MAX_REPORT_BYTES)?;
+            output(json!({"sources":args.sources,"selection":args.selection,"engine_version":product.engine_version,
+                "batch_revision":product.batch_revision,"projection":topo_projection_summary(&product),
+                "physical":topo_summary(&product.projection.physical),"document":document,"artifact_id":artifact,
+                "authority":"Explicit component/seed only; no target-guided path selection, nick repair or standalone physical authority from the projected reference."}))
+        }).await
+    }
+    #[tool(
+        description = "Freshly reconstruct the explicitly selected TOPO component/seed and compare an independently supplied immutable target under a fully explicit AcceptancePolicy. Target DNA is a noncausal requirement and never chooses components, seeds, orientation or product sequence. Exact equality cannot silently seal nicks, specify unknown terminal chemistry, discard other components or apply failed transfers. Returns conditional accepted/rejected/withheld outcome and complete source/request/target-bound <=32MiB JSON; no experimental success guarantee."
+    )]
+    async fn check_topo_target(
+        &self,
+        Parameters(args): Parameters<TopoTargetQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move||{
+            let(inputs,target)=server.topo_sources(&args.sources,&args.request,Some(&args.target))?;
+            let target=target.ok_or_else(||bad("explicit independent TOPO target required"))?;
+            let report=collagene_core::topo::check_target(&inputs,&args.request,&args.selection,&target,&args.policy).map_err(bad)?;
+            let evidence=TopoEvidence{source_bindings:&args.sources,request:&args.request,target_requirement:Some(&args.target),report:&report,
+                binding_scope:"Independent target is a noncausal requirement, not an ancestry parent or source of generated DNA."};
+            let artifact=server.text_artifact(bounded_json_limit(&evidence,collagene_core::topo::MAX_REPORT_BYTES)?,"application/json","topo-target-check.json")?;
+            output(json!({"sources":args.sources,"target":args.target,"selection":args.selection,"policy":args.policy,
+                "engine_version":report.engine_version,"batch_revision":report.batch_revision,"target_revision":report.target_revision,
+                "outcome":report.outcome,"projection":topo_projection_summary(&report.product),
+                "physical":topo_summary(&report.product.projection.physical),"artifact_id":artifact,
+                "authority":"Conditional comparison under declared physical graph and explicit allowances, not a repaired molecule or experimental verification."}))
+        }).await
     }
     #[tool(
         description = "Inspect explicitly profiled BP/LR reciprocal reference-sequence alternatives from exactly two ordered immutable source roles. Mandatory full profile snapshot and resource limits; all reciprocal components and uncertainty retained in immutable JSON. Bounded candidate page only, no automatic winner or product installation, no chemical activity claims."

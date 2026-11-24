@@ -83,9 +83,24 @@ again in the geometry enumerator. The recipe-wide sum must fit the requested
 own graph work under that cap. This is a conservative comparison-work bound,
 not a wall-clock timeout or a combined preparation-and-graph work counter.
 
-The initial adapter does not yet add plan operations, history installation, worker
-jobs, MCP tools, a kit wizard, full annotation projection or a duplex mapping that
-would discard nick chemistry. Standard kit preparation profiles need full
-manufacturer-backed strand geometry; an annotated vector reference alone does not
-establish the supplied activated substrate. Primary mechanism sources and the
-scope of the elementary transfer model are documented by `collagene-topo`.
+The adapter now connects to typed `Operation::Topo` plans, full reconstruction
+JSON evidence, HTML/PDF protocol export and four MCP tools. Each role binds an
+explicit immutable source. Plans freshly reconstruct the graph and retain it in
+`VerificationReport.step_reports`; a paired reference view keeps the chemistry
+boundary sticky through subsequent operations. A missing contour preserves the
+graph while withholding DNA. The initial plan operation deliberately has no
+implicit physical target-acceptance policy and remains Incomplete; standalone
+`check_topo_target` requires a separately supplied target and explicit policy.
+
+The browser can review and verify imported TOPO candidates and download the full
+physical reconstruction evidence. Existing source-event run capture/replay
+retains source recipes and immutable inputs, not a restored proof. Candidate
+schema8/workspace plan schema6/worker schema25 and science10 identify the new
+semantics; older worker verification layouts migrate without invented graphs.
+
+Kit-specific preparation wizards, full annotation projection and downstream
+physical graph composition remain implementation work. No contour preview can
+be used as an intact-duplex substrate by silently dropping its graph. The
+underlying engine and its bounded elementary-transfer model are documented by
+`collagene-topo`. Compiler validation is separate from scientific/runtime
+validation; browser checks remain deferred until in-scope code is complete.

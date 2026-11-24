@@ -52,7 +52,10 @@ fn appended_operations_require_candidate_six_and_worker_seventeen_in_nested_plan
     let (target, plan) = fixture();
     let candidate = Candidate::new(plan.clone());
     let bytes = transfer::save_candidate(&candidate).unwrap();
-    assert_eq!(&bytes[4..6], &7u16.to_le_bytes());
+    assert_eq!(
+        &bytes[4..6],
+        &collagene_core::protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
+    );
     transfer::load_candidate(&bytes).unwrap();
     for version in 1..6 {
         assert!(transfer::load_candidate(&wire(b"CGP\0", version, &candidate)).is_err());
@@ -128,10 +131,35 @@ fn inline_and_binary_workspace_plan_graphs_cannot_downcast_tracked_operations() 
     }
 }
 #[test]
-fn science_nine_reports_require_new_envelopes_while_eight_and_seven_stay_historical() {
+fn current_reports_require_new_envelopes_while_eight_and_seven_stay_historical() {
+    fn historical_wire(version: u16, response: &Response) -> Vec<u8> {
+        let AnalysisResult::Verification(report) = &response.result else {
+            panic!("expected verification")
+        };
+        assert!(report.step_reports.is_empty());
+        wire(
+            b"CGR\0",
+            version,
+            &(
+                response.id,
+                &response.revision,
+                4u32,
+                (
+                    &report.plan_revision,
+                    &report.target_revision,
+                    &report.engine_version,
+                    report.status,
+                    &report.findings,
+                    &report.assumptions,
+                    &report.products,
+                    report.exhaustive_alternative_search,
+                ),
+            ),
+        )
+    }
     let (target, plan) = fixture();
     let report = verify(&plan, &target);
-    assert!(report.engine_version.ends_with("/science-9"));
+    assert!(report.engine_version == collagene_core::verification::ENGINE_VERSION);
     let response = Response {
         id: 503,
         revision: target.revision(),
@@ -139,7 +167,7 @@ fn science_nine_reports_require_new_envelopes_while_eight_and_seven_stay_histori
     };
     assert!(protocol::decode_response(&wire(b"CGR\0", 16, &response)).is_err());
     assert!(protocol::decode_response(&wire(b"CGR\0", 21, &response)).is_err());
-    protocol::decode_response(&wire(b"CGR\0", 22, &response)).unwrap();
+    protocol::decode_response(&wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &response)).unwrap();
     let mut historical_eight = report.clone();
     historical_eight.engine_version = "0.1.0/science-8".into();
     let historical = Response {
@@ -147,7 +175,7 @@ fn science_nine_reports_require_new_envelopes_while_eight_and_seven_stay_histori
         revision: target.revision(),
         result: AnalysisResult::Verification(historical_eight),
     };
-    protocol::decode_response(&wire(b"CGR\0", 17, &historical)).unwrap();
+    protocol::decode_response(&historical_wire(17, &historical)).unwrap();
 
     let pdf = collagene_core::pdf::export_protocol_pdf(&plan, &target).unwrap();
     let response = Response {
@@ -163,7 +191,7 @@ fn science_nine_reports_require_new_envelopes_while_eight_and_seven_stay_histori
         revision: target.revision(),
         result: AnalysisResult::Verification(old),
     };
-    let decoded = protocol::decode_response(&wire(b"CGR\0", 16, &response)).unwrap();
+    let decoded = protocol::decode_response(&historical_wire(16, &response)).unwrap();
     let AnalysisResult::Verification(old) = decoded.result else {
         panic!()
     };
@@ -189,7 +217,10 @@ fn native_archive_plan_four_floor_is_checked_even_when_its_candidate_hashes_are_
             entry.read_to_end(&mut data).unwrap();
             if name == "manifest.json" {
                 let mut manifest: serde_json::Value = serde_json::from_slice(&data).unwrap();
-                assert_eq!(manifest["plan_schema"], 5);
+                assert_eq!(
+                    manifest["plan_schema"],
+                    collagene_core::workspace::PLAN_SCHEMA_VERSION
+                );
                 manifest["plan_schema"] = serde_json::json!(schema);
                 data = serde_json::to_vec(&manifest).unwrap();
             }
@@ -238,7 +269,10 @@ fn retained_runs_and_their_workspaces_cannot_hide_new_semantics_under_old_outer_
     let record =
         load_run_record(&commit.workspace.attachments[&commit.receipt.attachment_hash].bytes)
             .unwrap();
-    assert_eq!(record.plan_schema, 5);
+    assert_eq!(
+        record.plan_schema,
+        collagene_core::workspace::PLAN_SCHEMA_VERSION
+    );
     let mut mislabeled = serde_json::to_value(&record).unwrap();
     mislabeled["plan_schema"] = serde_json::json!(3);
     assert!(load_run_record(&serde_json::to_vec(&mislabeled).unwrap()).is_err());

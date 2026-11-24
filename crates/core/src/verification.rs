@@ -30,6 +30,15 @@ pub struct OrientedSource {
     pub source: Source,
     pub reverse: bool,
 }
+/// Explicit ordered role binding for a fresh TOPO preparation hypothesis.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct TopoSource {
+    pub role: String,
+    pub source: Source,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -112,6 +121,13 @@ pub enum Operation {
         request: crate::recombination::Request,
         selection: crate::recombination::Selection,
     },
+    /// Fresh full physical graph. A proven contour is only a restrictive reference
+    /// view; no target acceptance or downstream chemical state is inferred.
+    Topo {
+        sources: Vec<TopoSource>,
+        request: crate::topo::Request,
+        selection: crate::topo::Selection,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -141,9 +157,21 @@ pub struct VerificationReport {
     pub assumptions: Vec<String>,
     pub products: Vec<Molecule>,
     pub exhaustive_alternative_search: bool,
+    /// Full per-step scientific evidence, including withheld TOPO contours.
+    #[serde(default)]
+    pub step_reports: Vec<StepReport>,
 }
 
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-9");
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct StepReport {
+    pub step_index: usize,
+    #[serde(default)]
+    pub topo: Option<crate::topo::Product>,
+}
+
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-10");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrDocument {
@@ -329,12 +357,203 @@ pub fn plan_revision(plan: &DesignPlan) -> String {
         .to_string()
 }
 
+struct EvidenceCounter {
+    bytes: usize,
+    max: usize,
+}
+impl std::io::Write for EvidenceCounter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.bytes = self
+            .bytes
+            .checked_add(bytes.len())
+            .filter(|&n| n <= self.max)
+            .ok_or_else(|| std::io::Error::other("bounded plan step evidence"))?;
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+fn evidence_bytes(value: &impl Serialize, max: usize) -> Result<usize, Error> {
+    let mut counter = EvidenceCounter { bytes: 0, max };
+    serde_json::to_writer(&mut counter, value).map_err(|_| Error::TooLarge)?;
+    Ok(counter.bytes)
+}
+
+/// Cheap borrowed snapshot/resource guard before plan hashing or source clones.
+/// Actual sequence intervals, strand pairing and scalar engine policies are
+/// independently checked by the source adapter against freshly bound molecules.
+fn validate_topo_shape(
+    sources: &[TopoSource],
+    request: &crate::topo::Request,
+) -> Result<(), Error> {
+    if sources.is_empty()
+        || sources.len() > 32
+        || request.recipe.schema_version != 1
+        || request.recipe.materials.is_empty()
+        || request.recipe.materials.len() > 16
+        || request.transfers.len() > 16
+    {
+        return Err(Error::TooLarge);
+    }
+    let mut roles = std::collections::BTreeSet::new();
+    for source in sources {
+        if source.role.len() > 256
+            || source.role.trim().is_empty()
+            || !roles.insert(source.role.as_str())
+            || matches!(&source.source,Source::Input(id) if id.len()>128 || id.trim().is_empty())
+        {
+            return Err(Error::Format(
+                "invalid or duplicate TOPO source role".into(),
+            ));
+        }
+    }
+    let mut strands = 0usize;
+    let mut pairing = 0usize;
+    let mut segments = 0usize;
+    for material in &request.recipe.materials {
+        match material {
+            crate::topo::MaterialRecipe::Prepared {
+                declaration_id,
+                assumption,
+                strands: items,
+                pairing: spans,
+            } => {
+                strands = strands.checked_add(items.len()).ok_or(Error::TooLarge)?;
+                pairing = pairing.checked_add(spans.len()).ok_or(Error::TooLarge)?;
+                if strands > 32
+                    || pairing > 1024
+                    || declaration_id.len() > 256
+                    || assumption.len() > 4096
+                {
+                    return Err(Error::TooLarge);
+                }
+                for strand in items {
+                    if strand.id.len() > 256
+                        || strand.segments.is_empty()
+                        || strand.segments.len() > 1024
+                    {
+                        return Err(Error::TooLarge);
+                    }
+                    if let crate::topo::physical::ThreePrime::Phosphotyrosyl {
+                        activation_id, ..
+                    } = &strand.three_prime
+                    {
+                        if activation_id.len() > 256 {
+                            return Err(Error::TooLarge);
+                        }
+                    }
+                    segments = segments
+                        .checked_add(strand.segments.len())
+                        .ok_or(Error::TooLarge)?;
+                    if segments > 2048 {
+                        return Err(Error::TooLarge);
+                    }
+                    for segment in &strand.segments {
+                        if segment.source_role.len() > 256
+                            || !roles.contains(segment.source_role.as_str())
+                        {
+                            return Err(Error::Format(
+                                "TOPO interval uses an unbound source role".into(),
+                            ));
+                        }
+                    }
+                }
+            }
+            crate::topo::MaterialRecipe::ExactPcr {
+                material_id,
+                template_role,
+                forward,
+                reverse,
+                ..
+            } => {
+                strands = strands.checked_add(2).ok_or(Error::TooLarge)?;
+                if strands > 32
+                    || material_id.len() > 256
+                    || template_role.len() > 256
+                    || !roles.contains(template_role.as_str())
+                {
+                    return Err(Error::Format(
+                        "TOPO PCR uses an unbound role or exceeds preparation bounds".into(),
+                    ));
+                }
+                for primer in [forward, reverse] {
+                    if primer.name.len() > 256
+                        || primer.annealing.len() > 1000
+                        || primer.tail.len() > 1000
+                    {
+                        return Err(Error::TooLarge);
+                    }
+                }
+            }
+        }
+    }
+    evidence_bytes(request, 1024 * 1024)?;
+    Ok(())
+}
+
+/// Bind the exact ordered plan sources to explicit recipe roles. Display names
+/// and imported producer metadata cannot resolve a role or establish chemistry.
+pub fn topo_inputs(
+    sources: &[TopoSource],
+    molecules: &[&Molecule],
+    request: &crate::topo::Request,
+) -> Result<Vec<crate::topo::Input>, Error> {
+    validate_topo_shape(sources, request)?;
+    if sources.len() != molecules.len() {
+        return Err(Error::Format("TOPO source count mismatch".into()));
+    }
+    collagene_model::bounds::model_preflight(molecules)?;
+    let mut bases = 0usize;
+    for molecule in molecules {
+        bases = bases
+            .checked_add(molecule.sequence.len())
+            .filter(|&n| n <= 100_000)
+            .ok_or(Error::TooLarge)?;
+        if molecule.sequence.alphabet() != Alphabet::Dna {
+            return Err(Error::Format("TOPO sources must be DNA".into()));
+        }
+    }
+    let inputs = sources
+        .iter()
+        .zip(molecules)
+        .map(|(source, molecule)| crate::topo::Input {
+            role: source.role.clone(),
+            molecule: (*molecule).clone(),
+        })
+        .collect::<Vec<_>>();
+    crate::topo::source_preflight(&inputs, request)
+        .map_err(|error| Error::Format(format!("TOPO source preparation rejected: {error}")))?;
+    Ok(inputs)
+}
+
 pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
     if plan.steps.len() > 1000 || plan.inputs.len() > 1000 {
         return Err(Error::TooLarge);
     }
     let mut count = 0usize;
     for step in &plan.steps {
+        if let Operation::Topo {
+            sources,
+            request,
+            selection,
+        } = step
+        {
+            count += 1;
+            if count > 64 {
+                return Err(Error::TooLarge);
+            }
+            validate_topo_shape(sources, request)?;
+            if selection.batch_revision.len() != 64
+                || !selection
+                    .batch_revision
+                    .bytes()
+                    .all(|b| b.is_ascii_hexdigit())
+                || selection.component >= 64
+            {
+                return Err(Error::Format("invalid TOPO source selection".into()));
+            }
+        }
         if let Operation::RecombineReference {
             sources,
             request,
@@ -389,6 +608,7 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
 pub(crate) fn operation_sources(op: &Operation) -> Vec<&Source> {
     match op {
         Operation::RecombineReference { sources, .. } => sources.iter().collect(),
+        Operation::Topo { sources, .. } => sources.iter().map(|s| &s.source).collect(),
         Operation::Pcr { template, .. }
         | Operation::PcrWithMismatches { template, .. }
         | Operation::Digest { template, .. }
@@ -440,11 +660,12 @@ pub fn recombination_inputs(
 pub fn verify(plan: &DesignPlan, target: &Molecule) -> VerificationReport {
     // New embedded profile snapshots are bounded before hashing their public native DTOs.
     let preflight = validate_reference_steps(plan).and_then(|()| {
-        if plan
-            .steps
-            .iter()
-            .any(|s| matches!(s, Operation::RecombineReference { .. }))
-        {
+        if plan.steps.iter().any(|s| {
+            matches!(
+                s,
+                Operation::RecombineReference { .. } | Operation::Topo { .. }
+            )
+        }) {
             let mut models = plan.inputs.iter().map(|i| &i.molecule).collect::<Vec<_>>();
             models.push(target);
             crate::recombination::reference::model_preflight(&models)?;
@@ -453,13 +674,14 @@ pub fn verify(plan: &DesignPlan, target: &Molecule) -> VerificationReport {
     });
     if let Err(error) = preflight {
         return VerificationReport { plan_revision: String::new(), target_revision: String::new(), engine_version: ENGINE_VERSION.into(), status: Status::Invalid,
-            findings: vec![error.to_string()], assumptions: vec!["Reference exchange request rejected before plan hashing; no current result binding established.".into()], products: vec![], exhaustive_alternative_search: false };
+            findings: vec![error.to_string()], assumptions: vec!["Reference/TOPO request rejected before plan hashing; no current result binding established.".into()], products: vec![], exhaustive_alternative_search: false, step_reports: vec![] };
     }
     let mut report = VerificationReport {
         plan_revision: plan_revision(plan), target_revision: target.revision(), engine_version: ENGINE_VERSION.into(),
-        status: Status::Invalid, findings: vec![], products: vec![], exhaustive_alternative_search: false,
+        status: Status::Invalid, findings: vec![], products: vec![], exhaustive_alternative_search: false, step_reports: vec![],
         assumptions: vec!["Exact annealing/overlap model; no experimental outcome is guaranteed.".into(),
             "RecombineReference is a bounded full-site-profile reciprocal reference exchange. All components are computed before an explicit selection; neither its selected DNA nor target agreement establishes chemical strand state, biological repair, efficacy or a selected experimental winner. Reference-only ancestry cannot supply physical PCR or annealing material.".into(),
+            "TOPO reconstructs explicitly declared strands, pairing and elementary transfers. Its full physical graph is retained; a selected proven paired contour supplies a restrictive reference view only. No implicit target acceptance policy, nick/flap repair, supplier-kit state or experimental success is asserted. Downstream physical graph consumption is not yet modeled.".into(),
             "Exact-PCR operations consider exact non-overlapping binding sites within one template turn, including competing oligo orientations and single-oligo products. Intentional-mismatch PCR uses its separately recorded mismatch and 3′ policy; ambiguous and overlapping-domain products remain incomplete previews.".into(),
             "Golden Gate enumerates a bounded one-copy fragment pool under explicit options; recut paths, carryover and alternative source histories remain evidence, not a claim of exhaustive kinetic mixture uniqueness.".into(),
             "Legacy digest and Golden Gate cleavage remain explicit complete-cleavage assumptions. CheckedDigest evaluates the pinned positional modification profile only; reaction conditions, secondary structure and genome-wide specificity are not established.".into(),
@@ -477,6 +699,7 @@ pub fn verify(plan: &DesignPlan, target: &Molecule) -> VerificationReport {
         &plan_hash,
         &mut report.products,
         &mut report.findings,
+        &mut report.step_reports,
     ) {
         Ok(incomplete) => {
             let product = report.products.last().expect("nonempty reconstructed plan");
@@ -1275,6 +1498,7 @@ fn reconstruct(
     plan_hash: &str,
     products: &mut Vec<Molecule>,
     findings: &mut Vec<String>,
+    step_reports: &mut Vec<StepReport>,
 ) -> Result<Vec<String>, Error> {
     target.validate()?;
     if plan.target_revision != target.revision() {
@@ -1302,6 +1526,7 @@ fn reconstruct(
     let mut reference_only: Vec<bool> = vec![];
     let mut product_bases = 0usize;
     let mut product_bytes = 0usize;
+    let mut step_evidence_bytes = 0usize;
     let mut incomplete = Vec::new();
     for (index, step) in plan.steps.iter().enumerate() {
         let inherited_reference_only = operation_sources(step).iter().any(|source| match source {
@@ -1314,9 +1539,10 @@ fn reconstruct(
                 Operation::Pcr { .. }
                     | Operation::PcrWithMismatches { .. }
                     | Operation::AnnealOligos { .. }
+                    | Operation::Topo { .. }
             )
         {
-            return Err(Error::Unsupported("Reference-only recombination ancestry cannot establish a physical PCR/annealing substrate; no chemical template or oligo materialization assumption is modeled.".into()));
+            return Err(Error::Unsupported("Reference-only ancestry cannot establish a physical PCR/annealing/TOPO substrate. Its full originating graph must be consumed by an explicit supported physical operation; no materialization or graph repair is inferred.".into()));
         }
         let resolve = |source: &Source| -> Result<&Molecule, Error> {
             match source {
@@ -1342,6 +1568,43 @@ fn reconstruct(
             |source: &Source| -> Result<Duplex, Error> { Ok(resolve_tracked(source)?.duplex) };
         let mut next_physical = None;
         let mut product = match step {
+            Operation::Topo {
+                sources,
+                request,
+                selection,
+            } => {
+                let molecules = sources
+                    .iter()
+                    .map(|source| resolve(&source.source))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let inputs = topo_inputs(sources, &molecules, request)?;
+                // Only a fresh source-backed reconstruction may populate this
+                // evidence. Imported Product/Selection data grants no authority.
+                let fresh = crate::topo::product(&inputs, request, selection).map_err(|error| {
+                    Error::Format(format!("TOPO reconstruction rejected: {error}"))
+                })?;
+                let size = evidence_bytes(&fresh, crate::topo::MAX_REPORT_BYTES)?;
+                step_evidence_bytes = step_evidence_bytes
+                    .checked_add(size)
+                    .ok_or(Error::TooLarge)?;
+                if step_evidence_bytes > 32 * 1024 * 1024 {
+                    return Err(Error::Unsupported("TOPO full-graph evidence exceeds the plan's 32 MiB evidence budget; no reference-only substitute is published".into()));
+                }
+                let preview = fresh.reference.clone();
+                step_reports.push(StepReport {
+                    step_index: index,
+                    topo: Some(fresh),
+                });
+                findings.push(format!("Step {} retains its complete freshly reconstructed TOPO preparation, transfer graph, all physical components and paired-contour proof. A selected reference view does not seal nicks, remove flaps or establish experimental success.",index+1));
+                let Some(preview) = preview else {
+                    return Err(Error::Unsupported(format!(
+                        "Step {} has no uniquely proven paired TOPO contour. Its full physical graph is retained; no product DNA or target-derived path is invented.",
+                        index + 1
+                    )));
+                };
+                incomplete.push(format!("Step {} TOPO contour matches only an explicitly selected reference path. No physical target-acceptance policy was supplied, and downstream graph consumption is not modeled; nicks, other components and transfer outcomes remain in full step evidence.",index+1));
+                preview
+            }
             Operation::RecombineReference {
                 sources,
                 request,
@@ -1981,8 +2244,11 @@ fn reconstruct(
                 product
             }
         };
-        let is_reference_only =
-            inherited_reference_only || matches!(step, Operation::RecombineReference { .. });
+        let is_reference_only = inherited_reference_only
+            || matches!(
+                step,
+                Operation::RecombineReference { .. } | Operation::Topo { .. }
+            );
         if is_reference_only {
             if next_physical.is_some() {
                 return Err(Error::Unsupported("Reference-only ancestry cannot acquire chemical authority without a modeled materialization assumption".into()));
@@ -2027,7 +2293,7 @@ fn reconstruct(
                 .map_err(|e| Error::Format(e.to_string()))?
                 .len(),
         );
-        if product_bytes > 64 * 1024 * 1024 {
+        if product_bytes.saturating_add(step_evidence_bytes) > 64 * 1024 * 1024 {
             return Err(Error::Unsupported(
                 "plan products exceed the 64 MiB serialized annotation/evidence budget".into(),
             ));
@@ -2115,6 +2381,16 @@ pub fn export_protocol_html(plan: &DesignPlan, target: &Molecule) -> String {
     };
     for (step_index, step) in plan.steps.iter().enumerate() {
         match step {
+            Operation::Topo { sources, request, selection } => {
+                body.push_str(&format!("<li>Source-backed TOPO elementary-transfer graph with explicit ordered roles: {}. Preparation/transfers/limits <code>{}</code>; selection <code>{}</code>. Full physical evidence is retained; a paired-contour reference view does not establish nick repair, flap removal, supplier state, target acceptance or experimental success.<ul>",sources.iter().map(|s|format!("{} = {}",e(&s.role),source(&s.source))).collect::<Vec<_>>().join(", "),e(&serde_json::to_string(request).unwrap_or_default()),e(&serde_json::to_string(selection).unwrap_or_default())));
+                for material in &request.recipe.materials {
+                    match material {
+                        crate::topo::MaterialRecipe::Prepared {declaration_id,assumption,..} => body.push_str(&format!("<li>Preparation {}: {}</li>",e(declaration_id),e(assumption))),
+                        crate::topo::MaterialRecipe::ExactPcr {material_id,template_role,forward,reverse,tail} => body.push_str(&format!("<li>Fresh exact PCR {} from role {}. Actual ordered oligos 5′→3′: <code>{}</code> and <code>{}</code>. Optional separately declared 3′ tail: {:?}. Unique current geometry and ideal newly synthesized OH-ended strands are assumptions, not measured amplification.</li>",e(material_id),e(template_role),e(&forward.ordered_sequence()),e(&reverse.ordered_sequence()),tail)),
+                    }
+                }
+                body.push_str("</ul></li>");
+            },
             Operation::RecombineReference { sources, request, selection } => body.push_str(&format!("<li>Reference-only {:?} exchange of {} and {}. Pinned full profile/data, work/annotation limits: <code>{}</code>. Explicit component selection: <code>{}</code>. All reciprocal components are computed; selected reference DNA does not establish chemical state, efficacy, repair or experimental selection.</li>",request.reaction,source(&sources[0]),source(&sources[1]),e(&serde_json::to_string(request).unwrap_or_default()),e(&serde_json::to_string(selection).unwrap_or_default()))),
             Operation::PcrWithMismatches{template,forward,reverse,options}=>body.push_str(&format!("<li>Intentional-mismatch PCR of {}. Oligos 5′→3′: <code>{}</code> and <code>{}</code>. Binding/search policy: <code>{}</code>. Primer-derived changes are reconstructed; amplification is not established.</li>",source(template),e(&forward.ordered_sequence()),e(&reverse.ordered_sequence()),e(&serde_json::to_string(options).unwrap_or_default()))),
             Operation::GoldenGate{templates,options,candidate_index}=>body.push_str(&format!("<li>Golden Gate with {:?}, inputs {}. Explicit zero-based candidate {} under policy <code>{}</code>. Cleavage, orientation, cohesive ends and recognition-site removal are checked. Finite one-copy fragment search does not establish exhaustive mixture uniqueness; conditions and quantities are unspecified.</li>",options.enzyme,templates.iter().map(source).collect::<Vec<_>>().join(", "),candidate_index,e(&serde_json::to_string(options).unwrap_or_default()))),
@@ -2163,7 +2439,40 @@ pub fn export_protocol_html(plan: &DesignPlan, target: &Molecule) -> String {
     for finding in &report.findings {
         body.push_str(&format!("<li>{}</li>", e(finding)));
     }
-    body.push_str("</ul><h2>Assumptions and limits</h2><ul>");
+    body.push_str("</ul>");
+    if !report.step_reports.is_empty() {
+        body.push_str("<h2>TOPO physical step evidence</h2><ul>");
+        for step in &report.step_reports {
+            if let Some(topo) = &step.topo {
+                let physical = &topo.projection.physical;
+                let graph = &physical.product;
+                let unpaired = graph
+                    .unpaired
+                    .iter()
+                    .map(|run| run.end - run.start)
+                    .sum::<usize>();
+                let contour = match &topo.projection.outcome {
+                    crate::topo::physical::projection::Outcome::Proven(view) => format!(
+                        "Proven {:?} paired contour with {} retained nicks; known terminal chemistry {}; all requested transfers applied {}. This is no target-acceptance or repair claim.",
+                        view.topology,
+                        view.nicks.len(),
+                        view.fully_known_terminal_chemistry,
+                        view.all_requested_transfers_applied
+                    ),
+                    crate::topo::physical::projection::Outcome::Withheld(reason) => format!(
+                        "Contour withheld: {reason:?}. No target-derived path, flap removal or nick repair was attempted."
+                    ),
+                };
+                body.push_str(&format!("<li>Step {}: {} components, {} actual chains, {} graph nicks and {} unpaired nucleotides retained. {} The full bounded graph and source-call maps remain in the downloadable verification JSON.<ul>",step.step_index+1,graph.components.len(),graph.chains.len(),graph.nicks.len(),unpaired,e(&contour)));
+                for assumption in &topo.preparation.assumptions {
+                    body.push_str(&format!("<li>{}</li>", e(assumption)));
+                }
+                body.push_str("</ul></li>");
+            }
+        }
+        body.push_str("</ul>");
+    }
+    body.push_str("<h2>Assumptions and limits</h2><ul>");
     for assumption in &report.assumptions {
         body.push_str(&format!("<li>{}</li>", e(assumption)));
     }

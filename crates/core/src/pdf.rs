@@ -78,6 +78,160 @@ fn source_name(source: &Source) -> String {
             .unwrap_or_else(|| format!("invalid step index {i}")),
     }
 }
+// TOPO request/evidence text shares the PDF text ceiling before collecting a
+// String. Large valid graphs fail explicitly rather than truncate a recipe or
+// allocate an unbounded JSON value merely to discover the PDF is too large.
+struct TopoText(Vec<u8>);
+impl io::Write for TopoText {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if self
+            .0
+            .len()
+            .checked_add(bytes.len())
+            .is_none_or(|n| n > MAX_PDF_TEXT_BYTES)
+        {
+            return Err(io::Error::other("TOPO PDF text limit"));
+        }
+        self.0
+            .try_reserve(bytes.len())
+            .map_err(|_| io::Error::other("TOPO PDF text allocation"))?;
+        self.0.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+impl TopoText {
+    fn json(&mut self, value: &impl serde::Serialize) -> Result<(), Error> {
+        serde_json::to_writer(self, value).map_err(|_| Error::TooLarge)
+    }
+    fn finish(self) -> Result<String, Error> {
+        String::from_utf8(self.0).map_err(|error| Error::Format(error.to_string()))
+    }
+}
+fn topo_step_text(
+    sources: &[verification::TopoSource],
+    request: &crate::topo::Request,
+    selection: &crate::topo::Selection,
+    plan: &DesignPlan,
+    report: &verification::VerificationReport,
+) -> Result<String, Error> {
+    use io::Write as _;
+    let mut out = TopoText(Vec::new());
+    writeln!(out,"TOPO elementary strand-transfer reconstruction under explicitly declared preparation hypotheses. No supplier label or imported reference metadata proves activation, terminal chemistry, kit formulation or experimental success.").map_err(|_|Error::TooLarge)?;
+    for source in sources {
+        let revision = match &source.source {
+            Source::Input(id) => plan
+                .inputs
+                .iter()
+                .find(|input| input.id == *id)
+                .map(|input| input.revision.clone()),
+            Source::Step(index) => report.products.get(*index).map(Molecule::revision),
+        };
+        writeln!(
+            out,
+            "Source role {:?}: {}; revision {}",
+            source.role,
+            source_name(&source.source),
+            revision
+                .as_deref()
+                .unwrap_or("unavailable; upstream reconstruction is not established")
+        )
+        .map_err(|_| Error::TooLarge)?;
+    }
+    // Preserve the complete typed request: strand source intervals/orientations,
+    // preparation statements, pairing, transfers and both sets of work limits.
+    writeln!(out, "Full source-role recipe and bounded request:").map_err(|_| Error::TooLarge)?;
+    out.json(request)?;
+    writeln!(out, "\nExplicit component/source-seed selection:").map_err(|_| Error::TooLarge)?;
+    out.json(selection)?;
+    for (index, material) in request.recipe.materials.iter().enumerate() {
+        match material {
+            crate::topo::MaterialRecipe::Prepared {
+                declaration_id,
+                assumption,
+                ..
+            } => {
+                writeln!(
+                    out,
+                    "\nPrepared material {} / {}: {}",
+                    index, declaration_id, assumption
+                )
+                .map_err(|_| Error::TooLarge)?;
+            }
+            crate::topo::MaterialRecipe::ExactPcr {
+                material_id,
+                template_role,
+                forward,
+                reverse,
+                tail,
+            } => {
+                writeln!(out,"\nExact PCR material {} / {} from role {:?}. Ordered oligos 5′→3′: forward {} = {} (annealing {}; explicit 5′ tail {}); reverse {} = {} (annealing {}; explicit 5′ tail {}). Explicit subsequent 3′ tailing {:?}. These are ideal copied/synthesized strands, not inherited modifications or empirical amplification.",index,material_id,template_role,forward.name,forward.ordered_sequence(),forward.annealing.as_str(),forward.tail,reverse.name,reverse.ordered_sequence(),reverse.annealing.as_str(),reverse.tail,tail).map_err(|_|Error::TooLarge)?;
+            }
+        }
+    }
+    writeln!(out,"\nAll reciprocal components, open nicks, retained flaps/free strands and unreleased activations remain in the physical graph. A paired contour is not covalent closure or host repair. Kit conditions, quantities, enzyme recycling, mixture kinetics and laboratory efficacy are unspecified. This plan has no implicit physical-target acceptance policy.").map_err(|_|Error::TooLarge)?;
+    out.finish()
+}
+fn topo_evidence_text(product: &crate::topo::Product) -> Result<String, Error> {
+    use io::Write as _;
+    let mut out = TopoText(Vec::new());
+    let physical = &product.projection.physical;
+    writeln!(out,"Fresh TOPO evidence: adapter {} / {}; physical engine {} / model {}. Work complete {}; all requested transfers applied {}; unsupported/unknown {}; fully specified DNA {}.",product.engine_version,product.batch_revision,physical.engine,physical.model,physical.work_complete,physical.all_requested_transfers_applied,physical.unsupported_or_unknown,physical.fully_specified_dna).map_err(|_|Error::TooLarge)?;
+    for assumption in product
+        .preparation
+        .assumptions
+        .iter()
+        .chain(physical.assumptions.iter())
+    {
+        writeln!(out, "Preparation/model assumption: {assumption}").map_err(|_| Error::TooLarge)?;
+    }
+    writeln!(
+        out,
+        "Actual transfer outcomes, source-call pair changes and displacement:"
+    )
+    .map_err(|_| Error::TooLarge)?;
+    out.json(&physical.steps)?;
+    writeln!(out, "\nEvery reconstructed component:").map_err(|_| Error::TooLarge)?;
+    out.json(&physical.product.components)?;
+    for (index, chain) in physical.product.chains.iter().enumerate() {
+        writeln!(out,"\nChemical chain {index}: {} stored 5′→3′ bases; actual ends and immutable source placements:",chain.sequence.len()).map_err(|_|Error::TooLarge)?;
+        out.json(&chain.ends)?;
+        out.json(&chain.sources)?;
+    }
+    writeln!(
+        out,
+        "\nOpen nicks with actual source calls and terminal chemistry:"
+    )
+    .map_err(|_| Error::TooLarge)?;
+    out.json(&physical.product.nicks)?;
+    writeln!(
+        out,
+        "\nRetained unpaired runs, including flaps and free strands:"
+    )
+    .map_err(|_| Error::TooLarge)?;
+    out.json(&physical.product.unpaired)?;
+    writeln!(out, "\nExplicitly released activation identities:").map_err(|_| Error::TooLarge)?;
+    out.json(&physical.product.released_activations)?;
+    match &product.projection.outcome {
+        crate::topo::physical::projection::Outcome::Proven(view) => {
+            writeln!(out,"\nSelected paired contour {:?}: top {} bases, actual bottom {} bases; known terminal chemistry {}; all requested transfers applied {}. External ends and every retained nick follow:",view.topology,view.top.len(),view.bottom.len(),view.fully_known_terminal_chemistry,view.all_requested_transfers_applied).map_err(|_|Error::TooLarge)?;
+            out.json(&view.ends)?;
+            out.json(&view.nicks)?;
+        }
+        crate::topo::physical::projection::Outcome::Withheld(reason) => {
+            writeln!(
+                out,
+                "\nPaired contour withheld; no replacement reference DNA or repair is fabricated:"
+            )
+            .map_err(|_| Error::TooLarge)?;
+            out.json(reason)?;
+        }
+    }
+    writeln!(out,"\nReference preview present: {}. This summary cannot restore physical authority from saved/imported producer metadata or establish experimental target acceptance.",product.reference.is_some()).map_err(|_|Error::TooLarge)?;
+    out.finish()
+}
 fn status_text(status: Status) -> &'static str {
     match status {
         Status::Invalid => "DRAFT - INVALID: do not use as a validated protocol",
@@ -646,6 +800,11 @@ pub fn export_protocol_pdf(plan: &DesignPlan, target: &Molecule) -> Result<PdfRe
     layout.heading("Cloning steps")?;
     for (index, step) in plan.steps.iter().enumerate() {
         let body = match step {
+            Operation::Topo {
+                sources,
+                request,
+                selection,
+            } => topo_step_text(sources, request, selection, plan, &report)?,
             Operation::RecombineReference {
                 sources,
                 request,
@@ -835,6 +994,14 @@ pub fn export_protocol_pdf(plan: &DesignPlan, target: &Molecule) -> Result<PdfRe
             ),
         };
         layout.paragraph(&format!("Step {}. {body}", index + 1))?;
+        if let Some(topo) = report
+            .step_reports
+            .iter()
+            .find(|entry| entry.step_index == index)
+            .and_then(|entry| entry.topo.as_ref())
+        {
+            layout.paragraph_size(&topo_evidence_text(topo)?, 9.0, INK)?;
+        }
         if let Some(product) = report.products.get(index) {
             layout.paragraph_size(
                 &format!(

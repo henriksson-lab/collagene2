@@ -113,7 +113,10 @@ fn newer_operations_cannot_hide_in_old_candidates_verify_pdf_or_workspace_messag
     let plan = plan(&m);
     let c = Candidate::new(plan.clone());
     let bytes = collagene_core::transfer::save_candidate(&c).unwrap();
-    assert_eq!(&bytes[4..6], &7u16.to_le_bytes());
+    assert_eq!(
+        &bytes[4..6],
+        &collagene_core::protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
+    );
     for v in 1..5 {
         assert!(collagene_core::transfer::load_candidate(&envelope(b"CGP\0", v, &c)).is_err());
     }

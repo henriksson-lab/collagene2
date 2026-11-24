@@ -173,7 +173,10 @@ fn candidates_and_nested_plan_jobs_reject_new_operations_under_old_schema_labels
     let (plan, target) = repair_plan();
     let candidate = transfer::Candidate::new(plan.clone());
     let bytes = transfer::save_candidate(&candidate).unwrap();
-    assert_eq!(&bytes[4..6], &7u16.to_le_bytes());
+    assert_eq!(
+        &bytes[4..6],
+        &collagene_core::protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
+    );
     assert_eq!(
         transfer::load_candidate(&bytes).unwrap().plan_revision,
         candidate.plan_revision

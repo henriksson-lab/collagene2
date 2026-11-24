@@ -193,13 +193,24 @@ fn validate_texts(values: &[String], limit: usize) -> Result<(), Error> {
 }
 fn validate_record(r: &RunRecord) -> Result<(), Error> {
     if r.schema_version != 1
-        || !matches!(r.plan_schema, 3 | 4 | 5)
+        || !matches!(r.plan_schema, 3 | 4 | 5 | 6)
         || !digest(&r.run_id)
         || r.assessment.engine_version.is_empty()
         || r.assessment.engine_version.len() > 128
         || r.assessment.status == Status::Invalid
     {
         return Err(bad("invalid schema or assessment"));
+    }
+    if r.plan_schema < 6
+        && (r.assessment.engine_version.ends_with("/science-10")
+            || r.plan
+                .steps
+                .iter()
+                .any(|op| matches!(op, Operation::Topo { .. })))
+    {
+        return Err(bad(
+            "TOPO-aware reconstruction requires workspace plan schema 6",
+        ));
     }
     if r.plan_schema < 5
         && (r.assessment.engine_version.ends_with("/science-9")
@@ -438,7 +449,7 @@ pub fn record_run(
     }
     let mut r = RunRecord {
         schema_version: 1,
-        plan_schema: 5,
+        plan_schema: crate::workspace::PLAN_SCHEMA_VERSION,
         run_id: String::new(),
         plan_revision: report.plan_revision.clone(),
         plan: plan.clone(),

@@ -114,7 +114,7 @@ async fn oriented_profile_recommendations_are_advisory_but_target_reconstruction
     let (c, s) = setup().await;
     assert_eq!(
         c.list_tools(Default::default()).await.unwrap().tools.len(),
-        101
+        105
     );
     let a = import(&c, "a", "AAAACC", Topology::Linear).await;
     let b = import(&c, "b", "AACCGG", Topology::Linear).await;

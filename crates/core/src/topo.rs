@@ -8,7 +8,7 @@ use std::{collections::BTreeSet, io::Write};
 pub const ENGINE_VERSION: &str = "topo-source-adapter-1";
 pub const MAX_REPORT_BYTES: usize = 32 * 1024 * 1024;
 pub const RECIPE_KEY: &str = "topo:unverified_generation";
-macro_rules! dto { ($($t:tt)*) => { #[derive(Debug,Clone,Serialize,Deserialize)] #[serde(deny_unknown_fields)] $($t)* }; }
+macro_rules! dto { ($($t:tt)*) => { #[derive(Debug,Clone,Serialize,Deserialize)] #[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))] #[serde(deny_unknown_fields)] $($t)* }; }
 dto! {pub struct Input { pub role:String, pub molecule:Molecule }}
 dto! {pub struct SourceIdentity { pub role:String,pub revision:String }}
 // Forward reference interval, optionally read in reverse-complement sense. One

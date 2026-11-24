@@ -1,0 +1,11 @@
+LOCUS       fixture                   16 bp    DNA     circular SYN 01-JAN-2026
+DEFINITION  Independent synthetic coordinate fixture, not a functional construct.
+FEATURES             Location/Qualifiers
+     CDS             complement(join(13..16,1..4))
+                     /label="origin feature"
+                     /note="first"
+                     /note="second"
+                     /ApEinfo_fwdcolor="#00aa77"
+ORIGIN
+        1 aaaaccccgg ggtttt
+//

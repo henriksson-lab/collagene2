@@ -1,0 +1,14 @@
+[package]
+name = "analysis-worker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+collagene-core = { path = "../core" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "=0.2.128"
+js-sys = "=0.3.105"
+web-sys = { version = "=0.3.105", features = ["DedicatedWorkerGlobalScope", "MessageEvent"] }

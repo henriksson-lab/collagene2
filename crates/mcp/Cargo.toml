@@ -1,0 +1,22 @@
+[package]
+name = "collagene-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+collagene-core = { path = "../core", features = ["json-schema"] }
+collagene-sources = { path = "../sources" }
+serde.workspace = true
+serde_json.workspace = true
+blake3.workspace = true
+schemars = "1.2"
+rmcp = { version = "=3.11.0", default-features = false, features = ["server", "macros", "transport-io"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-std"] }
+
+[dev-dependencies]
+rmcp = { version = "=3.11.0", default-features = false, features = ["client"] }
+
+[dependencies.base64]
+version = "0.22"

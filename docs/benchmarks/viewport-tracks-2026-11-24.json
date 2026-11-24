@@ -1,0 +1,192 @@
+{
+  "environment": {
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/104.0.5112.79 Safari/537.36",
+    "hardwareConcurrency": 40,
+    "viewport": [
+      1600,
+      1000
+    ],
+    "renderer": "ANGLE (Google, Vulkan 1.2.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+    "devicePixelRatio": 1,
+    "cpu": "Intel(R) Xeon(R) Gold 6138 CPU @ 2.00GHz"
+  },
+  "cases": [
+    {
+      "length": 20000,
+      "feature_count": 200,
+      "map_rendered_features": "200",
+      "map_geometry_limited": "false",
+      "track_viewport_status": "Visible tracks complete",
+      "row_height": "156",
+      "measurements": {
+        "rotate": {
+          "frames": 120,
+          "frame_interval_ms": {
+            "p50": 16.66599999999994,
+            "p95": 16.666000000000167,
+            "max": 16.666000000000167
+          },
+          "event_dispatch_ms": {
+            "p50": 0.19999998807907104,
+            "p95": 0.30000001192092896,
+            "max": 1.600000023841858
+          },
+          "long_tasks": [],
+          "canvas": [
+            531,
+            558
+          ],
+          "heap_js": 10000000
+        },
+        "scroll": {
+          "frames": 120,
+          "frame_interval_ms": {
+            "p50": 16.666000000000167,
+            "p95": 16.666000000000167,
+            "max": 16.666000000000167
+          },
+          "event_dispatch_ms": {
+            "p50": 0.09999996423721313,
+            "p95": 0.19999998807907104,
+            "max": 0.30000001192092896
+          },
+          "long_tasks": [],
+          "canvas": [
+            531,
+            558
+          ],
+          "heap_js": 10000000
+        }
+      },
+      "import_persist_and_track_ready_ms": 313.69999998807907
+    },
+    {
+      "length": 1000000,
+      "feature_count": 10000,
+      "map_rendered_features": "10000",
+      "map_geometry_limited": "false",
+      "track_viewport_status": "Visible tracks complete",
+      "row_height": "156",
+      "measurements": {
+        "rotate": {
+          "frames": 120,
+          "frame_interval_ms": {
+            "p50": 16.666000000000167,
+            "p95": 16.666000000000167,
+            "max": 16.666000000000167
+          },
+          "event_dispatch_ms": {
+            "p50": 0.10000002384185791,
+            "p95": 0.20000004768371582,
+            "max": 0.2999999523162842
+          },
+          "long_tasks": [],
+          "canvas": [
+            531,
+            558
+          ],
+          "heap_js": 10000000
+        },
+        "scroll": {
+          "frames": 120,
+          "frame_interval_ms": {
+            "p50": 16.665999999999258,
+            "p95": 16.666000000001077,
+            "max": 16.666000000001077
+          },
+          "event_dispatch_ms": {
+            "p50": 0.09999996423721313,
+            "p95": 0.20000004768371582,
+            "max": 0.3999999761581421
+          },
+          "long_tasks": [],
+          "canvas": [
+            531,
+            558
+          ],
+          "heap_js": 10000000
+        }
+      },
+      "annotation_pagination_checked": true,
+      "import_persist_and_track_ready_ms": 1022.7999999523163
+    }
+  ],
+  "date": "2026-11-24",
+  "notes": [
+    "Dedicated immutable sequence-track worker, default feature/primer tracks warmed before interaction.",
+    "Readiness timings include import, persistence and initial track preparation; not comparable to prior import/persistence-only timings.",
+    "Full-reference scrolling jumps across the source each animation frame; off-tile scientific tracks refresh after debounce/settling. Frame cadence does not establish per-frame track completeness or analysis throughput.",
+    "Software SwiftShader; uncontrolled host load; no cross-browser, hardware-GPU or memory-budget acceptance claim."
+  ],
+  "sha256": {
+    "source": {
+      "Cargo.lock": "6fab9663690e64d2f8e8b41ccf16433eb76503732b6bb92700d760dc5888a14c",
+      "Cargo.toml": "f34c407e87f3763d9955d01ed5b95d8ce7d7a0e9685e6bc327b79c4388cb5a8c",
+      "crates/core/src/alignment.rs": "47b7ed8af797aabe5779d3ffc423cc6448bcca6f230c5ae41b76a089d45a9053",
+      "crates/core/src/alignment_formats.rs": "b714d26655cdece8e3cae61e5c6fb849f5e1b318d592c3a028cad7a83157825a",
+      "crates/core/src/analysis.rs": "1d9de1d4695d6b01befe8fd1f59576ef9cccc0b42240bd279b4be3083b494af4",
+      "crates/core/src/annotation_formats.rs": "d29b7cc8ce66a4546c31c9b0e822c51bf7444191ba1fe1a16628f8b6aac88c7d",
+      "crates/core/src/annotations.rs": "28023b060bc57e8cd49d52744b209d7ecf942126efcfa7ca3731129e18de08d9",
+      "crates/core/src/chemistry.rs": "a448be63d8903424ba6901e323b97dcfe835349caf084484bc6b513d1822b522",
+      "crates/core/src/editing.rs": "ba6cb2032bb94e44438d3f835c3992046acb3aa4c57deb8d099a34aea4cdfa9d",
+      "crates/core/src/embl.rs": "0fc74d51674fe53304746a059bcd66267eec23c9f0f5e570b1891695662d9ffc",
+      "crates/core/src/feature_library.rs": "5c0899cd67f03f338650e78126dabc0ecf55a1dc6cd10784c71c8fc35d535adf",
+      "crates/core/src/formats.rs": "e6508001b26b5e8cabed5f5f28922404e725de75221a3bfe48c2eccc5e605f57",
+      "crates/core/src/gel.rs": "4348cdb70715f8f0119ce5279ad7e3c1a5df9bcff7d2338e517507cd92f12532",
+      "crates/core/src/golden_gate.rs": "9c64c2a11eb89e52ec297d346937441e918e1525b4f96aae68a89741bf5554a1",
+      "crates/core/src/history.rs": "b27b52fe0d09396935079c40be57f85a1d9cb7db0c987c17c02ada2aadfbda35",
+      "crates/core/src/legacy_formats.rs": "525d26423a541a139a506bc385b9ad20602592c96641f4827b835119ea3e0cf3",
+      "crates/core/src/lib.rs": "8acef8576d416c888d13b4951ccca01cfd36b24b10972cb0b27fda52ccf4538c",
+      "crates/core/src/model.rs": "24386cdb22ec4b377597520ff53c8c8a3ad289e56b0d57eb9f1b0b20931f9d69",
+      "crates/core/src/mutagenesis.rs": "19c0effb4ebfa899b924ec8815aa033fdb04bb76275417c385984ffac6654912",
+      "crates/core/src/oligo_formats.rs": "b64fe394dfeeda22e64b20486288f6f8fa22145d0f98e6d2d942f57efd926e28",
+      "crates/core/src/pdf.rs": "9825023e54c52b583b87bd94e5adf043f7282d64416fc0ba7de018107218fdf4",
+      "crates/core/src/primers.rs": "f33e4fa12fc26138a7e32e1824dce9a169deef47cf756d56f6fb254ea86982c8",
+      "crates/core/src/protocol.rs": "da7852873266d196f4d0278b9fe14582907a3fbdaf2956d5b319a3bf1c45a465",
+      "crates/core/src/search.rs": "79752fd0dfc6badc42f467964d0fb3d333ee1b6a102ce372f8cf6c8bdbbb0653",
+      "crates/core/src/snapgene.rs": "2a388afe1b06635c213133c2b37088a6ce92d28fefa49df09d71dcb1a8131b90",
+      "crates/core/src/svg.rs": "31b6a151d4db13e65fe620f2b88cde3ca4d87388ff856fa86050e071ea004ae9",
+      "crates/core/src/trace_validation.rs": "808130e585ee0a9d732126faf92593c1d193966f98726254777af45a7dc97559",
+      "crates/core/src/traces.rs": "2e2c868767cf33787b673e1845ff4a73f2e7f9fa759fe36706c043400b0d6895",
+      "crates/core/src/tracks.rs": "dcbb5d34d6108fc5df6e256b11899d58cac6ea78e5cb26f7b72626b11a9e7c24",
+      "crates/core/src/transfer.rs": "3d7f8c8f959743bee5ccd238380f99ab7a2f0a7bdd8019406fa646381c9a13fd",
+      "crates/core/src/translation.rs": "71461ee35164bcb0455ea22e6fded3dbdca6956a198297a31ff764593b4fed6b",
+      "crates/core/src/verification.rs": "f92d468bbac03e64a1d2ed428943fcaca037548af65258d07adb6c644230acb6",
+      "crates/core/src/view_tracks.rs": "464dfae93fce9fb54d1fe14d69a497548ffac37c8385ee223311800a7e45e10b",
+      "crates/core/src/workspace.rs": "09198d913bac7d9e7a1c138243cdb89f4ec3e5b98245ef6d6cd79f884fcaff74",
+      "crates/web/src/app.rs": "23ba108035e40a149aae6d3d2a6df3a5b2f7d59e9b3b9a68b163640aae5b5d9b",
+      "crates/web/src/biology.rs": "1ac8c07221cb9c8cf5ee573961952d43276085620e23722f4dd828547cd4fbe1",
+      "crates/web/src/clipboard.rs": "4724424d30a30ac45f842b5e855bd1516ef6945732a99a03ff1b996ec91d404b",
+      "crates/web/src/compare.rs": "2f28747d296f1fd4921e405ee44d888f81531d834fbb75c55135e5ddf49a419b",
+      "crates/web/src/editors.rs": "fd779c14f5e7d9045bdd935b34d935ccab01baac95dccc4ef025b2dcc12717ab",
+      "crates/web/src/end_repair.rs": "3a03dce7c448870592ce2a47a17029b6d5bef5c8fc350d9883baa84561542702",
+      "crates/web/src/feature_tools.rs": "b1320d71a038160a0647cc222090c530415077e8b16caa24cac36abdfde0558a",
+      "crates/web/src/gel.rs": "dc8848073ed29ce27d25cd8e2d5c2f7357c4f44d45954ab4549a896ef1e38a07",
+      "crates/web/src/golden_gate.rs": "a3022758349d54c5eb7e740f4bde08af01596f950251ab0b34c57c643faed081",
+      "crates/web/src/history_view.rs": "6ea4ac8118e08a0e15bc3174a56b2cdee8c2ed76f9bbe2a8a74c8d0f50734916",
+      "crates/web/src/main.rs": "9db7128a80d020e597ac851f1572df2e7b9c65d00d07511d07be296b8172f811",
+      "crates/web/src/mutagenesis.rs": "ff2e823dbfbed07fdaa4c70fbc7614f75f17e984600cb8f97a65d217caba978b",
+      "crates/web/src/oligo_import.rs": "08ca32ec944890b9ff9437ac126094f966a8af18d864df35453416ce25a6fc43",
+      "crates/web/src/primers.rs": "f351fbdaca1d37c0b3c1a99079522eabb4de52da5d8c31026f181e1180fe9011",
+      "crates/web/src/renderer.rs": "cadb2a63dc6261c73073fb8ce1c0c569667c61ffdaef066830dac3b52dddf8d9",
+      "crates/web/src/search_view.rs": "52ae3b2990e07bd940f3f14cf89c607e228b2343980befd242d96c944f94b617",
+      "crates/web/src/sequence_view.rs": "cf954575393429259f98129aaef8ed1e7352a434a3effdd753fac6cfee0bce11",
+      "crates/web/src/source_import.rs": "9f0dfe0687a9b46bb6a19d72bb9b4d679feb45778f3eccc17c02b27d40c0cadf",
+      "crates/web/src/storage.rs": "adecebcbbbd912ba3f53c907a900448800128b714f8aef010ff10c5aea9db6dc",
+      "crates/web/src/trace_validation.rs": "8a161320c92210b5aa3e56bf31760c5431241012cc031c5169ac746489069923",
+      "crates/web/src/trace_view.rs": "766fb240c13afc75285928dcb64803935dcf91b89f2f9ce3a4c1a9e4bce39131",
+      "crates/web/src/worker.rs": "54f8241a6bcd16bb486199d705758a1814a097701b69acdf983af9656f0d225f",
+      "crates/web/src/workspace_view.rs": "8649bd1bf102da4ee84c2c044e2d1dfd83677b17939d5926a70ef49f2255d3c3",
+      "crates/worker/src/main.rs": "1c2bce50153217eff66c2309655db60a9926eff6e9e2152b233c2900e369dc48"
+    },
+    "release": {
+      "dist/analysis-worker.js": "eda8a49d0694a53b066e77d07032dbc1fa8485e99833b6e1f58068c97ca53019",
+      "dist/analysis-worker_bg.wasm": "c392f2c6e19a4925354b5a37eb410b1a65d25a7e6ac9e28e89b0649077d34c83",
+      "dist/analysis-worker_loader.js": "b4b4f49eacac25527877de740c2b5e18b5679bbca57ad9891a4916a285749a0f",
+      "dist/collagene-web-eb1ff3d88021f9fc.js": "5291a9a1e815ea73319a069810c830eaa4ecc9088c44aa18d550aec35365beff",
+      "dist/collagene-web-eb1ff3d88021f9fc_bg.wasm": "2bf45c486ab807bc9ea91c2163227c2e9928016704d50ceab83450557b9ae6e3",
+      "dist/index.html": "3b4f2e7f354941ea9ddd91b3442f56e9928cd336717d735a0d995dc83f6e129c",
+      "dist/style-ddd261759b7ee026.css": "1670005c5b9bf35dffa3564afe1859b6570e20f7db0e7b4dcbbec28e31400615"
+    }
+  }
+}

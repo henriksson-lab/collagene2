@@ -1,0 +1,344 @@
+{
+  "date": "2026-11-24",
+  "baseline_identity": "Pre-indexed-scrolling release; baseline artifact digest was not captured. No baseline source identity is inferred retroactively.",
+  "runs": {
+    "before": {
+      "environment": {
+        "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/104.0.5112.79 Safari/537.36",
+        "hardwareConcurrency": 40,
+        "viewport": [
+          1600,
+          1000
+        ],
+        "renderer": "ANGLE (Google, Vulkan 1.2.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+        "devicePixelRatio": 1,
+        "cpu": "Intel(R) Xeon(R) Gold 6138 CPU @ 2.00GHz"
+      },
+      "cases": [
+        {
+          "length": 20000,
+          "feature_count": 200,
+          "import_and_persist_ms": 193.19999998807907,
+          "map_rendered_features": null,
+          "map_geometry_limited": null,
+          "measurements": {
+            "rotate": {
+              "frames": 120,
+              "frame_interval_ms": {
+                "p50": 16.66599999999994,
+                "p95": 16.666000000000167,
+                "max": 16.666000000000167
+              },
+              "event_dispatch_ms": {
+                "p50": 0.19999998807907104,
+                "p95": 0.30000001192092896,
+                "max": 0.40000003576278687
+              },
+              "long_tasks": [],
+              "canvas": [
+                531,
+                593
+              ],
+              "heap_js": 10000000
+            },
+            "scroll": {
+              "frames": 120,
+              "frame_interval_ms": {
+                "p50": 16.666000000000167,
+                "p95": 16.666000000000167,
+                "max": 16.666000000000167
+              },
+              "event_dispatch_ms": {
+                "p50": 0.09999996423721313,
+                "p95": 0.19999998807907104,
+                "max": 0.20000004768371582
+              },
+              "long_tasks": [],
+              "canvas": [
+                531,
+                593
+              ],
+              "heap_js": 10000000
+            }
+          }
+        },
+        {
+          "length": 1000000,
+          "feature_count": 10000,
+          "import_and_persist_ms": 409.9000000357628,
+          "map_rendered_features": null,
+          "map_geometry_limited": null,
+          "measurements": {
+            "rotate": {
+              "frames": 120,
+              "frame_interval_ms": {
+                "p50": 16.666000000000167,
+                "p95": 16.666000000000167,
+                "max": 16.666000000000167
+              },
+              "event_dispatch_ms": {
+                "p50": 0.19999998807907104,
+                "p95": 0.30000001192092896,
+                "max": 0.30000001192092896
+              },
+              "long_tasks": [],
+              "canvas": [
+                531,
+                593
+              ],
+              "heap_js": 10000000
+            },
+            "scroll": {
+              "frames": 120,
+              "frame_interval_ms": {
+                "p50": 16.666000000001077,
+                "p95": 33.332000000000335,
+                "max": 33.332000000000335
+              },
+              "event_dispatch_ms": {
+                "p50": 0.10000002384185791,
+                "p95": 0.19999998807907104,
+                "max": 1.5
+              },
+              "long_tasks": [],
+              "canvas": [
+                531,
+                593
+              ],
+              "heap_js": 10000000
+            }
+          }
+        }
+      ]
+    },
+    "after_initial": {
+      "environment": {
+        "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/104.0.5112.79 Safari/537.36",
+        "hardwareConcurrency": 40,
+        "viewport": [
+          1600,
+          1000
+        ],
+        "renderer": "ANGLE (Google, Vulkan 1.2.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+        "devicePixelRatio": 1,
+        "cpu": "Intel(R) Xeon(R) Gold 6138 CPU @ 2.00GHz"
+      },
+      "cases": [
+        {
+          "length": 20000,
+          "feature_count": 200,
+          "import_and_persist_ms": 203.39999997615814,
+          "map_rendered_features": "200",
+          "map_geometry_limited": "false",
+          "measurements": {
+            "rotate": {
+              "frames": 120,
+              "frame_interval_ms": {
+                "p50": 16.66599999999994,
+                "p95": 16.666000000000167,
+                "max": 16.666000000000167
+              },
+              "event_dispatch_ms": {
+                "p50": 0.19999998807907104,
+                "p95": 0.30000001192092896,
+                "max": 3.300000011920929
+              },
+              "long_tasks": [],
+              "canvas": [
+                531,
+                593
+              ],
+              "heap_js": 10000000
+            },
+            "scroll": {
+              "frames": 120,
+              "frame_interval_ms": {
+                "p50": 16.666000000000167,
+                "p95": 16.666000000000167,
+                "max": 16.666000000000167
+              },
+              "event_dispatch_ms": {
+                "p50": 0.09999996423721313,
+                "p95": 0.19999998807907104,
+                "max": 0.30000001192092896
+              },
+              "long_tasks": [],
+              "canvas": [
+                531,
+                593
+              ],
+              "heap_js": 10000000
+            }
+          }
+        },
+        {
+          "length": 1000000,
+          "feature_count": 10000,
+          "import_and_persist_ms": 464.19999998807907,
+          "map_rendered_features": "10000",
+          "map_geometry_limited": "false",
+          "measurements": {
+            "rotate": {
+              "frames": 120,
+              "frame_interval_ms": {
+                "p50": 16.666000000000167,
+                "p95": 16.666000000000167,
+                "max": 16.666000000000167
+              },
+              "event_dispatch_ms": {
+                "p50": 0.10000002384185791,
+                "p95": 0.20000004768371582,
+                "max": 0.30000001192092896
+              },
+              "long_tasks": [],
+              "canvas": [
+                531,
+                593
+              ],
+              "heap_js": 10000000
+            },
+            "scroll": {
+              "frames": 120,
+              "frame_interval_ms": {
+                "p50": 16.666000000000167,
+                "p95": 16.666000000001077,
+                "max": 16.666000000001077
+              },
+              "event_dispatch_ms": {
+                "p50": 0.09999996423721313,
+                "p95": 0.19999998807907104,
+                "max": 0.20000004768371582
+              },
+              "long_tasks": [],
+              "canvas": [
+                531,
+                593
+              ],
+              "heap_js": 10000000
+            }
+          }
+        }
+      ]
+    },
+    "after_with_pagination": {
+      "environment": {
+        "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/104.0.5112.79 Safari/537.36",
+        "hardwareConcurrency": 40,
+        "viewport": [
+          1600,
+          1000
+        ],
+        "renderer": "ANGLE (Google, Vulkan 1.2.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+        "devicePixelRatio": 1,
+        "cpu": "Intel(R) Xeon(R) Gold 6138 CPU @ 2.00GHz"
+      },
+      "cases": [
+        {
+          "length": 20000,
+          "feature_count": 200,
+          "import_and_persist_ms": 110.40000003576279,
+          "map_rendered_features": "200",
+          "map_geometry_limited": "false",
+          "measurements": {
+            "rotate": {
+              "frames": 120,
+              "frame_interval_ms": {
+                "p50": 16.66599999999994,
+                "p95": 16.666000000000167,
+                "max": 16.666000000000167
+              },
+              "event_dispatch_ms": {
+                "p50": 0.19999998807907104,
+                "p95": 0.30000001192092896,
+                "max": 0.3999999761581421
+              },
+              "long_tasks": [],
+              "canvas": [
+                531,
+                593
+              ],
+              "heap_js": 11200000
+            },
+            "scroll": {
+              "frames": 120,
+              "frame_interval_ms": {
+                "p50": 16.666000000000167,
+                "p95": 16.666000000000167,
+                "max": 16.666000000000167
+              },
+              "event_dispatch_ms": {
+                "p50": 0.10000002384185791,
+                "p95": 0.20000004768371582,
+                "max": 0.20000004768371582
+              },
+              "long_tasks": [],
+              "canvas": [
+                531,
+                593
+              ],
+              "heap_js": 11200000
+            }
+          }
+        },
+        {
+          "length": 1000000,
+          "feature_count": 10000,
+          "import_and_persist_ms": 489.19999998807907,
+          "map_rendered_features": "10000",
+          "map_geometry_limited": "false",
+          "measurements": {
+            "rotate": {
+              "frames": 120,
+              "frame_interval_ms": {
+                "p50": 16.666000000000167,
+                "p95": 16.666000000000167,
+                "max": 16.666000000000167
+              },
+              "event_dispatch_ms": {
+                "p50": 0.10000002384185791,
+                "p95": 0.20000004768371582,
+                "max": 0.20000004768371582
+              },
+              "long_tasks": [],
+              "canvas": [
+                531,
+                593
+              ],
+              "heap_js": 11200000
+            },
+            "scroll": {
+              "frames": 120,
+              "frame_interval_ms": {
+                "p50": 16.666000000000167,
+                "p95": 16.666000000001077,
+                "max": 16.666000000001077
+              },
+              "event_dispatch_ms": {
+                "p50": 0.10000002384185791,
+                "p95": 0.19999998807907104,
+                "max": 0.20000004768371582
+              },
+              "long_tasks": [],
+              "canvas": [
+                531,
+                593
+              ],
+              "heap_js": 11200000
+            }
+          },
+          "annotation_pagination_checked": true
+        }
+      ]
+    }
+  },
+  "final_source_sha256": {
+    "crates/web/src/app.rs": "3ac71b20f8fcaca2bcc1938fbd4073176dd5c72b9aab2ba84f3fefd28364ddf8",
+    "crates/web/src/renderer.rs": "e00b3e201bb7a8dca9a1a19008aa439c2a6465ef97adfaa50333ec7636087656",
+    "crates/core/src/tracks.rs": "8d20ffd6a9e1b5d26b59190798fa70b8f99d68aaebebb93fa2b0ec788da9ebe0",
+    "scripts/performance_browser_qa.py": "937138863dd8da785b92a72a5e89a76d81ef8251b3086e2a83df20d0ee9ad456"
+  },
+  "final_release_sha256": {
+    "analysis-worker_bg.wasm": "6beece613098794b1e071369b4343274c79334df906905e59f62c2989c93bf62",
+    "collagene-web-4e562d6033d40080_bg.wasm": "af09d7d6576898865c0707415591aa89217660cafe3e5023235eac396a04eee8"
+  }
+}

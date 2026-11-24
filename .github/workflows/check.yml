@@ -1,0 +1,35 @@
+name: Check
+on: [push, pull_request]
+
+# Keep the native test binaries within hosted-runner disk budgets.
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_BUILD_JOBS: "2"
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+
+jobs:
+  scientific-core:
+    name: Scientific core on ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p collagene-core -p collagene-mcp -p collagene-sources -p collagene-web --locked
+      - run: cargo build -p collagene-mcp --locked
+      - run: python scripts/mcp_smoke.py
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo check -p collagene-web -p analysis-worker -p collagene-sources --target wasm32-unknown-unknown --locked

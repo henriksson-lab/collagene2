@@ -1,0 +1,18 @@
+LOCUS       vector_fixture            14 bp    DNA     circular SYN 01-JAN-2026
+DEFINITION  Synthetic restriction geometry fixture, not a functional construct.
+FEATURES             Location/Qualifiers
+ORIGIN
+        1 aaaagaattc tttt
+//
+LOCUS       insert_fixture            14 bp    DNA     circular SYN 01-JAN-2026
+DEFINITION  Synthetic restriction geometry fixture, not a functional construct.
+FEATURES             Location/Qualifiers
+ORIGIN
+        1 ccccgaattc gggg
+//
+LOCUS       ligation_target           28 bp    DNA     circular SYN 01-JAN-2026
+DEFINITION  Independent target for two EcoRI-linearized synthetic circles.
+FEATURES             Location/Qualifiers
+ORIGIN
+        1 aattctttta aaagaattcg gggccccg
+//

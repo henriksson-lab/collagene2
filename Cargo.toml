@@ -1,0 +1,25 @@
+[workspace]
+members = ["crates/core", "crates/web", "crates/worker", "crates/mcp", "crates/sources"]
+default-members = ["crates/core"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.88"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+thiserror = "2"
+blake3 = { version = "1", default-features = false, features = ["pure", "std"] }
+postcard = { version = "1", features = ["alloc"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+
+[profile.dev.package."*"]
+opt-level = 2

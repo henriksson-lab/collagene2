@@ -1,0 +1,15 @@
+# Retained read-assembly evidence
+
+`core::contig_history` stores immutable `read-assembly-v1` attachments in the native workspace. `SavedAssembly` schema 1 contains one complete `ContigReport` and an ordered `InputEventBinding` for each read role. Source molecules and original trace/FASTQ bytes remain on their retained molecular revisions; they are not duplicated inside the report attachment.
+
+Each binding identifies the source document, exact revision event and molecular revision. Equal sequence text does not substitute for an event. Resolving a historical assembly uses those retained events even when the source document head has advanced. Workspace validation checks the attachment hash, bounded report structure, roles, source event/document/revision and source length. It does not run scientific dynamic programming during autosave, or treat an imported report as a current result.
+
+The attachment is `application/json`, hash-addressed with BLAKE3, and limited to 17 MiB. A workspace permits at most 128 saved assemblies; a record permits 1–32 ordered read roles. Unknown/ignored record fields, unsupported schema versions, missing events or mismatched bindings reject the whole workspace installation. Historical engine names remain historical evidence; current scientific binding and use require the running engine and fresh replay.
+
+`DocumentHistory::derive_from_events` creates a derived document whose initial event names every exact contributing source event as a parent, preserving order and deduplicating identical event IDs. It leaves source heads and navigation stacks untouched. Products may retain the external evidence attachment hash as producer metadata, avoiding a self-referential report/product hash. Those metadata claims do not grant scientific authority or establish a physical cloning operation.
+
+The web recording dialog reassembles from retained snapshots in a worker, compares source and product bindings, and constructs the record from the fresh report. It validates the complete proposed workspace before replacing IndexedDB current and recovery slots in one transaction. The previous workspace is the recovery copy. Failed writes or stale workspace generations leave the installed workspace unchanged. Keeping evidence does not require opening a consensus product, so branches, unresolved calls and incomplete searches can still be archived.
+
+Historical reports open visibly unverified. Explicit replay resolves the original sources and computes a current report before enabling consensus use. FASTA and bounded GenBank comments cannot preserve full per-call, gap and event evidence; retain the native workspace and full JSON report for reconstruction. See [scientific bounds](CONTIGS.md) and [web controls](CONTIGS_UI.md).
+
+Worker envelope version 15 introduces the assembly job/result and prevents saved read-assembly workspaces from being mislabeled as older schemas. Supported version 1–14 messages remain readable according to their original layouts. The ordinary 32 MiB and existing dedicated workspace 128 MiB transport profiles remain unchanged; attachment availability does not expand arbitrary message limits.

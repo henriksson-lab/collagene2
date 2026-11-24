@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<madgene>
+  <oneseq>
+    <sequence name="legacy_circle" su="ACGTTAGC" sl="TGCAATCG" circular="true" notes="Retained &amp; original notes" />
+    <annotation name="origin reverse" from="6" to="2" colr="20" colg="40" colb="220" orientation="rev" />
+    <annotation name="unstranded" from="2" to="5" colr="5" colg="15" colb="25" orientation="none" />
+    <primer name="forward" sequence="ACGT" target="4" orientation="fwd" />
+    <primer name="reverse" sequence="GCTA" target="4" orientation="rev" />
+  </oneseq>
+  <oneseq>
+    <sequence name="legacy_circle" su="AC GT TAC" sl="TGCCAAATG" circular="true" notes="Physical source columns remain evidence" />
+    <annotation name="projected reference" from="3" to="9" colr="0" colg="255" colb="0" orientation="fwd" />
+    <annotation name="lower only" from="2" to="3" colr="255" colg="0" colb="0" orientation="rev" />
+  </oneseq>
+</madgene>

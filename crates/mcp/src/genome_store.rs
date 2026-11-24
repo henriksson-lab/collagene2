@@ -10,18 +10,17 @@ use collagene_core::{
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
-    fs::{self, File, OpenOptions},
+    fs::File,
     io::{Read, Seek, SeekFrom, Write},
-    path::PathBuf,
-    sync::atomic::{AtomicU64, Ordering},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 const MAX_IMPORTS: usize = 2;
 const MAX_DATASETS: usize = 4;
 const MAX_MANAGED_BYTES: u64 = 64 * 1024 * 1024 * 1024;
 const MAX_CHUNK: usize = 1024 * 1024;
-static SERIAL: AtomicU64 = AtomicU64::new(0);
+use collagene_local_storage::{ManagedFile, ManagedSession, StorageRoot};
+#[cfg(test)]
+use std::{fs, path::PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub enum ImportFormat {
@@ -55,21 +54,7 @@ fn digest(s: &str) -> bool {
         && s.bytes()
             .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
-struct OwnedFile {
-    path: PathBuf,
-    file: Option<File>,
-}
-impl OwnedFile {
-    fn file(&mut self) -> &mut File {
-        self.file.as_mut().expect("live owned reference file")
-    }
-}
-impl Drop for OwnedFile {
-    fn drop(&mut self) {
-        drop(self.file.take()); // Windows requires closing the handle before deleting.
-        let _ = fs::remove_file(&self.path);
-    }
-}
+type OwnedFile = ManagedFile;
 struct Verification {
     reference: FinishedReference,
     verifier: BlockVerifier,
@@ -95,7 +80,9 @@ struct Dataset {
     file: OwnedFile,
 }
 pub(crate) struct NativeGenomes {
+    #[cfg(test)]
     directory: PathBuf,
+    session: ManagedSession,
     namespace: String,
     serial: u64,
     imports: BTreeMap<String, Import>,
@@ -104,23 +91,16 @@ pub(crate) struct NativeGenomes {
 }
 impl NativeGenomes {
     pub fn new() -> Result<Self, Error> {
-        let time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| bad("invalid storage clock"))?
-            .as_nanos();
-        let serial = SERIAL.fetch_add(1, Ordering::Relaxed);
-        let namespace = format!("{}-{time}-{serial}", std::process::id());
-        let directory = std::env::temp_dir().join(format!("collagene2-genomes-{namespace}"));
-        let mut builder = fs::DirBuilder::new();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::DirBuilderExt;
-            builder.mode(0o700);
-        }
-        builder.create(&directory).map_err(io)?;
+        let root = StorageRoot::temporary().map_err(io)?;
+        Self::in_root(&root).map_err(io)
+    }
+    pub fn in_root(root: &StorageRoot) -> std::io::Result<Self> {
+        let session = root.session()?;
         Ok(Self {
-            directory,
-            namespace,
+            #[cfg(test)]
+            directory: session.diagnostic_path(),
+            namespace: session.namespace().to_owned(),
+            session,
             serial: 0,
             imports: BTreeMap::new(),
             datasets: BTreeMap::new(),
@@ -179,17 +159,7 @@ impl NativeGenomes {
         };
         self.serial = self.serial.checked_add(1).ok_or(Error::TooLarge)?;
         let id = format!("reference-import-{}-{}", self.namespace, self.serial);
-        let path = self.directory.join(format!("stage-{}.cgref", self.serial));
-        let file = OpenOptions::new()
-            .create_new(true)
-            .read(true)
-            .write(true)
-            .open(&path)
-            .map_err(io)?;
-        let mut owned = OwnedFile {
-            path,
-            file: Some(file),
-        };
+        let mut owned = self.session.create_file().map_err(io)?;
         if format == ImportFormat::Fasta {
             owned.file().write_all(&genome::HEADER).map_err(io)?;
         }
@@ -462,7 +432,8 @@ impl Drop for NativeGenomes {
     fn drop(&mut self) {
         self.imports.clear();
         self.datasets.clear();
-        let _ = fs::remove_dir(&self.directory);
+        // ManagedSession removes its empty child after all owned file handles close.
+        // No absolute-path or recursive deletion is used here.
     }
 }
 fn done(id: &str, dataset: &NativeDataset) -> NativeImportProgress {

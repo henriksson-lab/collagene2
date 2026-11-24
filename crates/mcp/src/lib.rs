@@ -1570,6 +1570,25 @@ impl CollageneServer {
         .map_err(|e| ErrorData::internal_error(e.to_string(), None))?
     }
 }
+impl CollageneServer {
+    /// Configure managed file-backed session storage. This grants no filesystem
+    /// tool or arbitrary-path read access; ordinary documents remain memory-only.
+    pub fn with_storage_root(path: impl AsRef<std::path::Path>) -> std::io::Result<Self> {
+        Self::with_storage_policy(collagene_local_storage::StorageRoot::existing(path)?)
+    }
+    pub fn with_storage_policy(
+        root: collagene_local_storage::StorageRoot,
+    ) -> std::io::Result<Self> {
+        let native = genome_store::NativeGenomes::in_root(&root)?;
+        Ok(Self {
+            genomes: Arc::new(Mutex::new(GenomeResources {
+                native: Some(native),
+                ..Default::default()
+            })),
+            ..Self::default()
+        })
+    }
+}
 impl Default for CollageneServer {
     fn default() -> Self {
         Self {

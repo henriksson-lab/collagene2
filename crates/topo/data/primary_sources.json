@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "model": "vaccinia-tyr274-explicit-graph-ta-cacc-1",
+  "scope": "Elementary prepared-substrate strand transfer, not kit activation preparation or host repair",
+  "sources": [
+    {
+      "url": "https://documents.thermofisher.com/TFS-Assets/LSG/manuals/pcdna3_1dv5histopo_man.pdf",
+      "title": "pcDNA3.1 Directional TOPO Expression Kit, Version F, 10 November 2010",
+      "accessed": "2026-11-24",
+      "raw_sha256": "46be535b24cab55978a1801386e812d5149bc32aede5a8f60a1405725459d2df",
+      "location": "printed page 2 / PDF page 12: phosphotyrosyl mechanism and directional displaced-flap diagram",
+      "evidence": "Diagram preserves displaced insert-bottom3prime four-nucleotide flap. Displayed bottom GTGG runs3prime to5prime; actual5prime to3prime sequence is GGTG."
+    },
+    {
+      "url": "https://doi.org/10.1093/nar/28.9.1893",
+      "title": "Cheng and Shuman 2000, DNA strand transfer catalyzed by vaccinia topoisomerase: ligation of DNAs containing a3prime mononucleotide overhang",
+      "pmcid": "PMC103307",
+      "evidence": "Prepared CCCTT donor3primeT overhang transfers to acceptor5primeOH with3primeA overhang. Opposite strand remains nicked; mismatch transfer occurs under some experimental conditions, not predicted here."
+    },
+    {
+      "url": "https://pubmed.ncbi.nlm.nih.gov/7798275/",
+      "title": "Shuman 1994, Novel approach to molecular cloning and polynucleotide synthesis using vaccinia DNA topoisomerase",
+      "evidence": "Prepared phosphotyrosyl complexes and complementary acceptor geometry; original free5primeOH can reverse the enzyme-DNA linkage."
+    },
+    {
+      "url": "https://www.thermofisher.com/us/en/home/life-science/cloning/topo/topo-resources/the-technology-behind-topo-cloning.html",
+      "evidence": "Vaccinia enzyme recognition(Y)CCTT and3prime-phosphate adduct, not ordinary DNA ligase."
+    },
+    {
+      "url": "https://www.thermofisher.com/uk/en/home/technical-resources/technical-reference-library/cloning-technical-support-center/pcr-cloning/pcr-cloning-getting-started.html",
+      "evidence": "PCR5primephosphate inhibits TOPO transfer; vector terminal chemistry includes activated3primephosphate and5primephosphate."
+    }
+  ],
+  "extensions": [
+    "Complete four-nucleotide opposite-strand displacement and displacement with unpaired continuation are declared physical graph branches. They are not empirical commercial-kit or efficiency claims."
+  ]
+}

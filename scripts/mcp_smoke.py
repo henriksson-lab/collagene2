@@ -19,12 +19,16 @@ def main():
     if not target_dir.is_absolute():
         target_dir=root / target_dir
     parser.add_argument("binary",nargs="?",type=Path,default=target_dir / "debug" / ("collagene-mcp.exe" if sys.platform == "win32" else "collagene-mcp"))
+    parser.add_argument("--storage-root",type=Path,help="Existing managed storage parent passed to the native server")
     parser.add_argument("--workspace",type=Path,help="Browser-generated synthetic QA snapshot")
     parser.add_argument("--candidate",type=Path,help="Write the binary candidate for the browser QA helper")
     parser.add_argument("--native-workspace",type=Path,help="Synthetic source/target native workspace for retained-run checks")
     args=parser.parse_args()
     binary=args.binary
-    process = subprocess.Popen([str(binary.resolve())], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8")
+    server_command=[str(binary.resolve())]
+    if args.storage_root is not None:
+        server_command.extend(["--storage-root",str(args.storage_root)])
+    process = subprocess.Popen(server_command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8")
     lines = queue.Queue()
 
     def read():

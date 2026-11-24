@@ -25,6 +25,16 @@ A typical MCP client's configuration is:
 
 On Windows use the absolute `.exe` path, escaping backslashes as JSON requires. The client owns process startup and shutdown. No server configuration files, database, network endpoint or authentication secret is needed for this session-only stdio mode. A client can access only documents it explicitly imports into that session, not browser storage or local files.
 
+Optionally restrict managed native genome storage to a chosen existing folder:
+
+```json
+{"mcpServers":{"collagene":{"command":"/absolute/path/collagene-mcp","args":["--storage-root","/absolute/path/CollageneData"]}}}
+```
+
+Create and protect that folder beforehand. The server canonicalizes it, rejects a file/missing folder/final symlink or junction, and creates a unique per-session child beneath the opened directory capability. All managed genome staging, readback and export I/O uses retained file/directory handles there. Small documents, plans and artifacts remain memory-only. Default startup still uses private OS-temp session storage. `--help` and `--version` write only to stderr; invalid arguments/storage configuration return a structured JSON diagnostic on stderr and exit2, preserving stdout exclusively for MCP.
+
+This option does **not** enable arbitrary file imports/exports, access to existing files in that folder, a public filesystem HTTP API or browser access to the native root. Upload/download chunks and opaque session handles remain the only file-backed interface. It limits managed application I/O, not all OS access by other same-user processes. Unix creation modes are0700/0600; Windows privacy follows the configured parent's ACL. Cleanup is best-effort for owned files and empty session directories on normal disposal; crashes, foreign handles or external namespace changes may leave data behind. Keep the parent folder protected. The reusable implementation is [collagene-local-storage](../crates/local-storage/README.md).
+
 ## Browser exchange
 
 The web Plan panel provides an explicit file exchange without exposing a network bridge:
@@ -299,7 +309,7 @@ All sources and aggregate reference sets are preflighted while borrowed, before 
 
 ## File-backed large references and cooperative genome searches
 
-The server now exposes 96 tools. Large references use managed private scratchfiles, outside the 64 MiB small-document store. No tool accepts an arbitrary filesystem path. Normal disposal closes handles before deleting owned files, including on Windows. The backend supports two active imports, four published datasets and four live searches, with a separate 64 GiB managed-byte reservation budget.
+The server now exposes 96 tools. Large references use managed private scratchfiles, outside the 64 MiB small-document store. No tool accepts an arbitrary filesystem path. Normal disposal uses platform-specific owned-handle cleanup: Unix unlinks a matching managed entry while it is open, and Windows uses delete-on-close with delete sharing denied. The backend supports two active imports, four published datasets and four live searches, with a separate 64 GiB managed-byte reservation budget.
 
 The eleven new tools are:
 

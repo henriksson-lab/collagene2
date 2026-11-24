@@ -10,6 +10,12 @@ Direct sequence typing/deletion, pointer and keyboard range selection, insertion
 
 SAM/BAM collections now have an immutable source-backed core adapter, explicit actual-DNA reference checking, four MCP tools (101 total) and schema-24 worker sessions. The browser viewer and raw-source workspace retention/reopening are implemented. These sources are separate from editable molecules; saved reports grant no restored mapping authority. Pane sizes/view choices also have bounded, separately persisted display preferences. Background native core/MCP/asset and WASM web compiler checks passed at this checkpoint; new fixtures have been authored but not executed, and browser checks remain deferred. [Workflow and boundaries](READ_ALIGNMENT_WORKFLOW.md).
 
+## GPU sequence text and variant exchange
+
+The sequence editor now uses a bounded WebGL2 glyph atlas/instancing overlay for visible reference/complement letters, synchronized with the existing2D interaction canvas and immediate2D fallback. Browser/GPU performance validation remains deferred. [Rendering boundaries](GPU_SEQUENCE_TEXT.md).
+
+An immutable VCF/BCF exchange crate and explicit actual-DNA reference-allele checker are implemented as native/WASM APIs. Original bytes, typed field/genotype evidence, bounded conversion and allocation/framing guards remain separate from allele truth. Concrete edit previews require a fresh matching REF and explicit alternative selection. GUI/MCP import integration remains pending. Native core/MCP/web fixture type checks and WASM compiler checks passed; new fixtures are authored but not executed locally. [Format and checking scope](VARIANT_FORMATS.md).
+
 ## Final physical TOPO acceptance
 
 Reviewed web candidates now carry final `CheckedTopo` operations with all six explicit policy choices. The verifier reconstructs once against the independently bound target, retains graph/annotation evidence before rejection or withholding and can report consistency under the declared graph assumptions for fully specified accepted DNA. Native capture shares the same rotation/reverse comparison. Exported reference views retain their chemistry restriction; no nick repair or downstream intact-duplex authority is inferred. Background native core/MCP/web fixture type checks and the development WASM build passed. Port8082 serves the new immutable compiled snapshot. New scientific fixtures were authored but not executed locally; browser checks remain deferred.

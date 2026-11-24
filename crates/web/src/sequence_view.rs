@@ -1,6 +1,7 @@
 //! Virtual sequence canvas with revision-bound, cached-worker viewport tracks.
 use crate::{
     annotation_layout::AnnotationLayout,
+    glyph_renderer::{Glyph, GlyphRenderer},
     renderer::{ResizeListener, css_color},
     worker::CachedWorker,
 };
@@ -22,6 +23,91 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use wasm_bindgen_futures::spawn_local;
 use web_sys::CanvasRenderingContext2d as Ctx;
 
+// Context listeners outlive each GPU instance so restoration can build a fresh
+// renderer. Event handlers never borrow GPU state during an in-progress paint.
+struct GlyphEvents {
+    canvas: web_sys::HtmlCanvasElement,
+    lost: Closure<dyn FnMut(web_sys::Event)>,
+    restored: Closure<dyn FnMut(web_sys::Event)>,
+}
+impl GlyphEvents {
+    fn new(
+        canvas: &web_sys::HtmlCanvasElement,
+        lost: RwSignal<bool>,
+        epoch: RwSignal<u32>,
+        alive: Arc<AtomicBool>,
+    ) -> Result<Self, String> {
+        let hidden = canvas.clone();
+        let lost_alive = alive.clone();
+        let on_lost = Closure::<dyn FnMut(web_sys::Event)>::new(move |event: web_sys::Event| {
+            event.prevent_default();
+            if !lost_alive.load(Ordering::Relaxed) {
+                return;
+            }
+            let _ = hidden
+                .unchecked_ref::<web_sys::HtmlElement>()
+                .style()
+                .set_property("display", "none");
+            let _ = lost.try_set(true);
+            let _ = epoch.try_update(|value| *value = value.wrapping_add(1));
+        });
+        let on_restored = Closure::<dyn FnMut(web_sys::Event)>::new(move |_: web_sys::Event| {
+            if !alive.load(Ordering::Relaxed) {
+                return;
+            }
+            let _ = lost.try_set(false);
+            let _ = epoch.try_update(|value| *value = value.wrapping_add(1));
+        });
+        canvas
+            .add_event_listener_with_callback("webglcontextlost", on_lost.as_ref().unchecked_ref())
+            .map_err(|_| "Cannot observe glyph context loss".to_string())?;
+        if canvas
+            .add_event_listener_with_callback(
+                "webglcontextrestored",
+                on_restored.as_ref().unchecked_ref(),
+            )
+            .is_err()
+        {
+            let _ = canvas.remove_event_listener_with_callback(
+                "webglcontextlost",
+                on_lost.as_ref().unchecked_ref(),
+            );
+            return Err("Cannot observe glyph context restoration".into());
+        }
+        Ok(Self {
+            canvas: canvas.clone(),
+            lost: on_lost,
+            restored: on_restored,
+        })
+    }
+}
+impl Drop for GlyphEvents {
+    fn drop(&mut self) {
+        let _ = self.canvas.remove_event_listener_with_callback(
+            "webglcontextlost",
+            self.lost.as_ref().unchecked_ref(),
+        );
+        let _ = self.canvas.remove_event_listener_with_callback(
+            "webglcontextrestored",
+            self.restored.as_ref().unchecked_ref(),
+        );
+    }
+}
+fn base_glyph_color(base: u8) -> [f32; 4] {
+    let rgb = match base {
+        b'A' => [51u8, 124, 109],
+        b'C' => [68, 118, 163],
+        b'G' => [177, 139, 56],
+        b'T' | b'U' => [173, 107, 110],
+        _ => [93, 106, 100],
+    };
+    [
+        rgb[0] as f32 / 255.,
+        rgb[1] as f32 / 255.,
+        rgb[2] as f32 / 255.,
+        1.,
+    ]
+}
 type Regions = RwSignal<Option<(String, Vec<(usize, usize)>)>>;
 struct Timer {
     id: i32,
@@ -218,6 +304,15 @@ pub fn SequenceView(
     on_show_restrictions: Callback<()>,
 ) -> impl IntoView {
     let canvas = NodeRef::<html::Canvas>::new();
+    let glyph_canvas = NodeRef::<html::Canvas>::new();
+    let paint_stack = NodeRef::<html::Div>::new();
+    let glyph_renderer = StoredValue::new_local(None::<GlyphRenderer>);
+    let glyph_events = StoredValue::new_local(None::<GlyphEvents>);
+    let glyph_events_ready = RwSignal::new(false);
+    let glyph_context_lost = RwSignal::new(false);
+    let glyph_epoch = RwSignal::new(0u32);
+    let glyph_seen_epoch = StoredValue::new(0u32);
+    let glyph_failed_view = StoredValue::new(None::<(u64, u64, u64, u32)>);
     let container = NodeRef::<html::Div>::new();
     let scroll = RwSignal::new(0f64);
     let columns = RwSignal::new(60usize);
@@ -239,6 +334,33 @@ pub fn SequenceView(
     let alive = Arc::new(AtomicBool::new(true));
     let prepare_alive = alive.clone();
     let query_alive = alive.clone();
+    let glyph_alive = alive.clone();
+    Effect::new(move |_| {
+        let Some(canvas) = glyph_canvas.get() else {
+            return;
+        };
+        if glyph_events.with_value(Option::is_some) {
+            return;
+        }
+        match GlyphEvents::new(
+            &canvas,
+            glyph_context_lost,
+            glyph_epoch,
+            glyph_alive.clone(),
+        ) {
+            Ok(events) => {
+                glyph_events.set_value(Some(events));
+                glyph_events_ready.set(true);
+            }
+            Err(_) => {
+                glyph_events_ready.set(false);
+                let _ = canvas
+                    .unchecked_ref::<web_sys::HtmlElement>()
+                    .style()
+                    .set_property("display", "none");
+            }
+        }
+    });
     let source = Memo::new(move |_| molecule.with(|m| m.revision()));
     let edit_cursor = StoredValue::new(None::<EditCursor>);
     let base_drag = StoredValue::new(None::<BaseDrag>);
@@ -733,6 +855,19 @@ pub fn SequenceView(
     on_cleanup(move || {
         stop_drag();
         alive.store(false, Ordering::Relaxed);
+        glyph_events.set_value(None);
+        if let Some(canvas) = glyph_canvas.get_untracked() {
+            let _ = canvas
+                .unchecked_ref::<web_sys::HtmlElement>()
+                .style()
+                .set_property("display", "none");
+        }
+        glyph_renderer.update_value(|renderer| {
+            if let Some(renderer) = renderer.as_mut() {
+                renderer.clear();
+            }
+        });
+        glyph_renderer.set_value(None);
         timer.set_value(None);
         if let Some(previous) = client.get_value() {
             previous.close();
@@ -958,6 +1093,15 @@ pub fn SequenceView(
     Effect::new(move |_| {
         molecule.with(|mol| {
             let selected = highlighted_spans.get();
+            let gpu_epoch = glyph_epoch.get();
+            let gpu_lost = glyph_context_lost.get();
+            let gpu_events_ready = glyph_events_ready.get();
+            let gpu_canvas = glyph_canvas.get();
+            if glyph_seen_epoch.get_value() != gpu_epoch {
+                glyph_renderer.set_value(None);
+                glyph_failed_view.set_value(None);
+                glyph_seen_epoch.set_value(gpu_epoch);
+            }
             let caret = selection.get().filter(|(a, b)| a == b).map(|(a, _)| a);
             let top = scroll.get();
             let rh = row_height.get();
@@ -996,6 +1140,7 @@ pub fn SequenceView(
             }
             let dpr = web_sys::window()
                 .map(|w| w.device_pixel_ratio())
+                .filter(|value| value.is_finite() && *value > 0.)
                 .unwrap_or(1.)
                 .min(2.);
             let pw = (width * dpr).ceil() as u32;
@@ -1009,6 +1154,16 @@ pub fn SequenceView(
             let style = canvas.unchecked_ref::<web_sys::HtmlElement>().style();
             let _ = style.set_property("height", &format!("{h}px"));
             let _ = style.set_property("width", &format!("{width}px"));
+            if let Some(stack) = paint_stack.get() {
+                let _ = stack
+                    .unchecked_ref::<web_sys::HtmlElement>()
+                    .style()
+                    .set_property("height", &format!("{h}px"));
+                let _ = stack
+                    .unchecked_ref::<web_sys::HtmlElement>()
+                    .style()
+                    .set_property("width", &format!("{width}px"));
+            }
             let Some(ctx) = canvas
                 .get_context("2d")
                 .ok()
@@ -1028,6 +1183,12 @@ pub fn SequenceView(
             let offset = offsets(counts);
             let shared_items = shared_restrictions.get();
             let mut boxes = vec![];
+            let mut base_glyphs = Vec::<Glyph>::with_capacity(
+                count
+                    .saturating_mul(cols)
+                    .saturating_mul(2)
+                    .min(crate::glyph_renderer::MAX_GLYPHS),
+            );
             let mut painted = 0usize;
             for row in first..first + count {
                 let start = row * cols;
@@ -1058,21 +1219,19 @@ pub fn SequenceView(
                     .iter()
                     .enumerate()
                 {
-                    ctx.set_fill_style_str(match b {
-                        b'A' => "#337c6d",
-                        b'C' => "#4476a3",
-                        b'G' => "#b18b38",
-                        b'T' | b'U' => "#ad6b6e",
-                        _ => "#5d6a64",
+                    base_glyphs.push(Glyph {
+                        character: *b as char,
+                        x: start_x + i as f64 * cell,
+                        y,
+                        color: base_glyph_color(*b),
                     });
-                    let _ = ctx.fill_text(&(*b as char).to_string(), start_x + i as f64 * cell, y);
                     if mol.sequence.alphabet() != Alphabet::Protein {
-                        ctx.set_fill_style_str("#98a39d");
-                        let _ = ctx.fill_text(
-                            &(complement(*b, mol.sequence.alphabet()) as char).to_string(),
-                            start_x + i as f64 * cell,
-                            y + 19.,
-                        );
+                        base_glyphs.push(Glyph {
+                            character: complement(*b, mol.sequence.alphabet()) as char,
+                            x: start_x + i as f64 * cell,
+                            y: y + 19.,
+                            color: [152. / 255., 163. / 255., 157. / 255., 1.],
+                        });
                     }
                 }
                 if let Some(p) = caret.filter(|p| *p <= mol.sequence.len()) {
@@ -1262,6 +1421,64 @@ pub fn SequenceView(
                     }
                 }
             }
+            let view_key = (width.to_bits(), h.to_bits(), dpr.to_bits(), gpu_epoch);
+            let mut gpu_painted = false;
+            if let Some(gpu_canvas) = gpu_canvas.as_ref() {
+                let gpu_style = gpu_canvas.unchecked_ref::<web_sys::HtmlElement>().style();
+                let _ = gpu_style.set_property("width", &format!("{width}px"));
+                let _ = gpu_style.set_property("height", &format!("{h}px"));
+                if gpu_events_ready && !gpu_lost && glyph_failed_view.get_value() != Some(view_key)
+                {
+                    let mut success = false;
+                    glyph_renderer.update_value(|slot| {
+                        if slot.is_none() {
+                            *slot = GlyphRenderer::new(gpu_canvas, "14px monospace").ok();
+                        }
+                        success = slot.as_mut().is_some_and(|renderer| {
+                            renderer.paint(width, h, dpr, &base_glyphs).is_ok()
+                        });
+                    });
+                    // A loss event may fire inside GL calls: do not show a frame
+                    // whose context was revoked before paint returned.
+                    gpu_painted = success && !glyph_context_lost.get_untracked();
+                }
+                if gpu_painted {
+                    glyph_failed_view.set_value(None);
+                    let _ = gpu_style.set_property("display", "block");
+                } else {
+                    let _ = gpu_style.set_property("display", "none");
+                    glyph_renderer.update_value(|slot| {
+                        if let Some(renderer) = slot.as_mut() {
+                            renderer.clear();
+                        }
+                    });
+                    glyph_renderer.set_value(None);
+                    if gpu_events_ready && !gpu_lost {
+                        glyph_failed_view.set_value(Some(view_key));
+                    }
+                }
+            }
+            if !gpu_painted {
+                ctx.set_font("14px monospace");
+                ctx.set_text_align("left");
+                ctx.set_text_baseline("alphabetic");
+                for glyph in &base_glyphs {
+                    let color = glyph.color;
+                    ctx.set_fill_style_str(&format!(
+                        "rgba({},{},{},{})",
+                        (color[0] * 255.).round() as u8,
+                        (color[1] * 255.).round() as u8,
+                        (color[2] * 255.).round() as u8,
+                        color[3]
+                    ));
+                    let _ = ctx.fill_text(&glyph.character.to_string(), glyph.x, glyph.y);
+                }
+            }
+            let _ = canvas.set_attribute(
+                "data-glyph-backend",
+                if gpu_painted { "webgl2" } else { "2d" },
+            );
+            let _ = canvas.set_attribute("data-visible-glyphs", &base_glyphs.len().to_string());
             hit_boxes.set_value(boxes);
             let _ = canvas.set_attribute("data-row-height", &rh.to_string());
             let _ = canvas.set_attribute("data-feature-lanes", &counts[0].to_string());
@@ -1356,6 +1573,7 @@ pub fn SequenceView(
         {move||selected_item.get().map(|item|view!{<div class="track-selection"><strong>{item.label}</strong><span>{format!(" · {:?}{}",item.kind,if item.certain{""}else{" · possible/review"})}</span><span>{item.cuts.as_ref().map(|c|format!(" · top {}, bottom {}",crate::search_view::boundary_label(c.top),crate::search_view::boundary_label(c.bottom)))}</span></div>})}
         <div class="sequence-scroll" node_ref=container on:scroll=move|_|if let Some(c)=container.get(){scroll.set(c.scroll_top()as f64);}>
             <div class="sequence-spacer" style:height=move||format!("{}px",molecule.with(|m|m.sequence.len()).div_ceil(columns.get())as f64*row_height.get())>
+                <div node_ref=paint_stack class="sequence-paint-stack">
                 <canvas node_ref=canvas class="sequence-canvas" role="textbox" aria-multiline="true" aria-readonly=move||locked.get().to_string() tabindex="0" aria-label="Sequence editor. Drag reference or complement bases to select. Shift extends selection; type to replace reference symbols. Arrow keys move the caret; Shift and arrows extend. Home and End move to document boundaries." on:keydown=keydown
                     on:pointerdown=move|e:web_sys::PointerEvent|{
                         if e.button()!=0 || locked.get_untracked(){return;}
@@ -1395,6 +1613,8 @@ pub fn SequenceView(
                         if e.detail()!=0 || locked.get_untracked(){return;}
                         if let Some(c)=canvas.get(){let rect=c.get_bounding_client_rect();let x=e.client_x()as f64-rect.left();let y=e.client_y()as f64-rect.top();let hit=hit_boxes.with_value(|boxes|boxes.iter().rev().find(|b|x>=b.x&&x<b.x+b.width&&y>=b.y&&y<b.y+b.height).map(|b|b.item.clone()));if let Some(hit)=hit{edit_cursor.set_value(None);choose.run(hit);}else{press_base.run((x,y,e.shift_key()));}}
                     }></canvas>
+                <canvas node_ref=glyph_canvas class="sequence-glyph-canvas" aria-hidden="true" style="display:none;pointer-events:none;"></canvas>
+                </div>
             </div>
             <div class="sr-only" aria-live="polite">{move||{if let Some(feature)=selected_feature.get().and_then(|i|molecule.with(|m|m.features.get(i).cloned())){let size=feature.location.spans().iter().try_fold(0usize,|n,(a,b,_)|n.checked_add(b-a)).unwrap_or(usize::MAX);let sequence=if size<=10_000{molecule.with(|m|feature.location.extract(&m.sequence).unwrap_or_else(|e|e.to_string()))}else{"Sequence display limit exceeded".into()};return format!("Selected annotation {}: {}",feature.label(),sequence);}selection.get().map(|(a,b)|molecule.with(|m|{if a==b{return format!("Insertion caret at boundary {} of {}. Type to insert reference symbols.",a,m.sequence.len());}if b.saturating_sub(a)>10_000 {format!("Selected {} {} to {}. Sequence display limit exceeded; use a sequence export for the complete selection.",m.sequence.alphabet().selected_symbols(),a+1,b)}else{format!("Selected {} {} to {}: {}",m.sequence.alphabet().selected_symbols(),a+1,b,m.sequence.as_str().get(a..b).unwrap_or("selection changed"))}})).unwrap_or_else(||format!("{} reference parts highlighted",highlighted_spans.get().len()))}}</div>
         </div>

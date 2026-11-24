@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/web", "crates/worker", "crates/mcp", "crates/sources", "crates/protocol-units", "crates/enzyme-catalog", "crates/web-assets", "crates/model", "crates/recombination", "crates/read-alignments", "crates/topo", "crates/local-storage", "crates/view-layout", "crates/map-label-layout"]
+members = ["crates/core", "crates/web", "crates/worker", "crates/mcp", "crates/sources", "crates/protocol-units", "crates/enzyme-catalog", "crates/web-assets", "crates/model", "crates/recombination", "crates/read-alignments", "crates/variants", "crates/topo", "crates/local-storage", "crates/view-layout", "crates/map-label-layout"]
 default-members = ["crates/core"]
 resolver = "2"
 

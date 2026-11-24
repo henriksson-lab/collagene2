@@ -39,6 +39,8 @@ mod genome_view;
 #[cfg(target_arch = "wasm32")]
 mod genomes;
 #[cfg(target_arch = "wasm32")]
+mod glyph_renderer;
+#[cfg(target_arch = "wasm32")]
 mod history_view;
 #[cfg(target_arch = "wasm32")]
 mod map_labels;

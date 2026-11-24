@@ -104,3 +104,5 @@ pub mod read_alignment_archive;
 pub mod read_alignment_session;
 
 pub mod topo_worker;
+
+pub mod variant_reference;

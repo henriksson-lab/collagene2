@@ -167,3 +167,8 @@
 .topo-panel .checkbox-label { align-items:flex-start; white-space:normal; line-height:1.5; }
 .topo-panel table { width:100%; border-collapse:collapse; font-size:11px; }
 .topo-panel td,.topo-panel th { padding:5px; text-align:left; vertical-align:top; border-bottom:1px solid #e1e7e2; }
+
+/* Both paint surfaces share one sticky box so compositor scrolling stays aligned. */
+.sequence-paint-stack { position:sticky; top:0; width:100%; }
+.sequence-paint-stack > .sequence-canvas { position:absolute; inset:0; }
+.sequence-glyph-canvas { position:absolute; inset:0; pointer-events:none; z-index:1; display:none; }

@@ -8,6 +8,7 @@ rust-version.workspace = true
 [dependencies]
 collagene-model = { path = "../model" }
 collagene-read-alignments = { path = "../read-alignments" }
+collagene-variants = { path = "../variants" }
 collagene-topo = { path = "../topo" }
 collagene-recombination = { path = "../recombination" }
 collagene-enzyme-catalog = { path = "../enzyme-catalog" }

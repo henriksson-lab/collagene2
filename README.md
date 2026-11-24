@@ -38,6 +38,8 @@ In **Plan**, choose checked restriction to declare per-source Dam/Dcm/CpG assump
 
 **End repair / annealing** reconstructs restriction-derived ends before explicit 5′ fill-in/3′ removal, and enumerates complementary oligo offsets with declared terminal chemistry. Review a candidate against the independently chosen active target, with optional phosphorylation and sealed circular ligation. Actual strands, alternatives, source revisions and incomplete search stay visible. [Physical models and limits](docs/END_REPAIR.md).
 
+The independent [recombination library](crates/recombination/README.md) reconstructs defined two-site BP/LR reference exchanges with an opt-in, versioned manufacturer-context profile. It retains reciprocal products and source maps and checks independently supplied targets. Application integration, annotation projection and physical chemistry remain pending; this library is not yet exposed in the GUI or MCP.
+
 For an assembly example, open [overlap-demo.fasta](fixtures/overlap-demo.fasta), select `target`, open **Plan**, choose `left` and `right`, set the overlap to **4**, and reconstruct. Changing the overlap to **3** must fail. Export HTML or use **Export PDF protocol** for a standalone paginated vector PDF generated in a Rust/WASM worker. Both exports re-verify the exact plan; invalid/incomplete drafts remain marked. [PDF details and font notice](docs/PDF_EXPORT.md).
 
 ## Formats, traces and sequence URLs

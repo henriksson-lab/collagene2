@@ -359,6 +359,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "collagene-recombination"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "collagene-model",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "collagene-sources"
 version = "0.1.0"
 dependencies = [

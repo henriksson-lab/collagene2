@@ -1,0 +1,176 @@
+{
+  "id": "manufacturer-vector-contexts-att1-att2",
+  "edition": "2026-11-24.1",
+  "sources": [
+    {
+      "id": "gateway-manual-MAN0000282-rev1.0-B1",
+      "url": "https://assets.thermofisher.com/TFS-Assets/LSG/manuals/gatewayman.pdf",
+      "raw_sha256": "479c7d09e12788160842868dd90d4902437a7a7c7ec9ba80881300d2529b24f4",
+      "vector_name": "Primer site string (not a vector record); manual printed page 13",
+      "vector_length": 25,
+      "start_1based": 1,
+      "end_1based": 25,
+      "reverse_extraction": false,
+      "map_url": "https://assets.thermofisher.com/TFS-Assets/LSG/manuals/gatewayman.pdf",
+      "map_sha256": "479c7d09e12788160842868dd90d4902437a7a7c7ec9ba80881300d2529b24f4"
+    },
+    {
+      "id": "gateway-manual-MAN0000282-rev1.0-B2",
+      "url": "https://assets.thermofisher.com/TFS-Assets/LSG/manuals/gatewayman.pdf",
+      "raw_sha256": "479c7d09e12788160842868dd90d4902437a7a7c7ec9ba80881300d2529b24f4",
+      "vector_name": "Primer site string (not a vector record); manual printed page 13",
+      "vector_length": 25,
+      "start_1based": 1,
+      "end_1based": 25,
+      "reverse_extraction": false,
+      "map_url": "https://assets.thermofisher.com/TFS-Assets/LSG/manuals/gatewayman.pdf",
+      "map_sha256": "479c7d09e12788160842868dd90d4902437a7a7c7ec9ba80881300d2529b24f4"
+    },
+    {
+      "id": "pDONR221-attP1-manufacturer-snapshot-2026-11-24",
+      "url": "https://documents.thermofisher.com/TFS-Assets/vectors/pdonr221_seq.txt",
+      "raw_sha256": "9f6fd695e2eaa95d7153dfde0786fb8d1a0ad8471ccde73a9689d4679af78424",
+      "vector_name": "pDONR221",
+      "vector_length": 4761,
+      "start_1based": 570,
+      "end_1based": 801,
+      "reverse_extraction": false,
+      "map_url": "https://documents.thermofisher.com/TFS-Assets/vectors/pdonr221_pdonrzeo_map.pdf",
+      "map_sha256": "d88b5865ce6fc6846905c277cb9e9316cd35656597e11d6af01924c6062fba58"
+    },
+    {
+      "id": "pDONR221-attP2-manufacturer-snapshot-2026-11-24",
+      "url": "https://documents.thermofisher.com/TFS-Assets/vectors/pdonr221_seq.txt",
+      "raw_sha256": "9f6fd695e2eaa95d7153dfde0786fb8d1a0ad8471ccde73a9689d4679af78424",
+      "vector_name": "pDONR221",
+      "vector_length": 4761,
+      "start_1based": 2753,
+      "end_1based": 2984,
+      "reverse_extraction": true,
+      "map_url": "https://documents.thermofisher.com/TFS-Assets/vectors/pdonr221_pdonrzeo_map.pdf",
+      "map_sha256": "d88b5865ce6fc6846905c277cb9e9316cd35656597e11d6af01924c6062fba58"
+    },
+    {
+      "id": "pDEST14-attR1-manufacturer-snapshot-2026-11-24",
+      "url": "https://documents.thermofisher.com/TFS-Assets/vectors/pdest14_seq.txt",
+      "raw_sha256": "762bed0de999424600942d85bb341fcccb4f4cb1085f9775a72f5997a4def67b",
+      "vector_name": "pDEST14",
+      "vector_length": 6422,
+      "start_1based": 67,
+      "end_1based": 191,
+      "reverse_extraction": false,
+      "map_url": "https://documents.thermofisher.com/TFS-Assets/vectors/pdest14_map.pdf",
+      "map_sha256": "e4694880a4c1200343fdaaead52710fd7f149a6224f0948b46118454152337a2"
+    },
+    {
+      "id": "pDEST14-attR2-manufacturer-snapshot-2026-11-24",
+      "url": "https://documents.thermofisher.com/TFS-Assets/vectors/pdest14_seq.txt",
+      "raw_sha256": "762bed0de999424600942d85bb341fcccb4f4cb1085f9775a72f5997a4def67b",
+      "vector_name": "pDEST14",
+      "vector_length": 6422,
+      "start_1based": 1788,
+      "end_1based": 1912,
+      "reverse_extraction": true,
+      "map_url": "https://documents.thermofisher.com/TFS-Assets/vectors/pdest14_map.pdf",
+      "map_sha256": "e4694880a4c1200343fdaaead52710fd7f149a6224f0948b46118454152337a2"
+    },
+    {
+      "id": "pENTR-D-TOPO-attL1-manufacturer-snapshot-2026-11-24",
+      "url": "https://documents.thermofisher.com/TFS-Assets/vectors/pentr_dtopo_seq.txt",
+      "raw_sha256": "cb1751ae6792b6b0d9307067f0ee6e99fe5a1c6980f870d1f657147873ff3e56",
+      "vector_name": "pENTR-D-TOPO",
+      "vector_length": 2580,
+      "start_1based": 569,
+      "end_1based": 668,
+      "reverse_extraction": false,
+      "map_url": "https://documents.thermofisher.com/TFS-Assets/vectors/pentr_dtopo_map.pdf",
+      "map_sha256": "45c19c25de3cf2654d20ef00f5cd19bc9de0444cb4b5f642311038aa6005c79b"
+    },
+    {
+      "id": "pENTR-D-TOPO-attL2-manufacturer-snapshot-2026-11-24",
+      "url": "https://documents.thermofisher.com/TFS-Assets/vectors/pentr_dtopo_seq.txt",
+      "raw_sha256": "cb1751ae6792b6b0d9307067f0ee6e99fe5a1c6980f870d1f657147873ff3e56",
+      "vector_name": "pENTR-D-TOPO",
+      "vector_length": 2580,
+      "start_1based": 705,
+      "end_1based": 804,
+      "reverse_extraction": true,
+      "map_url": "https://documents.thermofisher.com/TFS-Assets/vectors/pentr_dtopo_map.pdf",
+      "map_sha256": "45c19c25de3cf2654d20ef00f5cd19bc9de0444cb4b5f642311038aa6005c79b"
+    }
+  ],
+  "variants": [
+    {
+      "id": "attB1-primer25",
+      "family": "B",
+      "subtype": 1,
+      "sequence": "ACAAGTTTGTACAAAAAAGCAGGCT",
+      "overlap_start": 8,
+      "source_id": "gateway-manual-MAN0000282-rev1.0-B1"
+    },
+    {
+      "id": "attB2-primer25",
+      "family": "B",
+      "subtype": 2,
+      "sequence": "ACCACTTTGTACAAGAAAGCTGGGT",
+      "overlap_start": 8,
+      "source_id": "gateway-manual-MAN0000282-rev1.0-B2"
+    },
+    {
+      "id": "attP1-pDONR221-232",
+      "family": "P",
+      "subtype": 1,
+      "sequence": "AAATAATGATTTTATTTTGACTGATAGTGACCTGTTCGTTGCAACAAATTGATGAGCAATGCTTTTTTATAATGCCAACTTTGTACAAAAAAGCTGAACGAGAAACGTAAAATGATATAAATATCAATATATTAAATTAGATTTTGCATAAAAAACAGACTACATAATACTGTAAAACACAACATATCCAGTCACTATGAATCAACTACTTAGATGGTATTAGTGACCTGTA",
+      "overlap_start": 82,
+      "source_id": "pDONR221-attP1-manufacturer-snapshot-2026-11-24"
+    },
+    {
+      "id": "attP2-pDONR221-232",
+      "family": "P",
+      "subtype": 2,
+      "sequence": "AAATAATGATTTTATTTTGACTGATAGTGACCTGTTCGTTGCAACAAATTGATAAGCAATGCTTTCTTATAATGCCAACTTTGTACAAGAAAGCTGAACGAGAAACGTAAAATGATATAAATATCAATATATTAAATTAGATTTTGCATAAAAAACAGACTACATAATACTGTAAAACACAACATATCCAGTCACTATGAATCAACTACTTAGATGGTATTAGTGACCTGTA",
+      "overlap_start": 82,
+      "source_id": "pDONR221-attP2-manufacturer-snapshot-2026-11-24"
+    },
+    {
+      "id": "attR1-pDEST14-125",
+      "family": "R",
+      "subtype": 1,
+      "sequence": "ACAAGTTTGTACAAAAAAGCTGAACGAGAAACGTAAAATGATATAAATATCAATATATTAAATTAGATTTTGCATAAAAAACAGACTACATAATACTGTAAAACACAACATATCCAGTCACTATG",
+      "overlap_start": 8,
+      "source_id": "pDEST14-attR1-manufacturer-snapshot-2026-11-24"
+    },
+    {
+      "id": "attR2-pDEST14-125",
+      "family": "R",
+      "subtype": 2,
+      "sequence": "ACCACTTTGTACAAGAAAGCTGAACGAGAAACGTAAAATGATATAAATATCAATATATTAAATTAGATTTTGCATAAAAAACAGACTACATAATACTGTAAAACACAACATATCCAGTCACTATG",
+      "overlap_start": 8,
+      "source_id": "pDEST14-attR2-manufacturer-snapshot-2026-11-24"
+    },
+    {
+      "id": "attL1-pENTR-D-TOPO-100",
+      "family": "L",
+      "subtype": 1,
+      "sequence": "CAAATAATGATTTTATTTTGACTGATAGTGACCTGTTCGTTGCAACAAATTGATGAGCAATGCTTTTTTATAATGCCAACTTTGTACAAAAAAGCAGGCT",
+      "overlap_start": 83,
+      "source_id": "pENTR-D-TOPO-attL1-manufacturer-snapshot-2026-11-24"
+    },
+    {
+      "id": "attL2-pENTR-D-TOPO-100",
+      "family": "L",
+      "subtype": 2,
+      "sequence": "CAAATAATGATTTTATTTTGACTGATAGTGACCTGTTCGTTGCAACAAATTGATAAGCAATGCTTTCTTATAATGCCAACTTTGTACAAGAAAGCTGGGT",
+      "overlap_start": 83,
+      "source_id": "pENTR-D-TOPO-attL2-manufacturer-snapshot-2026-11-24"
+    }
+  ],
+  "limitations": [
+    "Explicit opt-in vector-context profile; no universal Gateway or minimal functional-site claim.",
+    "Manufacturer sequence text does not provide INSDC accession/version; raw snapshot hashes and exact official map spans identify this edition.",
+    "Map annotation strand is not used as matching direction: literal canonical overlap defines orientation; pENTR-D-TOPO attL1 map says complementary although reference context contains canonical GTACAAA.",
+    "attR125 deletion/context variant remains distinct; LR may produce a shorter/unregistered attP hybrid; distal missing DNA is never restored.",
+    "Full contexts exclude many valid vectors, distal variants and shortened sites; failure to match is unsupported applicability, not evidence of biochemical inactivity.",
+    "att1.1/att2.1 and MultiSite profiles not included."
+  ]
+}

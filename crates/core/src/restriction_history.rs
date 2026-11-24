@@ -75,6 +75,17 @@ fn source<'a>(w: &'a Workspace, b: &SourceBinding) -> Result<&'a crate::Molecule
         .get(&b.revision)
         .ok_or_else(|| bad("source revision is unavailable"))
 }
+/// Resolve only the current active exact source event. No producer metadata establishes chemistry.
+pub(crate) fn current_source<'a>(
+    w: &'a Workspace,
+    b: &SourceBinding,
+) -> Result<&'a crate::Molecule, Error> {
+    w.validate()?;
+    if w.active_document != b.document_id {
+        return Err(bad("active source changed; rerun virtual digest"));
+    }
+    source(w, b)
+}
 pub fn installation_revision(
     w: &Workspace,
     b: &SourceBinding,
@@ -82,11 +93,7 @@ pub fn installation_revision(
     options: &InspectionOptions,
     index: usize,
 ) -> Result<String, Error> {
-    w.validate()?;
-    if w.active_document != b.document_id {
-        return Err(bad("active source changed; rerun virtual digest"));
-    }
-    let m = source(w, b)?;
+    let m = current_source(w, b)?;
     let product =
         restriction_inspection::product_revision(&source_role(b)?, m, enzymes, options, index)?;
     Ok(blake3::hash(
@@ -115,6 +122,35 @@ pub fn prepare_install(
     let role = source_role(b)?;
     let product = restriction_inspection::product(&role, original, enzymes, options, index)?;
     product.validate_bindings_for(&role, original, enzymes, options, index)?;
+    let enzyme_names = enzymes
+        .iter()
+        .map(|e| e.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    prepare_fresh_install(
+        w,
+        b,
+        product.molecule,
+        batch_revision,
+        format!(
+            "Virtual digest fragment {} with {} · source event {}; complete-cleavage assumptions, computational producer evidence only",
+            index + 1,
+            enzyme_names,
+            b.event_id
+        ),
+    )
+}
+/// Install a product reconstructed by a trusted in-crate scientific caller. All producer
+/// metadata must be present before deriving the event; no revision is mutated afterward.
+pub(crate) fn prepare_fresh_install(
+    w: &Workspace,
+    b: &SourceBinding,
+    product: crate::Molecule,
+    batch_revision: String,
+    description: String,
+) -> Result<PreparedInstallation, Error> {
+    current_source(w, b)?;
+    product.validate()?;
     let histories = DocumentHistory::restore_all(w)?;
     let history = histories
         .iter()
@@ -123,19 +159,14 @@ pub fn prepare_install(
     if history.head_event() != b.event_id || history.molecule.revision() != b.revision {
         return Err(bad("restored source head changed"));
     }
-    let prefix = format!("digest-{}", &product.molecule.revision()[..24]);
+    let prefix = format!("digest-{}", &product.revision()[..24]);
     let mut id = prefix.clone();
     let mut suffix = 1usize;
     while w.documents.iter().any(|d| d.id == id) {
         id = format!("{prefix}-{suffix}");
         suffix = suffix.checked_add(1).ok_or(Error::TooLarge)?;
     }
-    let enzyme_names = enzymes
-        .iter()
-        .map(|e| e.name.as_str())
-        .collect::<Vec<_>>()
-        .join(", ");
-    let derived=history.derive_event(&b.event_id,id.clone(),product.molecule,format!("Virtual digest fragment {} with {} · source event {}; complete-cleavage assumptions, computational producer evidence only",index+1,enzyme_names,b.event_id))?;
+    let derived = history.derive_event(&b.event_id, id.clone(), product, description)?;
     let event_id = derived.head_event().to_owned();
     let product_revision = derived.molecule.revision();
     let mut next = w.clone();

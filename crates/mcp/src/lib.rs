@@ -648,8 +648,10 @@ pub struct RestrictionInspectionQuery {
     pub document: DocumentRef,
     /// Stable source role; included in every report binding independently of document identity.
     pub source_role: String,
-    /// One to 64 embedded enzyme names from list_enzymes; exact resolved geometries are bound.
+    /// One to 64 exact catalog enzyme IDs or uniquely resolved names/aliases. Formulations are separate.
     pub enzymes: Vec<String>,
+    /// Optional exact current catalog edition/hash/ordered-ID/geometry pin; stale or changed pins fail.
+    pub catalog_pin: Option<collagene_core::catalog_digest::CatalogSelection>,
     #[serde(default)]
     pub options: collagene_core::restriction_inspection::InspectionOptions,
     #[serde(default)]
@@ -1274,6 +1276,13 @@ impl CollageneServer {
             (text, "application/json", "dotplot.json"),
             (svg, "image/svg+xml", "dotplot.svg"),
         ];
+        self.paired_text_artifacts(entries)
+    }
+    // A complete compatible report and its catalog wrapper publish atomically too.
+    fn paired_text_artifacts(
+        &self,
+        entries: [(String, &'static str, &'static str); 2],
+    ) -> Result<(String, String), ErrorData> {
         let ids = entries
             .iter()
             .map(|(text, _, _)| blake3::hash(text.as_bytes()).to_hex().to_string())
@@ -1591,7 +1600,17 @@ impl ServerHandler for CollageneServer {
             return Err(bad("resources fit in one page; no cursor is valid"));
         }
         let store = self.store.lock().unwrap();
-        let mut resources = Vec::new();
+        let catalog = catalog_tools::builtin()?;
+        let mut resources = vec![
+            Resource::new(
+                catalog_tools::resource_uri(&catalog),
+                format!(
+                    "Documentary restriction catalog {}",
+                    catalog.edition().edition
+                ),
+            )
+            .with_mime_type("application/json"),
+        ];
         for (id, m) in &store.documents {
             resources.push(
                 Resource::new(
@@ -1624,7 +1643,15 @@ impl ServerHandler for CollageneServer {
         request: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResponse, ErrorData> {
-        let value = if let Some(id) = request.uri.strip_prefix("collagene://document/") {
+        let value = if request.uri.starts_with("collagene://enzyme-catalog/") {
+            let catalog = catalog_tools::builtin()?;
+            if request.uri != catalog_tools::resource_uri(&catalog) {
+                return Err(bad(
+                    "unknown catalog edition/content hash; use the listed exact versioned resource",
+                ));
+            }
+            catalog_tools::resource(&catalog)
+        } else if let Some(id) = request.uri.strip_prefix("collagene://document/") {
             let store = self.store.lock().unwrap();
             let m = store
                 .documents
@@ -1664,6 +1691,24 @@ impl ServerHandler for CollageneServer {
 
 #[tool_router]
 impl CollageneServer {
+    #[tool(
+        description = "Search or exactly look up the embedded versioned restriction catalog. Returns edition/hash, stable enzyme geometry identities, separate formulation records, aliases and documentary source citations. Search/exact ambiguity pages are bounded to 100 records. Optional edition/hash pin rejects stale editions. Enzyme identity and formulation assay facts are distinct; lookup does not predict cleavage or transfer supplier conditions between related enzymes."
+    )]
+    fn lookup_enzyme_catalog(
+        &self,
+        Parameters(args): Parameters<catalog_tools::LookupQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        output(catalog_tools::lookup(args)?)
+    }
+    #[tool(
+        description = "Resolve one explicit formulation/condition/assay context from the pinned embedded documentary catalog. Keeps Known, Unknown, Conflict and ContextRequired distinct, with every original qualifier, citation, source URL and context preserved. No evidence or conflicting evidence never becomes compatibility or activity. Buffer activity is a contextual vendor assay observation, not digestion efficiency; methylation categories are not site-specific permission. Optional edition/hash pin rejects stale catalog claims."
+    )]
+    fn resolve_enzyme_evidence(
+        &self,
+        Parameters(args): Parameters<catalog_tools::EvidenceQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        output(catalog_tools::evidence(args)?)
+    }
     #[tool(
         description = "Calculate exact single-stock dilution from decimal-string quantities and explicit mass or molar units. Missing values and mixed dimensions are errors. Optional explicit stock-volume quantization reports absolute rounding deviation, refill diluent and achieved concentration; omitted quantization never rounds. Assumes C1*V1=C2*V2, additive volumes and zero-concentration diluent. No stock inventory lookup, solvent compatibility or reaction verification."
     )]
@@ -3414,15 +3459,15 @@ impl CollageneServer {
         )
     }
     #[tool(
-        description = "List the embedded enzyme catalog and the pinned positional modification sensitivity profile revision required by CheckedDigest plan steps. Standalone methylation assessments use a distinct profile; permission under declared tracked-generation assumptions does not establish empirical activity."
+        description = "List the original 12-enzyme starter geometry and the separate pinned positional modification profile revision required by CheckedDigest plan steps. Full catalog documentary evidence uses lookup_enzyme_catalog/resolve_enzyme_evidence; no supplier facts are inferred by this legacy list. Standalone methylation assessments use a distinct profile; permission under declared tracked-generation assumptions does not establish empirical activity."
     )]
     fn list_enzymes(&self) -> Result<CallToolResult, ErrorData> {
         output(
-            json!({"enzymes":analysis::starter_enzymes(),"checked_digest_profile_revision":collagene_core::modified_duplex::profile_revision(),"checked_digest_profile_version":collagene_core::modified_duplex::PROFILE_VERSION}),
+            json!({"enzymes":analysis::starter_enzymes(),"checked_digest_profile_revision":collagene_core::modified_duplex::profile_revision(),"checked_digest_profile_version":collagene_core::modified_duplex::PROFILE_VERSION,"scope":"Legacy starter geometry only; no catalog supplier/formulation facts are inferred.","catalog_discovery":catalog_tools::identity(&catalog_tools::builtin()?),"catalog_lookup_tool":"lookup_enzyme_catalog","catalog_evidence_tool":"resolve_enzyme_evidence"}),
         )
     }
     #[tool(
-        description = "Inspect an immutable DNA source with one or more embedded enzymes. Preserves certain/possible recognition sites, exact origin-split spans, cuts outside substrate, bounded-scan limits and separate scan_complete/products_determined flags. Returns paged site and duplex-fragment summaries plus a complete immutable JSON artifact, bound to source role/revision, exact enzyme geometry and options. Products assume complete cleavage without blocking methylation or conditions; reports are evidence, not experimental activity or permission to release imported products. Existing analyze_restriction retains its strict legacy behavior."
+        description = "Inspect an immutable DNA source with one or more exact catalog enzyme identities or uniquely resolved names. Legacy flat report fields and raw artifact_id remain compatible; additive catalog_pin/catalog_batch_revision/catalog_artifact_id expose full edition/hash/ordered-identity/geometry binding. Preserves certain/possible recognition sites, exact origin-split spans, cuts outside substrate, bounded-scan limits and separate scan_complete/products_determined flags. Returns paged site and duplex-fragment summaries plus a complete immutable JSON artifact, bound to source role/revision, exact enzyme geometry and options. Products assume complete cleavage without blocking methylation or conditions; reports are evidence, not experimental activity or permission to release imported products. Existing analyze_restriction retains its strict legacy behavior."
     )]
     async fn inspect_restriction(
         &self,
@@ -3434,34 +3479,47 @@ impl CollageneServer {
         if args.enzymes.is_empty() || args.enzymes.len() > 64 {
             return Err(bad("select 1..64 embedded enzymes"));
         }
-        let catalog = analysis::starter_enzymes();
-        let enzymes = args
+        let catalog = catalog_tools::builtin()?;
+        let ids = args
             .enzymes
             .iter()
-            .map(|name| {
-                catalog
-                    .iter()
-                    .find(|e| e.name.eq_ignore_ascii_case(name))
-                    .cloned()
-                    .ok_or_else(|| bad("unknown enzyme; call list_enzymes"))
+            .map(|name| match catalog.lookup_enzyme(name) {
+                collagene_enzyme_catalog::Lookup::Unique(enzyme) => Ok(enzyme.id.clone()),
+                collagene_enzyme_catalog::Lookup::Missing => {
+                    Err(bad("unknown enzyme identity; call lookup_enzyme_catalog"))
+                }
+                collagene_enzyme_catalog::Lookup::Ambiguous(_) => {
+                    Err(bad("ambiguous enzyme alias; select exact catalog IDs"))
+                }
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let selection = collagene_core::catalog_digest::select(&catalog, &ids).map_err(bad)?;
+        if let Some(pin) = &args.catalog_pin {
+            pin.validate_for(&catalog).map_err(bad)?;
+            if pin != &selection {
+                return Err(bad("catalog pin and ordered enzyme selection differ"));
+            }
+        }
         let server = self.clone();
         self.compute(move || {
             let molecule = {
                 let store = server.store.lock().unwrap();
                 let molecule = store.document(&args.document)?;
-                collagene_core::restriction_inspection::source_preflight(&args.source_role, molecule, &enzymes, &args.options).map_err(bad)?;
+                collagene_core::catalog_digest::source_preflight(&catalog, &selection, &args.source_role, molecule, &args.options).map_err(bad)?;
                 molecule.clone()
             };
-            let report = collagene_core::restriction_inspection::inspect(&args.source_role, &molecule, &enzymes, &args.options).map_err(bad)?;
-            report.validate_bindings_for(&args.source_role, &molecule, &enzymes, &args.options).map_err(bad)?;
+            let pinned = collagene_core::catalog_digest::inspect(&catalog, &selection, &args.source_role, &molecule, &args.options).map_err(bad)?;
+            pinned.validate_bindings_for(&catalog, &selection, &args.source_role, &molecule, &args.options).map_err(bad)?;
+            let report = &pinned.inspection;
             if args.site_start > report.sites.len() || args.fragment_start > report.fragments.len() {
                 return Err(bad("restriction page offset exceeds retained evidence count"));
             }
             let site_end = args.site_start.saturating_add(args.max_sites).min(report.sites.len());
             let fragment_end = args.fragment_start.saturating_add(args.max_fragments).min(report.fragments.len());
-            let artifact_id = server.text_artifact(bounded_json(&report)?, "application/json", "restriction-inspection.json")?;
+            let (artifact_id,catalog_artifact_id) = server.paired_text_artifacts([
+                (bounded_json(report)?, "application/json", "restriction-inspection.json"),
+                (bounded_json(&pinned)?, "application/json", "catalog-restriction-inspection.json"),
+            ])?;
             output(json!({
                 "document":args.document,"engine_version":report.engine_version,"source_role":report.source_role,
                 "source_revision":report.source_revision,"source_length":report.source_length,"topology":report.topology,
@@ -3474,7 +3532,8 @@ impl CollageneServer {
                 "sites":&report.sites[args.site_start..site_end],"fragment_count":report.fragments.len(),
                 "fragment_start":args.fragment_start,"next_fragment_start":fragment_end,
                 "fragments_done":fragment_end==report.fragments.len(),"fragments":&report.fragments[args.fragment_start..fragment_end],
-                "artifact_id":artifact_id,
+                "artifact_id":artifact_id,"catalog_pin":pinned.selection,"catalog_batch_revision":pinned.batch_revision,
+                "catalog_artifact_id":catalog_artifact_id,"catalog_engine_version":pinned.engine_version,
                 "authority":"Recognition evidence and assumed-complete cleavage summaries only; possible/partial/edge evidence cannot authorize a digest product. Reconstruct selected products from current source inputs."
             }))
         }).await
@@ -3750,3 +3809,5 @@ impl CollageneServer {
 mod genome_store;
 
 mod unit_tools;
+
+mod catalog_tools;

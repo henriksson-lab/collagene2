@@ -58,7 +58,7 @@ fn schema_eleven_tail_and_profile_jobs_bind_every_source_and_option() {
         },
     };
     let bytes = protocol::encode_request(&req).unwrap();
-    assert_eq!(&bytes[4..6], &20u16.to_le_bytes());
+    assert_eq!(&bytes[4..6], &21u16.to_le_bytes());
     let response = protocol::decode_response(&protocol::process_request(&bytes).unwrap()).unwrap();
     let AnalysisResult::TailPreview(p) = response.result else {
         panic!()

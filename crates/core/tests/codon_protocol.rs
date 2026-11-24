@@ -24,7 +24,7 @@ fn raw(magic: &[u8; 4], version: u16, payload: &[u8]) -> Vec<u8> {
 }
 fn roundtrip(request: &Request) -> Response {
     let bytes = protocol::encode_request(request).unwrap();
-    assert_eq!(&bytes[4..6], &20u16.to_le_bytes());
+    assert_eq!(&bytes[4..6], &21u16.to_le_bytes());
     let response = protocol::decode_response(&protocol::process_request(&bytes).unwrap()).unwrap();
     assert_eq!(response.id, request.id);
     assert_eq!(response.revision, request.revision);

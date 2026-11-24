@@ -2,6 +2,7 @@
 //! No UI, filesystem, subprocess, network or async runtime dependencies.
 
 pub mod analysis;
+pub mod catalog_digest;
 pub mod chemistry;
 pub mod formats;
 pub mod model;

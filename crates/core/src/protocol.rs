@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
-        b"CGQ\0" | b"CGR\0" => 20,
+        b"CGQ\0" | b"CGR\0" => 21,
         b"CGP\0" => 6,
         _ => 1,
     }
@@ -78,7 +78,7 @@ fn envelope_info(magic: &[u8; 4], bytes: &[u8], maximum: usize) -> Result<(u16, 
     }
     let version = u16::from_le_bytes([bytes[4], bytes[5]]);
     if version != current_version(magic)
-        && !(version >= 1 && version < current_version(magic) && current_version(magic) <= 20)
+        && !(version >= 1 && version < current_version(magic) && current_version(magic) <= 21)
     {
         return Err(Error::Unsupported(format!(
             "binary schema version {version}"
@@ -484,6 +484,26 @@ pub enum AnalysisJob {
         options: crate::restriction_inspection::InspectionOptions,
         fragment_index: usize,
     },
+    InspectCatalogRestriction {
+        selection: crate::catalog_digest::CatalogSelection,
+        source_role: String,
+        molecule: Molecule,
+        options: crate::restriction_inspection::InspectionOptions,
+    },
+    MaterializeCatalogDigestFragment {
+        selection: crate::catalog_digest::CatalogSelection,
+        source_role: String,
+        molecule: Molecule,
+        options: crate::restriction_inspection::InspectionOptions,
+        fragment_index: usize,
+    },
+    InstallCatalogDigestFragment {
+        selection: crate::catalog_digest::CatalogSelection,
+        workspace: crate::workspace::Workspace,
+        source: crate::run_lineage::EventBinding,
+        options: crate::restriction_inspection::InspectionOptions,
+        fragment_index: usize,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -556,6 +576,9 @@ pub enum AnalysisResult {
     RestrictionInspection(crate::restriction_inspection::RestrictionInspection),
     DigestProduct(crate::restriction_inspection::DigestProduct),
     DigestInstalled(crate::restriction_history::InstalledDigest),
+    CatalogRestrictionInspection(crate::catalog_digest::CatalogRestrictionInspection),
+    CatalogDigestProduct(crate::catalog_digest::CatalogDigestProduct),
+    CatalogDigestInstalled(crate::catalog_digest::CatalogDigestInstalled),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -664,6 +687,7 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::RecordCloningRun { .. }
             | AnalysisJob::ReplayCloningRun { .. }
             | AnalysisJob::InstallDigestFragment { .. }
+            | AnalysisJob::InstallCatalogDigestFragment { .. }
     ) {
         MAX_WORKSPACE_MESSAGE_BYTES
     } else {
@@ -677,7 +701,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     let maximum = worker_limit(
         b"CGR\0",
         bytes,
-        &[(20, 6), (21, 6), (40, 12), (41, 12), (62, 20)],
+        &[(20, 6), (21, 6), (40, 12), (41, 12), (62, 20), (65, 21)],
     )?;
     preflight_codon_tag(bytes, &[42, 43])?;
     preflight_dotplot_tag(bytes, &[44])?;
@@ -686,6 +710,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_crispr_tag(bytes, &[47, 48, 49, 50])?;
     preflight_genome_tag(bytes, &[51, 52, 53, 54, 55, 56, 57, 58, 59])?;
     preflight_restriction_tag(bytes, &[60, 61, 62])?;
+    preflight_catalog_tag(bytes, &[63, 64, 65])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -707,6 +732,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         _ => decode_with_limit(b"CGR\0", bytes, maximum)?,
     };
     let required = match &response.result {
+        AnalysisResult::CatalogRestrictionInspection(_)
+        | AnalysisResult::CatalogDigestProduct(_)
+        | AnalysisResult::CatalogDigestInstalled(_) => 21,
         AnalysisResult::RestrictionInspection(_)
         | AnalysisResult::DigestProduct(_)
         | AnalysisResult::DigestInstalled(_) => 20,
@@ -785,6 +813,30 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
     }
     match &response.result {
+        AnalysisResult::CatalogRestrictionInspection(report) => {
+            report.validate()?;
+            if report.batch_revision != response.revision {
+                return Err(Error::Format(
+                    "catalog restriction batch revision mismatch".into(),
+                ));
+            }
+        }
+        AnalysisResult::CatalogDigestProduct(report) => {
+            report.validate()?;
+            if report.batch_revision != response.revision {
+                return Err(Error::Format(
+                    "catalog product batch revision mismatch".into(),
+                ));
+            }
+        }
+        AnalysisResult::CatalogDigestInstalled(report) => {
+            report.validate()?;
+            if report.batch_revision != response.revision {
+                return Err(Error::Format(
+                    "catalog installation batch revision mismatch".into(),
+                ));
+            }
+        }
         AnalysisResult::DigestInstalled(report) => {
             report.validate()?;
             if report.batch_revision != response.revision {
@@ -1055,6 +1107,14 @@ fn preflight_methylation_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     }
     Ok(())
 }
+fn preflight_catalog_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 21)?;
+    }
+    Ok(())
+}
 fn preflight_restriction_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -1182,7 +1242,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     let maximum = worker_limit(
         b"CGQ\0",
         bytes,
-        &[(19, 6), (20, 6), (42, 12), (43, 12), (69, 20)],
+        &[(19, 6), (20, 6), (42, 12), (43, 12), (69, 20), (72, 21)],
     )?;
     preflight_codon_tag(bytes, &[44, 45])?;
     preflight_dotplot_tag(bytes, &[46])?;
@@ -1194,8 +1254,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         &[53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66],
     )?;
     preflight_restriction_tag(bytes, &[67, 68, 69])?;
+    preflight_catalog_tag(bytes, &[70, 71, 72])?;
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::InspectCatalogRestriction { .. }
+        | AnalysisJob::MaterializeCatalogDigestFragment { .. }
+        | AnalysisJob::InstallCatalogDigestFragment { .. } => 21,
         AnalysisJob::InspectRestriction { .. }
         | AnalysisJob::MaterializeDigestFragment { .. }
         | AnalysisJob::InstallDigestFragment { .. } => 20,
@@ -1340,6 +1404,74 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let mol = match &r.job {
+        AnalysisJob::InspectCatalogRestriction {
+            selection,
+            source_role,
+            molecule,
+            options,
+        } => {
+            let catalog = crate::catalog_digest::builtin_catalog()?;
+            if crate::catalog_digest::batch_revision(
+                &catalog,
+                selection,
+                source_role,
+                molecule,
+                options,
+            )? != r.revision
+            {
+                return Err(Error::Format(
+                    "catalog restriction source/pin/options changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::MaterializeCatalogDigestFragment {
+            selection,
+            source_role,
+            molecule,
+            options,
+            fragment_index,
+        } => {
+            let catalog = crate::catalog_digest::builtin_catalog()?;
+            if crate::catalog_digest::product_revision(
+                &catalog,
+                selection,
+                source_role,
+                molecule,
+                options,
+                *fragment_index,
+            )? != r.revision
+            {
+                return Err(Error::Format(
+                    "catalog product source/pin/options/index changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::InstallCatalogDigestFragment {
+            selection,
+            workspace,
+            source,
+            options,
+            fragment_index,
+        } => {
+            let catalog = crate::catalog_digest::builtin_catalog()?;
+            if crate::catalog_digest::installation_revision(
+                &catalog,
+                selection,
+                workspace,
+                source,
+                options,
+                *fragment_index,
+            )? != r.revision
+            {
+                return Err(Error::Format(
+                    "catalog installation workspace/source/pin/options/index changed".into(),
+                ));
+            }
+            None
+        }
+
         AnalysisJob::InstallDigestFragment {
             workspace,
             source,
@@ -1611,6 +1743,53 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let result = match r.job {
+        AnalysisJob::InspectCatalogRestriction {
+            selection,
+            source_role,
+            molecule,
+            options,
+        } => {
+            let catalog = crate::catalog_digest::builtin_catalog()?;
+            crate::catalog_digest::inspect(&catalog, &selection, &source_role, &molecule, &options)
+                .map(AnalysisResult::CatalogRestrictionInspection)
+        }
+        AnalysisJob::MaterializeCatalogDigestFragment {
+            selection,
+            source_role,
+            molecule,
+            options,
+            fragment_index,
+        } => {
+            let catalog = crate::catalog_digest::builtin_catalog()?;
+            crate::catalog_digest::product(
+                &catalog,
+                &selection,
+                &source_role,
+                &molecule,
+                &options,
+                fragment_index,
+            )
+            .map(AnalysisResult::CatalogDigestProduct)
+        }
+        AnalysisJob::InstallCatalogDigestFragment {
+            selection,
+            workspace,
+            source,
+            options,
+            fragment_index,
+        } => {
+            let catalog = crate::catalog_digest::builtin_catalog()?;
+            crate::catalog_digest::install(
+                &catalog,
+                &selection,
+                &workspace,
+                &source,
+                &options,
+                fragment_index,
+            )
+            .map(AnalysisResult::CatalogDigestInstalled)
+        }
+
         AnalysisJob::InstallDigestFragment {
             workspace,
             source,
@@ -1951,6 +2130,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             | AnalysisResult::RunCommit(_)
             | AnalysisResult::RunReplay(_)
             | AnalysisResult::DigestInstalled(_)
+            | AnalysisResult::CatalogDigestInstalled(_)
     ) {
         MAX_WORKSPACE_MESSAGE_BYTES
     } else {
@@ -1979,7 +2159,7 @@ impl AnalysisSession {
         let maximum = worker_limit(
             b"CGQ\0",
             bytes,
-            &[(19, 6), (20, 6), (42, 12), (43, 12), (69, 20)],
+            &[(19, 6), (20, 6), (42, 12), (43, 12), (69, 20), (72, 21)],
         )?;
         // Route by a borrowed prefix so ordinary jobs are not fully decoded twice.
         // Stable append-only tags 32/33 are the only session-specific variants.

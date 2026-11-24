@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/web", "crates/worker", "crates/mcp", "crates/sources", "crates/protocol-units", "crates/enzyme-catalog"]
+members = ["crates/core", "crates/web", "crates/worker", "crates/mcp", "crates/sources", "crates/protocol-units", "crates/enzyme-catalog", "crates/web-assets"]
 default-members = ["crates/core"]
 resolver = "2"
 

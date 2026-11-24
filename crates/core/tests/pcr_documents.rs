@@ -112,7 +112,7 @@ fn previous_version_three_biology_job_remains_readable() {
     let mut bytes = protocol::encode_request(&request).unwrap();
     bytes[4..6].copy_from_slice(&3u16.to_le_bytes());
     let reply = protocol::process_request(&bytes).unwrap();
-    assert_eq!(&reply[4..6], &20u16.to_le_bytes());
+    assert_eq!(&reply[4..6], &21u16.to_le_bytes());
     let AnalysisResult::Translation(report) = protocol::decode_response(&reply).unwrap().result
     else {
         panic!("wrong response")

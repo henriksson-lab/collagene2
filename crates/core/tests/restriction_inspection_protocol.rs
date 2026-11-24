@@ -28,7 +28,7 @@ fn run(revision: String, job: J) -> Response {
         job,
     })
     .unwrap();
-    assert_eq!(&bytes[4..6], &20u16.to_le_bytes());
+    assert_eq!(&bytes[4..6], &21u16.to_le_bytes());
     let response = protocol::decode_response(
         &protocol::AnalysisSession::default()
             .process_request(&bytes)

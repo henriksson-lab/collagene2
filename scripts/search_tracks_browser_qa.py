@@ -127,7 +127,7 @@ ORIGIN
     follow=b.evaluate('window.__wire.slice('+str(len(initial))+')')
     cached=[x for x in follow if x['worker']==worker]
     assert cached and all(x['bytes']<512 for x in cached),cached
-    assert all(x['version']==20 for x in initial+follow),initial+follow
+    assert all(x['version']==21 for x in initial+follow),initial+follow
     # Rapid scroll/option changes must settle on the latest viewport and frame settings.
     b.evaluate("(()=>{const e=document.querySelector('.sequence-scroll');for(let i=0;i<30;i++){e.scrollTop=i*1000;e.dispatchEvent(new Event('scroll'));}})()")
     toggle(b,'Translation tracks')

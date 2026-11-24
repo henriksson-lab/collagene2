@@ -9,6 +9,7 @@ rust-version.workspace = true
 collagene-core = { path = "../core", features = ["json-schema"] }
 collagene-sources = { path = "../sources" }
 collagene-protocol-units = { path = "../protocol-units", features = ["serde"] }
+collagene-enzyme-catalog = { path = "../enzyme-catalog" }
 serde.workspace = true
 serde_json.workspace = true
 blake3.workspace = true

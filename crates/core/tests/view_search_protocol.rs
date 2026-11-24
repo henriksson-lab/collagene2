@@ -41,7 +41,7 @@ fn new_jobs_roundtrip_bound_source_and_keep_old_search_tag() {
             job,
         };
         let encoded = encode_request(&request).unwrap();
-        assert_eq!(&encoded[4..6], &20u16.to_le_bytes());
+        assert_eq!(&encoded[4..6], &21u16.to_le_bytes());
         let response = decode_response(&process_request(&encoded).unwrap()).unwrap();
         assert_eq!(response.revision, m.revision());
         assert!(!matches!(response.result, AnalysisResult::Error(_)));

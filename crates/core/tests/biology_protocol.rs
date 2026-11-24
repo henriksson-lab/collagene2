@@ -24,12 +24,12 @@ fn request(source: &Molecule, job: AnalysisJob) -> Request {
 fn run(request: &Request) -> Response {
     let bytes = encode_request(request).unwrap();
     assert_eq!(&bytes[..4], b"CGQ\0");
-    assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), 20);
+    assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), 21);
     let response_bytes = process_request(&bytes).unwrap();
     assert_eq!(&response_bytes[..4], b"CGR\0");
     assert_eq!(
         u16::from_le_bytes([response_bytes[4], response_bytes[5]]),
-        20
+        21
     );
     let response = decode_response(&response_bytes).unwrap();
     assert_eq!(response.id, request.id);
@@ -349,7 +349,7 @@ fn unsupported_worker_versions_and_corrupt_payloads_are_transport_errors() {
     ))
     .unwrap();
     let valid_response = process_request(&valid).unwrap();
-    for version in [0u16, 21, u16::MAX] {
+    for version in [0u16, 22, u16::MAX] {
         let mut bytes = valid.clone();
         bytes[4..6].copy_from_slice(&version.to_le_bytes());
         assert!(matches!(

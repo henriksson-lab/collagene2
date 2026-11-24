@@ -146,3 +146,17 @@
 .digest-provenance { margin:0 0 10px; padding:10px 14px; border:1px solid #e2d7bb; border-radius:6px; background:#fffdf5; color:#6d613e; font-size:12px; }
 .digest-provenance summary { cursor:pointer; font-weight:600; }
 .digest-provenance p { line-height:1.6; }
+/* Catalog evidence stays inside the existing desktop digest inspector. */
+.digest-catalog { border:1px solid #dce5df; border-radius:6px; padding:10px; margin:10px 0; font-size:12px; }
+.digest-catalog > summary,.digest-formulation > summary { cursor:pointer; line-height:1.6; }
+.digest-catalog p,.digest-catalog li { line-height:1.65; }
+.digest-catalog-identity { border-top:1px solid #e1e8e3; padding-top:10px; margin-top:12px; }
+.digest-catalog-identity h4 { margin:0 0 7px; font-size:13px; }
+.digest-catalog-citations { padding-left:17px; font-size:11px; overflow-wrap:anywhere; }
+.digest-catalog-citations a { color:#286b57; }
+.digest-formulation { border-left:2px solid #c3d8cc; padding:6px 0 6px 9px; margin:9px 0; }
+.digest-catalog-fact { border-top:1px solid #e5ebe7; padding-top:7px; margin-top:10px; }
+.digest-catalog-fact h5 { margin:0; font-size:12px; }
+.digest-catalog-context { margin:7px 0; }
+.digest-catalog-observation { padding-left:8px; }
+.digest-catalog-unknown { color:#6f6246; }

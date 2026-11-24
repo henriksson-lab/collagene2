@@ -3,6 +3,7 @@
 import argparse
 import base64
 import json
+import os
 import queue
 import subprocess
 import sys
@@ -14,7 +15,10 @@ from pathlib import Path
 def main():
     root = Path(__file__).resolve().parents[1]
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("binary",nargs="?",type=Path,default=root / "target" / "debug" / ("collagene-mcp.exe" if sys.platform == "win32" else "collagene-mcp"))
+    target_dir=Path(os.environ.get("CARGO_TARGET_DIR", "target"))
+    if not target_dir.is_absolute():
+        target_dir=root / target_dir
+    parser.add_argument("binary",nargs="?",type=Path,default=target_dir / "debug" / ("collagene-mcp.exe" if sys.platform == "win32" else "collagene-mcp"))
     parser.add_argument("--workspace",type=Path,help="Browser-generated synthetic QA snapshot")
     parser.add_argument("--candidate",type=Path,help="Write the binary candidate for the browser QA helper")
     parser.add_argument("--native-workspace",type=Path,help="Synthetic source/target native workspace for retained-run checks")
@@ -73,8 +77,16 @@ def main():
         assert initialized["protocolVersion"] == "2025-11-25", initialized
         send("notifications/initialized", {}, notification=True)
         tools = send("tools/list", {})["tools"]
-        assert len(tools) == 91, len(tools)
-        assert {"calculate_dilution", "balance_mixture", "calculate_dna_molar_ratios", "inspect_restriction", "propose_plan", "verify_plan", "read_sequence_region", "validate_reads", "import_fastq", "export_oligos", "import_workspace_archive", "export_workspace_archive", "begin_workspace_upload", "append_workspace_upload", "finalize_workspace_upload", "abort_workspace_upload", "create_feature_library", "import_feature_library", "export_feature_library", "scan_feature_library", "apply_feature_library", "import_annotations", "apply_annotations", "export_annotations", "export_annotation_dataset", "simulate_end_repair", "simulate_oligo_annealing", "search_document", "view_tracks", "import_alignment", "import_alignment_document", "list_alignments", "read_alignment", "export_alignment", "extract_alignment_rows", "analyze_protein", "design_codons", "check_codon_design", "analyze_dotplot", "assemble_contigs", "assess_methylation", "design_crispr_guides", "search_crispr_off_targets", "design_edit_template", "check_edit_template", "begin_genome_import", "append_genome_import", "finish_genome_import", "inspect_genome", "read_genome_export", "read_genome_interval", "design_genome_interval_guides", "start_genome_off_target_search", "advance_genome_off_target_search", "read_genome_off_target_hits", "cancel_genome_job", "simulate_tailing", "check_overlap_profile", "record_workspace_run", "list_workspace_runs", "replay_workspace_run"} <= {t["name"] for t in tools}
+        assert len(tools) == 93, len(tools)
+        assert {"lookup_enzyme_catalog", "resolve_enzyme_evidence", "calculate_dilution", "balance_mixture", "calculate_dna_molar_ratios", "inspect_restriction", "propose_plan", "verify_plan", "read_sequence_region", "validate_reads", "import_fastq", "export_oligos", "import_workspace_archive", "export_workspace_archive", "begin_workspace_upload", "append_workspace_upload", "finalize_workspace_upload", "abort_workspace_upload", "create_feature_library", "import_feature_library", "export_feature_library", "scan_feature_library", "apply_feature_library", "import_annotations", "apply_annotations", "export_annotations", "export_annotation_dataset", "simulate_end_repair", "simulate_oligo_annealing", "search_document", "view_tracks", "import_alignment", "import_alignment_document", "list_alignments", "read_alignment", "export_alignment", "extract_alignment_rows", "analyze_protein", "design_codons", "check_codon_design", "analyze_dotplot", "assemble_contigs", "assess_methylation", "design_crispr_guides", "search_crispr_off_targets", "design_edit_template", "check_edit_template", "begin_genome_import", "append_genome_import", "finish_genome_import", "inspect_genome", "read_genome_export", "read_genome_interval", "design_genome_interval_guides", "start_genome_off_target_search", "advance_genome_off_target_search", "read_genome_off_target_hits", "cancel_genome_job", "simulate_tailing", "check_overlap_profile", "record_workspace_run", "list_workspace_runs", "replay_workspace_run"} <= {t["name"] for t in tools}
+        catalog=tool("lookup_enzyme_catalog",{"query":"HaeIII","mode":"Enzyme"})
+        assert catalog["status"]=="Unique" and catalog["enzymes"][0]["id"]=="haeiii" and catalog["enzymes"][0]["geometry"]=={"recognition":"GGCC","top_cut":2,"bottom_cut":2}
+        resource=send("resources/read",{"uri":catalog["catalog_resource_uri"]})
+        assert json.loads(resource["contents"][0]["text"])["identity"]["catalog_content_hash"]==catalog["catalog_content_hash"]
+        fact=tool("resolve_enzyme_evidence",{"formulation":"neb-r3101","condition":{"kind":"buffer_activity","buffer":"NEBuffer r3.1","temperature_milli_c":37000}})
+        assert fact["resolution"]["status"]=="Known" and fact["resolution"]["value"]=={"kind":"less_than_percent","value":10} and fact["resolution"]["evidence"][0]["qualifiers"]
+        missing_fact=tool("resolve_enzyme_evidence",{"formulation":"neb-r3101","condition":{"kind":"buffer_activity","buffer":"not-curated","temperature_milli_c":37000}})
+        assert missing_fact["resolution"]["status"]=="Unknown" and "value" not in missing_fact["resolution"]
         dilution_args={"stock":{"kind":"molar","value":"10","unit":"uM"},"target":{"kind":"molar","value":"100","unit":"nM"},"final_volume":{"value":"20","unit":"uL"}}
         dilution=tool("calculate_dilution",dilution_args)
         assert dilution["exact"]["stock_volume"]=={"unit":"nL","value":{"numerator":"200","denominator":"1"}} and dilution["target_reached"]
@@ -120,6 +132,16 @@ def main():
         possible=tool("inspect_restriction",{"document":digest_ref(1),"source_role":"mvp-possible","enzymes":["EcoRI"]})
         assert possible["scan_complete"] and not possible["products_determined"] and not possible["sites"][0]["certain"]
         reject_tool("analyze_restriction",{"document":digest_ref(1),"enzyme":"EcoRI"})
+        catalog_doc=tool("import_document",{"text":">catalog-digest\nAAGGCCTT\n"})["documents"][0]
+        catalog_args={"document":{"id":catalog_doc["id"],"revision":catalog_doc["revision"]},"source_role":"catalog-source","enzymes":["HaeIII"]}
+        catalog_digest=tool("inspect_restriction",catalog_args)
+        assert catalog_digest["products_determined"] and [f["duplex"]["top_length"] for f in catalog_digest["fragments"]]==[4,4]
+        assert catalog_digest["catalog_pin"]["catalog_content_hash"]==catalog["catalog_content_hash"] and catalog_digest["catalog_pin"]["enzymes"][0]["id"]=="haeiii"
+        wrapped=full_json_artifact(catalog_digest["catalog_artifact_id"])
+        raw=full_json_artifact(catalog_digest["artifact_id"])
+        assert wrapped["inspection"]==raw and "catalog_pin" not in raw and wrapped["batch_revision"]==catalog_digest["catalog_batch_revision"] and wrapped["selection"]==catalog_digest["catalog_pin"]
+        stale_pin=dict(catalog_digest["catalog_pin"],catalog_content_hash="0"*64)
+        reject_tool("inspect_restriction",dict(catalog_args,catalog_pin=stale_pin))
         search_options={"query":"CCCC","mode":"Sequence","both_strands":True,"case_sensitive":False,"whole_word":False,"enzymes":[],"max_hits":100,"max_rows":1000,"max_work":10000}
         searched=tool("search_document",{"document":ref("target"),"options":search_options})
         assert searched["source_revision"]==ref("target")["revision"] and searched["complete"] and searched["hit_count"]>=1, searched
@@ -366,7 +388,7 @@ def main():
             assert tool("list_workspace_runs",new_ref)["run_count"]==1
             replay=tool("replay_workspace_run",{"workspace":new_ref,"run_id":recorded["receipt"]["run_id"]})
             assert replay["products_match"] and replay["engine_matches"] and replay["status_matches"]
-        print("MCP stdio smoke passed: 2025-11-25 negotiation, tools/resources, candidate, deterministic verification, HTML artifact, revision-bound unified search/browser tracks, retained alignment exchange, protein properties, codon design and independent candidate checks, annotation evidence, feature-library scan/application, reconstructed end repair/tailing, explicit overlap profiles and declared oligo annealing; optional immutable retained-run record/list/replay, source-bound dot plots/SVG, and reference-free source-bound read contigs and explicitly declared methylation-context assessment and reconstructed tracked-generation checked digest plans, source-bound CRISPR guides/selected-reference off-target evidence and independently checked literal editing donors and file-backed streamed references with global seam guides/private cooperative full-manifest search; exact unit-aware dilution/quantization, named volume balance and caller-model DNA molecule ratios.")
+        print(f"MCP stdio smoke passed: {len(tools)} tools, 2025-11-25 negotiation, tools/resources, candidate, deterministic verification, HTML artifact, revision-bound unified search/browser tracks, retained alignment exchange, protein properties, codon design and independent candidate checks, annotation evidence, feature-library scan/application, reconstructed end repair/tailing, explicit overlap profiles and declared oligo annealing; optional immutable retained-run record/list/replay, source-bound dot plots/SVG, and reference-free source-bound read contigs and explicitly declared methylation-context assessment and reconstructed tracked-generation checked digest plans, source-bound CRISPR guides/selected-reference off-target evidence and independently checked literal editing donors and file-backed streamed references with global seam guides/private cooperative full-manifest search; exact unit-aware dilution/quantization, named volume balance and caller-model DNA molecule ratios; versioned catalog lookup/contextual evidence and compatible catalog-pinned digest artifacts.")
     finally:
         process.stdin.close()
         try:

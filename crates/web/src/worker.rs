@@ -2,6 +2,37 @@ use collagene_core::protocol::{self, Request, Response};
 use std::{cell::RefCell, rc::Rc};
 use wasm_bindgen::{JsCast, closure::Closure};
 
+// The build pins the loader, JavaScript glue and WASM together. A fixed loader
+// URL can otherwise combine cached files from different application releases.
+fn worker_url() -> Result<String, String> {
+    let missing = || "Analysis worker assets are missing from this build.".to_string();
+    let document = web_sys::window()
+        .and_then(|window| window.document())
+        .ok_or_else(missing)?;
+    let url = document
+        .query_selector("meta[name=collagene-worker]")
+        .map_err(|_| missing())?
+        .and_then(|element| element.get_attribute("content"))
+        .ok_or_else(missing)?;
+    let bundle = url
+        .rsplit_once("/workers/")
+        .map(|(_, tail)| tail)
+        .or_else(|| url.strip_prefix("workers/"));
+    let valid = bundle.is_some_and(|tail| {
+        tail.split_once('/').is_some_and(|(hash, file)| {
+            hash.len() == 64
+                && hash
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                && file == "analysis-worker_loader.js"
+        })
+    });
+    if !valid || url.len() > 4096 || url.chars().any(char::is_control) {
+        return Err(missing());
+    }
+    Ok(url)
+}
+
 /// One isolated worker per explicit job. Termination enforces the job timeout.
 /// A retained worker pool and chunked document cache can replace this transport later.
 pub async fn analyze(request: Request) -> Result<Response, String> {
@@ -19,7 +50,7 @@ async fn analyze_inner(
     alive: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 ) -> Result<Response, String> {
     let bytes = protocol::encode_request(&request).map_err(|e| e.to_string())?;
-    let worker = web_sys::Worker::new("analysis-worker_loader.js")
+    let worker = web_sys::Worker::new(&worker_url()?)
         .map_err(|_| "Cannot start analysis worker".to_string())?;
     let (sender, receiver) = futures_channel::oneshot::channel();
     let sender = Rc::new(RefCell::new(Some(sender)));
@@ -140,7 +171,7 @@ fn post_bytes(worker: &web_sys::Worker, bytes: &[u8]) -> Result<(), String> {
 }
 impl CachedWorker {
     pub fn new() -> Result<Self, String> {
-        let worker = web_sys::Worker::new("analysis-worker_loader.js")
+        let worker = web_sys::Worker::new(&worker_url()?)
             .map_err(|_| "Cannot start sequence track worker".to_string())?;
         let state = Rc::new(RefCell::new(CachedState {
             ready: false,

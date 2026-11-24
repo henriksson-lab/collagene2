@@ -1,10 +1,10 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **20** and reads supported schemas 1–19. Candidate files write schema 6; workspace plan schema is 4; the verifier is science-8.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **21** and reads supported schemas 1–20. Candidate files write schema 6; workspace plan schema is 4; the verifier is science-8.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
-Ordinary payloads are limited to **32 MiB** during bounded serialization and before deserialization. Only native workspace save/load variants (schema6+) the explicitly whitelisted cloning-run variants (schema12+), and digest installation (schema20+) can use the separate **128 MiB** message cap. A borrowed prefix probe checks those exact tags and bounded revision text before allowing a large payload; ordinary scientific jobs retain32MiB. The checksum provides corruption detection, not authorization.
+Ordinary payloads are limited to **32 MiB** during bounded serialization and before deserialization. Only native workspace save/load variants (schema 6+), the explicitly whitelisted cloning-run variants (schema 12+), digest installation (schema 20+), and catalog digest installation (schema 21+) can use the separate **128 MiB** message cap. A borrowed prefix probe checks those exact tags and bounded revision text before allowing a large payload; ordinary scientific jobs retain 32 MiB. The checksum provides corruption detection, not authorization.
 
 ## Stable job tags
 
@@ -82,6 +82,9 @@ Postcard enum indexes are append-only. Existing tags and supported historical la
 | 67 | InspectRestriction | 20 |
 | 68 | MaterializeDigestFragment | 20 |
 | 69 | InstallDigestFragment | 20 |
+| 70 | InspectCatalogRestriction | 21 |
+| 71 | MaterializeCatalogDigestFragment | 21 |
+| 72 | InstallCatalogDigestFragment | 21 |
 
 Result tags 0–29 retain their previous layouts (`Search`, `Restriction`, `Error`, `Pcr`, `Verification`, `DuplexDigest`, `Translation`, `CdsTranslation`, `Orfs`, `Alignment`, `PcrDocuments`, `PrimerEvidence`, `PrimerDesign`, `ProtocolPdf`, `GoldenGate`, `MismatchPcr`, `InversePcr`, `Gel`, `DiagnosticDigest`, `MismatchPcrPreview`, `WorkspaceSaved`, `WorkspaceLoaded`, `TraceValidation`, `FeatureLibraryScan`, `AnnotatedDocument`, `AnnotationImport`, `AnnotationExport`, `RepairPreview`, `AnnealPreview`, `PhysicalPreviewDocument`). Schema 9 appends `ViewTracks` at tag 30, `DocumentSearch` at tag 31 and `TracksPrepared` at tag 32. New response variants cannot be decoded under older version labels.
 
@@ -200,3 +203,12 @@ Jobs 67/68 append `InspectRestriction {source_role, molecule, enzymes, options}`
 Recognition scanning preserves exact recognition lengths and origin-split spans, possible matches and cuts outside the substrate. `scan_complete` and `products_determined` are separate. A completed recognition enumeration can still lack physical products; a limited scan cannot establish absence. Fragment summaries retain original top/bottom boundaries, lengths, ends and topology. Materialization freshly reconstructs the selected fragment, projects source annotations and removes obsolete original-record evidence. Producer recipes and duplex summaries remain descriptive; importing them cannot grant physical authority.
 
 Job 69 appends `InstallDigestFragment {workspace, source, enzymes, options, fragment_index}`. `source` binds an exact document/event/revision through the existing history model. The request revision is `restriction_history::installation_revision`; it covers the workspace fingerprint, exact source event and selected product recipe. Result 62, `DigestInstalled`, returns a native archive and bound source/product identifiers. These two exact tags alone extend the workspace 128 MiB whitelist; they require schema 20 before a large body is decoded. Installation reruns the calculation against the current source and creates one derived document with the exact source event as parent. No serialized input product or new attachment kind is accepted. The receiver must verify current request/epoch bindings and validate the returned archive before installing it atomically. Candidate 6, plan 4, archive 1 and science-8 remain unchanged.
+
+
+## Catalog-pinned digest (schema 21)
+
+Jobs 70/71 append `InspectCatalogRestriction {selection, source_role, molecule, options}` and `MaterializeCatalogDigestFragment {selection, source_role, molecule, options, fragment_index}`. Job 72 appends `InstallCatalogDigestFragment {selection, workspace, source, options, fragment_index}`. Results 63–65 are `CatalogRestrictionInspection`, `CatalogDigestProduct` and `CatalogDigestInstalled`. Each is a wrapper from `catalog_digest`, retaining the original inspection/product/installation fields in its inner DTO. Jobs67–69/results60–62 and recipe1 remain readable without invented catalog identities.
+
+A selection pins schema1, actual catalog edition/content hash and ordered exact enzyme IDs with full name/recognition/strand-cut geometry. Workers load the embedded sealed catalog themselves; clients cannot substitute arbitrary supplier records or promote a claimed hash. Revision helpers include this complete pin in a distinct domain around the existing source-role/geometry/options/index bindings. Before calculation, exact current catalog matching and bounded rich-source preflight are required. Response decoding checks wrapper shape plus its outer batch revision against the envelope. Imported historical reports remain producer evidence; lightweight validation does not replay biology or grant authority.
+
+Only the exact installation request72/response65 tags extend the workspace128MiB whitelist, with a schema21 floor before large-body decode. Scientific requests70/71/results63/64 retain32MiB. Installation uses the existing fresh derivation/history pipeline to create one product with its exact source event as parent; it accepts no serialized product. `validate_archive_bindings_for` checks current request, decoded recipe and catalog bindings without running site matching on the main thread; it is used only after a fresh private worker result and current epoch guard. Native `validate_archive_for` additionally reconstructs the calculation. Source-only catalog comments cannot restore fresh chemistry. Candidate6, plan4, archive1, recipe1 and science-8 are unchanged.

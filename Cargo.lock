@@ -297,6 +297,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "blake3",
+ "collagene-enzyme-catalog",
  "csv",
  "gb-io",
  "pdf-writer",
@@ -326,6 +327,7 @@ dependencies = [
  "base64 0.22.1",
  "blake3",
  "collagene-core",
+ "collagene-enzyme-catalog",
  "collagene-protocol-units",
  "collagene-sources",
  "rmcp",
@@ -374,6 +376,13 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+]
+
+[[package]]
+name = "collagene-web-assets"
+version = "0.1.0"
+dependencies = [
+ "blake3",
 ]
 
 [[package]]

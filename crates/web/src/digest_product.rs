@@ -1,9 +1,9 @@
 //! Fresh digest derivation and atomic native installation, separate from panel rendering.
 use crate::worker::CachedWorker;
 use collagene_core::{
-    analysis::Enzyme,
+    catalog_digest::{self, CatalogSelection},
     protocol::{AnalysisJob, AnalysisResult, Request},
-    restriction_history::{self, SourceBinding},
+    restriction_history::SourceBinding,
     restriction_inspection::InspectionOptions,
     run_lineage,
     workspace::Workspace,
@@ -21,7 +21,7 @@ use wasm_bindgen_futures::spawn_local;
 #[derive(Clone)]
 pub struct DigestOpenRequest {
     pub source: SourceBinding,
-    pub enzymes: Vec<Enzyme>,
+    pub selection: CatalogSelection,
     pub options: InspectionOptions,
     pub fragment_index: usize,
     pub epoch: u64,
@@ -112,19 +112,21 @@ pub fn DigestOpenPanel(
                 let frame = snapshot.run(())?;
                 let fingerprint =
                     run_lineage::workspace_fingerprint(&frame).map_err(|e| e.to_string())?;
-                let revision = restriction_history::installation_revision(
+                let catalog = catalog_digest::builtin_catalog().map_err(|e| e.to_string())?;
+                let revision = catalog_digest::installation_revision(
+                    &catalog,
+                    &input.selection,
                     &frame,
                     &input.source,
-                    &input.enzymes,
                     &input.options,
                     input.fragment_index,
                 )
                 .map_err(|e| e.to_string())?;
                 let w = Rc::new(CachedWorker::new()?);
                 worker.set_value(Some(w.clone()));
-                Ok((frame, fingerprint, revision, w))
+                Ok((frame, fingerprint, revision, w, catalog))
             })();
-            let (frame, fingerprint, revision, w) = match prepared {
+            let (frame, fingerprint, revision, w, catalog) = match prepared {
                 Ok(v) => v,
                 Err(e) => {
                     owns_lock.set(false);
@@ -144,10 +146,10 @@ pub fn DigestOpenPanel(
                         .ask(Request {
                             id: u32::MAX - 60,
                             revision: revision.clone(),
-                            job: AnalysisJob::InstallDigestFragment {
+                            job: AnalysisJob::InstallCatalogDigestFragment {
                                 workspace: frame.clone(),
                                 source: input.source.clone(),
-                                enzymes: input.enzymes.clone(),
+                                selection: input.selection.clone(),
                                 options: input.options.clone(),
                                 fragment_index: input.fragment_index,
                             },
@@ -159,14 +161,20 @@ pub fn DigestOpenPanel(
                         );
                     }
                     let installed = match response.result {
-                        AnalysisResult::DigestInstalled(p) => p,
+                        AnalysisResult::CatalogDigestInstalled(p) => p,
                         AnalysisResult::Error(e) => return Err(e),
                         _ => return Err("Unexpected digest installation result.".into()),
                     };
-                    installed.validate().map_err(|e| e.to_string())?;
-                    if installed.batch_revision != revision || installed.source != input.source {
-                        return Err("The prepared fragment has another source binding.".into());
-                    }
+                    installed
+                        .validate_bindings_for(
+                            &catalog,
+                            &input.selection,
+                            &frame,
+                            &input.source,
+                            &input.options,
+                            input.fragment_index,
+                        )
+                        .map_err(|e| e.to_string())?;
                     let guard = || -> Result<(), String> {
                         if !alive.load(Ordering::Relaxed) || epoch.get_untracked() != input.epoch {
                             return Err(
@@ -186,18 +194,28 @@ pub fn DigestOpenPanel(
                         Ok(())
                     };
                     guard()?;
-                    let next =
-                        crate::app::decode_workspace(installed.archive.clone(), u32::MAX - 61)
-                            .await?;
+                    let next = crate::app::decode_workspace(
+                        installed.installed.archive.clone(),
+                        u32::MAX - 61,
+                    )
+                    .await?;
                     installed
-                        .validate_archive(&next)
+                        .validate_archive_bindings_for(
+                            &catalog,
+                            &input.selection,
+                            &frame,
+                            &input.source,
+                            &input.options,
+                            input.fragment_index,
+                            &next,
+                        )
                         .map_err(|e| e.to_string())?;
                     validate.run(next.clone())?;
                     let previous = crate::app::encode_workspace(frame, u32::MAX - 62).await?;
                     guard()?;
                     crate::storage::replace_workspace_cancellable(
                         &database,
-                        &installed.archive,
+                        &installed.installed.archive,
                         &previous,
                         transaction.clone(),
                     )

@@ -55,6 +55,15 @@ pub(crate) fn retain_digest_producer_comments(m: &mut Molecule, raw: &str) -> bo
             "CG-DIGEST-ENDS-v1 ",
             "source:restriction_inspection:duplex_summary",
         ),
+        (
+            "CG-CATALOG-DIGEST-v1 ",
+            "source:restriction_catalog:selection",
+        ),
+        ("CG-CATALOG-ENGINE-v1 ", "source:restriction_catalog:engine"),
+        (
+            "CG-CATALOG-REVISION-v1 ",
+            "source:restriction_catalog:batch_revision",
+        ),
     ] {
         let mut encoded = String::new();
         let mut count = 0usize;
@@ -244,7 +253,32 @@ pub fn provenance_comments(molecule: &Molecule) -> Vec<String> {
             .metadata
             .get("source:restriction_inspection:duplex_summary")
     });
-    if recipe.is_some() || ends.is_some() {
+    let catalog = molecule
+        .metadata
+        .get(crate::catalog_digest::RECIPE_KEY)
+        .or_else(|| {
+            molecule
+                .metadata
+                .get("source:restriction_catalog:selection")
+        });
+    let catalog_engine = molecule
+        .metadata
+        .get(crate::catalog_digest::ENGINE_KEY)
+        .or_else(|| molecule.metadata.get("source:restriction_catalog:engine"));
+    let catalog_revision = molecule
+        .metadata
+        .get(crate::catalog_digest::PRODUCT_REVISION_KEY)
+        .or_else(|| {
+            molecule
+                .metadata
+                .get("source:restriction_catalog:batch_revision")
+        });
+    if recipe.is_some()
+        || ends.is_some()
+        || catalog.is_some()
+        || catalog_engine.is_some()
+        || catalog_revision.is_some()
+    {
         comments.push(DIGEST_PRODUCER_MARKER.into());
         comments.push("Complete enzyme geometry, options and end summaries are unverified producer data. Sequence text cannot restore strand/end chemistry or a passing scientific check; retain native source-event ancestry and recompute.".into());
         if let Some(value) = recipe {
@@ -252,6 +286,16 @@ pub fn provenance_comments(molecule: &Molecule) -> Vec<String> {
         }
         if let Some(value) = ends {
             digest_claim_comments(&mut comments, "CG-DIGEST-ENDS-v1", value);
+        }
+        if let Some(value) = catalog {
+            comments.push("Catalog edition, content hash, ordered enzyme identities and geometry are unverified producer claims. Reimport does not authenticate supplier evidence or restore current catalog, cleavage or verification authority.".into());
+            digest_claim_comments(&mut comments, "CG-CATALOG-DIGEST-v1", value);
+        }
+        if let Some(value) = catalog_engine {
+            digest_claim_comments(&mut comments, "CG-CATALOG-ENGINE-v1", value);
+        }
+        if let Some(value) = catalog_revision {
+            digest_claim_comments(&mut comments, "CG-CATALOG-REVISION-v1", value);
         }
     }
     // Limits cover the full supported codon profile, including 10,000 residues
@@ -466,6 +510,15 @@ pub fn export_with_report(molecule: &Molecule, format: TextFormat) -> Result<Exp
             .contains_key("source:restriction_inspection:recipe")
     {
         warnings.push("Digest recipe/end comments are bounded, unverified producer data. This reference-strand export cannot restore physical end states or source-event ancestry; retain the native workspace and recompute from its exact source. FASTA is sequence-only.".into());
+    }
+    if molecule
+        .metadata
+        .contains_key(crate::catalog_digest::RECIPE_KEY)
+        || molecule
+            .metadata
+            .contains_key("source:restriction_catalog:selection")
+    {
+        warnings.push("Catalog-pinned digest comments retain bounded unverified edition/hash/identity/geometry producer claims only. Text import does not restore supplier facts, physical chemistry or fresh catalog matching; retain native source history and recompute. FASTA is sequence-only.".into());
     }
     Ok(ExportReport { text, warnings })
 }

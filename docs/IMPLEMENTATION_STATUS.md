@@ -20,7 +20,7 @@ The reviewed Benchling reference is method selection, backbone/insert slots fill
 from sequence selections, preparation/primer review, a central junction/product
 preview, then output creation. The current inspector is groundwork; a persistent
 assembly draft and full source-view/product-preview connections remain required.
-[Interaction design and references](CLONING_INTERACTION_DESIGN.md).
+[Interaction design and references](CLONING_INTERACTION_DESIGN.md). Three parallel official-document/walkthrough reviews now map restriction/Golden Gate, primers/mutagenesis and verification/history to specific missing UI connections; their findings guide the existing cloning-first queue.
 
 Deterministic PCR overlap-primer suggestions now connect to the existing
 prepared-overlap compiler, web controls and MCP. Explicit source intervals and

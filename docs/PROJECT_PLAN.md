@@ -159,6 +159,13 @@ application before fresh verification; MCP uses the same engine. This advances
 ordinary assembly setup while the dedicated sequence-centred assembly workspace
 and region-defined intent remain required. [Planner model](OVERLAP_PRIMER_DESIGN.md).
 
+Parallel reviews of Benchling's public restriction/Golden Gate, primer/mutagenesis
+and verification/history workflows are complete. The immediate UI work is the
+persistent assembly draft, source-selection/slot connection and central product/
+junction/primer review; reuse the existing engines. Supporting review and history
+connections follow in the cloning-first queue. The reviewed patterns and exact
+source links are consolidated in [the interaction design](CLONING_INTERACTION_DESIGN.md#implementation-order).
+
 ## Feature inventory and delivery priorities
 
 P0 is the foundation and first usable cloning release. P1 supplies everyday molecular biology workflows. P2 extends scale, specialized workflows, collaboration, and desktop delivery. P3 covers advanced molecular analysis. Each row is an implementation backlog item, not a claim about an existing Collagene 2 feature. Feature IDs are retained when rows are removed.

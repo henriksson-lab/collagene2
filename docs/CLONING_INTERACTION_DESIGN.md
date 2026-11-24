@@ -86,9 +86,20 @@ until implementation is complete, as instructed.
    to the same reviewed draft. Preserve producing-run/source navigation in each
    product. Then extend slots to batch alternatives and method-specific controls.
 
-Parallel workflow reviews cover restriction/Golden Gate, primers/mutagenesis,
-and verification/history. Their findings should refine these interactions before
-implementation; they are not separate product features or additional test gates.
+Parallel reviews are complete and identify concrete connections to reuse:
+
+| Review | Main implementation connections |
+| --- | --- |
+| [Restriction and Golden Gate](BENCHLING_RESTRICTION_GOLDEN_GATE.md) | Persistent slots; exact cut-pair and inverted backbone selection; existing-site versus PCR-added Type IIS preparation; connected primer/junction review. |
+| [Primers and mutagenesis](BENCHLING_PRIMERS_MUTAGENESIS.md) | Directional selection into a shared oligo editor; saved-primer reuse; explicit edit intent; sequence-centred domain/junction editing; direct order sheets. |
+| [Verification and history](BENCHLING_VERIFICATION_HISTORY.md) | Discrepancy-to-source chromatogram navigation; complete review queues; saved construct-owned read checks; product-to-producing-run and exact source-event navigation. |
+
+The notes distinguish current documented behavior, historical examples, inspected
+images and our proposals. Their local P0/P1 recommendations fit inside the main
+cloning-first execution queue; they do not move read verification ahead of core
+assembly work, add product scope or introduce new test gates. Reuse our existing
+scientific engines, source guards, trace painter, history and export machinery.
+Do not build another parallel set of unconnected parameter panels.
 
 ## Reference sources
 

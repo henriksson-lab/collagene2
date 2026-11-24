@@ -715,6 +715,53 @@ pub fn App() -> impl IntoView {
     let renderer = StoredValue::new_local(None::<MapRenderer>);
     let render_error = RwSignal::new(String::new());
     let show_library = RwSignal::new(true);
+    let explorer_documents = Memo::new(move |_| {
+        documents.with(|docs| {
+            docs.iter()
+                .map(|doc| {
+                    let provider = doc.molecule.metadata.get("source:provider");
+                    let accession = doc
+                        .molecule
+                        .metadata
+                        .get("source:accession_version")
+                        .or_else(|| doc.molecule.metadata.get("source:identifier"));
+                    crate::document_explorer::DocumentItem {
+                        id: doc.id.clone(),
+                        name: doc.molecule.name.clone(),
+                        length: doc.molecule.sequence.len(),
+                        alphabet: doc.molecule.sequence.alphabet(),
+                        topology: doc.molecule.topology,
+                        source: provider.map(|provider| {
+                            accession
+                                .map(|id| format!("{provider} · {id}"))
+                                .unwrap_or_else(|| provider.clone())
+                        }),
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+    });
+    let explorer_active = Memo::new(move |_| {
+        documents.with(|docs| {
+            docs.get(active.get())
+                .map(|doc| doc.id.clone())
+                .unwrap_or_default()
+        })
+    });
+    let explorer_locked = Memo::new(move |_| workspace_restoring.get());
+    let explorer_activate = Callback::new(move |id: String| {
+        if workspace_restoring.get_untracked() {
+            return;
+        }
+        if let Some(index) =
+            documents.with_untracked(|docs| docs.iter().position(|doc| doc.id == id))
+        {
+            if active.get_untracked() != index {
+                active.set(index);
+            }
+        }
+    });
+
     let db = StoredValue::new_local(None::<web_sys::IdbDatabase>);
     let loaded = RwSignal::new(false);
     let save_status = RwSignal::new("Opening local storage…".to_string());
@@ -2305,23 +2352,34 @@ pub fn App() -> impl IntoView {
 
     view! {
             <Show when=move||workspace_restoring.get()><div role="status" aria-live="polite" style="position:fixed;inset:0;z-index:10000;background:#f5f8f4ed;display:grid;place-items:center;pointer-events:all"><p>"Updating workspace…"</p></div></Show>
-            <div class="application" inert=move||workspace_restoring.get()>
+            <div class="application workspace-shell" inert=move||workspace_restoring.get()>
                 <header class="topbar">
                     <a class="brand" href="#" aria-label="Collagene workspace"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" stroke-width="3"/><path d="M9 7L23 25M7 10L11 6M21 26L25 22" stroke="currentColor" stroke-width="3"/></svg><span>"collagene"</span><span class="version">"2"</span></a>
-                    <div class="top-divider"></div><span class="workspace-label">"Sequence workspace"</span>
+                    <div class="top-divider"></div><span class="workspace-label">{move||workspace_name.get()}</span>
                     <div class="top-actions"><button class="button secondary" on:click=move|_|{modal_error.set(String::new());modal.set("workspace");}>"Workspace"</button><button class="button secondary" on:click=move|_|{modal_error.set(String::new());modal.set("import");}>"Paste sequence"</button><button class="button primary" on:click=move|_|if let Some(input)=file_input.get(){input.click();}>"Open GenBank"</button></div>
                     <input node_ref=file_input type="file" multiple accept=".gb,.gbk,.gbff,.genbank,.ape,.fa,.fasta,.fna,.faa,.txt,.cg2,.cg2design,.cg2plan,.dna,.embl,.emb,.ab1,.abi,.scf,.fastq,.fq,.csv,.tsv,.gff3,.gff,.bed,.xml,.collagene,.seqfile,.xdna,.xdgn,.xprt,.aln,.clustal,.sto,.stockholm,.afa,.afasta,.cg2aln" style="display:none" on:change=open_file/>
                 </header>
                 <div class="body-layout" class:library-hidden=move||!show_library.get()>
-                    <aside class="library" aria-label="Open documents">
-                        <div class="library-heading"><span>"DOCUMENTS"</span><button class="icon-button" title="Hide document list" on:click=move|_|show_library.set(false)>"‹"</button></div>
-                        <div class="library-intro">"Your sequences, right here."</div>
-                        {move||documents.with(|docs|docs.iter().enumerate().map(|(index,doc)|(index,doc.molecule.name.clone(),doc.molecule.sequence.len(),doc.molecule.topology,doc.molecule.sequence.alphabet())).collect::<Vec<_>>()).into_iter().map(|(index,name,len,topology,alphabet)|{view!{<button class="document-entry" class:active=move||active.get()==index on:click=move|_|active.set(index)><span class="doc-icon">"◯"</span><span><strong>{name}</strong><small>{format!("{len} {} · {:?}",alphabet.map_unit(),topology)}</small></span></button>}}).collect_view()}
-                        <button class="library-open" on:click=move|_|if let Some(input)=file_input.get(){input.click();}>"+ Open another sequence"</button>
-                        <div class="library-footer"><span class="local-icon">"▣"</span><strong>"Local by default"</strong><p>"Files stay in this browser. Export a .cg2 file to keep a portable copy."</p></div>
-                    </aside>
+                    <nav class="workspace-rail" aria-label="Workspace navigation">
+                        <button class="rail-button" class:active=move||show_library.get() title="Documents" aria-label="Documents" aria-expanded=move||show_library.get().to_string() on:click=move|_|show_library.update(|visible|*visible=!*visible)>
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h7l2 2h9v13H3z"/><path d="M3 10h18"/></svg>
+                        </button>
+                        <button class="rail-button" title="Import sequence files" aria-label="Import sequence files" on:click=move|_|if let Some(input)=file_input.get(){input.click();}>
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5"/></svg>
+                        </button>
+                        <button class="rail-button" title="Import from Addgene or NCBI" aria-label="Import from Addgene or NCBI" on:click=move|_|{modal_error.set(String::new());modal.set("url");}>
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 13 4-4m-6 6-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 3 1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0"/></svg>
+                        </button>
+                        <span class="rail-spacer"></span>
+                        <button class="rail-button" title="Workspace files and settings" aria-label="Workspace files and settings" on:click=move|_|{modal_error.set(String::new());modal.set("workspace");}>
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/></svg>
+                        </button>
+                    </nav>
+                    <crate::document_explorer::DocumentExplorer documents=explorer_documents active_document=explorer_active locked=explorer_locked on_activate=explorer_activate on_open=Callback::new(move|()|if let Some(input)=file_input.get(){input.click();})/>
                     <main>
-                        <div class="document-header"><div><div class="eyebrow">"MOLECULAR DESIGN"</div><h1>{move||molecule.get().name}</h1><div class="document-meta"><span>{move||format!("{} {}",molecule.get().sequence.len(),molecule.get().sequence.alphabet().short_unit())}</span><span>"·"</span><span>{move||format!("{} {}",if molecule.get().topology==Topology::Circular{"Circular"}else{"Linear"},match molecule.get().sequence.alphabet(){Alphabet::Dna=>"DNA",Alphabet::Rna=>"RNA",Alphabet::Protein=>"protein"})}</span><span>"·"</span><span>{move||molecule.get().sequence.gc_fraction().map(|v|format!("{:.1}% GC",v*100.)).unwrap_or_else(||"GC unavailable".into())}</span></div><Show when=move||molecule.get().metadata.contains_key("source:provider")><p class="source-provenance">{move||{let m=molecule.get();let mut parts=vec![format!("Source: {}",m.metadata.get("source:provider").map(String::as_str).unwrap_or("unknown")),m.metadata.get("source:accession_version").or_else(||m.metadata.get("source:identifier")).cloned().unwrap_or_else(||"record".into())];if let Some(id)=m.metadata.get("source:sequence_id"){parts.push(format!("sequence {id}"));}if let Some(category)=m.metadata.get("source:addgene_completeness"){parts.push(format!("{category} record (provider label)"));}parts.push(format!("retrieved {}",m.metadata.get("source:retrieved_at").map(String::as_str).unwrap_or("unknown")));parts.join(" · ")}}</p></Show></div>
+                        <crate::document_explorer::DocumentTabs documents=explorer_documents active_document=explorer_active locked=explorer_locked on_activate=explorer_activate/>
+                        <div class="active-document" id="active-sequence-document" role="tabpanel" aria-label="Active sequence document" tabindex="0">
+                        <div class="document-header"><div><div class="eyebrow">"SEQUENCE"</div><h1>{move||molecule.get().name}</h1><div class="document-meta"><span>{move||format!("{} {}",molecule.get().sequence.len(),molecule.get().sequence.alphabet().short_unit())}</span><span>"·"</span><span>{move||format!("{} {}",if molecule.get().topology==Topology::Circular{"Circular"}else{"Linear"},match molecule.get().sequence.alphabet(){Alphabet::Dna=>"DNA",Alphabet::Rna=>"RNA",Alphabet::Protein=>"protein"})}</span><span>"·"</span><span>{move||molecule.get().sequence.gc_fraction().map(|v|format!("{:.1}% GC",v*100.)).unwrap_or_else(||"GC unavailable".into())}</span></div><Show when=move||molecule.get().metadata.contains_key("source:provider")><p class="source-provenance">{move||{let m=molecule.get();let mut parts=vec![format!("Source: {}",m.metadata.get("source:provider").map(String::as_str).unwrap_or("unknown")),m.metadata.get("source:accession_version").or_else(||m.metadata.get("source:identifier")).cloned().unwrap_or_else(||"record".into())];if let Some(id)=m.metadata.get("source:sequence_id"){parts.push(format!("sequence {id}"));}if let Some(category)=m.metadata.get("source:addgene_completeness"){parts.push(format!("{category} record (provider label)"));}parts.push(format!("retrieved {}",m.metadata.get("source:retrieved_at").map(String::as_str).unwrap_or("unknown")));parts.join(" · ")}}</p></Show></div>
                             <div class="document-actions"><button class="button secondary" on:click=save_file>"Save .cg2"</button><button class="button secondary" on:click=move|_|{let mol=molecule.get_untracked();match formats::export_with_report(&mol,formats::TextFormat::GenBank){Ok(report)=>if let Err(e)=download(&format!("{}.gb",mol.name),"text/plain",report.text.as_bytes()){message.set(e)}else{message.set(report.warnings.join(" "));},Err(e)=>message.set(e.to_string())}}>"Export GenBank"</button><details class="mvp-file-actions"><summary aria-label="More file actions">"More"</summary><div class="mvp-file-menu"><button class="button secondary" on:click=move|_|{modal_error.set(String::new());modal.set("document");}>"Document settings"</button><button class="button secondary" on:click=move|_|{let mol=molecule.get_untracked();match formats::export_with_report(&mol,formats::TextFormat::Fasta){Ok(report)=>if let Err(error)=download(&format!("{}.fasta",mol.name),"text/plain",report.text.as_bytes()){message.set(error);}else{message.set(report.warnings.join(" "));},Err(e)=>message.set(e.to_string())}}>"FASTA"</button><button class="button secondary" on:click=move|_|match formats::export_with_report(&molecule.get_untracked(),formats::TextFormat::Embl){Ok(report)=>{if let Err(e)=download("sequence.embl","text/plain",report.text.as_bytes()){message.set(e);}else{message.set(report.warnings.join(" "));}},Err(e)=>message.set(e.to_string())}>"EMBL"</button><Show when=move||molecule.get().metadata.contains_key(snapgene::ORIGINAL_BASE64_KEY)><button class="button secondary" on:click=move|_|match snapgene::original_snapgene_bytes(&molecule.get_untracked()){Ok(bytes)=>{if let Err(e)=download("original.dna","application/octet-stream",&bytes){message.set(e);}},Err(e)=>message.set(e.to_string())}>"Original .dna"</button></Show><Show when=move||molecule.get().metadata.contains_key("trace_original_base64")><button class="button secondary" on:click=move|_|match traces::original_trace_bytes(&molecule.get_untracked()){Ok(bytes)=>{let extension=if bytes.starts_with(b"ABIF"){"ab1"}else{"scf"};if let Err(e)=download(&format!("original.{extension}"),"application/octet-stream",&bytes){message.set(e);}},Err(e)=>message.set(e.to_string())}>"Original trace"</button></Show><Show when=move||molecule.with(|doc|doc.metadata.contains_key(collagene_core::legacy_formats::ORIGINAL_BASE64_KEY))><button class="button secondary" on:click=move|_|match collagene_core::legacy_formats::original_legacy_bytes(&molecule.get_untracked()){Ok(bytes)=>{let extension=if collagene_core::legacy_formats::is_collagene_xml(&bytes){"xml"}else{"xdna"};if let Err(error)=download(&format!("original-legacy.{extension}"),"application/octet-stream",&bytes){message.set(error);}},Err(error)=>message.set(error.to_string())}>"Original legacy file"</button></Show><button class="button secondary" on:click=move|_|match svg::render_map(&molecule.get_untracked()){Ok(text)=>{if let Err(e)=download("sequence-map.svg","image/svg+xml",text.as_bytes()){message.set(e);}},Err(e)=>message.set(e.to_string())}>"SVG map"</button></div></details></div>
                         </div>
                         <crate::digest::DigestProvenance molecule=molecule/>
@@ -2427,7 +2485,8 @@ pub fn App() -> impl IntoView {
                                 })/></Show><Show when=move||panel.get()=="compare"><crate::compare::ComparePanel molecule=molecule query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone()))) selection=selection/></Show>
                             </aside>
                         </div>
-                        <footer class="statusbar"><span>{move||save_status.get()}</span><span>{move||selection.get().map(|(a,b)|format!("Selection {}–{} · {} {}",a+1,b,b-a,molecule.with(|m|m.sequence.alphabet().map_unit()))).unwrap_or_else(||molecule.with(|m|if m.sequence.alphabet()==Alphabet::Protein{"Click a residue or feature to select".into()}else{"Click a base or feature to select".into()}))}</span><span>"Rust + WebAssembly"</span></footer>
+                        <footer class="statusbar"><span>{move||save_status.get()}</span><span>{move||selection.get().map(|(a,b)|format!("Selection {}–{} · {} {}",a+1,b,b-a,molecule.with(|m|m.sequence.alphabet().map_unit()))).unwrap_or_else(||molecule.with(|m|if m.sequence.alphabet()==Alphabet::Protein{"Click a residue or feature to select".into()}else{"Click a base or feature to select".into()}))}</span><span>{move||documents.with(|docs|format!("{} {}",docs.len(),if docs.len()==1{"document"}else{"documents"}))}</span></footer>
+                        </div>
                     </main>
                 </div>
                 <Show when=move||modal.get()!=""><div class="modal-backdrop"><section class="modal" class:alignment-modal=move||modal.get()=="alignments" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><div class="modal-heading"><h2 id="dialog-title">{move||if modal.get()=="digest_product"{"Open virtual digest fragment"}else if modal.get()=="crispr_product"{"Open checked sequence design"}else if modal.get()=="contig_archive"{"Record read assembly"}else if modal.get()=="saved_contig"{"Saved read assembly"}else if modal.get()=="record_run"{"Keep reconstructed products"}else if modal.get()=="run_details"{"Recorded reconstruction"}else if modal.get()=="alignments"{"Alignments"}else if modal.get()=="workspace"{"Workspace"}else if modal.get()=="oligos"{"Oligo table"}else if modal.get()=="fastq"{"Import FASTQ reads"}else if modal.get()=="import"{"Open a sequence"}else if modal.get()=="url"{"Import from a sequence source"}else if modal.get()=="feature"{"Edit annotation"}else if modal.get()=="document"{"Document settings"}else if molecule.with(|m|m.sequence.alphabet()==Alphabet::Protein){"Edit selected residues"}else{"Edit selected bases"}}</h2><button class="icon-button" aria-label="Close dialog" on:click=move|_|modal.set("")>"×"</button></div><Show when=move||!modal_error.get().is_empty()><p class="dialog-error" role="alert">{move||modal_error.get()}</p></Show><Show when=move||modal.get()=="digest_product">{move||pending_digest.get_untracked().map(|request|view!{<crate::digest_product::DigestOpenPanel request=request snapshot=contig_snapshot validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=contig_restore db=db busy=workspace_restoring loaded=loaded save_generation=save_generation epoch=workspace_epoch message=message/>})}</Show><Show when=move||modal.get()=="crispr_product">{move||pending_donor.get_untracked().map(|request|view!{<crate::crispr::DonorOpenPanel request=request snapshot=contig_snapshot validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=contig_restore db=db busy=workspace_restoring loaded=loaded save_generation=save_generation epoch=workspace_epoch message=message/>})}</Show><Show when=move||modal.get()=="contig_archive">{move||pending_assembly.get_untracked().map(|request|view!{<crate::contigs::ContigArchivePanel request=request snapshot=contig_snapshot validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=contig_restore db=db busy=workspace_restoring loaded=loaded save_generation=save_generation epoch=workspace_epoch message=message/>})}</Show><Show when=move||modal.get()=="saved_contig"><crate::contigs::SavedAssemblyPanel attachment_hash=inspected_assembly.get_untracked() snapshot=contig_snapshot epoch=workspace_epoch on_record=record_assembly on_navigate=navigate_read_call/></Show><Show when=move||modal.get()=="record_run">{move||last_plan.get_untracked().map(|(plan,_)|view!{<crate::run_capture::RunCapturePanel plan=plan preferred_bindings=last_plan_events.get_untracked().filter(|(revision,_)|last_plan.get_untracked().is_some_and(|(p,_)|verification::plan_revision(&p)==*revision)).map(|(_,bindings)|bindings).unwrap_or_default() snapshot=Callback::new(move|()|documents.with_untracked(|docs|stored_candidates.with_untracked(|plans|attachments.with_untracked(|assets|candidate.with_untracked(|current|workspace_snapshot(docs,active.get_untracked(),current.as_ref(),plans,assets,&workspace_name.get_untracked())))))) validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=Callback::new(move|frame:collagene_core::workspace::Workspace|match restore_workspace_state(&frame){Ok(state)=>batch(||apply_restored.run(state)),Err(e)=>message.set(e)}) db=db busy=workspace_restoring loaded=loaded save_generation=save_generation epoch=workspace_epoch message=message/>})}</Show><Show when=move||modal.get()=="run_details"><crate::run_capture::RunDetailsPanel snapshot=Callback::new(move|()|documents.with_untracked(|docs|stored_candidates.with_untracked(|plans|attachments.with_untracked(|assets|candidate.with_untracked(|current|workspace_snapshot(docs,active.get_untracked(),current.as_ref(),plans,assets,&workspace_name.get_untracked())))))) run_id=selected_run.get_untracked() epoch=workspace_epoch on_open_product=Callback::new(move|id:String|{if workspace_restoring.get_untracked(){return;}if let Some(index)=documents.with_untracked(|docs|docs.iter().position(|d|d.id==id)){active.set(index);panel.set("history");modal.set("");}})/></Show><Show when=move||modal.get()=="workspace"><crate::workspace_view::WorkspacePanel snapshot=Callback::new(move|()|documents.with_untracked(|docs|stored_candidates.with_untracked(|plans|attachments.with_untracked(|assets|candidate.with_untracked(|current|workspace_snapshot(docs,active.get_untracked(),current.as_ref(),plans,assets,&workspace_name.get_untracked())))))) validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=Callback::new(move|frame:collagene_core::workspace::Workspace|match restore_workspace_state(&frame){Ok(state)=>batch(||apply_restored.run(state)),Err(e)=>message.set(e)}) db=db busy=workspace_restoring loaded=loaded save_generation=save_generation message=message/></Show>

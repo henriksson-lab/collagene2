@@ -1,0 +1,36 @@
+/* Desktop document navigation. Presentation only; no model/history state lives here. */
+.document-explorer{display:flex;flex-direction:column;min-width:0;min-height:0;height:100%;background:#f8fafc;border-right:1px solid #dce2e8;color:#25384a;font-size:13px;overflow:hidden}
+.explorer-heading{height:44px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid #e3e8ee}
+.explorer-heading h2{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:650;color:#33485c}
+.explorer-count{font-size:11px;font-weight:500;color:#718096;font-variant-numeric:tabular-nums}
+.explorer-icon-button{border:0;border-radius:4px;background:transparent;color:#50677c;width:26px;height:26px;padding:0;font-size:22px;line-height:1}
+.explorer-icon-button:hover{background:#e9eef4;color:#174e69}
+.explorer-controls{flex:none;padding:9px 10px 8px;border-bottom:1px solid #e3e8ee}
+.explorer-search{display:flex;align-items:center;gap:6px;height:30px;border:1px solid #d8e0e8;background:white;border-radius:4px;padding:0 7px}
+.explorer-search svg{width:14px;height:14px;flex:none;fill:none;stroke:#8290a0;stroke-width:1.5}
+.explorer-search input{min-width:0;width:100%;border:0;outline:0;background:transparent;font-size:12px;color:#25384a;padding:4px 0}
+.explorer-search:focus-within{border-color:#4481b0;box-shadow:0 0 0 2px #4481b01c}
+.explorer-sort{display:flex;align-items:center;gap:7px;margin-top:7px;font-size:11px;color:#718096}
+.explorer-sort select{min-width:0;flex:1;border:0;background:transparent;color:#53677c;font-size:11px;padding:2px 0}
+.explorer-document-list{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding:4px 0}
+.document-explorer .document-entry{display:flex;align-items:center;gap:8px;min-width:0;width:100%;height:40px;padding:4px 11px;border:0;border-left:3px solid transparent;border-radius:0;box-shadow:none;color:#35495d;background:transparent;text-align:left}
+.document-explorer .document-entry:hover{background:#edf2f7}
+.document-explorer .document-entry.active{border-left-color:#26799d;background:#e5eff8;color:#174f72;box-shadow:none}
+.explorer-document-icon{display:block;width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.35;stroke-linecap:round;stroke-linejoin:round;color:#73889b}
+.document-entry.active .explorer-document-icon{color:#26799d}
+.explorer-document-text{display:block;min-width:0;flex:1}
+.document-explorer .document-entry strong{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;overflow-wrap:normal;font-size:12px;line-height:16px;font-weight:550;color:inherit}
+.document-explorer .document-entry small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;line-height:13px;margin-top:1px;color:#7b8b9b}
+.explorer-empty{font-size:12px;line-height:1.5;color:#768596;margin:18px 13px}
+.explorer-list-footer{display:flex;align-items:center;justify-content:space-between;min-height:28px;flex:none;padding:3px 10px;border-top:1px solid #e3e8ee;color:#7b8b9b;font-size:10px;font-variant-numeric:tabular-nums}
+.explorer-pages{display:flex;gap:4px}.explorer-pages button{border:1px solid #dce2e8;border-radius:3px;color:#526a80;background:white;width:23px;height:21px;padding:0;font-size:15px;line-height:1}
+.explorer-open{flex:none;text-align:left;border:0;border-top:1px solid #e3e8ee;background:transparent;color:#3c718e;font-size:12px;padding:10px 12px;white-space:normal}
+.explorer-open:hover{background:#edf2f7}
+.document-tabs{display:flex;position:relative;align-items:stretch;min-width:0;flex:none;height:40px;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;background:#f1f4f7;border-bottom:1px solid #d8e0e8;overscroll-behavior-x:contain}
+.document-tab{position:relative;display:flex;align-items:center;gap:7px;flex:0 0 auto;min-width:100px;max-width:230px;height:36px;padding:0 15px;border:0;border-right:1px solid #dce2e8;border-top:2px solid transparent;border-bottom:1px solid transparent;border-radius:0;background:transparent;color:#65778b;font-size:12px;text-align:left;white-space:nowrap}
+.document-tab>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.document-tab:hover{background:#e8eef4;color:#35526d}.document-tab.active{border-top-color:#26799d;background:white;color:#224f70;font-weight:600;border-bottom-color:white}
+.document-tab.active .explorer-document-icon{color:#26799d}
+.document-tab:focus-visible,.document-explorer button:focus-visible{outline:2px solid #4481b0;outline-offset:-3px}
+
+.document-tabs::-webkit-scrollbar{height:4px}.document-tabs::-webkit-scrollbar-thumb{background:#c5d0db;border-radius:3px}.document-tabs::-webkit-scrollbar-track{background:transparent}

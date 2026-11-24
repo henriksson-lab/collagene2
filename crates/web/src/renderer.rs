@@ -50,8 +50,9 @@ impl ResizeListener {
                 if !active_for_callback.get() {
                     return;
                 }
-                let rect = observed.get_bounding_client_rect();
-                let size = (rect.width().floor() as i32, rect.height().floor() as i32);
+                // Scrollbars can change the usable viewport while its border
+                // rectangle stays fixed. Match the dimensions the canvas uses.
+                let size = (observed.client_width(), observed.client_height());
                 if previous.get() == Some(size) {
                     return;
                 }

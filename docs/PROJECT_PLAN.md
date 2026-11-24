@@ -49,6 +49,8 @@ The [original Collagene README](https://github.com/mahogny/collagene#readme) pro
 
 The current priority is a coherent desktop MVP: viewer, GenBank import and virtual restriction digest. [Architecture and scientific interpretation](MVP_DESKTOP.md). Finish and validate that everyday workflow before expanding input providers, advanced analyses or cloning wizards. Existing implemented modules remain available behind a secondary tools entry; the main workflow should not require users to navigate them. The complete feature inventory remains the long-term target.
 
+The user has reviewed the early preview and considers the GUI unfinished, particularly the left side. Prioritize the desktop workspace layout before requesting another GUI review: compact functional navigation, a searchable document explorer, document switching tabs, and a coherent editor toolbar and inspector. Use Benchling's navigation and sequence workspace as visual references while retaining simple document organization. A working viewer and passing scientific tests alone do not establish GUI readiness. Keep mobile design deferred.
+
 The MVP must satisfy these acceptance conditions:
 
 1. Open a real GenBank sequence directly, with explicit import errors and retained original evidence. Preserve topology, IUPAC calls, both strands, compound/origin-spanning annotations and supported qualifiers through native save/reopen and declared-loss exports.

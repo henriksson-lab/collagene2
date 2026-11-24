@@ -66,14 +66,18 @@ def main():
     fixtures=[('ta_vector','ATGATATCGG',True),('pcr_template','ACGACCCCGGGGTAAC',False),('ta_target','ATCGGATGATTACGACCCCGGGGTAACA',True),('gc_target','ATCGGATGATCACGACCCCGGGGTAACG',True),('missing_tails','ATCGGATGATACGACCCCGGGGTAAC',True),('ov_left','AACCTTGCAAACGTAGCTACGATTC',False),('ov_right_rc','TAAGGATCCGAATCGTAGCTACGT',False),('ov_target','AACCTTGCAAACGTAGCTACGATTCGGATCCTTA',False),('short_left','AAAACCCC',False),('short_right','CCCCGGGG',False),('short_target','AAAACCCCGGGG',False)]
     b.click('Paste sequence');fill(b,'Sequence input',''.join(record(*f)for f in fixtures));b.click('Open sequence')
     b.wait('document.querySelector("h1")?.textContent==="ta_vector"')
-    # The final document remains pointer-accessible inside a genuinely scrollable
-    # library; programmatic .click() alone would hide a clipped-sidebar bug.
-    b.evaluate('document.querySelector(".document-entry:last-of-type")?.scrollIntoView({block:"nearest"})')
-    position=b.evaluate('(()=>{const list=Array.from(document.querySelectorAll(".document-entry")),button=list[list.length-1],r=button.getBoundingClientRect(),library=document.querySelector(".library");button.scrollIntoView({block:"nearest"});const q=button.getBoundingClientRect();return {x:q.left+q.width/2,y:q.top+q.height/2,top:q.top,bottom:q.bottom,scroll:library.scrollTop,overflow:library.scrollHeight>library.clientHeight};})()')
-    assert position['overflow'] and position['scroll']>0 and 72<=position['top']<position['bottom']<=1000,position
+    # Compact rows need a shorter desktop viewport to exercise genuine list
+    # overflow. Keep pointer hit-testing inside both the list and viewport.
+    b.call('Emulation.setDeviceMetricsOverride',{'width':1600,'height':600,'deviceScaleFactor':1,'mobile':False})
+    b.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+    position=b.evaluate('(()=>{const library=document.querySelector(".explorer-document-list"),button=library.querySelector(".document-entry:last-of-type");button.scrollIntoView({block:"nearest",inline:"nearest",behavior:"instant"});const q=button.getBoundingClientRect(),r=library.getBoundingClientRect(),hit=document.elementFromPoint(q.left+q.width/2,q.top+q.height/2);return {x:q.left+q.width/2,y:q.top+q.height/2,top:q.top,bottom:q.bottom,listTop:r.top,listBottom:r.bottom,viewport:innerHeight,scroll:library.scrollTop,overflow:library.scrollHeight>library.clientHeight,unobscured:hit===button||button.contains(hit)};})()')
+    assert position['overflow'] and position['scroll']>0 and position['unobscured'],position
+    assert max(0,position['listTop'])<=position['top']<position['bottom']<=min(position['viewport'],position['listBottom'])+1,position
     b.call('Input.dispatchMouseEvent',{'type':'mousePressed','x':position['x'],'y':position['y'],'button':'left','clickCount':1})
     b.call('Input.dispatchMouseEvent',{'type':'mouseReleased','x':position['x'],'y':position['y'],'button':'left','clickCount':1})
     b.wait('document.querySelector("h1")?.textContent==="short_target"')
+    b.call('Emulation.setDeviceMetricsOverride',{'width':1600,'height':1000,'deviceScaleFactor':1,'mobile':False})
+    b.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
     active(b,'ta_target');methods(b)
     source(b,'Vector tailing source','ta_vector');source(b,'Insert tailing source','pcr_template')
     fill(b,'Insert tailing forward primer','ACGA');fill(b,'Insert tailing reverse primer','GTTA')

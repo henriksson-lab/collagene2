@@ -1,0 +1,62 @@
+/* Desktop workspace frame. Scientific tools keep their existing independent panels. */
+.workspace-shell { color:#283b39; background:#fff; }
+.workspace-shell .topbar { height:48px; min-height:48px; padding:0 16px; gap:18px; background:#fff; border-color:#dce3e5; }
+.workspace-shell .brand { font-size:20px; letter-spacing:-.7px; gap:7px; }
+.workspace-shell .brand svg { width:25px; height:25px; }
+.workspace-shell .version { font-size:11px; padding:1px 4px; }
+.workspace-shell .workspace-label { font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.workspace-shell .top-actions { gap:6px; }
+.workspace-shell .top-actions .button { padding:6px 11px; font-size:12px; }
+.workspace-shell .body-layout { grid-template-columns:48px 244px minmax(0,1fr); min-height:calc(100vh - 48px); }
+.workspace-shell .body-layout.library-hidden { grid-template-columns:48px minmax(0,1fr); }
+.workspace-shell .library-hidden .document-explorer { display:none; }
+.workspace-rail { display:flex; flex-direction:column; align-items:center; gap:8px; padding:12px 4px 10px; background:#f0f4f4; border-right:1px solid #dce3e5; min-height:0; }
+.rail-button { display:grid; place-items:center; width:36px; height:36px; padding:8px; color:#627575; background:transparent; border:0; border-radius:5px; }
+.rail-button svg { width:21px; height:21px; fill:none; stroke:currentColor; stroke-width:1.65; stroke-linecap:round; stroke-linejoin:round; }
+.rail-button:hover { background:#e1e9e8; color:#245f52; }
+.rail-button.active { background:#d9eae4; color:#185b4c; }
+.rail-spacer { flex:1; min-height:24px; }
+.workspace-shell main { padding:0; background:#fff; }
+.active-document { display:flex; flex-direction:column; min-width:0; min-height:0; flex:1; }
+.workspace-shell .document-header>div:first-child { min-width:0; }
+.workspace-shell .document-header h1 { overflow-wrap:anywhere; }
+.workspace-shell .document-header { padding:15px 20px 13px; gap:12px; border-bottom:1px solid #e3e8e9; flex-shrink:0; }
+.workspace-shell .eyebrow { margin:0 0 6px; font-size:10px; letter-spacing:1.1px; color:#7c8d8b; }
+.workspace-shell h1 { font-size:21px; letter-spacing:-.4px; }
+.workspace-shell .document-meta { margin-top:7px; font-size:12px; gap:7px; }
+.workspace-shell .document-actions { gap:6px; }
+.workspace-shell .document-actions .button,.workspace-shell .mvp-file-actions>summary { font-size:12px; padding:7px 10px; }
+.workspace-shell .editor-toolbar { border-width:0 0 1px; border-radius:0; min-height:45px; height:45px; padding:0 12px; flex-shrink:0; }
+.workspace-shell .editor-grid { border:0; border-bottom:1px solid #dce3e5; }
+.workspace-shell .panel-heading { height:42px; min-height:42px; padding:0 13px; background:#fafbfb; }
+.workspace-shell .inspector-tabs { min-height:42px; }
+.workspace-shell .panel-kicker { font-size:10px; letter-spacing:.8px; }
+.workspace-shell .mvp-example { padding:7px 16px; gap:12px; }
+.workspace-shell .mvp-example strong { font-size:12px; margin-bottom:2px; }
+.workspace-shell .mvp-example span { font-size:11px; }
+.workspace-shell .mvp-example .button { font-size:11px; padding:6px 9px; }
+.workspace-shell .notice { margin:0; border-radius:0; }
+.workspace-shell .statusbar { min-height:29px; font-size:11px; padding:5px 13px; }
+.workspace-shell .source-provenance { margin-bottom:0; font-size:11px; }
+@media(min-width:1100px) {
+ .workspace-shell .body-layout { min-height:0; }
+ .workspace-shell .editor-grid { grid-template-columns:minmax(210px,1fr) minmax(220px,1fr) 290px; }
+}
+@media(min-width:1500px) {
+ .workspace-shell .editor-grid { grid-template-columns:minmax(300px,1.1fr) minmax(300px,1fr) 310px; }
+}
+@media(min-width:851px) and (max-width:1099px) {
+ .workspace-shell .body-layout { grid-template-columns:48px 210px minmax(0,1fr); }
+ .workspace-shell .document-header { align-items:flex-start; flex-direction:column; }
+ .workspace-shell .editor-toolbar { height:auto; flex-wrap:wrap; padding:7px 10px; }
+}
+@media(max-width:850px) {
+ .workspace-shell .document-explorer { display:none; }
+ .workspace-shell .body-layout,.workspace-shell .body-layout.library-hidden { grid-template-columns:42px minmax(0,1fr); }
+ .workspace-rail { padding-left:2px; padding-right:2px; }
+ .workspace-shell .topbar { padding:0 10px; gap:10px; }
+ .workspace-shell .document-header>div:first-child { min-width:0; }
+.workspace-shell .document-header h1 { overflow-wrap:anywhere; }
+.workspace-shell .document-header { padding:12px; }
+ .workspace-shell .editor-toolbar { height:auto; flex-wrap:wrap; padding:8px; }
+}

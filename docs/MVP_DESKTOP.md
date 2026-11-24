@@ -2,6 +2,27 @@
 
 The current delivery priority is an ordinary desktop workflow: open GenBank, inspect the sequence and map, select enzymes, inspect a virtual digest and explicitly open/export a fragment. Features and Digest are primary tools. The metadata registry in `desktop_shell.rs` keeps advanced modules behind More tools without removing their algorithms or changing their stable identities. Mobile scope and acceptance remain deferred until desktop completion and user review.
 
+## Workspace layout in development
+
+The early preview was not accepted as a finished GUI. The desktop frame now
+separates a narrow functional navigation rail, a searchable document explorer,
+document switching tabs and the sequence editor. There is one simple workspace;
+no project hierarchy or excluded inventory/notebook modules are implied.
+
+The explorer searches names, stable document IDs, recorded sources and molecule
+types, and sorts by workspace order, name, length or source. Its bounded pages
+contain at most 100 rows. Tab order follows the workspace, independently of the
+explorer's current search and sort. Arrow keys, Home and End switch and focus
+tabs. Collapsing the explorer changes only layout. Rows and tabs address stable
+document IDs and react to current metadata; they do not create, close or delete
+documents, alter science or replace source history. Imported source labels are
+shown only when recorded in the document.
+
+`scripts/workspace_navigation_browser_qa.py` exercises the actual imported-file,
+pointer and keyboard workflow, including native history/source preservation
+across navigation and reload, and an intentional same-ID rename. Passing it is
+a functional gate for this frame, not acceptance of the overall GUI design.
+
 ## Boundaries retained for later features
 
 - `Molecule`, `Sequence` and `Location` remain the common scientific model. GenBank adapters retain original records, topology, annotations and unsupported evidence; the renderer never owns the biological coordinate model.
@@ -26,7 +47,9 @@ The viewer and format adapters retain their existing limits and extension points
 
 ## Validation checkpoint
 
-The release WASM/web build, native workspace checks (882 tests plus eight doctests), real stdio MCP smoke and all 26 desktop browser workflow suites pass. The dedicated desktop MVP browser suite exercises actual GenBank import, map rotation and sequence navigation, independently specified multi-enzyme products, non-six-base and circular-origin sites, fresh fragment construction/export, exact source history, ambiguous/limited/uncut cases, paged evidence, stale-result cancellation and atomic storage rollback. Desktop widths of 1600, 1280 and 1200 pixels are covered. These are local Chrome/software-renderer observations; they do not establish Firefox/Safari, hardware GPU or installed desktop parity.
+The release WASM/web build, native workspace checks (1,021 tests plus 13 doctests), real stdio MCP smoke and all 29 desktop browser workflow suites pass. The dedicated desktop MVP browser suite exercises actual GenBank import, map rotation and sequence navigation, independently specified multi-enzyme products, non-six-base and circular-origin sites, fresh fragment construction/export, exact source history, ambiguous/limited/uncut cases, paged evidence, stale-result cancellation and atomic storage rollback. Desktop widths of 1600, 1280 and 1200 pixels are covered. These are local Chrome/software-renderer observations; they do not establish Firefox/Safari, hardware GPU or installed desktop parity.
+
+The navigation suite additionally covers 1366×768 and 1280×800 laptop windows, a 101-record import across explorer pages, same-ID rename updates, keyboard tab focus and native source/history preservation. The canvas regression reproduces scrollbar-only client viewport changes without synthetic resize/scroll events, verifies backing/CSS dimensions and exact base selection, and checks natural short/long document switches.
 
 Run the desktop suites against the isolated QA browser and release preview with `python3 scripts/desktop_qa.py`. See the README for prerequisites. Mobile and machine-specific performance acceptance remain separate from this gate.
 

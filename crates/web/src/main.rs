@@ -21,6 +21,8 @@ mod digest;
 #[cfg(target_arch = "wasm32")]
 mod digest_product;
 #[cfg(target_arch = "wasm32")]
+mod document_explorer;
+#[cfg(target_arch = "wasm32")]
 mod dotplot;
 #[cfg(target_arch = "wasm32")]
 mod end_repair;

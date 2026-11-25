@@ -77,6 +77,7 @@ Normal autosave and native workspace export retain comparison attachments.
 No external alignment executable, multiple-alignment engine, read mapper or
 BAM/index integration is introduced. Integrated reference/read/chromatogram review
 is implemented by [read checks](READ_CHECKS.md) and [explicit review](READ_REVIEW.md).
-Computed pairwise search, aligned context and portable exports remain follow-ups
-([current decisions](BENCHLING_WORKFLOW_DECISIONS.md)). Browser acceptance stays
+Computed pairwise search, aligned annotation/CDS context and portable
+FASTA/Clustal/HTML/PDF outputs are now connected through cancellable worker jobs
+([presentation contracts](PAIRWISE_PRESENTATION.md)). Browser acceptance stays
 deferred under the current instruction.

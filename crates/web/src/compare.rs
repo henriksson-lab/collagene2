@@ -329,6 +329,8 @@ pub fn ComparePanel(
                         },
                         reference_name: r.name.clone(),
                         query_name: q.name.clone(),
+                        reference: r.clone(),
+                        query: q.clone(),
                         fresh: true,
                         epoch: key.epoch,
                     }))
@@ -395,8 +397,10 @@ pub fn ComparePanel(
             gap_extend.set(alignment.scoring.gap_extend.to_string());
             max_cells.set(alignment.max_cells.to_string());
             report.set(Some(Arc::new(Review {
-                reference_name: r.name,
-                query_name: q.name,
+                reference_name: r.name.clone(),
+                query_name: q.name.clone(),
+                reference: Arc::new(r),
+                query: Arc::new(q),
                 record,
                 fresh: false,
                 epoch: epoch.get_untracked(),

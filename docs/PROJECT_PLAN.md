@@ -116,8 +116,10 @@ concrete connections:
   source-linked protein outputs, review-required CDS proposals and full ORF
   selection are now connected ([details](TRANSLATION_REFERENCE.md)). Named digest
   setup/history and a pinned-source gel route are now implemented
-  ([details](NAMED_DIGESTS.md)); continue comparison presentation and remaining
-  ordinary cloning interaction work.
+  ([details](NAMED_DIGESTS.md)). Computed pairwise search, mapped annotation/CDS
+  context and direct aligned/printable outputs are now connected
+  ([details](PAIRWISE_PRESENTATION.md)); continue remaining ordinary cloning
+  interaction work and the alternative-source design layer below.
 - After ordinary designs, implement genuine alternative source bins and per-combination
   output identity over the shared compiler. Reaction-product enumeration alone does
   not complete combinatorial cloning. Inspectable fusion-end proposals and intentional

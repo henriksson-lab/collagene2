@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **55** and reads supported schemas 1–54. Candidate files write schema 11; workspace plan schema is 9; the verifier is science-14.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **56** and reads supported schemas 1–55. Candidate files write schema 11; workspace plan schema is 9; the verifier is science-14.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -137,6 +137,9 @@ Postcard enum indexes are append-only. Existing tags and supported historical la
 | 122 | TranslateReference | 54 |
 | 123 | PrepareTranslatedReference | 54 |
 | 124 | PredictPinnedGel | 55 |
+| 125 | ExportPairwiseComparison | 56 |
+| 126 | SearchPairwiseComparison | 56 |
+| 127 | PreparePairwiseContext | 56 |
 
 Result tags 0–29 retain their selectors (verification gains explicit versioned step evidence in schema 25) (`Search`, `Restriction`, `Error`, `Pcr`, `Verification`, `DuplexDigest`, `Translation`, `CdsTranslation`, `Orfs`, `Alignment`, `PcrDocuments`, `PrimerEvidence`, `PrimerDesign`, `ProtocolPdf`, `GoldenGate`, `MismatchPcr`, `InversePcr`, `Gel`, `DiagnosticDigest`, `MismatchPcrPreview`, `WorkspaceSaved`, `WorkspaceLoaded`, `TraceValidation`, `FeatureLibraryScan`, `AnnotatedDocument`, `AnnotationImport`, `AnnotationExport`, `RepairPreview`, `AnnealPreview`, `PhysicalPreviewDocument`). Schema 9 appends `ViewTracks` at tag 30, `DocumentSearch` at tag 31 and `TracksPrepared` at tag 32. New response variants cannot be decoded under older version labels.
 
@@ -730,3 +733,22 @@ moving document heads. Native prediction validates actual molecular revision and
 catalog geometry, requires complete/determined cleavage, and retains unplaced
 circular conformations and explicit lane errors. Saved reports are documentary
 evidence, never substitutes for fresh source reconstruction.
+
+## Computed comparison presentation (schema56)
+
+Job125 `ExportPairwiseComparison` returns117 `ExportedPairwiseComparison` for
+aligned FASTA/Clustal or a complete HTML/PDF review. Job126
+`SearchPairwiseComparison` returns118 `SearchedPairwiseComparison`; literal and
+compatible-IUPAC searches retain gap-column windows and original source mappings,
+explicit work/hit limits and incomplete status. Job127 `PreparePairwiseContext`
+returns119 `PreparedPairwiseContext`, caching actual-source annotation and full-CDS
+mapping for paged projection without restarting frames or doing translation on
+the GUI thread. [Contracts and limits](PAIRWISE_PRESENTATION.md).
+
+Each request binds all relevant inputs to its exact revision and stays within the
+ordinary32 MiB cap. Old55 envelopes reject the new selectors before payload decode,
+including short-prefix relabeling. Result guards bound byte/coordinate/cache data;
+the host separately checks exact events, request/epoch/generation and current form.
+These are views of an existing comparison, not new alignment or verification
+authority. Existing job/result layouts and native/candidate/plan/science versions
+are unchanged.

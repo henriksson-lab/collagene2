@@ -86,6 +86,11 @@ keep gaps, original coordinates, orientation/origin policy, exact events and
 historical/fresh status explicit. The imported-alignment viewer's exports do not
 make these actions available from a computed pairwise report.
 
+Implementation follow-up: these computed-pairwise connections are now present as
+explicit worker-backed search, cached actual-source annotation/CDS context and
+aligned FASTA/Clustal/HTML/PDF exports. Existing report/history/coordinate engines
+remain the foundation. [Details and bounds](PAIRWISE_PRESENTATION.md).
+
 A direct read-check action in `AssemblyProductView` is an optional continuity
 improvement. The supported existing route is to open the actual final product and
 use its document-toolbar action. This is not a missing validation engine.

@@ -535,6 +535,103 @@ fn parse_blocks(
     Ok((rows, meta))
 }
 
+fn validate_export_content(
+    alphabet: Alphabet,
+    rows: &[AlignmentRow],
+    metadata: &AlignmentMetadata,
+) -> Result<(), Error> {
+    if rows.is_empty() || rows.len() > MAX_ALIGNMENT_ROWS {
+        return Err(bad("alignment needs 1..1000 rows"));
+    }
+    let width = rows[0].aligned.len();
+    if width == 0 || width.saturating_mul(rows.len()) > MAX_ALIGNMENT_CELLS {
+        return Err(Error::TooLarge);
+    }
+    let mut ids = BTreeSet::new();
+    let mut labels = BTreeSet::new();
+    let mut origins = BTreeSet::new();
+    for row in rows {
+        if !token(&row.identifier)
+            || row.identifier.len() > 4096
+            || !ids.insert(&row.id)
+            || !labels.insert(&row.identifier)
+            || !origins.insert(row.source_row_index)
+        {
+            return Err(bad("invalid/duplicate row identity"));
+        }
+        if row.description.len() > MAX_ALIGNMENT_LINE
+            || row.description.chars().any(char::is_control)
+            || !row.description.is_ascii()
+        {
+            return Err(bad("invalid row description"));
+        }
+        if row.aligned.len() != width || normalized(&row.aligned, alphabet, false)? != row.aligned {
+            return Err(bad(
+                "rows must have equal width and canonical uppercase residues/gaps",
+            ));
+        }
+    }
+    if metadata.annotations.len() > MAX_ALIGNMENT_ANNOTATIONS {
+        return Err(Error::TooLarge);
+    }
+    if metadata
+        .annotations
+        .iter()
+        .map(|a| a.value.len() + a.tag.len() + a.row_identifier.as_ref().map_or(0, String::len))
+        .sum::<usize>()
+        > MAX_ALIGNMENT_BYTES
+    {
+        return Err(Error::TooLarge);
+    }
+    let mut column_keys = BTreeSet::new();
+    for a in &metadata.annotations {
+        if a.value.len() > MAX_ALIGNMENT_CELLS
+            || !a.value.is_ascii()
+            || a.value.bytes().any(|b| b.is_ascii_control())
+        {
+            return Err(bad("invalid annotation text"));
+        }
+        if a.row_identifier
+            .as_ref()
+            .is_some_and(|s| !labels.contains(s))
+        {
+            return Err(bad("annotation refers to absent row"));
+        }
+        if (a.scope == "GF" || a.scope == "GS") && a.value.trim().is_empty() {
+            return Err(bad("free-text annotations require a nonempty value"));
+        }
+        match a.scope.as_str() {
+            "GF" | "GC" if a.row_identifier.is_none() && token(&a.tag) => {}
+            "GS" | "GR" if a.row_identifier.is_some() && token(&a.tag) => {}
+            "COMMENT"
+                if a.row_identifier.is_none()
+                    && a.tag.is_empty()
+                    && a.value.starts_with('#')
+                    && !a.value.starts_with("#=") => {}
+            _ => return Err(bad("invalid annotation scope/tag")),
+        }
+        if a.scope == "GR" || a.scope == "GC" {
+            if a.value.len() != width
+                || !token(&a.value)
+                || !column_keys.insert((&a.scope, &a.row_identifier, &a.tag))
+            {
+                return Err(bad("column annotation width or identity mismatch"));
+            }
+        }
+    }
+    if let Some(c) = &metadata.clustal_consensus {
+        if c.len() != width || !c.bytes().all(|b| b" *:.".contains(&b)) {
+            return Err(bad("invalid consensus width/symbol"));
+        }
+    }
+    if metadata.source_header.as_ref().is_some_and(|s| {
+        s.len() > MAX_ALIGNMENT_LINE || s.chars().any(char::is_control) || !s.is_ascii()
+    }) {
+        return Err(bad("invalid source header"));
+    }
+    Ok(())
+}
+
 impl AlignmentDocument {
     fn validate_content(&self) -> Result<(), Error> {
         if self.schema_version != 1 {
@@ -546,99 +643,7 @@ impl AlignmentDocument {
         {
             return Err(bad("invalid alignment name"));
         }
-        if self.rows.is_empty() || self.rows.len() > MAX_ALIGNMENT_ROWS {
-            return Err(bad("alignment needs 1..1000 rows"));
-        }
-        let width = self.rows[0].aligned.len();
-        if width == 0 || width.saturating_mul(self.rows.len()) > MAX_ALIGNMENT_CELLS {
-            return Err(Error::TooLarge);
-        }
-        let mut ids = BTreeSet::new();
-        let mut labels = BTreeSet::new();
-        let mut origins = BTreeSet::new();
-        for row in &self.rows {
-            if !token(&row.identifier)
-                || row.identifier.len() > 4096
-                || !ids.insert(&row.id)
-                || !labels.insert(&row.identifier)
-                || !origins.insert(row.source_row_index)
-            {
-                return Err(bad("invalid/duplicate row identity"));
-            }
-            if row.description.len() > MAX_ALIGNMENT_LINE
-                || row.description.chars().any(char::is_control)
-                || !row.description.is_ascii()
-            {
-                return Err(bad("invalid row description"));
-            }
-            if row.aligned.len() != width
-                || normalized(&row.aligned, self.alphabet, false)? != row.aligned
-            {
-                return Err(bad(
-                    "rows must have equal width and canonical uppercase residues/gaps",
-                ));
-            }
-        }
-        if self.metadata.annotations.len() > MAX_ALIGNMENT_ANNOTATIONS {
-            return Err(Error::TooLarge);
-        }
-        if self
-            .metadata
-            .annotations
-            .iter()
-            .map(|a| a.value.len() + a.tag.len() + a.row_identifier.as_ref().map_or(0, String::len))
-            .sum::<usize>()
-            > MAX_ALIGNMENT_BYTES
-        {
-            return Err(Error::TooLarge);
-        }
-        let mut column_keys = BTreeSet::new();
-        for a in &self.metadata.annotations {
-            if a.value.len() > MAX_ALIGNMENT_CELLS
-                || !a.value.is_ascii()
-                || a.value.bytes().any(|b| b.is_ascii_control())
-            {
-                return Err(bad("invalid annotation text"));
-            }
-            if a.row_identifier
-                .as_ref()
-                .is_some_and(|s| !labels.contains(s))
-            {
-                return Err(bad("annotation refers to absent row"));
-            }
-            if (a.scope == "GF" || a.scope == "GS") && a.value.trim().is_empty() {
-                return Err(bad("free-text annotations require a nonempty value"));
-            }
-            match a.scope.as_str() {
-                "GF" | "GC" if a.row_identifier.is_none() && token(&a.tag) => {}
-                "GS" | "GR" if a.row_identifier.is_some() && token(&a.tag) => {}
-                "COMMENT"
-                    if a.row_identifier.is_none()
-                        && a.tag.is_empty()
-                        && a.value.starts_with('#')
-                        && !a.value.starts_with("#=") => {}
-                _ => return Err(bad("invalid annotation scope/tag")),
-            }
-            if a.scope == "GR" || a.scope == "GC" {
-                if a.value.len() != width
-                    || !token(&a.value)
-                    || !column_keys.insert((&a.scope, &a.row_identifier, &a.tag))
-                {
-                    return Err(bad("column annotation width or identity mismatch"));
-                }
-            }
-        }
-        if let Some(c) = &self.metadata.clustal_consensus {
-            if c.len() != width || !c.bytes().all(|b| b" *:.".contains(&b)) {
-                return Err(bad("invalid consensus width/symbol"));
-            }
-        }
-        if self.metadata.source_header.as_ref().is_some_and(|s| {
-            s.len() > MAX_ALIGNMENT_LINE || s.chars().any(char::is_control) || !s.is_ascii()
-        }) {
-            return Err(bad("invalid source header"));
-        }
-        Ok(())
+        validate_export_content(self.alphabet, &self.rows, &self.metadata)
     }
     /// Validate structure, immutable source hash and stable row derivation. Edited content
     /// remains usable but cannot claim that the original source describes current content.
@@ -834,11 +839,25 @@ pub fn export_alignment(
     format: AlignmentFormat,
 ) -> Result<AlignmentExport, Error> {
     doc.validate()?;
+    let mut result = export_rows(&doc.rows, &doc.metadata, doc.alphabet, format)?;
+    result.losses.insert(0, "Canonical export does not preserve original byte layout, letter case, Stockholm dot gaps, header text, or document name; use original_bytes for exact evidence.".into());
+    Ok(result)
+}
+
+/// Export computed rows without inventing an imported original-file record.
+/// Row identities, canonical residues/gaps and metadata are checked independently.
+pub(crate) fn export_rows(
+    rows: &[AlignmentRow],
+    metadata: &AlignmentMetadata,
+    alphabet: Alphabet,
+    format: AlignmentFormat,
+) -> Result<AlignmentExport, Error> {
+    validate_export_content(alphabet, rows, metadata)?;
     let mut text = String::new();
-    let mut losses=vec!["Canonical export does not preserve original byte layout, letter case, Stockholm dot gaps, header text, or document name; use original_bytes for exact evidence.".into()];
+    let mut losses = Vec::new();
     match format {
         AlignmentFormat::AlignedFasta => {
-            for row in &doc.rows {
+            for row in rows {
                 text.push('>');
                 text.push_str(&row.identifier);
                 if !row.description.is_empty() {
@@ -851,45 +870,44 @@ pub fn export_alignment(
                     text.push('\n');
                 }
             }
-            if !doc.metadata.annotations.is_empty() {
+            if !metadata.annotations.is_empty() {
                 losses.push("FASTA omits all Stockholm annotations/comments.".into());
             }
-            if doc.metadata.clustal_consensus.is_some() {
+            if metadata.clustal_consensus.is_some() {
                 losses.push("FASTA omits imported CLUSTAL consensus.".into());
             }
         }
         AlignmentFormat::Clustal => {
             text.push_str("CLUSTAL Collagene alignment exchange\n\n");
-            let pad = doc.rows.iter().map(|r| r.identifier.len()).max().unwrap() + 2;
+            let pad = rows.iter().map(|r| r.identifier.len()).max().unwrap() + 2;
             if pad + 80 > MAX_ALIGNMENT_LINE {
                 return Err(Error::TooLarge);
             }
-            for start in (0..doc.column_count()).step_by(80) {
-                let end = (start + 80).min(doc.column_count());
-                for row in &doc.rows {
+            for start in (0..rows[0].aligned.len()).step_by(80) {
+                let end = (start + 80).min(rows[0].aligned.len());
+                for row in rows {
                     text.push_str(&format!(
                         "{:<pad$}{}\n",
                         row.identifier,
                         &row.aligned[start..end]
                     ));
                 }
-                if let Some(c) = &doc.metadata.clustal_consensus {
+                if let Some(c) = &metadata.clustal_consensus {
                     text.push_str(&" ".repeat(pad));
                     text.push_str(&c[start..end]);
                     text.push('\n');
                 }
                 text.push('\n');
             }
-            if !doc.metadata.annotations.is_empty() {
+            if !metadata.annotations.is_empty() {
                 losses.push("CLUSTAL omits all Stockholm annotations/comments.".into());
             }
-            if doc.rows.iter().any(|r| !r.description.is_empty()) {
+            if rows.iter().any(|r| !r.description.is_empty()) {
                 losses.push("CLUSTAL omits FASTA row descriptions.".into());
             }
         }
         AlignmentFormat::Stockholm => {
-            if doc
-                .rows
+            if rows
                 .iter()
                 .any(|r| r.identifier.starts_with('#') || r.identifier == "//")
             {
@@ -898,7 +916,7 @@ pub fn export_alignment(
                 ));
             }
             text.push_str("# STOCKHOLM 1.0\n");
-            for a in &doc.metadata.annotations {
+            for a in &metadata.annotations {
                 match a.scope.as_str() {
                     "GF" => text.push_str(&format!("#=GF {} {}\n", a.tag, a.value)),
                     "GS" => text.push_str(&format!(
@@ -914,15 +932,15 @@ pub fn export_alignment(
                     _ => {}
                 }
             }
-            for start in (0..doc.column_count()).step_by(80) {
-                let end = (start + 80).min(doc.column_count());
-                for row in &doc.rows {
+            for start in (0..rows[0].aligned.len()).step_by(80) {
+                let end = (start + 80).min(rows[0].aligned.len());
+                for row in rows {
                     text.push_str(&format!(
                         "{} {}\n",
                         row.identifier,
                         &row.aligned[start..end]
                     ));
-                    for a in doc.metadata.annotations.iter().filter(|a| {
+                    for a in metadata.annotations.iter().filter(|a| {
                         a.scope == "GR" && a.row_identifier.as_deref() == Some(&row.identifier)
                     }) {
                         text.push_str(&format!(
@@ -933,16 +951,16 @@ pub fn export_alignment(
                         ));
                     }
                 }
-                for a in doc.metadata.annotations.iter().filter(|a| a.scope == "GC") {
+                for a in metadata.annotations.iter().filter(|a| a.scope == "GC") {
                     text.push_str(&format!("#=GC {} {}\n", a.tag, &a.value[start..end]));
                 }
                 text.push('\n');
             }
             text.push_str("//\n");
-            if doc.rows.iter().any(|r| !r.description.is_empty()) {
+            if rows.iter().any(|r| !r.description.is_empty()) {
                 losses.push("Stockholm omits FASTA row descriptions.".into());
             }
-            if doc.metadata.clustal_consensus.is_some() {
+            if metadata.clustal_consensus.is_some() {
                 losses.push("Stockholm omits imported CLUSTAL consensus; no biological annotation is inferred.".into());
             }
         }

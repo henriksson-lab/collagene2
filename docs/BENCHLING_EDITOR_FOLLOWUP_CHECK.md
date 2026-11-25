@@ -51,6 +51,14 @@ connecting-workflow gap below without adapting through starter-enzyme names or
 current document indices. [Implementation and limits](NAMED_DIGESTS.md).
 Comparison context/export and compact provenance presentation remain follow-ups.
 
+## Comparison presentation implementation follow-up
+
+Computed pairwise search, mapped annotation/CDS context and direct aligned
+FASTA/Clustal/HTML/PDF export now extend the existing event-bound viewer. These
+close item4 below; compact provenance presentation remains a separate follow-up.
+[Implementation and limits](PAIRWISE_PRESENTATION.md). No external aligner or
+browser acceptance is introduced.
+
 ## Remaining actionable connections
 
 Items1–3 below are completed research history, as recorded above. Items4/5 remain

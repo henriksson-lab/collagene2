@@ -22,6 +22,31 @@ and review proposals are implemented, despite older gap tables. See
 [workflow decisions](BENCHLING_WORKFLOW_DECISIONS.md). This documentation-only
 checkpoint adds no runtime/build/browser checks.
 
+## Computed comparison search, source context and portable review
+
+The event-bound pairwise viewer now searches displayed rows with literal or
+compatible-IUPAC policies, reports all returned hits through pages and navigates
+their original source ranges. Annotation and full-source CDS context project onto
+the same600-column page with circular/reverse/gap-aware mappings and explicit
+unsupported/budget notes. Core preparation and search run in cancellable workers;
+page changes reuse the context cache.
+
+Direct aligned FASTA/Clustal and complete HTML/PDF review reuse existing exchange
+and PDF primitives, preserving gaps/orientation and disclosing format losses.
+PDF base columns have explicit fixed cell positions; rich review distinguishes
+source events, original coordinates and historical/fresh status from experimental
+verification. Worker56 appends three jobs/results with the ordinary32 MiB cap;
+native archive/candidate/plan/scientific-engine schemas stay unchanged.
+[Presentation, limits and guards](PAIRWISE_PRESENTATION.md).
+
+Validation passed: 40 focused native tests (eight search/context, five export,
+seven binary protocol, twelve existing alignment-exchange and eight existing PDF
+cases) and the combined Trunk app/worker build. No browser or HTTP smoke checks
+were run. Port8082 now serves the immutable schema56 snapshot:48 assets,
+228,876,923 bytes, retaining older versioned workers and exposing no filesystem
+API or writes. Index SHA-256:
+`429aec162ab5d2c3457394fb2c7d0b6b65342e81d37a329bc081a9cb2910aa1a`.
+
 ## Existing-oligo comparison and selected binding handoff
 
 The shared pair editor can preview and accept a new directional reference
@@ -84,8 +109,8 @@ and a separate context retains the editor's cursor/scroll identity.
 [Projection semantics and navigation](PCR_OVERLAYS.md).
 
 All 65 native web tests passed, including seven focused PCR projection fixtures.
-The combined Trunk web/worker build passed and port 8082 now serves the new immutable
-schema-54 snapshot, including the recent annotation, translation, enzyme-selection
+The combined Trunk web/worker build passed and port 8082 was refreshed with an immutable
+schema-54 snapshot at that checkpoint, including annotation, translation, enzyme-selection
 and historical-source work. The server loaded 45 assets (210,781,733 bytes) into RAM,
 retains old versioned workers, and exposes no filesystem API or writes. No browser
 or HTTP smoke checks were run. Index SHA-256:

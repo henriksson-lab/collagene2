@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 55;
+pub const WORKER_SCHEMA_VERSION: u16 = 56;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 11;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -754,6 +754,24 @@ pub enum AnalysisJob {
         lanes: Vec<crate::gel::LaneInput>,
         calibration: crate::gel::Calibration,
     },
+    ExportPairwiseComparison {
+        record: crate::pairwise_history::Record,
+        reference_name: String,
+        query_name: String,
+        fresh: bool,
+        format: crate::pairwise_export::Format,
+    },
+    SearchPairwiseComparison {
+        report: crate::pairwise_review::Report,
+        pattern: String,
+        options: crate::pairwise_search::Options,
+    },
+    PreparePairwiseContext {
+        report: crate::pairwise_review::Report,
+        reference: Molecule,
+        query: Molecule,
+        translate: bool,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -880,6 +898,9 @@ pub enum AnalysisResult {
     TranslatedReference(crate::translation_reference::Report),
     TranslatedOutputs(crate::translation_reference::Outputs),
     PinnedGel(crate::gel::GelReport),
+    ExportedPairwiseComparison(crate::pairwise_export::Export),
+    SearchedPairwiseComparison(crate::pairwise_search::Matches),
+    PreparedPairwiseContext(crate::pairwise_context::Context),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1073,6 +1094,32 @@ impl From<LegacyResultV2> for AnalysisResult {
     }
 }
 pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
+    if let AnalysisJob::ExportPairwiseComparison {
+        record,
+        reference_name,
+        query_name,
+        ..
+    } = &r.job
+    {
+        crate::pairwise_export::preflight(record, reference_name, query_name)?;
+    }
+    if let AnalysisJob::SearchPairwiseComparison {
+        report,
+        pattern,
+        options,
+    } = &r.job
+    {
+        crate::pairwise_search::preflight(report, pattern, options)?;
+    }
+    if let AnalysisJob::PreparePairwiseContext {
+        report,
+        reference,
+        query,
+        translate,
+    } = &r.job
+    {
+        crate::pairwise_context::preflight(report, reference, query, *translate)?;
+    }
     let maximum = if matches!(
         r.job,
         AnalysisJob::SaveWorkspace { .. }
@@ -1146,6 +1193,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_reference_transfer_tag(bytes, &[112, 113])?;
     preflight_translation_reference_tag(bytes, &[114, 115])?;
     preflight_pinned_gel_tag(bytes, &[116])?;
+    preflight_pairwise_export_tag(bytes, &[117, 118, 119])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1205,6 +1253,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         AnalysisResult::ReferenceFragment(_) | AnalysisResult::ReferencePaste(_) => 53,
         AnalysisResult::TranslatedReference(_) | AnalysisResult::TranslatedOutputs(_) => 54,
         AnalysisResult::PinnedGel(_) => 55,
+        AnalysisResult::ExportedPairwiseComparison(_) => 56,
+        AnalysisResult::SearchedPairwiseComparison(_) => 56,
+        AnalysisResult::PreparedPairwiseContext(_) => 56,
         AnalysisResult::GoldenGateReaction(_) | AnalysisResult::GoldenGateReactionCandidate(_) => {
             49
         }
@@ -1359,6 +1410,14 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
         AnalysisResult::ReviewedComparison(report) => {
             report.validate_binding(&response.revision)?;
+        }
+        AnalysisResult::ExportedPairwiseComparison(export) => export.validate()?,
+        AnalysisResult::SearchedPairwiseComparison(matches) => matches.validate()?,
+        AnalysisResult::PreparedPairwiseContext(context) => {
+            context.validate()?;
+            if context.context_revision != response.revision {
+                return Err(Error::Format("Pairwise context response changed.".into()));
+            }
         }
         AnalysisResult::ReferenceFragment(fragment) => {
             fragment.validate_binding(&response.revision)?;
@@ -1861,6 +1920,14 @@ fn preflight_pinned_gel_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     }
     Ok(())
 }
+fn preflight_pairwise_export_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 56)?;
+    }
+    Ok(())
+}
 fn preflight_translation_reference_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -2298,6 +2365,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_reference_transfer_tag(bytes, &[120, 121])?;
     preflight_translation_reference_tag(bytes, &[122, 123])?;
     preflight_pinned_gel_tag(bytes, &[124])?;
+    preflight_pairwise_export_tag(bytes, &[125, 126, 127])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -2313,6 +2381,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         AnalysisJob::TranslateReference { .. } => 54,
         AnalysisJob::PrepareTranslatedReference { .. } => 54,
         AnalysisJob::PredictPinnedGel { .. } => 55,
+        AnalysisJob::ExportPairwiseComparison { .. } => 56,
+        AnalysisJob::SearchPairwiseComparison { .. } => 56,
+        AnalysisJob::PreparePairwiseContext { .. } => 56,
         AnalysisJob::PredictGel { lanes, .. }
             if lanes.iter().any(|lane| {
                 matches!(
@@ -2740,6 +2811,48 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
                 return Err(Error::Format(
                     "Reference paste sources or selection changed".into(),
                 ));
+            }
+            None
+        }
+        AnalysisJob::PreparePairwiseContext {
+            report,
+            reference,
+            query,
+            translate,
+        } => {
+            if crate::pairwise_context::revision(report, reference, query, *translate)?
+                != r.revision
+            {
+                return Err(Error::Format("Pairwise annotation context changed.".into()));
+            }
+            None
+        }
+        AnalysisJob::SearchPairwiseComparison {
+            report,
+            pattern,
+            options,
+        } => {
+            if crate::pairwise_search::revision(report, pattern, options)? != r.revision {
+                return Err(Error::Format("Pairwise search context changed.".into()));
+            }
+            None
+        }
+        AnalysisJob::ExportPairwiseComparison {
+            record,
+            reference_name,
+            query_name,
+            fresh,
+            format,
+        } => {
+            if crate::pairwise_export::revision(
+                record,
+                reference_name,
+                query_name,
+                *fresh,
+                *format,
+            )? != r.revision
+            {
+                return Err(Error::Format("Pairwise export context changed.".into()));
             }
             None
         }
@@ -3503,6 +3616,27 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             options,
         } => crate::pairwise_review::compare(&reference, &query, &options)
             .map(AnalysisResult::ReviewedComparison),
+        AnalysisJob::ExportPairwiseComparison {
+            record,
+            reference_name,
+            query_name,
+            fresh,
+            format,
+        } => crate::pairwise_export::export(&record, &reference_name, &query_name, fresh, format)
+            .map(AnalysisResult::ExportedPairwiseComparison),
+        AnalysisJob::SearchPairwiseComparison {
+            report,
+            pattern,
+            options,
+        } => crate::pairwise_search::search(&report, &pattern, options)
+            .map(AnalysisResult::SearchedPairwiseComparison),
+        AnalysisJob::PreparePairwiseContext {
+            report,
+            reference,
+            query,
+            translate,
+        } => crate::pairwise_context::prepare(&report, &reference, &query, translate)
+            .map(AnalysisResult::PreparedPairwiseContext),
         AnalysisJob::CopyReferenceFragment { request } => {
             crate::reference_transfer::copy(&request).map(AnalysisResult::ReferenceFragment)
         }

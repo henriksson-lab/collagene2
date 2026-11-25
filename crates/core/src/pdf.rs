@@ -259,9 +259,13 @@ struct Layout {
     escaped: BTreeSet<char>,
     text_bytes: usize,
     status: Status,
+    review_label: Option<String>,
 }
 impl Layout {
     fn new(status: Status) -> Result<Self, Error> {
+        Self::with_review_label(status, None)
+    }
+    fn with_review_label(status: Status, review_label: Option<String>) -> Result<Self, Error> {
         let mut layout = Self {
             face: Face::parse(FONT, 0)
                 .map_err(|_| Error::Format("bundled PDF font is invalid".into()))?,
@@ -272,11 +276,23 @@ impl Layout {
             escaped: BTreeSet::new(),
             text_bytes: 0,
             status,
+            review_label,
         };
         layout.header()?;
         Ok(layout)
     }
     fn header(&mut self) -> Result<(), Error> {
+        if let Some(label) = self.review_label.clone() {
+            self.text_at(MARGIN, 790.0, &label, 10.0, INK)?;
+            self.text_at(
+                MARGIN,
+                822.0,
+                "COLLAGENE 2 / SEQUENCE COMPARISON",
+                9.0,
+                GREEN,
+            )?;
+            return Ok(());
+        }
         let draft = self.status != Status::ConsistentUnderAssumptions;
         let color = if draft { RED } else { GREEN };
         self.current
@@ -635,10 +651,20 @@ impl Layout {
                 MARGIN,
                 30.0,
                 &format!(
-                    "Page {} of {} | Plan {} | Target {}",
+                    "Page {} of {} | {} {} | {} {}",
                     index + 1,
                     count,
+                    if self.review_label.is_some() {
+                        "Reference"
+                    } else {
+                        "Plan"
+                    },
                     &plan_revision[..12],
+                    if self.review_label.is_some() {
+                        "Query"
+                    } else {
+                        "Target"
+                    },
                     &target_revision[..12]
                 ),
                 8.0,
@@ -657,11 +683,19 @@ impl Layout {
         let gid_map_id = Ref::new(8);
         let info = Ref::new(9);
         pdf.catalog(catalog).pages(pages).lang(TextStr("en"));
+        let subject = self
+            .review_label
+            .as_deref()
+            .unwrap_or_else(|| status_text(self.status));
         pdf.document_info(info)
             .title(TextStr(title))
-            .subject(TextStr(status_text(self.status)))
+            .subject(TextStr(subject))
             .creator(TextStr("Collagene 2"))
-            .producer(TextStr("Collagene embedded Rust protocol exporter"));
+            .producer(TextStr(if self.review_label.is_some() {
+                "Collagene embedded Rust comparison exporter"
+            } else {
+                "Collagene embedded Rust protocol exporter"
+            }));
         let page_ids: Vec<_> = (0..count).map(|i| Ref::new(10 + i as i32 * 2)).collect();
         pdf.pages(pages)
             .kids(page_ids.iter().copied())
@@ -759,6 +793,67 @@ impl Layout {
         };
         Ok((bytes, count, warnings))
     }
+}
+
+/// Shared bounded text/report renderer. Fixed lines position each ASCII glyph in
+/// an equal-width cell; the bundled proportional font cannot align base columns
+/// by merely drawing an ordinary text paragraph.
+pub(crate) enum ReviewBlock {
+    Heading(String),
+    Paragraph(String),
+    Fixed(Vec<String>),
+}
+pub(crate) fn export_comparison_pdf(
+    title: &str,
+    label: &str,
+    reference_revision: &str,
+    query_revision: &str,
+    blocks: &[ReviewBlock],
+) -> Result<(Vec<u8>, usize, Vec<String>), Error> {
+    if title.len() > 8192
+        || label.len() > 256
+        || reference_revision.len() != 64
+        || query_revision.len() != 64
+    {
+        return Err(Error::TooLarge);
+    }
+    let mut layout = Layout::with_review_label(Status::Incomplete, Some(label.into()))?;
+    for block in blocks {
+        match block {
+            ReviewBlock::Heading(text) => layout.heading(text)?,
+            ReviewBlock::Paragraph(text) => layout.paragraph(text)?,
+            ReviewBlock::Fixed(lines) => {
+                let height = lines.len() as f32 * 11.0 + 6.0;
+                if lines.len() > 8
+                    || lines.iter().any(|line| {
+                        !line.is_ascii()
+                            || line.len() > 84
+                            || line.bytes().any(|b| b.is_ascii_control())
+                    })
+                {
+                    return Err(Error::Format(
+                        "invalid fixed-column comparison block".into(),
+                    ));
+                }
+                layout.ensure(height)?;
+                for line in lines {
+                    for (column, character) in line.chars().enumerate() {
+                        let mut buffer = [0; 4];
+                        layout.text_at(
+                            MARGIN + column as f32 * 6.0,
+                            layout.y,
+                            character.encode_utf8(&mut buffer),
+                            8.0,
+                            INK,
+                        )?;
+                    }
+                    layout.y -= 11.0;
+                }
+                layout.y -= 6.0;
+            }
+        }
+    }
+    layout.finish(title, reference_revision, query_revision)
 }
 fn color(hex: &str) -> [f32; 3] {
     let component =

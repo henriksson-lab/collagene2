@@ -10,6 +10,8 @@ use std::{io, sync::Arc};
 
 pub struct Review {
     pub record: Record,
+    pub reference: Arc<collagene_core::Molecule>,
+    pub query: Arc<collagene_core::Molecule>,
     pub reference_name: String,
     pub query_name: String,
     pub fresh: bool,
@@ -178,6 +180,8 @@ pub fn PairwiseResultView(
                 {move||{let current=page.get().min(alignment_pages-1);let text=bound.with_value(|review|index.with_value(|index|render_page(&review.record.report.comparison.alignment,index,current)));view!{<pre>{text}</pre><p>{format!("Columns {}–{} of {columns}; page {} of {alignment_pages}",if columns==0{0}else{current*600+1},((current+1)*600).min(columns),current+1)}</p><div class="method-row-actions"><button class="text-tool" disabled=current==0 on:click=move|_|page.set(current.saturating_sub(1))>"Previous columns"</button><button class="text-tool" disabled={current+1>=alignment_pages} on:click=move|_|page.set((current+1).min(alignment_pages-1))>"Next columns"</button></div>}}}
                 <label>"Jump to alignment column (1-based)"<input type="number" min="1" prop:value=move||column_jump.get() on:input=move|event|column_jump.set(event_target_value(&event))/></label><button class="text-tool" on:click=move|_|{match column_jump.get_untracked().parse::<usize>(){Ok(column)if column>0&&column<=columns=>page.set((column-1)/600),_=>status.set("Enter a reported alignment column.".into())}}>"Show column"</button>
             </details>
+            <crate::pairwise_search_view::PairwiseSearchView review=bound.get_value() guard page on_navigate/>
+            <crate::pairwise_context_view::PairwiseContextView review=bound.get_value() guard page/>
             <h4>{format!("Differences and uncertain regions · {count}")}</h4>
             <div class="method-row-actions"><button class="text-tool" disabled=move||focused.get().is_none_or(|index|index==0) on:click=move|_|if let Some(index)=focused.get_untracked(){focus.run(index.saturating_sub(1));}>"Previous difference"</button><button class="text-tool" disabled=move||focused.get().is_none_or(|index|index+1>=count) on:click=move|_|if let Some(index)=focused.get_untracked(){focus.run((index+1).min(count.saturating_sub(1)));}>"Next difference"</button></div>
             <label>"Difference number (1-based)"<input type="number" min="1" prop:value=move||jump.get() on:input=move|event|jump.set(event_target_value(&event))/></label><button class="text-tool" on:click=move|_|{match jump.get_untracked().parse::<usize>(){Ok(index)if index>0&&index<=count=>focus.run(index-1),_=>status.set("Enter a reported difference number.".into())}}>"Show difference"</button>
@@ -192,6 +196,7 @@ pub fn PairwiseResultView(
             <details><summary>"Complete CIGAR"</summary>{move||{let current=cigar_page.get().min(cigar_pages-1);let value=bound.with_value(|review|{let cigar=&review.record.report.comparison.alignment.cigar;let start=(current*2000).min(cigar.len());cigar[start..(start+2000).min(cigar.len())].to_string()});view!{<pre>{value}</pre><p>{format!("CIGAR text page {} of {cigar_pages}",current+1)}</p><button class="text-tool" disabled=current==0 on:click=move|_|cigar_page.set(current.saturating_sub(1))>"Previous CIGAR"</button><button class="text-tool" disabled={current+1>=cigar_pages} on:click=move|_|cigar_page.set((current+1).min(cigar_pages-1))>"Next CIGAR"</button>}}}</details>
             <button class="button secondary full" disabled=bound.with_value(|review|!review.fresh) on:click=save>"Save event-bound comparison"</button>
             <button class="button secondary full" on:click=export>"Download complete comparison JSON"</button>
+            <crate::pairwise_export_view::PairwiseExportView review=bound.get_value() guard/>
             <p class="helper" role="status">{move||status.get()}</p>
         </section>
     }.into_any()

@@ -14,6 +14,27 @@ is postponed until the rest of the software is implemented. Existing modules are
 retained; no more alignment/index features or integration are scheduled now.
 Browser checks remain deferred and compiler checks run alongside coding.
 
+## Explicit ordinary PCR outputs
+
+Ordinary exact-PCR no longer opens every returned product immediately. The review
+pages every geometry and selected DNA, shows actual oligo roles, retains names and
+tails, and requires a choice when several geometries exist. Users choose a named
+reference preview, optional oligo collection, or export the named pair as CSV/TSV.
+Output creation freshly reconstructs the selected preview in the worker and checks
+its original revision; the host checks the source event, literal draft and epoch
+before staging a complete validated workspace. Output history and a compact
+reference-provenance attachment retain the original event and selected geometry.
+No independently verified target or physical chemistry is asserted by this route.
+
+Worker50 adds job117/result109; existing candidate/plan/science/archive versions
+and the MCP registry are unchanged. Twenty-four focused native cases passed,
+covering selected alternatives, annotations, stale inputs, complete named orders,
+optional outputs, IUPAC/long tails and old-schema binary rejection, alongside
+existing PCR-document and oligo-format regression cases. The web application and
+analysis worker also passed the WASM compiler check. Browser acceptance remains
+deferred. Inverse-PCR event handoff/shared output review and the wider product
+goal remain unfinished. [Output contract](PCR_OUTPUTS.md).
+
 ## Coherent assembly junction edits
 
 The persistent assembly workspace can trim the two oriented source cores around a

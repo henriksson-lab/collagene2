@@ -2,6 +2,13 @@
 
 Reviewed 2026-11-25 using official public Benchling documentation and repository source. No local browser checks, compilation, tests, third-party source code or authenticated Benchling session were used. This updates the output-handoff gap in [the primer/validation review](BENCHLING_PRIMER_VALIDATION_WORKFLOW_REVIEW.md); it does not reopen completed shared primer-editor work. Source inspection is not GUI acceptance.
 
+Subsequent implementation: ordinary exact-PCR now retains all returned geometries
+for explicit selection, naming, optional product/oligo output and CSV/TSV. Fresh
+worker reconstruction and exact original-event guards precede atomic staging.
+The observations below record the pre-change audit; the ordinary-PCR handoff is
+no longer wholly absent. [Current contract](PCR_OUTPUTS.md). Inverse-PCR and the
+other follow-ups remain active.
+
 ## Documented Benchling behavior
 
 **Primer selection precedes saving and export.** Benchling's primer guide describes selecting template bases and direction, editing a named single primer or pair, and saving. Wizard results let users choose primers before saving or CSV export. Attached sequence primers also have checkboxes and a bulk CSV action. These are two selection contexts: choosing a designed candidate and exporting already attached primers. A named oligo can be reused across templates; a primer pair defines the intended amplification region. The documented wizard uses Primer3, which remains outside our implementation scope. [Use primers, updated October 2, 2025](https://help.benchling.com/hc/en-us/articles/39072057302541-Use-primers).

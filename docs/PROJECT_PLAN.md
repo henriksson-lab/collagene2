@@ -585,6 +585,16 @@ remaining cloning workflows remain active priorities. See [outputs](CLONING_OUTP
 
 ### Next connected cloning workflows
 
+Ordinary exact-PCR now retains all returned geometries for explicit output review.
+Multiple geometries require selection; named product and optional declared oligo
+collection creation are separate choices, with CSV/TSV for the literal named pair.
+Fresh worker reconstruction checks the original preview revision before the host
+atomically installs outputs bound to the exact template event and unchanged draft.
+This is reference construction, without an invented independent target or physical
+verification claim. Worker50 appends only this output job/result. Inverse-PCR's
+source-event handoff and shared output/order review remain next connected work.
+[Selected PCR outputs](PCR_OUTPUTS.md).
+
 The latest source-aware workflow reviews supersede older gap lists where those
 connections have since been implemented: [PCR and selected outputs](BENCHLING_PCR_OUTPUT_REVIEW.md),
 [sequence editing and restriction controls](BENCHLING_EDITOR_WORKFLOW_REVIEW.md),
@@ -594,8 +604,9 @@ reviews for independent workflows. Distinguish documented interactions from our
 adaptations and unknown scientific semantics; do not introduce project management
 or excluded scope merely to mirror its interface.
 
-Prioritize ordinary PCR's explicit selected-product review and output/order route
-over further Golden Gate optimization or domestication. Preserve alternative
+Keep ordinary PCR's explicit selected-product review and output/order route as
+the foundation for the next primer-led output connections, ahead of further
+Golden Gate optimization or domestication. Preserve alternative
 binding geometries, named oligos, original source events and separate intended-target
 checking: a simulator-derived PCR preview is not an independently verified design.
 Reuse the existing output and oligo-export machinery where its contracts fit;

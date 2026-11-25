@@ -1073,6 +1073,41 @@ pub fn App() -> impl IntoView {
     let pcr_forward_tail = RwSignal::new(String::new());
     let pcr_reverse_tail = RwSignal::new(String::new());
     let pcr_generation = RwSignal::new(0u32);
+    let pcr_review = RwSignal::new(None::<crate::pcr_outputs::Review>);
+    let pcr_output_busy = RwSignal::new(false);
+    let pcr_output_worker = StoredValue::new_local(None::<std::rc::Rc<worker::CachedWorker>>);
+    let pcr_alive = StoredValue::new(std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
+        true,
+    )));
+    let pcr_cleanup_alive = pcr_alive.get_value();
+    on_cleanup(move || {
+        pcr_cleanup_alive.store(false, std::sync::atomic::Ordering::Relaxed);
+        if let Some(worker) = pcr_output_worker.get_value() {
+            worker.close();
+        }
+    });
+    Effect::new(move |_| {
+        let _ = (
+            pcr_forward_name.get(),
+            pcr_reverse_name.get(),
+            pcr_forward.get(),
+            pcr_reverse.get(),
+            pcr_forward_tail.get(),
+            pcr_reverse_tail.get(),
+            workspace_epoch.get(),
+            workspace_restoring.get(),
+        );
+        documents.with(|docs| {
+            let _ = docs.get(active.get()).map(current_event_binding);
+        });
+        pcr_generation.update(|g| *g = g.wrapping_add(1));
+        pcr_review.set(None);
+        pcr_output_busy.set(false);
+        if let Some(worker) = pcr_output_worker.get_value() {
+            worker.close();
+        }
+        pcr_output_worker.set_value(None);
+    });
     let primer_sources = Memo::new(move |_| {
         documents.with(|docs| {
             docs.iter()
@@ -1964,6 +1999,14 @@ pub fn App() -> impl IntoView {
         );
         let generation = pcr_generation.get_untracked().wrapping_add(1);
         pcr_generation.set(generation);
+        pcr_review.set(None);
+        pcr_output_busy.set(false);
+        if let Some(worker) = pcr_output_worker.get_value() {
+            worker.close();
+        }
+        pcr_output_worker.set_value(None);
+        let reviewed_forward = forward.clone();
+        let reviewed_reverse = reverse.clone();
         let request = protocol::Request {
             id: generation,
             revision: revision.clone(),
@@ -1974,8 +2017,12 @@ pub fn App() -> impl IntoView {
             },
         };
         message.set("Computing PCR products in background…".into());
+        let alive = pcr_alive.get_value();
         spawn_local(async move {
-            let result = worker::analyze(request).await;
+            let result = worker::analyze_cancellable(request, alive.clone()).await;
+            if !alive.load(std::sync::atomic::Ordering::Relaxed) {
+                return;
+            }
             if workspace_restoring.get_untracked()
                 || workspace_epoch.get_untracked() != pcr_epoch
                 || !documents.with_untracked(|docs| {
@@ -2002,57 +2049,16 @@ pub fn App() -> impl IntoView {
                     ..
                 }) => {
                     let count = products.len();
-                    let findings = products
-                        .iter()
-                        .flat_map(|p| p.findings.iter())
-                        .take(20)
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    let opened = (|| -> Result<(), String> {
-                        if products.is_empty() {
-                            return Ok(());
-                        }
-                        let (staged, first) = documents.with_untracked(|docs| -> Result<_, String> {
-                            let source = docs.iter().find(|doc| current_event_binding(doc) == pcr_source)
-                                .ok_or("The exact PCR template event changed; recompute products.")?;
-                            let first = docs.len();
-                            let added_bytes = products.iter().try_fold(0usize, |sum,p|sum.checked_add(document_bytes(&p.molecule)).ok_or("PCR product byte count overflow"))?;
-                            let existing_bytes = docs.iter().map(|d|document_bytes(&d.molecule)).sum::<usize>();
-                            if first.saturating_add(products.len()) > 1000 || existing_bytes.saturating_add(added_bytes) > MAX_WORKSPACE_BYTES {
-                                return Err("PCR products exceed the workspace document budget; no products opened.".into());
-                            }
-                            let mut ids = docs.iter().map(|d|d.id.clone()).collect::<std::collections::BTreeSet<_>>();
-                            let mut additions = Vec::with_capacity(products.len());
-                            for product in products {
-                                let prefix = format!("pcr-{}",&product.molecule.revision()[..16]);
-                                let mut suffix=1usize;
-                                let id=loop{let id=format!("{prefix}-{suffix}");if ids.insert(id.clone()){break id;}suffix+=1;};
-                                additions.push(source.derive_event(&pcr_source.event_id,id,product.molecule,"Exact-PCR reference preview from this template event; ordered primers retained, physical chemistry and experimental success unverified").map_err(|e|e.to_string())?);
-                            }
-                            let mut staged=docs.clone();staged.extend(additions);Ok((staged,first))
-                        })?;
-                        workspace_snapshot(
-                            &staged,
-                            first,
-                            candidate.get_untracked().as_ref(),
-                            &stored_candidates.get_untracked(),
-                            &attachments.get_untracked(),
-                            &workspace_name.get_untracked(),
-                        )?
-                        .validate()
-                        .map_err(|e| e.to_string())?;
-                        batch(|| {
-                            documents.set(staged);
-                            active.set(first);
-                        });
-                        Ok(())
-                    })();
-                    if let Err(error) = opened {
-                        message.set(error);
-                        return;
-                    }
-                    message.set(format!("{count} exact-annealing PCR product geometry/ies with projected annotations. Reaction feasibility is not evaluated. {findings}"));
+                    pcr_review.set(Some(crate::pcr_outputs::Review {
+                        source: pcr_source,
+                        epoch: pcr_epoch,
+                        generation,
+                        forward: reviewed_forward,
+                        reverse: reviewed_reverse,
+                        products: std::sync::Arc::new(products),
+                        inputs: pcr_inputs,
+                    }));
+                    message.set(format!("{count} exact-annealing PCR geometries. Review and choose outputs; no documents have been created."));
                 }
                 Ok(protocol::Response {
                     result: protocol::AnalysisResult::Error(error),
@@ -2063,6 +2069,226 @@ pub fn App() -> impl IntoView {
             }
         });
     };
+    let pcr_review_current = Callback::new(move |review: crate::pcr_outputs::Review| {
+        !workspace_restoring.get_untracked()
+            && workspace_epoch.get_untracked() == review.epoch
+            && pcr_generation.get_untracked() == review.generation
+            && review.inputs
+                == (
+                    pcr_forward_name.get_untracked(),
+                    pcr_reverse_name.get_untracked(),
+                    pcr_forward.get_untracked(),
+                    pcr_reverse.get_untracked(),
+                    pcr_forward_tail.get_untracked(),
+                    pcr_reverse_tail.get_untracked(),
+                )
+            && documents.with_untracked(|docs| {
+                docs.get(active.get_untracked())
+                    .is_some_and(|doc| current_event_binding(doc) == review.source)
+            })
+            && pcr_review.with_untracked(|current| {
+                current.as_ref().is_some_and(|current| {
+                    current.generation == review.generation
+                        && std::sync::Arc::ptr_eq(&current.products, &review.products)
+                })
+            })
+    });
+    let create_pcr_outputs = Callback::new(move |choice: crate::pcr_outputs::Choice| {
+        if pcr_output_busy.get_untracked() || !pcr_review_current.run(choice.review.clone()) {
+            message.set("The PCR draft or template changed; compute and review again.".into());
+            return;
+        }
+        let Some(selected) = choice.review.products.get(choice.product_index) else {
+            message.set("Choose a reported PCR geometry.".into());
+            return;
+        };
+        let Some(source) = documents.with_untracked(|docs| {
+            docs.get(active.get_untracked())
+                .map(|doc| doc.molecule.clone())
+        }) else {
+            return;
+        };
+        let request = collagene_core::pcr_outputs::Request {
+            source,
+            forward: choice.review.forward.clone(),
+            reverse: choice.review.reverse.clone(),
+            selected_index: choice.product_index,
+            expected_product_revision: selected.molecule.revision(),
+            options: collagene_core::pcr_outputs::Options {
+                name: choice.name.clone(),
+                save_product: choice.save_product,
+                save_primers: choice.save_primers,
+            },
+        };
+        let preview_revision = request.expected_product_revision.clone();
+        let revision = match collagene_core::pcr_outputs::revision(&request) {
+            Ok(revision) => revision,
+            Err(error) => {
+                message.set(error.to_string());
+                return;
+            }
+        };
+        let w = match worker::CachedWorker::new() {
+            Ok(w) => std::rc::Rc::new(w),
+            Err(error) => {
+                message.set(error);
+                return;
+            }
+        };
+        pcr_output_worker.set_value(Some(w.clone()));
+        pcr_output_busy.set(true);
+        message.set("Reconstructing the selected PCR geometry before creating outputs…".into());
+        let alive = pcr_alive.get_value();
+        spawn_local(async move {
+            let result = w
+                .ask(protocol::Request {
+                    id: choice.review.generation,
+                    revision: revision.clone(),
+                    job: protocol::AnalysisJob::PreparePcrOutputs { request },
+                })
+                .await;
+            w.close();
+            if !alive.load(std::sync::atomic::Ordering::Relaxed)
+                || !pcr_review_current.run(choice.review.clone())
+            {
+                return;
+            }
+            pcr_output_worker.set_value(None);
+            pcr_output_busy.set(false);
+            let outcome = (|| -> Result<(), String> {
+                let response = result?;
+                if response.id != choice.review.generation || response.revision != revision {
+                    return Err("PCR output response does not match this request.".into());
+                }
+                let prepared = match response.result {
+                    protocol::AnalysisResult::PcrOutputs(prepared) => prepared,
+                    protocol::AnalysisResult::Error(error) => return Err(error),
+                    _ => return Err("Unexpected PCR output response.".into()),
+                };
+                prepared
+                    .validate_binding(&revision)
+                    .map_err(|e| e.to_string())?;
+                if prepared.context_revision != revision
+                    || prepared.selected_index != choice.product_index
+                    || prepared.product.is_some() != choice.save_product
+                    || prepared.primers.is_some() != choice.save_primers
+                {
+                    return Err("PCR output selection does not match the reviewed request.".into());
+                }
+                let output_findings = prepared.findings.join(" ");
+                let mut staged_docs = documents.get_untracked();
+                let mut staged_active = active.get_untracked();
+                let mut staged_assets = attachments.get_untracked();
+                let mut product_event = None;
+                let mut primer_asset = None;
+                if let Some(mut product) = prepared.product {
+                    product.metadata.insert(
+                        "pcr:template_document".into(),
+                        choice.review.source.document_id.clone(),
+                    );
+                    product.metadata.insert(
+                        "pcr:template_event".into(),
+                        choice.review.source.event_id.clone(),
+                    );
+                    let source = staged_docs
+                        .iter()
+                        .find(|doc| current_event_binding(doc) == choice.review.source)
+                        .ok_or("The exact PCR template event changed; recompute products.")?;
+                    let prefix = format!("pcr-{}", &product.revision()[..16]);
+                    let mut suffix = 1usize;
+                    let id = loop {
+                        let id = format!("{prefix}-{suffix}");
+                        if !staged_docs.iter().any(|doc| doc.id == id) {
+                            break id;
+                        }
+                        suffix += 1;
+                    };
+                    let derived = source.derive_event(&choice.review.source.event_id,id,product,
+                        "Selected exact-PCR reference preview; ordered primers retained, physical chemistry and experimental success unverified")
+                        .map_err(|e|e.to_string())?;
+                    product_event = Some(current_event_binding(&derived));
+                    staged_active = staged_docs.len();
+                    staged_docs.push(derived);
+                }
+                if staged_docs.len() > 1000
+                    || staged_docs
+                        .iter()
+                        .map(|d| document_bytes(&d.molecule))
+                        .sum::<usize>()
+                        > MAX_WORKSPACE_BYTES
+                {
+                    return Err("Selected PCR output exceeds the workspace document budget; nothing created.".into());
+                }
+                let retained_table = prepared.primers.map(std::sync::Arc::new);
+                if let Some(table) = &retained_table {
+                    table.validate().map_err(|e| e.to_string())?;
+                    let bytes = serde_json::to_vec(table.as_ref()).map_err(|e| e.to_string())?;
+                    let asset_hash = blake3::hash(&bytes).to_hex().to_string();
+                    primer_asset = Some(asset_hash.clone());
+                    staged_assets.insert(
+                        asset_hash,
+                        workspace::WorkspaceAttachment {
+                            kind: "oligo-table-v1".into(),
+                            name: format!("{} primers", choice.name),
+                            media_type: "application/json".into(),
+                            bytes,
+                        },
+                    );
+                }
+                let receipt = serde_json::to_vec(&serde_json::json!({
+                    "schema_version":1,"source":choice.review.source,"context_revision":revision,
+                    "selected_index":choice.product_index,"original_preview_revision":preview_revision,
+                    "product":product_event,"primer_attachment":primer_asset,
+                    "geometry":{"forward_start":prepared.geometry.forward_start,
+                        "reverse_start":prepared.geometry.reverse_start,"crosses_origin":prepared.geometry.crosses_origin,
+                        "forward_primer":prepared.geometry.forward_primer,"reverse_primer":prepared.geometry.reverse_primer},
+                    "forward":choice.review.forward,"reverse":choice.review.reverse,
+                    "output_name":choice.name,"save_product":choice.save_product,"save_primers":choice.save_primers,
+                    "model":"Exact-annealing reference preview; no independent target verification or experimental success asserted"
+                })).map_err(|e|e.to_string())?;
+                staged_assets.insert(
+                    blake3::hash(&receipt).to_hex().to_string(),
+                    workspace::WorkspaceAttachment {
+                        kind: "pcr-output-reference-v1".into(),
+                        name: format!("{} PCR source", choice.name),
+                        media_type: "application/json".into(),
+                        bytes: receipt,
+                    },
+                );
+                workspace_snapshot(
+                    &staged_docs,
+                    staged_active,
+                    candidate.get_untracked().as_ref(),
+                    &stored_candidates.get_untracked(),
+                    &staged_assets,
+                    &workspace_name.get_untracked(),
+                )?
+                .validate()
+                .map_err(|e| e.to_string())?;
+                batch(|| {
+                    documents.set(staged_docs);
+                    active.set(staged_active);
+                    attachments.set(staged_assets);
+                    if let Some(table) = retained_table {
+                        oligo_tables.update(|tables| {
+                            if !tables.iter().any(|old| {
+                                old.source_blake3 == table.source_blake3
+                                    && old.options == table.options
+                            }) {
+                                tables.push(table);
+                            }
+                        });
+                    }
+                    pcr_review.set(None);
+                    message.set(format!("Selected PCR outputs created. Sequence-reference previews; physical chemistry and experimental success are unverified. {output_findings}"));
+                });
+                Ok(())
+            })();
+            if let Err(error) = outcome {
+                message.set(error);
+            }
+        });
+    });
     let run_plan =
         move |plan: DesignPlan,
               target: Molecule,
@@ -3813,7 +4039,7 @@ pub fn App() -> impl IntoView {
                                     <Show when=move||panel.get()=="pcr"><div class="inspector-content"><h2>"Simulate PCR"</h2><p class="helper">"Enter both primers 5′→3′. Annealing must match exactly; tails are introduced into the product."</p><crate::primer_picker::PrimerPicker label="Forward".to_string() sources=primer_sources list_primers=list_saved_primers resolve_primer=resolve_saved_primer epoch=workspace_epoch on_copy=Callback::new(move|primer:Primer|batch(||{pcr_forward_name.set(primer.name);pcr_forward.set(primer.annealing.as_str().into());pcr_forward_tail.set(primer.tail);pcr_generation.update(|g|*g=g.wrapping_add(1));}))/>
     <crate::primer_picker::PrimerPicker label="Reverse".to_string() sources=primer_sources list_primers=list_saved_primers resolve_primer=resolve_saved_primer epoch=workspace_epoch on_copy=Callback::new(move|primer:Primer|batch(||{pcr_reverse_name.set(primer.name);pcr_reverse.set(primer.annealing.as_str().into());pcr_reverse_tail.set(primer.tail);pcr_generation.update(|g|*g=g.wrapping_add(1));}))/>
     <label>"Forward name"<input maxlength="256" prop:value=move||pcr_forward_name.get() on:input=move|e|pcr_forward_name.set(event_target_value(&e))/></label>
-    <label>"Reverse name"<input maxlength="256" prop:value=move||pcr_reverse_name.get() on:input=move|e|pcr_reverse_name.set(event_target_value(&e))/></label><label>"Forward annealing"<input prop:value=move||pcr_forward.get() on:input=move|e|pcr_forward.set(event_target_value(&e)) placeholder="ACGT…"/></label><label>"Forward 5′ tail"<input prop:value=move||pcr_forward_tail.get() on:input=move|e|pcr_forward_tail.set(event_target_value(&e)) placeholder="Optional"/></label><label>"Reverse annealing"<input prop:value=move||pcr_reverse.get() on:input=move|e|pcr_reverse.set(event_target_value(&e)) placeholder="ACGT…"/></label><label>"Reverse 5′ tail"<input prop:value=move||pcr_reverse_tail.get() on:input=move|e|pcr_reverse_tail.set(event_target_value(&e)) placeholder="Optional"/></label><button class="button primary full" on:click=do_pcr>"Compute products"</button><p class="helper">"Products open as new documents. This checks sequence geometry, not laboratory success."</p></div></Show>
+    <label>"Reverse name"<input maxlength="256" prop:value=move||pcr_reverse_name.get() on:input=move|e|pcr_reverse_name.set(event_target_value(&e))/></label><label>"Forward annealing"<input prop:value=move||pcr_forward.get() on:input=move|e|pcr_forward.set(event_target_value(&e)) placeholder="ACGT…"/></label><label>"Forward 5′ tail"<input prop:value=move||pcr_forward_tail.get() on:input=move|e|pcr_forward_tail.set(event_target_value(&e)) placeholder="Optional"/></label><label>"Reverse annealing"<input prop:value=move||pcr_reverse.get() on:input=move|e|pcr_reverse.set(event_target_value(&e)) placeholder="ACGT…"/></label><label>"Reverse 5′ tail"<input prop:value=move||pcr_reverse_tail.get() on:input=move|e|pcr_reverse_tail.set(event_target_value(&e)) placeholder="Optional"/></label><button class="button primary full" on:click=do_pcr>"Compute products"</button><p class="helper">"Review reported geometries, then choose a named reference preview and optional primers. This checks sequence geometry, not laboratory success."</p>{move||pcr_review.get().map(|review|view!{<crate::pcr_outputs::PcrOutputsPanel review=review on_create=create_pcr_outputs guard=pcr_review_current busy=pcr_output_busy/>})}</div></Show>
                                     <Show when=move||panel.get()=="plan"><div class="inspector-content"><h2>"Cloning plan"</h2><div class="plan-exchange"><button class="button secondary full" on:click=export_workspace>"Export for AI"</button><button class="button secondary full" on:click=move|_|if let Some(input)=file_input.get(){input.click();}>"Open candidate"</button></div><p class="helper">"Export the active target and open inputs for your MCP client. Open its returned candidate here for review."</p><Show when=move||candidate.get().is_some()><div class="candidate-review"><h3>"Candidate · review before use"</h3>{move||candidate.get().map(|c|view!{<p><strong>{c.plan.name.clone()}</strong></p><p class="helper">{format!("Target revision {}…",&c.plan.target_revision[..12])}</p><h4>"Bound inputs"</h4><ul>{c.plan.inputs.iter().map(|i|view!{<li>{format!("{}: {} · {} bases · {}…",i.id,i.molecule.name,i.molecule.sequence.len(),&i.revision[..12])}</li>}).collect_view()}</ul><h4>"Ordered steps"</h4><ol>{c.plan.steps.iter().map(|step|{let description=match step{Operation::CatalogDigest{selection,..}=>format!("Catalog digest with {}",selection.enzymes.iter().map(|e|e.enzyme.name.as_str()).collect::<Vec<_>>().join(", ")),Operation::DeclareSourceTermini{..}=>"Declare original duplex termini".into(),Operation::CheckedTopo{..}=>"TOPO graph with explicit target acceptance".into(),Operation::Topo{..}=>"TOPO physical strand reconstruction".into(),Operation::RecombineReference{request,..}=>format!("Reference-only {:?} exchange",request.reaction),Operation::DeclareSourceModifications{..}=>"Declare original source modifications".into(),Operation::CheckedDigest{enzymes,..}=>format!("Checked digest with {}",enzymes.join(", ")),Operation::Tail3Prime{base,..}=>format!("Add {} to both 3′ ends",base.as_str()),Operation::ProfiledOverlap{options,..}=>format!("Profiled {:?} overlap assembly",options.method),Operation::RepairEnds{method,..}=>format!("End repair: {:?}",method),Operation::AnnealOligos{candidate_index,..}=>format!("Anneal oligos: zero-based candidate {}",candidate_index),Operation::PcrWithMismatches{..}=>"Intentional-mismatch PCR".into(),Operation::GoldenGate{options,..}=>format!("Golden Gate with {:?}",options.enzyme),Operation::Digest{enzymes,..}=>format!("Digest with {}",enzymes.join(", ")),Operation::TreatEnds{treatment,..}=>format!("Terminal {treatment:?}"),Operation::Ligate{fragments,circular,..}=>format!("Ligation of {} fragments → {}",fragments.len(),if *circular {"circular"}else{"linear"}),Operation::Pcr{forward,reverse,..}=>format!("PCR with {} and {}",forward.name,reverse.name),Operation::Overlap{fragments,circular,..}=>format!("Overlap assembly of {} fragments → {}",fragments.len(),if *circular {"circular"} else {"linear"})};let details=describe_step(step);view!{<li><details><summary>{description}</summary><pre>{details}</pre></details></li>}}).collect_view()}</ol>})}<button class="button primary full" on:click=verify_candidate>"Verify candidate"</button><button class="button secondary full" on:click=move|_|{candidate_events.set(None);candidate.set(None);plan_report.set(None);last_plan.set(None);plan_generation.update(|g|*g=g.wrapping_add(1));}>"Discard candidate"</button></div></Show><Show when=move||candidate.get().is_none()><h3>"Manual cloning plan"</h3><p class="helper">"The active document is the intended target. Choose source documents and a cloning method; the core reconstructs the ordered candidate."</p><label>"First fragment"<select aria-label="First source document" prop:value=move||first_input.get().to_string() on:change=move|e|first_input.set(event_target_value(&e).parse().unwrap_or(0))>{move||documents.get().iter().enumerate().map(|(i,d)|view!{<option value=i.to_string()>{d.molecule.name.clone()}</option>}).collect_view()}</select></label><Show when=move||plan_method.get()!="restriction"||(restriction_final.get()=="ligate"&&second_restriction.get())><label>"Second fragment"<select aria-label="Second source document" prop:value=move||second_input.get().to_string() on:change=move|e|second_input.set(event_target_value(&e).parse().unwrap_or(0))>{move||documents.get().iter().enumerate().map(|(i,d)|view!{<option value=i.to_string()>{d.molecule.name.clone()}</option>}).collect_view()}</select></label></Show><label>"Method"<select aria-label="Cloning method" prop:value=move||plan_method.get() on:change=move|e|plan_method.set(if event_target_value(&e)=="restriction"{"restriction"}else{"overlap"})><option value="overlap">"Overlap assembly"</option><option value="restriction">"Restriction and ligation"</option></select></label><Show when=move||plan_method.get()=="restriction"><div class="checked-restriction-options"><label>"Restriction model"<select aria-label="Restriction model" prop:value=move||restriction_policy.get() on:change=move|e|restriction_policy.set(if event_target_value(&e)=="checked"{"checked"}else{"legacy"})><option value="legacy">"Assume complete cleavage (legacy)"</option><option value="checked">"Check inherited modification state"</option></select></label><label>"Final restriction product"<select aria-label="Restriction final product" prop:value=move||restriction_final.get() on:change=move|e|restriction_final.set(if event_target_value(&e)=="fragment"{"fragment"}else{"ligate"})><option value="ligate">"Ligate selected substrates"</option><option value="fragment">"Single processed fragment (no ligation)"</option></select></label><p class="helper">"Single-fragment mode keeps the selected digest product, or its explicitly repaired/treated descendant, as the final product. A blocked circle can remain an uncut circle without claiming a ligation."</p><Show when=move||restriction_final.get()=="ligate"><label class="checkbox-label"><input type="checkbox" aria-label="Use second restriction substrate" prop:checked=move||second_restriction.get() on:change=move|e|second_restriction.set(event_target_checked(&e))/>"Use a second restriction substrate"</label></Show><Show when=move||restriction_policy.get()=="checked"><p class="helper">"Declare the original source generation under a closed Dam/Dcm/CpG model. Original eligible positions inherit the declared state; positions outside these original motifs and newly synthesized bases are unmodified under this scope. Descendant motifs are not rescanned. Other modification systems and experimental conditions are not modeled. Unknown or impaired checked cleavage withholds undetermined products; blocked sites stay uncut."</p><details class="checked-profile-identities"><summary>"Pinned positional profiles and formulation identities"</summary><p>{format!("{} · revision {}",modified_duplex::PROFILE_VERSION,modified_duplex::profile_revision())}</p>{methylation::profiles().into_iter().map(|p|view!{<p>{format!("{}: {}",p.enzyme,p.supplier_identity)}</p>}).collect_view()}<p class="helper">"This positional profile is distinct from the source-context methylation review. Generic and HF/v2 enzyme formulations are not substituted. Imported summaries cannot authorize checked state."</p></details></Show>
         <RestrictionFields side="First" enzymes=first_enzymes fragment=first_fragment treatment=first_treatment repair=first_repair reverse=first_reverse/><Show when=move||restriction_policy.get()=="checked"><p class="checked-source-binding">{move||documents.with(|docs|docs.get(first_input.get()).map(|d|format!("First source: document {} · event {}",d.id,d.head_event())).unwrap_or_else(||"Choose a first source".into()))}</p><crate::checked_cloning::SourceAssumptions side="First" signals=first_modifications/></Show>
         <Show when=move||second_restriction.get()&&restriction_final.get()=="ligate"><RestrictionFields side="Second" enzymes=second_enzymes fragment=second_fragment treatment=second_treatment repair=second_repair reverse=second_reverse/><Show when=move||restriction_policy.get()=="checked"><p class="checked-source-binding">{move||documents.with(|docs|docs.get(second_input.get()).map(|d|format!("Second source: document {} · event {}",d.id,d.head_event())).unwrap_or_else(||"Choose a second source".into()))}</p><crate::checked_cloning::SourceAssumptions side="Second" signals=second_modifications/></Show></Show><Show when=move||restriction_final.get()=="ligate"><label class="checkbox-label"><input type="checkbox" aria-label="Allow restriction ligation nicks" prop:checked=move||allow_nicked.get() on:change=move|e|allow_nicked.set(event_target::<HtmlInputElement>(&e).checked())/>"Allow explicitly reported nicks"</label></Show><p class="helper">"Fragment numbers follow ascending reference-strand cut order, not size. Intact circles cannot ligate. The active document remains the independent target; declared source state is not measured modification evidence."</p></div></Show><Show when=move||plan_method.get()=="overlap"><label>"Junction overlap (bp)"<input type="number" min="1" prop:value=move||overlap.get() on:input=move|e|overlap.set(event_target_value(&e))/></label><Show when=move||molecule.get().topology==Topology::Circular><label>"Circular closure overlap (bp)"<input type="number" min="1" prop:value=move||closure_overlap.get() on:input=move|e|closure_overlap.set(event_target_value(&e))/></label></Show></Show><button class="button primary full" on:click=do_plan>"Reconstruct and verify"</button></Show>{move||plan_report.with(|report|report.as_ref().map(|report|view!{<div class="verification-result"><strong>{format!("{:?}",report.status)}</strong>{report.findings.iter().cloned().map(|f|view!{<p>{f}</p>}).collect_view()}{report.annotation_reports.iter().map(|step|view!{<details class="annotation-evidence"><summary>{format!("Step {} · source annotation correspondence",step.step_index+1)}</summary><p class="helper">"Mapped coordinates follow the actual selected top-reference calls. Review PCR-derived and disrupted annotations. Original unmapped features remain evidence in the reconstruction JSON, not invented product coordinates."</p>{step.evidence.sources.iter().map(|source|view!{<p>{format!("{} · {} projected · {} outside contour · {} unmapped originals · projection supported {}",source.role,source.projected,source.dropped,source.unmapped.len(),source.projection_supported)}</p>}).collect_view()}</details>}).collect_view()}{report.step_reports.iter().filter_map(|step|step.topo.as_ref().map(|topo|{let outcome=match &topo.projection.outcome{collagene_core::topo::physical::projection::Outcome::Proven(contour)=>format!("Paired contour proven; {} nicks retained. No repair is inferred.",contour.nicks.len()),collagene_core::topo::physical::projection::Outcome::Withheld(_)=>"No unique paired contour; physical graph retained and reference withheld.".into()};view!{<details class="physical-evidence"><summary>{format!("Step {} · TOPO physical graph",step.step_index+1)}</summary><p>{outcome}</p><p>{format!("{} physical components · batch {}",topo.projection.physical.product.components.len(),topo.batch_revision)}</p><p class="helper">"Download the reconstruction report for the full physical graph, original source maps and projection evidence. Saved evidence needs fresh replay before use."</p></details>}})).collect_view()}{report.products.iter().enumerate().filter_map(|(i,p)|p.metadata.get("duplex_model").and_then(|s|serde_json::from_str::<chemistry::DuplexSummary>(s).ok()).map(|summary|view!{<details class="physical-evidence"><summary>{format!("Step {} · {}",i+1,p.name)}</summary><pre>{summary.describe()}</pre></details>})).collect_view()}{report.products.iter().enumerate().filter_map(|(i,p)|crate::checked_cloning::modification_summary(p).map(|summary|view!{<details class="checked-modification-summary"><summary>{format!("Step {} · positional modification evidence",i+1)}</summary><p>{summary}</p></details>})).collect_view()}<details><summary>"Assumptions and limits"</summary><ul>{report.assumptions.iter().cloned().map(|a|view!{<li>{a}</li>}).collect_view()}</ul></details><p class="helper">"Alternative assemblies and experimental feasibility are not exhaustively checked."</p></div>}))}<Show when=move||last_plan.with(Option::is_some)><crate::assembly_junctions_view::AssemblyJunctionsPanel capture=capture_junction_plan identity=junction_identity epoch=workspace_epoch/></Show><button class="button secondary full" disabled=move||plan_report.with(Option::is_none) on:click=move|_|{let result=plan_report.with_untracked(|report|report.as_ref().map(crate::checked_cloning::export_report));if let Some(Err(error))=result{message.set(error);}}>"Download reconstruction report"</button><button class="button secondary full" disabled=move||candidate.get().is_none()&&last_plan.get().is_none() on:click=move|_|{let value=candidate.get_untracked().or_else(||last_plan.get_untracked().map(|(plan,_)|transfer::Candidate::new(plan)));if let Some(value)=value {match transfer::save_candidate(&value){Ok(bytes)=>{if let Err(e)=download("candidate.cg2plan","application/octet-stream",&bytes){message.set(e);}},Err(e)=>message.set(e.to_string())}}}>"Save candidate"</button><button class="button secondary full" disabled=move||last_plan.get().is_none() on:click=move|_|{modal_error.set(String::new());modal.set("record_run");}>"Keep reconstructed products"</button><button class="button secondary full" disabled=move||last_plan.get().is_none() on:click=move|_|if let Some((plan,target))=last_plan.get_untracked(){let html=verification::export_protocol_html(&plan,&target);if let Err(e)=download("cloning-protocol.html","text/html",html.as_bytes()){message.set(e);}}>"Export HTML protocol"</button><button class="button secondary full" disabled=move||pdf_busy.get()||last_plan.get().is_none() on:click=export_pdf>"Export PDF protocol"</button></div></Show>

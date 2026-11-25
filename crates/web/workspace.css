@@ -274,3 +274,12 @@
 .prepared-gate-pool{margin:14px 0;padding:10px;border:1px solid #dce3e8;border-radius:5px;overflow-wrap:anywhere}.prepared-gate-pool .prepared-gate-candidate{padding:10px 0;border-top:1px solid #e1e7e0}.prepared-gate-pool pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto}.prepared-gate-pool details{margin:8px 0}
 
 .assembly-golden-path .path-rows{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:8px;max-height:420px;overflow:auto}.assembly-golden-path article{border:1px solid #dce3e8;border-radius:5px;padding:8px;min-width:0;overflow-wrap:anywhere}
+
+/* PCR review shares the inspector and keeps long ordered DNA within its width. */
+.pcr-output-review { min-width:0; display:grid; gap:10px; }
+.pcr-output-review article { min-width:0; padding:8px; border:1px solid var(--border); border-radius:5px; margin:6px 0; }
+.pcr-output-review .sequence-preview { max-width:100%; white-space:pre-wrap; overflow-wrap:anywhere; font-family:monospace; }
+.pcr-output-review label:has(input[type="radio"]),
+.pcr-output-review label:has(input[type="checkbox"]) { display:flex; flex-direction:row; align-items:start; gap:7px; }
+.pcr-output-review input[type="radio"],
+.pcr-output-review input[type="checkbox"] { flex:0 0 auto; width:auto; margin-top:3px; }

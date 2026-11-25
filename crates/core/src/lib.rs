@@ -45,6 +45,7 @@ pub mod workspace;
 pub mod history;
 
 pub mod oligo_formats;
+pub mod pcr_outputs;
 
 pub mod trace_validation;
 

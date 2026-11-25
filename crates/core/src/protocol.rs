@@ -6,8 +6,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 58;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 11;
+pub const WORKER_SCHEMA_VERSION: u16 = 59;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 12;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
@@ -1478,9 +1478,11 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::PreparedGoldenGatePool(report) => {
+            check_scientific_report_version(bytes, &report.preview.verification.engine_version)?;
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::PreparedGoldenGateCandidate(report) => {
+            check_variant_version(bytes, plan_worker_version(&report.plan))?;
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::PcrOutputs(report) => {
@@ -1555,9 +1557,11 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             outputs.validate_binding(&response.revision)?;
         }
         AnalysisResult::GoldenGateReaction(report) => {
+            check_scientific_report_version(bytes, &report.verification.engine_version)?;
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::GoldenGateReactionCandidate(report) => {
+            check_variant_version(bytes, plan_worker_version(&report.plan))?;
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::ReadReviewPreview(preview) => {
@@ -2300,6 +2304,9 @@ fn preflight_crispr_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     Ok(())
 }
 fn check_scientific_report_version(bytes: &[u8], engine: &str) -> Result<(), Error> {
+    if engine.ends_with("/science-15") {
+        check_variant_version(bytes, 59)?;
+    }
     if engine.ends_with("/science-14") {
         check_variant_version(bytes, 37)?;
     }
@@ -2323,6 +2330,29 @@ fn check_scientific_report_version(bytes: &[u8], engine: &str) -> Result<(), Err
     }
     Ok(())
 }
+fn check_combinatorial_request_version(
+    bytes: &[u8],
+    request: &crate::combinatorial_batch::Request,
+) -> Result<(), Error> {
+    use crate::combinatorial_design::Method;
+    let pool = |method: &Method| matches!(method, Method::GoldenGatePool { .. });
+    if request
+        .design
+        .as_ref()
+        .is_some_and(|design| pool(&design.method))
+        || request.rows.iter().any(|row| match row {
+            crate::combinatorial_batch::RowRequest::Ready(row) => row
+                .overrides
+                .as_ref()
+                .and_then(|overrides| overrides.method.as_ref())
+                .is_some_and(pool),
+            _ => false,
+        })
+    {
+        check_variant_version(bytes, 59)?;
+    }
+    Ok(())
+}
 fn check_workspace_version(
     bytes: &[u8],
     workspace: &crate::workspace::Workspace,
@@ -2338,6 +2368,9 @@ fn check_workspace_version(
             check_variant_version(bytes, 12)?;
             let record = crate::run_lineage::load_run_record(&attachment.bytes)?;
             check_variant_version(bytes, plan_worker_version(&record.plan))?;
+            if record.plan_schema >= 10 {
+                check_variant_version(bytes, 59)?;
+            }
             if record.plan_schema >= 4 {
                 check_variant_version(bytes, 17)?;
             }
@@ -2357,6 +2390,21 @@ fn check_workspace_version(
                 check_variant_version(bytes, 22)?;
             }
             check_scientific_report_version(bytes, &record.assessment.engine_version)?;
+        } else if attachment.kind == crate::combinatorial_batch::KIND {
+            check_variant_version(bytes, 57)?;
+            let record = crate::combinatorial_batch::load(
+                workspace,
+                &blake3::hash(&attachment.bytes).to_hex().to_string(),
+            )?;
+            check_combinatorial_request_version(bytes, &record.request)?;
+            check_scientific_report_version(bytes, &record.engine_version)?;
+        } else if attachment.kind == crate::combinatorial_release::KIND {
+            check_variant_version(bytes, 58)?;
+            let manifest = crate::combinatorial_release::load(
+                workspace,
+                &blake3::hash(&attachment.bytes).to_hex().to_string(),
+            )?;
+            check_scientific_report_version(bytes, &manifest.engine_version)?;
         } else if attachment.kind == crate::genome::WORKSPACE_ATTACHMENT_KIND {
             check_variant_version(bytes, 19)?;
         } else if attachment.kind == "read-assembly-v1" {
@@ -2427,6 +2475,7 @@ fn plan_worker_version(plan: &crate::verification::DesignPlan) -> u16 {
     plan.steps
         .iter()
         .map(|step| match step {
+            crate::verification::Operation::SelectedGoldenGate { .. } => 59,
             crate::verification::Operation::CatalogDigest { .. } => 37,
             crate::verification::Operation::DeclareSourceTermini { .. } => 34,
             crate::verification::Operation::CheckedTopo { .. } => 28,
@@ -2718,7 +2767,19 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         _ => 5,
     };
     check_variant_version(bytes, required)?;
+    if let AnalysisJob::BeginCombinatorialBatch { workspace, matrix } = &r.job {
+        check_workspace_version(bytes, workspace)?;
+        check_combinatorial_request_version(bytes, matrix)?;
+    }
     match &r.job {
+        AnalysisJob::SelectGoldenGateReaction { report, .. } => {
+            check_scientific_report_version(bytes, &report.verification.engine_version)?;
+            check_variant_version(bytes, plan_worker_version(&report.probe_plan))?;
+        }
+        AnalysisJob::SelectPreparedGoldenGateCandidate { report, .. } => {
+            check_scientific_report_version(bytes, &report.preview.verification.engine_version)?;
+            check_variant_version(bytes, plan_worker_version(&report.preview.compiled.plan))?;
+        }
         AnalysisJob::ImportAnnotations { format, .. }
         | AnalysisJob::ExportAnnotations { format, .. } => {
             check_annotation_format_version(bytes, *format)?;
@@ -4546,6 +4607,7 @@ impl AnalysisSession {
             }
             AnalysisJob::BeginCombinatorialBatch { workspace, matrix } => {
                 check_workspace_version(bytes, &workspace)?;
+                check_combinatorial_request_version(bytes, &matrix)?;
                 let pending = crate::combinatorial_batch::Session::begin(workspace, matrix)?;
                 let progress = pending.summary();
                 if progress.context_revision != r.revision {

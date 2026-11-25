@@ -471,6 +471,7 @@ pub fn RunDetailsPanel(
                                 collagene_core::verification::Operation::Tail3Prime{..}=>"3′ tailing",
                                 collagene_core::verification::Operation::AnnealOligos{..}=>"Anneal oligos",
                                 collagene_core::verification::Operation::GoldenGate{..}=>"Golden Gate",
+                                collagene_core::verification::Operation::SelectedGoldenGate{..}=>"Golden Gate with exact candidate keys",
                                 collagene_core::verification::Operation::Overlap{..}|collagene_core::verification::Operation::ProfiledOverlap{..}=>"Overlap assembly",
                             }).unwrap_or("Missing operation");
                             view!{<div class="run-product" data-step-index=product.step_index data-document-id=product.document_id.clone() data-event-id=product.event_id.clone()>

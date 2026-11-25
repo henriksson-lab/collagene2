@@ -500,6 +500,7 @@ fn BatchRows(
     on_edit: Callback<String>,
 ) -> impl IntoView {
     let page = RwSignal::new(0usize);
+    let filter = RwSignal::new("all".to_string());
     let selected = RwSignal::new(None::<usize>);
     let note_page = RwSignal::new(0usize);
     Effect::new(move || {
@@ -512,13 +513,26 @@ fn BatchRows(
         }
     });
     view!{<section class="batch-row-results">
+        <label>"Show results "<select prop:value=move||filter.get() on:change=move|event|{filter.set(event_target_value(&event));page.set(0);selected.set(None);note_page.set(0);}>
+            <option value="all">"All constructs"</option><option value="evaluated">"Evaluated constructs"</option><option value="invalid">"Invalid evaluations"</option><option value="incomplete">"Incomplete evaluations"</option><option value="errors">"Reconstruction errors"</option><option value="drafts">"Uncomputed drafts"</option>
+        </select></label>
         {move||rows.with(|all|{
-            let pages=all.len().div_ceil(20).max(1);let current=page.get().min(pages-1);
-            let rendered=all.iter().enumerate().skip(current*20).take(20).map(|(index,row)|{
+            let current_filter=filter.get();
+            let matches=|row:&RowEvidence|match current_filter.as_str(){
+                "evaluated"=>row.state==batch::RowState::Evaluated,
+                "invalid"=>row.status==Some(collagene_core::verification::Status::Invalid),
+                "incomplete"=>row.status==Some(collagene_core::verification::Status::Incomplete),
+                "errors"=>row.state==batch::RowState::Error,
+                "drafts"=>row.state==batch::RowState::DraftError,
+                _=>true,
+            };
+            let matching=all.iter().filter(|row|matches(row)).count();
+            let pages=matching.div_ceil(20).max(1);let current=page.get().min(pages-1);
+            let rendered=all.iter().enumerate().filter(|(_,row)|matches(row)).skip(current*20).take(20).map(|(index,row)|{
                 let id=row.construct_id.clone();
                 view!{<article><button class="text-tool" on:click=move|_|{selected.set(Some(index));note_page.set(0);}>{format!("{} · {} · {:?} · {}",index+1,row.name,row.state,row.status.map(|s|format!("{s:?}")).unwrap_or_else(||"not computed".into()))}</button><p class="helper">{format!("Construct {} · completed steps {}/{} · preparation complete {}",row.construct_id,row.completed_steps,row.planned_steps,row.preparation_complete)}</p>{row.error.clone().map(|error|view!{<p role="alert">{error}</p>})}<button class="text-tool" disabled=move||!editable.get() on:click=move|_|on_edit.run(id.clone())>"Edit construct in assembly dock"</button></article>}
             }).collect_view();
-            view!{<div>{rendered}<p>{format!("Result page {} of {pages}",current+1)}</p><button class="text-tool" disabled=current==0 on:click=move|_|page.set(current.saturating_sub(1))>"Previous results"</button><button class="text-tool" disabled={current+1>=pages} on:click=move|_|page.set(current+1)>"Next results"</button></div>}
+            view!{<div><p>{format!("{matching} matching constructs of {}",all.len())}</p>{rendered}<p>{format!("Result page {} of {pages}",current+1)}</p><button class="text-tool" disabled=current==0 on:click=move|_|page.set(current.saturating_sub(1))>"Previous results"</button><button class="text-tool" disabled={current+1>=pages} on:click=move|_|page.set(current+1)>"Next results"</button></div>}
         })}
         {move||selected.get().and_then(|index|rows.with(|all|all.get(index).cloned())).map(|row|{
             let count=row.findings.len()+row.assumptions.len();let pages=count.div_ceil(50).max(1);let current=note_page.get().min(pages-1);

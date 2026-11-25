@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 146;
+pub const CURRENT_TOOL_COUNT: usize = 147;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -2490,6 +2490,15 @@ impl CollageneServer {
         Parameters(args): Parameters<combinatorial_tools::InspectQuery>,
     ) -> Result<CallToolResult, ErrorData> {
         self.combinatorial_inspect(args).await
+    }
+    #[tool(
+        description = "Discover the finite native Golden Gate reaction pool for one source-bound combinatorial construct, including whole sources, complete PCR amplicons, discarded fragments, carryover and explicit preparation substrates. Returns exact source/target event bindings and source_revision, candidate indices and both sequence keys; complete native report is retained in the JSON artifact. Missing selection is allowed and never defaults to candidate zero. Independent target correspondence is advisory, never a selection rule. Explicit selection followed by fresh batch evaluation and release is required; imported reports confer no authority."
+    )]
+    async fn inspect_combinatorial_pool(
+        &self,
+        Parameters(args): Parameters<combinatorial_tools::InspectQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.combinatorial_pool_inspect(args).await
     }
     #[tool(
         description = "Freshly evaluate explicitly selected constructs with the existing deterministic preparation compilers/verifier and retain a named immutable batch record in a NEW native workspace. Stable design/construct/bin/choice identities and exact original events are preserved. Per-construct preparation/method/topology overrides are explicit; unresolved draft rows remain errors. Imported reports never restore fresh authority. Original source heads remain unchanged; native archive and complete historical JSON are returned atomically. This does not release bulk outputs or assert experimental success."

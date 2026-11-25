@@ -185,6 +185,12 @@ fn geometry(
             templates,
             options,
             candidate_index,
+        }
+        | Operation::SelectedGoldenGate {
+            templates,
+            options,
+            candidate_index,
+            ..
         } => {
             let pool = golden_gate
                 .ok_or_else(|| bad("final Golden Gate has no fresh captured enumeration"))?;

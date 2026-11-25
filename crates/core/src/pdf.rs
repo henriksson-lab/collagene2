@@ -986,6 +986,25 @@ pub(crate) fn export_protocol_pdf_checked(
                 reverse.tail,
                 serde_json::to_string(options).map_err(|e| Error::Format(e.to_string()))?
             ),
+            Operation::SelectedGoldenGate {
+                templates,
+                options,
+                candidate_index,
+                directed_sequence_key,
+                physical_sequence_key,
+            } => format!(
+                "Key-bound Golden Gate with {:?}; inputs {}. Explicit zero-based candidate {}. Fresh native enumeration must match directed key {} and physical key {} under policy {}. Finite one-copy search does not establish exhaustive reaction-mixture uniqueness; conditions and quantities are unspecified.",
+                options.enzyme,
+                templates
+                    .iter()
+                    .map(source_name)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                candidate_index,
+                directed_sequence_key,
+                physical_sequence_key,
+                serde_json::to_string(options).map_err(|e| Error::Format(e.to_string()))?
+            ),
             Operation::GoldenGate {
                 templates,
                 options,

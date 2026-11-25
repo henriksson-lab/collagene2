@@ -954,3 +954,21 @@ separate documented interactions from our independent scientific and transaction
 contracts. Matrix status filtering and easier construct-to-construct review remain
 useful refinements. Public inverse-PCR and detailed BP/LR recovery evidence remains
 incomplete; do not invent matching behavior or replace existing scientific models.
+
+
+### Per-construct whole-reaction candidate checkpoint
+
+The source matrix now composes the existing finite Golden Gate reaction model,
+with whole-source/complete exact-PCR/selected-preparation inputs, explicit native
+candidate discovery and event/geometry-bound consent. The new key-bound operation
+checks the chosen index and both identities during one fresh verifier enumeration.
+Independent targets and wrong-target failures remain separate from candidate
+choice. Existing batch records, atomic outputs and HTML/PDF/sequence ZIP exports
+retain these typed operations end to end. Draft3 and worker59/candidate12/plan10/
+science15 isolate new semantics; MCP147 exposes discovery using immutable sources.
+[Detailed scope](COMBINATORIAL_POOLS.md).
+
+Library topology editing, further method coverage, optimization/domestication and
+remaining delivery/acceptance work stay active. This closes the finite reaction
+composition gap, without claiming kinetic cycling, experimental yield or real
+mixture exhaustiveness.

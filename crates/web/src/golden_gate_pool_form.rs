@@ -1,10 +1,61 @@
-//! Portable editable pool settings, never a saved inspection or verification result.
+//! Portable editable pool settings and candidate intent, never verification evidence.
 use collagene_core::golden_gate::{GoldenGateEnzyme, GoldenGateOptions};
 use serde::{Deserialize, Deserializer, Serialize, de};
 use std::fmt;
 
 pub const MAX_CHOICES: usize = 12;
 pub const MAX_FIELD_BYTES: usize = 20;
+
+/// A user's explicit choice for a source/options-bound inspection. Restoring
+/// this declaration requires fresh native reconstruction; it grants no authority.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CandidateIntent {
+    #[serde(deserialize_with = "deserialize_hash")]
+    pub source_revision: String,
+    #[serde(deserialize_with = "deserialize_hash")]
+    pub context_revision: String,
+    #[serde(deserialize_with = "deserialize_candidate_index")]
+    pub candidate_index: usize,
+    #[serde(deserialize_with = "deserialize_hash")]
+    pub directed_sequence_key: String,
+    #[serde(deserialize_with = "deserialize_hash")]
+    pub physical_sequence_key: String,
+}
+impl CandidateIntent {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.candidate_index >= 1000
+            || [
+                &self.source_revision,
+                &self.context_revision,
+                &self.directed_sequence_key,
+                &self.physical_sequence_key,
+            ]
+            .into_iter()
+            .any(|value| !valid_hash(value))
+        {
+            return Err(
+                "Pool candidate intent requires bounded index and exact source/sequence keys."
+                    .into(),
+            );
+        }
+        Ok(())
+    }
+}
+fn valid_hash(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+fn deserialize_candidate_index<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<usize, D::Error> {
+    let index = usize::deserialize(deserializer)?;
+    if index >= 1000 {
+        return Err(de::Error::custom(
+            "pool candidate index exceeds native limit",
+        ));
+    }
+    Ok(index)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -24,6 +75,8 @@ pub struct PoolForm {
     pub products: String,
     #[serde(deserialize_with = "deserialize_field")]
     pub states: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub candidate: Option<CandidateIntent>,
 }
 
 impl Default for PoolForm {
@@ -37,6 +90,7 @@ impl Default for PoolForm {
             maximum: "16".into(),
             products: "128".into(),
             states: "50000".into(),
+            candidate: None,
         }
     }
 }
@@ -49,6 +103,9 @@ impl PoolForm {
     /// Validate safe editable state. Empty or temporarily invalid numeric text
     /// remains valid draft data; it cannot be compiled into a runnable request.
     pub fn validate(&self) -> Result<(), String> {
+        if let Some(candidate) = &self.candidate {
+            candidate.validate()?;
+        }
         if self.choices.len() > MAX_CHOICES || self.choices.iter().any(|&choice| choice > 2) {
             return Err("Pool settings require at most 12 known substrate choices.".into());
         }
@@ -105,6 +162,29 @@ impl PoolForm {
         }
         Ok(options)
     }
+}
+
+fn deserialize_hash<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    struct HashVisitor;
+    impl de::Visitor<'_> for HashVisitor {
+        type Value = String;
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.write_str("a 64-character hexadecimal identity")
+        }
+        fn visit_str<E: de::Error>(self, value: &str) -> Result<String, E> {
+            if !valid_hash(value) {
+                return Err(E::custom("invalid pool candidate identity"));
+            }
+            Ok(value.into())
+        }
+        fn visit_string<E: de::Error>(self, value: String) -> Result<String, E> {
+            if !valid_hash(&value) {
+                return Err(E::custom("invalid pool candidate identity"));
+            }
+            Ok(value)
+        }
+    }
+    deserializer.deserialize_str(HashVisitor)
 }
 
 fn deserialize_choices<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<u8>, D::Error> {
@@ -191,6 +271,33 @@ mod tests {
         let restored: PoolForm =
             serde_json::from_str(&serde_json::to_string(&form).unwrap()).unwrap();
         assert_eq!(restored, form);
+    }
+
+    #[test]
+    fn candidate_declaration_has_bounded_keys_and_never_accepts_saved_authority() {
+        let mut form = PoolForm::default();
+        form.candidate = Some(CandidateIntent {
+            source_revision: "d".repeat(64),
+            context_revision: "a".repeat(64),
+            candidate_index: 999,
+            directed_sequence_key: "b".repeat(64),
+            physical_sequence_key: "c".repeat(64),
+        });
+        assert_eq!(decode(serde_json::to_value(&form).unwrap()).unwrap(), form);
+        for (key, bad) in [
+            ("context_revision", serde_json::json!("a".repeat(65))),
+            ("directed_sequence_key", serde_json::json!("z".repeat(64))),
+            ("physical_sequence_key", serde_json::json!("a".repeat(63))),
+            ("candidate_index", serde_json::json!(1000)),
+            ("fresh", serde_json::json!(true)),
+            ("report", serde_json::json!({})),
+        ] {
+            let mut value = serde_json::to_value(&form).unwrap();
+            value["candidate"][key] = bad;
+            assert!(decode(value).is_err(), "{key}");
+        }
+        let value = serde_json::to_value(PoolForm::default()).unwrap();
+        assert!(value.get("candidate").is_none());
     }
 
     #[test]

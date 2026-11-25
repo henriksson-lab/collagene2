@@ -3,7 +3,7 @@
 use crate::{
     Error, Molecule, Topology, assembly_intent, assembly_junction_edit, assembly_recipe,
     chemistry::EndTreatment,
-    golden_gate::GoldenGateEnzyme,
+    golden_gate::{GoldenGateEnzyme, GoldenGateOptions},
     ligation_recipe,
     overlap_profiles::ProfileOptions,
     run_lineage::{EventBinding, InputEventBinding},
@@ -35,7 +35,15 @@ dto! {pub enum Method {
     Ligation{allow_nicked:bool},
     /// Same existing pinned-site geometry requirement; no kinetic-mixture inference.
     GoldenGate{enzyme:GoldenGateEnzyme,allow_nicked:bool},
+    /// Physical reaction substrates are independent of original target-contribution
+    /// coordinates. An absent pin is an editable inspection draft, never candidate zero.
+    GoldenGatePool{options:GoldenGateOptions,substrates:Vec<PoolSubstrate>,selection:Option<PoolSelection>},
 }}
+dto! {pub enum PoolSubstrateKind {WholeSource,Prepared}}
+dto! {pub struct PoolSubstrate {pub bin_id:String,pub kind:PoolSubstrateKind}}
+// Documentary user-selection intent, never imported scientific authority.
+// The outer revision also pins equal-DNA distinct workspace events and geometry.
+dto! {pub struct PoolSelection {pub selection:crate::prepared_golden_gate::Selection,pub source_revision:String}}
 dto! {pub struct Design {pub id:String,pub name:String,pub circular:bool,pub bins:Vec<Bin>,pub method:Method}}
 dto! {pub struct ChoiceSelection {pub bin_id:String,pub choice_id:String}}
 dto! {pub struct Combination {pub id:String,pub choices:Vec<ChoiceSelection>}}
@@ -63,6 +71,11 @@ pub enum IndependentIntent {
 pub enum Recipe {
     Overlap(assembly_recipe::Recipe),
     Ligation(ligation_recipe::Recipe),
+    GoldenGatePool {
+        request: crate::golden_gate_reaction::Request,
+        selection: Option<PoolSelection>,
+        source_revision: String,
+    },
 }
 pub struct Resolved {
     pub construct_id: String,
@@ -82,6 +95,12 @@ pub struct Compiled {
 pub enum Preview {
     Overlap(assembly_recipe::Preview),
     Ligation(ligation_recipe::Preview),
+    GoldenGatePool(PoolPreview),
+}
+pub struct PoolPreview {
+    pub plan: crate::verification::DesignPlan,
+    pub verification: crate::verification::VerificationReport,
+    pub preparation_complete: bool,
 }
 pub struct Evaluation {
     pub resolved: Resolved,
@@ -261,6 +280,55 @@ fn method_shape(method: &Method, bins: usize, circular: bool) -> Result<(), Erro
         }
         options.validate()?;
     }
+    if let Method::GoldenGatePool {
+        options,
+        substrates,
+        selection,
+    } = method
+    {
+        if substrates.len() != bins
+            || options.circular != circular
+            || options.min_fragments == 0
+            || options.min_fragments > options.max_fragments
+            || options.max_fragments > 32
+            || options.max_products == 0
+            || options.max_products > 1000
+            || options.max_states == 0
+            || options.max_states > 1_000_000
+        {
+            return Err(bad(
+                "declare one substrate per bin and bounded reaction options matching construct topology",
+            ));
+        }
+        let mut ids = BTreeSet::new();
+        if substrates
+            .iter()
+            .any(|row| !identifier(&row.bin_id) || !ids.insert(&row.bin_id))
+        {
+            return Err(bad("invalid or duplicate reaction substrate bin"));
+        }
+        if let Some(pin) = selection {
+            if !digest(&pin.source_revision)
+                || !digest(&pin.selection.context_revision)
+                || !digest(&pin.selection.directed_sequence_key)
+                || !digest(&pin.selection.physical_sequence_key)
+                || pin.selection.candidate_index >= options.max_products
+            {
+                return Err(bad("invalid bounded explicit reaction candidate pin"));
+            }
+        }
+    }
+    Ok(())
+}
+fn pool_bins(method: &Method, bins: &[Bin]) -> Result<(), Error> {
+    if let Method::GoldenGatePool { substrates, .. } = method {
+        if substrates
+            .iter()
+            .any(|row| !bins.iter().any(|bin| bin.id == row.bin_id))
+        {
+            return Err(bad("reaction substrate references an unknown bin"));
+        }
+    }
     Ok(())
 }
 fn effective<'a>(design: &'a Design, construct: &'a SelectedConstruct) -> (&'a Method, bool) {
@@ -328,6 +396,7 @@ pub fn validate_design(design: &Design) -> Result<(), Error> {
         }
     }
     method_shape(&design.method, design.bins.len(), design.circular)?;
+    pool_bins(&design.method, &design.bins)?;
     count(design)
 }
 fn selected<'a>(
@@ -384,6 +453,7 @@ fn construct_shape(design: &Design, construct: &SelectedConstruct) -> Result<(),
     selected(design, &construct.choices)?;
     let (method, circular) = effective(design, construct);
     method_shape(method, design.bins.len(), circular)?;
+    pool_bins(method, &design.bins)?;
     if let Some(overrides) = &construct.overrides {
         if overrides.preparations.len() > MAX_BINS {
             return Err(Error::TooLarge);
@@ -432,7 +502,15 @@ pub(crate) fn work_charge(
         let n = resolve_event(workspace, &choice.source)?.sequence.len();
         let preparation = preparation_override(construct, &bin.id)
             .map(|p| &p.preparation)
-            .unwrap_or(&choice.preparation);
+            .unwrap_or(&choice.preparation)
+            .as_ref();
+        let preparation = if matches!(method, Method::GoldenGatePool { substrates, .. }
+            if substrates.iter().any(|row| row.bin_id == bin.id && matches!(row.kind, PoolSubstrateKind::WholeSource)))
+        {
+            None
+        } else {
+            preparation
+        };
         let mut factor = 1usize;
         if let Some(preparation) = preparation {
             match preparation {
@@ -483,6 +561,15 @@ pub(crate) fn work_charge(
         work = work
             .checked_add(n.checked_mul(factor).ok_or(Error::TooLarge)?)
             .ok_or(Error::TooLarge)?;
+        if let Method::GoldenGatePool { options, .. } = method {
+            work = work
+                .checked_add(
+                    n.checked_add(400)
+                        .and_then(|n| n.checked_mul(options.enzyme.profile().recognition.len()))
+                        .ok_or(Error::TooLarge)?,
+                )
+                .ok_or(Error::TooLarge)?;
+        }
     }
     if let Method::Overlap { options, .. } = method {
         if options.scan_repeated_overlaps {
@@ -490,6 +577,16 @@ pub(crate) fn work_charge(
                 .checked_add(options.max_comparisons)
                 .ok_or(Error::TooLarge)?;
         }
+    }
+    if let Method::GoldenGatePool { options, .. } = method {
+        work = work
+            .checked_add(
+                options
+                    .max_states
+                    .checked_mul(options.max_fragments)
+                    .ok_or(Error::TooLarge)?,
+            )
+            .ok_or(Error::TooLarge)?;
     }
     Ok(work.max(1))
 }
@@ -712,87 +809,164 @@ pub(crate) fn resolve_validated(
             }
         }
     };
-    let mut rows = Vec::with_capacity(choices.len());
-    for ((bin, choice), (id, role)) in choices.iter().zip(&identities) {
-        let preparation = preparation_override(construct, &bin.id)
-            .map(|o| &o.preparation)
-            .unwrap_or(&choice.preparation)
-            .clone()
-            .ok_or_else(|| bad("chosen alternative has no explicit preparation"))?;
-        rows.push(assembly_recipe::FragmentSpec {
-            role: role.clone(),
-            input_id: id.clone(),
-            preparation,
-            reverse: choice.reverse,
-        });
-    }
-    let recipe = match method {
-        Method::Overlap { overlaps, options } => {
-            if choices.iter().any(|(bin, choice)| {
-                preparation_override(construct, &bin.id)
+    let recipe = if let Method::GoldenGatePool {
+        options,
+        substrates,
+        selection,
+    } = method
+    {
+        let rows = choices
+            .iter()
+            .zip(&identities)
+            .map(|((bin, choice), (id, role))| {
+                let treatment = preparation_override(construct, &bin.id)
                     .map(|o| o.treatment)
-                    .unwrap_or(choice.treatment)
-                    .is_some()
-            }) {
-                return Err(bad(
-                    "terminal treatments require an explicit ligation route",
-                ));
-            }
-            let recipe = assembly_recipe::Recipe {
-                name: construct.name.clone(),
-                fragments: rows,
-                overlaps: overlaps.clone(),
-                circular,
-                options: options.clone(),
-            };
-            assembly_recipe::preflight(&inputs, &target, &recipe)?;
-            Recipe::Overlap(recipe)
-        }
-        Method::Ligation { allow_nicked } | Method::GoldenGate { allow_nicked, .. } => {
-            if let Method::GoldenGate { enzyme, .. } = method {
-                let profile = enzyme.profile();
-                for row in &rows {
-                    let selection = match &row.preparation {
-                        assembly_recipe::Preparation::CatalogDigest { selection, .. }
-                        | assembly_recipe::Preparation::PcrCatalogDigest { selection, .. } => {
-                            selection
+                    .unwrap_or(choice.treatment);
+                let kind = &substrates
+                    .iter()
+                    .find(|row| row.bin_id == bin.id)
+                    .ok_or_else(|| bad("reaction substrate bin is missing"))?
+                    .kind;
+                let substrate = match kind {
+                    PoolSubstrateKind::WholeSource => {
+                        if treatment.is_some() {
+                            return Err(bad("whole-source reaction substrate cannot silently apply a terminal treatment; choose an explicit prepared route"));
                         }
-                        _ => {
+                        crate::golden_gate_reaction::Substrate::WholeSource
+                    }
+                    PoolSubstrateKind::Prepared => {
+                        let preparation = preparation_override(construct, &bin.id)
+                            .map(|o| &o.preparation)
+                            .unwrap_or(&choice.preparation)
+                            .clone()
+                            .ok_or_else(|| bad("prepared reaction substrate needs an explicit preparation"))?;
+                        crate::golden_gate_reaction::Substrate::Prepared { preparation, treatment }
+                    }
+                };
+                Ok(crate::golden_gate_reaction::Row {
+                    role: role.clone(),
+                    input_id: id.clone(),
+                    substrate,
+                })
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        let request = crate::golden_gate_reaction::Request {
+            name: construct.name.clone(),
+            rows,
+            options: options.clone(),
+        };
+        crate::golden_gate_reaction::preflight(&native, &target, &request)?;
+        let source_revision = assembly_recipe::hash(&(
+            "combinatorial-pool-source-intent-1",
+            &design.id,
+            &construct.id,
+            &construct.choices,
+            &bindings,
+            &construct.target,
+            choices
+                .iter()
+                .map(|(bin, choice)| {
+                    (
+                        &bin.id,
+                        &choice.id,
+                        choice.start,
+                        choice.end,
+                        choice.reverse,
+                    )
+                })
+                .collect::<Vec<_>>(),
+            target.revision(),
+            &request,
+        ))?;
+        Recipe::GoldenGatePool {
+            request,
+            selection: selection.clone(),
+            source_revision,
+        }
+    } else {
+        let mut rows = Vec::with_capacity(choices.len());
+        for ((bin, choice), (id, role)) in choices.iter().zip(&identities) {
+            let preparation = preparation_override(construct, &bin.id)
+                .map(|o| &o.preparation)
+                .unwrap_or(&choice.preparation)
+                .clone()
+                .ok_or_else(|| bad("chosen alternative has no explicit preparation"))?;
+            rows.push(assembly_recipe::FragmentSpec {
+                role: role.clone(),
+                input_id: id.clone(),
+                preparation,
+                reverse: choice.reverse,
+            });
+        }
+        match method {
+            Method::Overlap { overlaps, options } => {
+                if choices.iter().any(|(bin, choice)| {
+                    preparation_override(construct, &bin.id)
+                        .map(|o| o.treatment)
+                        .unwrap_or(choice.treatment)
+                        .is_some()
+                }) {
+                    return Err(bad(
+                        "terminal treatments require an explicit ligation route",
+                    ));
+                }
+                let recipe = assembly_recipe::Recipe {
+                    name: construct.name.clone(),
+                    fragments: rows,
+                    overlaps: overlaps.clone(),
+                    circular,
+                    options: options.clone(),
+                };
+                assembly_recipe::preflight(&inputs, &target, &recipe)?;
+                Recipe::Overlap(recipe)
+            }
+            Method::Ligation { allow_nicked } | Method::GoldenGate { allow_nicked, .. } => {
+                if let Method::GoldenGate { enzyme, .. } = method {
+                    let profile = enzyme.profile();
+                    for row in &rows {
+                        let selection = match &row.preparation {
+                            assembly_recipe::Preparation::CatalogDigest { selection, .. }
+                            | assembly_recipe::Preparation::PcrCatalogDigest {
+                                selection, ..
+                            } => selection,
+                            _ => {
+                                return Err(bad(
+                                    "Golden Gate needs pinned existing-site or PCR/catalog-digest preparation",
+                                ));
+                            }
+                        };
+                        if selection.enzymes.len() != 1
+                            || !selection.enzymes.iter().all(|entry| {
+                                entry.enzyme.recognition == profile.recognition
+                                    && entry.enzyme.top_cut == profile.top_cut
+                                    && entry.enzyme.bottom_cut == profile.bottom_cut
+                            })
+                        {
                             return Err(bad(
-                                "Golden Gate needs pinned existing-site or PCR/catalog-digest preparation",
+                                "chosen Type IIS pin differs from the design enzyme geometry",
                             ));
                         }
-                    };
-                    if selection.enzymes.len() != 1
-                        || !selection.enzymes.iter().all(|entry| {
-                            entry.enzyme.recognition == profile.recognition
-                                && entry.enzyme.top_cut == profile.top_cut
-                                && entry.enzyme.bottom_cut == profile.bottom_cut
-                        })
-                    {
-                        return Err(bad(
-                            "chosen Type IIS pin differs from the design enzyme geometry",
-                        ));
                     }
                 }
+                let recipe = ligation_recipe::Recipe {
+                    name: construct.name.clone(),
+                    fragments: rows
+                        .into_iter()
+                        .zip(&choices)
+                        .map(|(source, (bin, choice))| ligation_recipe::Fragment {
+                            source,
+                            treatment: preparation_override(construct, &bin.id)
+                                .map(|o| o.treatment)
+                                .unwrap_or(choice.treatment),
+                        })
+                        .collect(),
+                    circular,
+                    allow_nicked: *allow_nicked,
+                };
+                ligation_recipe::source_preflight(&native, &target, &recipe)?;
+                Recipe::Ligation(recipe)
             }
-            let recipe = ligation_recipe::Recipe {
-                name: construct.name.clone(),
-                fragments: rows
-                    .into_iter()
-                    .zip(&choices)
-                    .map(|(source, (bin, choice))| ligation_recipe::Fragment {
-                        source,
-                        treatment: preparation_override(construct, &bin.id)
-                            .map(|o| o.treatment)
-                            .unwrap_or(choice.treatment),
-                    })
-                    .collect(),
-                circular,
-                allow_nicked: *allow_nicked,
-            };
-            ligation_recipe::source_preflight(&native, &target, &recipe)?;
-            Recipe::Ligation(recipe)
+            Method::GoldenGatePool { .. } => unreachable!("pool compiled above"),
         }
     };
     let combination_id = combination_key(design, &construct.choices)?;
@@ -818,15 +992,67 @@ pub fn compile(
     workspace: &Workspace,
 ) -> Result<Compiled, Error> {
     let resolved = resolve(design, construct, workspace)?;
-    let plan = match &resolved.recipe {
+    let plan = compile_resolved(&resolved)?;
+    Ok(Compiled { resolved, plan })
+}
+/// Compile an already source-resolved declaration without running scientific
+/// enumeration. Callers must not treat the resulting plan as verification evidence.
+pub fn compile_resolved(resolved: &Resolved) -> Result<crate::verification::DesignPlan, Error> {
+    match &resolved.recipe {
         Recipe::Overlap(recipe) => {
-            assembly_recipe::compile(&resolved.inputs, &resolved.target, recipe)?.plan
+            Ok(assembly_recipe::compile(&resolved.inputs, &resolved.target, recipe)?.plan)
         }
         Recipe::Ligation(recipe) => {
-            ligation_recipe::compile(&resolved.inputs, &resolved.target, recipe)?.plan
+            Ok(ligation_recipe::compile(&resolved.inputs, &resolved.target, recipe)?.plan)
         }
+        Recipe::GoldenGatePool {
+            request,
+            selection,
+            source_revision,
+        } => {
+            let pin = selection.as_ref().ok_or_else(|| {
+                bad("inspect the reaction and explicitly select a candidate before compilation")
+            })?;
+            if &pin.source_revision != source_revision {
+                return Err(bad(
+                    "reaction selection belongs to different exact source events, contribution geometry, or independent target intent",
+                ));
+            }
+            crate::golden_gate_reaction::compile_selected(
+                &resolved.inputs,
+                &resolved.target,
+                request,
+                &pin.selection,
+            )
+        }
+    }
+}
+/// Resolve exact original sources and the independent target for pool discovery.
+/// A missing candidate selection is intentional and does not select candidate zero.
+pub fn resolve_pool(
+    design: &Design,
+    construct: &SelectedConstruct,
+    workspace: &Workspace,
+) -> Result<Resolved, Error> {
+    let resolved = resolve(design, construct, workspace)?;
+    if !matches!(&resolved.recipe, Recipe::GoldenGatePool { .. }) {
+        return Err(bad(
+            "selected construct is not an explicit Golden Gate reaction pool",
+        ));
+    }
+    Ok(resolved)
+}
+/// Fresh bounded discovery only. A report or target match grants no output authority.
+pub fn inspect_pool(
+    design: &Design,
+    construct: &SelectedConstruct,
+    workspace: &Workspace,
+) -> Result<crate::golden_gate_reaction::Report, Error> {
+    let resolved = resolve_pool(design, construct, workspace)?;
+    let Recipe::GoldenGatePool { request, .. } = &resolved.recipe else {
+        unreachable!()
     };
-    Ok(Compiled { resolved, plan })
+    crate::golden_gate_reaction::inspect(&resolved.inputs, &resolved.target, request)
 }
 /// One explicitly selected construct, reconstructed by the existing native
 /// preparation compiler/verifier. This is not batch completion or mixture search.
@@ -857,6 +1083,17 @@ fn evaluate_resolved(resolved: Resolved) -> Result<Evaluation, Error> {
             &resolved.target,
             recipe,
         )?),
+        Recipe::GoldenGatePool { .. } => {
+            let plan = compile_resolved(&resolved)?;
+            let verification = crate::verification::verify(&plan, &resolved.target);
+            let preparation_complete =
+                verification.products.len() >= plan.steps.len().saturating_sub(1);
+            Preview::GoldenGatePool(PoolPreview {
+                plan,
+                verification,
+                preparation_complete,
+            })
+        }
     };
     Ok(Evaluation { resolved, preview })
 }
@@ -865,12 +1102,21 @@ impl Evaluation {
         match &self.preview {
             Preview::Overlap(preview) => &preview.verification,
             Preview::Ligation(preview) => &preview.verification,
+            Preview::GoldenGatePool(preview) => &preview.verification,
         }
     }
     pub fn plan(&self) -> &crate::verification::DesignPlan {
         match &self.preview {
             Preview::Overlap(preview) => &preview.compiled.plan,
             Preview::Ligation(preview) => &preview.compiled.plan,
+            Preview::GoldenGatePool(preview) => &preview.plan,
+        }
+    }
+    pub fn preparation_complete(&self) -> bool {
+        match &self.preview {
+            Preview::Overlap(preview) => preview.preparation_complete,
+            Preview::Ligation(preview) => preview.preparation_complete,
+            Preview::GoldenGatePool(preview) => preview.preparation_complete,
         }
     }
 }

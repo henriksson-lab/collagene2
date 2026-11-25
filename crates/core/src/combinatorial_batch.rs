@@ -304,10 +304,7 @@ fn evaluate_row(
         {
             return Err(bad("native row report identity is inconsistent"));
         }
-        let preparation_complete = match &evaluated.preview {
-            design::Preview::Overlap(p) => p.preparation_complete,
-            design::Preview::Ligation(p) => p.preparation_complete,
-        };
+        let preparation_complete = evaluated.preparation_complete();
         let final_product_revision =
             if !plan.steps.is_empty() && report.products.len() == plan.steps.len() {
                 report.products.last().map(|m| m.revision())

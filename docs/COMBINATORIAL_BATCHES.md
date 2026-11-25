@@ -19,11 +19,11 @@ valid rows remain eligible. Raw invalid text and pending geometry participate in
 the host declaration key, even when two invalid strings produce the same error.
 Ordinary row/slot navigation leaves an unchanged matrix key stable.
 
-The current batch route verifies declared prepared-fragment assembly. A row asking
-for whole-original/whole-amplicon Golden Gate reaction-pool analysis is explicitly
-uncomputed, with directions to its existing reaction inspector. Its raw choices
-remain saved. Connecting those existing finite reaction models to batch evaluation
-remains work; no kinetic engine is added as a prerequisite.
+The batch route now also verifies explicitly selected Golden Gate reaction-pool
+candidates, including whole originals and complete exact-PCR amplicons. Discovery
+and exact candidate consent precede compilation; a missing pin remains explicitly
+uncomputed. The same finite model is reused without adding a kinetic prerequisite.
+[Discovery, consent and fresh checking](COMBINATORIAL_POOLS.md).
 
 A private, nonserializable core session owns one validated source workspace and
 advances exactly one construct at a time through existing preparation compilers
@@ -92,7 +92,7 @@ accepts an arbitrary host filesystem path or starts external scientific software
 | Tool | Purpose |
 | --- | --- |
 | `page_combinatorial_design` | Bounded Cartesian pages with exact source ownership checks. |
-| `inspect_combinatorial_construct` | Fresh native reconstruction of one explicit construct against its independent target. |
+| `inspect_combinatorial_construct` | Resolve exact sources, independent intent and the declared recipe without scientific reconstruction. |
 | `evaluate_combinatorial_batch` | Evaluate selected rows and return a native workspace artifact containing historical batch evidence. |
 | `list_combinatorial_batches` | Page historical batch summaries. |
 | `open_combinatorial_batch` | Open historical evidence without recomputation. |
@@ -101,15 +101,16 @@ accepts an arbitrary host filesystem path or starts external scientific software
 Complete evidence is available through immutable artifacts rather than a truncated
 summary. MCP batch evaluation is one bounded request behind the existing compute
 gate; it is not a scheduling interface or public persistent job service. These six
-operations bring the current registry to142 tools.
+operations brought the batch checkpoint registry to142 tools. Current reaction
+discovery and release additions bring it to147; see [reaction matrix](COMBINATORIAL_POOLS.md).
 
 ## Remaining delivery work
 
 Batch product release now uses a separate fresh-reconstruction transaction and
 the existing run/output finalizer. Per-construct output manifests, actual staged
 product/target inspection and bulk sequence/primer/HTML/PDF ZIP exports are
-implemented; see [contracts](COMBINATORIAL_RELEASE.md). Batch reaction-pool
-composition and library topology editing remain in scope. A batch record is not
+implemented; see [contracts](COMBINATORIAL_RELEASE.md). The finite reaction-pool
+composition route is implemented. Library topology editing and broader method/model coverage remain in scope. A batch record is not
 permission to release imported products or claim a verified library.
 Browser/visual/performance acceptance stays deferred until all in-scope code is
 implemented.

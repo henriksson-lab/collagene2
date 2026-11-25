@@ -363,13 +363,40 @@ pub fn enable(draft: &Draft, id: &str) -> Result<Draft, String> {
     row.edits.methods.source_roles = Some(roles(&library, &row)?);
     library.rows.push(row);
     library.active_row = row_id;
-    next.version = 2;
+    next.version = 3;
     next.alternatives = Some(library);
     finish(next)
 }
 pub fn save_active(draft: &Draft) -> Result<Draft, String> {
     let mut next = stage(draft)?;
     save_inner(&mut next)?;
+    finish(next)
+}
+/// Save an explicit candidate declaration for the active construct. The caller
+/// binds its asynchronous inspection to the unchanged draft before invoking
+/// this helper; native compilation must reconstruct and check the choice again.
+pub fn set_active_pool_candidate(
+    draft: &Draft,
+    candidate: Option<crate::golden_gate_pool_form::CandidateIntent>,
+) -> Result<Draft, String> {
+    let mut next = stage(draft)?;
+    require_active_choice_match(&next)?;
+    if next.alternatives.is_none()
+        || next.methods.mode != crate::cloning_methods_model::Mode::GoldenGate
+    {
+        return Err("Choose a Golden Gate construct before declaring a pool candidate.".into());
+    }
+    if let Some(intent) = &candidate {
+        intent.validate()?;
+    }
+    let pool = next
+        .methods
+        .golden_gate_pool
+        .as_mut()
+        .ok_or("Inspect explicit pool settings before choosing a candidate.")?;
+    pool.candidate = candidate;
+    save_inner(&mut next)?;
+    next.version = 3;
     finish(next)
 }
 /// Persist raw working edits even while a source edit awaits explicit choice
@@ -379,7 +406,7 @@ pub fn for_storage(draft: &Draft) -> Result<Draft, String> {
     if require_active_choice_match(&next).is_ok() {
         save_inner(&mut next)?;
     }
-    next.version = 2;
+    next.version = 3;
     finish(next)
 }
 pub fn capture_active_choice(draft: &Draft) -> Result<Draft, String> {
@@ -772,12 +799,25 @@ mod tests {
             .remove("source_roles");
         let legacy = serde_json::to_vec(&value).unwrap();
         let restored = assembly_draft_model::decode_version(&legacy, 1).unwrap();
-        assert_eq!(restored.version, 2);
+        assert_eq!(restored.version, 3);
         assert!(restored.alternatives.is_none());
         assert!(restored.methods.source_roles.is_none());
         let written = assembly_draft_model::encode(&restored).unwrap();
-        assert!(assembly_draft_model::decode_version(&written, 2).is_ok());
+        assert!(assembly_draft_model::decode_version(&written, 3).is_ok());
         assert!(assembly_draft_model::decode_version(&written, 1).is_err());
+        assert!(assembly_draft_model::decode_version(&written, 2).is_err());
+        let mut v2 = serde_json::to_value(&current).unwrap();
+        v2["version"] = serde_json::json!(2);
+        let legacy_v2 = serde_json::to_vec(&v2).unwrap();
+        let migrated = assembly_draft_model::decode_version(&legacy_v2, 2).unwrap();
+        assert_eq!(migrated.version, 3);
+        assert!(
+            migrated
+                .methods
+                .golden_gate_pool
+                .as_ref()
+                .is_none_or(|pool| pool.candidate.is_none())
+        );
         let library = enable(&current, "new-format").unwrap();
         let mut bad = serde_json::to_value(&library).unwrap();
         bad["version"] = serde_json::json!(1);

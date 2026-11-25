@@ -140,7 +140,7 @@ fn deserialize_slots<'de, D: serde::Deserializer<'de>>(
 impl Default for Draft {
     fn default() -> Self {
         let mut value = Self {
-            version: 2,
+            version: 3,
             name: "New assembly".into(),
             circular: true,
             slots: vec![Slot::empty("Backbone"), Slot::empty("Insert")],
@@ -245,7 +245,7 @@ pub(crate) fn validate_controls(
     }
     if let Some(pool) = &methods.golden_gate_pool {
         pool.validate()?;
-        if pool.choices.len() != count {
+        if !pool.choices.is_empty() && pool.choices.len() != count {
             return Err("Reaction substrate choices must match the assembly slots.".into());
         }
     }
@@ -375,10 +375,28 @@ impl Draft {
     /// Structural/bounded source consistency only. Historical event IDs require
     /// the host workspace to attest them before installing any candidate.
     pub fn validate(&self) -> Result<(), String> {
-        if !matches!(self.version, 1 | 2) || self.version == 1 && self.alternatives.is_some() {
+        if !matches!(self.version, 1 | 2 | 3) || self.version == 1 && self.alternatives.is_some() {
             return Err(
                 "Unsupported assembly draft version or alternatives in a legacy draft.".into(),
             );
+        }
+        if self.version < 3
+            && (self
+                .methods
+                .golden_gate_pool
+                .as_ref()
+                .is_some_and(|pool| pool.candidate.is_some())
+                || self.alternatives.as_ref().is_some_and(|library| {
+                    library.rows.iter().any(|row| {
+                        row.edits
+                            .methods
+                            .golden_gate_pool
+                            .as_ref()
+                            .is_some_and(|pool| pool.candidate.is_some())
+                    })
+                }))
+        {
+            return Err("Pool candidate declarations require assembly draft version 3.".into());
         }
         validate_controls(
             &self.name,
@@ -457,7 +475,7 @@ fn decode_expected(bytes: &[u8], expected: Option<u32>) -> Result<Draft, String>
         return Err("Assembly attachment kind disagrees with its draft version.".into());
     }
     draft.validate()?;
-    draft.version = 2;
+    draft.version = 3;
     Ok(draft)
 }
 

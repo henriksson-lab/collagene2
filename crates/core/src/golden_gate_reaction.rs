@@ -188,6 +188,48 @@ fn compile(
         materials,
     ))
 }
+/// Compile explicit reaction intent without enumerating or accepting imported reports.
+/// Native verification must check both keys against its own fresh enumeration.
+pub fn compile_selected(
+    inputs: &[PlanInput],
+    target: &Molecule,
+    r: &Request,
+    selection: &Selection,
+) -> Result<DesignPlan, Error> {
+    if selection.context_revision != inspect_revision(inputs, target, r)?
+        || selection.candidate_index >= r.options.max_products
+        || [
+            &selection.directed_sequence_key,
+            &selection.physical_sequence_key,
+        ]
+        .iter()
+        .any(|key| {
+            key.len() != 64
+                || !key
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        })
+    {
+        return Err(bad(
+            "selection context, bounded index or candidate keys changed",
+        ));
+    }
+    let (mut plan, _) = compile(inputs, target, r)?;
+    let Some(Operation::GoldenGate {
+        templates, options, ..
+    }) = plan.steps.pop()
+    else {
+        return Err(bad("compiled reaction operation missing"));
+    };
+    plan.steps.push(Operation::SelectedGoldenGate {
+        templates,
+        options,
+        candidate_index: selection.candidate_index,
+        directed_sequence_key: selection.directed_sequence_key.clone(),
+        physical_sequence_key: selection.physical_sequence_key.clone(),
+    });
+    Ok(plan)
+}
 fn matches(
     plan: &DesignPlan,
     duplex: &crate::chemistry::Duplex,

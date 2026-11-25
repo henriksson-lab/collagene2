@@ -234,7 +234,8 @@ pub struct MethodsState {
     pub occurrences: String,
     #[serde(default)]
     pub golden_gate: GoldenGateForm,
-    /// Editable pool/reaction choices only; receipts and selected candidates are transient.
+    /// Editable pool/reaction settings and explicit candidate intent only;
+    /// inspections, plans and scientific authority remain transient.
     /// Missing in older drafts: initialize using their preparation topology and row count.
     #[serde(default)]
     pub golden_gate_pool: Option<PoolForm>,
@@ -391,10 +392,9 @@ impl MethodsState {
         if a >= self.rows.len()
             || b >= self.rows.len()
             || self.role_ids(self.rows.len()).is_err()
-            || self
-                .golden_gate_pool
-                .as_ref()
-                .is_some_and(|form| form.choices.len() != self.rows.len())
+            || self.golden_gate_pool.as_ref().is_some_and(|form| {
+                !form.choices.is_empty() && form.choices.len() != self.rows.len()
+            })
         {
             return;
         }
@@ -403,17 +403,20 @@ impl MethodsState {
             roles.swap(a, b);
         }
         if let Some(form) = &mut self.golden_gate_pool {
+            form.choices.resize(self.rows.len(), 0);
             form.choices.swap(a, b);
+            if a != b {
+                form.candidate = None;
+            }
         }
     }
     pub(crate) fn remove_row(&mut self, index: usize) {
         if index >= self.rows.len()
             || self.rows.len() <= 1
             || self.role_ids(self.rows.len()).is_err()
-            || self
-                .golden_gate_pool
-                .as_ref()
-                .is_some_and(|form| form.choices.len() != self.rows.len())
+            || self.golden_gate_pool.as_ref().is_some_and(|form| {
+                !form.choices.is_empty() && form.choices.len() != self.rows.len()
+            })
         {
             return;
         }
@@ -422,7 +425,9 @@ impl MethodsState {
             roles.remove(index);
         }
         if let Some(form) = &mut self.golden_gate_pool {
+            form.choices.resize(self.rows.len() + 1, 0);
             form.choices.remove(index);
+            form.candidate = None;
         }
     }
     pub(crate) fn push_row(&mut self, row: OverlapInput) -> Result<(), String> {
@@ -433,16 +438,16 @@ impl MethodsState {
             );
         }
         if self.rows.len() >= 12
-            || self
-                .golden_gate_pool
-                .as_ref()
-                .is_some_and(|form| form.choices.len() != self.rows.len())
+            || self.golden_gate_pool.as_ref().is_some_and(|form| {
+                !form.choices.is_empty() && form.choices.len() != self.rows.len()
+            })
         {
             return Err("Assembly rows or reaction choices exceed their supported bounds.".into());
         }
         self.rows.push(row);
         if let Some(form) = &mut self.golden_gate_pool {
-            form.choices.push(0);
+            form.choices.resize(self.rows.len(), 0);
+            form.candidate = None;
         }
         Ok(())
     }

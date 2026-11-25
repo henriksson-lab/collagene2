@@ -652,6 +652,13 @@ pub fn CloningMethodsPanel(
     });
     let compute = Callback::new(move |()| {
         let state = config.get_untracked();
+        if state.mode == Mode::GoldenGate
+            && state.source_roles.is_some()
+            && state.golden_gate_pool.is_some()
+        {
+            status.set("This construct declares a finite reaction pool. Use Review selected reaction and junctions in its Construct reaction candidate panel, or explicitly return to ordered prepared assembly.".into());
+            return;
+        }
         if state.mode == Mode::Tailing && state.source_roles.is_some() {
             status.set("Stable source-choice assemblies use overlap or ordered ligation preparation. Tailing cannot reinterpret those identities as vector/insert inputs.".into());
             return;
@@ -867,6 +874,14 @@ pub fn CloningMethodsPanel(
         Ok(())
     });
     let review = Callback::new(move |()| {
+        if config.with_untracked(|state| {
+            state.mode == Mode::GoldenGate
+                && state.source_roles.is_some()
+                && state.golden_gate_pool.is_some()
+        }) {
+            status.set("Review this construct's explicit pool choice in the Construct reaction candidate panel; ordered evidence cannot replace that choice.".into());
+            return;
+        }
         let (Some(proof), Some(inputs)) = (evidence.get_untracked(), sources.get_untracked())
         else {
             return;
@@ -1781,6 +1796,7 @@ fn PreparedPool(
     use collagene_core::prepared_golden_gate as pool;
     let form = PoolSettings(config);
     let proof = StoredValue::new(proof);
+    let construct_matrix = proof.with_value(|proof| proof.config.source_roles.is_some());
     let evidence = RwSignal::new(None::<Arc<PoolEvidence>>);
     let page = RwSignal::new(0usize);
     let status = RwSignal::new(String::new());
@@ -1824,6 +1840,10 @@ fn PreparedPool(
     });
     let inspect_alive = alive.clone();
     let inspect = move |_| {
+        if construct_matrix {
+            status.set("These options belong to a source-matrix construct. Inspect and choose its candidate in the Construct reaction candidate panel below.".into());
+            return;
+        }
         let options = form.get_untracked();
         let captured_epoch = epoch.get_untracked();
         let prepared = (|| -> Result<_, String> {
@@ -2005,6 +2025,9 @@ fn PreparedPool(
     let select = Callback::new(
         move |(saved, index, finalize): (Arc<PoolEvidence>, usize, bool)| {
             let prepared = (|| -> Result<_, String> {
+                if construct_matrix {
+                    return Err("Use the construct's exact source-bound pool discovery and candidate choice below.".into());
+                }
                 pool_guard.run(saved.clone())?;
                 let candidate = saved
                     .report
@@ -2104,6 +2127,7 @@ fn PreparedPool(
     view! {<section class="prepared-gate-pool" aria-label="Prepared Golden Gate pool alternatives"><h3>"Explore Golden Gate alternatives"</h3>
         <p class="helper">"Inspect selected prepared fragments, or explicitly choose what enters the reaction for every role. The finite search reports competing products, recutting and uncut circular carryover without selecting a winner or predicting experimental yield."</p>
         <p class="helper">"Reaction choices and search limits are kept with the assembly draft. Reopen the draft and inspect again to reconstruct current evidence."</p>
+        {construct_matrix.then(||view!{<p class="helper">"These are this construct's pool settings. Use the Construct reaction candidate panel below for exact source-bound discovery, selection, product/junction review and output creation. Ordered method evidence is unavailable until you explicitly return to ordered prepared assembly."</p>})}
         <label class="checkbox-label"><input type="checkbox" aria-label="Inspect whole Golden Gate reaction" prop:checked=move||form.with(|f|f.reaction) on:change=move|e|form.update(|f|f.reaction=event_target_checked(&e))/>"Declare reaction substrates (whole DNA / whole amplicons / prepared fragments)"</label>
         <Show when=move||form.with(|f|f.reaction)><p class="helper">"Choose what enters the tube for every role. Whole source includes its circular backbone and all cut pieces. Whole amplicon uses the current primers before digestion and omits post-digest repair/treatment. Retaining a prepared fragment keeps its current explicit operations. Primers and the intended target are unchanged."</p>
         {proof.with_value(|p|p.config.rows.iter().enumerate().map(|(i,row)|{let pcr=matches!(row.preparation,OverlapPreparation::ExactPcr|OverlapPreparation::PcrCatalogDigest);view!{<label>{format!("{}: {}",i+1,p.context.get(i).map(|c|c.name.as_str()).unwrap_or("source"))}<select aria-label=format!("Reaction substrate {}",i+1) prop:value=move||form.with(|f|f.choices.get(i).copied().unwrap_or(0).to_string()) on:change=move|e|form.update(|f|if let Some(choice)=f.choices.get_mut(i){*choice=event_target_value(&e).parse().unwrap_or(0)})><option value="0">"Current selected prepared fragment"</option><option value="1">"Whole original source"</option><option value="2" disabled=!pcr>"Complete PCR amplicon before digestion"</option></select></label>}}).collect_view())}</Show>
@@ -2112,7 +2136,7 @@ fn PreparedPool(
             <label class="checkbox-label"><input type="checkbox" aria-label="Prepared pool both raw orientations" prop:checked=move||form.with(|f|f.both) on:change=move|e|form.update(|f|f.both=event_target_checked(&e))/>"Explore both raw substrate orientations"</label><p class="helper">"If unchecked, each prepared substrate uses its original, unreversed preparation orientation. Ordered-row reverse checkboxes do not constrain this pool search."</p>
             <div class="primer-grid"><label>"Minimum fragments (1 includes background)"<input type="number" min="1" aria-label="Prepared pool minimum fragments" prop:value=move||form.with(|f|f.minimum.clone()) on:input=move|e|form.update(|f|f.minimum=event_target_value(&e))/></label><label>"Maximum fragments"<input type="number" min="1" aria-label="Prepared pool maximum fragments" prop:value=move||form.with(|f|f.maximum.clone()) on:input=move|e|form.update(|f|f.maximum=event_target_value(&e))/></label><label>"Product limit"<input type="number" min="1" aria-label="Prepared pool product limit" prop:value=move||form.with(|f|f.products.clone()) on:input=move|e|form.update(|f|f.products=event_target_value(&e))/></label><label>"Search-state limit"<input type="number" min="1" aria-label="Prepared pool state limit" prop:value=move||form.with(|f|f.states.clone()) on:input=move|e|form.update(|f|f.states=event_target_value(&e))/></label></div>
         </details>
-        <button class="button secondary" disabled=move||pending.get() on:click=inspect>{move||if form.with(|f|f.reaction){"Inspect declared reaction"}else{"Inspect prepared pool"}}</button><button class="text-tool" disabled=move||!pending.get() on:click=move|_|{generation.update(|g|*g=g.wrapping_add(1));if let Some(w)=worker.get_value(){w.close();}worker.set_value(None);pending.set(false);status.set("Prepared-pool computation cancelled.".into());}>"Cancel prepared pool"</button><p role="status">{move||status.get()}</p>
+        <button class="button secondary" disabled=move||pending.get()||construct_matrix on:click=inspect>{move||if construct_matrix{"Use construct reaction panel below"}else if form.with(|f|f.reaction){"Inspect declared reaction"}else{"Inspect prepared pool"}}</button><button class="text-tool" disabled=move||!pending.get() on:click=move|_|{generation.update(|g|*g=g.wrapping_add(1));if let Some(w)=worker.get_value(){w.close();}worker.set_value(None);pending.set(false);status.set("Prepared-pool computation cancelled.".into());}>"Cancel prepared pool"</button><p role="status">{move||status.get()}</p>
         {move||evidence.get().map(|bound|{let request=StoredValue::new(bound.clone());let diagnostics=bound.report.diagnostics();let names=proof.with_value(|p|p.context.iter().map(|s|s.name.clone()).collect::<Vec<_>>());let preparations=proof.with_value(|p|p.config.rows.iter().map(OverlapInput::summary).collect::<Vec<_>>());view!{<section class="prepared-gate-report">
             <h4>"Fresh pool reconstruction"</h4><p>{format!("Native diagnostic assessment: {}. For a reaction this is the index0 probe, not a selected winner.",method_status(&bound.report.verification().status))}</p>
             {(!bound.report.missing().is_empty()).then(||view!{<p role="alert">{format!("Pool withheld: physical substrate state is unavailable for rows {}. No partial search is presented as complete.",bound.report.missing().iter().map(|i|(i+1).to_string()).collect::<Vec<_>>().join(", "))}</p>})}

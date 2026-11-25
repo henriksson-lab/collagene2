@@ -27,6 +27,8 @@ mod assembly_finalize;
 #[cfg(target_arch = "wasm32")]
 mod assembly_outputs;
 #[cfg(target_arch = "wasm32")]
+mod assembly_pool_view;
+#[cfg(target_arch = "wasm32")]
 mod assembly_product_view;
 #[cfg(target_arch = "wasm32")]
 mod assembly_release_view;
@@ -76,6 +78,8 @@ mod genome_view;
 mod genomes;
 #[cfg(target_arch = "wasm32")]
 mod glyph_renderer;
+#[cfg(target_arch = "wasm32")]
+mod golden_gate_candidate_view;
 #[cfg(any(target_arch = "wasm32", test))]
 mod golden_gate_pool_form;
 #[cfg(target_arch = "wasm32")]

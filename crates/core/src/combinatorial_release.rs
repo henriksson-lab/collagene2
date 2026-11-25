@@ -691,16 +691,7 @@ impl Manifest {
                     ));
                 }
             }
-            let plan = match &resolved.recipe {
-                design::Recipe::Overlap(recipe) => {
-                    crate::assembly_recipe::compile(&resolved.inputs, &resolved.target, recipe)?
-                        .plan
-                }
-                design::Recipe::Ligation(recipe) => {
-                    crate::ligation_recipe::compile(&resolved.inputs, &resolved.target, recipe)?
-                        .plan
-                }
-            };
+            let plan = design::compile_resolved(&resolved)?;
             let asset = workspace
                 .attachments
                 .get(&row.output.run.attachment_hash)

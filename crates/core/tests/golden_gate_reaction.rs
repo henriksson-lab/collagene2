@@ -242,3 +242,161 @@ fn reaction_protocol_is_append_only_and_changed_keys_or_substrates_cannot_reuse_
     stale[0].revision = "0".repeat(64);
     assert!(reaction::inspect(&stale, &target, &request).is_err());
 }
+
+#[test]
+fn key_bound_native_operation_reconstructs_the_selected_path_without_target_selection() {
+    let (inputs, target, request) = fixture();
+    let discovery = reaction::inspect(&inputs, &target, &request).unwrap();
+    let pool = discovery.pool.as_ref().unwrap();
+    let index = pool
+        .candidates
+        .iter()
+        .position(|candidate| {
+            candidate.duplex.top.as_str() == AB && candidate.restriction_site_free
+        })
+        .unwrap();
+    let candidate = &pool.candidates[index];
+    let selection = Selection {
+        context_revision: discovery.context_revision.clone(),
+        candidate_index: index,
+        directed_sequence_key: candidate.directed_sequence_key.clone(),
+        physical_sequence_key: candidate.physical_sequence_key.clone(),
+    };
+    let plan = reaction::compile_selected(&inputs, &target, &request, &selection).unwrap();
+    assert!(matches!(
+        plan.steps.last(),
+        Some(Operation::SelectedGoldenGate { .. })
+    ));
+    assert_eq!(
+        serde_json::to_value(&plan.steps[..1]).unwrap(),
+        serde_json::to_value(&discovery.probe_plan.steps[..1]).unwrap()
+    );
+    let fresh = verification::verify(&plan, &target);
+    assert_eq!(fresh.status, Status::ConsistentUnderAssumptions);
+    assert_eq!(fresh.products.last().unwrap().sequence.as_str(), AB);
+    assert!(
+        fresh
+            .findings
+            .iter()
+            .any(|finding| finding.contains("1 uncut carryover"))
+    );
+    assert!(fresh.engine_version.ends_with("/science-15"));
+
+    // Matching the target cannot rescue a changed selection key, including when
+    // an otherwise valid imported/deserialized plan supplies it.
+    for directed in [true, false] {
+        let mut forged: verification::DesignPlan =
+            serde_json::from_slice(&serde_json::to_vec(&plan).unwrap()).unwrap();
+        let Operation::SelectedGoldenGate {
+            directed_sequence_key,
+            physical_sequence_key,
+            ..
+        } = forged.steps.last_mut().unwrap()
+        else {
+            unreachable!()
+        };
+        if directed {
+            *directed_sequence_key = "0".repeat(64);
+        } else {
+            *physical_sequence_key = "0".repeat(64);
+        }
+        let rejected = verification::verify(&forged, &target);
+        assert_eq!(rejected.status, Status::Invalid);
+        assert_eq!(
+            rejected.products.len(),
+            1,
+            "only PCR preparation survives a rejected final candidate"
+        );
+        assert!(
+            rejected
+                .findings
+                .iter()
+                .any(|finding| finding.contains("candidate keys disagree"))
+        );
+    }
+
+    // A separately declared wrong target still rejects the exact selected AB path.
+    let wrong_target = Molecule::dna("independent wrong target", A, Topology::Circular).unwrap();
+    let mut wrong_selection = selection.clone();
+    wrong_selection.context_revision =
+        reaction::inspect_revision(&inputs, &wrong_target, &request).unwrap();
+    let wrong_plan =
+        reaction::compile_selected(&inputs, &wrong_target, &request, &wrong_selection).unwrap();
+    let wrong = verification::verify(&wrong_plan, &wrong_target);
+    assert_eq!(wrong.status, Status::Invalid);
+    assert_eq!(wrong.products.last().unwrap().sequence.as_str(), AB);
+}
+
+#[test]
+fn key_bound_compilation_preserves_explicit_choice_and_refuses_stale_context() {
+    let (inputs, target, request) = fixture();
+    let report = reaction::inspect(&inputs, &target, &request).unwrap();
+    let pool = report.pool.as_ref().unwrap();
+    let index = pool
+        .candidates
+        .iter()
+        .position(|candidate| candidate.duplex.top.as_str() == A && candidate.restriction_site_free)
+        .unwrap();
+    let candidate = &pool.candidates[index];
+    let mut selection = Selection {
+        context_revision: report.context_revision.clone(),
+        candidate_index: index,
+        directed_sequence_key: candidate.directed_sequence_key.clone(),
+        physical_sequence_key: candidate.physical_sequence_key.clone(),
+    };
+    let plan = reaction::compile_selected(&inputs, &target, &request, &selection).unwrap();
+    let native = verification::verify(&plan, &target);
+    assert_eq!(native.status, Status::Invalid);
+    assert_eq!(
+        native.products.last().unwrap().sequence.as_str(),
+        A,
+        "target does not choose the AB alternative"
+    );
+    selection.context_revision = "0".repeat(64);
+    assert!(reaction::compile_selected(&inputs, &target, &request, &selection).is_err());
+    selection.context_revision = report.context_revision;
+    selection.candidate_index = request.options.max_products;
+    assert!(reaction::compile_selected(&inputs, &target, &request, &selection).is_err());
+    selection.candidate_index = index;
+    selection.physical_sequence_key = "x".repeat(64);
+    assert!(reaction::compile_selected(&inputs, &target, &request, &selection).is_err());
+}
+
+#[test]
+fn keyed_reaction_protocol_and_junctions_keep_the_native_path_identity() {
+    let (inputs, target, request) = fixture();
+    let report = reaction::inspect(&inputs, &target, &request).unwrap();
+    let pool = report.pool.as_ref().unwrap();
+    let index = pool
+        .candidates
+        .iter()
+        .position(|c| c.duplex.top.as_str() == AB && c.restriction_site_free)
+        .unwrap();
+    let candidate = &pool.candidates[index];
+    let selection = Selection {
+        context_revision: report.context_revision,
+        candidate_index: index,
+        directed_sequence_key: candidate.directed_sequence_key.clone(),
+        physical_sequence_key: candidate.physical_sequence_key.clone(),
+    };
+    let plan = reaction::compile_selected(&inputs, &target, &request, &selection).unwrap();
+    let html = verification::export_protocol_html(&plan, &target);
+    assert!(html.contains(&selection.directed_sequence_key));
+    assert!(html.contains(&selection.physical_sequence_key));
+    let pdf = collagene_core::pdf::export_protocol_pdf(&plan, &target).unwrap();
+    assert!(pdf.bytes.starts_with(b"%PDF-"));
+    let junctions =
+        collagene_core::assembly_junctions::inspect_plan(&plan, &target, &Default::default())
+            .unwrap();
+    assert!(junctions.complete);
+    assert_eq!(
+        junctions.verification.status,
+        Status::ConsistentUnderAssumptions
+    );
+    assert!(!junctions.junctions.is_empty());
+    let encoded = postcard::to_allocvec(plan.steps.last().unwrap()).unwrap();
+    assert_eq!(
+        encoded[0], 18,
+        "new op is appended; existing discriminants stay unchanged"
+    );
+}

@@ -150,6 +150,15 @@ pub enum Operation {
         selection: crate::catalog_digest::CatalogSelection,
         fragment_index: usize,
     },
+    /// Explicit path identity checked against the same fresh native enumeration.
+    /// Neither an imported report nor correspondence to the target chooses a path.
+    SelectedGoldenGate {
+        templates: Vec<Source>,
+        options: crate::golden_gate::GoldenGateOptions,
+        candidate_index: usize,
+        directed_sequence_key: String,
+        physical_sequence_key: String,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -204,7 +213,7 @@ pub struct AnnotationStepReport {
     pub evidence: crate::topo_annotations::AnnotationEvidence,
 }
 
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-14");
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-15");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrDocument {
@@ -632,6 +641,41 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
     };
     let mut count = 0usize;
     for step in &plan.steps {
+        if let Operation::SelectedGoldenGate {
+            templates,
+            options,
+            candidate_index,
+            directed_sequence_key,
+            physical_sequence_key,
+        } = step
+        {
+            if templates.is_empty()
+                || templates.len() > 32
+                || options.min_fragments == 0
+                || options.min_fragments > options.max_fragments
+                || options.max_fragments > 32
+                || options.max_products == 0
+                || options.max_products > 1000
+                || options.max_states == 0
+                || options.max_states > 1_000_000
+                || *candidate_index >= options.max_products
+                || [directed_sequence_key, physical_sequence_key]
+                    .iter()
+                    .any(|key| {
+                        key.len() != 64
+                            || !key
+                                .bytes()
+                                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                    })
+                || templates.iter().any(
+                    |source| matches!(source, Source::Input(id) if id.is_empty() || id.len() > 128),
+                )
+            {
+                return Err(Error::Format(
+                    "Invalid bounded key-bound Golden Gate selection".into(),
+                ));
+            }
+        }
         if let Operation::CatalogDigest {
             template,
             selection,
@@ -716,7 +760,9 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
         || plan.steps.iter().any(|s| {
             matches!(
                 s,
-                Operation::DeclareSourceTermini { .. } | Operation::CatalogDigest { .. }
+                Operation::DeclareSourceTermini { .. }
+                    | Operation::CatalogDigest { .. }
+                    | Operation::SelectedGoldenGate { .. }
             )
         })
     {
@@ -759,6 +805,10 @@ pub(crate) fn operation_sources(op: &Operation) -> Vec<&Source> {
         | Operation::Tail3Prime { template, .. } => vec![template],
         Operation::Overlap { fragments, .. }
         | Operation::GoldenGate {
+            templates: fragments,
+            ..
+        }
+        | Operation::SelectedGoldenGate {
             templates: fragments,
             ..
         } => fragments.iter().collect(),
@@ -859,6 +909,7 @@ fn evaluate_captured(
                     | Operation::CheckedTopo { .. }
                     | Operation::DeclareSourceTermini { .. }
                     | Operation::CatalogDigest { .. }
+                    | Operation::SelectedGoldenGate { .. }
             )
         }) {
             let mut models = plan.inputs.iter().map(|i| &i.molecule).collect::<Vec<_>>();
@@ -2018,6 +2069,12 @@ fn reconstruct(
                 templates,
                 options,
                 candidate_index,
+            }
+            | Operation::SelectedGoldenGate {
+                templates,
+                options,
+                candidate_index,
+                ..
             } => {
                 let sources = templates
                     .iter()
@@ -2050,6 +2107,20 @@ fn reconstruct(
                         .expect("fresh intermediate enumeration")
                 };
                 let selected=report.candidates.get(*candidate_index).ok_or_else(||if report.enumeration_complete{Error::Format("Golden Gate candidate index does not exist".into())}else{Error::Unsupported("Golden Gate search is incomplete and the selected candidate is unavailable".into())})?;
+                if let Operation::SelectedGoldenGate {
+                    directed_sequence_key,
+                    physical_sequence_key,
+                    ..
+                } = step
+                {
+                    if directed_sequence_key.len() != 64
+                        || physical_sequence_key.len() != 64
+                        || selected.directed_sequence_key != *directed_sequence_key
+                        || selected.physical_sequence_key != *physical_sequence_key
+                    {
+                        return Err(Error::Format("Golden Gate explicit candidate keys disagree with the fresh native enumeration".into()));
+                    }
+                }
                 if !selected.restriction_site_free {
                     return Err(Error::Format("Golden Gate candidate retains recognition sites; it is not a site-free cycling product".into()));
                 }
@@ -2770,6 +2841,7 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
             Operation::RecombineReference { sources, request, selection } => body.push_str(&format!("<li>Reference-only {:?} exchange of {} and {}. Pinned full profile/data, work/annotation limits: <code>{}</code>. Explicit component selection: <code>{}</code>. All reciprocal components are computed; selected reference DNA does not establish chemical state, efficacy, repair or experimental selection.</li>",request.reaction,source(&sources[0]),source(&sources[1]),e(&serde_json::to_string(request).unwrap_or_default()),e(&serde_json::to_string(selection).unwrap_or_default()))),
             Operation::PcrWithMismatches{template,forward,reverse,options}=>body.push_str(&format!("<li>Intentional-mismatch PCR of {}. Oligos 5′→3′: <code>{}</code> and <code>{}</code>. Binding/search policy: <code>{}</code>. Primer-derived changes are reconstructed; amplification is not established.</li>",source(template),e(&forward.ordered_sequence()),e(&reverse.ordered_sequence()),e(&serde_json::to_string(options).unwrap_or_default()))),
             Operation::GoldenGate{templates,options,candidate_index}=>body.push_str(&format!("<li>Golden Gate with {:?}, inputs {}. Explicit zero-based candidate {} under policy <code>{}</code>. Cleavage, orientation, cohesive ends and recognition-site removal are checked. Finite one-copy fragment search does not establish exhaustive mixture uniqueness; conditions and quantities are unspecified.</li>",options.enzyme,templates.iter().map(source).collect::<Vec<_>>().join(", "),candidate_index,e(&serde_json::to_string(options).unwrap_or_default()))),
+            Operation::SelectedGoldenGate{templates,options,candidate_index,directed_sequence_key,physical_sequence_key}=>body.push_str(&format!("<li>Key-bound Golden Gate with {:?}, inputs {}. Explicit zero-based candidate {} under policy <code>{}</code>. Cleavage, orientation, cohesive ends and recognition-site removal are checked. Finite one-copy fragment search does not establish exhaustive mixture uniqueness; conditions and quantities are unspecified. Fresh enumeration must match directed key <code>{}</code> and physical key <code>{}</code>.</li>",options.enzyme,templates.iter().map(source).collect::<Vec<_>>().join(", "),candidate_index,e(&serde_json::to_string(options).unwrap_or_default()),e(directed_sequence_key),e(physical_sequence_key))),
             Operation::Pcr { template, forward, reverse } => body.push_str(&format!("<li>PCR of {} with {}: <code>{}</code> and {}: <code>{}</code>. Primers shown 5′→3′. Reaction conditions and quantities are unspecified.</li>",source(template),e(&forward.name),e(&forward.ordered_sequence()),e(&reverse.name),e(&reverse.ordered_sequence()))),
             Operation::DeclareSourceTermini{template,left,right}=>body.push_str(&format!("<li>Declare original intact linear duplex source termini for {}: left <code>{}</code>, right <code>{}</code>. Explicit operator hypothesis only; not measured chemistry, synthesis, repair, recovered imported physical state or experimental success. Original sequence/features/citations are retained; methylation remains unknown.</li>",source(template),e(&serde_json::to_string(left).unwrap_or_default()),e(&serde_json::to_string(right).unwrap_or_default()))),
             Operation::DeclareSourceModifications{template,assumptions}=>body.push_str(&format!("<li>Declare closed Dam/Dcm/CpG source generation for {} under explicit assumptions <code>{}</code>. Bind the original input revision; these are not measured modifications. Descendant strand states are propagated without resynthesizing methylation.</li>",source(template),e(&serde_json::to_string(assumptions).unwrap_or_default()))),

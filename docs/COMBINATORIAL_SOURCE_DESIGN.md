@@ -65,15 +65,15 @@ preparation choices do not block a separately valid selected construct.
 
 Editable data now lives in UI-independent Rust modules for draft, preparation,
 source identity, roles and alternatives. Scientific receipts remain private and
-transient. The native attachment writer uses `assembly-draft-v2`, JSON version2;
-the reader explicitly migrates version1 and accepts version2. Attachment-kind and
+transient. The native attachment writer uses `assembly-draft-v3`, JSON version3;
+the reader explicitly migrates versions1/2 and accepts version3. Attachment-kind and
 payload version must agree. Multiple active known drafts are an error. Old readers
 can preserve the unknown new attachment kind instead of interpreting alternatives
 as an ordinary ordinal draft.
 
 Restoration checks every retained captured event, including inactive choices,
 against its actual document/event/revision and source snapshot. Autosave removes
-both known active kinds and writes only version2. Per-construct edits contain
+all known active kinds and writes only version3. Per-construct edits contain
 settings and choice IDs, avoiding recursive draft snapshots and source copies
 for every matrix row. Pending working source edits are retained separately from
 the last choice-consistent saved row.
@@ -90,10 +90,11 @@ This checkpoint connects explicit choice matrices to ordinary per-construct edit
 and verification. It does not complete F13/F27 bulk delivery. Batch evaluation with
 progress/cancellation, immutable batch records and dedicated MCP design operations
 are now implemented ([details](COMBINATORIAL_BATCHES.md)). Matrix-owned per-construct
-run/output records, bulk sequence and oligo/protocol release, full product inspection,
-reaction-pool composition and library topology editing remain in scope.
-These should build on the typed design layer and existing
-compilers, not add another chemistry engine. Fusion-end ranking and domestication
+run/output records, bulk sequence and oligo/protocol release and staged product
+inspection are implemented ([outputs](COMBINATORIAL_RELEASE.md)). Finite reaction
+composition now has explicit per-construct discovery and key-bound selection
+([reaction matrix](COMBINATORIAL_POOLS.md)). Library topology editing and final
+acceptance remain in scope; extend the typed design layer and existing compilers. Fusion-end ranking and domestication
 remain distinct planned capabilities.
 
 Browser/visual/performance acceptance remains deferred until all in-scope code is

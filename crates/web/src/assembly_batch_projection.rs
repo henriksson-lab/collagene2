@@ -3,15 +3,15 @@
 use crate::{
     assembly_alternatives::{self as alternatives, Construct, Library},
     assembly_draft_model::{DigestGeometry, Draft, Slot},
-    cloning_methods_model::{MethodsState, Mode, OverlapInput},
+    cloning_methods_model::{MethodsState, Mode, OverlapInput, OverlapPreparation},
     cloning_preparations,
 };
 use collagene_core::{
     assembly_junction_edit::Edit,
     combinatorial_batch::{self as batch, RowRequest},
     combinatorial_design::{
-        self as design, ChoiceSelection, ConstructOverrides, Method, PreparationOverride,
-        SelectedConstruct, TargetDeclaration,
+        self as design, ChoiceSelection, ConstructOverrides, Method, PoolSubstrate,
+        PoolSubstrateKind, PreparationOverride, SelectedConstruct, TargetDeclaration,
     },
     run_lineage::EventBinding,
 };
@@ -63,6 +63,7 @@ fn typed_row(
         }
     }
     let state = &row.edits.methods;
+    let mut preparation_state = state.clone();
     let method = match state.mode {
         Mode::Overlap => {
             let (overlaps, options) = state.profile()?;
@@ -72,16 +73,65 @@ fn typed_row(
             allow_nicked: state.allow_nicked,
         },
         Mode::GoldenGate => {
-            if state
-                .golden_gate_pool
-                .as_ref()
-                .is_some_and(|pool| pool.reaction || pool.choices.iter().any(|&choice| choice != 0))
-            {
-                return Err("Batch preparation evaluates one copy of each declared prepared fragment. Whole-original/whole-amplicon reaction pools require their separate reaction inspection; switch this row to prepared substrates before a batch check.".into());
-            }
-            Method::GoldenGate {
-                enzyme: state.golden_gate.enzyme,
-                allow_nicked: state.allow_nicked,
+            if let Some(pool) = &state.golden_gate_pool {
+                if state.allow_nicked {
+                    return Err("Finite Golden Gate pool selection requires sealed products; disable retained nicks for this construct.".into());
+                }
+                let options = pool.options(state.golden_gate.enzyme)?;
+                let mut substrates = Vec::with_capacity(library.bins.len());
+                for (index, (bin, raw)) in library
+                    .bins
+                    .iter()
+                    .zip(&mut preparation_state.rows)
+                    .enumerate()
+                {
+                    let choice = pool.choices.get(index).copied().unwrap_or(0);
+                    let kind = match (pool.reaction, choice) {
+                        (false, 0) | (true, 0) => PoolSubstrateKind::Prepared,
+                        (true, 1) => {
+                            if raw.treatment != crate::cloning_methods_model::Treatment::Keep {
+                                return Err("Whole-original reaction substrates cannot silently discard a terminal treatment; choose Keep terminal chemistry.".into());
+                            }
+                            *raw = OverlapInput { document: raw.document, ..Default::default() };
+                            PoolSubstrateKind::WholeSource
+                        },
+                        (true, 2) => {
+                            if raw.treatment != crate::cloning_methods_model::Treatment::Keep {
+                                return Err("Whole-amplicon reaction substrates require Keep terminal chemistry; post-digest terminal treatment does not apply to this substrate.".into());
+                            }
+                            if !matches!(raw.preparation, OverlapPreparation::ExactPcr | OverlapPreparation::PcrCatalogDigest) {
+                                return Err("Choose actual PCR primers before using a whole amplicon.".into());
+                            }
+                            raw.preparation = OverlapPreparation::ExactPcr;
+                            raw.fragment = "1".into();
+                            raw.treatment = crate::cloning_methods_model::Treatment::Keep;
+                            PoolSubstrateKind::Prepared
+                        },
+                        _ => return Err("Whole-original and whole-amplicon substrates require declared reaction mode.".into()),
+                    };
+                    substrates.push(PoolSubstrate {
+                        bin_id: bin.id.clone(),
+                        kind,
+                    });
+                }
+                Method::GoldenGatePool {
+                    options,
+                    substrates,
+                    selection: pool.candidate.as_ref().map(|intent| design::PoolSelection {
+                        source_revision: intent.source_revision.clone(),
+                        selection: collagene_core::prepared_golden_gate::Selection {
+                            context_revision: intent.context_revision.clone(),
+                            candidate_index: intent.candidate_index,
+                            directed_sequence_key: intent.directed_sequence_key.clone(),
+                            physical_sequence_key: intent.physical_sequence_key.clone(),
+                        },
+                    }),
+                }
+            } else {
+                Method::GoldenGate {
+                    enzyme: state.golden_gate.enzyme,
+                    allow_nicked: state.allow_nicked,
+                }
             }
         }
         Mode::Tailing => {
@@ -91,12 +141,13 @@ fn typed_row(
             );
         }
     };
-    let (_, prepared) = cloning_preparations::prepared_rows(state, library.bins.len())?;
+    let (_, prepared) =
+        cloning_preparations::prepared_rows(&preparation_state, library.bins.len())?;
     let preparations = library
         .bins
         .iter()
         .zip(prepared)
-        .zip(&state.rows)
+        .zip(&preparation_state.rows)
         .map(|((bin, fragment), raw)| PreparationOverride {
             bin_id: bin.id.clone(),
             preparation: Some(fragment.preparation),
@@ -528,7 +579,7 @@ mod tests {
     }
 
     #[test]
-    fn unassigned_sources_and_requested_reaction_pools_are_explicit_draft_errors() {
+    fn unassigned_sources_fail_but_explicit_reaction_rows_remain_inspectable_without_a_pin() {
         let empty = alternatives::enable(&Draft::default(), "unassigned").unwrap();
         let result = project(&empty).unwrap();
         assert!(result.request.design.is_none());
@@ -549,9 +600,19 @@ mod tests {
         });
         let result = project(&draft).unwrap();
         assert!(matches!(&result.request.rows[0], RowRequest::Ready(_)));
-        assert!(
-            matches!(&result.request.rows[1],RowRequest::DraftError{message,..}if message.contains("reaction pools"))
-        );
+        let row = ready(&result.request, 1);
+        let Method::GoldenGatePool {
+            selection,
+            substrates,
+            options,
+        } = row.overrides.as_ref().unwrap().method.as_ref().unwrap()
+        else {
+            panic!("expected declared reaction");
+        };
+        assert!(selection.is_none());
+        assert!(!options.circular);
+        assert!(matches!(substrates[0].kind, PoolSubstrateKind::WholeSource));
+        assert!(matches!(substrates[1].kind, PoolSubstrateKind::Prepared));
         assert_eq!(
             draft.methods.golden_gate_pool.as_ref().unwrap().choices,
             vec![1, 0]
@@ -565,5 +626,136 @@ mod tests {
             source_label("Original source", "choice-id"),
             "Original source"
         );
+    }
+
+    #[test]
+    fn whole_amplicon_projection_keeps_primers_and_rejects_discarded_treatments_locally() {
+        let mut draft = two_rows();
+        draft.methods.mode = Mode::GoldenGate;
+        draft.methods.golden_gate_pool = Some(PoolForm {
+            reaction: true,
+            choices: vec![2, 0],
+            circular: false,
+            ..PoolForm::default()
+        });
+        let raw = &mut draft.methods.rows[0];
+        raw.preparation = OverlapPreparation::ExactPcr;
+        raw.forward = "AACCGGTT".into();
+        raw.reverse_primer = "AACCGGTT".into();
+        let projection = project(&draft).unwrap();
+        let row = ready(&projection.request, 1);
+        let overrides = row.overrides.as_ref().unwrap();
+        let Some(collagene_core::assembly_recipe::Preparation::ExactPcr { forward, reverse }) =
+            &overrides.preparations[0].preparation
+        else {
+            panic!("whole amplicon did not retain PCR");
+        };
+        assert_eq!(forward.annealing.as_str(), "AACCGGTT");
+        assert_eq!(reverse.annealing.as_str(), "AACCGGTT");
+        draft.methods.rows[0].treatment = Treatment::Phosphorylate;
+        let projection = project(&draft).unwrap();
+        assert!(matches!(&projection.request.rows[0], RowRequest::Ready(_)));
+        assert!(
+            matches!(&projection.request.rows[1], RowRequest::DraftError { message, .. } if message.contains("terminal chemistry"))
+        );
+        draft.methods.rows[0].treatment = Treatment::Keep;
+        draft.methods.allow_nicked = true;
+        let projection = project(&draft).unwrap();
+        assert!(
+            matches!(&projection.request.rows[1], RowRequest::DraftError { message, .. } if message.contains("sealed products"))
+        );
+    }
+
+    #[test]
+    fn candidate_intent_roundtrips_per_construct_and_changes_declaration_identity() {
+        use crate::golden_gate_pool_form::CandidateIntent;
+        let mut draft = two_rows();
+        draft.methods.mode = Mode::GoldenGate;
+        draft.methods.golden_gate_pool = Some(PoolForm {
+            reaction: true,
+            choices: vec![1, 0],
+            circular: false,
+            ..PoolForm::default()
+        });
+        let before = project(&draft).unwrap();
+        let intent = CandidateIntent {
+            source_revision: "d".repeat(64),
+            context_revision: "a".repeat(64),
+            candidate_index: 3,
+            directed_sequence_key: "b".repeat(64),
+            physical_sequence_key: "c".repeat(64),
+        };
+        let saved = alternatives::set_active_pool_candidate(&draft, Some(intent.clone())).unwrap();
+        let after = project(&saved).unwrap();
+        assert_ne!(before.revision, after.revision);
+        let Method::GoldenGatePool {
+            selection: Some(selection),
+            ..
+        } = ready(&after.request, 1)
+            .overrides
+            .as_ref()
+            .unwrap()
+            .method
+            .as_ref()
+            .unwrap()
+        else {
+            panic!("missing explicit intent");
+        };
+        assert_eq!(selection.source_revision, intent.source_revision);
+        assert_eq!(
+            selection.selection.context_revision,
+            intent.context_revision
+        );
+        assert_eq!(selection.selection.candidate_index, 3);
+        let bytes = crate::assembly_draft_model::encode(&saved).unwrap();
+        let restored = crate::assembly_draft_model::decode_version(&bytes, 3).unwrap();
+        assert_eq!(project(&restored).unwrap().revision, after.revision);
+        // Equal DNA under a different source event is a new declaration. The
+        // old explicit pin remains old; projection must never refresh its token.
+        let mut changed = saved.clone();
+        let mut alias = changed.slots[0].captured.as_deref().unwrap().clone();
+        alias.source.binding.event_id = format!("event-{}", "f".repeat(64));
+        let alias = Arc::new(alias);
+        changed.slots[0].captured = Some(alias.clone());
+        let library = changed.alternatives.as_mut().unwrap();
+        let active = library
+            .rows
+            .iter()
+            .find(|row| row.id == library.active_row)
+            .unwrap();
+        let selected = active.choices[0].clone();
+        library.bins[0]
+            .choices
+            .iter_mut()
+            .find(|choice| choice.id == selected)
+            .unwrap()
+            .slot
+            .captured = Some(alias);
+        let aliased = project(&changed).unwrap();
+        assert_ne!(aliased.revision, after.revision);
+        let Method::GoldenGatePool {
+            selection: Some(old_pin),
+            ..
+        } = ready(&aliased.request, 1)
+            .overrides
+            .as_ref()
+            .unwrap()
+            .method
+            .as_ref()
+            .unwrap()
+        else {
+            panic!("missing retained old pin");
+        };
+        assert_eq!(old_pin.source_revision, intent.source_revision);
+        assert_eq!(old_pin.selection.context_revision, intent.context_revision);
+        for old_version in [1, 2] {
+            let mut value = serde_json::to_value(&saved).unwrap();
+            value["version"] = serde_json::json!(old_version);
+            assert!(
+                crate::assembly_draft_model::decode(&serde_json::to_vec(&value).unwrap()).is_err()
+            );
+        }
+        let cleared = alternatives::set_active_pool_candidate(&saved, None).unwrap();
+        assert_eq!(project(&cleared).unwrap().revision, before.revision);
     }
 }

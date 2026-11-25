@@ -22,6 +22,32 @@ and review proposals are implemented, despite older gap tables. See
 [workflow decisions](BENCHLING_WORKFLOW_DECISIONS.md). This documentation-only
 checkpoint adds no runtime/build/browser checks.
 
+## Whole-reaction construct matrices and exact candidate identity
+
+Source-matrix constructs can now discover finite Golden Gate pools from prepared
+material, whole originals and complete exact-PCR amplicons, then save an explicit
+candidate declaration. Exact source events, contribution geometry and independent
+intent are pinned separately from DNA equality. The new native operation checks
+index and both sequence/physical keys in one fresh enumeration; a target-matching
+alternative is never substituted.
+
+The web provides paged raw fragment/path/recut/chemistry evidence, a read-only
+reference canvas, complete guarded JSON export and direct shared product/junction/
+output review. Ordered-method controls cannot silently replace the selected pool;
+returning to ordered assembly is explicit. Draft3 migrates earlier drafts without restoring proof. Worker59,
+candidate12, plan10 and science15 preserve typed compatibility; MCP147 includes
+source-bound pool discovery before existing batch/release/export operations.
+[Contract and remaining boundaries](COMBINATORIAL_POOLS.md).
+
+Validation passed:71 focused core tests, six real MCP SDK fixture groups, all101
+native web tests and the final application/worker WASM check. The final full
+Trunk build also passed, including direct selected-reaction review/output routing.
+The public preview at http://130.239.192.39:8082/ now serves worker59 and includes
+the previous source-bin, batch and release checkpoints. The immutable snapshot
+contains51 assets /250,201,860 bytes; the server has no host filesystem API. Listener
+and local asset identity checks passed; browser/HTTP interaction checks were not
+run. Final application acceptance remains deferred until implementation completes.
+
 ## Fresh atomic construct outputs and bulk ZIP export
 
 Saved batch declarations now support selected per-row named outputs through a

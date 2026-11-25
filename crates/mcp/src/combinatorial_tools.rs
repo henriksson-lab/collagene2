@@ -306,6 +306,33 @@ impl CollageneServer {
                 "state":"source-bound-declarations","verified":false,"authority":"Exact retained source events and original contribution intervals were resolved. Matrix enumeration does not check preparations, junctions, target agreement or experimental success."}))
         }).await
     }
+    pub(super) async fn combinatorial_pool_inspect(
+        &self,
+        args: InspectQuery,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || {
+            let frame = server.restore_workspace(&args.workspace)?;
+            let resolved = design::resolve_pool(&args.design, &args.construct, &frame).map_err(bad)?;
+            let design::Recipe::GoldenGatePool { request, source_revision, .. } = &resolved.recipe else {
+                return Err(bad("selected construct is not a Golden Gate reaction pool"));
+            };
+            let report = collagene_core::golden_gate_reaction::inspect(&resolved.inputs, &resolved.target, request).map_err(bad)?;
+            let evidence = json!({"workspace":args.workspace,"design":args.design,"construct":args.construct,
+                "source_revision":source_revision,"construct_id":resolved.construct_id,
+                "combination_id":resolved.combination_id,"declaration_revision":resolved.declaration_revision,
+                "input_bindings":resolved.bindings,"target_binding":resolved.target_binding,
+                "report":report,"verified":false,"state":"fresh-pool-discovery"});
+            let artifact = server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","combinatorial-pool.json")?;
+            output(json!({"workspace":args.workspace,"source_revision":source_revision,
+                "construct_id":resolved.construct_id,"combination_id":resolved.combination_id,
+                "declaration_revision":resolved.declaration_revision,"input_bindings":resolved.bindings,
+                "target_binding":resolved.target_binding,"context_revision":report.context_revision,
+                "assessments":report.assessments,"warnings":report.warnings,"artifact_id":artifact,
+                "state":"fresh-pool-discovery","verified":false,
+                "authority":"Finite native reaction discovery only. Choose an explicit index and both candidate keys with this source_revision. Target correspondence never chooses a candidate. Batch evaluation and output release reconstruct the selected path afresh; imported reports do not restore authority."}))
+        }).await
+    }
     pub(super) async fn combinatorial_inspect(
         &self,
         args: InspectQuery,
@@ -316,7 +343,7 @@ impl CollageneServer {
             let resolved=design::resolve(&args.design,&args.construct,&frame).map_err(bad)?;
             let mut summary=summaries(&resolved);
             let intent=match &resolved.intent{Some(design::IndependentIntent::Regions(report))=>json!({"OriginalRegions":report}),Some(design::IndependentIntent::Junctions(report))=>json!({"OriginalJunctions":report}),None=>Value::Null};
-            let recipe=match &resolved.recipe{design::Recipe::Overlap(recipe)=>json!({"Overlap":recipe}),design::Recipe::Ligation(recipe)=>json!({"Ligation":recipe})};
+            let recipe=match &resolved.recipe{design::Recipe::Overlap(recipe)=>json!({"Overlap":recipe}),design::Recipe::Ligation(recipe)=>json!({"Ligation":recipe}),design::Recipe::GoldenGatePool{request,selection,source_revision}=>json!({"GoldenGatePool":{"request":request,"selection":selection,"source_revision":source_revision}})};
             let evidence=json!({"workspace":args.workspace,"design":args.design,"construct":args.construct,"construct_id":resolved.construct_id,"combination_id":resolved.combination_id,"declaration_revision":resolved.declaration_revision,"input_bindings":resolved.bindings,"inputs":resolved.inputs,"independent_target":resolved.target,"target_binding":resolved.target_binding,"independent_intent":intent,"recipe":recipe,"verified":false});
             let artifact=server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","combinatorial-construct.json")?;
             summary["workspace"]=serde_json::to_value(args.workspace).map_err(bad)?;summary["artifact_id"]=json!(artifact);

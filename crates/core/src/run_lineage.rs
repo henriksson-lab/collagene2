@@ -187,13 +187,24 @@ fn validate_texts(values: &[String], limit: usize) -> Result<(), Error> {
 }
 fn validate_record(r: &RunRecord) -> Result<(), Error> {
     if r.schema_version != 1
-        || !matches!(r.plan_schema, 3 | 4 | 5 | 6 | 7 | 8 | 9)
+        || !matches!(r.plan_schema, 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10)
         || !digest(&r.run_id)
         || r.assessment.engine_version.is_empty()
         || r.assessment.engine_version.len() > 128
         || r.assessment.status == Status::Invalid
     {
         return Err(bad("invalid schema or assessment"));
+    }
+    if r.plan_schema < 10
+        && (r.assessment.engine_version.ends_with("/science-15")
+            || r.plan
+                .steps
+                .iter()
+                .any(|op| matches!(op, Operation::SelectedGoldenGate { .. })))
+    {
+        return Err(bad(
+            "Key-bound Golden Gate requires workspace plan schema 10",
+        ));
     }
     if r.plan_schema < 9
         && (r.assessment.engine_version.ends_with("/science-14")

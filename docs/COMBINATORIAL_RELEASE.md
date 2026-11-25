@@ -59,7 +59,9 @@ workspace/artifact references. It accepts no host filesystem paths and invokes
 no external scientific programs. Together with the previous tools the registry
 contains 146 operations.
 
-Full reaction-pool batch composition, library topology editing, remaining cloning
+Finite reaction-pool batch composition now uses exact candidate consent and a
+single fresh native verifier pass; see [contract](COMBINATORIAL_POOLS.md). Library
+topology editing, remaining cloning
 methods and final browser/visual/performance acceptance remain in scope. This
 increment does not establish a verified experimental library.
 

@@ -22,6 +22,27 @@ and review proposals are implemented, despite older gap tables. See
 [workflow decisions](BENCHLING_WORKFLOW_DECISIONS.md). This documentation-only
 checkpoint adds no runtime/build/browser checks.
 
+## Alternative source bins and per-construct edits
+
+The existing assembly dock now captures immutable source alternatives, pages the
+Cartesian matrix and opens explicitly selected constructs in the same preparation
+and verification route. Each row preserves its raw primer/tail/method/junction
+settings. Stable design/bin/choice/construct identities flow into original-source
+inputs and proposal/candidate guards. Pending source edits persist but cannot
+inherit old choice identity. Draft version2 migrates legacy data, isolates old
+readers and attests every inactive source on restoration.
+
+UI-independent Rust models support native state/persistence checks; the typed core
+resolves actual historical events and dispatches existing compilers against an
+independently declared target. Bulk evaluation/output records, MCP design tools,
+release and library topology editing remain delivery work.
+[Behavior, limits and remaining scope](COMBINATORIAL_SOURCE_DESIGN.md).
+
+Eight core design fixtures and all93 native web tests passed, including eight new
+web state/identity groups. The WASM compile passed. No browser checks or public
+preview refresh were run at this checkpoint; port8082 retains the preceding
+schema56 comparison/primer/digest snapshot.
+
 ## Computed comparison search, source context and portable review
 
 The event-bound pairwise viewer now searches displayed rows with literal or

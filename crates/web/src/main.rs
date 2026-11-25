@@ -10,6 +10,12 @@ mod annotation_table;
 mod annotation_visibility;
 #[cfg(target_arch = "wasm32")]
 mod app;
+#[cfg(any(target_arch = "wasm32", test))]
+mod assembly_alternatives;
+#[cfg(target_arch = "wasm32")]
+mod assembly_alternatives_view;
+#[cfg(any(target_arch = "wasm32", test))]
+mod assembly_draft_model;
 #[cfg(target_arch = "wasm32")]
 mod assembly_finalize;
 #[cfg(target_arch = "wasm32")]
@@ -18,6 +24,8 @@ mod assembly_outputs;
 mod assembly_product_view;
 #[cfg(any(target_arch = "wasm32", test))]
 mod assembly_review;
+#[cfg(any(target_arch = "wasm32", test))]
+mod assembly_role_ids;
 #[cfg(target_arch = "wasm32")]
 mod assembly_workspace;
 #[cfg(target_arch = "wasm32")]
@@ -26,6 +34,8 @@ mod checked_cloning;
 mod clipboard;
 #[cfg(target_arch = "wasm32")]
 mod cloning_methods;
+#[cfg(any(target_arch = "wasm32", test))]
+mod cloning_methods_model;
 #[cfg(target_arch = "wasm32")]
 mod codon_design;
 #[cfg(target_arch = "wasm32")]
@@ -96,6 +106,8 @@ mod search_view;
 mod selection_toolbar;
 #[cfg(target_arch = "wasm32")]
 mod sequence_view;
+#[cfg(any(target_arch = "wasm32", test))]
+mod source_identity;
 #[cfg(any(target_arch = "wasm32", test))]
 mod topo_preparation;
 #[cfg(target_arch = "wasm32")]

@@ -120,9 +120,12 @@ concrete connections:
   context and direct aligned/printable outputs are now connected
   ([details](PAIRWISE_PRESENTATION.md)); continue remaining ordinary cloning
   interaction work and the alternative-source design layer below.
-- After ordinary designs, implement genuine alternative source bins and per-combination
-  output identity over the shared compiler. Reaction-product enumeration alone does
-  not complete combinatorial cloning. Inspectable fusion-end proposals and intentional
+- Genuine alternative source bins, selected construct rows, stable recipe identities
+  and per-construct editable preparation/junction state now extend the same dock
+  ([details](COMBINATORIAL_SOURCE_DESIGN.md)). Continue batch evaluation/cancellation,
+  matrix-owned run/output provenance, bulk release, MCP and library topology editing.
+  Reaction-product enumeration alone does not complete combinatorial cloning.
+  Inspectable fusion-end proposals and intentional
   domestication remain distinct planned work.
 
 The named-digest/gel connection now retains complete catalog geometry/options

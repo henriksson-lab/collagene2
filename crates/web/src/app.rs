@@ -13,7 +13,11 @@ use web_sys::{HtmlCanvasElement, HtmlInputElement};
 
 type OpenDocument = collagene_core::history::DocumentHistory;
 const MAX_WORKSPACE_BYTES: usize = 64 * 1024 * 1024;
-const ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v1";
+const ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v2";
+const LEGACY_ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v1";
+fn assembly_draft_kind(kind: &str) -> bool {
+    matches!(kind, ASSEMBLY_DRAFT_KIND | LEGACY_ASSEMBLY_DRAFT_KIND)
+}
 fn current_event_binding(doc: &OpenDocument) -> collagene_core::run_lineage::EventBinding {
     let revision = doc.head_revision().to_owned();
     collagene_core::run_lineage::EventBinding {
@@ -199,35 +203,37 @@ fn restore_workspace_state(
     let draft_assets = frame
         .attachments
         .values()
-        .filter(|a| a.kind == ASSEMBLY_DRAFT_KIND)
+        .filter(|a| assembly_draft_kind(&a.kind))
         .collect::<Vec<_>>();
     if draft_assets.len() > 1 {
         return Err("Workspace contains multiple active assembly drafts.".into());
     }
     let assembly_draft = match draft_assets.first() {
         Some(asset) if asset.media_type == "application/json" => {
-            crate::assembly_workspace::decode(&asset.bytes)?
+            crate::assembly_workspace::decode_version(
+                &asset.bytes,
+                if asset.kind == LEGACY_ASSEMBLY_DRAFT_KIND {
+                    1
+                } else {
+                    2
+                },
+            )?
         }
         Some(_) => return Err("Assembly draft has the wrong media type.".into()),
         None => crate::assembly_workspace::Draft::default(),
     };
-    for slot in &assembly_draft.slots {
-        if let Some(captured) = &slot.captured {
-            let binding = &captured.source.binding;
-            let source = documents
-                .iter()
-                .find(|d| d.id == binding.document_id)
-                .ok_or("Assembly draft source document is not retained.")?;
-            let exact = source
-                .revision_molecule(&binding.event_id)
-                .map_err(|e| e.to_string())?;
-            if exact.revision() != binding.revision
-                || exact.revision() != captured.molecule.revision()
-            {
-                return Err(
-                    "Assembly draft source event differs from its retained snapshot.".into(),
-                );
-            }
+    for captured in crate::assembly_alternatives::all_captures(&assembly_draft) {
+        let binding = &captured.source.binding;
+        let source = documents
+            .iter()
+            .find(|d| d.id == binding.document_id)
+            .ok_or("Assembly draft source document is not retained.")?;
+        let exact = source
+            .revision_molecule(&binding.event_id)
+            .map_err(|e| e.to_string())?;
+        if exact.revision() != binding.revision || exact.revision() != captured.molecule.revision()
+        {
+            return Err("Assembly draft source event differs from its retained snapshot.".into());
         }
     }
     let pair_assets = frame
@@ -1583,11 +1589,16 @@ pub fn App() -> impl IntoView {
                     assets
                         .get(&hash)
                         .is_some_and(|a| a.kind == ASSEMBLY_DRAFT_KIND)
+                        && assets
+                            .values()
+                            .filter(|a| assembly_draft_kind(&a.kind))
+                            .count()
+                            == 1
                 }) {
                     return;
                 }
                 attachments.update(|assets| {
-                    assets.retain(|_, a| a.kind != ASSEMBLY_DRAFT_KIND);
+                    assets.retain(|_, a| !assembly_draft_kind(&a.kind));
                     assets.insert(
                         hash,
                         collagene_core::workspace::WorkspaceAttachment {

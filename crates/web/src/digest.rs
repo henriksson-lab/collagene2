@@ -1,4 +1,5 @@
 //! Exact-source virtual restriction inspection. Scientific work stays in the worker.
+pub use crate::source_identity::SourceInfo;
 use crate::{app::download, worker::CachedWorker};
 use collagene_core::{
     Alphabet, Molecule, Topology, analysis,
@@ -15,7 +16,7 @@ use collagene_core::{
     run_lineage::EventBinding,
 };
 use leptos::prelude::*;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::{
     rc::Rc,
     sync::{
@@ -24,14 +25,6 @@ use std::{
     },
 };
 use wasm_bindgen_futures::spawn_local;
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SourceInfo {
-    pub binding: EventBinding,
-    pub name: String,
-    pub length: usize,
-    pub alphabet: Alphabet,
-    pub topology: Topology,
-}
 #[derive(Clone, PartialEq, Eq)]
 pub struct BoundaryPick {
     pub source: EventBinding,

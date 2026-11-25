@@ -64,6 +64,11 @@ layer over the shared preparation compiler, with distinct per-combination output
 identity. No second wizard, ELN/project hierarchy or external design engine is needed.
 See the [detailed assembly check](BENCHLING_ASSEMBLY_WORKFLOW_CHECK.md).
 
+Implementation follow-up: the dock now has genuine source bins and explicit
+selected construct rows, with per-construct raw settings and stable recipe IDs.
+[Contracts and remaining batch/output work](COMBINATORIAL_SOURCE_DESIGN.md).
+This closes the basic alternative-choice connection, not the full bulk workflow.
+
 ## Comparison and sequencing verification
 
 Benchling starts known-reference checking from the construct, distinguishes it from

@@ -1,5 +1,9 @@
 //! Persistent declared assembly slots. Frozen intent/scientific evidence is
 //! component-private and is never restored from a serialized draft.
+pub use crate::assembly_draft_model::{
+    CapturedSource, DigestGeometry, Draft, Slot, decode_version, encode,
+};
+use crate::assembly_draft_model::{digest_interval, hex, token};
 use crate::{
     assembly_review::IntendedReference,
     cloning_methods::{
@@ -19,9 +23,7 @@ use collagene_core::{
     verification::PlanInput,
 };
 use leptos::prelude::*;
-use serde::{Deserialize, Serialize};
 use std::{
-    io::Write,
     rc::Rc,
     sync::{
         Arc,
@@ -29,398 +31,13 @@ use std::{
     },
 };
 use wasm_bindgen_futures::spawn_local;
-const MAX_BYTES: usize = 32 << 20;
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CapturedSource {
-    pub source: SourceInfo,
-    pub molecule: Molecule,
-}
-mod optional_snapshot {
-    use super::*;
-    pub fn serialize<S: serde::Serializer>(
-        value: &Option<Arc<CapturedSource>>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        value.as_deref().serialize(serializer)
-    }
-    pub fn deserialize<'de, D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Option<Arc<CapturedSource>>, D::Error> {
-        Option::<CapturedSource>::deserialize(deserializer).map(|v| v.map(Arc::new))
-    }
-}
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct DigestGeometry {
-    pub top_start: usize,
-    pub top_length: usize,
-    pub bottom_start: i64,
-    pub bottom_length: usize,
-}
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Slot {
-    pub label: String,
-    #[serde(with = "optional_snapshot")]
-    pub captured: Option<Arc<CapturedSource>>,
-    pub start: usize,
-    pub end: usize,
-    pub reverse: bool,
-    #[serde(default)]
-    pub digest_geometry: Option<DigestGeometry>,
-}
-impl Slot {
-    fn empty(label: &str) -> Self {
-        Self {
-            label: label.into(),
-            captured: None,
-            start: 0,
-            end: 0,
-            reverse: false,
-            digest_geometry: None,
-        }
-    }
-}
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Draft {
-    pub version: u32,
-    pub name: String,
-    pub circular: bool,
-    #[serde(deserialize_with = "deserialize_slots")]
-    pub slots: Vec<Slot>,
-    pub active_slot: usize,
-    pub methods: MethodsState,
-    #[serde(default, deserialize_with = "deserialize_junction_edits")]
-    pub junction_edits: Vec<assembly_junction_edit::Edit>,
-}
-fn deserialize_junction_edits<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Vec<assembly_junction_edit::Edit>, D::Error> {
-    struct Visitor;
-    impl<'de> serde::de::Visitor<'de> for Visitor {
-        type Value = Vec<assembly_junction_edit::Edit>;
-        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-            f.write_str("at most 12 explicit junction edits")
-        }
-        fn visit_seq<A: serde::de::SeqAccess<'de>>(
-            self,
-            mut seq: A,
-        ) -> Result<Self::Value, A::Error> {
-            if seq.size_hint().is_some_and(|n| n > 12) {
-                return Err(serde::de::Error::custom("at most 12 junction edits"));
-            }
-            let mut values = Vec::new();
-            while values.len() < 12 {
-                match seq.next_element()? {
-                    Some(value) => values.push(value),
-                    None => return Ok(values),
-                }
-            }
-            if seq.next_element::<serde::de::IgnoredAny>()?.is_some() {
-                return Err(serde::de::Error::custom("at most 12 junction edits"));
-            }
-            Ok(values)
-        }
-    }
-    deserializer.deserialize_seq(Visitor)
-}
-fn deserialize_slots<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Vec<Slot>, D::Error> {
-    struct Visitor;
-    impl<'de> serde::de::Visitor<'de> for Visitor {
-        type Value = Vec<Slot>;
-        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-            f.write_str("at most12 assembly slots")
-        }
-        fn visit_seq<A: serde::de::SeqAccess<'de>>(
-            self,
-            mut seq: A,
-        ) -> Result<Self::Value, A::Error> {
-            if seq.size_hint().is_some_and(|n| n > 12) {
-                return Err(serde::de::Error::custom("at most12 assembly slots"));
-            }
-            let mut slots = Vec::with_capacity(2);
-            while slots.len() < 12 {
-                match seq.next_element()? {
-                    Some(slot) => slots.push(slot),
-                    None => return Ok(slots),
-                }
-            }
-            if seq.next_element::<serde::de::IgnoredAny>()?.is_some() {
-                return Err(serde::de::Error::custom("at most12 assembly slots"));
-            }
-            Ok(slots)
-        }
-    }
-    deserializer.deserialize_seq(Visitor)
-}
-impl Default for Draft {
-    fn default() -> Self {
-        let mut value = Self {
-            version: 1,
-            name: "New assembly".into(),
-            circular: true,
-            slots: vec![Slot::empty("Backbone"), Slot::empty("Insert")],
-            active_slot: 0,
-            methods: MethodsState::default(),
-            junction_edits: Vec::new(),
-        };
-        value.sync_rows();
-        for row in &mut value.methods.rows {
-            row.preparation = OverlapPreparation::ExactPcr;
-        }
-        value
-    }
-}
-fn token(text: &str, max: usize) -> bool {
-    !text.trim().is_empty() && text.len() <= max && !text.chars().any(char::is_control)
-}
-fn hex(text: &str) -> bool {
-    text.len() == 64
-        && text
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-}
-struct Bounded {
-    bytes: Vec<u8>,
-}
-struct Count(usize);
-impl Write for Count {
-    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
-        self.0 = self
-            .0
-            .checked_add(data.len())
-            .filter(|n| *n <= MAX_BYTES)
-            .ok_or_else(|| std::io::Error::other("Assembly draft exceeds32MiB"))?;
-        Ok(data.len())
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-impl Write for Bounded {
-    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
-        if self
-            .bytes
-            .len()
-            .checked_add(data.len())
-            .is_none_or(|n| n > MAX_BYTES)
-        {
-            return Err(std::io::Error::other("Assembly draft exceeds32MiB"));
-        }
-        self.bytes.extend_from_slice(data);
-        Ok(data.len())
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
 impl Draft {
-    /// Structural/bounded source consistency only. Historical event IDs require
-    /// the host workspace to attest them before installing any candidate.
-    pub fn validate(&self) -> Result<(), String> {
-        if self.version != 1
-            || !token(&self.name, 256)
-            || self.slots.is_empty()
-            || self.slots.len() > 12
-            || self.active_slot >= self.slots.len()
-            || self.methods.rows.len() != self.slots.len()
-            || self.methods.mode == Mode::Tailing
-            || self.methods.circular != self.circular
-        {
-            return Err("Invalid bounded assembly draft or unsupported draft mode".into());
-        }
-        if let Some(pool) = &self.methods.golden_gate_pool {
-            pool.validate()?;
-            if pool.choices.len() != self.slots.len() {
-                return Err("Reaction substrate choices must match the assembly slots.".into());
-            }
-        }
-        let junction_count = self.slots.len().saturating_sub(1) + usize::from(self.circular);
-        if self.junction_edits.len() > 12
-            || (!self.junction_edits.is_empty()
-                && !matches!(self.methods.mode, Mode::Overlap | Mode::GoldenGate))
-        {
-            return Err(
-                "Junction edits require overlap or Golden Gate assembly and at most 12 edits"
-                    .into(),
-            );
-        }
-        let mut junctions = std::collections::BTreeSet::new();
-        for edit in &self.junction_edits {
-            if edit.junction >= junction_count
-                || !junctions.insert(edit.junction)
-                || edit.inserted.len() > 200
-            {
-                return Err(
-                    "Invalid or duplicate junction edit; inserted text is limited to 200 bytes"
-                        .into(),
-                );
-            }
-        }
-        let models = self
-            .slots
-            .iter()
-            .filter_map(|slot| slot.captured.as_deref().map(|c| &c.molecule))
-            .collect::<Vec<_>>();
-        collagene_core::model::bounds::model_preflight(&models).map_err(|e| e.to_string())?;
-        for row in &self.methods.rows {
-            if let Some(selection) = &row.catalog_selection {
-                selection.validate().map_err(|e| e.to_string())?;
-            }
-            for text in [
-                &row.enzymes,
-                &row.fragment,
-                &row.forward_name,
-                &row.reverse_name,
-                &row.forward,
-                &row.reverse_primer,
-                &row.forward_tail,
-                &row.reverse_tail,
-                &row.interval_start,
-                &row.interval_end,
-                &row.right_fusion,
-            ] {
-                if text.len() > 65536 {
-                    return Err("Assembly option field exceeds64KiB".into());
-                }
-            }
-        }
-        let gate = &self.methods.golden_gate;
-        if gate.clamp.len() > 12
-            || gate.spacer.len() > 2
-            || gate.forward_length.len() > 4
-            || gate.reverse_length.len() > 4
-        {
-            return Err("Type IIS primer settings exceed their field bounds".into());
-        }
-        for row in [&self.methods.vector, &self.methods.insert] {
-            for text in [
-                &row.enzymes,
-                &row.fragment,
-                &row.forward_name,
-                &row.reverse_name,
-                &row.forward,
-                &row.reverse,
-                &row.forward_tail,
-                &row.reverse_tail,
-            ] {
-                if text.len() > 65536 {
-                    return Err("Assembly option field exceeds64KiB".into());
-                }
-            }
-        }
-        for text in [
-            &self.methods.overlaps,
-            &self.methods.comparisons,
-            &self.methods.occurrences,
-        ] {
-            if text.len() > 65536 {
-                return Err("Assembly option field exceeds64KiB".into());
-            }
-        }
-        serde_json::to_writer(&mut Count(0), self).map_err(|e| e.to_string())?;
-        let mut bases = 0usize;
-        for (i, slot) in self.slots.iter().enumerate() {
-            if !token(&slot.label, 80) {
-                return Err("Slot labels must be nonblank and at most80 bytes".into());
-            }
-            let row = &self.methods.rows[i];
-            if row.document != i
-                || row.reverse != slot.reverse
-                || slot.start.checked_add(1).map(|n| n.to_string()).as_deref()
-                    != Some(row.interval_start.as_str())
-                || row.interval_end
-                    != if slot.captured.is_some() {
-                        slot.end.to_string()
-                    } else {
-                        String::new()
-                    }
-            {
-                return Err("Draft preparation source/order differs from its pinned slots".into());
-            }
-            for text in [
-                &row.enzymes,
-                &row.fragment,
-                &row.forward_name,
-                &row.reverse_name,
-                &row.forward,
-                &row.reverse_primer,
-                &row.forward_tail,
-                &row.reverse_tail,
-                &self.methods.overlaps,
-                &self.methods.comparisons,
-                &self.methods.occurrences,
-            ] {
-                if text.len() > 65536 {
-                    return Err("Assembly option field exceeds64KiB".into());
-                }
-            }
-            let Some(captured) = slot.captured.as_deref() else {
-                if slot.start != 0 || slot.end != 0 || slot.digest_geometry.is_some() {
-                    return Err("An empty slot cannot retain a source interval".into());
-                }
-                continue;
-            };
-            let source = &captured.source;
-            let molecule = &captured.molecule;
-            let n = molecule.sequence.len();
-            bases = bases
-                .checked_add(n)
-                .filter(|n| *n <= 8 << 20)
-                .ok_or("Assembly pinned source bases exceed8MiB")?;
-            if !token(&source.binding.document_id, 512)
-                || !token(&source.binding.event_id, 512)
-                || !hex(&source.binding.revision)
-                || source.alphabet != Alphabet::Dna
-                || source.alphabet != molecule.sequence.alphabet()
-                || source.topology != molecule.topology
-                || source.length != n
-                || source.name != molecule.name
-                || n == 0
-                || slot.start >= n
-                || slot.end <= slot.start
-                || slot
-                    .end
-                    .checked_sub(slot.start)
-                    .is_none_or(|length| length > n)
-                || (molecule.topology == Topology::Linear && slot.end > n)
-            {
-                return Err("Invalid pinned DNA source or one-turn interval".into());
-            }
-            if let Some(geometry) = &slot.digest_geometry {
-                digest_interval(source, geometry, false)?;
-                digest_interval(source, geometry, true)?;
-            }
-            if molecule.revision() != source.binding.revision {
-                return Err("Pinned source content differs from its captured revision".into());
-            }
-        }
-        Ok(())
-    }
-    fn sync_rows(&mut self) {
-        self.methods.circular = self.circular;
-        self.methods
-            .rows
-            .resize_with(self.slots.len(), OverlapInput::default);
-        for (i, (slot, row)) in self.slots.iter().zip(&mut self.methods.rows).enumerate() {
-            row.document = i;
-            row.reverse = slot.reverse;
-            row.interval_start = slot.start.saturating_add(1).to_string();
-            row.interval_end = if slot.captured.is_some() {
-                slot.end.to_string()
-            } else {
-                String::new()
-            };
-        }
-    }
     fn identity(&self) -> IntentIdentity {
         IntentIdentity {
             name: self.name.clone(),
             circular: self.circular,
+            roles: self.methods.source_roles.clone(),
+            combination: crate::assembly_alternatives::identity(self),
             junction_edits: self.junction_edits.clone(),
             slots: self
                 .slots
@@ -447,25 +64,14 @@ fn same_declaration(current: &Draft, applied: &Draft) -> bool {
         && current.slots == applied.slots
         && current.methods == applied.methods
         && current.junction_edits == applied.junction_edits
-}
-pub fn encode(draft: &Draft) -> Result<Vec<u8>, String> {
-    draft.validate()?;
-    let mut writer = Bounded { bytes: Vec::new() };
-    serde_json::to_writer(&mut writer, draft).map_err(|e| e.to_string())?;
-    Ok(writer.bytes)
-}
-pub fn decode(bytes: &[u8]) -> Result<Draft, String> {
-    if bytes.len() > MAX_BYTES {
-        return Err("Assembly draft exceeds32MiB".into());
-    }
-    let draft: Draft = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
-    draft.validate()?;
-    Ok(draft)
+        && current.alternatives == applied.alternatives
 }
 #[derive(Clone, PartialEq, Eq)]
 struct IntentIdentity {
     name: String,
     circular: bool,
+    roles: Option<Vec<crate::assembly_role_ids::Role>>,
+    combination: Option<(String, String, Vec<String>)>,
     junction_edits: Vec<assembly_junction_edit::Edit>,
     slots: Vec<(
         String,
@@ -520,6 +126,7 @@ fn inputs_request(
     String,
 > {
     draft.validate()?;
+    crate::assembly_alternatives::require_active_choice_match(draft)?;
     let captures = draft
         .slots
         .iter()
@@ -532,8 +139,10 @@ fn inputs_request(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let ids = (0..captures.len())
-        .map(|i| format!("source-{}", i + 1))
+    let roles = draft.methods.role_ids(captures.len())?;
+    let ids = roles
+        .iter()
+        .map(|role| role.input_id.clone())
         .collect::<Vec<_>>();
     let request = assembly_intent::Request {
         name: draft.name.clone(),
@@ -543,7 +152,7 @@ fn inputs_request(
             .iter()
             .enumerate()
             .map(|(i, s)| collagene_core::overlap_primer_design::Fragment {
-                role: format!("fragment-{}", i + 1),
+                role: roles[i].role.clone(),
                 input_id: ids[i].clone(),
                 start: s.start,
                 end: s.end,
@@ -834,8 +443,9 @@ pub fn AssemblyWorkspace(
                     .report
                     .fragment(i)
                     .ok_or("Proposed fragment is missing.")?;
-                if fragment.input_id != format!("source-{}", i + 1)
-                    || fragment.role != format!("fragment-{}", i + 1)
+                let roles = next.methods.role_ids(next.slots.len())?;
+                if fragment.input_id != roles[i].input_id
+                    || fragment.role != roles[i].role
                     || fragment.reverse != next.slots[i].reverse
                 {
                     return Err("Proposed source order or orientation changed.".into());
@@ -935,9 +545,16 @@ pub fn AssemblyWorkspace(
             <details class="assembly-source-details"><summary>"Source details"</summary><p class="helper">{move||draft.with(|d|d.slots.get(i).and_then(|s|s.captured.as_ref()).map(|c|format!("Pinned source event {} · revision {}",c.source.binding.event_id,c.source.binding.revision)).unwrap_or_default())}</p></details>
             <p class="helper">{move||{let captured=draft.with(|d|d.slots.get(i).and_then(|s|s.captured.clone()));captured.map(|c|sources.with(|current|if current.iter().any(|s|s.binding==c.source.binding){"Current source version is pinned"}else{"Using the captured source version; current tabs do not replace it"})).unwrap_or("")}}</p>
             <label class="checkbox-label"><input type="checkbox" aria-label=format!("Reverse assembly slot {}",i+1) prop:checked=move||draft.with(|d|d.slots.get(i).is_some_and(|s|s.reverse)) on:change=move|e|draft.update(|d|{let reversed=event_target_checked(&e);if i<d.slots.len(){let adjusted=d.slots[i].captured.as_ref().zip(d.slots[i].digest_geometry.as_ref()).filter(|_|d.methods.rows[i].preparation==OverlapPreparation::CatalogDigest&&d.methods.rows[i].repair.is_none()).map(|(capture,geometry)|digest_interval(&capture.source,geometry,reversed));match adjusted{Some(Ok((start,end)))=>{d.slots[i].start=start;d.slots[i].end=end;},Some(Err(error))=>{status.set(error);return;},None=>{}}d.slots[i].reverse=reversed;d.junction_edits.clear();}d.sync_rows();})/>"Reverse fragment in construct"</label>
-            <div class="method-row-actions"><button class="text-tool" on:click=move|_|{if let Some(nav)=draft.with_untracked(|d|d.slots.get(i).and_then(|s|s.captured.as_ref().map(|c|SelectionNavigation{source:c.source.binding.clone(),start:s.start,end:s.end,reverse:s.reverse}))){on_navigate.run(nav);}}>"View source region"</button><button class="text-tool" disabled=i==0 on:click=move|_|draft.update(|d|{if i>0&&i<d.slots.len(){d.slots.swap(i,i-1);d.methods.swap_rows(i,i-1);d.junction_edits.clear();d.active_slot=i-1;d.sync_rows();}})>"Move earlier"</button><button class="text-tool" disabled=move||draft.with(|d|i+1>=d.slots.len()) on:click=move|_|draft.update(|d|{if i+1<d.slots.len(){d.slots.swap(i,i+1);d.methods.swap_rows(i,i+1);d.junction_edits.clear();d.active_slot=i+1;d.sync_rows();}})>"Move later"</button><button class="text-tool" disabled=move||draft.with(|d|d.slots.len()<=1) on:click=move|_|draft.update(|d|{if d.slots.len()>1&&i<d.slots.len(){d.slots.remove(i);d.methods.remove_row(i);d.junction_edits.clear();d.active_slot=d.active_slot.min(d.slots.len()-1);d.sync_rows();}})>"Remove slot"</button></div>
+            <div class="method-row-actions"><button class="text-tool" on:click=move|_|{if let Some(nav)=draft.with_untracked(|d|d.slots.get(i).and_then(|s|s.captured.as_ref().map(|c|SelectionNavigation{source:c.source.binding.clone(),start:s.start,end:s.end,reverse:s.reverse}))){on_navigate.run(nav);}}>"View source region"</button><button class="text-tool" disabled=move||i==0||draft.with(|d|d.alternatives.is_some()) on:click=move|_|draft.update(|d|{if d.alternatives.is_none()&&i>0&&i<d.slots.len(){d.slots.swap(i,i-1);d.methods.swap_rows(i,i-1);d.junction_edits.clear();d.active_slot=i-1;d.sync_rows();}})>"Move earlier"</button><button class="text-tool" disabled=move||draft.with(|d|d.alternatives.is_some()||i+1>=d.slots.len()) on:click=move|_|draft.update(|d|{if d.alternatives.is_none()&&i+1<d.slots.len(){d.slots.swap(i,i+1);d.methods.swap_rows(i,i+1);d.junction_edits.clear();d.active_slot=i+1;d.sync_rows();}})>"Move later"</button><button class="text-tool" disabled=move||draft.with(|d|d.alternatives.is_some()||d.slots.len()<=1) on:click=move|_|draft.update(|d|{if d.alternatives.is_none()&&d.slots.len()>1&&i<d.slots.len(){d.slots.remove(i);d.methods.remove_row(i);d.junction_edits.clear();d.active_slot=d.active_slot.min(d.slots.len()-1);d.sync_rows();}})>"Remove slot"</button></div>
         </article>}/></div>
-        <button class="button secondary" disabled=move||draft.with(|d|d.slots.len()>=12) on:click=move|_|draft.update(|d|{if d.slots.len()<12{d.slots.push(Slot::empty(&format!("Fragment {}",d.slots.len()+1)));d.methods.push_row(OverlapInput{preparation:OverlapPreparation::ExactPcr,..Default::default()});d.active_slot=d.slots.len()-1;d.junction_edits.clear();d.sync_rows();}})>"Add fragment slot"</button>
+        <button class="button secondary" disabled=move||draft.with(|d|d.alternatives.is_some()||d.slots.len()>=12) on:click=move|_|{
+            let mut next=draft.get_untracked();
+            if next.alternatives.is_some()||next.slots.len()>=12{return;}
+            if let Err(error)=next.methods.push_row(OverlapInput{preparation:OverlapPreparation::ExactPcr,..Default::default()}){status.set(error);return;}
+            next.slots.push(Slot::empty(&format!("Fragment {}",next.slots.len()+1)));
+            next.active_slot=next.slots.len()-1;next.junction_edits.clear();next.sync_rows();draft.set(next);
+        }>"Add fragment slot"</button>
+        <crate::assembly_alternatives_view::AssemblyAlternativesView draft epoch/>
         <section class="assembly-set-fragment"><p>{move||format!("Active viewer source: {} · set {}",active_source.get().name,draft.with(|d|d.slots.get(d.active_slot).map(|s|s.label.as_str()).unwrap_or("selected slot").to_owned()))}</p><button class="button primary" on:click=move|_|pin.run(1)>"Set from sequence selection"</button><button class="button secondary" on:click=move|_|pin.run(0)>"Use whole source"</button><button class="button secondary" on:click=move|_|pin.run(2)>"Keep outside selection"</button><p class="helper">"Keep outside selection retains the complementary path on circular DNA, including an origin crossing. This sets intended source coordinates; it does not digest, amplify or prove a physical fragment."</p></section>
         <button class="button primary" disabled=move||busy.get() on:click=move|_|review_intent.run(())>"Review intended construct"</button><button class="text-tool" disabled=move||!busy.get() on:click=cancel>"Cancel intended construct"</button><p class="assembly-workspace-status" role="status">{move||status.get()}</p>
         <JunctionEditor draft epoch on_apply=apply_junction/>
@@ -1032,11 +649,11 @@ fn FrozenWorkspace(
             {
                 return Err("Source slots changed; review the intended construct again.".into());
             }
+            let roles = crate::assembly_role_ids::resolve(&f.identity.roles, f.sources.len())?;
             if candidate.plan.target_revision != f.target_revision
                 || candidate.plan.inputs.len() != f.sources.len()
                 || candidate.plan.inputs.iter().enumerate().any(|(i, p)| {
-                    p.id != format!("source-{}", i + 1)
-                        || p.revision != f.sources[i].source.binding.revision
+                    p.id != roles[i].input_id || p.revision != f.sources[i].source.binding.revision
                 })
             {
                 return Err(
@@ -1119,50 +736,6 @@ fn FrozenWorkspace(
     </section>}
 }
 
-fn digest_interval(
-    source: &SourceInfo,
-    geometry: &DigestGeometry,
-    reverse: bool,
-) -> Result<(usize, usize), String> {
-    let n = source.length;
-    if n == 0 {
-        return Err("Digest source is empty".into());
-    }
-    let (start, length) = if reverse {
-        geometry
-            .bottom_start
-            .checked_add(
-                i64::try_from(geometry.bottom_length)
-                    .map_err(|_| "Bottom interval length overflow")?,
-            )
-            .ok_or("Bottom interval coordinate overflow")?;
-        if geometry.bottom_length == 0 || geometry.bottom_length > n {
-            return Err("Digest bottom-strand interval is empty or exceeds one source turn".into());
-        }
-        let start = if source.topology == Topology::Circular {
-            let size =
-                i64::try_from(n).map_err(|_| "Source length exceeds signed coordinate range")?;
-            usize::try_from(geometry.bottom_start.rem_euclid(size))
-                .map_err(|_| "Invalid bottom-strand coordinate")?
-        } else {
-            usize::try_from(geometry.bottom_start)
-                .map_err(|_| "Linear digest bottom interval starts outside its source")?
-        };
-        (start, geometry.bottom_length)
-    } else {
-        (geometry.top_start, geometry.top_length)
-    };
-    if start >= n || length == 0 || length > n {
-        return Err("Digest interval is outside its original source".into());
-    }
-    let end = start
-        .checked_add(length)
-        .ok_or("Digest interval overflow")?;
-    if source.topology == Topology::Linear && end > n {
-        return Err("Linear digest interval extends beyond its source".into());
-    }
-    Ok((start, end))
-}
 /// Pin a fresh private digest selection, retaining its original source and full
 /// catalog identity. This checks bindings/bounds, not cleavage; the compiled
 /// CatalogDigest operation must reconstruct the actual fragment in the worker.

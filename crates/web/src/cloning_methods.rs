@@ -23,379 +23,8 @@ use std::{
 };
 use wasm_bindgen_futures::spawn_local;
 
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Mode {
-    Tailing,
-    Overlap,
-    Ligation,
-    GoldenGate,
-}
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Treatment {
-    Keep,
-    Phosphorylate,
-    Dephosphorylate,
-}
-impl Treatment {
-    pub(crate) fn operation(self) -> Option<EndTreatment> {
-        match self {
-            Self::Keep => None,
-            Self::Phosphorylate => Some(EndTreatment::Phosphorylate),
-            Self::Dephosphorylate => Some(EndTreatment::Dephosphorylate),
-        }
-    }
-}
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TailInput {
-    pub document: usize,
-    pub pcr: bool,
-    pub enzymes: String,
-    pub fragment: String,
-    pub blunt: bool,
-    pub forward_name: String,
-    pub reverse_name: String,
-    pub forward: String,
-    pub reverse: String,
-    pub forward_tail: String,
-    pub reverse_tail: String,
-    pub base: TailingBase,
-    pub treatment: Treatment,
-    pub reversed: bool,
-}
-impl TailInput {
-    fn new(pcr: bool, base: TailingBase) -> Self {
-        Self {
-            document: 0,
-            pcr,
-            enzymes: "EcoRV".into(),
-            fragment: "1".into(),
-            blunt: false,
-            forward_name: "Forward".into(),
-            reverse_name: "Reverse".into(),
-            forward: String::new(),
-            reverse: String::new(),
-            forward_tail: String::new(),
-            reverse_tail: String::new(),
-            base,
-            treatment: Treatment::Keep,
-            reversed: false,
-        }
-    }
-    fn recipe(&self) -> Result<TailSubstrate, String> {
-        if self.pcr {
-            Ok(TailSubstrate::ExactPcr {
-                forward: Primer::new(&self.forward_name, &self.forward, &self.forward_tail)
-                    .map_err(|e| e.to_string())?,
-                reverse: Primer::new(&self.reverse_name, &self.reverse, &self.reverse_tail)
-                    .map_err(|e| e.to_string())?,
-            })
-        } else {
-            let enzymes = self
-                .enzymes
-                .split(',')
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(str::to_owned)
-                .collect::<Vec<_>>();
-            if enzymes.is_empty() {
-                return Err("Choose explicit restriction enzymes".into());
-            }
-            let fragment_index = self
-                .fragment
-                .parse::<usize>()
-                .ok()
-                .and_then(|n| n.checked_sub(1))
-                .ok_or("Fragment numbers start at 1")?;
-            Ok(TailSubstrate::Digest {
-                enzymes,
-                fragment_index,
-                blunt_before: self.blunt,
-            })
-        }
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum OverlapPreparation {
-    WholeLinear,
-    DeclaredDuplex,
-    Digest,
-    CatalogDigest,
-    ExactPcr,
-    PcrCatalogDigest,
-}
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OverlapInput {
-    pub document: usize,
-    pub interval_start: String,
-    pub interval_end: String,
-    pub reverse: bool,
-    pub treatment: Treatment,
-    pub preparation: OverlapPreparation,
-    #[serde(default)]
-    pub catalog_selection: Option<collagene_core::catalog_digest::CatalogSelection>,
-    pub left_terminus: Terminus,
-    pub right_terminus: Terminus,
-    pub enzymes: String,
-    pub fragment: String,
-    pub repair: Option<EndRepairMethod>,
-    pub forward_name: String,
-    pub reverse_name: String,
-    pub forward: String,
-    pub reverse_primer: String,
-    pub forward_tail: String,
-    pub reverse_tail: String,
-    #[serde(default)]
-    pub right_fusion: String,
-}
-impl Default for OverlapInput {
-    fn default() -> Self {
-        Self {
-            document: 0,
-            interval_start: "1".into(),
-            interval_end: String::new(),
-            reverse: false,
-            treatment: Treatment::Keep,
-            preparation: OverlapPreparation::WholeLinear,
-            catalog_selection: None,
-            left_terminus: Terminus::UNKNOWN,
-            right_terminus: Terminus::UNKNOWN,
-            enzymes: "EcoRV".into(),
-            fragment: "1".into(),
-            repair: None,
-            forward_name: "Forward".into(),
-            reverse_name: "Reverse".into(),
-            forward: String::new(),
-            reverse_primer: String::new(),
-            forward_tail: String::new(),
-            reverse_tail: String::new(),
-            right_fusion: String::new(),
-        }
-    }
-}
-impl OverlapInput {
-    pub(crate) fn summary(&self) -> String {
-        let preparation = match self.preparation {
-            OverlapPreparation::WholeLinear => {
-                "Whole linear source (circular DNA requires preparation)".into()
-            }
-            OverlapPreparation::DeclaredDuplex => format!(
-                "Declared intact linear duplex assumption; left {}; right {}",
-                declared_terminus(self.left_terminus),
-                declared_terminus(self.right_terminus)
-            ),
-            OverlapPreparation::CatalogDigest | OverlapPreparation::PcrCatalogDigest => format!(
-                "{}: {}; fragment {}",
-                if self.preparation == OverlapPreparation::PcrCatalogDigest {
-                    "Exact PCR followed by pinned catalog digest"
-                } else {
-                    "Pinned catalog digest"
-                },
-                self.catalog_selection
-                    .as_ref()
-                    .map(|s| s
-                        .enzymes
-                        .iter()
-                        .map(|e| e.enzyme.name.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", "))
-                    .unwrap_or_else(|| "select a virtual digest fragment".into()),
-                self.fragment
-            ),
-            OverlapPreparation::Digest => format!(
-                "Restriction digest: {}; fragment {} (1-based); {}",
-                self.enzymes,
-                self.fragment,
-                match self.repair {
-                    None => "cohesive ends retained",
-                    Some(EndRepairMethod::FillFivePrimeOverhangs) => "explicit 5′ overhang fill-in",
-                    Some(EndRepairMethod::RemoveThreePrimeOverhangs) =>
-                        "explicit 3′ overhang removal",
-                    Some(EndRepairMethod::Blunt) => "explicit blunting",
-                }
-            ),
-            OverlapPreparation::ExactPcr => format!(
-                "Exact PCR: annealing {} / {} bp; 5′ extensions {} / {} bp",
-                self.forward.len(),
-                self.reverse_primer.len(),
-                self.forward_tail.len(),
-                self.reverse_tail.len()
-            ),
-        };
-        format!(
-            "{} · {}",
-            preparation,
-            if self.reverse {
-                "reverse complement after preparation"
-            } else {
-                "forward after preparation"
-            }
-        )
-    }
-}
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MethodsState {
-    pub mode: Mode,
-    pub vector: TailInput,
-    pub insert: TailInput,
-    pub circular: bool,
-    pub allow_nicked: bool,
-    #[serde(deserialize_with = "deserialize_method_rows")]
-    pub rows: Vec<OverlapInput>,
-    pub overlaps: String,
-    pub method: OverlapMethod,
-    pub scan_repeats: bool,
-    pub comparisons: String,
-    pub occurrences: String,
-    #[serde(default)]
-    pub golden_gate: GoldenGateForm,
-    /// Editable pool/reaction choices only; receipts and selected candidates are transient.
-    /// Missing in older drafts: initialize using their preparation topology and row count.
-    #[serde(default)]
-    pub golden_gate_pool: Option<PoolForm>,
-}
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GoldenGateForm {
-    pub enzyme: collagene_core::golden_gate::GoldenGateEnzyme,
-    pub clamp: String,
-    pub spacer: String,
-    pub forward_length: String,
-    pub reverse_length: String,
-}
-impl Default for GoldenGateForm {
-    fn default() -> Self {
-        Self {
-            enzyme: collagene_core::golden_gate::GoldenGateEnzyme::BsaI,
-            clamp: "ATGC".into(),
-            spacer: "A".into(),
-            forward_length: "20".into(),
-            reverse_length: "20".into(),
-        }
-    }
-}
-fn deserialize_method_rows<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Vec<OverlapInput>, D::Error> {
-    struct Visitor;
-    impl<'de> serde::de::Visitor<'de> for Visitor {
-        type Value = Vec<OverlapInput>;
-        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-            f.write_str("at most12 assembly preparation rows")
-        }
-        fn visit_seq<A: serde::de::SeqAccess<'de>>(
-            self,
-            mut seq: A,
-        ) -> Result<Self::Value, A::Error> {
-            if seq.size_hint().is_some_and(|n| n > 12) {
-                return Err(serde::de::Error::custom(
-                    "at most12 assembly preparation rows",
-                ));
-            }
-            let mut rows = Vec::with_capacity(2);
-            while rows.len() < 12 {
-                match seq.next_element()? {
-                    Some(row) => rows.push(row),
-                    None => return Ok(rows),
-                }
-            }
-            if seq.next_element::<serde::de::IgnoredAny>()?.is_some() {
-                return Err(serde::de::Error::custom(
-                    "at most12 assembly preparation rows",
-                ));
-            }
-            Ok(rows)
-        }
-    }
-    deserializer.deserialize_seq(Visitor)
-}
-impl Default for MethodsState {
-    fn default() -> Self {
-        Self {
-            mode: Mode::Overlap,
-            vector: TailInput::new(false, TailingBase::T),
-            insert: TailInput::new(true, TailingBase::A),
-            circular: true,
-            allow_nicked: false,
-            rows: vec![OverlapInput::default(), OverlapInput::default()],
-            overlaps: "20".into(),
-            method: OverlapMethod::HiFi,
-            scan_repeats: true,
-            comparisons: "5000000".into(),
-            occurrences: "1000".into(),
-            golden_gate: GoldenGateForm::default(),
-            golden_gate_pool: None,
-        }
-    }
-}
-impl MethodsState {
-    fn preparation_context(&self) -> Self {
-        let mut context = self.clone();
-        context.golden_gate_pool = None;
-        context
-    }
-    fn pool_form(&self) -> PoolForm {
-        self.golden_gate_pool.clone().unwrap_or_else(|| PoolForm {
-            circular: self.circular,
-            choices: vec![0; self.rows.len()],
-            ..PoolForm::default()
-        })
-    }
-    pub(crate) fn swap_rows(&mut self, a: usize, b: usize) {
-        self.rows.swap(a, b);
-        if let Some(form) = &mut self.golden_gate_pool {
-            form.choices.swap(a, b);
-        }
-    }
-    pub(crate) fn remove_row(&mut self, index: usize) {
-        self.rows.remove(index);
-        if let Some(form) = &mut self.golden_gate_pool {
-            form.choices.remove(index);
-        }
-    }
-    pub(crate) fn push_row(&mut self, row: OverlapInput) {
-        self.rows.push(row);
-        if let Some(form) = &mut self.golden_gate_pool {
-            form.choices.push(0);
-        }
-    }
-    fn input(&self, vector: bool) -> &TailInput {
-        if vector { &self.vector } else { &self.insert }
-    }
-    fn input_mut(&mut self, vector: bool) -> &mut TailInput {
-        if vector {
-            &mut self.vector
-        } else {
-            &mut self.insert
-        }
-    }
-    pub(crate) fn profile(&self) -> Result<(Vec<usize>, ProfileOptions), String> {
-        let overlaps = self
-            .overlaps
-            .split(',')
-            .map(|s| {
-                s.trim()
-                    .parse::<usize>()
-                    .map_err(|_| "Supply comma-separated overlap lengths".to_string())
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok((overlaps, self.profile_options()?))
-    }
-    pub(crate) fn profile_options(&self) -> Result<ProfileOptions, String> {
-        let options = ProfileOptions {
-            method: self.method,
-            scan_repeated_overlaps: self.scan_repeats,
-            max_comparisons: self
-                .comparisons
-                .parse()
-                .map_err(|_| "Invalid comparison budget")?,
-            max_occurrences: self
-                .occurrences
-                .parse()
-                .map_err(|_| "Invalid occurrence limit")?,
-        };
-        options.validate().map_err(|e| e.to_string())?;
-        Ok(options)
-    }
-}
+pub use crate::cloning_methods_model::*;
+
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct PlannerForm {
     overlap: String,
@@ -773,11 +402,18 @@ pub fn CloningMethodsPanel(
             return;
         }
         let mut next = saved.config.clone();
+        let roles = match next.role_ids(next.rows.len()) {
+            Ok(roles) => roles,
+            Err(error) => {
+                status.set(error);
+                return;
+            }
+        };
         for fragment in &saved.report.fragments {
-            let Some(index) = (0..next.rows.len()).find(|index| {
-                fragment.role == format!("fragment-{}", index + 1)
-                    && fragment.input_id == format!("source-{}", index + 1)
-            }) else {
+            let Some(index) = roles
+                .iter()
+                .position(|role| fragment.role == role.role && fragment.input_id == role.input_id)
+            else {
                 status.set("Proposal has an unknown source role; nothing applied.".into());
                 return;
             };
@@ -968,8 +604,16 @@ pub fn CloningMethodsPanel(
             return;
         }
         let mut updated = proposal.config.clone();
+        let roles = match updated.role_ids(updated.rows.len()) {
+            Ok(roles) => roles,
+            Err(error) => {
+                status.set(error);
+                return;
+            }
+        };
         for (i, fragment) in proposal.report.recipe.fragments.iter().enumerate() {
-            if fragment.input_id != format!("source-{}", i + 1)
+            if fragment.input_id != roles[i].input_id
+                || fragment.role != roles[i].role
                 || fragment.reverse != updated.rows[i].reverse
             {
                 status
@@ -1008,6 +652,10 @@ pub fn CloningMethodsPanel(
     });
     let compute = Callback::new(move |()| {
         let state = config.get_untracked();
+        if state.mode == Mode::Tailing && state.source_roles.is_some() {
+            status.set("Stable source-choice assemblies use overlap or ordered ligation preparation. Tailing cannot reinterpret those identities as vector/insert inputs.".into());
+            return;
+        }
         let Some(inputs) = sources.get_untracked() else {
             status.set("Choose available source documents".into());
             return;
@@ -1339,6 +987,7 @@ pub fn CloningMethodsPanel(
         if state.rows.is_empty() || state.rows.len() > 12 || context.len() != state.rows.len() {
             return None;
         }
+        state.role_ids(state.rows.len()).ok()?;
         Some(Arc::new(PoolContext {
             config: state,
             context,
@@ -1361,15 +1010,16 @@ pub fn CloningMethodsPanel(
         Ok(())
     });
     let reaction_capture = Callback::new(move |saved: Arc<PoolContext>| {
-        reaction_guard.run(saved)?;
+        reaction_guard.run(saved.clone())?;
         let originals = sources
             .get_untracked()
             .ok_or("Choose available original reaction sources.")?;
-        let inputs = originals
+        let roles = saved.config.role_ids(originals.len())?;
+        let inputs = roles
             .into_iter()
-            .enumerate()
-            .map(|(i, molecule)| PlanInput {
-                id: format!("source-{}", i + 1),
+            .zip(originals)
+            .map(|(role, molecule)| PlanInput {
+                id: role.input_id,
                 revision: molecule.revision(),
                 molecule,
             })
@@ -1383,7 +1033,7 @@ pub fn CloningMethodsPanel(
             <Show when=move||matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate)><p class="helper">"List fragments in intended ligation order. Preparation, end repair and terminal treatment are explicit source-bound operations. Whole linear DNA retains unknown terminal chemistry; its sequence alone does not imply cleaved or PCR ends. Unknown ends can withhold ligation even after phosphorylation."</p><label class="checkbox-label"><input type="checkbox" aria-label="Allow retained ordered ligation nicks" prop:checked=move||config.get().allow_nicked on:change=move|e|config.update(|c|c.allow_nicked=event_target_checked(&e))/>"Allow explicitly retained nicks"</label></Show>
             <h3>"1. Choose source fragments and regions"</h3>
             <Show when=move||config.with(|c|c.rows.len()>12)><p role="alert">"This preparation exceeds the supported 12 rows. No partial row list is shown."</p></Show><For each=move||config.with(|c|if c.rows.len()<=12{(0..c.rows.len()).collect::<Vec<_>>()}else{Vec::new()}) key=|i|*i children=move|i|view!{<div node_ref=row_nodes.with_value(|nodes|nodes[i]) tabindex="-1" class="method-preparation-focus"><OverlapFields config index=i query_options primer_sources list_primers resolve_primer epoch selected_region fixed_sources edited_junctions=disable_plain_primer_design/></div>}/>
-            <button class="button secondary full" disabled=move||{fixed_sources||config.with(|c|c.rows.len()>=12)} on:click=move|_|config.update(|c|c.push_row(OverlapInput::default()))>{move||if matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate){"Add ligation fragment"}else{"Add overlap fragment"}}</button><p class="helper">"This panel supports up to 12 ordered fragments; the typed core has its separate documented work bounds."</p><Show when=move||config.get().mode==Mode::Overlap><label>"Overlap lengths in junction order (bp)"<input aria-label="Profile overlap lengths" prop:value=move||config.get().overlaps on:input=move|e|config.update(|c|c.overlaps=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label="Scan repeated overlap words" prop:checked=move||config.get().scan_repeats on:change=move|e|config.update(|c|c.scan_repeats=event_target_checked(&e))/>"Search supplied fragments for repeated homology words"</label><label>"Repeat comparison budget"<input type="number" min="1" aria-label="Overlap repeat budget" prop:value=move||config.get().comparisons on:input=move|e|config.update(|c|c.comparisons=event_target_value(&e))/></label><label>"Maximum reported homology occurrences"<input type="number" min="1" aria-label="Overlap occurrence limit" prop:value=move||config.get().occurrences on:input=move|e|config.update(|c|c.occurrences=event_target_value(&e))/></label></Show>
+            <button class="button secondary full" disabled=move||{fixed_sources||config.with(|c|c.rows.len()>=12)} on:click=move|_|{let mut result=Ok(());config.update(|c|result=c.push_row(OverlapInput::default()));if let Err(error)=result{status.set(error);}}>{move||if matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate){"Add ligation fragment"}else{"Add overlap fragment"}}</button><p class="helper">"This panel supports up to 12 ordered fragments; the typed core has its separate documented work bounds."</p><Show when=move||config.get().mode==Mode::Overlap><label>"Overlap lengths in junction order (bp)"<input aria-label="Profile overlap lengths" prop:value=move||config.get().overlaps on:input=move|e|config.update(|c|c.overlaps=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label="Scan repeated overlap words" prop:checked=move||config.get().scan_repeats on:change=move|e|config.update(|c|c.scan_repeats=event_target_checked(&e))/>"Search supplied fragments for repeated homology words"</label><label>"Repeat comparison budget"<input type="number" min="1" aria-label="Overlap repeat budget" prop:value=move||config.get().comparisons on:input=move|e|config.update(|c|c.comparisons=event_target_value(&e))/></label><label>"Maximum reported homology occurrences"<input type="number" min="1" aria-label="Overlap occurrence limit" prop:value=move||config.get().occurrences on:input=move|e|config.update(|c|c.occurrences=event_target_value(&e))/></label></Show>
         </Show>
         <Show when=move||config.get().mode==Mode::GoldenGate&&!disable_plain_primer_design><section class="golden-gate-primer-planner"><h3>"2. Prepare Type IIS fragments"</h3>
             <p class="helper">"Use existing pinned digest fragments, or choose Exact PCR → pinned catalog digest for rows needing new sites. Proposals use each chosen original source region and explicit right fusion. They do not replace existing-site rows or choose a target. This ordered reconstruction does not enumerate every mixture outcome."</p>
@@ -1567,8 +1217,10 @@ pub(crate) fn prepared_rows(
     if input_count != state.rows.len() || input_count == 0 || input_count > 12 {
         return Err("Choose 1–12 ordered original sources".into());
     }
-    let ids = (0..input_count)
-        .map(|i| format!("source-{}", i + 1))
+    let roles = state.role_ids(input_count)?;
+    let ids = roles
+        .iter()
+        .map(|role| role.input_id.clone())
         .collect::<Vec<_>>();
     let mut fragments = Vec::with_capacity(input_count);
     for (i, row) in state.rows.iter().enumerate() {
@@ -1660,7 +1312,7 @@ pub(crate) fn prepared_rows(
             },
         };
         fragments.push(FragmentSpec {
-            role: format!("fragment-{}", i + 1),
+            role: roles[i].role.clone(),
             input_id: ids[i].clone(),
             preparation,
             reverse: row.reverse,
@@ -1819,21 +1471,6 @@ fn method_duplex(summary: &collagene_core::chemistry::DuplexSummary) -> String {
     )
 }
 
-fn declared_terminus(end: Terminus) -> String {
-    format!(
-        "5′ {}; 3′ {}",
-        match end.five_prime {
-            FivePrime::Phosphate => "phosphate",
-            FivePrime::Hydroxyl => "hydroxyl",
-            FivePrime::Unknown => "unknown",
-        },
-        match end.three_prime {
-            ThreePrime::Hydroxyl => "hydroxyl",
-            ThreePrime::Blocked => "blocked",
-            ThreePrime::Unknown => "unknown",
-        }
-    )
-}
 #[component]
 fn DeclaredEndFields(config: RwSignal<MethodsState>, index: usize, left: bool) -> impl IntoView {
     let end = move || {
@@ -1883,8 +1520,10 @@ fn primer_design_request(
     {
         return Err("Primer settings exceed their field limits.".into());
     }
-    let ids = (0..inputs.len())
-        .map(|i| format!("source-{}", i + 1))
+    let roles = state.role_ids(inputs.len())?;
+    let ids = roles
+        .iter()
+        .map(|role| role.input_id.clone())
         .collect::<Vec<_>>();
     let mut fragments = Vec::with_capacity(inputs.len());
     for (i, (row, molecule)) in state.rows.iter().zip(&inputs).enumerate() {
@@ -1912,7 +1551,7 @@ fn primer_design_request(
                 .map_err(|_| format!("Invalid end position for fragment {}.", i + 1))?
         };
         fragments.push(Fragment {
-            role: format!("fragment-{}", i + 1),
+            role: roles[i].role.clone(),
             input_id: ids[i].clone(),
             start,
             end,
@@ -2005,8 +1644,10 @@ fn golden_gate_request(
         .reverse_length
         .parse()
         .map_err(|_| "Enter a reverse annealing length.")?;
-    let ids = (0..inputs.len())
-        .map(|i| format!("source-{}", i + 1))
+    let roles = state.role_ids(inputs.len())?;
+    let ids = roles
+        .iter()
+        .map(|role| role.input_id.clone())
         .collect::<Vec<_>>();
     let mut fragments = Vec::new();
     for (i, row) in state.rows.iter().enumerate() {
@@ -2035,7 +1676,7 @@ fn golden_gate_request(
                 .map_err(|_| "Invalid source interval end.")?
         };
         fragments.push(Fragment {
-            role: format!("fragment-{}", i + 1),
+            role: roles[i].role.clone(),
             input_id: ids[i].clone(),
             start,
             end,

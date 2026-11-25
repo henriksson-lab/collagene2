@@ -131,6 +131,7 @@ pub mod assembly_junctions;
 pub mod overlap_primer_design;
 
 pub mod assembly_intent;
+pub mod combinatorial_design;
 
 pub mod digest_cut_selection;
 
@@ -157,8 +158,8 @@ pub mod prepared_golden_gate;
 
 pub mod golden_gate_reaction;
 
-pub mod pairwise_export;
 pub mod pairwise_context;
+pub mod pairwise_export;
 pub mod pairwise_history;
 pub mod pairwise_search;
 

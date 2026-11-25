@@ -27,7 +27,10 @@ or failure leaves the original workspace unchanged.
 Worker 39 adds finalization job 102/result 94; MCP now exposes 120 tools and reserves
 both result artifacts before publishing a changed workspace. Candidate 11, plan 9,
 science-14 and native archive 1 remain unchanged. Fifteen focused native cases and
-the full 120-tool stdio smoke passed. Browser checks remain deferred.
+the full 120-tool stdio smoke passed. The full development Trunk build of the
+web application, scientific worker and packaged assets also passed. Port 8082
+serves the new immutable read-only snapshot, retaining older versioned workers
+for open tabs. Browser checks remain deferred.
 [Output model](CLONING_OUTPUTS.md).
 
 ## Direct cut choices and reviewed design outputs

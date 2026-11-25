@@ -6,6 +6,7 @@ use collagene_core::{
     mutagenesis::{InversePcrDesign, InversePcrOptions, PcrOptions, PcrReport},
     primers::BindingOptions,
     protocol::{AnalysisJob, AnalysisResult, Request, Response},
+    run_lineage::EventBinding,
     transfer::Candidate,
 };
 use leptos::prelude::*;
@@ -19,6 +20,14 @@ fn number<T: std::str::FromStr>(value: String, label: &str) -> Result<T, String>
         .trim()
         .parse()
         .map_err(|_| format!("{label} is not a valid number"))
+}
+#[derive(Clone)]
+struct AppliedPair {
+    primers: (Primer, Primer),
+    draft: crate::primer_pair_model::PairDraft,
+    source: EventBinding,
+    target: EventBinding,
+    epoch: u64,
 }
 #[derive(Clone)]
 struct PcrEvidence {
@@ -40,13 +49,28 @@ pub fn MutagenesisPanel(
     get_query: Callback<usize, Option<Molecule>>,
     on_candidate: Callback<Candidate>,
     on_products: Callback<Vec<Molecule>, Result<(), String>>,
+    pair_draft: RwSignal<crate::primer_pair_model::PairDraft>,
+    pair_selection: Callback<(), Result<crate::primer_pair_model::SelectionSeed, String>>,
+    anchor_available: Callback<EventBinding, bool>,
+    primer_sources: Memo<Vec<crate::digest::SourceInfo>>,
+    list_primers: Callback<EventBinding, Result<collagene_core::primer_reuse::List, String>>,
+    resolve_primer: Callback<
+        crate::primer_picker::ResolveRequest,
+        Result<collagene_core::primer_reuse::Resolved, String>,
+    >,
+    epoch: RwSignal<u64>,
+    source_info: Callback<usize, Option<crate::digest::SourceInfo>>,
+    target_binding: Memo<EventBinding>,
 ) -> impl IntoView {
     let template_index = RwSignal::new(0usize);
     let source = Memo::new(move |_| get_query.run(template_index.get()));
-    let f_domain = RwSignal::new(String::new());
-    let r_domain = RwSignal::new(String::new());
-    let f_tail = RwSignal::new(String::new());
-    let r_tail = RwSignal::new(String::new());
+    let applied_pair = RwSignal::new(None::<AppliedPair>);
+    let source_binding = Memo::new(move |_| {
+        let _ = epoch.get();
+        source_info
+            .run(template_index.get())
+            .map(|info| info.binding)
+    });
     let mismatches = RwSignal::new("1".to_string());
     let exact = RwSignal::new("1".to_string());
     let edit_start = RwSignal::new("1".to_string());
@@ -67,13 +91,42 @@ pub fn MutagenesisPanel(
     }
     Effect::new(move |_| {
         let _ = (
+            pair_draft.get(),
+            source_binding.get(),
+            target_binding.get(),
+            epoch.get(),
+        );
+        applied_pair.set(None);
+    });
+    let apply_pair = Callback::new(move |pair: (Primer, Primer)| {
+        let binding = source_binding
+            .get_untracked()
+            .ok_or("Choose a current source template before applying primers.")?;
+        if !anchor_available.run(binding.clone()) {
+            return Err(
+                "The source event is no longer available. Select the template again.".into(),
+            );
+        }
+        applied_pair.set(Some(AppliedPair {
+            primers: pair,
+            draft: pair_draft.get_untracked(),
+            source: binding,
+            target: target_binding.get_untracked(),
+            epoch: epoch.get_untracked(),
+        }));
+        status.set("Primer pair applied. Simulate with the declared mismatch rules.".into());
+        Ok(())
+    });
+    Effect::new(move |_| {
+        let _ = (
             molecule.get().revision(),
             source.get().map(|m| m.revision()),
             template_index.get(),
-            f_domain.get(),
-            r_domain.get(),
-            f_tail.get(),
-            r_tail.get(),
+            applied_pair.get(),
+            pair_draft.get(),
+            source_binding.get(),
+            target_binding.get(),
+            epoch.get(),
             mismatches.get(),
             exact.get(),
             edit_start.get(),
@@ -92,11 +145,28 @@ pub fn MutagenesisPanel(
     let run = {
         let alive = alive.clone();
         move |job: AnalysisJob, expected_source: Molecule, target_revision: Option<String>| {
+            let Some(binding) = source_binding.get_untracked() else {
+                status.set("Choose a current source template.".into());
+                return;
+            };
+            if binding.revision != expected_source.revision()
+                || !anchor_available.run(binding)
+                || !anchor_available.run(target_binding.get_untracked())
+            {
+                status.set(
+                    "Source or target event changed. Select the current documents again.".into(),
+                );
+                return;
+            }
             let token = generation.get_untracked().wrapping_add(1);
             generation.set(token);
             busy.set(true);
             status.set("Computing mutation evidence in background…".into());
             let revision = expected_source.revision();
+            let captured_source = source_binding.get_untracked();
+            let captured_target = target_binding.get_untracked();
+            let captured_epoch = epoch.get_untracked();
+            let captured_draft = pair_draft.get_untracked();
             let alive = alive.clone();
             spawn_local(async move {
                 let response = worker::analyze(Request {
@@ -105,7 +175,13 @@ pub fn MutagenesisPanel(
                     job,
                 })
                 .await;
-                if !alive.load(Ordering::Relaxed) || generation.get_untracked() != token {
+                if !alive.load(Ordering::Relaxed)
+                    || generation.get_untracked() != token
+                    || epoch.get_untracked() != captured_epoch
+                    || pair_draft.get_untracked() != captured_draft
+                    || source_binding.get_untracked() != captured_source
+                    || target_binding.get_untracked() != captured_target
+                {
                     return;
                 }
                 if source
@@ -148,18 +224,17 @@ pub fn MutagenesisPanel(
     let simulate = move |_| {
         let result = (|| -> Result<_, String> {
             let source = source.get_untracked().ok_or("Choose a template document")?;
-            let forward = Primer::new(
-                "Mutagenic forward",
-                &f_domain.get_untracked(),
-                &f_tail.get_untracked(),
-            )
-            .map_err(|e| e.to_string())?;
-            let reverse = Primer::new(
-                "Mutagenic reverse",
-                &r_domain.get_untracked(),
-                &r_tail.get_untracked(),
-            )
-            .map_err(|e| e.to_string())?;
+            let applied = applied_pair
+                .get_untracked()
+                .ok_or("Apply a primer pair before simulating mismatch PCR.")?;
+            if applied.draft != pair_draft.get_untracked()
+                || source_binding.get_untracked().as_ref() != Some(&applied.source)
+                || applied.target != target_binding.get_untracked()
+                || applied.epoch != epoch.get_untracked()
+            {
+                return Err("Primer draft or source/target event changed. Apply the pair again before simulation.".into());
+            }
+            let (forward, reverse) = applied.primers;
             let options = PcrOptions {
                 binding: BindingOptions {
                     max_mismatches: number(mismatches.get_untracked(), "Allowed mismatches")?,
@@ -220,8 +295,9 @@ pub fn MutagenesisPanel(
         <style>".mutation-panel .mutation-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.mutation-panel pre{white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.6 monospace;background:#f3f6f3;padding:9px;max-height:250px;overflow:auto}.mutation-panel .mutation-product{padding:10px 0;border-bottom:1px solid #e2e9e2;font-size:12px;line-height:1.6}.mutation-panel .mutation-status{font-size:12px;line-height:1.6;overflow-wrap:anywhere}.mutation-panel ul{padding-left:18px}.mutation-panel details{margin:10px 0}"</style>
         <div class="inspector-content mutation-panel"><h2>"Mutagenesis"</h2><label>"Source template"<select aria-label="Mutagenesis template" prop:value=move||template_index.get().to_string() on:change=move|e|template_index.set(event_target_value(&e).parse().unwrap_or(0))>{move||query_options.get().into_iter().map(|(i,name)|view!{<option value=i.to_string()>{name}</option>}).collect_view()}</select></label><p class="mutation-status" role="status">{move||status.get()}</p>
         <h3>"PCR with declared mismatches"</h3><p class="helper">"Enter actual ordered oligo domains 5′→3′, including intended substitutions. Binding mismatches are conditional rules, not predicted polymerase success."</p>
-        {[("Forward domain","Mutagenesis forward domain",f_domain),("Forward 5′ tail","Mutagenesis forward tail",f_tail),("Reverse domain","Mutagenesis reverse domain",r_domain),("Reverse 5′ tail","Mutagenesis reverse tail",r_tail)].into_iter().map(|(label,aria,value)|view!{<label>{label}<input aria-label=aria prop:value=move||value.get() on:input=move|e|value.set(event_target_value(&e))/></label>}).collect_view()}
-        <div class="mutation-grid"><label>"Allowed disjoint mismatches"<input aria-label="Mutagenesis allowed mismatches" type="number" min="0" prop:value=move||mismatches.get() on:input=move|e|mismatches.set(event_target_value(&e))/></label><label>"Required exact 3′ bases"<input aria-label="Mutagenesis exact 3prime bases" type="number" min="0" prop:value=move||exact.get() on:input=move|e|exact.set(event_target_value(&e))/></label></div><button class="button primary full" disabled=move||busy.get()||source.get().is_none() on:click=simulate>"Simulate mismatch PCR"</button>
+        <crate::primer_pair_editor::PrimerPairEditor draft=pair_draft selection=pair_selection anchor_available=anchor_available primer_sources=primer_sources list_primers=list_primers resolve_primer=resolve_primer epoch=epoch on_apply=apply_pair apply_label="Apply pair to mismatch PCR".to_string()/>
+        <p class="helper" role="status">{move || applied_pair.get().map(|pair| format!("Applied: {} / {}. Draft edits require Apply again.",pair.primers.0.name,pair.primers.1.name)).unwrap_or_else(|| "No applied primer pair. Edit or reuse primers, then Apply before simulation.".into())}</p>
+        <div class="mutation-grid"><label>"Allowed disjoint mismatches"<input aria-label="Mutagenesis allowed mismatches" type="number" min="0" prop:value=move||mismatches.get() on:input=move|e|mismatches.set(event_target_value(&e))/></label><label>"Required exact 3′ bases"<input aria-label="Mutagenesis exact 3prime bases" type="number" min="0" prop:value=move||exact.get() on:input=move|e|exact.set(event_target_value(&e))/></label></div><button class="button primary full" disabled=move||busy.get()||source.get().is_none()||applied_pair.get().is_none() on:click=simulate>"Simulate mismatch PCR"</button>
         {move||pcr.get().map(|bound|{let report=&bound.report;let download=bound.clone();view!{<section class="mutation-pcr-result"><h3>{format!("{} conditional PCR products",report.products.len())}</h3><p class="helper">{format!("Search complete: {} · complete model: {} · unsupported geometries {} · conflicting overlaps {}",report.search_complete,report.enumeration_complete,report.unsupported_geometries,report.conflicting_overlaps)}</p><ul>{report.warnings.iter().chain(bound.findings.iter()).cloned().map(|w|view!{<li>{w}</li>}).collect_view()}</ul>{report.products.iter().take(50).enumerate().map(|(index,p)|{let action=bound.clone();view!{<article class="mutation-product"><strong>{format!("Product {} · {} bp · {} primer substitutions",index+1,p.sequence.len(),p.substitutions.len())}</strong><p>{format!("Source starts F {} / R {} · domains overlap: {} · concrete: {}",p.forward_start+1,p.reverse_start+1,p.overlapping_domains,p.certain)}</p><pre>{p.sequence.as_str().chars().take(160).collect::<String>()}</pre><button class="button secondary" on:click=move|_|match preview_document(&action,index).and_then(|m|on_products.run(vec![m])){Ok(())=>status.set("Reference preview opened with source annotation mapping. Changed or uncertain features require review.".into()),Err(e)=>status.set(e)}>"Open product reference preview"</button></article>}}).collect_view()}<p class="helper">"First 50 geometries shown. Previews retain source annotation mappings and binding evidence; changed or uncertain features require review. They assert neither target verification nor physical chemistry. JSON retains all returned products and limits."</p><button class="button secondary full" on:click=move|_|match serde_json::to_vec_pretty(&download.report){Ok(bytes)=>if let Err(e)=crate::app::download("mismatch-pcr.json","application/json",&bytes){status.set(e)},Err(e)=>status.set(e.to_string())}>"Download mismatch PCR evidence"</button></section>}})}
         <h3>"Inverse-PCR replacement"</h3><p class="helper">{move||format!("Active document is the independently specified intended circular target: {}. Choose the original circular source above.",molecule.get().name)}</p><p class="helper">"Edit coordinates are one-based boundaries: start inclusive, end exclusive. Equal values insert without deletion. A circular end can exceed the source length to cross the origin. Example: start 4, end 6 replaces source bases 4–5."</p>
         <div class="mutation-grid">{[("Edit start boundary","Mutation edit start",edit_start),("Edit end boundary","Mutation edit end",edit_end),("Forward annealing length","Mutation forward length",f_length),("Reverse annealing length","Mutation reverse length",r_length),("Inserted bases on reverse tail","Mutation tail split",split)].into_iter().map(|(label,aria,value)|view!{<label>{label}<input aria-label=aria type="number" prop:value=move||value.get() on:input=move|e|value.set(event_target_value(&e))/></label>}).collect_view()}</div><label>"Replacement/inserted sequence"<textarea aria-label="Mutation inserted sequence" rows="3" prop:value=move||inserted.get() on:input=move|e|inserted.set(event_target_value(&e))></textarea></label><button class="button primary full" disabled=move||busy.get()||source.get().is_none() on:click=design>"Design inverse-PCR candidate"</button>

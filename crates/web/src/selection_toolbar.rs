@@ -218,6 +218,20 @@ fn summarize(
     })
 }
 
+/// Reuse exactly the toolbar's eligibility rules for editor selection capture.
+pub fn primer_range(
+    molecule: &Molecule,
+    range: Option<(usize, usize)>,
+    feature: Option<usize>,
+    parts: &[(usize, usize)],
+) -> Result<(usize, usize), String> {
+    if summarize(molecule, range, feature, parts).is_some_and(|s| s.primer) {
+        range.ok_or_else(|| "Select one exact contiguous DNA range.".into())
+    } else {
+        Err("Select one exact contiguous DNA range within the primer length limit; compound, fuzzy and unresolved annotations cannot seed a primer.".into())
+    }
+}
+
 #[component]
 pub fn SelectionToolbar(
     molecule: Memo<Molecule>,
@@ -226,7 +240,7 @@ pub fn SelectionToolbar(
     highlighted_spans: Memo<Vec<(usize, usize)>>,
     locked: Memo<bool>,
     on_annotate: Callback<()>,
-    on_primer: Callback<()>,
+    on_primer: Callback<bool>,
     on_edit: Callback<()>,
     on_clear: Callback<()>,
 ) -> impl IntoView {
@@ -245,7 +259,8 @@ pub fn SelectionToolbar(
                 </div>
                 <div class="selection-toolbar-actions">
                     <button class="text-tool" disabled=move||locked.get()||!summary.with(|s|s.as_ref().is_some_and(|s|s.annotate)) title="Annotate the selected known reference parts" on:click=move|_|if !locked.get_untracked()&&summary.with_untracked(|s|s.as_ref().is_some_and(|s|s.annotate)){on_annotate.run(());}>"Annotate selection"</button>
-                    <button class="text-tool" disabled=move||locked.get()||!summary.with(|s|s.as_ref().is_some_and(|s|s.primer)) title="Select one exact contiguous DNA range to make a primer" on:click=move|_|if !locked.get_untracked()&&summary.with_untracked(|s|s.as_ref().is_some_and(|s|s.primer)){on_primer.run(());}>"Make primer"</button>
+                    <button class="text-tool" disabled=move||locked.get()||!summary.with(|s|s.as_ref().is_some_and(|s|s.primer)) title="Select one exact contiguous DNA range to make a primer" on:click=move|_|if !locked.get_untracked()&&summary.with_untracked(|s|s.as_ref().is_some_and(|s|s.primer)){on_primer.run(false);}>"Make forward primer"</button>
+                    <button class="text-tool" disabled=move||locked.get()||!summary.with(|s|s.as_ref().is_some_and(|s|s.primer)) title="Use the reverse complement of one exact DNA range, written 5′→3′" on:click=move|_|if !locked.get_untracked()&&summary.with_untracked(|s|s.as_ref().is_some_and(|s|s.primer)){on_primer.run(true);}>"Make reverse primer"</button>
                     <button class="text-tool" disabled=move||locked.get()||!summary.with(|s|s.as_ref().is_some_and(|s|s.edit)) title="Edit one contiguous reference range or insertion caret" on:click=move|_|if !locked.get_untracked()&&summary.with_untracked(|s|s.as_ref().is_some_and(|s|s.edit)){on_edit.run(());}>"Edit bases"</button>
                     <button class="text-tool" disabled=move||locked.get() on:click=move|_|if !locked.get_untracked(){on_clear.run(());}>"Clear selection"</button>
                 </div>

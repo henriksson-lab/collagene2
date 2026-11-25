@@ -106,6 +106,10 @@ mod methylation;
 #[cfg(target_arch = "wasm32")]
 mod mutagenesis;
 #[cfg(target_arch = "wasm32")]
+mod primer_pair_editor;
+#[cfg(any(target_arch = "wasm32", test))]
+mod primer_pair_model;
+#[cfg(target_arch = "wasm32")]
 mod primer_picker;
 #[cfg(target_arch = "wasm32")]
 mod primers;

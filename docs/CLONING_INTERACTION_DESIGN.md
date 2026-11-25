@@ -152,3 +152,10 @@ identified these next connections, rather than additional standalone tools:
 
 Each audit separates documented behavior, historical examples and our adaptations.
 Public source research does not replace the deferred runtime GUI acceptance review.
+
+The first follow-up connection is now implemented: the session-local
+[directional pair draft](PRIMER_PAIR_DRAFT.md) is shared by primer analysis and
+mismatch PCR, with forward/reverse selection, saved reuse, anchored source-call
+comparison and explicit Apply. Exact draft/event checks invalidate old evidence.
+Native unfinished-draft persistence and sequence-centered mutation/junction
+transactions remain pending; this does not establish full workflow parity.

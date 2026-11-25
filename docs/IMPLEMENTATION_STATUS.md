@@ -14,6 +14,21 @@ is postponed until the rest of the software is implemented. Existing modules are
 retained; no more alignment/index features or integration are scheduled now.
 Browser checks remain deferred and compiler checks run alongside coding.
 
+## Shared directional primer pair editing
+
+Primers and Mutagenesis now share editable named forward/reverse oligos, separate
+annealing domains and tails, explicit saved-primer reuse and explicit Apply.
+Selection actions offer forward or reverse-complement DNA with exact event/range
+anchors. The editor displays substitutions and compatible ambiguity in oligo
+orientation; changing domain length leaves placement unresolved. Pair drafts survive
+panel/document switches within the session; restoring a workspace resets them.
+
+Mutation results are invalidated by draft changes and bound to exact source/target
+events, including equal-DNA switches. Ordinary primer evidence retains its original
+event for annotation/navigation. Four focused native model cases and the final
+web/worker WASM compiler check pass. Browser checks remain deferred. Integrated junction editing and native persistence of
+unfinished pair drafts remain pending. [Draft model](PRIMER_PAIR_DRAFT.md).
+
 ## Finalizing reviewed assemblies
 
 The assembly dock now offers a named construct, optional primer collection and

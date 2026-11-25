@@ -592,3 +592,12 @@ and assembly. Reuse the persistent dock, fresh product/junction views and output
 chooser. Preserve explicit oligo application and independent intended DNA. Supporting
 trace verification should attach to exact construct events; this does not reopen
 BAM/index, ELN or inventory work.
+
+### Directional primer pair checkpoint
+
+A session-local shared pair editor now connects selection, saved oligos and
+mismatch-PCR with explicit Apply, named domains/tails, anchored mismatch display
+and exact source-event invalidation. Ordinary primer evidence now retains its
+originating event for annotation/navigation. Persisting unfinished pair drafts,
+sequence-centered mutation/junction transactions, and Golden Gate PCR→digest
+preparation remain required. [Pair draft](PRIMER_PAIR_DRAFT.md).

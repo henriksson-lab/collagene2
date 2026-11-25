@@ -106,9 +106,11 @@ concrete connections:
   synchronized source overlays ([details](PCR_OVERLAYS.md)). Explicit domain/tail
   boundary preview/accept and circular anchor migration are now implemented
   ([details](PRIMER_DOMAIN_EDITS.md)); continue local binding-failure recovery and
-  the remaining ordinary cloning interactions. Separate literal-preserving reference
-  capture from domain replacement; connect selected binding hits to pair slots and
-  page all returned single-oligo placements instead of requiring JSON inspection.
+  the remaining ordinary cloning interactions. Literal-preserving reference capture,
+  explicit selected-hit transfer to either pair slot, full returned-hit paging and
+  local domain/policy/rerun controls are now connected
+  ([details](PRIMER_REFERENCE_RECOVERY.md)). Continue the remaining ordinary cloning
+  connections without adding a second primer or assembly workflow.
 - Annotation list/bulk operations and exact-event display preferences are now
   implemented ([details](ANNOTATION_MANAGEMENT.md)). Exact selected translation,
   source-linked protein outputs, review-required CDS proposals and full ORF

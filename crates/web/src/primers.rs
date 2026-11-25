@@ -6,7 +6,7 @@ use collagene_core::{
     primers::{BindingOptions, DesignOptions, DesignReport, PrimerAnalysis, ThermoConditions},
     protocol::{AnalysisJob, AnalysisResult, PrimerEvidence, Request, Response},
 };
-use leptos::prelude::*;
+use leptos::{html, prelude::*};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -19,7 +19,7 @@ fn parse<T: std::str::FromStr>(value: String, label: &str) -> Result<T, String> 
         .parse()
         .map_err(|_| format!("{label} is not a valid number"))
 }
-fn annotation(
+pub(crate) fn annotation(
     primer: &Primer,
     location: collagene_core::Location,
     metrics: &PrimerAnalysis,
@@ -49,11 +49,17 @@ struct OrderContext {
 pub fn PrimerPanel(
     molecule: Memo<Molecule>,
     selection: RwSignal<Option<(usize, usize)>>,
-    selected_feature: RwSignal<Option<usize>>,
     on_use: Callback<(Primer, Primer)>,
     on_collection: Callback<collagene_core::oligo_formats::OligoTable, Result<(), String>>,
     on_annotate: Callback<(collagene_core::run_lineage::EventBinding, Feature), Result<(), String>>,
     source_binding: Memo<collagene_core::run_lineage::EventBinding>,
+    on_select_binding: Callback<
+        (
+            collagene_core::run_lineage::EventBinding,
+            Vec<(usize, usize)>,
+        ),
+        Result<(), String>,
+    >,
     pair_draft: RwSignal<crate::primer_pair_model::PairDraft>,
     pair_selection: Callback<(), Result<crate::primer_pair_model::SelectionSeed, String>>,
     anchor_available: Callback<collagene_core::run_lineage::EventBinding, bool>,
@@ -91,6 +97,8 @@ pub fn PrimerPanel(
             tail.set(value.tail);
         }
     });
+    let annealing_input = NodeRef::<html::Input>::new();
+    let mismatches_input = NodeRef::<html::Input>::new();
     let sodium = RwSignal::new("50".to_string());
     let concentration = RwSignal::new("500".to_string());
     let mismatches = RwSignal::new("0".to_string());
@@ -120,8 +128,12 @@ pub fn PrimerPanel(
         reuse_index.set(String::new());
         reuse_notice.set(String::new());
     });
-    let evidence =
-        RwSignal::new(None::<(collagene_core::run_lineage::EventBinding, PrimerEvidence)>);
+    let evidence = RwSignal::new(
+        None::<(
+            collagene_core::run_lineage::EventBinding,
+            Arc<PrimerEvidence>,
+        )>,
+    );
     let design = RwSignal::new(None::<(collagene_core::run_lineage::EventBinding, DesignReport)>);
     let status = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
@@ -157,7 +169,7 @@ pub fn PrimerPanel(
             || order_form.run(()) != bound.form
             || !order_context.with_untracked(|current| current.as_ref() == Some(&bound))
         {
-            return Err("The source, primer inputs or calculation changed; analyze/select again before exporting or saving oligos.".into());
+            return Err("The source, primer inputs or calculation changed; analyze/select again before using these results.".into());
         }
         Ok(())
     });
@@ -254,7 +266,7 @@ pub fn PrimerPanel(
                                     generation: token,
                                     form: captured_form,
                                 }));
-                                evidence.set(Some((expected_event.clone(), report)));
+                                evidence.set(Some((expected_event.clone(), Arc::new(report))));
                             }
                             AnalysisResult::PrimerDesign(report) => {
                                 status.set(format!("{} ranked pair(s); binding uniqueness has not been established.",report.pairs.len()));
@@ -278,9 +290,9 @@ pub fn PrimerPanel(
             });
         }
     };
-    let analyze = {
+    let analyze = Callback::new({
         let run = run.clone();
-        move |_| {
+        move |()| {
             let request = (|| -> Result<AnalysisJob, String> {
                 let primer = Primer::new(
                     name.get_untracked(),
@@ -307,7 +319,7 @@ pub fn PrimerPanel(
                 Err(error) => status.set(error),
             }
         }
-    };
+    });
     let reuse = move |_| {
         let result = (|| -> Result<collagene_core::primer_reuse::Resolved, String> {
             let index = reuse_index
@@ -375,12 +387,17 @@ pub fn PrimerPanel(
         <style>".primer-panel .primer-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.primer-panel .primer-grid label{margin:0}.primer-panel pre{font:11px/1.6 monospace;white-space:pre-wrap;overflow-wrap:anywhere;background:#f2f6f2;padding:8px;max-height:220px;overflow:auto}.primer-panel .primer-hit,.primer-panel .primer-pair{padding:10px 0;border-bottom:1px solid #e1e7e0;font-size:12px;line-height:1.6}.primer-panel .primer-actions{display:flex;gap:6px;flex-wrap:wrap}.primer-panel .primer-actions button{font-size:11px;padding:6px 8px}.primer-panel ul{padding-left:18px}.primer-status{font-size:12px;line-height:1.6;overflow-wrap:anywhere}"</style>
         <div class="inspector-content primer-panel"><h2>"Primers & oligos"</h2><p class="helper">"All oligos are written 5′→3′. Initial binding and Tm use the annealing domain; structure screens include tails."</p>
         <details open><summary>"Calculation conditions"</summary><div class="primer-grid"><label>"Sodium (mM)"<input aria-label="Primer sodium mM" type="number" prop:value=move||sodium.get() on:input=move|e|sodium.set(event_target_value(&e))/></label><label>"Total strands (nM)"<input aria-label="Primer total strands nM" type="number" prop:value=move||concentration.get() on:input=move|e|concentration.set(event_target_value(&e))/></label></div><p class="helper">"Perfect DNA-duplex model; magnesium, dNTPs and additives are not inferred. Tm is not a recommended PCR temperature."</p></details>
-        <h3>"Analyze one primer"</h3><label>"Saved primer annotations"<select aria-label="Saved primer annotations" prop:value=move||reuse_index.get() on:change=move|e|reuse_index.set(event_target_value(&e))><option value="">"Choose a saved primer…"</option>{move||saved_primers.get().and_then(Result::ok).map(|list|list.primers.iter().map(|entry|{let title=entry.diagnostic.clone().unwrap_or_default();view!{<option value=entry.feature_index.to_string() disabled=!entry.reusable title=title>{format!("{}{}",entry.name,if entry.reusable{""}else{" · cannot reuse"})}</option>}}).collect_view())}</select></label><button class="button secondary full" on:click=reuse>"Load saved primer"</button><p class="helper">{move||match saved_primers.get(){Some(Ok(list)) if list.omitted>0=>format!("Showing {} of {} saved primers; {} omitted by the bounded list.",list.primers.len(),list.total,list.omitted),Some(Err(error))=>error,_=>String::new()}}</p><p class="helper primer-reuse-notice" role="status">{move||reuse_notice.get()}</p><label>"Name"<input aria-label="Primer name" prop:value=move||name.get() on:input=move|e|name.set(event_target_value(&e))/></label><label>"Annealing domain"<input aria-label="Primer annealing domain" prop:value=move||annealing.get() on:input=move|e|annealing.set(event_target_value(&e))/></label><label>"5′ tail"<input aria-label="Primer tail" prop:value=move||tail.get() on:input=move|e|tail.set(event_target_value(&e))/></label>
+        <h3>"Analyze one primer"</h3><label>"Saved primer annotations"<select aria-label="Saved primer annotations" prop:value=move||reuse_index.get() on:change=move|e|reuse_index.set(event_target_value(&e))><option value="">"Choose a saved primer…"</option>{move||saved_primers.get().and_then(Result::ok).map(|list|list.primers.iter().map(|entry|{let title=entry.diagnostic.clone().unwrap_or_default();view!{<option value=entry.feature_index.to_string() disabled=!entry.reusable title=title>{format!("{}{}",entry.name,if entry.reusable{""}else{" · cannot reuse"})}</option>}}).collect_view())}</select></label><button class="button secondary full" on:click=reuse>"Load saved primer"</button><p class="helper">{move||match saved_primers.get(){Some(Ok(list)) if list.omitted>0=>format!("Showing {} of {} saved primers; {} omitted by the bounded list.",list.primers.len(),list.total,list.omitted),Some(Err(error))=>error,_=>String::new()}}</p><p class="helper primer-reuse-notice" role="status">{move||reuse_notice.get()}</p><label>"Name"<input aria-label="Primer name" prop:value=move||name.get() on:input=move|e|name.set(event_target_value(&e))/></label><label>"Annealing domain"<input node_ref=annealing_input aria-label="Primer annealing domain" prop:value=move||annealing.get() on:input=move|e|annealing.set(event_target_value(&e))/></label><label>"5′ tail"<input aria-label="Primer tail" prop:value=move||tail.get() on:input=move|e|tail.set(event_target_value(&e))/></label>
         <div class="primer-actions">{[false,true].into_iter().map(|reverse|view!{<button class="button secondary" on:click=move|_|match pair_selection.run(()).and_then(|seed|seed.oligo(&name.get_untracked(),reverse,&tail.get_untracked())){Ok(value)=>{annealing.set(value.annealing);},Err(error)=>status.set(error)}>{if reverse{"Use selection reverse"}else{"Use selection forward"}}</button>}).collect_view()}</div>
-        <div class="primer-grid"><label>"Allowed mismatches"<input aria-label="Primer allowed mismatches" type="number" min="0" prop:value=move||mismatches.get() on:input=move|e|mismatches.set(event_target_value(&e))/></label><label>"Required exact 3′ bases"<input aria-label="Primer exact 3prime bases" type="number" min="0" prop:value=move||three_prime.get() on:input=move|e|three_prime.set(event_target_value(&e))/></label></div>
-        <button class="button primary full" disabled=move||busy.get()||molecule.get().sequence.alphabet()!=Alphabet::Dna on:click=analyze>"Analyze primer & binding"</button>
+        <div class="primer-grid"><label>"Allowed mismatches"<input node_ref=mismatches_input aria-label="Primer allowed mismatches" type="number" min="0" prop:value=move||mismatches.get() on:input=move|e|mismatches.set(event_target_value(&e))/></label><label>"Required exact 3′ bases"<input aria-label="Primer exact 3prime bases" type="number" min="0" prop:value=move||three_prime.get() on:input=move|e|three_prime.set(event_target_value(&e))/></label></div>
+        <button class="button primary full" disabled=move||busy.get()||molecule.get().sequence.alphabet()!=Alphabet::Dna on:click=move|_|analyze.run(())>"Analyze primer & binding"</button>
         <p class="primer-status" role="status">{move||status.get()}</p>
-        {move||evidence.get().map(|(revision,report)|{let metrics=report.analysis.clone();let primer=Primer::new(&metrics.name,&metrics.annealing,&metrics.tail).expect("worker validated primer");let for_download=report.clone();let keep_forward=primer.clone();let keep_reverse=primer.clone();let orders=order_context.get().map(|bound|view!{<crate::primer_orders::PrimerOrdersPanel primers=vec![primer.clone()] guard=Callback::new(move|()|order_guard.run(bound.clone())) on_collection/>});view!{<section class="primer-evidence"><h3>"Oligo evidence"</h3><pre>{report.analysis.ordered_sequence.clone()}</pre>{orders}<div class="primer-actions"><button class="button secondary" on:click=move|_|pair_draft.update(|draft|draft.forward=crate::primer_pair_model::OligoDraft{name:keep_forward.name.clone(),annealing:keep_forward.annealing.as_str().into(),tail:keep_forward.tail.clone(),anchor:None})>"Keep as forward primer"</button><button class="button secondary" on:click=move|_|pair_draft.update(|draft|draft.reverse=crate::primer_pair_model::OligoDraft{name:keep_reverse.name.clone(),annealing:keep_reverse.annealing.as_str().into(),tail:keep_reverse.tail.clone(),anchor:None})>"Keep as reverse primer"</button></div><p>{format!("Annealing {} nt · tail {} nt · GC {:.1}–{:.1}%",report.analysis.annealing.len(),report.analysis.tail.len(),report.analysis.annealing_gc.minimum_fraction*100.,report.analysis.annealing_gc.maximum_fraction*100.)}</p><p class="primer-tm">{report.analysis.tm.as_ref().map(|t|format!("Tm {:.2} °C · {}",t.tm_c,t.model)).unwrap_or_else(||report.analysis.tm_unavailable.clone().unwrap_or_else(||"Tm unavailable".into()))}</p><p>{format!("Contiguous possible runs: hairpin {} · homodimer {} · homodimer at a 3′ end {}",metrics.hairpin.max_run,metrics.homodimer.max_run,metrics.homodimer.max_three_prime_run)}</p><ul>{report.analysis.warnings.into_iter().chain(report.bindings.warnings.clone()).map(|w|view!{<li>{w}</li>}).collect_view()}</ul><h4>{format!("{} binding hits{}",report.bindings.hits.len(),if report.bindings.truncated{" · truncated"}else{""})}</h4>{report.bindings.hits.into_iter().take(100).map(|hit|{let spans=hit.location.spans();let first=spans.first().map(|(a,b,_)|(*a,*b));let saved=annotation(&primer,hit.location.clone(),&metrics,!hit.certain,&revision.revision);let source=revision.clone();let select_source=revision.clone();view!{<article class="primer-hit"><strong>{format!("{}–{}{}{}",hit.start+1,hit.start+hit.length,if hit.reverse{" · reverse"}else{" · forward"},if hit.crosses_origin{" · crosses origin"}else{""})}</strong><p>{format!("{} mismatches · {} ambiguous positions · {} exact 3′ bases",hit.mismatches.len(),hit.ambiguous_positions.len(),hit.three_prime_exact)}</p><div class="primer-actions"><button class="button secondary" on:click=move|_|{if source_binding.get_untracked()!=select_source{status.set("The source event changed; rerun primer analysis before navigating.".into());return;}selected_feature.set(None);selection.set(first);status.set(if spans.len()>1{"Origin-spanning binding: first reference span selected; annotation preserves every span.".into()}else{"Binding interval selected.".into()});}>"Select binding"</button><button class="button secondary" on:click=move|_|match on_annotate.run((source.clone(),saved.clone())){Ok(())=>status.set("Primer annotation saved; binding source revision is retained in its qualifiers.".into()),Err(error)=>status.set(error)}>"Save primer annotation"</button></div></article>}}).collect_view()}<p class="helper">"Showing up to 100 hits; the JSON report retains all returned hits. Compatibility is not amplification or genome-wide specificity."</p><button class="button secondary full" on:click=move|_|match serde_json::to_vec_pretty(&for_download){Ok(bytes)=>if let Err(error)=crate::app::download("primer-evidence.json","application/json",&bytes){status.set(error)},Err(error)=>status.set(error.to_string())}>"Download primer evidence"</button></section>}})}
+        {move||evidence.get().zip(order_context.get()).map(|((source,report),bound)|{
+            let guard=Callback::new(move|()|order_guard.run(bound.clone()));
+            let focus_domain=Callback::new(move|()|{let result=guard.run(()).and_then(|()|annealing_input.get().ok_or_else(||"Primer domain editor is unavailable.".to_string())).and_then(|input|{input.scroll_into_view();input.focus().map_err(|_|"Primer domain editor could not receive focus.".to_string())});if let Err(error)=result{status.set(error);}});
+            let focus_options=Callback::new(move|()|{let result=guard.run(()).and_then(|()|mismatches_input.get().ok_or_else(||"Binding policy editor is unavailable.".to_string())).and_then(|input|{input.scroll_into_view();input.focus().map_err(|_|"Binding policy editor could not receive focus.".to_string())});if let Err(error)=result{status.set(error);}});
+            view!{<crate::primer_binding_view::PrimerEvidenceView source report guard resolve_source pair_draft on_select_binding on_annotate on_collection on_message=Callback::new(move|message|status.set(message)) on_edit_domain=focus_domain on_edit_options=focus_options on_rerun=Callback::new(move|()|{if let Err(error)=guard.run(()){status.set(error);}else{analyze.run(());}})/>}
+        })}
         <crate::primer_pair_editor::PrimerPairEditor draft=pair_draft selection=pair_selection anchor_available resolve_source primer_sources list_primers resolve_primer epoch on_apply=Callback::new(move|pair|{on_use.run(pair);Ok(())}) apply_label="Use pair for PCR".to_string()/>
         <h3>"Select an anchored primer pair"</h3><p class="helper">"One-based inclusive target coordinates. For a circle, end may exceed the document length to cross the origin, up to one turn."</p><button class="button secondary full" disabled=move||selection.get().is_none() on:click=move|_|if let Some((a,b))=selection.get_untracked(){start.set((a+1).to_string());end.set(b.to_string());}>"Use selection as target"</button>
         <div class="primer-grid">{[("Target start","Primer target start",start),("Target end","Primer target end",end),("Min length","Primer minimum length",min_length),("Max length","Primer maximum length",max_length),("Target Tm (°C)","Primer target Tm",target_tm),("Pair ΔTm (°C)","Primer pair Tm difference",max_delta),("Min GC (%)","Primer minimum GC",min_gc),("Max GC (%)","Primer maximum GC",max_gc),("Homopolymer limit","Primer homopolymer limit",max_homopolymer),("3′ run limit","Primer complementarity limit",max_complementarity)].into_iter().map(|(label,aria,value)|view!{<label>{label}<input aria-label=aria type="number" prop:value=move||value.get() on:input=move|e|value.set(event_target_value(&e))/></label>}).collect_view()}</div>

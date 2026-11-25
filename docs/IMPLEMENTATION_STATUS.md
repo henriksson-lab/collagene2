@@ -22,6 +22,22 @@ and review proposals are implemented, despite older gap tables. See
 [workflow decisions](BENCHLING_WORKFLOW_DECISIONS.md). This documentation-only
 checkpoint adds no runtime/build/browser checks.
 
+## Existing-oligo comparison and selected binding handoff
+
+The shared pair editor can preview and accept a new directional reference
+comparison while preserving exact oligo text, including intentional mismatches.
+Single-oligo results page every returned hit and transfer an explicitly chosen
+placement into either pair slot with actual source/binding-fact checks. Navigation
+highlights every circular-origin part. Local edit-domain, review-policy and rerun
+controls reuse the existing form without automatic threshold changes. Epoch,
+event, form and calculation guards protect actions; pair Apply stays separate.
+No new parser, scientific engine or storage/worker schema is introduced.
+[Semantics and limits](PRIMER_REFERENCE_RECOVERY.md).
+
+All 85 native web tests and the WASM compile passed, including five new native
+capture-contract fixture groups.
+Browser acceptance and preview refresh remain deferred at this checkpoint.
+
 ## Primer endpoint and tail-boundary previews
 
 The shared pair editor now previews and explicitly accepts endpoint or tail-boundary

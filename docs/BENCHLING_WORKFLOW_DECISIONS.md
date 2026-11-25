@@ -42,6 +42,12 @@ Public documentation does not establish exact endpoint-edit semantics, mismatch
 preservation on selection replacement, exhaustive ambiguity handling or zero-hit
 recovery. Do not attribute our algorithms or uncertainty contracts to Benchling.
 
+Implementation follow-up: the four connections above now have explicit controls
+in the existing pair/single-oligo route: unchanged-oligo comparison previews,
+selected-hit handoff, full returned-hit pages and local edit/policy/rerun actions.
+[Contracts and limits](PRIMER_REFERENCE_RECOVERY.md). This closes these specific
+connections, not every PCR/mutagenesis workflow or final GUI acceptance.
+
 ## Ordinary and combinatorial assembly
 
 The documented useful pattern is source slots/preparation → junction/product

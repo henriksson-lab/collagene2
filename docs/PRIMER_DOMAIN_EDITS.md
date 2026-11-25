@@ -41,6 +41,11 @@ The comparison is against that version, not evidence of binding to another sourc
 A missing event, changed original anchor, changed pair or stale preview prevents
 acceptance.
 
+For an existing manual/saved oligo without an anchor, the separate
+[reference-comparison preview](PRIMER_REFERENCE_RECOVERY.md) now captures selected
+context while preserving all oligo text. A selected computed binding hit can also
+populate either draft slot. Neither route silently replaces intentional calls.
+
 Circular support is shared by selection capture, endpoint planning, saved anchors,
 the toolbar and captured PCR overlays. Exactly two ordered origin pieces can seed
 one contiguous primer domain. Gaps, repeated/multiturn selections and fuzzy or

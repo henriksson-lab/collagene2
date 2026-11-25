@@ -1,9 +1,9 @@
 //! Editable sequence reuse only. Anchors describe an explicit selected reference,
 //! never physical oligo identity, current binding, or successful amplification.
 use collagene_core::{
-    Alphabet, Molecule, Sequence, Topology,
+    Alphabet, Location, Molecule, Sequence, Topology,
     analysis::{Primer, base_mask},
-    primers::MAX_OLIGO,
+    primers::{BindingHit, MAX_OLIGO},
     run_lineage::EventBinding,
 };
 use serde::{Deserialize, Serialize};
@@ -191,6 +191,115 @@ impl SelectionSeed {
         draft.tail = primer.tail;
         Ok(draft)
     }
+
+    /// Capture comparison context for an existing oligo without replacing any
+    /// editable text. The host must resolve the seed's actual retained event.
+    /// This is neither an alignment guess nor a binding-site search: the domain
+    /// and explicitly selected reference must have equal canonical lengths.
+    pub fn compare_existing(
+        &self,
+        current: &OligoDraft,
+        reverse: bool,
+    ) -> Result<OligoDraft, String> {
+        selected_guard(&self.source, self.start, self.end, &self.reference)?;
+        let primer = current.primer()?;
+        if primer.annealing.len() != self.reference.len() {
+            return Err("Select exactly as many reference bases as this oligo's annealing domain. The existing oligo was not changed.".into());
+        }
+        let reference = if reverse {
+            Sequence::dna(&self.reference)
+                .and_then(|s| s.reverse_complement())
+                .map_err(|e| e.to_string())?
+                .as_str()
+                .to_owned()
+        } else {
+            self.reference.clone()
+        };
+        Ok(OligoDraft {
+            name: current.name.clone(),
+            annealing: current.annealing.clone(),
+            tail: current.tail.clone(),
+            anchor: Some(SelectionAnchor {
+                source: self.source.clone(),
+                start: self.start,
+                end: self.end,
+                reverse,
+                reference,
+            }),
+        })
+    }
+}
+
+/// Retain one explicitly chosen binding placement as editable reference context.
+/// The host guards the original report, options, epoch and exact source-event
+/// membership. This checks the chosen hit's actual geometry and per-base facts
+/// without rescanning the reference or retaining a claim of complete/unique
+/// binding. Subsequent draft edits still require explicit Apply and analysis.
+pub fn capture_binding_hit(
+    molecule: &Molecule,
+    source: &EventBinding,
+    primer: &Primer,
+    hit: &BindingHit,
+) -> Result<OligoDraft, String> {
+    text_guard(&primer.name, primer.annealing.as_str(), &primer.tail)?;
+    if primer.annealing.alphabet() != Alphabet::Dna
+        || primer.annealing.len() > MAX_OLIGO
+        || hit.length != primer.annealing.len()
+        || hit.mismatches.len() > MAX_OLIGO
+        || hit.ambiguous_positions.len() > MAX_OLIGO
+    {
+        return Err("The selected binding hit does not match a bounded DNA primer.".into());
+    }
+    let current = OligoDraft {
+        name: primer.name.clone(),
+        annealing: primer.annealing.as_str().into(),
+        tail: primer.tail.clone(),
+        anchor: None,
+    };
+    current.primer()?;
+    let end = hit
+        .start
+        .checked_add(hit.length)
+        .ok_or("The selected binding interval exceeds the coordinate bounds.")?;
+    let seed = SelectionSeed::capture(molecule, source, hit.start, end)?;
+    let n = molecule.sequence.len();
+    let crosses_origin = end > n;
+    let location = if crosses_origin {
+        Location::Join(vec![
+            Location::range(hit.start, n),
+            Location::range(0, end - n),
+        ])
+    } else {
+        Location::range(hit.start, end)
+    };
+    let location = if hit.reverse {
+        Location::Complement(Box::new(location))
+    } else {
+        location
+    };
+    if hit.crosses_origin != crosses_origin || hit.location != location {
+        return Err(
+            "The selected binding hit's location or circular crossing is inconsistent.".into(),
+        );
+    }
+    let compared = seed.compare_existing(&current, hit.reverse)?;
+    let comparison = compared
+        .comparison()?
+        .ok_or("The selected binding reference was not captured.")?;
+    let three_prime_exact = (0..hit.length)
+        .rev()
+        .take_while(|index| {
+            !comparison.mismatches.contains(index) && !comparison.ambiguous.contains(index)
+        })
+        .count();
+    if hit.mismatches != comparison.mismatches
+        || hit.ambiguous_positions != comparison.ambiguous
+        || hit.three_prime_exact != three_prime_exact
+        || hit.certain != (comparison.mismatches.is_empty() && comparison.ambiguous.is_empty())
+    {
+        return Err("The selected binding hit's mismatch, ambiguity or 3′ evidence does not match its actual reference.".into());
+    }
+    Ok(compared)
 }
 fn text_guard(name: &str, domain: &str, tail: &str) -> Result<(), String> {
     if name.is_empty()
@@ -408,5 +517,203 @@ mod tests {
         let mut stale = b;
         stale.revision = "0".repeat(64);
         assert!(anchor_reference(&m, &stale, 6, 11, true).is_err());
+    }
+
+    #[test]
+    fn compare_existing_preserves_raw_oligo_and_uses_explicit_direction() {
+        let (m, b) = source("GGAGNTCC");
+        let seed = SelectionSeed::capture(&m, &b, 2, 6).unwrap();
+        for (reverse, calls, reference, mismatch, ambiguous) in [
+            (false, "t g n t", "AGNT", vec![0], vec![2]),
+            (true, "t n c t", "ANCT", vec![0], vec![1]),
+        ] {
+            let original = OligoDraft {
+                name: "Intentional edits".into(),
+                annealing: calls.into(),
+                tail: "g g".into(),
+                anchor: None,
+            };
+            let compared = seed.compare_existing(&original, reverse).unwrap();
+            assert_eq!(compared.name, original.name);
+            assert_eq!(compared.annealing, original.annealing);
+            assert_eq!(compared.tail, original.tail);
+            assert!(original.anchor.is_none());
+            let comparison = compared.comparison().unwrap().unwrap();
+            assert_eq!(comparison.reference, reference);
+            assert_eq!(comparison.mismatches, mismatch);
+            assert_eq!(comparison.ambiguous, ambiguous);
+            let anchor = compared.anchor.unwrap();
+            assert_eq!((anchor.start, anchor.end, anchor.reverse), (2, 6, reverse));
+            assert_eq!(anchor.source, b);
+        }
+    }
+
+    #[test]
+    fn compare_existing_replaces_only_anchor_and_handles_wrapped_reverse_context() {
+        let (m, b) = source_topology("ACGTAAGC", Topology::Circular);
+        let seed = SelectionSeed::capture(&m, &b, 6, 11).unwrap();
+        let old = SelectionSeed::capture(&m, &b, 0, 5).unwrap();
+        let mut original = old.oligo("Retained mismatch", false, "TT").unwrap();
+        original.annealing = "c g t N c".into();
+        let compared = seed.compare_existing(&original, true).unwrap();
+        assert_eq!(compared.annealing, "c g t N c");
+        assert_eq!(compared.primer().unwrap().ordered_sequence(), "TTCGTNC");
+        let comparison = compared.comparison().unwrap().unwrap();
+        assert_eq!(comparison.reference, "CGTGC");
+        assert_eq!(comparison.mismatches, Vec::<usize>::new());
+        assert_eq!(comparison.ambiguous, vec![3]);
+        assert_eq!(original.anchor.unwrap().start, 0);
+        let anchor = compared.anchor.unwrap();
+        assert_eq!((anchor.start, anchor.end, anchor.reverse), (6, 11, true));
+    }
+
+    #[test]
+    fn compare_existing_refuses_length_invalid_text_and_malformed_seeds_without_repair() {
+        let (m, b) = source("AGNT");
+        let seed = SelectionSeed::capture(&m, &b, 0, 4).unwrap();
+        let original = OligoDraft {
+            name: "Existing".into(),
+            annealing: "t g n t".into(),
+            tail: "TT".into(),
+            anchor: None,
+        };
+        for domain in ["AGT", "", "AG?T"] {
+            let mut changed = original.clone();
+            changed.annealing = domain.into();
+            assert!(seed.compare_existing(&changed, false).is_err());
+            assert_eq!(changed.annealing, domain);
+            assert!(changed.anchor.is_none());
+        }
+        let mut oversized = original.clone();
+        oversized.tail = "A".repeat(MAX_OLIGO);
+        assert!(seed.compare_existing(&oversized, false).is_err());
+        let mut unnamed = original.clone();
+        unnamed.name = " ".into();
+        assert!(seed.compare_existing(&unnamed, false).is_err());
+        let mut malformed = seed.clone();
+        malformed.reference = "agnt".into();
+        assert!(malformed.compare_existing(&original, false).is_err());
+        malformed = seed.clone();
+        malformed.source.event_id = "unbound".into();
+        assert!(malformed.compare_existing(&original, false).is_err());
+        assert_eq!(original.annealing, "t g n t");
+        assert!(original.anchor.is_none());
+    }
+
+    #[test]
+    fn chosen_binding_hits_capture_actual_forward_and_wrapped_reverse_reference() {
+        let (m, b) = source("GGAGNTCC");
+        let primer = Primer::new("Forward hit", "TGNT", "GG").unwrap();
+        let hit = BindingHit {
+            start: 2,
+            length: 4,
+            reverse: false,
+            crosses_origin: false,
+            certain: false,
+            mismatches: vec![0],
+            ambiguous_positions: vec![2],
+            three_prime_exact: 1,
+            location: Location::range(2, 6),
+        };
+        let captured = capture_binding_hit(&m, &b, &primer, &hit).unwrap();
+        assert_eq!(captured.primer().unwrap().ordered_sequence(), "GGTGNT");
+        assert_eq!(captured.anchor.unwrap().reference, "AGNT");
+
+        let (circle, cb) = source_topology("ACGTAAGC", Topology::Circular);
+        let primer = Primer::new("Wrapped reverse", "CATNC", "GG").unwrap();
+        let hit = BindingHit {
+            start: 6,
+            length: 5,
+            reverse: true,
+            crosses_origin: true,
+            certain: false,
+            mismatches: vec![1],
+            ambiguous_positions: vec![3],
+            three_prime_exact: 1,
+            location: Location::Complement(Box::new(Location::Join(vec![
+                Location::range(6, 8),
+                Location::range(0, 3),
+            ]))),
+        };
+        let captured = capture_binding_hit(&circle, &cb, &primer, &hit).unwrap();
+        assert_eq!(captured.primer().unwrap().ordered_sequence(), "GGCATNC");
+        let anchor = captured.anchor.unwrap();
+        assert_eq!((anchor.start, anchor.end, anchor.reverse), (6, 11, true));
+        assert_eq!(anchor.reference, "CGTGC");
+    }
+
+    #[test]
+    fn chosen_binding_hit_refuses_stale_source_and_inconsistent_placement_facts() {
+        let (m, b) = source("GGAGNTCC");
+        let primer = Primer::new("Chosen", "TGNT", "").unwrap();
+        let hit = BindingHit {
+            start: 2,
+            length: 4,
+            reverse: false,
+            crosses_origin: false,
+            certain: false,
+            mismatches: vec![0],
+            ambiguous_positions: vec![2],
+            three_prime_exact: 1,
+            location: Location::range(2, 6),
+        };
+        let variants = [
+            BindingHit {
+                start: usize::MAX,
+                ..hit.clone()
+            },
+            BindingHit {
+                start: 7,
+                ..hit.clone()
+            },
+            BindingHit {
+                length: 3,
+                ..hit.clone()
+            },
+            BindingHit {
+                reverse: true,
+                ..hit.clone()
+            },
+            BindingHit {
+                crosses_origin: true,
+                ..hit.clone()
+            },
+            BindingHit {
+                certain: true,
+                ..hit.clone()
+            },
+            BindingHit {
+                mismatches: vec![1],
+                ..hit.clone()
+            },
+            BindingHit {
+                ambiguous_positions: vec![],
+                ..hit.clone()
+            },
+            BindingHit {
+                three_prime_exact: 2,
+                ..hit.clone()
+            },
+            BindingHit {
+                location: Location::range(1, 5),
+                ..hit.clone()
+            },
+            BindingHit {
+                location: Location::Order(vec![Location::range(2, 6)]),
+                ..hit.clone()
+            },
+        ];
+        for changed in variants {
+            assert!(capture_binding_hit(&m, &b, &primer, &changed).is_err());
+        }
+        let mut stale = b.clone();
+        stale.revision = "0".repeat(64);
+        assert!(capture_binding_hit(&m, &stale, &primer, &hit).is_err());
+        let mut rna = primer.clone();
+        rna.annealing = Sequence::new(Alphabet::Rna, "UGNU").unwrap();
+        assert!(capture_binding_hit(&m, &b, &rna, &hit).is_err());
+        let mut oversized = primer;
+        oversized.tail = "A".repeat(MAX_OLIGO);
+        assert!(capture_binding_hit(&m, &b, &oversized, &hit).is_err());
     }
 }

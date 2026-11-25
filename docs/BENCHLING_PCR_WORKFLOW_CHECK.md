@@ -49,7 +49,9 @@ controls; pointer-drag manipulation remains an optional interaction refinement.
 Local failure recovery and output-presentation recommendations remain follow-ups.
 The [parallel follow-up decisions](BENCHLING_WORKFLOW_DECISIONS.md) refine recovery
 into literal-preserving reference capture, selected-hit handoff and full binding-list
-paging. Recommendations1/2 below are retained as completed research history.
+paging. Those controls and local edit/policy/rerun actions are now implemented
+([details](PRIMER_REFERENCE_RECOVERY.md)). Recommendations1/2 below are retained as
+completed research history; broader output continuity remains follow-up work.
 
 ## Actionable priorities
 

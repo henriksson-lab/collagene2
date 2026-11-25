@@ -147,6 +147,8 @@ mod pcr_overlay;
 mod pcr_overlay_draw;
 #[cfg(target_arch = "wasm32")]
 mod pcr_source_view;
+#[cfg(target_arch = "wasm32")]
+mod primer_binding_view;
 #[cfg(any(target_arch = "wasm32", test))]
 mod primer_domain_edit;
 #[cfg(target_arch = "wasm32")]
@@ -161,6 +163,8 @@ mod primer_pair_model;
 mod primer_pair_storage;
 #[cfg(target_arch = "wasm32")]
 mod primer_picker;
+#[cfg(target_arch = "wasm32")]
+mod primer_reference_capture_view;
 #[cfg(target_arch = "wasm32")]
 mod primers;
 #[cfg(target_arch = "wasm32")]

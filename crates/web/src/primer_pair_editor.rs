@@ -135,6 +135,7 @@ fn PrimerSlotEditor(
         <label>"Annealing domain (5′→3′)"<textarea aria-label=format!("{label} primer annealing domain") rows="3" maxlength="1600" spellcheck="false" prop:value=move||oligo.with(|o|o.annealing.clone()) on:input=move|e|draft.update(|pair|slot_mut(pair,reverse_slot).annealing=event_target_value(&e))></textarea></label>
         <label>"5′ tail"<textarea aria-label=format!("{label} primer 5 prime tail") rows="2" maxlength="1600" spellcheck="false" prop:value=move||oligo.with(|o|o.tail.clone()) on:input=move|e|draft.update(|pair|slot_mut(pair,reverse_slot).tail=event_target_value(&e))></textarea></label>
         <div class="primer-selection-actions"><button class="button secondary" on:click=move|_|use_selection.run(false)>"Use selection forward"</button><button class="button secondary" on:click=move|_|use_selection.run(true)>"Use selection reverse complement"</button></div>
+        <crate::primer_reference_capture_view::PrimerReferenceCaptureView draft reverse_slot selection resolve_source epoch/>
         <PrimerPicker label=format!("{label} pair editor") sources=primer_sources list_primers resolve_primer epoch on_copy/>
         <pre>{move||oligo.with(|o|format!("Ordered oligo, 5′→3′: {}{}\nAnnealing domain: {}\n5′ tail: {}",o.tail,o.annealing,o.annealing,if o.tail.is_empty(){"(none)"}else{&o.tail}))}</pre>
         {move||oligo.with(|o|o.anchor.clone()).map(|anchor|view!{<section class="primer-anchor-comparison">

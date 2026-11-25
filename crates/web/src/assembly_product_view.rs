@@ -355,7 +355,15 @@ pub(crate) fn ReferenceCanvas(
     current: Memo<bool>,
     on_message: Callback<String>,
     #[prop(optional)] initial_spans: Vec<(usize, usize)>,
+    #[prop(optional_no_strip)] pcr_overlay: Option<Memo<Option<Arc<crate::pcr_overlay::Overlay>>>>,
 ) -> impl IntoView {
+    let visible_pcr_overlay = Memo::new(move |_| {
+        if current.get() {
+            pcr_overlay.and_then(|overlay| overlay.get())
+        } else {
+            None
+        }
+    });
     let source = StoredValue::new(Arc::new(product));
     // One memo-owned model for the existing virtual viewer. Source access in
     // this component stays borrowed; selection changes never clone full DNA.
@@ -435,6 +443,7 @@ pub(crate) fn ReferenceCanvas(
         let feature = selected_feature.get();
         if !context_current {
             if let Some(map) = renderer.get_value() {
+                map.set_pcr_overlay(None);
                 map.pointer_cancel();
             }
             return;
@@ -473,6 +482,7 @@ pub(crate) fn ReferenceCanvas(
             source.with_value(|source| {
                 map.set_document_spans(source, &revision.get_value(), &parts, feature)
             });
+            map.set_pcr_overlay(visible_pcr_overlay.get());
             map.queue_draw();
         }
     });
@@ -546,7 +556,7 @@ pub(crate) fn ReferenceCanvas(
             </div>
         </div>
         <div class="assembly-product-sequence" hidden=move||mode.get()==Mode::Map>
-            <SequenceView molecule=molecule selection=selection selected_feature=selected_feature highlighted_spans=highlighted search_regions=regions
+            <SequenceView pcr_overlay=Some(visible_pcr_overlay) molecule=molecule selection=selection selected_feature=selected_feature highlighted_spans=highlighted search_regions=regions
                 on_show_features=Callback::new(move|()|features_open.set(true)) identity=view_identity locked=locked read_only=true shared_restrictions=false
                 on_edit=Callback::new(|_|Err("This reference snapshot is read-only; fork or open a separate document copy to edit.".into()))
                 on_history=Callback::new(|_|Err("Source history is unchanged by this read-only review.".into())) on_message=on_message

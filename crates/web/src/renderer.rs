@@ -1,7 +1,8 @@
 use crate::{
     annotation_geometry::{self, PreparedGeometry},
     map_labels::{self, LabelStats, View},
-    restriction_map,
+    pcr_overlay::Overlay,
+    pcr_overlay_draw, restriction_map,
 };
 use collagene_core::{Molecule, Topology, model::Feature};
 use js_sys::Float32Array;
@@ -186,6 +187,8 @@ struct State {
     restriction_cache: Option<restriction_map::Cache>,
     restriction_hits: Vec<restriction_map::Hit>,
     selected_restriction: Option<usize>,
+    pcr_overlay: Option<Arc<Overlay>>,
+    pcr_hits: Vec<pcr_overlay_draw::Hit>,
     label_stats: Option<LabelStats>,
     on_labels: Rc<dyn Fn(LabelStats)>,
     overlay_ctx: Ctx,
@@ -332,6 +335,8 @@ impl MapRenderer {
             restriction_cache: None,
             restriction_hits: Vec::new(),
             selected_restriction: None,
+            pcr_overlay: None,
+            pcr_hits: Vec::new(),
             label_stats: None,
             on_labels,
             overlay_ctx,
@@ -372,6 +377,8 @@ impl MapRenderer {
                 // A gesture started on another source cannot select this document.
                 state.drag = None;
                 state.range_preview.clear();
+                state.pcr_overlay = None;
+                state.pcr_hits.clear();
                 let prepared = visible_geometry(molecule, &state.hidden_features);
                 state.geometry_valid = prepared.is_ok();
                 state.geometry = prepared.unwrap_or_default();
@@ -459,6 +466,8 @@ impl MapRenderer {
             state.drag = None;
             state.range_preview.clear();
             state.interaction_context = context.into();
+            state.pcr_overlay = None;
+            state.pcr_hits.clear();
             drop(state);
             self.queue_draw();
         }
@@ -522,6 +531,31 @@ impl MapRenderer {
         self.queue_draw();
         true
     }
+    /// Install transient PCR evidence only for the exact displayed source event.
+    /// Overlay changes never rebuild DNA/annotation geometry or reset gestures.
+    pub fn set_pcr_overlay(&self, overlay: Option<Arc<Overlay>>) -> bool {
+        let mut state = self.0.borrow_mut();
+        let valid = overlay.as_ref().is_none_or(|overlay| {
+            overlay.source.revision == state.revision
+                && pcr_overlay_draw::context(overlay) == state.interaction_context
+                && overlay.validate_for_length(state.molecule.sequence.len())
+        });
+        let overlay = if valid { overlay } else { None };
+        if match (&state.pcr_overlay, &overlay) {
+            (None, None) => true,
+            (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+            _ => false,
+        } {
+            return valid;
+        }
+        state.pcr_overlay = overlay;
+        state.pcr_hits.clear();
+        let _ = state.canvas.remove_attribute("title");
+        drop(state);
+        self.queue_draw();
+        valid
+    }
+
     pub fn zoom(&self, factor: f64) {
         if !factor.is_finite() || factor <= 0. {
             return;
@@ -595,6 +629,13 @@ impl MapRenderer {
                     .rev()
                     .find(|hit| hit.contains(x - rect.left(), y - rect.top()))
                     .and_then(|hit| s.restriction_cache.as_ref()?.tooltip(hit.index))
+            })
+            .or_else(|| {
+                s.pcr_hits
+                    .iter()
+                    .rev()
+                    .find(|hit| hit.contains(x - rect.left(), y - rect.top()))
+                    .map(|hit| hit.label.as_str())
             });
         if let Some(title) = title {
             if s.canvas.get_attribute("title").as_deref() != Some(title) {
@@ -671,6 +712,19 @@ impl MapRenderer {
                 spans: vec![hit.span],
             });
         }
+        if let Some(hit) = s
+            .pcr_hits
+            .iter()
+            .rev()
+            .find(|hit| hit.contains(local_x, local_y))
+        {
+            return Some(MapHit {
+                feature_index: None,
+                restriction_index: None,
+                span: (hit.start, hit.end),
+                spans: vec![(hit.start, hit.end)],
+            });
+        }
         let pos = reference_position(&s, local_x, local_y, rect.width(), rect.height(), false)?;
         for located in s.geometry.located.iter().take(s.rendered_geometry_count) {
             if let Some(&(a, b, _)) = located.spans.iter().find(|&&(a, b, _)| pos >= a && pos < b) {
@@ -681,6 +735,28 @@ impl MapRenderer {
                     spans: feature_spans(&s, located.index, (a, b)),
                 });
             }
+        }
+        if let Some(span) = s.pcr_overlay.as_ref().and_then(|overlay| {
+            pcr_overlay_draw::map_span_hit(
+                overlay,
+                View {
+                    width: rect.width(),
+                    height: rect.height(),
+                    rotation: s.rotation,
+                    zoom: s.zoom,
+                    topology: s.molecule.topology,
+                },
+                s.molecule.sequence.len(),
+                local_x,
+                local_y,
+            )
+        }) {
+            return Some(MapHit {
+                feature_index: None,
+                restriction_index: None,
+                span,
+                spans: vec![span],
+            });
         }
         Some(MapHit {
             feature_index: None,
@@ -1215,6 +1291,11 @@ fn draw(s: &mut State) -> Option<LabelStats> {
             }
         }
     }
+    s.pcr_hits = s
+        .pcr_overlay
+        .as_ref()
+        .map(|overlay| pcr_overlay_draw::map(ctx, overlay, view, s.molecule.sequence.len()))
+        .unwrap_or_default();
     let restrictions = s
         .restriction_cache
         .as_mut()

@@ -141,6 +141,12 @@ mod pairwise_result_view;
 mod pairwise_source_view;
 #[cfg(target_arch = "wasm32")]
 mod pcr_outputs;
+#[cfg(any(target_arch = "wasm32", test))]
+mod pcr_overlay;
+#[cfg(target_arch = "wasm32")]
+mod pcr_overlay_draw;
+#[cfg(target_arch = "wasm32")]
+mod pcr_source_view;
 #[cfg(target_arch = "wasm32")]
 mod primer_orders;
 #[cfg(target_arch = "wasm32")]

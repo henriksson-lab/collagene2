@@ -2,6 +2,8 @@
 use crate::{
     annotation_layout::AnnotationLayout,
     glyph_renderer::{Glyph, GlyphRenderer},
+    pcr_overlay::Overlay,
+    pcr_overlay_draw,
     renderer::{ResizeListener, css_color, css_color_for_strand},
     worker::CachedWorker,
 };
@@ -307,6 +309,8 @@ pub fn SequenceView(
     restriction_visible: RwSignal<bool>,
     on_show_restrictions: Callback<()>,
     #[prop(optional_no_strip)] hidden_features: Option<Memo<BTreeSet<usize>>>,
+    #[prop(optional_no_strip)] pcr_overlay: Option<Memo<Option<Arc<Overlay>>>>,
+    #[prop(optional_no_strip)] pcr_context: Option<Memo<String>>,
     #[prop(default = false)] read_only: bool,
     #[prop(default = true)] shared_restrictions: bool,
     #[prop(optional)] on_select_restriction: Option<
@@ -382,6 +386,19 @@ pub fn SequenceView(
         }
     });
     let source = Memo::new(move |_| molecule.with(|m| m.revision()));
+    // The host supplies only its current overlay. Keep a second display guard
+    // against equal-content events and stale source revisions, without hashing
+    // DNA or rescanning primers during scrolling/painting.
+    let pcr = Memo::new(move |_| {
+        let overlay = pcr_overlay.and_then(|overlay| overlay.get())?;
+        let valid = overlay.source.revision == source.get()
+            && pcr_overlay_draw::context(&overlay)
+                == pcr_context
+                    .map(|context| context.get())
+                    .unwrap_or_else(|| identity.get())
+            && molecule.with(|m| overlay.validate_for_length(m.sequence.len()));
+        valid.then_some(overlay)
+    });
     let edit_cursor = StoredValue::new(None::<EditCursor>);
     let base_drag = StoredValue::new(None::<BaseDrag>);
     let drag_active = RwSignal::new(false);
@@ -488,7 +505,10 @@ pub fn SequenceView(
             counts
         })
     });
-    let row_height = Memo::new(move |_| 66. + lane_counts.get().iter().sum::<usize>() as f64 * 18.);
+    let row_height = Memo::new(move |_| {
+        66. + lane_counts.get().iter().sum::<usize>() as f64 * 18.
+            + if pcr.get().is_some() { 40. } else { 0. }
+    });
     let drag_alive = alive.clone();
     Effect::new(move |_| {
         let active = drag_active.get();
@@ -723,6 +743,7 @@ pub fn SequenceView(
     let timer = StoredValue::new_local(None::<Timer>);
     let resize = StoredValue::new_local(None::<ResizeListener>);
     let hit_boxes = StoredValue::new_local(Vec::<HitBox>::new());
+    let pcr_hits = StoredValue::new_local(Vec::<pcr_overlay_draw::Hit>::new());
     Effect::new(move |_| {
         let rev = source.get();
         let _ = retry.get();
@@ -906,6 +927,29 @@ pub fn SequenceView(
                 }
             }
         }
+    });
+    let choose_pcr = Callback::new(move |hit: pcr_overlay_draw::Hit| {
+        let Some(overlay) = pcr.get_untracked() else {
+            return;
+        };
+        if !overlay
+            .spans
+            .iter()
+            .any(|span| span.start == hit.start && span.end == hit.end)
+        {
+            return;
+        }
+        batch(|| {
+            selected_feature.set(None);
+            search_regions.set(None);
+            selection.set(Some((hit.start, hit.end)));
+        });
+        on_message.run(format!(
+            "{} · source {}–{}",
+            hit.label,
+            hit.start + 1,
+            hit.end
+        ));
     });
     let choose = Callback::new(move |item: TrackItem| {
         if item
@@ -1167,6 +1211,8 @@ pub fn SequenceView(
                 .get()
                 .filter(|r| r.source_revision == revision && r.options == opts);
             let hidden = hidden.get();
+            let pcr_overlay = pcr.get();
+            let pcr_height = if pcr_overlay.is_some() { 40. } else { 0. };
             let packed = annotation_layout.get();
             let layout = packed.as_ref().as_ref().ok();
             let Some(canvas) = canvas.get() else {
@@ -1240,6 +1286,7 @@ pub fn SequenceView(
             let offset = offsets(counts);
             let shared_items = shared_restriction_tracks.get();
             let mut boxes = vec![];
+            let mut overlay_boxes = vec![];
             let mut base_glyphs = Vec::<Glyph>::with_capacity(
                 count
                     .saturating_mul(cols)
@@ -1271,6 +1318,11 @@ pub fn SequenceView(
                             39.,
                         );
                     }
+                }
+                if let Some(overlay) = pcr_overlay.as_ref() {
+                    overlay_boxes.extend(pcr_overlay_draw::sequence(
+                        &ctx, overlay, start, end, start_x, y, cell,
+                    ));
                 }
                 for (i, b) in mol.sequence.as_str().as_bytes()[start..end]
                     .iter()
@@ -1324,7 +1376,8 @@ pub fn SequenceView(
                         let Some(item_slot) = slot(item, ordinal, counts, layout) else {
                             continue;
                         };
-                        let lane_y = y + 36. + (offset[group] + item_slot) as f64 * 18.;
+                        let lane_y =
+                            y + 36. + pcr_height + (offset[group] + item_slot) as f64 * 18.;
                         let color = track_color(item, mol);
                         for part in &item.parts {
                             let left = part.start.max(start);
@@ -1538,6 +1591,7 @@ pub fn SequenceView(
             );
             let _ = canvas.set_attribute("data-visible-glyphs", &base_glyphs.len().to_string());
             hit_boxes.set_value(boxes);
+            pcr_hits.set_value(overlay_boxes);
             let _ = canvas.set_attribute("data-row-height", &rh.to_string());
             let _ = canvas.set_attribute("data-feature-lanes", &counts[0].to_string());
             let _ = canvas.set_attribute("data-primer-lanes", &counts[1].to_string());
@@ -1634,6 +1688,17 @@ pub fn SequenceView(
             <details class="viewport-tracks"><summary>"Viewport items and warnings"</summary>{move||report.get().map(|mut r|{let hidden=hidden.get();r.items.retain(|item|item.source_feature.is_none_or(|i|!hidden.contains(&i)));let count=r.items.len();view!{<p class="helper">{format!("{} items · {} work units · {}",count,r.work.used_units,if r.complete{"complete"}else{"incomplete"})}</p>{r.warnings.into_iter().map(|w|view!{<p class="helper">{w}</p>}).collect_view()}{r.items.into_iter().skip(page.get()*50).take(50).map(|item|{let text=format!("{:?} · {} · {}{}",item.kind,item.label,item.parts.iter().map(|p|format!("{}–{}",p.start+1,p.end)).collect::<Vec<_>>().join(", "),if item.certain{""}else{" · possible/review"});view!{<button class="result-entry viewport-item" data-kind=format!("{:?}",item.kind) on:click=move|_|choose.run(item.clone())>{text}</button>}}).collect_view()}<Show when=move||{count>50}><button class="text-tool" disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous track items"</button><button class="text-tool" disabled=move||{(page.get()+1)*50>=count} on:click=move|_|page.update(|p|*p+=1)>"Next track items"</button></Show>}})}<button class="text-tool" disabled=move||report.get().is_none() on:click=move|_|if let Some(r)=report.get_untracked(){match serde_json::to_vec_pretty(&r){Ok(bytes)=>{let _=crate::app::download("viewport-tracks.json","application/json",&bytes);},Err(e)=>status.set(e.to_string())}}>"Download viewport report"</button></details>
         </div></Show>
         {move||selected_item.get().map(|item|view!{<div class="track-selection"><strong>{item.label}</strong><span>{format!(" · {:?}{}",item.kind,if item.certain{""}else{" · possible/review"})}</span><span>{item.cuts.as_ref().map(|c|format!(" · top {}, bottom {}",crate::search_view::boundary_label(c.top),crate::search_view::boundary_label(c.bottom)))}</span></div>})}
+        {move||pcr.get().map(|overlay|{
+            let kind=pcr_overlay_draw::kind_label(overlay.kind);
+            let primer_spans=overlay.spans.iter().filter(|span|matches!(span.role,crate::pcr_overlay::Role::Forward|crate::pcr_overlay::Role::Reverse)).cloned().collect::<Vec<_>>();
+            view!{<section class="pcr-overlay-summary" aria-label="Transient PCR source overlay">
+                <strong>{kind}</strong><p class="helper">{overlay.summary.clone()}</p>
+                <p class="helper">"Blue: configured forward primer · orange: configured reverse primer · green: amplified source · red: mismatch · amber: ambiguous base. Arrows show source orientation. These temporary marks are separate from saved annotations."</p>
+                <div class="method-row-actions">{primer_spans.into_iter().map(|span|{let label=span.label.clone();let hit=pcr_overlay_draw::Hit{x:0.,y:0.,width:0.,height:0.,start:span.start,end:span.end,label:label.clone()};view!{<button class="text-tool" on:click=move|_|choose_pcr.run(hit.clone())>{format!("Select {} · {}–{}",label,span.start+1,span.end)}</button>}}).collect_view()}</div>
+                {(!overlay.tails.is_empty()).then(||view!{<details><summary>"Added primer DNA · not mapped onto source"</summary>{overlay.tails.iter().map(|tail|view!{<p class="helper"><code>{tail.clone()}</code></p>}).collect_view()}</details>})}
+                {overlay.warnings.iter().map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view()}
+            </section>}
+        })}
         <div class="sequence-scroll" node_ref=container on:scroll=move|_|if let Some(c)=container.get(){scroll.set(c.scroll_top()as f64);}>
             <div class="sequence-spacer" style:height=move||format!("{}px",molecule.with(|m|m.sequence.len()).div_ceil(columns.get())as f64*row_height.get())>
                 <div node_ref=paint_stack class="sequence-paint-stack">
@@ -1644,6 +1709,7 @@ pub fn SequenceView(
                             let _=c.focus();let rect=c.get_bounding_client_rect();let x=e.client_x()as f64-rect.left();let y=e.client_y()as f64-rect.top();
                             let hit=hit_boxes.with_value(|boxes|boxes.iter().rev().find(|b|x>=b.x&&x<b.x+b.width&&y>=b.y&&y<b.y+b.height).map(|b|b.item.clone()));
                             if let Some(hit)=hit{e.prevent_default();stop_drag();edit_cursor.set_value(None);choose.run(hit);return;}
+                            if let Some(hit)=pcr_hits.with_value(|hits|hits.iter().rev().find(|hit|hit.contains(x,y)).cloned()){e.prevent_default();stop_drag();edit_cursor.set_value(None);choose_pcr.run(hit);return;}
                             if base_at(x,y,scroll.get_untracked(),row_height.get_untracked(),columns.get_untracked(),molecule.with_untracked(|m|m.sequence.len()),false).is_some(){
                                 e.prevent_default();press_base.run((x,y,e.shift_key()));
                                 if let Some(cursor)=current_cursor(){base_drag.set_value(Some(BaseDrag{identity:identity.get_untracked(),revision:source.get_untracked(),pointer_id:e.pointer_id(),anchor:cursor.pointer_anchor.unwrap_or(cursor.anchor)}));drag_pointer.set_value(Some((e.client_x()as f64,e.client_y()as f64)));if c.set_pointer_capture(e.pointer_id()).is_ok(){drag_active.set(true);}else{stop_drag();}}
@@ -1674,7 +1740,7 @@ pub fn SequenceView(
                         // Preserve programmatic/accessibility clicks; a real pointer click
                         // was already handled on down/up and must not collapse its drag.
                         if e.detail()!=0 || locked.get_untracked(){return;}
-                        if let Some(c)=canvas.get(){let rect=c.get_bounding_client_rect();let x=e.client_x()as f64-rect.left();let y=e.client_y()as f64-rect.top();let hit=hit_boxes.with_value(|boxes|boxes.iter().rev().find(|b|x>=b.x&&x<b.x+b.width&&y>=b.y&&y<b.y+b.height).map(|b|b.item.clone()));if let Some(hit)=hit{edit_cursor.set_value(None);choose.run(hit);}else{press_base.run((x,y,e.shift_key()));}}
+                        if let Some(c)=canvas.get(){let rect=c.get_bounding_client_rect();let x=e.client_x()as f64-rect.left();let y=e.client_y()as f64-rect.top();let hit=hit_boxes.with_value(|boxes|boxes.iter().rev().find(|b|x>=b.x&&x<b.x+b.width&&y>=b.y&&y<b.y+b.height).map(|b|b.item.clone()));if let Some(hit)=hit{edit_cursor.set_value(None);choose.run(hit);}else if let Some(hit)=pcr_hits.with_value(|hits|hits.iter().rev().find(|hit|hit.contains(x,y)).cloned()){edit_cursor.set_value(None);choose_pcr.run(hit);}else{press_base.run((x,y,e.shift_key()));}}
                     }></canvas>
                 <canvas node_ref=glyph_canvas class="sequence-glyph-canvas" aria-hidden="true" style="display:none;pointer-events:none;"></canvas>
                 </div>

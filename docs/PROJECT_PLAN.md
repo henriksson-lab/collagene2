@@ -95,9 +95,10 @@ concrete connections:
 - Keep ordinary source capture, preparation, junction/product review and named outputs
   continuous in the existing assembly dock. Preserve explicit Apply and selective
   regeneration rather than silently replacing intentional primers/edits.
-- Connect the applied primer pair, selected binding placements and PCR geometry to
-  synchronized source overlays. Improve domain/tail boundary editing and local failure
-  recovery using the existing primer model and native checks.
+- Applied pair comparisons and selected exact/mismatch PCR geometries now feed
+  synchronized source overlays ([details](PCR_OVERLAYS.md)). Continue domain/tail
+  boundary editing and local failure recovery using the existing primer model
+  and native checks.
 - Annotation list/bulk operations and exact-event display preferences are now
   implemented ([details](ANNOTATION_MANAGEMENT.md)). Exact selected translation,
   source-linked protein outputs, review-required CDS proposals and full ORF
@@ -107,6 +108,15 @@ concrete connections:
   output identity over the shared compiler. Reaction-product enumeration alone does
   not complete combinatorial cloning. Inspectable fusion-end proposals and intentional
   domestication remain distinct planned work.
+
+The next named-digest/gel connection must retain complete catalog geometry/options
+and exact source events. Current gel digest lanes resolve starter-enzyme names and
+current document indices; adapting saved setups through those names would silently
+lose identity. Add a pinned-catalog lane that freshly inspects the retained event,
+uses fragments only when the scan is complete/products determined, and explicitly
+keeps the gel's 1,024-fragment bound. Reopen historical evidence without moving heads;
+mutable continuation uses an explicit fork. Do not silently repin an old catalog
+selection or alter saved digest options to fit a gel.
 
 No new wizard, parser, primer engine or export engine is implied by these findings.
 Broader kinetic/mixture modeling mentioned in research is not an added delivery gate.

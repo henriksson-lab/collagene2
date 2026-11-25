@@ -1,6 +1,11 @@
 //! Selected, source-bound mismatch-PCR reference outputs. Scientific preparation
 //! stays in the worker; naming and ordering never imply target verification.
-use crate::{app::download, mutagenesis::OutputOpen, worker::CachedWorker};
+use crate::{
+    app::download,
+    mutagenesis::OutputOpen,
+    pcr_overlay::{self, Overlay, Publication, Role},
+    worker::CachedWorker,
+};
 use collagene_core::{
     Molecule,
     analysis::Primer,
@@ -16,10 +21,12 @@ use std::{
     rc::Rc,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
     },
 };
 use wasm_bindgen_futures::spawn_local;
+
+static NEXT_OVERLAY_OWNER: AtomicU32 = AtomicU32::new(1);
 
 pub struct Review {
     pub source: EventBinding,
@@ -43,6 +50,8 @@ pub fn MismatchPcrOutputsPanel(
     review: Arc<Review>,
     guard: Callback<(), Result<(), String>>,
     on_outputs: Callback<OutputOpen, Result<(), String>>,
+    on_overlay: Callback<Publication>,
+    on_navigate: Callback<(EventBinding, u64, Vec<(usize, usize)>), Result<(), String>>,
 ) -> impl IntoView {
     let count = review.report.products.len();
     let initial_name = if count == 1 {
@@ -67,6 +76,75 @@ pub fn MismatchPcrOutputsPanel(
     let generation = RwSignal::new(0u32);
     let worker = StoredValue::new_local(None::<Rc<CachedWorker>>);
     let bound = StoredValue::new(review);
+    let owner = StoredValue::new(format!(
+        "mismatch-{}",
+        NEXT_OVERLAY_OWNER.fetch_add(1, Ordering::Relaxed)
+    ));
+    let projected = RwSignal::new(None::<Arc<Overlay>>);
+    let project = Callback::new(move |()| -> Result<Arc<Overlay>, String> {
+        guard.run(())?;
+        let index = selected
+            .get_untracked()
+            .ok_or("Choose a reported mismatch-PCR geometry first.")?;
+        bound
+            .with_value(|review| {
+                pcr_overlay::mismatch(
+                    &review.source_molecule,
+                    &review.source,
+                    review.epoch,
+                    &review.forward,
+                    &review.reverse,
+                    &review.report,
+                    index,
+                )
+            })
+            .map(Arc::new)
+    });
+    Effect::new(move |_| {
+        let overlay = if selected.get().is_some() {
+            match project.run(()) {
+                Ok(overlay) => Some(overlay),
+                Err(error) => {
+                    status.set(error);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        projected.set(overlay.clone());
+        on_overlay.run(Publication {
+            owner: owner.get_value(),
+            overlay,
+        });
+    });
+    on_cleanup(move || {
+        on_overlay.run(Publication {
+            owner: owner.get_value(),
+            overlay: None,
+        })
+    });
+    let navigate = Callback::new(move |role: Role| {
+        let result = project.run(()).and_then(|overlay| {
+            let spans = overlay
+                .spans
+                .iter()
+                .filter(|span| span.role == role)
+                .map(|span| (span.start, span.end))
+                .collect::<Vec<_>>();
+            if spans.is_empty() {
+                return Err("The selected geometry has no mapped bases for this role.".into());
+            }
+            on_overlay.run(Publication {
+                owner: owner.get_value(),
+                overlay: Some(overlay.clone()),
+            });
+            on_navigate.run((overlay.source.clone(), overlay.epoch, spans))
+        });
+        if let Err(error) = result {
+            status.set(error);
+        }
+    });
     let alive = Arc::new(AtomicBool::new(true));
     let cleanup_alive = alive.clone();
     on_cleanup(move || {
@@ -290,6 +368,15 @@ pub fn MismatchPcrOutputsPanel(
                 let findings=bound.with_value(|r|r.findings.iter().skip(current*20).take(20).cloned().map(|finding|view!{<p class="helper">{finding}</p>}).collect_view());
                 view!{<div>{findings}</div><p>{format!("Findings across all returned products · page {} of {pages}",current+1)}</p><div class="method-row-actions"><button class="text-tool" disabled=move||busy.get()||current==0 on:click=move|_|findings_page.set(current.saturating_sub(1))>"Previous findings"</button><button class="text-tool" disabled=move||{busy.get()||current+1>=pages} on:click=move|_|findings_page.set((current+1).min(pages-1))>"Next findings"</button></div>}
             }}</details>
+            {move||projected.get().map(|overlay|view!{
+                <section class="pcr-placement-review"><h4>"Selected template placement"</h4>
+                    <p class="helper">{overlay.summary.clone()}</p>
+                    <div class="method-row-actions"><button class="text-tool" disabled=move||{busy.get()} on:click=move|_|{navigate.run(Role::Amplified);}>"View template interval"</button><button class="text-tool" disabled=move||{busy.get()} on:click=move|_|{navigate.run(Role::Forward);}>"View forward-role primer"</button><button class="text-tool" disabled=move||{busy.get()} on:click=move|_|{navigate.run(Role::Reverse);}>"View reverse-role primer"</button></div>
+                    <p class="helper">"Only this selected conditional geometry is overlaid. Mismatch and ambiguous bases retain their reported evidence; synthetic tails have no template coordinates. Other returned geometries remain separate."</p>
+                    {overlay.tails.iter().cloned().map(|tail|view!{<p class="sequence-preview">{tail}</p>}).collect_view()}
+                    {overlay.warnings.iter().cloned().map(|warning|view!{<p class="helper">{warning}</p>}).collect_view()}
+                </section>
+            })}
             <label>"Output name"<input maxlength="256" disabled=move||busy.get() prop:value=move||name.get() on:input=move|e|name.set(event_target_value(&e))/></label>
             <label><input type="checkbox" disabled=move||busy.get() prop:checked=move||save_product.get() on:change=move|e|save_product.set(event_target_checked(&e))/>"Create selected mismatch-PCR reference preview"</label>
             <label><input type="checkbox" disabled=move||busy.get() prop:checked=move||save_primers.get() on:change=move|e|save_primers.set(event_target_checked(&e))/>"Save declared pair as an oligo collection"</label>
@@ -298,5 +385,5 @@ pub fn MismatchPcrOutputsPanel(
             <button class="button secondary full" disabled=move||busy.get() on:click=download_report>"Download complete mismatch-PCR evidence"</button>
             <p class="helper" role="status">{move||status.get()}</p>
         </section>
-    }
+    }.into_any()
 }

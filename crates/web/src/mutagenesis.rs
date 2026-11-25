@@ -113,7 +113,15 @@ pub fn MutagenesisPanel(
     mutation_selection: Callback<(), Result<MutationSelection, String>>,
     mutation_seed: RwSignal<Option<MutationSelection>>,
     on_intent: Callback<IntentOpen, Result<(), String>>,
+    #[prop(optional_no_strip)] on_overlay: Option<Callback<crate::pcr_overlay::Publication>>,
+    #[prop(optional_no_strip)] on_navigate: Option<
+        Callback<(EventBinding, u64, Vec<(usize, usize)>), Result<(), String>>,
+    >,
 ) -> impl IntoView {
+    let on_overlay = on_overlay.unwrap_or_else(|| Callback::new(|_| {}));
+    let on_navigate = on_navigate.unwrap_or_else(|| {
+        Callback::new(|_| Err("PCR source navigation is unavailable in this context.".into()))
+    });
     let template_index = RwSignal::new(0usize);
     let source = Memo::new(move |_| get_query.run(template_index.get()));
     let applied_pair = RwSignal::new(None::<AppliedPair>);
@@ -743,7 +751,7 @@ pub fn MutagenesisPanel(
         {move||pcr.get().map(|bound|{
             let review=bound.review.clone();
             let guard=Callback::new(move|()|current_pcr.run(bound.clone()));
-            view!{<crate::mismatch_pcr_outputs::MismatchPcrOutputsPanel review guard on_outputs/>}
+            view!{<crate::mismatch_pcr_outputs::MismatchPcrOutputsPanel review guard on_outputs on_overlay on_navigate/>}
         })}
 
         <h3>"3. Design inverse-PCR preparation"</h3><p class="helper">{move||format!("Active document is the independently specified intended circular target: {}. Choose the original circular source above.",molecule.get().name)}</p>

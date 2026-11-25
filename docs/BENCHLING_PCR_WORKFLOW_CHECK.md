@@ -27,6 +27,16 @@ These findings come from repository source and are independent of the public pre
 | Primer orders | [primer_orders.rs](../crates/web/src/primer_orders.rs) and the two PCR output components | Selected oligos can become collections and CSV/TSV sheets with complete ordered 5′→3′ sequence and domain/tail decomposition. No JSON reconstruction is required. |
 | Mutation intent and inverse PCR | [mutagenesis.rs](../crates/web/src/mutagenesis.rs), [mutation_review.rs](../crates/web/src/mutation_review.rs), candidate handoff in [app.rs](../crates/web/src/app.rs) | Literal source-bound mutation intent creates a separate intended reference. Inverse PCR reaches candidate review with exact original source events, independent-target checking and the existing shared output/order route. Earlier claims that event handoff or outputs are absent are stale. |
 
+## Overlay implementation follow-up
+
+The applied pair/selected geometry connection is now implemented: captured-domain
+comparisons and actual selected exact/mismatch PCR products feed transient map and
+sequence overlays, with full source navigation and explicit added tails and
+uncertainty. Foreign-source inspection preserves the independent target.
+[Details](PCR_OVERLAYS.md). The first recommendation below remains research history;
+endpoint/tail-boundary editing and local recovery remain follow-up work. Browser
+acceptance has not been run.
+
 ## Actionable priorities
 
 The following are our recommendations from the comparison, not claims about undocumented Benchling internals.

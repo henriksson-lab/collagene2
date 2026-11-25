@@ -1,14 +1,22 @@
 //! Explicit selection and output review for exact-PCR reference previews.
 //! Reaction reconstruction remains in the worker; this view never invents a target.
-use crate::app::download;
+use crate::{
+    app::download,
+    pcr_overlay::{self, Overlay, Publication, Role},
+};
 use collagene_core::{
+    Molecule,
     analysis::Primer,
     oligo_formats::{self, Delimiter, TableExportMode},
     run_lineage::EventBinding,
     verification::PcrDocument,
 };
 use leptos::prelude::*;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU32, Ordering},
+};
+static NEXT_OVERLAY_OWNER: AtomicU32 = AtomicU32::new(1);
 
 #[derive(Clone)]
 pub struct Review {
@@ -43,6 +51,9 @@ pub fn PcrOutputsPanel(
     on_create: Callback<Choice>,
     guard: Callback<Review, bool>,
     busy: RwSignal<bool>,
+    source_molecule: Memo<Molecule>,
+    on_overlay: Callback<Publication>,
+    on_navigate: Callback<(EventBinding, u64, Vec<(usize, usize)>), Result<(), String>>,
 ) -> impl IntoView {
     let count = review.products.len();
     let selected = RwSignal::new((count == 1).then_some(0usize));
@@ -58,6 +69,80 @@ pub fn PcrOutputsPanel(
     let sequence_page = RwSignal::new(0usize);
     let status = RwSignal::new(String::new());
     let bound = StoredValue::new(review);
+    let owner = StoredValue::new(format!(
+        "exact-{}",
+        NEXT_OVERLAY_OWNER.fetch_add(1, Ordering::Relaxed)
+    ));
+    let projected = RwSignal::new(None::<Arc<Overlay>>);
+    let project = Callback::new(move |()| -> Result<Arc<Overlay>, String> {
+        let review = bound.get_value();
+        if !guard.run(review.clone()) {
+            return Err("The template or primer pair changed; compute PCR products again.".into());
+        }
+        let index = selected
+            .get_untracked()
+            .ok_or("Choose a reported binding geometry first.")?;
+        let product = review
+            .products
+            .get(index)
+            .ok_or("The selected PCR geometry is unavailable.")?;
+        pcr_overlay::exact(
+            &source_molecule.get_untracked(),
+            &review.source,
+            review.epoch,
+            &review.forward,
+            &review.reverse,
+            product,
+        )
+        .map(Arc::new)
+    });
+    Effect::new(move |_| {
+        let index = selected.get();
+        let _ = source_molecule.get();
+        let overlay = if index.is_some() {
+            match project.run(()) {
+                Ok(overlay) => Some(overlay),
+                Err(error) => {
+                    status.set(error);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        projected.set(overlay.clone());
+        on_overlay.run(Publication {
+            owner: owner.get_value(),
+            overlay,
+        });
+    });
+    on_cleanup(move || {
+        on_overlay.run(Publication {
+            owner: owner.get_value(),
+            overlay: None,
+        })
+    });
+    let navigate = Callback::new(move |role: Role| {
+        let result = project.run(()).and_then(|overlay| {
+            let spans = overlay
+                .spans
+                .iter()
+                .filter(|span| span.role == role)
+                .map(|span| (span.start, span.end))
+                .collect::<Vec<_>>();
+            if spans.is_empty() {
+                return Err("The selected geometry has no mapped bases for this role.".into());
+            }
+            on_overlay.run(Publication {
+                owner: owner.get_value(),
+                overlay: Some(overlay.clone()),
+            });
+            on_navigate.run((overlay.source.clone(), overlay.epoch, spans))
+        });
+        if let Err(error) = result {
+            status.set(error);
+        }
+    });
     let export = Callback::new(move |delimiter: Delimiter| {
         let review = bound.get_value();
         if busy.get_untracked() || !guard.run(review.clone()) {
@@ -157,11 +242,20 @@ pub fn PcrOutputsPanel(
                 let sequence=product.molecule.sequence.as_str()[start..end].to_string();
                 view!{<details open><summary>"Selected reference preview"</summary><p class="helper">{format!("Product bases {}–{} of {length}; page {} of {pages}",start+1,end,current+1)}</p><pre class="sequence-preview">{sequence}</pre><div class="method-row-actions"><button class="text-tool" disabled=move||busy.get()||current==0 on:click=move|_|sequence_page.set(current.saturating_sub(1))>"Previous bases"</button><button class="text-tool" disabled=move||{busy.get()||current+1>=pages} on:click=move|_|sequence_page.set((current+1).min(pages-1))>"Next bases"</button></div>{product.findings.iter().cloned().map(|finding|view!{<p class="helper">{finding}</p>}).collect_view()}</details>}
             })))}
+            {move||projected.get().map(|overlay|view!{
+                <section class="pcr-placement-review"><h4>"Selected template placement"</h4>
+                    <p class="helper">{overlay.summary.clone()}</p>
+                    <div class="method-row-actions"><button class="text-tool" disabled=move||{busy.get()} on:click=move|_|{navigate.run(Role::Amplified);}>"View template interval"</button><button class="text-tool" disabled=move||{busy.get()} on:click=move|_|{navigate.run(Role::Forward);}>"View forward-role primer"</button><button class="text-tool" disabled=move||{busy.get()} on:click=move|_|{navigate.run(Role::Reverse);}>"View reverse-role primer"</button></div>
+                    <p class="helper">"Only the selected reported geometry is overlaid. Tail bases are synthetic additions and have no template coordinates."</p>
+                    {overlay.tails.iter().cloned().map(|tail|view!{<p class="sequence-preview">{tail}</p>}).collect_view()}
+                    {overlay.warnings.iter().cloned().map(|warning|view!{<p class="helper">{warning}</p>}).collect_view()}
+                </section>
+            })}
             <label>"Output name"<input maxlength="256" disabled=move||busy.get() prop:value=move||name.get() on:input=move|event|name.set(event_target_value(&event))/></label>
             <label><input type="checkbox" prop:checked=move||save_product.get() disabled=move||busy.get() on:change=move|event|save_product.set(event_target_checked(&event))/>"Create selected PCR reference preview"</label>
             <label><input type="checkbox" prop:checked=move||save_primers.get() disabled=move||busy.get() on:change=move|event|save_primers.set(event_target_checked(&event))/>"Save declared primer pair as an oligo collection"</label>
             <button class="button primary full" disabled=move||busy.get()||selected.get().is_none()||!valid_name(&name.get())||(!save_product.get()&&!save_primers.get()) on:click=create>"Create selected outputs"</button>
             <p class="helper" role="status">{move||status.get()}</p>
         </section>
-    }
+    }.into_any()
 }

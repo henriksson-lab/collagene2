@@ -14,6 +14,26 @@ is postponed until the rest of the software is implemented. Existing modules are
 retained; no more alignment/index features or integration are scheduled now.
 Browser checks remain deferred and compiler checks run alongside coding.
 
+## Synchronized PCR source overlays
+
+Applied captured domains and explicitly selected exact/mismatch PCR products now
+share transient source overlays in sequence and circular/linear maps. Directional
+primer placements, amplified intervals and diagnostic source bases are separate
+from synthetic tails. Captured-reference comparisons remain visibly weaker than
+computed binding evidence; incomplete searches and ambiguous role assignments stay
+explicit. Cross-document source inspection opens a read-only snapshot without
+retargeting an independent target. Owner/event/epoch guards prevent stale overlays,
+and a separate context retains the editor's cursor/scroll identity.
+[Projection semantics and navigation](PCR_OVERLAYS.md).
+
+All 65 native web tests passed, including seven focused PCR projection fixtures.
+The combined Trunk web/worker build passed and port 8082 now serves the new immutable
+schema-54 snapshot, including the recent annotation, translation, enzyme-selection
+and historical-source work. The server loaded 45 assets (210,781,733 bytes) into RAM,
+retains old versioned workers, and exposes no filesystem API or writes. No browser
+or HTTP smoke checks were run. Index SHA-256:
+`982729a5963514a86eab2886a051f024afcfee97094a70b17a70ea736f25c206`.
+
 ## Selected translation and linked protein outputs
 
 The biology inspector now translates an exact selected location or whole reference,

@@ -99,9 +99,10 @@ concrete connections:
   synchronized source overlays. Improve domain/tail boundary editing and local failure
   recovery using the existing primer model and native checks.
 - Annotation list/bulk operations and exact-event display preferences are now
-  implemented ([details](ANNOTATION_MANAGEMENT.md)). Continue with direct
-  source-linked translation/CDS workflows, then retained diagnostic digest and
-  comparison presentation.
+  implemented ([details](ANNOTATION_MANAGEMENT.md)). Exact selected translation,
+  source-linked protein outputs, review-required CDS proposals and full ORF
+  selection are now connected ([details](TRANSLATION_REFERENCE.md)). Continue with
+  retained diagnostic digest and comparison presentation.
 - After ordinary designs, implement genuine alternative source bins and per-combination
   output identity over the shared compiler. Reaction-product enumeration alone does
   not complete combinatorial cloning. Inspectable fusion-end proposals and intentional

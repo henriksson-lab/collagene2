@@ -1,0 +1,286 @@
+//! Source-bound binary translation and output requests; no external executables.
+use collagene_core::{
+    Alphabet, Error, Feature, Location, Molecule, Topology,
+    protocol::{self, AnalysisJob, AnalysisResult, Request, Response},
+    translation::TranslationOptions,
+    translation_reference::{self, Selection},
+};
+fn fixture(cds: bool) -> translation_reference::Request {
+    let mut source =
+        Molecule::dna("original template", "ATGAAACCCGGGTTTTAA", Topology::Linear).unwrap();
+    source.features.push(Feature {
+        kind: "CDS".into(),
+        location: Location::range(0, 18),
+        qualifiers: vec![
+            ("label".into(), Some("whole protein".into())),
+            ("translation".into(), Some("MKPGF".into())),
+        ],
+        needs_review: false,
+    });
+    let selection = if cds {
+        Selection::Cds { feature_index: 0 }
+    } else {
+        Selection::Region {
+            location: Location::Join(vec![Location::range(0, 6), Location::range(12, 18)]),
+            options: TranslationOptions::default(),
+        }
+    };
+    translation_reference::Request { source, selection }
+}
+fn job(request: translation_reference::Request, output: bool) -> Request {
+    let name = "translated protein";
+    let revision = if output {
+        translation_reference::output_revision(&request, name).unwrap()
+    } else {
+        translation_reference::inspect_revision(&request).unwrap()
+    };
+    Request {
+        id: 54,
+        revision,
+        job: if output {
+            AnalysisJob::PrepareTranslatedReference {
+                request,
+                name: name.into(),
+            }
+        } else {
+            AnalysisJob::TranslateReference { request }
+        },
+    }
+}
+fn roundtrip(request: &Request) -> (Vec<u8>, Response) {
+    let wire = protocol::process_request(&protocol::encode_request(request).unwrap()).unwrap();
+    let response = protocol::decode_response(&wire).unwrap();
+    assert_eq!(response.id, request.id);
+    assert_eq!(response.revision, request.revision);
+    (wire, response)
+}
+fn tag(wire: &[u8]) -> u32 {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&wire[42..]).unwrap();
+    tag
+}
+fn response_wire(response: &Response) -> Vec<u8> {
+    let body = postcard::to_allocvec(response).unwrap();
+    let mut wire = b"CGR\0".to_vec();
+    wire.extend_from_slice(&protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
+    wire.extend_from_slice(&(body.len() as u32).to_le_bytes());
+    wire.extend_from_slice(blake3::hash(&body).as_bytes());
+    wire.extend(body);
+    wire
+}
+#[test]
+fn compound_region_and_cds_binary_outputs_have_independent_expected_proteins() {
+    for cds in [false, true] {
+        let input = fixture(cds);
+        let original = input.source.clone();
+        let expected = if cds { "MKPGF" } else { "MKF*" };
+        let request = job(input.clone(), false);
+        assert_eq!(tag(&protocol::encode_request(&request).unwrap()), 122);
+        let (wire, response) = roundtrip(&request);
+        assert_eq!(tag(&wire), 114);
+        let AnalysisResult::TranslatedReference(report) = response.result else {
+            panic!("missing translation report")
+        };
+        report.validate_binding(&request.revision).unwrap();
+        report.validate_sources(&input).unwrap();
+        assert_eq!(report.protein, expected);
+        assert_eq!(report.source_revision, original.revision());
+        assert_eq!(report.cds.is_some(), cds);
+        let output = job(input.clone(), true);
+        assert_ne!(output.revision, request.revision);
+        assert_eq!(tag(&protocol::encode_request(&output).unwrap()), 123);
+        let (wire, response) = roundtrip(&output);
+        assert_eq!(tag(&wire), 115);
+        let AnalysisResult::TranslatedOutputs(outputs) = response.result else {
+            panic!("missing translated output")
+        };
+        outputs.validate_binding(&output.revision).unwrap();
+        outputs
+            .validate_sources(&input, "translated protein")
+            .unwrap();
+        assert_eq!(outputs.protein.sequence.as_str(), expected);
+        assert_eq!(outputs.protein.sequence.alphabet(), Alphabet::Protein);
+        assert_eq!(outputs.protein.topology, Topology::Linear);
+        assert_eq!(outputs.protein.name, "translated protein");
+        assert_eq!(input.source, original);
+    }
+}
+#[test]
+fn reverse_compound_location_uses_source_orientation() {
+    let mut input = fixture(false);
+    if let Selection::Region { location, .. } = &mut input.selection {
+        *location = Location::Complement(Box::new(location.clone()));
+    }
+    let (_, response) = roundtrip(&job(input, false));
+    let AnalysisResult::TranslatedReference(report) = response.result else {
+        panic!("missing translation report")
+    };
+    // reverse-complement(ATGAAATTTTAA) = TTAAAATTTCAT.
+    assert_eq!(report.protein, "LKFH");
+}
+#[test]
+fn stale_source_options_output_name_and_context_fail_before_computation() {
+    for output in [false, true] {
+        let request = job(fixture(false), output);
+        let mut stale = request.clone();
+        stale.revision = "0".repeat(64);
+        assert!(protocol::process_request(&protocol::encode_request(&stale).unwrap()).is_err());
+        let mut source = request.clone();
+        match &mut source.job {
+            AnalysisJob::TranslateReference { request }
+            | AnalysisJob::PrepareTranslatedReference { request, .. } => {
+                request.source.name = "different exact source".into()
+            }
+            _ => unreachable!(),
+        }
+        assert!(protocol::process_request(&protocol::encode_request(&source).unwrap()).is_err());
+        let mut options = request.clone();
+        match &mut options.job {
+            AnalysisJob::TranslateReference { request }
+            | AnalysisJob::PrepareTranslatedReference { request, .. } => {
+                if let Selection::Region { options, .. } = &mut request.selection {
+                    options.frame = 1;
+                }
+            }
+            _ => unreachable!(),
+        }
+        assert!(protocol::process_request(&protocol::encode_request(&options).unwrap()).is_err());
+        if output {
+            let mut changed = request.clone();
+            if let AnalysisJob::PrepareTranslatedReference { name, .. } = &mut changed.job {
+                *name = "another protein".into();
+            }
+            assert!(
+                protocol::process_request(&protocol::encode_request(&changed).unwrap()).is_err()
+            );
+        }
+    }
+}
+#[test]
+fn schema54_discriminators_reject_schema53_body_prefixes_and_full_envelopes() {
+    for (output, job_tag, result_tag) in [(false, 122, 114), (true, 123, 115)] {
+        let request = job(fixture(false), output);
+        let request_wire = protocol::encode_request(&request).unwrap();
+        let (reply_wire, _) = roundtrip(&request);
+        for (wire, is_response, expected_tag) in [
+            (&request_wire, false, job_tag),
+            (&reply_wire, true, result_tag),
+        ] {
+            assert_eq!(tag(wire), expected_tag);
+            let mut old = wire.clone();
+            old[4..6].copy_from_slice(&53u16.to_le_bytes());
+            let rejected = if is_response {
+                protocol::decode_response(&old).map(|_| ())
+            } else {
+                protocol::process_request(&old).map(|_| ())
+            };
+            assert!(matches!(rejected, Err(Error::Unsupported(_))));
+            // No new variant body exists; the new selector's minimum schema is
+            // checked before payload decoding or the deliberately stale checksum.
+            let body =
+                postcard::to_allocvec(&(request.id, request.revision.as_str(), expected_tag))
+                    .unwrap();
+            let mut prefix = wire[..42].to_vec();
+            prefix[4..6].copy_from_slice(&53u16.to_le_bytes());
+            prefix[6..10].copy_from_slice(&(body.len() as u32).to_le_bytes());
+            prefix.extend(body);
+            let rejected = if is_response {
+                protocol::decode_response(&prefix).map(|_| ())
+            } else {
+                protocol::process_request(&prefix).map(|_| ())
+            };
+            assert!(matches!(rejected, Err(Error::Unsupported(_))));
+        }
+    }
+}
+#[test]
+fn translated_response_validation_rejects_wrong_context_and_inconsistent_native_content() {
+    for output in [false, true] {
+        let (_, response) = roundtrip(&job(fixture(false), output));
+        let mut wrong = response.clone();
+        wrong.revision = "0".repeat(64);
+        assert!(protocol::decode_response(&response_wire(&wrong)).is_err());
+        let mut malformed = response.clone();
+        match &mut malformed.result {
+            AnalysisResult::TranslatedReference(report) => {
+                report.translation.translated_codons = usize::MAX
+            }
+            AnalysisResult::TranslatedOutputs(outputs) => {
+                outputs.protein = Molecule::dna("wrong alphabet", "ACG", Topology::Linear).unwrap()
+            }
+            _ => unreachable!(),
+        }
+        assert!(protocol::decode_response(&response_wire(&malformed)).is_err());
+    }
+}
+#[test]
+fn ordinary_32_mib_caps_apply_to_both_jobs_and_results() {
+    let maximum = collagene_core::formats::MAX_IMPORT_BYTES;
+    // One reusable oversized envelope establishes that these selectors cannot
+    // claim the separate 128 MiB workspace budget, before checksum/body decode.
+    let mut oversized = vec![0; 42 + maximum + 1];
+    oversized[4..6].copy_from_slice(&protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
+    oversized[6..10].copy_from_slice(&((maximum + 1) as u32).to_le_bytes());
+    for (magic, selector, response) in [
+        (b"CGQ\0", 122, false),
+        (b"CGQ\0", 123, false),
+        (b"CGR\0", 114, true),
+        (b"CGR\0", 115, true),
+    ] {
+        oversized[..4].copy_from_slice(magic);
+        let body = postcard::to_allocvec(&(54u32, "context", selector as u32)).unwrap();
+        oversized[42..42 + body.len()].copy_from_slice(&body);
+        let rejected = if response {
+            protocol::decode_response(&oversized).map(|_| ())
+        } else {
+            protocol::process_request(&oversized).map(|_| ())
+        };
+        assert!(matches!(rejected, Err(Error::TooLarge)));
+    }
+    drop(oversized);
+    let mut input = fixture(false);
+    input.source.original_genbank = Some("a".repeat(maximum + 1));
+    // A caller-provided envelope revision cannot make oversized original source
+    // evidence eligible for the workspace-only serialization exception.
+    let request = Request {
+        id: 54,
+        revision: "0".repeat(64),
+        job: AnalysisJob::TranslateReference { request: input },
+    };
+    assert!(matches!(
+        protocol::encode_request(&request),
+        Err(Error::TooLarge)
+    ));
+}
+#[test]
+fn old_schema53_reference_transfer_layout_and_version_floor_are_retained() {
+    use collagene_core::reference_transfer::{self, Part, RequestCopy, Selection};
+    let input = RequestCopy {
+        source: fixture(false).source,
+        selection: Selection {
+            parts: vec![Part {
+                start: 0,
+                end: 6,
+                reverse: false,
+            }],
+            reverse: false,
+        },
+    };
+    let request = Request {
+        id: 53,
+        revision: reference_transfer::copy_revision(&input).unwrap(),
+        job: AnalysisJob::CopyReferenceFragment { request: input },
+    };
+    let mut wire = protocol::encode_request(&request).unwrap();
+    assert_eq!(tag(&wire), 120);
+    wire[4..6].copy_from_slice(&53u16.to_le_bytes());
+    let response = protocol::process_request(&wire).unwrap();
+    assert_eq!(tag(&response), 112);
+    let mut old_response = response.clone();
+    old_response[4..6].copy_from_slice(&53u16.to_le_bytes());
+    assert!(protocol::decode_response(&old_response).is_ok());
+    wire[4..6].copy_from_slice(&52u16.to_le_bytes());
+    assert!(matches!(
+        protocol::process_request(&wire),
+        Err(Error::Unsupported(_))
+    ));
+}

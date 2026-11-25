@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 53;
+pub const WORKER_SCHEMA_VERSION: u16 = 54;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 11;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -742,6 +742,13 @@ pub enum AnalysisJob {
     PasteReferenceFragment {
         request: crate::reference_transfer::RequestPaste,
     },
+    TranslateReference {
+        request: crate::translation_reference::Request,
+    },
+    PrepareTranslatedReference {
+        request: crate::translation_reference::Request,
+        name: String,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -865,6 +872,8 @@ pub enum AnalysisResult {
     ReviewedComparison(crate::pairwise_review::Report),
     ReferenceFragment(crate::reference_transfer::Fragment),
     ReferencePaste(crate::reference_transfer::Report),
+    TranslatedReference(crate::translation_reference::Report),
+    TranslatedOutputs(crate::translation_reference::Outputs),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1129,6 +1138,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_mismatch_pcr_outputs_tag(bytes, &[110])?;
     preflight_pairwise_review_tag(bytes, &[111])?;
     preflight_reference_transfer_tag(bytes, &[112, 113])?;
+    preflight_translation_reference_tag(bytes, &[114, 115])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1186,6 +1196,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         AnalysisResult::MismatchPcrOutputs(_) => 51,
         AnalysisResult::ReviewedComparison(_) => 52,
         AnalysisResult::ReferenceFragment(_) | AnalysisResult::ReferencePaste(_) => 53,
+        AnalysisResult::TranslatedReference(_) | AnalysisResult::TranslatedOutputs(_) => 54,
         AnalysisResult::GoldenGateReaction(_) | AnalysisResult::GoldenGateReactionCandidate(_) => {
             49
         }
@@ -1346,6 +1357,12 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
         AnalysisResult::ReferencePaste(report) => {
             report.validate_binding(&response.revision)?;
+        }
+        AnalysisResult::TranslatedReference(report) => {
+            report.validate_binding(&response.revision)?;
+        }
+        AnalysisResult::TranslatedOutputs(outputs) => {
+            outputs.validate_binding(&response.revision)?;
         }
         AnalysisResult::GoldenGateReaction(report) => {
             report.validate_binding(&response.revision)?
@@ -1828,6 +1845,14 @@ fn preflight_topo_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     }
     Ok(())
 }
+fn preflight_translation_reference_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 54)?;
+    }
+    Ok(())
+}
 fn preflight_reference_transfer_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -2255,6 +2280,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_mismatch_pcr_outputs_tag(bytes, &[118])?;
     preflight_pairwise_review_tag(bytes, &[119])?;
     preflight_reference_transfer_tag(bytes, &[120, 121])?;
+    preflight_translation_reference_tag(bytes, &[122, 123])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -2267,6 +2293,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         AnalysisJob::CompareSequences { .. } => 52,
         AnalysisJob::CopyReferenceFragment { .. } => 53,
         AnalysisJob::PasteReferenceFragment { .. } => 53,
+        AnalysisJob::TranslateReference { .. } => 54,
+        AnalysisJob::PrepareTranslatedReference { .. } => 54,
         AnalysisJob::InspectGoldenGateReaction { .. }
         | AnalysisJob::SelectGoldenGateReaction { .. } => 49,
         AnalysisJob::BuildEditedAssemblyIntent { .. }
@@ -2671,6 +2699,22 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             if crate::reference_transfer::paste_revision(request)? != r.revision {
                 return Err(Error::Format(
                     "Reference paste sources or selection changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::TranslateReference { request } => {
+            if crate::translation_reference::inspect_revision(request)? != r.revision {
+                return Err(Error::Format(
+                    "Translation source or selection changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::PrepareTranslatedReference { request, name } => {
+            if crate::translation_reference::output_revision(request, name)? != r.revision {
+                return Err(Error::Format(
+                    "Translation source, selection or output name changed".into(),
                 ));
             }
             None
@@ -3395,6 +3439,13 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
         AnalysisJob::PasteReferenceFragment { request } => {
             crate::reference_transfer::paste(&request).map(AnalysisResult::ReferencePaste)
+        }
+        AnalysisJob::TranslateReference { request } => {
+            crate::translation_reference::inspect(&request).map(AnalysisResult::TranslatedReference)
+        }
+        AnalysisJob::PrepareTranslatedReference { request, name } => {
+            crate::translation_reference::prepare(&request, &name)
+                .map(AnalysisResult::TranslatedOutputs)
         }
         AnalysisJob::SelectGoldenGateReaction { report, selection } => {
             crate::golden_gate_reaction::select(&report, &selection)

@@ -115,6 +115,10 @@ mod workspace_view;
 
 #[cfg(target_arch = "wasm32")]
 mod biology;
+#[cfg(any(target_arch = "wasm32", test))]
+mod biology_selection;
+#[cfg(target_arch = "wasm32")]
+mod biology_source_view;
 #[cfg(target_arch = "wasm32")]
 mod compare;
 #[cfg(target_arch = "wasm32")]

@@ -34,6 +34,15 @@ with native-workspace display preferences and synchronized map/sequence hiding.
 The annotation recommendations below remain research history; the source-linked
 translation/CDS and digest/comparison connections remain outstanding.
 
+## Translation implementation follow-up
+
+Exact selected-region translation, retained CDS proposals, linked protein outputs
+and full compound ORF navigation are now connected. Protein origins retain exact
+source events and reopen historical versions read-only. Full protein/ORF paging
+replaces the earlier preview truncation. [Policies and implementation](TRANSLATION_REFERENCE.md).
+The translation recommendation below remains research history; named digest/gel
+and comparison presentation remain outstanding.
+
 ## Remaining actionable connections
 
 The following are recommendations inferred by comparing those documented interactions with source. They are not statements about Benchling internals.

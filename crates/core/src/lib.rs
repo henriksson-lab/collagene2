@@ -21,10 +21,11 @@ pub mod traces;
 
 pub mod svg;
 
-pub mod annotations;
 pub mod annotation_batch;
+pub mod annotations;
 
 pub mod translation;
+pub mod translation_reference;
 
 pub mod alignment;
 pub mod pairwise_review;

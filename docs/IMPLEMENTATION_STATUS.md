@@ -14,6 +14,22 @@ is postponed until the rest of the software is implemented. Existing modules are
 retained; no more alignment/index features or integration are scheduled now.
 Browser checks remain deferred and compiler checks run alongside coding.
 
+## Selected translation and linked protein outputs
+
+The biology inspector now translates an exact selected location or whole reference,
+with explicit frame/orientation/initiation policy, and retains the separate
+qualifier-directed CDS route. Complete protein review is paged and exports FASTA.
+Fresh source reconstruction precedes named protein creation or a review-required
+CDS proposal. Protein documents retain exact nucleotide-event ancestry, selection,
+codon options and warnings; the origin action opens the retained historical source
+without changing its head. ORF paging and selection retain all compound spans and
+biological orientation. [Semantics and source linkage](TRANSLATION_REFERENCE.md).
+
+Focused native validation passed: 11 translation/output fixtures, seven binary
+protocol/version/budget fixtures and 58 native web tests, including compound
+selection and historical-origin ownership. The final web WASM compile passed.
+Browser checks and preview publication were not performed for this checkpoint.
+
 ## Annotation management
 
 Annotations now have a searchable paged table, source-bound multi-selection and

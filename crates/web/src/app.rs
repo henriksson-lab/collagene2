@@ -793,6 +793,7 @@ pub fn App() -> impl IntoView {
         RwSignal::new(None::<std::sync::Arc<crate::reference_transfer_view::Copied>>);
     let pending_reference_paste = RwSignal::new(None::<crate::reference_transfer_view::PasteOpen>);
     let pending_comparison_source = RwSignal::new(None::<crate::pairwise_source_view::Snapshot>);
+    let pending_translation_source = RwSignal::new(None::<crate::pairwise_source_view::Snapshot>);
     let pending_run_event = RwSignal::new(None::<std::sync::Arc<crate::run_event_model::Snapshot>>);
     let run_page = RwSignal::new(0usize);
     let oligo_tables = RwSignal::new(Vec::<
@@ -855,6 +856,7 @@ pub fn App() -> impl IntoView {
         })
     });
     let search_regions = RwSignal::new(None::<(String, Vec<(usize, usize)>)>);
+    let biology_directed = RwSignal::new(None::<crate::biology_selection::DirectedSelection>);
     let highlighted_spans = Memo::new(move |_| {
         if let Some(feature) = inspected_feature.get() {
             return feature
@@ -3390,6 +3392,45 @@ pub fn App() -> impl IntoView {
             })
         },
     );
+    let biology_selection_location = Callback::new(move |()| {
+        molecule.with_untracked(|m| {
+            let source = documents
+                .with_untracked(|docs| current_event_binding(&docs[active.get_untracked()]));
+            crate::biology_selection::capture(
+                m,
+                &source,
+                selected_feature.get_untracked(),
+                selection.get_untracked(),
+                search_regions.get_untracked().as_ref(),
+                biology_directed.get_untracked().as_ref(),
+            )
+        })
+    });
+    let select_biology_location = Callback::new(
+        move |(revision, location): (String, Location)| -> Result<(), String> {
+            if workspace_restoring.get_untracked() || molecule_revision.get_untracked() != revision
+            {
+                return Err("The ORF source changed; rerun the analysis.".into());
+            }
+            let source = documents
+                .with_untracked(|docs| current_event_binding(&docs[active.get_untracked()]));
+            let directed = molecule.with_untracked(|m| {
+                crate::biology_selection::DirectedSelection::new(source, m, location)
+            })?;
+            batch(|| {
+                selected_feature.set(None);
+                selection.set(directed.contiguous());
+                search_regions.set(Some((revision, directed.spans.clone())));
+                biology_directed.set(Some(directed));
+            });
+            Ok(())
+        },
+    );
+    Effect::new(move |_| {
+        let _ = workspace_epoch.get();
+        biology_directed.set(None);
+        pending_translation_source.set(None);
+    });
     let reference_paste_guard = Callback::new(
         move |opened: crate::reference_transfer_view::PasteOpen| -> Result<(), String> {
             if workspace_restoring.get_untracked()
@@ -3865,6 +3906,184 @@ pub fn App() -> impl IntoView {
             })
         })
     });
+    let open_translated_protein = Callback::new(
+        move |output: crate::biology::ProteinOutput| -> Result<(), String> {
+            if workspace_restoring.get_untracked()
+                || workspace_epoch.get_untracked() != output.epoch
+            {
+                return Err("The workspace changed; translate again.".into());
+            }
+            let index = active.get_untracked();
+            let mut docs = documents.get_untracked();
+            let source = docs
+                .get(index)
+                .ok_or("The translation source is unavailable.")?;
+            if current_event_binding(source) != output.source
+                || source.molecule != output.request.source
+            {
+                return Err("The exact translation source event changed; translate again.".into());
+            }
+            output
+                .outputs
+                .validate_sources(&output.request, &output.name)
+                .map_err(|e| e.to_string())?;
+            let mut protein = output.outputs.protein.clone();
+            protein.metadata.insert(
+                "translation:source_document".into(),
+                output.source.document_id.clone(),
+            );
+            protein.metadata.insert(
+                "translation:source_event".into(),
+                output.source.event_id.clone(),
+            );
+            let location = serde_json::to_string(&output.outputs.report.effective_location)
+                .map_err(|e| e.to_string())?;
+            if location.len() > 512 * 1024 {
+                return Err("Translation location evidence exceeds its output limit.".into());
+            }
+            protein
+                .metadata
+                .insert("translation:source_location".into(), location);
+            let selection_evidence =
+                serde_json::to_string(&output.request.selection).map_err(|e| e.to_string())?;
+            if selection_evidence.len() > 512 * 1024 {
+                return Err("Translation policy evidence exceeds its output limit.".into());
+            }
+            protein
+                .metadata
+                .insert("translation:selection".into(), selection_evidence);
+            protein.metadata.insert(
+                "translation:options".into(),
+                serde_json::to_string(&output.outputs.report.translation.options)
+                    .map_err(|e| e.to_string())?,
+            );
+            protein
+                .metadata
+                .insert("translation:output_name".into(), output.name.clone());
+            protein.metadata.insert(
+                "translation:warnings".into(),
+                serde_json::to_string(&output.outputs.report.warnings)
+                    .map_err(|e| e.to_string())?,
+            );
+            let prefix = format!("protein-{}", &protein.revision()[..16]);
+            let mut suffix = 1usize;
+            let id = loop {
+                let id = format!("{prefix}-{suffix}");
+                if !docs.iter().any(|d| d.id == id) {
+                    break id;
+                }
+                suffix += 1;
+            };
+            let derived=source.derive_event(&output.source.event_id,id,protein,
+            "Computed reference translation; source codon policy retained, expression and experimental outcome unverified")
+            .map_err(|e|e.to_string())?;
+            let new_index = docs.len();
+            docs.push(derived);
+            if docs.len() > 1000
+                || docs
+                    .iter()
+                    .map(|d| document_bytes(&d.molecule))
+                    .sum::<usize>()
+                    > MAX_WORKSPACE_BYTES
+            {
+                return Err(
+                    "The linked protein exceeds this workspace's document or size limit.".into(),
+                );
+            }
+            let frame = workspace_snapshot(
+                &docs,
+                new_index,
+                candidate.get_untracked().as_ref(),
+                &stored_candidates.get_untracked(),
+                &attachments.get_untracked(),
+                &workspace_name.get_untracked(),
+            )?;
+            frame.validate().map_err(|e| e.to_string())?;
+            batch(|| {
+                documents.set(docs);
+                active.set(new_index);
+                selected_feature.set(None);
+                selection.set(None);
+                search_regions.set(None);
+            });
+            message.set(
+                "Opened the computed protein with its exact nucleotide source event retained."
+                    .into(),
+            );
+            Ok(())
+        },
+    );
+    let retain_translation_cds = Callback::new(
+        move |output: crate::biology::AnnotationOutput| -> Result<(), String> {
+            if workspace_restoring.get_untracked()
+                || workspace_epoch.get_untracked() != output.epoch
+            {
+                return Err("The workspace changed; translate again.".into());
+            }
+            let current = documents
+                .with_untracked(|docs| docs.get(active.get_untracked()).map(current_event_binding));
+            if current.as_ref() != Some(&output.source)
+                || molecule.with_untracked(|m| m != &output.request.source)
+            {
+                return Err("The exact translation source event changed; translate again.".into());
+            }
+            output
+                .outputs
+                .validate_sources(&output.request, &output.name)
+                .map_err(|e| e.to_string())?;
+            let feature = output
+                .outputs
+                .annotation
+                .clone()
+                .ok_or("This existing-CDS translation has no new annotation proposal.")?;
+            let edited = editing::set_feature(&output.request.source, None, feature)
+                .map_err(|e| e.to_string())?;
+            commit_document(
+                documents,
+                active,
+                workspace_restoring,
+                &output.source.revision,
+                edited,
+            )?;
+            message.set("Retained a CDS proposal requiring review. Its notes retain the chosen frame policy; biological CDS initiation can differ.".into());
+            Ok(())
+        },
+    );
+    let open_translation_origin = Callback::new(
+        move |source: collagene_core::run_lineage::EventBinding| -> Result<(), String> {
+            if workspace_restoring.get_untracked() {
+                return Err("Wait for the workspace update to finish.".into());
+            }
+            let frame = contig_snapshot.run(())?;
+            let protein = documents
+                .with_untracked(|docs| current_event_binding(&docs[active.get_untracked()]));
+            let original = crate::biology_selection::origin(&frame, &protein, &source)?;
+            let spans = molecule
+                .with_untracked(|m| m.metadata.get("translation:source_location").cloned())
+                .filter(|text| text.len() <= 512 * 1024)
+                .map(|text| {
+                    serde_json::from_str::<Location>(&text)
+                        .map_err(|e| e.to_string())
+                        .and_then(|location| {
+                            collagene_core::restriction_selection::footprint(
+                                &location,
+                                original.sequence.len(),
+                            )
+                            .map_err(|e| e.to_string())
+                        })
+                })
+                .transpose()?
+                .unwrap_or_default();
+            pending_translation_source.set(Some(crate::pairwise_source_view::Snapshot {
+                source,
+                epoch: workspace_epoch.get_untracked(),
+                molecule: std::sync::Arc::new(original.clone()),
+                spans,
+            }));
+            modal.set("translation_source");
+            Ok(())
+        },
+    );
     let set_annotation_visibility = Callback::new(
         move |(indices, hide): (Vec<usize>, bool)| -> Result<(), String> {
             if workspace_restoring.get_untracked() {
@@ -4916,7 +5135,7 @@ pub fn App() -> impl IntoView {
                                         frame.validate().map_err(|e|e.to_string())?;
                                         batch(||{documents.set(docs);active.set(first);});Ok(())
                                     })/></Show>
-                                    <Show when=move||panel.get()=="biology"><crate::biology::BiologyPanel molecule=molecule selected_feature=selected_feature selection=selection on_annotate=Callback::new(move|(base,feature):(String,Feature)|{let current=molecule.get_untracked();if current.revision()!=base{return Err("The document changed; rerun ORF analysis before annotating it.".into());}let edited=editing::set_feature(&current,None,feature).map_err(|e|e.to_string())?;commit_document(documents,active,workspace_restoring,&base,edited)})/><crate::protein_properties::ProteinPanel molecule=molecule/></Show>
+                                    <Show when=move||panel.get()=="biology"><Show when=move||molecule.with(|m|m.sequence.alphabet()!=Alphabet::Protein)><crate::biology::BiologyPanel source=Memo::new(move|_|documents.with(|docs|recombination_source_info(&docs[active.get()]))) epoch=workspace_epoch selection_location=biology_selection_location on_select_location=select_biology_location on_open_protein=open_translated_protein on_retain_cds=retain_translation_cds molecule=molecule selected_feature=selected_feature selection=selection on_annotate=Callback::new(move|(base,feature):(String,Feature)|{let current=molecule.get_untracked();if current.revision()!=base{return Err("The document changed; rerun ORF analysis before annotating it.".into());}let edited=editing::set_feature(&current,None,feature).map_err(|e|e.to_string())?;commit_document(documents,active,workspace_restoring,&base,edited)})/></Show><crate::biology_source_view::TranslationSourceLink molecule on_open=open_translation_origin/><crate::protein_properties::ProteinPanel molecule=molecule/></Show>
                                     <Show when=move||panel.get()=="dotplot"><crate::dotplot::DotPlotPanel molecule=molecule active_index=Memo::new(move|_|active.get()) source_identity=Memo::new(move|_|documents.with(|docs|format!("{}:{}",docs[active.get()].id,docs[active.get()].head_event()))) query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,format!("{} [{}]",d.molecule.name,d.id))).collect())) query_info=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|crate::dotplot::QueryInfo{identity:format!("{}:{}",d.id,d.head_event()),revision:d.molecule.revision(),name:d.molecule.name.clone(),length:d.molecule.sequence.len(),alphabet:d.molecule.sequence.alphabet()}))) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone()))) epoch=workspace_epoch on_navigate=Callback::new(move|(query,index,spans):(bool,usize,Vec<(usize,usize)>)|{
                                         if workspace_restoring.get_untracked(){return;}
                                         let index=if query{index}else{active.get_untracked()};
@@ -4960,7 +5179,7 @@ pub fn App() -> impl IntoView {
                         </main>
                     </div>
                     </div>
-                    <Show when=move||modal.get()!=""><div class="modal-backdrop"><section class="modal" class:alignment-modal=move||modal.get()=="alignments" class:read-review-modal=move||modal.get()=="read_review"||modal.get()=="run_event"||modal.get()=="comparison_source" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><div class="modal-heading"><h2 id="dialog-title">{move||if modal.get()=="variants"{"Variant source"}else if modal.get()=="read_alignments"{"Read alignments"}else if modal.get()=="digest_product"{"Open virtual digest fragment"}else if modal.get()=="crispr_product"{"Open checked sequence design"}else if modal.get()=="contig_archive"{"Record read assembly"}else if modal.get()=="saved_contig"{"Saved read assembly"}else if modal.get()=="read_review"{"Review sequencing differences"}else if modal.get()=="read_review_commit"{"Save read-review decisions"}else if modal.get()=="read_check_capture"{"Save sequencing check"}else if modal.get()=="assembly_finalize"{"Create assembly outputs"}else if modal.get()=="record_run"{"Keep reconstructed products"}else if modal.get()=="run_details"{"Recorded reconstruction"}else if modal.get()=="run_event"{"Recorded sequence version"}else if modal.get()=="comparison_source"{"Comparison source version"}else if modal.get()=="reference_paste"{"Paste annotated reference"}else if modal.get()=="alignments"{"Alignments"}else if modal.get()=="workspace"{"Workspace"}else if modal.get()=="oligos"{"Oligo table"}else if modal.get()=="fastq"{"Import FASTQ reads"}else if modal.get()=="import"{"Open a sequence"}else if modal.get()=="url"{"Import from a sequence source"}else if modal.get()=="feature"{"Edit annotation"}else if modal.get()=="document"{"Document settings"}else if molecule.with(|m|m.sequence.alphabet()==Alphabet::Protein){"Edit selected residues"}else{"Edit selected bases"}}</h2><button class="icon-button" aria-label="Close dialog" disabled=move||workspace_restoring.get() on:click=move|_|{if !workspace_restoring.get_untracked(){modal.set("");pending_finalize.set(None);pending_run_event.set(None);pending_comparison_source.set(None);pending_reference_paste.set(None);pending_read_check.set(None);pending_read_review.set(None);reviewed_check.set(None);review_seed.set(None);}}>"×"</button></div><Show when=move||!modal_error.get().is_empty()><p class="dialog-error" role="alert">{move||modal_error.get()}</p></Show><Show when=move||modal.get()=="digest_product">{move||pending_digest.get_untracked().map(|request|view!{<crate::digest_product::DigestOpenPanel request=request snapshot=contig_snapshot validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=contig_restore db=db busy=workspace_restoring loaded=loaded save_generation=save_generation epoch=workspace_epoch message=message/>})}</Show><Show when=move||modal.get()=="crispr_product">{move||pending_donor.get_untracked().map(|request|view!{<crate::crispr::DonorOpenPanel request=request snapshot=contig_snapshot validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=contig_restore db=db busy=workspace_restoring loaded=loaded save_generation=save_generation epoch=workspace_epoch message=message/>})}</Show><Show when=move||modal.get()=="contig_archive">{move||pending_assembly.get_untracked().map(|request|view!{<crate::contigs::ContigArchivePanel request=request snapshot=contig_snapshot validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=contig_restore db=db busy=workspace_restoring loaded=loaded save_generation=save_generation epoch=workspace_epoch message=message/>})}</Show><Show when=move||modal.get()=="saved_contig"><crate::contigs::SavedAssemblyPanel attachment_hash=inspected_assembly.get_untracked() snapshot=contig_snapshot epoch=workspace_epoch on_record=record_assembly on_navigate=navigate_read_call/></Show><Show when=move||modal.get()=="record_run">{move||last_plan.get_untracked().map(|(plan,_)|view!{<crate::run_capture::RunCapturePanel plan=plan preferred_bindings=last_plan_events.get_untracked().filter(|(revision,_)|last_plan.get_untracked().is_some_and(|(p,_)|verification::plan_revision(&p)==*revision)).map(|(_,bindings)|bindings).unwrap_or_default() snapshot=Callback::new(move|()|documents.with_untracked(|docs|stored_candidates.with_untracked(|plans|attachments.with_untracked(|assets|candidate.with_untracked(|current|workspace_snapshot(docs,active.get_untracked(),current.as_ref(),plans,assets,&workspace_name.get_untracked())))))) validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=Callback::new(move|frame:collagene_core::workspace::Workspace|match restore_workspace_state(&frame){Ok(state)=>batch(||apply_restored.run(state)),Err(e)=>message.set(e)}) db=db busy=workspace_restoring loaded=loaded save_generation=save_generation epoch=workspace_epoch message=message/>})}</Show><Show when=move||modal.get()=="reference_paste">{move||pending_reference_paste.get_untracked().map(|opened|view!{<crate::reference_transfer_view::ReferencePastePanel opened guard=reference_paste_guard on_apply=apply_reference_paste on_cancel=Callback::new(move|()|{pending_reference_paste.set(None);modal.set("");})/>})}</Show><Show when=move||modal.get()=="comparison_source">{move||pending_comparison_source.get().map(|snapshot|view!{<crate::pairwise_source_view::PairwiseSourceView snapshot epoch=workspace_epoch on_back=Callback::new(move|()|{pending_comparison_source.set(None);modal.set("");})/>})}</Show><Show when=move||modal.get()=="run_event">{move||pending_run_event.get().map(|snapshot|view!{<crate::run_event_view::RunEventPanel snapshot epoch=workspace_epoch on_fork=fork_run_event on_back=back_to_run/>})}</Show><Show when=move||modal.get()=="run_details"><crate::run_capture::RunDetailsPanel snapshot=Callback::new(move|()|documents.with_untracked(|docs|stored_candidates.with_untracked(|plans|attachments.with_untracked(|assets|candidate.with_untracked(|current|workspace_snapshot(docs,active.get_untracked(),current.as_ref(),plans,assets,&workspace_name.get_untracked())))))) run_id=selected_run.get_untracked() epoch=workspace_epoch on_open_event=open_run_event/></Show><Show when=move||modal.get()=="workspace"><crate::workspace_view::WorkspacePanel snapshot=Callback::new(move|()|documents.with_untracked(|docs|stored_candidates.with_untracked(|plans|attachments.with_untracked(|assets|candidate.with_untracked(|current|workspace_snapshot(docs,active.get_untracked(),current.as_ref(),plans,assets,&workspace_name.get_untracked())))))) validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=Callback::new(move|frame:collagene_core::workspace::Workspace|match restore_workspace_state(&frame){Ok(state)=>batch(||apply_restored.run(state)),Err(e)=>message.set(e)}) db=db busy=workspace_restoring loaded=loaded save_generation=save_generation message=message/></Show>
+                    <Show when=move||modal.get()!=""><div class="modal-backdrop"><section class="modal" class:alignment-modal=move||modal.get()=="alignments" class:read-review-modal=move||modal.get()=="read_review"||modal.get()=="run_event"||modal.get()=="comparison_source"||modal.get()=="translation_source" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><div class="modal-heading"><h2 id="dialog-title">{move||if modal.get()=="variants"{"Variant source"}else if modal.get()=="read_alignments"{"Read alignments"}else if modal.get()=="digest_product"{"Open virtual digest fragment"}else if modal.get()=="crispr_product"{"Open checked sequence design"}else if modal.get()=="contig_archive"{"Record read assembly"}else if modal.get()=="saved_contig"{"Saved read assembly"}else if modal.get()=="read_review"{"Review sequencing differences"}else if modal.get()=="read_review_commit"{"Save read-review decisions"}else if modal.get()=="read_check_capture"{"Save sequencing check"}else if modal.get()=="assembly_finalize"{"Create assembly outputs"}else if modal.get()=="record_run"{"Keep reconstructed products"}else if modal.get()=="run_details"{"Recorded reconstruction"}else if modal.get()=="run_event"{"Recorded sequence version"}else if modal.get()=="comparison_source"{"Comparison source version"}else if modal.get()=="translation_source"{"Original translation source"}else if modal.get()=="reference_paste"{"Paste annotated reference"}else if modal.get()=="alignments"{"Alignments"}else if modal.get()=="workspace"{"Workspace"}else if modal.get()=="oligos"{"Oligo table"}else if modal.get()=="fastq"{"Import FASTQ reads"}else if modal.get()=="import"{"Open a sequence"}else if modal.get()=="url"{"Import from a sequence source"}else if modal.get()=="feature"{"Edit annotation"}else if modal.get()=="document"{"Document settings"}else if molecule.with(|m|m.sequence.alphabet()==Alphabet::Protein){"Edit selected residues"}else{"Edit selected bases"}}</h2><button class="icon-button" aria-label="Close dialog" disabled=move||workspace_restoring.get() on:click=move|_|{if !workspace_restoring.get_untracked(){modal.set("");pending_finalize.set(None);pending_run_event.set(None);pending_comparison_source.set(None);pending_reference_paste.set(None);pending_read_check.set(None);pending_read_review.set(None);reviewed_check.set(None);review_seed.set(None);}}>"×"</button></div><Show when=move||!modal_error.get().is_empty()><p class="dialog-error" role="alert">{move||modal_error.get()}</p></Show><Show when=move||modal.get()=="digest_product">{move||pending_digest.get_untracked().map(|request|view!{<crate::digest_product::DigestOpenPanel request=request snapshot=contig_snapshot validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=contig_restore db=db busy=workspace_restoring loaded=loaded save_generation=save_generation epoch=workspace_epoch message=message/>})}</Show><Show when=move||modal.get()=="crispr_product">{move||pending_donor.get_untracked().map(|request|view!{<crate::crispr::DonorOpenPanel request=request snapshot=contig_snapshot validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=contig_restore db=db busy=workspace_restoring loaded=loaded save_generation=save_generation epoch=workspace_epoch message=message/>})}</Show><Show when=move||modal.get()=="contig_archive">{move||pending_assembly.get_untracked().map(|request|view!{<crate::contigs::ContigArchivePanel request=request snapshot=contig_snapshot validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=contig_restore db=db busy=workspace_restoring loaded=loaded save_generation=save_generation epoch=workspace_epoch message=message/>})}</Show><Show when=move||modal.get()=="saved_contig"><crate::contigs::SavedAssemblyPanel attachment_hash=inspected_assembly.get_untracked() snapshot=contig_snapshot epoch=workspace_epoch on_record=record_assembly on_navigate=navigate_read_call/></Show><Show when=move||modal.get()=="record_run">{move||last_plan.get_untracked().map(|(plan,_)|view!{<crate::run_capture::RunCapturePanel plan=plan preferred_bindings=last_plan_events.get_untracked().filter(|(revision,_)|last_plan.get_untracked().is_some_and(|(p,_)|verification::plan_revision(&p)==*revision)).map(|(_,bindings)|bindings).unwrap_or_default() snapshot=Callback::new(move|()|documents.with_untracked(|docs|stored_candidates.with_untracked(|plans|attachments.with_untracked(|assets|candidate.with_untracked(|current|workspace_snapshot(docs,active.get_untracked(),current.as_ref(),plans,assets,&workspace_name.get_untracked())))))) validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=Callback::new(move|frame:collagene_core::workspace::Workspace|match restore_workspace_state(&frame){Ok(state)=>batch(||apply_restored.run(state)),Err(e)=>message.set(e)}) db=db busy=workspace_restoring loaded=loaded save_generation=save_generation epoch=workspace_epoch message=message/>})}</Show><Show when=move||modal.get()=="reference_paste">{move||pending_reference_paste.get_untracked().map(|opened|view!{<crate::reference_transfer_view::ReferencePastePanel opened guard=reference_paste_guard on_apply=apply_reference_paste on_cancel=Callback::new(move|()|{pending_reference_paste.set(None);modal.set("");})/>})}</Show><Show when=move||modal.get()=="translation_source">{move||pending_translation_source.get().map(|snapshot|view!{<crate::biology_source_view::TranslationSourceView snapshot epoch=workspace_epoch on_back=Callback::new(move|()|{pending_translation_source.set(None);modal.set("");})/>})}</Show><Show when=move||modal.get()=="comparison_source">{move||pending_comparison_source.get().map(|snapshot|view!{<crate::pairwise_source_view::PairwiseSourceView snapshot epoch=workspace_epoch on_back=Callback::new(move|()|{pending_comparison_source.set(None);modal.set("");})/>})}</Show><Show when=move||modal.get()=="run_event">{move||pending_run_event.get().map(|snapshot|view!{<crate::run_event_view::RunEventPanel snapshot epoch=workspace_epoch on_fork=fork_run_event on_back=back_to_run/>})}</Show><Show when=move||modal.get()=="run_details"><crate::run_capture::RunDetailsPanel snapshot=Callback::new(move|()|documents.with_untracked(|docs|stored_candidates.with_untracked(|plans|attachments.with_untracked(|assets|candidate.with_untracked(|current|workspace_snapshot(docs,active.get_untracked(),current.as_ref(),plans,assets,&workspace_name.get_untracked())))))) run_id=selected_run.get_untracked() epoch=workspace_epoch on_open_event=open_run_event/></Show><Show when=move||modal.get()=="workspace"><crate::workspace_view::WorkspacePanel snapshot=Callback::new(move|()|documents.with_untracked(|docs|stored_candidates.with_untracked(|plans|attachments.with_untracked(|assets|candidate.with_untracked(|current|workspace_snapshot(docs,active.get_untracked(),current.as_ref(),plans,assets,&workspace_name.get_untracked())))))) validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=Callback::new(move|frame:collagene_core::workspace::Workspace|match restore_workspace_state(&frame){Ok(state)=>batch(||apply_restored.run(state)),Err(e)=>message.set(e)}) db=db busy=workspace_restoring loaded=loaded save_generation=save_generation message=message/></Show>
                         <Show when=move||modal.get()=="read_review">{move||reviewed_check.get().map(|hash|view!{<crate::read_review_view::ReadReviewPanel attachment_hash=hash reference=read_check_reference snapshot=contig_snapshot epoch=workspace_epoch on_commit=save_read_review on_read=navigate_read_call on_reference=navigate_check_reference event_available=primer_anchor_available attachment_available=read_check_attachment_available initial_request=review_seed.get_untracked()/>})}</Show>
                         <Show when=move||modal.get()=="read_review_commit">{move||pending_read_review.get().map(|pending|view!{<crate::read_review_capture::ReadReviewCapturePanel request=pending.request snapshot=read_review_snapshot validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=restore_read_review db busy=workspace_restoring loaded save_generation epoch=workspace_epoch message/>})}</Show>
                         <Show when=move||modal.get()=="read_check_capture">{move||pending_read_check.get().map(|request|view!{<crate::read_checks_view::ReadCheckCapturePanel request snapshot=read_check_snapshot validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=restore_read_check db busy=workspace_restoring loaded save_generation epoch=workspace_epoch message/>})}</Show>

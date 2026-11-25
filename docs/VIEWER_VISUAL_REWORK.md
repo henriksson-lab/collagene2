@@ -73,3 +73,38 @@ overlap lanes. The full web/worker build validates the application integration.
 No application browser/HTTP smoke checks were performed, as instructed. These
 checks establish numerical and build contracts; visual acceptance remains with
 the user's review of the published viewer.
+
+## Preparation follows the active fragment
+
+The ordinary draft passes a presentation-only active-row memo and row-navigation
+callback to the existing method panel. Only that preparation editor is mounted.
+All fragments still participate in the same reconstruction, primer proposals and
+verification; changing the active row does not change scientific settings or
+clear retained evidence. The standalone method panel retains its multiple-row
+layout. Duplicate workflow and disabled row-management controls are omitted in
+the fixed-source dock.
+
+Diagnostic Edit preparation links first select the affected draft row, then focus
+the newly mounted editor on the next animation frame. Deferred focus checks the
+workspace epoch, preparation settings and current selected row. Intended-source
+navigation also selects the matching row. Source capture collapses after explicit
+intended review, while the intended sequence/junction inspection remains available
+in a disclosure and warnings stay outside it. Primer setting grids expand beside
+the existing Suggest → inspect → explicit Apply actions.
+
+## Product review controls
+
+The actual-product surface now groups its reconstruction status and output actions
+in the header. Primer/HTML/PDF export controls expand together; verification
+findings, scientific engine version and retained source/preparation identities
+remain in their existing evidence disclosure. Invalid/incomplete and stale-context
+messages remain visible.
+
+A compact Sequence/Map/Split toolbar groups map zoom, exact coordinate navigation
+and annotation browsing. Split view puts precise sequence at left and the map at
+right. The product map uses the same rotation-first interaction as the document
+map; no approximate map range or empty-space base selection is offered. Coordinate
+navigation from map-only mode reveals the sequence. Actual map omission/lane
+statistics link users to the complete retained annotation browser. All drawing is
+over the existing actual reconstructed reference; this presentation adds no
+scientific verdict or new transformation.

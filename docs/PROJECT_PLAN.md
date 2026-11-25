@@ -1339,3 +1339,28 @@ adds no algorithm or external runtime dependency. The WASM compiler check and
 format/diff checks pass. No browser checks were run.
 Public8082 remains on the preceding published viewer graphics checkpoint until
 a later compiled preview includes this source-stage change.
+
+### Active fragment preparation
+
+The ordinary assembly source strip now drives the existing preparation editor.
+Only the selected row is mounted; all declared rows remain in the scientific
+request. Active-row navigation is separate from method configuration and evidence
+identity. Diagnostic correction links switch rows before deferred focus, guarded
+against changed workspace/settings/selection. Intended-source links select the
+corresponding row as well. Source capture and intended-junction detail collapse
+after intended review; warnings remain visible. Primer settings expand locally
+while proposals and explicit Apply retain their original contracts.
+
+The actual-product viewer groups reconstruction status and outputs, moves exact
+coordinate navigation into a disclosure, and keeps Sequence/Map/Split controls
+compact. Split view puts sequence at left and rotation-only plasmid navigation at
+right. Complete annotations remain accessible when map lanes/labels omit drawing
+geometry. Engine/version, immutable source history and verification findings are
+retained; invalid/incomplete and historical-state messages remain visible.
+
+The combined source/preparation/product-view code passes the full web/worker
+WASM build. Geometry fixtures from the preceding viewer checkpoint remain
+unchanged. Publication validates static references, integrity hashes, exact
+stylesheet bytes and preservation of old versioned workers. No browser or HTTP
+smoke checks were run; user visual acceptance and the full remaining scope are
+still outstanding.

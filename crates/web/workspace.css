@@ -426,3 +426,54 @@
 .assembly-strategy-choice strong,.assembly-strategy-choice small { display:block; }
 .assembly-strategy-choice small { color:#66778a; font-size:11px; margin-top:4px; font-weight:400; }
 .assembly-strategy-picker>.button { flex-shrink:0; }
+
+.assembly-source-edit { margin:4px 0 8px; }
+.assembly-source-edit>summary,.assembly-intent-details>summary,.assembly-primer-settings>summary { cursor:pointer; font-size:12px; color:#426486; padding:5px 0; }
+.assembly-source-edit[open]>.assembly-source-stage { margin-top:7px; }
+.assembly-intent-details { padding:2px 0 6px; }
+.assembly-primer-settings { margin:7px 0; }
+.assembly-primer-settings[open] { padding:0 10px 8px; border:1px solid #dce3eb; border-radius:4px; }
+.active-fragment-preparation>.method-preparation-focus { min-width:0; }
+.active-fragment-preparation .overlap-source-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 16px; margin:0; padding:10px; border:1px solid #dce3eb; border-radius:4px; }
+.active-fragment-preparation .overlap-source-row>p,.active-fragment-preparation .overlap-source-row>details,.active-fragment-preparation .overlap-source-row>fieldset,.active-fragment-preparation .overlap-source-row>.saved-primer-picker { grid-column:1 / -1; }
+.active-fragment-preparation .overlap-source-row label { min-width:0; font-size:12px; }
+.active-fragment-preparation .overlap-source-row input:not([type=checkbox]),.active-fragment-preparation .overlap-source-row select { box-sizing:border-box; width:100%; }
+.active-fragment-preparation .preparation-source-summary { margin:0; font-size:12px; color:#42576d; }
+
+.preparation-region-status:empty { display:none; }
+
+/* Product review keeps precise sequence at left and a rotation overview at right. */
+.product-reference-shell { display:block; }
+.product-reference-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:6px 8px; margin:0; border-bottom:1px solid #e0e6ee; background:#f8fafc; }
+.product-view-tabs,.product-map-zoom,.product-review-actions { display:flex; align-items:center; gap:4px; }
+.product-view-tabs { padding-right:8px; border-right:1px solid #dce3eb; }
+.product-view-tabs [aria-pressed=true] { color:#234e7c; background:#e4eefb; border-radius:3px; }
+.product-selection-summary { margin-left:auto; font-size:11px; color:#64758a; }
+.product-reference-panes { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0; }
+.product-reference-panes>.assembly-product-sequence { grid-column:1; grid-row:1; }
+.product-reference-panes>.assembly-product-map { grid-column:2; grid-row:1; height:340px; min-width:0; }
+.product-reference-panes .map-stage { height:340px; min-height:260px; }
+.product-reference-panes[data-view=sequence],.product-reference-panes[data-view=map] { grid-template-columns:minmax(0,1fr); }
+.product-reference-panes[data-view=map]>.assembly-product-map { grid-column:1; }
+.product-reference-panes>[hidden] { display:none !important; }
+.product-review-header { justify-content:space-between; align-items:center; }
+.product-review-title h2 { margin:0; font-size:15px; }
+.product-review-result { display:flex; flex-wrap:wrap; gap:8px; margin:5px 0; font-size:11px; color:#5e7085; }
+.product-review-result strong { color:#31465e; }
+.product-review-actions { flex-wrap:wrap; }
+.product-export-menu,.product-interval-menu { position:relative; font-size:12px; }
+.product-export-menu>summary,.product-interval-menu>summary { cursor:pointer; padding:5px 7px; color:#426486; }
+.product-export-menu>.assembly-outputs,.product-interval-menu>.product-interval-fields { position:absolute; z-index:10; top:100%; right:0; background:#fff; padding:12px; border:1px solid #d4dee9; border-radius:4px; box-shadow:0 6px 20px #273b5320; }
+.product-export-menu>.assembly-outputs { width:300px; }
+.product-interval-fields { display:flex; align-items:flex-end; flex-wrap:wrap; gap:8px; width:290px; }
+.product-interval-fields label { display:flex; flex-direction:column; align-items:flex-start; gap:5px; }
+.product-reference-toolbar .product-interval-fields input { box-sizing:border-box; width:110px; }
+.product-view-help { margin:5px 8px; font-size:11px; }
+.product-map-status { margin:7px 8px; }
+.assembly-product-status:empty,.product-reference-panes>.assembly-product-map>p:empty { display:none; }
+@media (max-width:900px) {
+ .product-reference-panes { grid-template-columns:minmax(0,1fr); }
+ .product-reference-panes>.assembly-product-map { grid-column:1; grid-row:2; }
+ .product-reference-panes[data-view=map]>.assembly-product-map { grid-row:1; }
+ .product-export-menu>.assembly-outputs { right:auto; left:0; }
+}

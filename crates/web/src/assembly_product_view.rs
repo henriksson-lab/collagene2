@@ -272,12 +272,13 @@ pub fn AssemblyProductView(
         match result{Ok(())=>status.set("Reconstructed reference opened. The original sources and intended target remain separate.".into()),Err(error)=>status.set(error)}
     };
     view! {<section class="assembly-product-view" aria-label="Reconstructed assembly product">
-        <header class="assembly-product-header"><h2>"Reconstructed product"</h2>
-            <p>{snapshot.with_value(|s|format!("Fresh final-step snapshot · {:?} · {}",s.report.status,s.report.engine_version))}</p>
-            <p class="helper">"This view shows actual reconstructed reference DNA, separately from intended DNA. It does not establish experimental success, exhaustive product uniqueness or newly prepared material."</p>
-        </header>
-        <crate::assembly_outputs::AssemblyOutputs capture identity epoch/>
-        {on_finalize.map(|finalize|view!{<button class="button primary" disabled=move||!available||!current.get() on:click=move|_|{let result=capture.run(()).and_then(|(plan,_)|finalize.run(collagene_core::transfer::Candidate::new(plan)));if let Err(error)=result{status.set(error);}}>"Create assembly outputs"</button>})}
+        <header class="assembly-product-header product-review-header"><div class="product-review-title"><h2>"Reconstructed product"</h2>
+            <p class="product-review-result"><strong>{snapshot.with_value(|s|format!("{:?}",s.report.status))}</strong><span>{move||if current.get(){"Current reconstruction snapshot"}else{"Historical snapshot · reconstruct again"}}</span></p>
+        </div><div class="product-review-actions">
+            {on_finalize.map(|finalize|view!{<button class="button primary" disabled=move||!available||!current.get() on:click=move|_|{let result=capture.run(()).and_then(|(plan,_)|finalize.run(collagene_core::transfer::Candidate::new(plan)));if let Err(error)=result{status.set(error);}}>"Create assembly outputs"</button>})}
+            <details class="product-export-menu"><summary>"Export primers / steps"</summary><crate::assembly_outputs::AssemblyOutputs capture identity epoch/></details>
+        </div></header>
+        <p class="helper product-review-scope">"Actual reconstructed reference DNA, separate from intended DNA. This view does not establish experimental success, exhaustive product uniqueness or newly prepared material."</p>
         <p class="assembly-product-status" role="status">{move||if !current.get(){"Workspace context changed. This snapshot is historical; reconstruct again before opening or inspecting it.".to_string()}else{status.get()}}</p>
         {snapshot.with_value(|s|s.error.clone()).map(|error|view!{<p class="assembly-product-status" role="alert">{error}</p>})}
         {snapshot.with_value(|s|if s.product_revision.is_some(){s.report.products.last().map(|product|{
@@ -291,6 +292,7 @@ pub fn AssemblyProductView(
             </div>}
         })}else{None})}
         <details class="assembly-product-details"><summary>"Sources, preparation history and verification findings"</summary>
+            <p>{snapshot.with_value(|s|format!("Scientific engine: {}",s.report.engine_version))}</p>
             <p>{snapshot.with_value(|s|format!("Plan {} · independent target {} ({})",s.plan_revision,clip(&s.target.name,120),s.target_revision))}</p>
             <ol>{snapshot.with_value(|s|s.plan.inputs.iter().take(128).map(|input|view!{<li>{format!("{} · {} · {} bases · revision {}",clip(&input.id,128),clip(&input.molecule.name,120),input.molecule.sequence.len(),input.revision)}</li>}).collect_view())}</ol>
             <ol>{snapshot.with_value(|s|s.plan.steps.iter().take(100).map(|step|view!{<li>{operation_label(step)}</li>}).collect_view())}</ol>
@@ -384,7 +386,7 @@ pub(crate) fn ReferenceCanvas(
     let features_open = RwSignal::new(false);
     let feature_page = RwSignal::new(0usize);
     let mode = RwSignal::new(Mode::Split);
-    let map_select = RwSignal::new(false);
+    let map_stats = RwSignal::new(crate::map_labels::LabelStats::default());
     let start = RwSignal::new(String::new());
     let end = RwSignal::new(String::new());
     let highlighted = Memo::new(move |_| {
@@ -463,13 +465,13 @@ pub(crate) fn ReferenceCanvas(
                     canvas.unchecked_ref::<HtmlCanvasElement>().clone(),
                     labels.unchecked_ref::<HtmlCanvasElement>().clone(),
                     source.as_ref().clone(),
-                    Rc::new(|_| {}),
+                    Rc::new(move |stats| map_stats.set(stats)),
                 )
             });
             match created {
                 Ok(map) => {
                     map.set_interaction_context(&identity.get_value());
-                    map.set_selection_mode(map_select.get_untracked());
+                    map.set_selection_mode(false);
                     renderer.set_value(Some(map));
                 }
                 Err(error) => {
@@ -514,6 +516,9 @@ pub(crate) fn ReferenceCanvas(
                 selected_feature.set(None);
                 regions.set(None);
                 selection.set(Some((a, b)));
+                if mode.get_untracked() == Mode::Map {
+                    mode.set(Mode::Split);
+                }
             }
             Err(error) => on_message.run(error),
         }
@@ -525,32 +530,39 @@ pub(crate) fn ReferenceCanvas(
             move |_| None::<Arc<Vec<collagene_core::restriction_inspection::InspectionSite>>>,
         );
     let restriction_visible = RwSignal::new(false);
-    view! {<div class="assembly-product-stage">
-        <div class="assembly-product-controls" role="group" aria-label="Read-only reference view">
-            <button class="text-tool" aria-pressed=move||(mode.get()==Mode::Sequence).to_string() on:click=move|_|mode.set(Mode::Sequence)>"Sequence"</button>
-            <button class="text-tool" aria-pressed=move||(mode.get()==Mode::Map).to_string() on:click=move|_|mode.set(Mode::Map)>"Map"</button>
-            <button class="text-tool" aria-pressed=move||(mode.get()==Mode::Split).to_string() on:click=move|_|mode.set(Mode::Split)>"Split"</button>
-            <label>"Reference start"<input type="number" min="1" aria-label="Reference start" prop:value=move||start.get() on:input=move|event|start.set(event_target_value(&event))/></label>
-            <label>"End (inclusive)"<input type="number" min="1" aria-label="Reference end" prop:value=move||end.get() on:input=move|event|end.set(event_target_value(&event))/></label>
-            <button class="text-tool" on:click=navigate>"Show interval"</button>
-            <button class="text-tool" on:click=move|_|{selected_feature.set(None);regions.set(None);selection.set(None);}>"Clear highlight"</button>
-            <button class="text-tool" on:click=move|_|features_open.update(|value|*value=!*value)>"Browse annotations"</button>
-        </div>
-        <p class="helper">"Read-only reference snapshot. Select bases or use the map, coordinates and annotations to navigate. Coordinates describe this displayed version; editing requires a separate document copy."</p>
-        <div class="assembly-product-map" hidden=move||mode.get()==Mode::Sequence>
-            <div class="map-controls"><button class="text-tool" on:click=move|_|if let Some(map)=renderer.get_value(){map.zoom(1./1.15);}>"Zoom out"</button><button class="text-tool" on:click=move|_|if let Some(map)=renderer.get_value(){map.reset();}>"Fit map"</button><button class="text-tool" on:click=move|_|if let Some(map)=renderer.get_value(){map.zoom(1.15);}>"Zoom in"</button>
-                <button class="text-tool" aria-pressed=move||map_select.get().to_string() on:click=move|_|{map_select.set(true);if let Some(map)=renderer.get_value(){map.set_selection_mode(true);}}>"Select map range"</button>
-                <button class="text-tool" aria-pressed=move||(!map_select.get()).to_string() on:click=move|_|{map_select.set(false);if let Some(map)=renderer.get_value(){map.set_selection_mode(false);}}>"Rotate / inspect"</button>
+    view! {<div class="assembly-product-stage product-reference-shell">
+        <div class="assembly-product-controls product-reference-toolbar" aria-label="Read-only reference view">
+            <div class="product-view-tabs" role="group" aria-label="Product view">
+                <button class="text-tool" aria-pressed=move||(mode.get()==Mode::Sequence).to_string() on:click=move|_|mode.set(Mode::Sequence)>"Sequence"</button>
+                <button class="text-tool" aria-pressed=move||(mode.get()==Mode::Map).to_string() on:click=move|_|mode.set(Mode::Map)>"Map"</button>
+                <button class="text-tool" aria-pressed=move||(mode.get()==Mode::Split).to_string() on:click=move|_|mode.set(Mode::Split)>"Split"</button>
             </div>
+            <Show when=move||mode.get()!=Mode::Sequence><div class="product-map-zoom" role="group" aria-label="Product map zoom">
+                <button class="text-tool" aria-label="Zoom product map out" title="Zoom out" disabled=move||!current.get() on:click=move|_|if let Some(map)=renderer.get_value(){map.zoom(1./1.15);}>"−"</button>
+                <button class="text-tool" title="Fit product map" disabled=move||!current.get() on:click=move|_|if let Some(map)=renderer.get_value(){map.reset();}>"Fit"</button>
+                <button class="text-tool" aria-label="Zoom product map in" title="Zoom in" disabled=move||!current.get() on:click=move|_|if let Some(map)=renderer.get_value(){map.zoom(1.15);}>"+"</button>
+            </div></Show>
+            <details class="product-interval-menu"><summary>"Go to interval"</summary><div class="product-interval-fields">
+                <label>"Start (1-based)"<input type="number" min="1" aria-label="Reference start" disabled=move||!current.get() prop:value=move||start.get() on:input=move|event|start.set(event_target_value(&event))/></label>
+                <label>"End (inclusive)"<input type="number" min="1" aria-label="Reference end" disabled=move||!current.get() prop:value=move||end.get() on:input=move|event|end.set(event_target_value(&event))/></label>
+                <button class="button secondary" disabled=move||!current.get() on:click=navigate>"Show exact interval"</button>
+            </div></details>
+            <button class="text-tool" aria-expanded=move||features_open.get().to_string() on:click=move|_|features_open.update(|value|*value=!*value)>"Annotations"</button>
+            <button class="text-tool" disabled=move||highlighted.with(Vec::is_empty) on:click=move|_|{selected_feature.set(None);regions.set(None);selection.set(None);}>"Clear highlight"</button>
+            <span class="product-selection-summary">{move||{let spans=highlighted.get();if let Some(&(a,b))=spans.first().filter(|&&(a,b)|spans.len()==1&&a<b){format!("{}–{} · {} bases",a+1,b,b-a)}else if !spans.is_empty(){format!("{} annotation parts highlighted",spans.len())}else{"Read-only reference".into()}}}</span>
+        </div>
+        <p class="helper product-view-help">"Select exact bases in Sequence or Go to interval. Drag a circular map to rotate; click a feature to inspect its annotated coordinates. Editing requires a separate document copy."</p>
+        <div class="product-reference-panes" data-view=move||match mode.get(){Mode::Sequence=>"sequence",Mode::Map=>"map",Mode::Split=>"split"}>
+        <div class="assembly-product-map" hidden=move||mode.get()==Mode::Sequence>
             <p role="status">{move||map_error.get()}</p>
-            <div class="map-stage" style="height:400px;min-height:260px;position:relative">
-                <canvas node_ref=canvas aria-label="Read-only reference map; drag to rotate or select, click annotations to inspect" style="width:100%;height:100%;display:block"
+            <div class="map-stage" style="min-height:260px;position:relative">
+                <canvas node_ref=canvas aria-label="Read-only reference map; drag a circular map to rotate, click annotations to inspect" style="width:100%;height:100%;display:block"
                     on:pointerdown=move|event:web_sys::PointerEvent|{if !current.get_untracked()||event.button()!=0{return;}if let Some(canvas)=canvas.get(){let _=canvas.set_pointer_capture(event.pointer_id());}if let Some(map)=renderer.get_value(){map.pointer_down(event.client_x()as f64,event.client_y()as f64);}}
                     on:pointermove=move|event:web_sys::PointerEvent|if current.get_untracked(){if let Some(map)=renderer.get_value(){map.pointer_move(event.client_x()as f64,event.client_y()as f64);}}
-                    on:pointerup=move|event:web_sys::PointerEvent|{if let Some(map)=renderer.get_value(){if current.get_untracked(){if let Some(hit)=map.pointer_up(event.client_x()as f64,event.client_y()as f64){if let Some(feature)=hit.feature_index{show_feature.run(feature);}else{selected_feature.set(None);selection.set(if hit.spans.len()==1{Some(hit.span)}else{None});regions.set(Some((revision.get_value(),hit.spans)));}}}else{map.pointer_cancel();}}if let Some(canvas)=canvas.get(){let _=canvas.release_pointer_capture(event.pointer_id());}}
+                    on:pointerup=move|event:web_sys::PointerEvent|{if let Some(map)=renderer.get_value(){if current.get_untracked(){if let Some(hit)=map.pointer_up(event.client_x()as f64,event.client_y()as f64){if let Some(feature)=hit.feature_index{show_feature.run(feature);}}}else{map.pointer_cancel();}}if let Some(canvas)=canvas.get(){let _=canvas.release_pointer_capture(event.pointer_id());}}
                     on:pointercancel=move|_|if let Some(map)=renderer.get_value(){map.pointer_cancel();}
                     on:lostpointercapture=move|_|if let Some(map)=renderer.get_value(){map.pointer_cancel();}
-                    on:wheel=move|event:web_sys::WheelEvent|{event.prevent_default();if let Some(map)=renderer.get_value(){map.zoom(if event.delta_y()>0.{0.95}else{1.05});}}/>
+                    on:wheel=move|event:web_sys::WheelEvent|{event.prevent_default();if !current.get_untracked(){return;}if let Some(map)=renderer.get_value(){map.zoom(if event.delta_y()>0.{0.95}else{1.05});}}/>
                 <canvas node_ref=labels class="map-labels" aria-hidden="true" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none"/>
                 <p class="map-geometry-note" role="status">"Overview simplified; browse annotations for omitted geometry."</p>
             </div>
@@ -563,6 +575,14 @@ pub(crate) fn ReferenceCanvas(
                 restriction_sites=no_restrictions restriction_visible=restriction_visible
                 on_show_restrictions=Callback::new(move|()|on_message.run("Restriction choices belong to the source/assembly preparation; this snapshot does not run an independent restriction scan.".into()))/>
         </div>
+        </div>
+        <Show when=move||map_stats.with(|s|s.omitted>0||s.abbreviated>0||s.lane_overflow>0)><p class="helper product-map-status" role="status">{move||map_stats.with(|s|{
+            let mut notes=vec![format!("{} of {} map labels shown",s.displayed,s.total)];
+            if s.abbreviated>0{notes.push(format!("{} abbreviated",s.abbreviated));}
+            if s.lane_overflow>0{notes.push(format!("{} overlapping features hidden from the 3 map lanes",s.lane_overflow));}
+            if s.unplaced>0{notes.push(format!("{} without local coordinates",s.unplaced));}
+            notes.push("Browse Annotations for the complete retained features".into());notes.join(" · ")
+        })}</p></Show>
         <Show when=move||features_open.get()><section class="assembly-product-features" aria-label="Reference annotations">
             <h3>"Reference annotations"</h3>
             <p>{source.with_value(|source|format!("{} annotations retained; projected or uncertain features may require review.",source.features.len()))}</p>

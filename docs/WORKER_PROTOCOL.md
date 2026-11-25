@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **65** and reads supported schemas 1–64. Candidate files write schema 13; workspace plan schema is 11; the verifier is science-16.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **66** and reads supported schemas 1–65. Candidate files write schema 14; workspace plan schema is 12; the verifier is science-17.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -850,3 +850,14 @@ its workspace-bearing request joins the128 MiB whitelist; the result retains the
 ordinary32 MiB cap with explicit export-workspace fallback at the boundary.
 Historical graphs cannot restore fresh material or verification authority.
 [Retained-plan contract](TOPO_PROCESSED_PLAN.md).
+
+
+## Ordered physical processing (schema66)
+
+Operation20 `TopoActions` requires worker66/candidate14/plan12/science17.
+Jobs150 `ProcessTopoActions` and151 `InspectTopoActions` return142
+`TopoActionsProduct` and143 `TopoActionsInspected`. Full typed evidence uses the
+appended generic `physical_processing_reports` vector. Explicit nine-path
+positional migrations through65 preserve old nonempty processed reports. Job149
+also downloads a bounded exact-evidence bundle for generic/mixed retained runs.
+[Chemistry, UI, MCP, historical binding and limits](TOPO_PROCESSING_ACTIONS.md).

@@ -36,6 +36,39 @@ interaction decisions, not browser acceptance or evidence of Benchling's scienti
 correctness. No application browser checks or compiler runs were needed for this
 documentation checkpoint. Earlier gap tables are historical where superseded below.
 
+## Latest assembly presentation follow-up
+
+A further parallel official-documentation review confirms the useful sequence:
+select sources and method, inspect preparation/orientation, review the intended
+construct and junctions, then create named products and optional primers/fragments.
+The current source already implements alternative bins, mixed preparation,
+selected combinations, status filtering, row edits, recovery and output review;
+older missing-engine tables must not be treated as the live backlog.
+
+The remaining narrow presentation improvement is to show the chosen method and
+per-slot preparation summary before **Review intended construct**, reusing the
+same method state and existing edit controls. Keep source/selection context visible
+through corrections and require fresh evidence after edits. Official pages:
+[assembly wizard](https://help.benchling.com/hc/en-us/articles/39656605989901-Create-assemblies-with-the-assembly-wizard),
+[combinatorial assembly](https://help.benchling.com/hc/en-us/articles/39922419457165-How-to-use-the-combinatorial-cloning-and-concatenation-assembly-tools),
+[restriction analysis](https://help.benchling.com/hc/en-us/articles/38609319462669-View-restriction-enzymes).
+The guides differ on which fragment orientation edits are exposed in individual
+steps. They do not establish exact edit-persistence/recovery semantics or chemical
+correctness; our supported orientations and explicit scientific verification remain.
+
+Implementation follow-up: the ordinary assembly dock now shows its current method
+and each slot's declared preparation before intended-construct review. Whole-input
+reaction options show the actual declared substrate instead of a row preparation
+that the selected option would ignore. Existing source capture, edit controls,
+scientific checking and candidate state are reused.
+
+A parallel [design-review continuity audit](BENCHLING_DESIGN_REVIEW_CONTINUITY.md)
+finds three remaining presentation connections: selection-to-existing directional
+primer editor, a compact exact-event run-provenance overview, and model-labelled
+selection statistics. Existing selected PCR outputs, saved primer export and bulk
+construct archives are already implemented. These are interaction follow-ups;
+public documentation does not establish chemical correctness or graph-export parity.
+
 ## Primer creation, existing oligos and recovery
 
 Benchling documents directional primer creation from a selection separately from

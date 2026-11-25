@@ -212,8 +212,8 @@ fn selected_opcode18_requires_candidate12_and_worker59_without_rejecting_index_o
     let (w, d, row) = fixture();
     let compiled = design::compile(&d, &row, &w).unwrap();
     assert!(protocol::WORKER_SCHEMA_VERSION >= 59);
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 13);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 11);
+    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 14);
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 12);
     assert_eq!(
         postcard::to_allocvec(compiled.plan.steps.last().unwrap()).unwrap()[0],
         18
@@ -333,8 +333,8 @@ fn current_and_historical_reports_keep_their_actual_layout_and_version_gates() {
         revision: compiled.resolved.target.revision(),
         result: AnalysisResult::Verification(report),
     };
-    protocol::decode_response(&wire(b"CGR\0", 65, &response)).unwrap();
-    assert!(protocol::decode_response(&wire(b"CGR\0", 64, &response)).is_err());
+    protocol::decode_response(&wire(b"CGR\0", 66, &response)).unwrap();
+    assert!(protocol::decode_response(&wire(b"CGR\0", 65, &response)).is_err());
 }
 #[test]
 fn workspace_and_rekeyed_runrecord_cannot_downcast_selected_semantics_to_plan9() {

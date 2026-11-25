@@ -113,7 +113,7 @@ fn terminus(e: &projection::EndChemistry) -> Result<chemistry::Terminus, String>
         three_prime: three(&e.three_prime)?,
     })
 }
-fn geometry(
+pub(crate) fn geometry(
     view: &projection::DuplexView,
 ) -> Result<
     (
@@ -154,7 +154,7 @@ fn geometry(
     }
     Ok((topology, left, right, nicks))
 }
-fn bridge(
+pub(crate) fn bridge(
     view: &projection::DuplexView,
 ) -> Result<(chemistry::Duplex, tracked::TrackedDuplex), String> {
     let (topology, left, right, nicks) = geometry(view)?;

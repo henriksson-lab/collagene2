@@ -431,6 +431,82 @@ async fn directional_preparation_compiles_actual_sources_without_inventing_repai
         "physical graph must retain the actual displaced bases"
     );
     assert_eq!(inspection["biochemical_mixture_exhaustive"], false);
+    let mut preparation = compiled["compiled"]["request"].clone();
+    preparation["transfers"] = inspection["candidates"][0]["transfers"].clone();
+    let processing = json!({"actions":[
+        {"CleaveThreePrimeFlap":{"bond":{"upstream":{"strand":3,"index":5},"downstream":{"strand":3,"index":6}},"displacement_step":0,"profile":"IdealDuplexAnchoredThreePrimeHydrolysisV1","assumption":"Explicit ideal hydrolytic fixture only; no named nuclease or host guarantee"}},
+        {"SealNick":{"selection":{"three":{"strand":2,"index":9},"five":{"strand":0,"index":0}},"ligase_assumption":"Explicit ideal templated ligase fixture"}},
+        {"SealNick":{"selection":{"three":{"strand":3,"index":5},"five":{"strand":1,"index":0}},"ligase_assumption":"Explicit ideal templated ligase fixture"}}
+    ],"limits":t::physical::processing::ProcessingLimits::default()});
+    let inspected = call(
+        &c,
+        "inspect_topo_actions",
+        json!({"sources":sources,"request":{"preparation":preparation,"processing":processing}}),
+    )
+    .await;
+    assert_eq!(inspected["verified"], false);
+    assert_eq!(inspected["source_calls"], 52);
+    assert_eq!(inspected["component_count"], 2);
+    let main = inspected["components"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["paired_calls"] == 48 && v["unpaired_calls"] == 0)
+        .unwrap()["component"]
+        .clone();
+    let request = json!({"preparation":preparation,"processing":processing,
+        "selection":{"processing_context_revision":inspected["processing_context_revision"],"component":main,"reference_seed":{"strand":0,"index":0}},
+        "options":{"require_all_requested_transfers_applied":true,"require_known_terminal_chemistry":true,"limits":t::physical::projection::ProjectionLimits::default()}});
+    let projected = call(
+        &c,
+        "project_topo_actions",
+        json!({"sources":sources,"request":request}),
+    )
+    .await;
+    assert_eq!(projected["contour_proven"], true);
+    assert_eq!(projected["component_count"], 2);
+    let data = evidence(&c, &projected["artifact_id"]).await;
+    let product: Molecule = serde_json::from_value(data["report"]["product"].clone()).unwrap();
+    assert_eq!(product.sequence.as_str(), "AAGGGGCATCCCTTCACCATGACG");
+    assert!(collagene_core::chemistry::has_unmapped_physical_evidence(
+        &product
+    ));
+    let independent_target = import(
+        &c,
+        "Independent intended directional clone",
+        "AAGGGGCATCCCTTCACCATGACG",
+        true,
+    )
+    .await;
+    let bindings = sources
+        .iter()
+        .map(|s| json!({"id":s["role"],"document":s["document"]}))
+        .collect::<Vec<_>>();
+    let roles = sources
+        .iter()
+        .map(|s| json!({"role":s["role"],"source":{"Input":s["role"]}}))
+        .collect::<Vec<_>>();
+    let proposed=call(&c,"propose_plan",json!({"name":"Explicit accounted directional action fixture","target":independent_target,"inputs":bindings,"steps":[{"TopoActions":{"sources":roles,"request":request}}]})).await;
+    let verified = call(
+        &c,
+        "verify_plan",
+        json!({"plan_revision":proposed["plan_revision"]}),
+    )
+    .await;
+    assert_eq!(verified["status"], "ConsistentUnderAssumptions");
+    let full = evidence(&c, &verified["artifact_id"]).await;
+    assert_eq!(
+        full["physical_processing_reports"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        full["physical_processing_reports"][0]["evidence"]["TopoActions"]["projection"]["processing"]
+            ["source_bases"],
+        52
+    );
     let mut stale = sources.clone();
     stale[0]["document"]["revision"] = json!("0".repeat(64));
     reject(

@@ -22,6 +22,32 @@ and review proposals are implemented, despite older gap tables. See
 [workflow decisions](BENCHLING_WORKFLOW_DECISIONS.md). This documentation-only
 checkpoint adds no runtime/build/browser checks.
 
+The latest two parallel official-documentation reviews found presentation seams,
+not missing PCR/export engines. The assembly dock now shows method and actual
+per-slot preparation before construct review. Selection-to-existing-primer-editor
+and compact exact-event provenance are recorded follow-ups.
+[Research and decisions](BENCHLING_WORKFLOW_DECISIONS.md).
+
+## Ordered source-conserving TOPO processing
+
+Explicit anchored-flap hydrolysis and nick-sealing actions now share one native
+reconstruction pipeline. The actual excised fragment remains in the graph; a
+per-call partition audit preserves all original source material. Fresh contour and
+tracked-duplex bridging feed operation20, later digest, independent target checking,
+HTML/PDF and retained run history. Desktop review exposes explicit ordered actions
+and actual components before a declaration-only candidate handoff. MCP165 exposes
+the same inspection/projection and generic verification evidence.
+[Full contract and remaining scope](TOPO_PROCESSING_ACTIONS.md).
+
+Worker66/candidate14/plan12/science17 add a generic typed physical-evidence slot.
+All nine positional legacy paths preserve old nonempty processed reports through65.
+Historical generic/mixed-run downloads bundle exact bound JSON attachments;
+history never restores current chemical authority. 90 focused native tests and
+the application/worker WASM check pass; browser checks remain deferred.
+Public8082 still serves worker65. The preceding pushed checkpoint passed Linux,
+Windows and WASM CI; macOS could not acquire a hosted runner after repeated attempts and was cancelled
+before any steps ran, leaving that platform unverified for that checkpoint ([run](https://github.com/henriksson-lab/collagene2/actions/runs/45681960208)).
+
 ## Processed TOPO in retained plans and downstream operations
 
 The explicit processed-contour action now opens a declaration-only candidate

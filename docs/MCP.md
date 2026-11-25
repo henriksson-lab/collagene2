@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current registry has 142 tools. Selected-construct design and batch operations
+The current registry has 165 tools. Selected-construct design and batch operations
 add exact-version matrix paging, native inspection, historical capture/list/open
 and explicit fresh replay. [Batch contracts](COMBINATORIAL_BATCHES.md).
 Reference recombination retains explicit profile discovery, source inspection,
@@ -817,3 +817,14 @@ and run_id, returns historical metadata plus an optional full JSON artifact, and
 never replays science or restores material authority. Older ordinary runs have no
 fabricated attachment. Use replay_workspace_run for current-engine evidence.
 [Formats, handoff, protocols and limits](TOPO_PROCESSED_PLAN.md).
+
+
+## Ordered physical TOPO processing (165 tools)
+
+`inspect_topo_actions` reconstructs original declared sources and explicit ordered
+flap-cleavage/nick-sealing actions. `project_topo_actions` adds a source-seeded
+contour proof and faithful bridge, producing an annotated restrictive reference
+and full bounded evidence artifact. The ideal hydrolytic profile makes no named
+nuclease, kit-efficiency or host-repair claim. Plan verification retains typed
+generic evidence; historical inspection supports exact generic/mixed-run bundles.
+[Full contract and remaining scope](TOPO_PROCESSING_ACTIONS.md).

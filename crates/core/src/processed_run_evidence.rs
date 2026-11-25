@@ -217,6 +217,61 @@ pub struct Download {
 }
 pub fn download(w: &Workspace, run_id: &str) -> Result<Download, Error> {
     let r = run_lineage::load_run(w, run_id)?;
+    if let Some(physical) = crate::physical_run_evidence::find(w, run_id)? {
+        let legacy = load(w, run_id)?;
+        let step_count = physical.steps.len() + legacy.as_ref().map_or(0, |e| e.steps.len());
+        let attachments = w
+            .attachments
+            .iter()
+            .filter(|(_, a)| a.kind == KIND || a.kind == crate::physical_run_evidence::KIND)
+            .filter_map(|(hash, a)| {
+                #[derive(Deserialize)]
+                struct Owner {
+                    run_id: String,
+                }
+                let value: Owner = serde_json::from_slice(&a.bytes).ok()?;
+                (value.run_id == run_id).then_some((hash, a))
+            })
+            .collect::<Vec<_>>();
+        let mut output = Bounded(vec![]);
+        output
+            .write_all(b"{\"format\":\"physical-processing-run-bundle-v1\",\"run_id\":")
+            .map_err(|_| Error::TooLarge)?;
+        serde_json::to_writer(&mut output, run_id).map_err(|_| Error::TooLarge)?;
+        output
+            .write_all(b",\"attachments\":[")
+            .map_err(|_| Error::TooLarge)?;
+        for (i, (hash, a)) in attachments.iter().enumerate() {
+            if i > 0 {
+                output.write_all(b",").map_err(|_| Error::TooLarge)?;
+            }
+            output
+                .write_all(b"{\"kind\":")
+                .map_err(|_| Error::TooLarge)?;
+            serde_json::to_writer(&mut output, &a.kind).map_err(|_| Error::TooLarge)?;
+            output
+                .write_all(b",\"blake3\":")
+                .map_err(|_| Error::TooLarge)?;
+            serde_json::to_writer(&mut output, hash).map_err(|_| Error::TooLarge)?;
+            output
+                .write_all(b",\"evidence\":")
+                .map_err(|_| Error::TooLarge)?;
+            output.write_all(&a.bytes).map_err(|_| Error::TooLarge)?;
+            output.write_all(b"}").map_err(|_| Error::TooLarge)?;
+        }
+        output.write_all(b"]}").map_err(|_| Error::TooLarge)?;
+        if output.0.len() > MAX_BYTES - 4096 {
+            return Err(bad(
+                "historical graph bundle exceeds worker download cap; export native workspace instead",
+            ));
+        }
+        return Ok(Download {
+            run_id: run_id.into(),
+            recorded_engine: r.assessment.engine_version,
+            step_count,
+            bytes: Some(output.0),
+        });
+    }
     for a in w.attachments.values().filter(|a| a.kind == KIND) {
         let e = decode(&a.bytes)?;
         if e.run_id == run_id {

@@ -18,7 +18,7 @@ struct OldReport {
     step_reports: Vec<verification::StepReport>,
     annotation_reports: Vec<verification::AnnotationStepReport>,
 }
-macro_rules! old {($name:ident{$($field:ident:$ty:ty),*$(,)?})=>{#[derive(Serialize,Deserialize)]struct $name{$($field:$ty),*}};}
+macro_rules! old {($name:ident<R>{$($field:ident:$ty:ty),*$(,)?})=>{#[derive(Serialize,Deserialize)]struct $name<R=OldReport>{$($field:$ty),*}};($name:ident{$($field:ident:$ty:ty),*$(,)?})=>{#[derive(Serialize,Deserialize)]struct $name{$($field:$ty),*}};}
 #[derive(Serialize, Deserialize)]
 struct OldInverse<R = OldReport> {
     source_revision: String,
@@ -44,12 +44,12 @@ struct OldReplay<R = OldReport> {
     products_match: bool,
     status_matches: bool,
 }
-old!(OldOverlap{context_revision:String,compiled:assembly_recipe::Compiled,verification:OldReport,prepared:Vec<Molecule>,profile:Option<overlap_profiles::ProfileReport>,preparation_complete:bool});
-old!(OldLigation{context_revision:String,compiled:ligation_recipe::Compiled,verification:OldReport,prepared:Vec<Molecule>,physical:Vec<Option<chemistry::DuplexSummary>>,product_physical:Option<chemistry::DuplexSummary>,junctions:Vec<ligation_recipe::Junction>,preparation_complete:bool});
-old!(OldJunction{engine_version:String,context_revision:String,plan_revision:String,target_revision:String,options:assembly_junctions::Options,verification:OldReport,product_revision:Option<String>,product_length:Option<usize>,product_topology:Option<Topology>,method:Option<assembly_junctions::Method>,junctions:Vec<assembly_junctions::Junction>,complete:bool,omitted_junctions:usize,warnings:Vec<String>});
-old!(OldPool{context_revision:String,request:prepared_golden_gate::Request,target:Molecule,preview:OldLigation,missing_physical:Vec<usize>,pool:Option<golden_gate::GoldenGateReport>,assessments:Vec<prepared_golden_gate::Assessment>,warnings:Vec<String>});
-old!(OldReaction{context_revision:String,request:golden_gate_reaction::Request,target:Molecule,probe_plan:verification::DesignPlan,materials:Vec<golden_gate_reaction::Material>,verification:OldReport,pool:Option<golden_gate::GoldenGateReport>,assessments:Vec<prepared_golden_gate::Assessment>,warnings:Vec<String>});
-old!(OldDomestication{context_revision:String,request:domestication_preparation::Request,source_revision:String,target:Molecule,check:domestication::CheckReport,preparation:mutagenesis::InversePcrPreparation,verification:OldReport,warnings:Vec<String>});
+old!(OldOverlap<R>{context_revision:String,compiled:assembly_recipe::Compiled,verification:R,prepared:Vec<Molecule>,profile:Option<overlap_profiles::ProfileReport>,preparation_complete:bool});
+old!(OldLigation<R>{context_revision:String,compiled:ligation_recipe::Compiled,verification:R,prepared:Vec<Molecule>,physical:Vec<Option<chemistry::DuplexSummary>>,product_physical:Option<chemistry::DuplexSummary>,junctions:Vec<ligation_recipe::Junction>,preparation_complete:bool});
+old!(OldJunction<R>{engine_version:String,context_revision:String,plan_revision:String,target_revision:String,options:assembly_junctions::Options,verification:R,product_revision:Option<String>,product_length:Option<usize>,product_topology:Option<Topology>,method:Option<assembly_junctions::Method>,junctions:Vec<assembly_junctions::Junction>,complete:bool,omitted_junctions:usize,warnings:Vec<String>});
+old!(OldPool<R>{context_revision:String,request:prepared_golden_gate::Request,target:Molecule,preview:OldLigation<R>,missing_physical:Vec<usize>,pool:Option<golden_gate::GoldenGateReport>,assessments:Vec<prepared_golden_gate::Assessment>,warnings:Vec<String>});
+old!(OldReaction<R>{context_revision:String,request:golden_gate_reaction::Request,target:Molecule,probe_plan:verification::DesignPlan,materials:Vec<golden_gate_reaction::Material>,verification:R,pool:Option<golden_gate::GoldenGateReport>,assessments:Vec<prepared_golden_gate::Assessment>,warnings:Vec<String>});
+old!(OldDomestication<R>{context_revision:String,request:domestication_preparation::Request,source_revision:String,target:Molecule,check:domestication::CheckReport,preparation:mutagenesis::InversePcrPreparation,verification:R,warnings:Vec<String>});
 #[derive(Serialize)]
 struct Wire<'a, T> {
     id: u32,
@@ -141,7 +141,7 @@ fn compare<T: Serialize>(tag: u32, value: T, path: &str) {
     );
     let actual = serde_json::to_value(&response.result).unwrap();
     let actual = actual.as_object().unwrap().values().next().unwrap();
-    let mut expected = original;
+    let mut expected = original.clone();
     let report = if path.is_empty() {
         &mut expected
     } else {
@@ -151,6 +151,10 @@ fn compare<T: Serialize>(tag: u32, value: T, path: &str) {
         .as_object_mut()
         .unwrap()
         .insert("processed_step_reports".into(), json!([]));
+    report
+        .as_object_mut()
+        .unwrap()
+        .insert("physical_processing_reports".into(), json!([]));
     assert_eq!(*actual, expected, "legacy result tag {tag}");
     let mut trailing = postcard::to_allocvec(&Wire {
         id: 733,
@@ -164,6 +168,7 @@ fn compare<T: Serialize>(tag: u32, value: T, path: &str) {
         decoder::decode(&envelope(&trailing, 64), 32 << 20).is_err(),
         "trailing fields tag {tag}"
     );
+    upgrade65(tag, original, path);
 }
 #[test]
 fn bare_legacy_report_preserves_engine_source_product_and_empty_new_evidence() {
@@ -467,6 +472,7 @@ fn public_era_roundtrip<T: Serialize>(version: u16, tag: u32, payload: T, path: 
     p.entry("step_reports").or_insert(json!([]));
     p.insert("annotation_reports".into(), json!([]));
     p.insert("processed_step_reports".into(), json!([]));
+    p.insert("physical_processing_reports".into(), json!([]));
     let bytes = envelope(
         &postcard::to_allocvec(&Wire {
             id: 912,
@@ -551,5 +557,227 @@ fn historical_replay_nested_eight_and_nine_field_reports_preserve_recorded_statu
             replay_era(old_era_report::<NineFieldReport>(version)),
             "/current_report",
         );
+    }
+}
+old!(ElevenFieldReport{plan_revision:String,target_revision:String,engine_version:String,status:verification::Status,findings:Vec<String>,assumptions:Vec<String>,products:Vec<Molecule>,exhaustive_alternative_search:bool,step_reports:Vec<verification::StepReport>,annotation_reports:Vec<verification::AnnotationStepReport>,processed_step_reports:Vec<verification::ProcessedTopoStepReport>});
+fn real_old_processed_evidence() -> topo_processed_product::Report {
+    use topo::physical as p;
+    let dna = ["AGGGGCATCCCTT", "AGGGATGCCCCTT", "CGAATGA", "CATTCGA"];
+    let inputs = dna
+        .iter()
+        .enumerate()
+        .map(|(i, dna)| topo::Input {
+            role: format!("old-source{i}"),
+            molecule: Molecule::dna(format!("original{i}"), dna, Topology::Linear).unwrap(),
+        })
+        .collect::<Vec<_>>();
+    let strands = dna
+        .iter()
+        .enumerate()
+        .map(|(i, dna)| topo::PreparedStrand {
+            id: format!("strand{i}"),
+            segments: vec![topo::SourceInterval {
+                source_role: format!("old-source{i}"),
+                start: 0,
+                length: dna.len(),
+                reverse: false,
+            }],
+            five_prime: if i < 2 {
+                p::FivePrime::Phosphate
+            } else {
+                p::FivePrime::Hydroxyl
+            },
+            three_prime: if i < 2 {
+                p::ThreePrime::Phosphotyrosyl {
+                    enzyme: p::Enzyme::VacciniaTypeIBTyr274,
+                    activation_id: format!("activation{i}"),
+                }
+            } else {
+                p::ThreePrime::Hydroxyl
+            },
+        })
+        .collect();
+    let preparation = topo::Request {
+        recipe: topo::GenerationRecipe {
+            schema_version: 1,
+            materials: vec![topo::MaterialRecipe::Prepared {
+                declaration_id: "historical explicit input geometry".into(),
+                assumption: "Declared original activation hypothesis".into(),
+                strands,
+                pairing: vec![
+                    p::PairSpan {
+                        strand_a: 0,
+                        start_a: 0,
+                        strand_b: 1,
+                        start_b: 0,
+                        length: 12,
+                    },
+                    p::PairSpan {
+                        strand_a: 2,
+                        start_a: 0,
+                        strand_b: 3,
+                        start_b: 0,
+                        length: 6,
+                    },
+                ],
+            }],
+        },
+        transfers: vec![
+            p::Transfer {
+                donor: 0,
+                acceptor: 2,
+                geometry: p::Geometry::ThreePrimeTA,
+            },
+            p::Transfer {
+                donor: 1,
+                acceptor: 3,
+                geometry: p::Geometry::ThreePrimeTA,
+            },
+        ],
+        engine_limits: p::Limits::default(),
+        projection_options: p::projection::Options::default(),
+    };
+    let sealing = p::nick_sealing::Request {
+        ligase_assumption: "Historical ideal ligase hypothesis".into(),
+        nicks: vec![
+            p::nick_sealing::NickSelection {
+                three: p::Call {
+                    strand: 2,
+                    index: 6,
+                },
+                five: p::Call {
+                    strand: 0,
+                    index: 0,
+                },
+            },
+            p::nick_sealing::NickSelection {
+                three: p::Call {
+                    strand: 3,
+                    index: 6,
+                },
+                five: p::Call {
+                    strand: 1,
+                    index: 0,
+                },
+            },
+        ],
+    };
+    let prepared = topo::simulate(&inputs, &preparation).unwrap().preparation;
+    let context = p::nick_sealing::revision(
+        &prepared.substrates,
+        &preparation.transfers,
+        &preparation.engine_limits,
+        &sealing,
+    )
+    .unwrap();
+    topo_processed_product::inspect(
+        &inputs,
+        &topo_processed_product::Request {
+            treatment: topo_nick_sealing::Request {
+                preparation,
+                sealing,
+            },
+            selection: p::processed_projection::Selection {
+                sealing_context_revision: context,
+                component: 0,
+                reference_seed: p::Call {
+                    strand: 0,
+                    index: 0,
+                },
+            },
+            options: p::projection::Options::default(),
+        },
+    )
+    .unwrap()
+}
+fn eleven_field_report() -> ElevenFieldReport {
+    let mut value = serde_json::to_value(report()).unwrap();
+    value["engine_version"] = json!("0.1.0/science-16");
+    value["processed_step_reports"] = json!([verification::ProcessedTopoStepReport {
+        step_index: 0,
+        evidence: real_old_processed_evidence()
+    }]);
+    serde_json::from_value(value).unwrap()
+}
+fn compare65<T: Serialize>(tag: u32, value: T, path: &str) {
+    let mut expected = serde_json::to_value(&value).unwrap();
+    let old = if path.is_empty() {
+        &mut expected
+    } else {
+        expected.pointer_mut(path).unwrap()
+    };
+    assert_eq!(old["processed_step_reports"].as_array().unwrap().len(), 1);
+    old.as_object_mut()
+        .unwrap()
+        .insert("physical_processing_reports".into(), json!([]));
+    let oldbytes = encode(tag, &value, 65);
+    let response = decoder::decode(&oldbytes, 32 << 20).unwrap().unwrap();
+    let actual = serde_json::to_value(&response.result).unwrap();
+    assert_eq!(
+        actual.as_object().unwrap().values().next().unwrap(),
+        &expected
+    );
+    let current_as_old = envelope(&postcard::to_allocvec(&response).unwrap(), 65);
+    assert!(decoder::decode(&current_as_old, 32 << 20).is_err());
+    let mut trailing = postcard::to_allocvec(&Wire {
+        id: 733,
+        revision: "retained-old-context",
+        tag,
+        payload: value,
+    })
+    .unwrap();
+    trailing.push(0);
+    assert!(decoder::decode(&envelope(&trailing, 65), 32 << 20).is_err());
+}
+#[test]
+fn actual_schema65_bare_processed_graph_survives_without_invented_generic_actions() {
+    let old = eleven_field_report();
+    let wire = encode(4, &old, 65);
+    let restored = protocol::decode_response(&wire).unwrap();
+    let protocol::AnalysisResult::Verification(r) = restored.result else {
+        panic!("verification")
+    };
+    assert_eq!(r.engine_version, "0.1.0/science-16");
+    assert_eq!(r.processed_step_reports.len(), 1);
+    assert_eq!(
+        r.processed_step_reports[0]
+            .evidence
+            .projection
+            .sealing
+            .source_bases,
+        40
+    );
+    assert!(r.physical_processing_reports.is_empty());
+    compare65(4, old, "");
+}
+#[test]
+fn actual_schema65_nested_processed_graph_preserves_inverse_tail_warnings() {
+    compare65(16, inverse_era(eleven_field_report()), "/verification");
+}
+// Each independently encoded <=64 outer fixture also traverses its real65
+// report era with nonempty original processed graph evidence and trailing fields.
+fn upgrade65(tag: u32, mut value: serde_json::Value, path: &str) {
+    let report = serde_json::to_value(eleven_field_report()).unwrap();
+    if path.is_empty() {
+        value = report
+    } else {
+        *value.pointer_mut(path).unwrap() = report;
+    }
+    macro_rules! run {
+        ($t:ty) => {
+            compare65(tag, serde_json::from_value::<$t>(value).unwrap(), path)
+        };
+    }
+    match tag {
+        4 => run!(ElevenFieldReport),
+        16 => run!(OldInverse<ElevenFieldReport>),
+        41 => run!(OldReplay<ElevenFieldReport>),
+        86 => run!(OldOverlap<ElevenFieldReport>),
+        87 => run!(OldLigation<ElevenFieldReport>),
+        88 => run!(OldJunction<ElevenFieldReport>),
+        105 => run!(OldPool<ElevenFieldReport>),
+        107 => run!(OldReaction<ElevenFieldReport>),
+        134 => run!(OldDomestication<ElevenFieldReport>),
+        _ => panic!("unknown old layout fixture"),
     }
 }

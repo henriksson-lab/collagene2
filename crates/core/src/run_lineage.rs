@@ -187,13 +187,22 @@ fn validate_texts(values: &[String], limit: usize) -> Result<(), Error> {
 }
 fn validate_record(r: &RunRecord) -> Result<(), Error> {
     if r.schema_version != 1
-        || !matches!(r.plan_schema, 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11)
+        || !matches!(r.plan_schema, 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12)
         || !digest(&r.run_id)
         || r.assessment.engine_version.is_empty()
         || r.assessment.engine_version.len() > 128
         || r.assessment.status == Status::Invalid
     {
         return Err(bad("invalid schema or assessment"));
+    }
+    if r.plan_schema < 12
+        && (r.assessment.engine_version.ends_with("/science-17")
+            || r.plan
+                .steps
+                .iter()
+                .any(|s| matches!(s, Operation::TopoActions { .. })))
+    {
+        return Err(bad("Accounted chemical actions require plan schema12"));
     }
     if r.plan_schema < 11
         && (r.assessment.engine_version.ends_with("/science-16")
@@ -407,6 +416,7 @@ pub fn validate_workspace_runs(w: &Workspace) -> Result<(), Error> {
         crossrefs(w, &r)?
     }
     crate::processed_run_evidence::validate_workspace(w)?;
+    crate::physical_run_evidence::validate_workspace(w)?;
     Ok(())
 }
 pub fn list_runs(w: &Workspace) -> Result<Vec<RunSummary>, Error> {
@@ -487,6 +497,7 @@ pub fn record_run(
     }
     let mut report = verification::verify(plan, target);
     let processed_graphs = std::mem::take(&mut report.processed_step_reports);
+    let physical_graphs = std::mem::take(&mut report.physical_processing_reports);
     if report.products.len() != plan.steps.len()
         || !report
             .products
@@ -566,6 +577,10 @@ pub fn record_run(
         });
         next.revisions.insert(m.revision(), m);
         next.history.push(event);
+    }
+    if let Some(attachment) = crate::physical_run_evidence::attachment(&r, physical_graphs)? {
+        let hash = blake3::hash(&attachment.bytes).to_hex().to_string();
+        next.attachments.insert(hash, attachment);
     }
     if let Some(attachment) = crate::processed_run_evidence::attachment(&r, processed_graphs)? {
         let hash = blake3::hash(&attachment.bytes).to_hex().to_string();

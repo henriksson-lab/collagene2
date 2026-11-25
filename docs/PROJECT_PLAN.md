@@ -1115,3 +1115,37 @@ operation/StepReport/RunRecord/RunReceipt layouts stay intact.
 Accounted directional flap processing, broader upstream tracked-material recipes,
 durable graph-only reviews and all remaining method/delivery/acceptance milestones
 remain in scope. No browser checks precede completion of the in-scope code.
+
+
+### Ordered source-conserving physical processing
+
+The directional-flap milestone now has explicit ideal anchored hydrolysis followed
+by ordered templated nick sealing. Every original call remains in the full graph,
+including the excised four-call fragment. Fresh native contour/duplex construction
+feeds typed operation20 and downstream tracked digestion. Desktop review and MCP
+share declarations, actual component/nick inspection and explicit candidate handoff.
+Readable HTML/PDF and exact historical attachments retain the same evidence.
+
+Worker66/candidate14/plan12/science17 and MCP165 append these interfaces. The new
+generic typed physical-evidence slot supports later actions without a report field
+per chemistry; explicit legacy converters preserve all nine old wire paths through65.
+[Contract, validation and remaining boundaries](TOPO_PROCESSING_ACTIONS.md).
+
+Broader upstream tracked-source chemistry, durable graph-only review, remaining
+methods/batch work and all outstanding delivery/acceptance requirements remain
+active. Public8082 remains on the preceding worker65 snapshot. Browser checks stay
+deferred until the in-scope code is complete.
+
+
+### Further Benchling workflow checks
+
+Two additional parallel reviews of official public help found presentation
+connections rather than new PCR/export engines. The ordinary dock now shows the
+chosen method and actual per-slot preparation before intended-construct review.
+Next interaction work should reuse the existing directional primer editor from a
+sequence selection and expose a compact exact-event assembly-provenance overview;
+selection statistics can use the existing bounded/model-labelled calculation path.
+[Source comparison and explicit unknowns](BENCHLING_DESIGN_REVIEW_CONTINUITY.md).
+Do not revive historical gap tables already closed in current source or infer
+chemical correctness from public UI instructions. Further uncertain workflows
+should continue to receive parallel official-documentation reviews.

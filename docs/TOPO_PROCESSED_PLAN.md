@@ -73,6 +73,6 @@ are not used as a Postcard migration. Old headers reject the new operation,
 science/evidence and historical-download selectors; ordinary old files remain
 readable. Historical RunRecord and RunReceipt layouts remain unchanged.
 
-Accounted directional-flap processing, broader upstream tracked-source chemistry,
+Directional-flap processing is now available through [ordered actions](TOPO_PROCESSING_ACTIONS.md). Broader upstream tracked-source chemistry,
 durable graph-only review without a material product, remaining cloning methods
 and final delivery/GUI acceptance remain active requirements.

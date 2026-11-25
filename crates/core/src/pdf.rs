@@ -377,6 +377,187 @@ fn processed_topo_evidence_text(
     writeln!(out,"Complete original and treated graphs, source-call mappings, displacement, activation and annotation details remain in the matching cloning-run JSON evidence. Processed evidence content hash: {content_hash}. Source/request context: {}. This PDF presents cloning instructions and scientific summaries; it is not a substitute for that full evidence.",evidence.context_revision).map_err(|_|Error::TooLarge)?;
     out.finish()
 }
+fn topo_actions_step_text(
+    sources: &[verification::TopoSource],
+    request: &crate::topo_actions::Request,
+    plan: &DesignPlan,
+    report: &verification::VerificationReport,
+) -> Result<String, Error> {
+    use crate::topo::physical::processing::Action;
+    use io::Write as _;
+    let mut out = TopoText(Vec::new());
+    writeln!(out,"TOPO ordered physical processing: prepare the original declared strands, perform the requested transfers, then execute only the explicit actions below in order. Flap cleavage uses the ideal duplex-anchored 3prime hydrolysis profile. This is not a named nuclease, kit protocol, host-repair model or efficacy guarantee.").map_err(|_|Error::TooLarge)?;
+    for source in sources {
+        let revision = match &source.source {
+            Source::Input(id) => plan
+                .inputs
+                .iter()
+                .find(|i| i.id == *id)
+                .map(|i| i.revision.clone()),
+            Source::Step(i) => report.products.get(*i).map(Molecule::revision),
+        };
+        writeln!(
+            out,
+            "Source role {}: {}; revision {}",
+            source.role,
+            source_name(&source.source),
+            revision
+                .as_deref()
+                .unwrap_or("unavailable; upstream reconstruction is not established")
+        )
+        .map_err(|_| Error::TooLarge)?;
+    }
+    for (index, material) in request.preparation.recipe.materials.iter().enumerate() {
+        match material {
+            crate::topo::MaterialRecipe::Prepared {
+                declaration_id,
+                assumption,
+                strands,
+                pairing,
+            } => {
+                writeln!(out,"Prepared material {index} / {declaration_id}: {assumption}. Activation is an explicit material hypothesis, not a measured property.").map_err(|_|Error::TooLarge)?;
+                for strand in strands {
+                    writeln!(
+                        out,
+                        "Strand {}: 5prime {:?}; 3prime {:?}.",
+                        strand.id, strand.five_prime, strand.three_prime
+                    )
+                    .map_err(|_| Error::TooLarge)?;
+                    for interval in &strand.segments {
+                        writeln!(out,"Read source role {} from zero-based offset {} for {} bases; reverse complement {}.",interval.source_role,interval.start,interval.length,interval.reverse).map_err(|_|Error::TooLarge)?;
+                    }
+                }
+                for span in pairing {
+                    writeln!(out,"Pair {} antiparallel bases: prepared strand {} offset {}, strand {} offset {}.",span.length,span.strand_a,span.start_a,span.strand_b,span.start_b).map_err(|_|Error::TooLarge)?;
+                }
+            }
+            crate::topo::MaterialRecipe::ExactPcr {
+                material_id,
+                template_role,
+                forward,
+                reverse,
+                tail,
+            } => {
+                writeln!(out,"Exact PCR material {index} / {material_id}, original template role {template_role}: forward ordered oligo {} = {} (annealing {}; 5prime tail {}); reverse ordered oligo {} = {} (annealing {}; 5prime tail {}). Explicit subsequent 3prime tailing {tail:?}. Newly copied/synthesized calls do not inherit original modifications or prove empirical amplification.",forward.name,forward.ordered_sequence(),forward.annealing.as_str(),forward.tail,reverse.name,reverse.ordered_sequence(),reverse.annealing.as_str(),reverse.tail).map_err(|_|Error::TooLarge)?;
+            }
+        }
+    }
+    for (index, transfer) in request.preparation.transfers.iter().enumerate() {
+        writeln!(
+            out,
+            "Transfer {}: prepared donor strand {} to acceptor strand {}, {:?} geometry.",
+            index + 1,
+            transfer.donor,
+            transfer.acceptor,
+            transfer.geometry
+        )
+        .map_err(|_| Error::TooLarge)?;
+    }
+    writeln!(
+        out,
+        "Ordered action declarations (all source-call offsets below are zero-based):"
+    )
+    .map_err(|_| Error::TooLarge)?;
+    for (index, action) in request.processing.actions.iter().enumerate() {
+        match action {
+            Action::CleaveThreePrimeFlap {
+                bond,
+                displacement_step,
+                assumption,
+                ..
+            } => {
+                writeln!(out,"Action {}: ideal hydrolytic cleavage of the duplex-anchored 3prime flap at source strand {} call {} -> strand {} call {}, supported by original displacement transfer {}. Assumption: {}. Cleavage must independently prove this actual anchored flap; the detached fragment remains present with explicit new terminal chemistry.",index+1,bond.upstream.strand,bond.upstream.index,bond.downstream.strand,bond.downstream.index,displacement_step+1,assumption).map_err(|_|Error::TooLarge)?;
+            }
+            Action::SealNick {
+                selection,
+                ligase_assumption,
+            } => {
+                writeln!(out,"Action {}: seal source strand {} call {} (3prime side) to strand {} call {} (5prime side). Ligase assumption: {}. Actual paired-template continuity, 3prime OH and 5prime phosphate must be established; no phosphorylation or activation replacement is inferred.",index+1,selection.three.strand,selection.three.index,selection.five.strand,selection.five.index,ligase_assumption).map_err(|_|Error::TooLarge)?;
+            }
+        }
+    }
+    writeln!(out,"Select actual processed component {}, with reference seed source strand {} call {}. Require every requested transfer/action {}; require known terminal chemistry {}. Processing context: {}.",request.selection.component,request.selection.reference_seed.strand,request.selection.reference_seed.index,request.options.require_all_requested_transfers_applied,request.options.require_known_terminal_chemistry,request.selection.processing_context_revision).map_err(|_|Error::TooLarge)?;
+    writeln!(out,"Every source call, detached chain, unpaired run, remaining nick and other component is retained. Contour selection is not physical isolation; cleavage is not target-driven trimming. The independent target is compared only after fresh plan reconstruction. Concentrations, reaction conditions, enzyme identity/activity and experimental success require laboratory review.").map_err(|_|Error::TooLarge)?;
+    out.finish()
+}
+fn topo_actions_evidence_text(evidence: &crate::topo_actions::Report) -> Result<String, Error> {
+    use crate::topo::physical::{processing::ActionEvidence, projection::Outcome};
+    use io::Write as _;
+    let mut out = TopoText(Vec::new());
+    let processing = &evidence.projection.processing;
+    let original = &processing.parent.product;
+    let product = &processing.product;
+    let total = |graph: &crate::topo::physical::ProductGraph| {
+        graph.chains.iter().try_fold(0usize, |n, c| {
+            n.checked_add(c.sequence.len()).ok_or(Error::TooLarge)
+        })
+    };
+    writeln!(out,"Fresh ordered-action evidence: {} original source calls; {} calls in the original graph, {} calls retained after processing. Original {} components / {} nicks / {} unpaired runs; processed {} components / {} nicks / {} unpaired runs. All actions applied {}; unsupported or unknown {}.",processing.source_bases,total(original)?,total(product)?,original.components.len(),original.nicks.len(),original.unpaired.len(),product.components.len(),product.nicks.len(),product.unpaired.len(),processing.all_requested_actions_applied,processing.unsupported_or_unknown).map_err(|_|Error::TooLarge)?;
+    for step in &processing.steps {
+        match step {
+            ActionEvidence::FlapCleavage(e) => {
+                let three = e
+                    .created_three_prime
+                    .as_ref()
+                    .map(|v| format!("{v:?}"))
+                    .unwrap_or_else(|| "not created".into());
+                let five = e
+                    .created_five_prime
+                    .map(|v| format!("{v:?}"))
+                    .unwrap_or_else(|| "not created".into());
+                writeln!(out,"Action {} flap cleavage: {:?}; {}. {} displaced source calls remain accounted for; new 3prime end {}, new 5prime end {}.",e.step+1,e.outcome,e.reason,e.flap_calls.len(),three,five).map_err(|_|Error::TooLarge)?;
+            }
+            ActionEvidence::NickSealing(e) => {
+                writeln!(
+                    out,
+                    "Action {} nick sealing: {:?}; {}. Actual 3prime {:?}, 5prime {:?}.",
+                    e.step + 1,
+                    e.outcome,
+                    e.reason,
+                    e.three_prime,
+                    e.five_prime
+                )
+                .map_err(|_| Error::TooLarge)?;
+            }
+        }
+    }
+    for (index, component) in product.components.iter().enumerate() {
+        let count = component.chains.iter().try_fold(0usize, |n, i| {
+            product
+                .chains
+                .get(*i)
+                .and_then(|c| n.checked_add(c.sequence.len()))
+                .ok_or(Error::TooLarge)
+        })?;
+        writeln!(out,"{} component {index}: {count} retained source calls; {} paired, {} unpaired; {} chains; covalently closed {}.",if index==evidence.request.selection.component{"Selected"}else{"Other retained"},component.paired_nucleotides,component.unpaired_nucleotides,component.chains.len(),component.covalently_closed).map_err(|_|Error::TooLarge)?;
+    }
+    for nick in &product.nicks {
+        writeln!(out,"Remaining nick: source strand {} call {} ({:?}, 3prime) -> strand {} call {} ({:?}, 5prime).",nick.three.strand,nick.three.index,nick.three_prime,nick.five.strand,nick.five.index,nick.five_prime).map_err(|_|Error::TooLarge)?;
+    }
+    match &evidence.projection.outcome {
+        Outcome::Proven(v) => {
+            writeln!(out,"Proven {:?} paired contour: actual top {} / bottom {} bases; {} retained contour nicks; terminal chemistry known {}.",v.topology,v.top.len(),v.bottom.len(),v.nicks.len(),v.fully_known_terminal_chemistry).map_err(|_|Error::TooLarge)?;
+        }
+        Outcome::Withheld(reason) => {
+            writeln!(out,"Contour withheld: {reason:?}. No replacement material or target-directed repair was created.").map_err(|_|Error::TooLarge)?;
+        }
+    }
+    writeln!(out,"Faithful duplex available {}; tracked bridge {}; source-derived reference {}. A faithful bridge does not prove biological function, isolation or laboratory success.",evidence.duplex.is_some(),evidence.tracked.is_some(),evidence.product.is_some()).map_err(|_|Error::TooLarge)?;
+    if let Some(annotations) = &evidence.annotations {
+        for source in &annotations.sources {
+            writeln!(out,"Annotation source {}: {} projected, {} outside selected contour, {} unmapped originals; projection supported {}. Disrupted and PCR-derived features require review.",source.role,source.projected,source.dropped,source.unmapped.len(),source.projection_supported).map_err(|_|Error::TooLarge)?;
+        }
+    }
+    for assumption in &processing.assumptions {
+        writeln!(out, "Processing assumption: {assumption}").map_err(|_| Error::TooLarge)?;
+    }
+    for note in &evidence.bridge_notes {
+        writeln!(out, "Bridge limitation: {note}").map_err(|_| Error::TooLarge)?;
+    }
+    let hash = crate::assembly_recipe::hash(evidence)?;
+    writeln!(out,"Complete original and processed graphs, cut/seal evidence, displacement, terminal activation and source maps remain in the matching cloning-run JSON sidecar. Action evidence content hash: {hash}. Source/request context: {}. This readable protocol summarizes that evidence; the full graph is not embedded here.",evidence.context_revision).map_err(|_|Error::TooLarge)?;
+    out.finish()
+}
 fn status_text(status: Status) -> &'static str {
     match status {
         Status::Invalid => "DRAFT - INVALID: do not use as a validated protocol",
@@ -1076,6 +1257,9 @@ pub(crate) fn export_protocol_pdf_checked(
             Operation::ProcessedTopo { sources, request } => {
                 processed_topo_step_text(sources, request, plan, &report)?
             }
+            Operation::TopoActions { sources, request } => {
+                topo_actions_step_text(sources, request, plan, &report)?
+            }
             Operation::RecombineReference {
                 sources,
                 request,
@@ -1312,6 +1496,17 @@ pub(crate) fn export_protocol_pdf_checked(
                 9.0,
                 INK,
             )?;
+        }
+        if let Some(entry) = report
+            .physical_processing_reports
+            .iter()
+            .find(|entry| entry.step_index == index)
+        {
+            match &entry.evidence {
+                verification::PhysicalProcessingEvidence::TopoActions(evidence) => {
+                    layout.paragraph_size(&topo_actions_evidence_text(evidence)?, 9.0, INK)?
+                }
+            }
         }
         if let Some(annotations) = report
             .annotation_reports

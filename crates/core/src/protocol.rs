@@ -6,8 +6,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 65;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 13;
+pub const WORKER_SCHEMA_VERSION: u16 = 66;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 14;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
@@ -862,6 +862,14 @@ pub enum AnalysisJob {
         workspace: crate::workspace::Workspace,
         run_id: String,
     },
+    ProcessTopoActions {
+        inputs: Vec<crate::topo::Input>,
+        request: crate::topo_actions::Request,
+    },
+    InspectTopoActions {
+        inputs: Vec<crate::topo::Input>,
+        request: crate::topo_actions::ActionsRequest,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1016,6 +1024,8 @@ pub enum AnalysisResult {
     TopoNicksSealed(crate::topo_nick_sealing::Report),
     ProcessedTopoProduct(crate::topo_processed_product::Report),
     HistoricalProcessedRunEvidence(crate::processed_run_evidence::Download),
+    TopoActionsProduct(crate::topo_actions::Report),
+    TopoActionsInspected(crate::topo_actions::Inspection),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1062,6 +1072,7 @@ impl From<LegacyVerificationReport> for crate::verification::VerificationReport 
             step_reports: Vec::new(),
             annotation_reports: Vec::new(),
             processed_step_reports: Vec::new(),
+            physical_processing_reports: Vec::new(),
         }
     }
 }
@@ -1108,6 +1119,7 @@ impl From<LegacyVerificationReportV24> for crate::verification::VerificationRepo
             step_reports: Vec::new(),
             annotation_reports: Vec::new(),
             processed_step_reports: Vec::new(),
+            physical_processing_reports: Vec::new(),
         }
     }
 }
@@ -1154,6 +1166,7 @@ impl From<LegacyVerificationReportV26> for crate::verification::VerificationRepo
             step_reports: old.step_reports,
             annotation_reports: Vec::new(),
             processed_step_reports: Vec::new(),
+            physical_processing_reports: Vec::new(),
         }
     }
 }
@@ -1239,6 +1252,12 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         crate::pairwise_context::preflight(report, reference, query, *translate)?;
     }
     match &r.job {
+        AnalysisJob::ProcessTopoActions { inputs, request } => {
+            crate::topo_actions::preflight(inputs, request)?
+        }
+        AnalysisJob::InspectTopoActions { inputs, request } => {
+            crate::topo_actions::preflight_actions(inputs, request)?
+        }
         AnalysisJob::ProjectProcessedTopo { inputs, request } => {
             crate::topo_processed_product::preflight(inputs, request)?
         }
@@ -1412,6 +1431,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_nick_sealing_tag(bytes, &[139])?;
     preflight_processed_topo_tag(bytes, &[140])?;
     preflight_processed_run_tag(bytes, &[141])?;
+    preflight_topo_actions_tag(bytes, &[142, 143])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1468,6 +1488,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         },
     };
     let required = match &response.result {
+        AnalysisResult::TopoActionsProduct(_) | AnalysisResult::TopoActionsInspected(_) => 66,
         AnalysisResult::HistoricalProcessedRunEvidence(_) => 65,
         AnalysisResult::ProcessedTopoProduct(_) => 64,
         AnalysisResult::TopoNicksSealed(_) => 63,
@@ -1629,6 +1650,12 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
     }
     match &response.result {
+        AnalysisResult::TopoActionsProduct(report) => {
+            report.validate_binding(&response.revision)?
+        }
+        AnalysisResult::TopoActionsInspected(report) => {
+            report.validate_binding(&response.revision)?
+        }
         AnalysisResult::HistoricalProcessedRunEvidence(value) => {
             if value.run_id.len() != 64
                 || value.recorded_engine.len() > 128
@@ -2249,6 +2276,14 @@ fn preflight_domestication_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> 
     }
     Ok(())
 }
+fn preflight_topo_actions_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 66)?;
+    }
+    Ok(())
+}
 fn preflight_processed_run_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -2586,6 +2621,25 @@ fn check_verification_report_version(
     report: &crate::verification::VerificationReport,
 ) -> Result<(), Error> {
     check_scientific_report_version(bytes, &report.engine_version)?;
+    if !report.physical_processing_reports.is_empty() {
+        check_variant_version(bytes, 66)?;
+        if report.physical_processing_reports.len() > 64 {
+            return Err(Error::TooLarge);
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for step in &report.physical_processing_reports {
+            if step.step_index >= 1000 || !seen.insert(step.step_index) {
+                return Err(Error::Format(
+                    "Invalid physical processing step index".into(),
+                ));
+            }
+            match &step.evidence {
+                crate::verification::PhysicalProcessingEvidence::TopoActions(r) => {
+                    r.validate_binding(&r.context_revision)?
+                }
+            }
+        }
+    }
     if !report.processed_step_reports.is_empty() {
         check_variant_version(bytes, 65)?;
         if report.processed_step_reports.len() > 64 {
@@ -2605,6 +2659,9 @@ fn check_verification_report_version(
     Ok(())
 }
 fn check_scientific_report_version(bytes: &[u8], engine: &str) -> Result<(), Error> {
+    if engine.ends_with("/science-17") {
+        check_variant_version(bytes, 66)?;
+    }
     if engine.ends_with("/science-16") {
         check_variant_version(bytes, 65)?;
     }
@@ -2672,6 +2729,9 @@ fn check_workspace_version(
             check_variant_version(bytes, 12)?;
             let record = crate::run_lineage::load_run_record(&attachment.bytes)?;
             check_variant_version(bytes, plan_worker_version(&record.plan))?;
+            if record.plan_schema >= 12 {
+                check_variant_version(bytes, 66)?;
+            }
             if record.plan_schema >= 11 {
                 check_variant_version(bytes, 65)?;
             }
@@ -2782,6 +2842,7 @@ fn plan_worker_version(plan: &crate::verification::DesignPlan) -> u16 {
     plan.steps
         .iter()
         .map(|step| match step {
+            crate::verification::Operation::TopoActions { .. } => 66,
             crate::verification::Operation::ProcessedTopo { .. } => 65,
             crate::verification::Operation::SelectedGoldenGate { .. } => 59,
             crate::verification::Operation::CatalogDigest { .. } => 37,
@@ -2876,6 +2937,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_nick_sealing_tag(bytes, &[147])?;
     preflight_processed_topo_tag(bytes, &[148])?;
     preflight_processed_run_tag(bytes, &[149])?;
+    preflight_topo_actions_tag(bytes, &[150, 151])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -2883,6 +2945,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::ProcessTopoActions { .. } | AnalysisJob::InspectTopoActions { .. } => 66,
         AnalysisJob::LoadProcessedRunEvidence { .. } => 65,
         AnalysisJob::ProjectProcessedTopo { .. } => 64,
         AnalysisJob::SealTopoNicks { .. } => 63,
@@ -3476,6 +3539,20 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             if crate::golden_gate_reaction::selection_revision(report, selection)? != r.revision {
                 return Err(Error::Format(
                     "Golden Gate reaction selection changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::ProcessTopoActions { inputs, request } => {
+            if crate::topo_actions::revision(inputs, request)? != r.revision {
+                return Err(Error::Format("TOPO actions product context changed".into()));
+            }
+            None
+        }
+        AnalysisJob::InspectTopoActions { inputs, request } => {
+            if crate::topo_actions::revision_actions(inputs, request)? != r.revision {
+                return Err(Error::Format(
+                    "TOPO action inspection context changed".into(),
                 ));
             }
             None
@@ -4247,6 +4324,13 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let result = match r.job {
+        AnalysisJob::ProcessTopoActions { inputs, request } => {
+            crate::topo_actions::inspect(&inputs, &request).map(AnalysisResult::TopoActionsProduct)
+        }
+        AnalysisJob::InspectTopoActions { inputs, request } => {
+            crate::topo_actions::inspect_actions(&inputs, &request)
+                .map(AnalysisResult::TopoActionsInspected)
+        }
         AnalysisJob::LoadProcessedRunEvidence { workspace, run_id } => {
             crate::processed_run_evidence::download(&workspace, &run_id)
                 .map(AnalysisResult::HistoricalProcessedRunEvidence)

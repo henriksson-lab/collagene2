@@ -776,7 +776,36 @@ fn terminal3(s: &Substrates, g: &Graph, node: usize) -> ThreePrime {
         ThreePrime::Unknown
     }
 }
+#[derive(Default)]
+struct TerminalOverrides {
+    five: BTreeMap<usize, FivePrime>,
+    three: BTreeMap<usize, ThreePrime>,
+}
+fn effective_five(s: &Substrates, g: &Graph, node: usize, ends: &TerminalOverrides) -> FivePrime {
+    ends.five.get(&node).copied().unwrap_or_else(|| {
+        let c = g.call(node);
+        if c.index == 0 {
+            s.strands[c.strand].five_prime
+        } else {
+            FivePrime::Unknown
+        }
+    })
+}
+fn effective_three(s: &Substrates, g: &Graph, node: usize, ends: &TerminalOverrides) -> ThreePrime {
+    ends.three
+        .get(&node)
+        .cloned()
+        .unwrap_or_else(|| terminal3(s, g, node))
+}
 fn output(s: &Substrates, g: &Graph, released: Vec<String>) -> Result<ProductGraph, Error> {
+    output_with_terminals(s, g, released, &TerminalOverrides::default())
+}
+fn output_with_terminals(
+    s: &Substrates,
+    g: &Graph,
+    released: Vec<String>,
+    ends: &TerminalOverrides,
+) -> Result<ProductGraph, Error> {
     let n = g.pairs.len();
     let mut visited = vec![false; n];
     let mut chains = vec![];
@@ -854,8 +883,8 @@ fn output(s: &Substrates, g: &Graph, released: Vec<String>) -> Result<ProductGra
             ChainEnds::CovalentlyCircular
         } else {
             ChainEnds::Linear {
-                five_prime: s.strands[g.call(start).strand].five_prime,
-                three_prime: terminal3(s, g, *nodes.last().expect("nonempty")),
+                five_prime: effective_five(s, g, start, ends),
+                three_prime: effective_three(s, g, *nodes.last().expect("nonempty"), ends),
             }
         };
         chains.push(Chain {
@@ -884,8 +913,8 @@ fn output(s: &Substrates, g: &Graph, released: Vec<String>) -> Result<ProductGra
         nicks.push(Nick {
             three: g.call(node),
             five: g.call(five),
-            three_prime: terminal3(s, g, node),
-            five_prime: s.strands[g.call(five).strand].five_prime,
+            three_prime: effective_three(s, g, node, ends),
+            five_prime: effective_five(s, g, five, ends),
         });
     }
     // Connected molecular complexes under actual covalent bonds AND declared base pairs.
@@ -1202,3 +1231,8 @@ pub mod nick_sealing;
 
 /// Paired-contour proof after explicit source-reconstructed treatment.
 pub mod processed_projection;
+
+pub mod processing;
+
+/// Contour proof after extensible accounted chemical actions.
+pub mod processing_projection;

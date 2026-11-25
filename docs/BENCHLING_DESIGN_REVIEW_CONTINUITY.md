@@ -1,0 +1,27 @@
+# Benchling design-review continuity: current source audit
+
+Reviewed 2026-11-25. Official public help only; no local browser, screenshots, builds or production edits. Distinct from the parallel assembly-setup review. Existing Benchling reviews were read first; earlier gaps now closed are not repeated as missing implementations.
+
+## Documented interactions and present comparison
+
+Benchling starts manual primer creation directly from a selected sequence region, asks forward/reverse direction, and opens its primer editor. It also supports populating another pair domain from a selection. Existing-primer attachment is a separate search/choose/attach flow. Linked pairs can be unlinked while primers stay attached; primer visibility is separate again. Export uses selected primers. These are distinct interaction operations, not proof of current binding or amplification. [Use primers, updated2025-10-02](https://help.benchling.com/hc/en-us/articles/39072057302541-Use-primers).
+
+Our shared pair editor already preserves domain/tail/name and exact selected source event; saved oligo reuse, reference comparison, actual hit handoff, full hit paging and source overlays exist. `primers.rs:391–406`, `primer_pair_editor.rs:108–153`, `primer_picker.rs`, and `PRIMER_REFERENCE_RECOVERY.md` establish this. Do not rebuild primer design or add Primer3. The outstanding convenience is entry from the sequence selection itself: `SequenceView` has no create-primer callback/context menu; the user goes to the primer panel before its selection buttons. A compact selection action row opening the EXISTING editor in an explicit direction would shorten this everyday flow without inventing another pair state. This is a current source-based recommendation, not browser acceptance.
+
+Benchling's separate PCR guide links a selected pair, then offers Create PCR Product, options, and a Copy/save step. [Run PCR in silico, updated2022-10-20](https://help.benchling.com/hc/en-us/articles/9684267245325-Run-PCR-in-silico). Our ordinary and mismatch PCR selected-output panels already supply explicit geometry, named output, optional declared primer collection, CSV/TSV and exact-source guards; `pcr_outputs.rs:219–257` and `PCR_OUTPUTS.md` close the old automatic-all-products gap. No missing PCR output engine was found.
+
+Benchling displays selected-region coordinates, length, GC and Tm in the sequence status area. [DNA/RNA sequence overview, updated2025-09-30](https://help.benchling.com/hc/en-us/articles/39110680274189-DNA-and-RNA-sequence-overview). Our `app.rs:941–979` status reports coordinates/length or multipart span count; header GC is whole-document GC. A useful small follow-up is selection GC and optional model/conditions-labelled Tm beside directional primer creation. Use bounded/cached selection computation, explicit unknowns for ambiguous or multipart regions, and existing thermodynamics. Do not label a generic Tm as a PCR annealing recommendation.
+
+For outputs, the same Benchling overview distinguishes per-sequence format selection from bulk selected-file GenBank/FASTA/CSV/ZIP exports. Our existing document exports, SVG map and released-construct archive already cover these purposes (`MAP_EXPORT.md`, `assembly_archive_view.rs:260–281`). No new format engine is justified by this research.
+
+## Highest-value product review connection
+
+Benchling exposes visual Assembly History from the resulting sequence's own tab, separate from generic history/lineage. [Assembly History location](https://help.benchling.com/hc/en-us/articles/17806823063053-Why-can-I-no-longer-see-the-assembly-history-in-the-lineage-tab); [current assembly guide](https://help.benchling.com/hc/en-us/articles/39922419457165-How-to-use-the-combinatorial-cloning-and-concatenation-assembly-tools).
+
+Our exact product→run→source/product version navigation, editable fork, historical status, current replay and retained graph downloads already exist. `RunDetailsPanel` currently presents paged input cards and ordered product-step cards with expandable textual operation parameters (`run_capture.rs:575–617`). A compact visual source→preparation→assembly→product overview would make those SAME exact bindings easier to review. It should open the existing exact-event viewers; matching DNA, active document names or copied product metadata must not invent edges. This is a presentation gap, not missing lineage science. The already documented compact-provenance follow-up remains applicable after checking current source.
+
+## Explicit unknowns / non-goals
+
+The reviewed help does not establish exact-event immutability, bounded ambiguity/exhaustiveness rules, target independence, internal chemical-state preservation or valid protocol-reagent quantities. It does not establish that GenBank/FASTA/CSV or map exports preserve an assembly graph. Product-linked Assembly History is not evidence that export recovers it. Public Notebook PDF/HTML export is also not a documented automatic verified cloning-protocol generator. Retain our native workspace/history and fresh protocol verification; no ELN, inventory, project hierarchy, external runtime or undocumented scientific parity is added.
+
+Suggested order: selection→existing primer editor shortcut; compact existing run provenance view; selection statistics as a small adjunct. Keep current PCR/output/export implementations and their exact-event contracts. GUI smoothness/layout acceptance remains deferred by the user.

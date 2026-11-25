@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 163;
+pub const CURRENT_TOOL_COUNT: usize = 165;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -4383,9 +4383,9 @@ impl CollageneServer {
         self.compute(move||{
             let workspace=server.restore_workspace(&args.workspace)?;
             let record=collagene_core::run_lineage::load_run(&workspace,&args.run_id).map_err(bad)?;
-            let evidence=collagene_core::processed_run_evidence::load(&workspace,&args.run_id).map_err(bad)?;
-            let artifact=evidence.as_ref().map(|e|server.text_artifact(bounded_json_limit(e,32*1024*1024)?,"application/json","historical-processed-topo-graphs.json")).transpose()?;
-            output(json!({"state":"historical","verified":false,"run_id":record.run_id,"recorded_engine":record.assessment.engine_version,"processed_step_count":evidence.as_ref().map_or(0,|e|e.steps.len()),"artifact_id":artifact,"authority":"Stored historical graph evidence only. Fresh replay of exact original inputs is required for current material state or verification."}))
+            let evidence=collagene_core::processed_run_evidence::download(&workspace,&args.run_id).map_err(bad)?;
+            let artifact=evidence.bytes.as_ref().map(|bytes|server.text_artifact(String::from_utf8(bytes.clone()).map_err(bad)?,"application/json","historical-physical-graphs.json")).transpose()?;
+            output(json!({"state":"historical","verified":false,"run_id":record.run_id,"recorded_engine":record.assessment.engine_version,"processed_step_count":evidence.step_count,"artifact_id":artifact,"authority":"Stored historical graph evidence only. Fresh replay of exact original inputs is required for current material state or verification."}))
         }).await
     }
     #[tool(
@@ -5500,6 +5500,24 @@ impl CollageneServer {
         self.topo_processed_product(args).await
     }
     #[tool(
+        description = "Freshly inspect ordered, explicit ideal-hydrolytic flap cleavage and nick sealing from original TOPO sources. Every original base, excised chain and component remains accounted for. No named nuclease, host repair, kit efficacy, isolation or target-derived trimming is inferred. Returns actual outcomes, components/nicks and full evidence for explicit later selection."
+    )]
+    async fn inspect_topo_actions(
+        &self,
+        Parameters(args): Parameters<topo_actions_tools::InspectQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.inspect_actions(args).await
+    }
+    #[tool(
+        description = "Freshly reconstruct source-bound chemical actions and prove a selected paired contour. Uses exact processing context/component/source seed and preserves the excised fragment, all parent/child graphs, created end chemistry and Unknown modifications. An annotated sequence view cannot restore private material; use the TopoActions plan operation with an independent target for full verification."
+    )]
+    async fn project_topo_actions(
+        &self,
+        Parameters(args): Parameters<topo_actions_tools::ProductQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.project_actions(args).await
+    }
+    #[tool(
         description = "Inspect source-bound restriction sites, explicit retained/protected ranges and coding-feature constraints for internal-site domestication. Uses exact catalog/feature/source pins and reports unsupported geometry or translation semantics rather than assuming a silent change. Reference inspection only; no physical stock is made."
     )]
     async fn inspect_domestication(
@@ -6179,7 +6197,8 @@ impl CollageneServer {
             .cloned()
             .ok_or_else(|| bad("unknown plan revision"))?;
         let report = verification::verify(&saved.plan, &saved.target);
-        let processed_step_count = report.processed_step_reports.len();
+        let processed_step_count =
+            report.processed_step_reports.len() + report.physical_processing_reports.len();
         let artifact = if processed_step_count > 0 {
             Some(self.text_artifact(
                 bounded_json_limit(&report, 32 * 1024 * 1024)?,
@@ -6350,6 +6369,7 @@ mod domestication_tools;
 mod fusion_design_tools;
 mod published_ligation_tools;
 mod recombination_tools;
+mod topo_actions_tools;
 
 #[cfg(test)]
 mod finalized_workspace_atomic_capacity {

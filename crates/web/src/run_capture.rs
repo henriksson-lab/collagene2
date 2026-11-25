@@ -596,6 +596,7 @@ pub fn RunDetailsPanel(
                                 collagene_core::verification::Operation::CheckedTopo{..}=>"TOPO graph with explicit target acceptance",
                                 collagene_core::verification::Operation::Topo{..}=>"TOPO physical strand reconstruction",
                                 collagene_core::verification::Operation::ProcessedTopo{..}=>"Processed TOPO source reconstruction and faithful material bridge",
+                                collagene_core::verification::Operation::TopoActions{..}=>"TOPO ordered source-backed physical actions",
                                 collagene_core::verification::Operation::RecombineReference{..}=>"Reference-only BP/LR exchange",
                                 collagene_core::verification::Operation::TreatEnds{..}=>"Treat ends",
                                 collagene_core::verification::Operation::RepairEnds{..}=>"Repair ends",

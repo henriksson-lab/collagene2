@@ -165,6 +165,11 @@ pub enum Operation {
         sources: Vec<TopoSource>,
         request: crate::topo_processed_product::Request,
     },
+    /// Accounted explicit graph actions; includes every retained byproduct.
+    TopoActions {
+        sources: Vec<TopoSource>,
+        request: crate::topo_actions::Request,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -203,6 +208,8 @@ pub struct VerificationReport {
     /// Full additive processed graph evidence, including withheld material.
     #[serde(default)]
     pub processed_step_reports: Vec<ProcessedTopoStepReport>,
+    #[serde(default)]
+    pub physical_processing_reports: Vec<PhysicalProcessingStepReport>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -230,7 +237,19 @@ pub struct ProcessedTopoStepReport {
     pub evidence: crate::topo_processed_product::Report,
 }
 
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-16");
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum PhysicalProcessingEvidence {
+    TopoActions(crate::topo_actions::Report),
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct PhysicalProcessingStepReport {
+    pub step_index: usize,
+    pub evidence: PhysicalProcessingEvidence,
+}
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-17");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrDocument {
@@ -788,6 +807,14 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
                 return Err(Error::Format("invalid TOPO source selection".into()));
             }
         }
+        if let Operation::TopoActions { sources, request } = step {
+            count += 1;
+            if count > 64 {
+                return Err(Error::TooLarge);
+            }
+            validate_topo_shape(sources, &request.preparation)?;
+            crate::topo_actions::request_preflight(request)?;
+        }
         if let Operation::ProcessedTopo { sources, request } = step {
             count += 1;
             if count > 64 {
@@ -860,7 +887,8 @@ pub(crate) fn operation_sources(op: &Operation) -> Vec<&Source> {
         Operation::RecombineReference { sources, .. } => sources.iter().collect(),
         Operation::Topo { sources, .. }
         | Operation::CheckedTopo { sources, .. }
-        | Operation::ProcessedTopo { sources, .. } => sources.iter().map(|s| &s.source).collect(),
+        | Operation::ProcessedTopo { sources, .. }
+        | Operation::TopoActions { sources, .. } => sources.iter().map(|s| &s.source).collect(),
         Operation::Pcr { template, .. }
         | Operation::PcrWithMismatches { template, .. }
         | Operation::Digest { template, .. }
@@ -976,6 +1004,7 @@ fn evaluate_captured(
                     | Operation::Topo { .. }
                     | Operation::CheckedTopo { .. }
                     | Operation::ProcessedTopo { .. }
+                    | Operation::TopoActions { .. }
                     | Operation::DeclareSourceTermini { .. }
                     | Operation::CatalogDigest { .. }
                     | Operation::SelectedGoldenGate { .. }
@@ -989,11 +1018,11 @@ fn evaluate_captured(
     });
     if let Err(error) = preflight {
         return (VerificationReport { plan_revision: String::new(), target_revision: String::new(), engine_version: ENGINE_VERSION.into(), status: Status::Invalid,
-            findings: vec![error.to_string()], assumptions: vec!["Reference/TOPO request rejected before plan hashing; no current result binding established.".into()], products: vec![], exhaustive_alternative_search: false, step_reports: vec![], annotation_reports: vec![], processed_step_reports: vec![] }, Vec::new());
+            findings: vec![error.to_string()], assumptions: vec!["Reference/TOPO request rejected before plan hashing; no current result binding established.".into()], products: vec![], exhaustive_alternative_search: false, step_reports: vec![], annotation_reports: vec![], processed_step_reports: vec![], physical_processing_reports: vec![] }, Vec::new());
     }
     let mut report = VerificationReport {
         plan_revision: plan_revision(plan), target_revision: target.revision(), engine_version: ENGINE_VERSION.into(),
-        status: Status::Invalid, findings: vec![], products: vec![], exhaustive_alternative_search: false, step_reports: vec![], annotation_reports: vec![], processed_step_reports: vec![],
+        status: Status::Invalid, findings: vec![], products: vec![], exhaustive_alternative_search: false, step_reports: vec![], annotation_reports: vec![], processed_step_reports: vec![], physical_processing_reports: vec![],
         assumptions: vec!["Exact annealing/overlap model; no experimental outcome is guaranteed.".into(),
             "RecombineReference is a bounded full-site-profile reciprocal reference exchange. All components are computed before an explicit selection; neither its selected DNA nor target agreement establishes chemical strand state, biological repair, efficacy or a selected experimental winner. Reference-only ancestry cannot supply physical PCR or annealing material.".into(),
             "TOPO reconstructs explicitly declared strands, pairing and elementary transfers. Its full physical graph is retained; a selected proven paired contour supplies a restrictive reference view only. No implicit target acceptance policy, nick/flap repair, supplier-kit state or experimental success is asserted. Downstream physical graph consumption is not yet modeled.".into(),
@@ -1019,6 +1048,7 @@ fn evaluate_captured(
         &mut report.step_reports,
         &mut report.annotation_reports,
         &mut report.processed_step_reports,
+        &mut report.physical_processing_reports,
         &mut physical,
         final_golden_gate,
     ) {
@@ -1846,6 +1876,7 @@ fn reconstruct(
     step_reports: &mut Vec<StepReport>,
     annotation_reports: &mut Vec<AnnotationStepReport>,
     processed_step_reports: &mut Vec<ProcessedTopoStepReport>,
+    physical_processing_reports: &mut Vec<PhysicalProcessingStepReport>,
     physical: &mut Vec<Option<TrackedDuplex>>,
     final_golden_gate: &mut Option<crate::golden_gate::GoldenGateReport>,
 ) -> Result<Vec<String>, Error> {
@@ -1893,6 +1924,7 @@ fn reconstruct(
                     | Operation::Topo { .. }
                     | Operation::CheckedTopo { .. }
                     | Operation::ProcessedTopo { .. }
+                    | Operation::TopoActions { .. }
             )
         {
             return Err(Error::Unsupported("Reference-only ancestry cannot establish a physical PCR/annealing/TOPO substrate. Its full originating graph must be consumed by an explicit supported physical operation; no materialization or graph repair is inferred.".into()));
@@ -1921,6 +1953,98 @@ fn reconstruct(
             |source: &Source| -> Result<Duplex, Error> { Ok(resolve_tracked(source)?.duplex) };
         let mut next_physical = None;
         let mut product = match step {
+            Operation::TopoActions { sources, request } => {
+                // Converting a private tracked descendant to a plain sequence
+                // would erase known/unknown modification and graph ancestry.
+                if sources.iter().any(|s| matches!(s.source, Source::Step(_))) {
+                    return Err(Error::Unsupported("TopoActions composition currently requires original source inputs. Tracked Step ancestry is not mapped through its declared preparation; use the existing private tracked state directly for downstream digest/repair instead of resetting chemical state.".into()));
+                }
+                let molecules = sources
+                    .iter()
+                    .map(|s| resolve(&s.source))
+                    .collect::<Result<Vec<_>, _>>()?;
+                for molecule in &molecules {
+                    if chemistry::has_unmapped_physical_evidence(molecule)
+                        || molecule.metadata.contains_key("tracked_modifications")
+                        || molecule
+                            .metadata
+                            .contains_key(crate::recombination::REFERENCE_ONLY_KEY)
+                        || molecule.metadata.keys().any(|key| key.starts_with("topo:"))
+                    {
+                        return Err(Error::Unsupported("TopoActions requires original reference sources with explicit preparation declarations; imported physical/reference-only summaries cannot restore their lost graph or tracked modification state.".into()));
+                    }
+                }
+                let inputs = topo_inputs(sources, &molecules, &request.preparation)?;
+                let fresh = crate::topo_actions::inspect(&inputs, request)?;
+                let fresh_bytes = evidence_bytes(&fresh, crate::topo_actions::MAX_REPORT_BYTES)?;
+                step_evidence_bytes = step_evidence_bytes
+                    .checked_add(fresh_bytes)
+                    .filter(|n| *n <= 32 * 1024 * 1024)
+                    .ok_or(Error::TooLarge)?;
+                let selected_bases = fresh
+                    .product
+                    .as_ref()
+                    .map_or(0, |m| m.sequence.len())
+                    .checked_add(
+                        fresh
+                            .tracked
+                            .as_ref()
+                            .map_or(0, |t| t.top.len() + t.bottom.len()),
+                    )
+                    .ok_or(Error::TooLarge)?;
+                let tracked_bytes = fresh
+                    .tracked
+                    .as_ref()
+                    .map(|t| evidence_bytes(t, 32 * 1024 * 1024))
+                    .transpose()?
+                    .unwrap_or(0);
+                let selected_document_bytes = fresh
+                    .product
+                    .as_ref()
+                    .map(|m| evidence_bytes(m, 32 * 1024 * 1024))
+                    .transpose()?
+                    .unwrap_or(0);
+                if product_bases
+                    .checked_add(selected_bases)
+                    .is_none_or(|n| n > 32_000_000)
+                    || product_bytes
+                        .checked_add(step_evidence_bytes)
+                        .and_then(|n| n.checked_add(tracked_bytes))
+                        .and_then(|n| n.checked_add(selected_document_bytes))
+                        .is_none_or(|n| n > 64 * 1024 * 1024)
+                {
+                    return Err(Error::Unsupported("TopoActions selected material plus full retained graph exceeds the plan material/evidence budget before duplicating its selected product.".into()));
+                }
+                let graph = &fresh.projection.processing.product;
+                findings.push(format!("Step {} fresh TopoActions retains {} components, {} original source calls, {} remaining graph nicks and {} unpaired calls. Explicit component selection is not physical isolation or a mixture winner; all other components and released activations remain typed evidence.",index+1,graph.components.len(),fresh.projection.processing.source_bases,graph.nicks.len(),graph.unpaired.iter().map(|r|r.end-r.start).sum::<usize>()));
+                if !fresh
+                    .projection
+                    .processing
+                    .parent
+                    .all_requested_transfers_applied
+                    || !fresh.projection.processing.all_requested_actions_applied
+                {
+                    findings.push(format!("Step {} retains an unapplied/unknown requested branch under its explicit projection options; target agreement cannot establish that operation occurred.",index+1));
+                }
+                findings.extend(fresh.bridge_notes.iter().cloned());
+                let actual = fresh.product.as_ref().cloned();
+                let tracked = fresh.tracked.as_ref().cloned();
+                physical_processing_reports.push(PhysicalProcessingStepReport {
+                    step_index: index,
+                    evidence: PhysicalProcessingEvidence::TopoActions(fresh),
+                });
+                let (Some(actual), Some(tracked)) = (actual, tracked) else {
+                    return Err(Error::Unsupported(format!(
+                        "Step {} TopoActions material is withheld: no faithfully representable paired duplex. Full preparation, parent/sealed graphs, flaps, components and terminal evidence are retained; no target-derived reference product was substituted.",
+                        index + 1
+                    )));
+                };
+                product_bytes = product_bytes
+                    .checked_add(tracked_bytes)
+                    .ok_or(Error::TooLarge)?;
+                next_physical = Some(tracked);
+                actual
+            }
             Operation::ProcessedTopo { sources, request } => {
                 // Converting a private tracked descendant to a plain sequence
                 // would erase known/unknown modification and graph ancestry.
@@ -2996,6 +3120,11 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
     };
     for (step_index, step) in plan.steps.iter().enumerate() {
         match step {
+            Operation::TopoActions{sources,request}=>{
+                body.push_str(&format!("<li>Accounted TOPO chemical actions from original roles {}. Every original base and excised fragment remains in the full graph. Explicit selected component {} and source seed strand {}, index {} (zero-based); component selection is not isolation. Ideal hydrolytic profiles are declared model assumptions, not a named nuclease, kit or host-repair guarantee.<ul>",sources.iter().map(|r|format!("{} = {}",e(&r.role),source(&r.source))).collect::<Vec<_>>().join(", "),request.selection.component,request.selection.reference_seed.strand,request.selection.reference_seed.index));
+                for action in &request.processing.actions {body.push_str(&format!("<li>{}</li>",e(&format!("{action:?}"))));}
+                body.push_str("</ul></li>");
+            },
             Operation::ProcessedTopo {sources,request} => {
                 body.push_str(&format!("<li>Fresh processed TOPO graph from original roles {}. Explicit ligase assumption: {}. Requested nick seals: {}. Select component {} using source call strand {}, index {} (zero-based), bound to <code>{}</code>. Require all requested transfers/seals applied: {}; require known terminal chemistry: {}. Only a faithfully representable paired contour becomes private duplex material; all other components and graph evidence are retained. Component choice is not isolation or a reaction winner; independent final-target verification remains separate.<ul>",sources.iter().map(|s|format!("{} = {}",e(&s.role),source(&s.source))).collect::<Vec<_>>().join(", "),e(&request.treatment.sealing.ligase_assumption),request.treatment.sealing.nicks.len(),request.selection.component,request.selection.reference_seed.strand,request.selection.reference_seed.index,e(&request.selection.sealing_context_revision),request.options.require_all_requested_transfers_applied,request.options.require_known_terminal_chemistry));
                 for material in &request.treatment.preparation.recipe.materials {
@@ -3111,6 +3240,25 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
                     body.push_str(&format!("<li>{}</li>", e(assumption)));
                 }
                 body.push_str("</ul></li>");
+            }
+        }
+        body.push_str("</ul>");
+    }
+    if !report.physical_processing_reports.is_empty() {
+        body.push_str("<h2>Accounted physical processing evidence</h2><ul>");
+        for step in &report.physical_processing_reports {
+            match &step.evidence {
+                PhysicalProcessingEvidence::TopoActions(report) => {
+                    let graph = &report.projection.processing.product;
+                    body.push_str(&format!("<li>Step {}: {} original source calls remain across {} components, {} chains and {} unpaired calls. Faithful selected duplex available: {}. Excised material is retained, not discarded from evidence.<ul>",step.step_index+1,report.projection.processing.source_bases,graph.components.len(),graph.chains.len(),graph.unpaired.iter().map(|r|r.end-r.start).sum::<usize>(),report.tracked.is_some()));
+                    for action in &report.projection.processing.steps {
+                        body.push_str(&format!("<li>{}</li>", e(&format!("{action:?}"))));
+                    }
+                    for note in &report.bridge_notes {
+                        body.push_str(&format!("<li>{}</li>", e(note)));
+                    }
+                    body.push_str("</ul></li>");
+                }
             }
         }
         body.push_str("</ul>");

@@ -419,6 +419,17 @@ pub fn TopoPanel(
             nicks: physical.product.nicks.clone(),
         })
     });
+    let actions_capture=Callback::new(move|expected:crate::topo_nick_view::Frame|->Result<crate::topo_actions_view::Capture,String>{
+        if nick_locked.get_untracked()||nick_frame.get_untracked().as_ref()!=Some(&expected){
+            return Err("The exact original TOPO path or target context changed.".into());
+        }
+        let b=current_bound().ok_or("The original inspected source context changed.")?;
+        let request=b.report.candidate_requests.get(expected.orientation).ok_or("The inspected orientation is unavailable.")?;
+        let physical=b.report.reference.candidates.get(expected.orientation).ok_or("The inspected graph is unavailable.")?;
+        let fresh=capture.run(CaptureRequest{sources:b.context.sources.clone(),target:b.context.target.binding.clone(),request:request.clone()})?;
+        if nick_frame.get_untracked().as_ref()!=Some(&expected){return Err("The source context changed during capture.".into());}
+        Ok(crate::topo_actions_view::Capture{inputs:fresh.inputs,request:request.clone(),physical:physical.clone()})
+    });
     let open_processed = Callback::new(
         move |open: crate::topo_nick_view::OpenProcessed| -> Result<(), String> {
             if nick_locked.get_untracked()
@@ -505,6 +516,90 @@ pub fn TopoPanel(
             proposed.validate().map_err(|e| e.to_string())?;
             on_candidate.run((proposed, preferred));
             // The callback may dispose this panel. Do not access local signals.
+            Ok(())
+        },
+    );
+    let open_actions = Callback::new(
+        move |open: crate::topo_actions_view::OpenActions| -> Result<(), String> {
+            if nick_locked.get_untracked()
+                || nick_frame.get_untracked().as_ref() != Some(&open.frame)
+            {
+                return Err("The exact action source path or independent target changed.".into());
+            }
+            let b = current_bound().ok_or("The original TOPO context is unavailable.")?;
+            if b.ticket != open.frame.inspection_generation
+                || b.context.epoch != open.frame.epoch
+                || b.context.target.binding != open.frame.target
+                || b.context.sources != open.frame.sources
+                || orientation.get_untracked().parse::<usize>().ok() != Some(open.frame.orientation)
+            {
+                return Err("The inspected source events, target or orientation changed.".into());
+            }
+            let inspected = b
+                .report
+                .candidate_requests
+                .get(open.frame.orientation)
+                .ok_or("The exact inspected orientation is unavailable.")?;
+            let fresh = capture.run(CaptureRequest {
+                sources: b.context.sources.clone(),
+                target: b.context.target.binding.clone(),
+                request: inspected.clone(),
+            })?;
+            let revision = collagene_core::topo_actions::revision(&fresh.inputs, &open.request)
+                .map_err(|e| e.to_string())?;
+            if revision != open.expected_revision
+                || serde_json::to_vec(inspected).map_err(|e| e.to_string())?
+                    != serde_json::to_vec(&open.request.preparation).map_err(|e| e.to_string())?
+            {
+                return Err("The ordered action declaration differs from the exact inspected source orientation.".into());
+            }
+            if context.get_untracked().as_ref().ok() != Some(&b.context)
+                || nick_frame.get_untracked().as_ref() != Some(&open.frame)
+            {
+                return Err(
+                    "The source or independent target changed during action candidate capture."
+                        .into(),
+                );
+            }
+            let inputs = fresh
+                .inputs
+                .into_iter()
+                .map(|input| PlanInput {
+                    id: input.role,
+                    revision: input.molecule.revision(),
+                    molecule: input.molecule,
+                })
+                .collect();
+            let sources = b
+                .context
+                .sources
+                .iter()
+                .map(|(role, _)| TopoSource {
+                    role: role.clone(),
+                    source: Source::Input(role.clone()),
+                })
+                .collect();
+            let preferred = b
+                .context
+                .sources
+                .iter()
+                .map(|(role, event)| InputEventBinding {
+                    input_id: role.clone(),
+                    event: event.clone(),
+                })
+                .collect();
+            let proposed = Candidate::new(DesignPlan {
+                name: "TOPO ordered physical actions candidate".into(),
+                target_revision: fresh.target.revision(),
+                inputs,
+                steps: vec![Operation::TopoActions {
+                    sources,
+                    request: open.request,
+                }],
+            });
+            proposed.validate().map_err(|e| e.to_string())?;
+            on_candidate.run((proposed, preferred));
+            // The root callback can dispose this panel.
             Ok(())
         },
     );
@@ -1021,6 +1116,7 @@ pub fn TopoPanel(
                 </section>
             })}
             <crate::topo_nick_view::TopoNickView frame=nick_frame capture=nick_capture on_open=open_processed locked=nick_locked/>
+            <crate::topo_actions_view::TopoActionsView frame=nick_frame capture=actions_capture on_open=open_actions locked=nick_locked/>
             <fieldset class="topo-acceptance"><legend>"Explicit independent-target acceptance policy"</legend><p class="helper">"Every permission starts off. Accepting a retained limitation does not repair it or prove laboratory success; changing policy requires fresh projection and target checking."</p>
                 <label class="checkbox-label"><input type="checkbox" disabled=move||locked.get() prop:checked=move||policies.with(|p|p.nicks) on:change=move|e|policies.update(|p|p.nicks=event_target_checked(&e))/>"Accept explicitly retained nicks"</label>
                 <label class="checkbox-label"><input type="checkbox" disabled=move||locked.get() prop:checked=move||policies.with(|p|p.unknown) on:change=move|e|policies.update(|p|p.unknown=event_target_checked(&e))/>"Accept unknown terminal chemistry"</label>

@@ -554,7 +554,8 @@ pub fn build(plan: &DesignPlan, target: &Molecule, options: &Options) -> Result<
             }
             Operation::Topo { .. }
             | Operation::CheckedTopo { .. }
-            | Operation::ProcessedTopo { .. } => warning(
+            | Operation::ProcessedTopo { .. }
+            | Operation::TopoActions { .. } => warning(
                 &mut builder.unavailable,
                 format!(
                     "Step {} embedded TOPO preparation oligos are outside this typed-PCR extraction profile; inspect the retained physical recipe separately.",

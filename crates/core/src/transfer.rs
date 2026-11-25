@@ -123,6 +123,17 @@ pub fn save_candidate(candidate: &Candidate) -> Result<Vec<u8>, Error> {
 }
 pub fn load_candidate(bytes: &[u8]) -> Result<Candidate, Error> {
     let candidate: Candidate = protocol::decode(b"CGP\0", bytes)?;
+    if u16::from_le_bytes([bytes[4], bytes[5]]) < 14
+        && candidate
+            .plan
+            .steps
+            .iter()
+            .any(|s| matches!(s, crate::verification::Operation::TopoActions { .. }))
+    {
+        return Err(Error::Unsupported(
+            "Accounted chemical actions require candidate schema14".into(),
+        ));
+    }
     if u16::from_le_bytes([bytes[4], bytes[5]]) < 13
         && candidate
             .plan

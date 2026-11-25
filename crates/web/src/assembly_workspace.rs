@@ -182,6 +182,45 @@ fn inputs_request(
     Ok((inputs, request, captures))
 }
 
+fn method_overview(methods: &MethodsState) -> String {
+    match methods.mode {
+        Mode::Overlap => format!(
+            "{} overlap assembly",
+            match methods.method {
+                collagene_core::overlap_profiles::OverlapMethod::Gibson => "Gibson",
+                collagene_core::overlap_profiles::OverlapMethod::HiFi => "HiFi",
+                collagene_core::overlap_profiles::OverlapMethod::InFusion => "In-Fusion",
+            }
+        ),
+        Mode::Ligation => "Ordered ligation".into(),
+        Mode::GoldenGate => format!("Golden Gate · {:?}", methods.golden_gate.enzyme),
+        Mode::Tailing => "TA / GC tailing and ligation".into(),
+    }
+}
+fn preparation_overview(methods: &MethodsState, index: usize) -> String {
+    if methods.mode == Mode::GoldenGate {
+        if let Some(pool) = methods
+            .golden_gate_pool
+            .as_ref()
+            .filter(|pool| pool.reaction)
+        {
+            match pool.choices.get(index).copied() {
+                Some(1) => return "Whole original source in the declared reaction pool".into(),
+                Some(2) => {
+                    return "Complete PCR amplicon before digestion in the declared reaction pool"
+                        .into();
+                }
+                _ => {}
+            }
+        }
+    }
+    methods
+        .rows
+        .get(index)
+        .map(OverlapInput::summary)
+        .unwrap_or_else(|| "Preparation has not been set".into())
+}
+
 #[component]
 pub fn AssemblyWorkspace(
     draft: RwSignal<Draft>,
@@ -545,9 +584,11 @@ pub fn AssemblyWorkspace(
     };
     view! {<section class="assembly-workspace"><header class="assembly-workspace-header"><h2>"Assembly workspace"</h2><p class="helper">"Choose a slot, select its source in the viewer above, then set the fragment. Switching source tabs preserves every pinned fragment. Preparation is reviewed against a separate intended construct."</p></header>
         <div class="assembly-draft-settings"><label>"Assembly name"<input maxlength="256" aria-label="Assembly draft name" prop:value=move||draft.with(|d|d.name.clone()) on:input=move|e|draft.update(|d|d.name=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label="Intended assembly circular" prop:checked=move||draft.with(|d|d.circular) on:change=move|e|draft.update(|d|{d.circular=event_target_checked(&e);d.junction_edits.clear();d.sync_rows();})/>"Circular intended construct"</label></div>
+        <p class="helper" aria-label="Current assembly method"><strong>"Current method: "</strong>{move||draft.with(|d|method_overview(&d.methods))}". Review the intended construct to edit preparation settings in step 3."</p>
         <h3>"1. Set original source fragments"</h3><div class="assembly-slot-list" role="group" aria-label="Ordered assembly fragment slots">
         <For each=move||draft.with(|d|(0..d.slots.len()).collect::<Vec<_>>()) key=|i|*i children=move|i|view!{<article class="assembly-slot" class:active=move||draft.with(|d|d.active_slot==i)><button class="button secondary" aria-pressed=move||draft.with(|d|d.active_slot==i) on:click=move|_|draft.update(|d|d.active_slot=i)>{move||draft.with(|d|format!("{} · {}",i+1,d.slots.get(i).map(|s|s.label.as_str()).unwrap_or("slot")))}</button><label>"Slot label"<input maxlength="80" aria-label=format!("Assembly slot {} label",i+1) prop:value=move||draft.with(|d|d.slots.get(i).map(|s|s.label.clone()).unwrap_or_default()) on:input=move|e|draft.update(|d|if let Some(s)=d.slots.get_mut(i){s.label=event_target_value(&e)})/></label>
             <p>{move||draft.with(|d|d.slots.get(i).map(|s|match s.captured.as_deref(){Some(c)=>format!("{} · {}–{} (1-based inclusive, unrolled) · {} bp · {}",c.source.name,s.start+1,s.end,s.end-s.start,if s.reverse{"reverse"}else{"forward"}),None=>"No source fragment set".into()}).unwrap_or_default())}</p>
+            <p class="helper"><strong>"Declared preparation: "</strong>{move||draft.with(|d|preparation_overview(&d.methods,i))}</p>
             <details class="assembly-source-details"><summary>"Source details"</summary><p class="helper">{move||draft.with(|d|d.slots.get(i).and_then(|s|s.captured.as_ref()).map(|c|format!("Pinned source event {} · revision {}",c.source.binding.event_id,c.source.binding.revision)).unwrap_or_default())}</p></details>
             <p class="helper">{move||{let captured=draft.with(|d|d.slots.get(i).and_then(|s|s.captured.clone()));captured.map(|c|sources.with(|current|if current.iter().any(|s|s.binding==c.source.binding){"Current source version is pinned"}else{"Using the captured source version; current tabs do not replace it"})).unwrap_or("")}}</p>
             <label class="checkbox-label"><input type="checkbox" aria-label=format!("Reverse assembly slot {}",i+1) prop:checked=move||draft.with(|d|d.slots.get(i).is_some_and(|s|s.reverse)) on:change=move|e|draft.update(|d|{let reversed=event_target_checked(&e);if i<d.slots.len(){let adjusted=d.slots[i].captured.as_ref().zip(d.slots[i].digest_geometry.as_ref()).filter(|_|d.methods.rows[i].preparation==OverlapPreparation::CatalogDigest&&d.methods.rows[i].repair.is_none()).map(|(capture,geometry)|digest_interval(&capture.source,geometry,reversed));match adjusted{Some(Ok((start,end)))=>{d.slots[i].start=start;d.slots[i].end=end;},Some(Err(error))=>{status.set(error);return;},None=>{}}d.slots[i].reverse=reversed;d.junction_edits.clear();}d.sync_rows();})/>"Reverse fragment in construct"</label>

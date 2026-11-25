@@ -218,7 +218,7 @@ fn actual_sealed_ta_flows_to_ecori_digest_and_frozen_independent_target() {
         "{:?}",
         report.findings
     );
-    assert!(report.engine_version.ends_with("/science-16"));
+    assert_eq!(report.engine_version, v::ENGINE_VERSION);
     assert_eq!(report.products.len(), 2);
     assert_eq!(report.products[1].sequence.as_str(), LINEAR_ECORI);
     assert_eq!(report.processed_step_reports.len(), 1);
@@ -257,7 +257,10 @@ fn actual_sealed_ta_flows_to_ecori_digest_and_frozen_independent_target() {
     assert_eq!(encoded[0], 19);
     let candidate = collagene_core::transfer::Candidate::new(plan.clone());
     let bytes = collagene_core::transfer::save_candidate(&candidate).unwrap();
-    assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), 13);
+    assert_eq!(
+        u16::from_le_bytes([bytes[4], bytes[5]]),
+        collagene_core::protocol::CANDIDATE_SCHEMA_VERSION
+    );
     let mut old = bytes;
     old[4..6].copy_from_slice(&12u16.to_le_bytes());
     assert!(collagene_core::transfer::load_candidate(&old).is_err());
@@ -525,7 +528,7 @@ fn immutable_run_graph_sidecar_survives_native_history_without_restoring_importe
             entry.read_to_end(&mut data).unwrap();
             if name == "manifest.json" {
                 let mut manifest: serde_json::Value = serde_json::from_slice(&data).unwrap();
-                assert_eq!(manifest["plan_schema"], 11);
+                assert_eq!(manifest["plan_schema"], workspace::PLAN_SCHEMA_VERSION);
                 manifest["plan_schema"] = 10.into();
                 data = serde_json::to_vec(&manifest).unwrap();
             }

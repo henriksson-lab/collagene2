@@ -1,4 +1,4 @@
-//! Exact pre-65 positional report layouts. Historical evidence gains no processed
+//! Exact pre-66 positional report layouts. Historical evidence gains no processed
 //! graph and no current scientific authority during conversion.
 use crate::{Error, Molecule, protocol, verification};
 use serde::Deserialize;
@@ -30,6 +30,39 @@ impl From<Report> for verification::VerificationReport {
             step_reports: r.step_reports,
             annotation_reports: r.annotation_reports,
             processed_step_reports: Vec::new(),
+            physical_processing_reports: Vec::new(),
+        }
+    }
+}
+#[derive(Deserialize)]
+struct ReportV65 {
+    plan_revision: String,
+    target_revision: String,
+    engine_version: String,
+    status: verification::Status,
+    findings: Vec<String>,
+    assumptions: Vec<String>,
+    products: Vec<Molecule>,
+    exhaustive_alternative_search: bool,
+    step_reports: Vec<verification::StepReport>,
+    annotation_reports: Vec<verification::AnnotationStepReport>,
+    processed_step_reports: Vec<verification::ProcessedTopoStepReport>,
+}
+impl From<ReportV65> for verification::VerificationReport {
+    fn from(r: ReportV65) -> Self {
+        Self {
+            plan_revision: r.plan_revision,
+            target_revision: r.target_revision,
+            engine_version: r.engine_version,
+            status: r.status,
+            findings: r.findings,
+            assumptions: r.assumptions,
+            products: r.products,
+            exhaustive_alternative_search: r.exhaustive_alternative_search,
+            step_reports: r.step_reports,
+            annotation_reports: r.annotation_reports,
+            processed_step_reports: r.processed_step_reports,
+            physical_processing_reports: Vec::new(),
         }
     }
 }
@@ -60,6 +93,7 @@ impl From<ReportV24> for verification::VerificationReport {
             step_reports: Vec::new(),
             annotation_reports: Vec::new(),
             processed_step_reports: Vec::new(),
+            physical_processing_reports: Vec::new(),
         }
     }
 }
@@ -89,6 +123,7 @@ impl From<ReportV26> for verification::VerificationReport {
             step_reports: r.step_reports,
             annotation_reports: Vec::new(),
             processed_step_reports: Vec::new(),
+            physical_processing_reports: Vec::new(),
         }
     }
 }
@@ -155,16 +190,18 @@ impl<R: Into<verification::VerificationReport>> From<Replay<R>>
     }
 }
 #[derive(Deserialize)]
-struct Overlap {
+struct Overlap<R = Report> {
     context_revision: String,
     compiled: crate::assembly_recipe::Compiled,
-    verification: Report,
+    verification: R,
     prepared: Vec<Molecule>,
     profile: Option<crate::overlap_profiles::ProfileReport>,
     preparation_complete: bool,
 }
-impl From<Overlap> for crate::assembly_recipe::Preview {
-    fn from(r: Overlap) -> Self {
+impl<R: Into<verification::VerificationReport>> From<Overlap<R>>
+    for crate::assembly_recipe::Preview
+{
+    fn from(r: Overlap<R>) -> Self {
         Self {
             context_revision: r.context_revision,
             compiled: r.compiled,
@@ -176,18 +213,20 @@ impl From<Overlap> for crate::assembly_recipe::Preview {
     }
 }
 #[derive(Deserialize)]
-struct Ligation {
+struct Ligation<R = Report> {
     context_revision: String,
     compiled: crate::ligation_recipe::Compiled,
-    verification: Report,
+    verification: R,
     prepared: Vec<Molecule>,
     physical: Vec<Option<crate::chemistry::DuplexSummary>>,
     product_physical: Option<crate::chemistry::DuplexSummary>,
     junctions: Vec<crate::ligation_recipe::Junction>,
     preparation_complete: bool,
 }
-impl From<Ligation> for crate::ligation_recipe::Preview {
-    fn from(r: Ligation) -> Self {
+impl<R: Into<verification::VerificationReport>> From<Ligation<R>>
+    for crate::ligation_recipe::Preview
+{
+    fn from(r: Ligation<R>) -> Self {
         Self {
             context_revision: r.context_revision,
             compiled: r.compiled,
@@ -201,13 +240,13 @@ impl From<Ligation> for crate::ligation_recipe::Preview {
     }
 }
 #[derive(Deserialize)]
-struct Junction {
+struct Junction<R = Report> {
     engine_version: String,
     context_revision: String,
     plan_revision: String,
     target_revision: String,
     options: crate::assembly_junctions::Options,
-    verification: Report,
+    verification: R,
     product_revision: Option<String>,
     product_length: Option<usize>,
     product_topology: Option<crate::Topology>,
@@ -217,8 +256,10 @@ struct Junction {
     omitted_junctions: usize,
     warnings: Vec<String>,
 }
-impl From<Junction> for crate::assembly_junctions::Report {
-    fn from(r: Junction) -> Self {
+impl<R: Into<verification::VerificationReport>> From<Junction<R>>
+    for crate::assembly_junctions::Report
+{
+    fn from(r: Junction<R>) -> Self {
         Self {
             engine_version: r.engine_version,
             context_revision: r.context_revision,
@@ -238,18 +279,20 @@ impl From<Junction> for crate::assembly_junctions::Report {
     }
 }
 #[derive(Deserialize)]
-struct Pool {
+struct Pool<R = Report> {
     context_revision: String,
     request: crate::prepared_golden_gate::Request,
     target: Molecule,
-    preview: Ligation,
+    preview: Ligation<R>,
     missing_physical: Vec<usize>,
     pool: Option<crate::golden_gate::GoldenGateReport>,
     assessments: Vec<crate::prepared_golden_gate::Assessment>,
     warnings: Vec<String>,
 }
-impl From<Pool> for crate::prepared_golden_gate::Report {
-    fn from(r: Pool) -> Self {
+impl<R: Into<verification::VerificationReport>> From<Pool<R>>
+    for crate::prepared_golden_gate::Report
+{
+    fn from(r: Pool<R>) -> Self {
         Self {
             context_revision: r.context_revision,
             request: r.request,
@@ -263,19 +306,21 @@ impl From<Pool> for crate::prepared_golden_gate::Report {
     }
 }
 #[derive(Deserialize)]
-struct Reaction {
+struct Reaction<R = Report> {
     context_revision: String,
     request: crate::golden_gate_reaction::Request,
     target: Molecule,
     probe_plan: verification::DesignPlan,
     materials: Vec<crate::golden_gate_reaction::Material>,
-    verification: Report,
+    verification: R,
     pool: Option<crate::golden_gate::GoldenGateReport>,
     assessments: Vec<crate::prepared_golden_gate::Assessment>,
     warnings: Vec<String>,
 }
-impl From<Reaction> for crate::golden_gate_reaction::Report {
-    fn from(r: Reaction) -> Self {
+impl<R: Into<verification::VerificationReport>> From<Reaction<R>>
+    for crate::golden_gate_reaction::Report
+{
+    fn from(r: Reaction<R>) -> Self {
         Self {
             context_revision: r.context_revision,
             request: r.request,
@@ -290,18 +335,20 @@ impl From<Reaction> for crate::golden_gate_reaction::Report {
     }
 }
 #[derive(Deserialize)]
-struct Domestication {
+struct Domestication<R = Report> {
     context_revision: String,
     request: crate::domestication_preparation::Request,
     source_revision: String,
     target: Molecule,
     check: crate::domestication::CheckReport,
     preparation: crate::mutagenesis::InversePcrPreparation,
-    verification: Report,
+    verification: R,
     warnings: Vec<String>,
 }
-impl From<Domestication> for crate::domestication_preparation::Prepared {
-    fn from(r: Domestication) -> Self {
+impl<R: Into<verification::VerificationReport>> From<Domestication<R>>
+    for crate::domestication_preparation::Prepared
+{
+    fn from(r: Domestication<R>) -> Self {
         Self {
             context_revision: r.context_revision,
             request: r.request,
@@ -346,7 +393,7 @@ pub(crate) fn decode(bytes: &[u8], maximum: usize) -> Result<Option<protocol::Re
     if blake3::hash(&bytes[HEADER..]).as_bytes() != &bytes[10..42] {
         return Err(invalid("binary checksum mismatch"));
     }
-    if version > 64 {
+    if version > 65 {
         return Ok(None);
     }
     let ((id, revision, tag), rest) =
@@ -357,6 +404,21 @@ pub(crate) fn decode(bytes: &[u8], maximum: usize) -> Result<Option<protocol::Re
     }
     use protocol::AnalysisResult as A;
     let result = match tag {
+        4 if version == 65 => A::Verification(payload::<ReportV65>(rest)?.into()),
+        16 if version == 65 => A::InversePcr(payload::<Inverse<ReportV65>>(rest)?.into()),
+        41 if version == 65 => A::RunReplay(payload::<Replay<ReportV65>>(rest)?.into()),
+        86 if version == 65 => A::OverlapRecipePreview(payload::<Overlap<ReportV65>>(rest)?.into()),
+        87 if version == 65 => {
+            A::LigationRecipePreview(payload::<Ligation<ReportV65>>(rest)?.into())
+        }
+        88 if version == 65 => {
+            A::AssemblyJunctionInspection(payload::<Junction<ReportV65>>(rest)?.into())
+        }
+        105 if version == 65 => A::PreparedGoldenGatePool(payload::<Pool<ReportV65>>(rest)?.into()),
+        107 if version == 65 => A::GoldenGateReaction(payload::<Reaction<ReportV65>>(rest)?.into()),
+        134 if version == 65 => {
+            A::DomesticationPrepared(payload::<Domestication<ReportV65>>(rest)?.into())
+        }
         4 if version >= 27 => A::Verification(payload::<Report>(rest)?.into()),
         16 if version < 25 => A::InversePcr(payload::<Inverse<ReportV24>>(rest)?.into()),
         16 if version < 27 => A::InversePcr(payload::<Inverse<ReportV26>>(rest)?.into()),

@@ -113,6 +113,16 @@ fn chemistry(s: &Substrates, g: &Graph, selection: &NickSelection) -> (ThreePrim
     (three, five)
 }
 fn eligible(s: &Substrates, g: &Graph, n: &NickSelection) -> Result<(), (Outcome, &'static str)> {
+    let (tc, fc) = chemistry(s, g, n);
+    eligible_with_chemistry(s, g, n, tc, fc)
+}
+pub(crate) fn eligible_with_chemistry(
+    s: &Substrates,
+    g: &Graph,
+    n: &NickSelection,
+    tc: ThreePrime,
+    fc: FivePrime,
+) -> Result<(), (Outcome, &'static str)> {
     let three = g.flat(n.three);
     let five = g.flat(n.five);
     if three == five {
@@ -127,7 +137,6 @@ fn eligible(s: &Substrates, g: &Graph, n: &NickSelection) -> Result<(), (Outcome
             "requested termini are not exposed or have already formed a covalent bond",
         ));
     }
-    let (tc, fc) = chemistry(s, g, n);
     match tc {
         ThreePrime::Hydroxyl => {}
         ThreePrime::Unknown => {

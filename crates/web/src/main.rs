@@ -45,6 +45,8 @@ mod assembly_pool_view;
 #[cfg(target_arch = "wasm32")]
 mod assembly_product_view;
 #[cfg(target_arch = "wasm32")]
+mod assembly_profile_view;
+#[cfg(target_arch = "wasm32")]
 mod assembly_release_view;
 #[cfg(any(target_arch = "wasm32", test))]
 mod assembly_review;

@@ -1044,3 +1044,26 @@ Worker61/MCP156 append these interfaces without changing candidate12/plan10/scie
 Joint overlapping-frame search, broader translation/preparation profiles,
 multi-round or other physical routes, curated empirical profiles and all remaining
 cloning/delivery/acceptance milestones stay active.
+
+
+### Published-data ranking and directional preparation checkpoint
+
+Five explicitly attributed Pryor2020 experimental profiles now support conditional
+fusion-set ranking and detailed pair review. Both bundled and supplied-data paths
+separate intended junctions from literal free-end competitors; linear terminal
+orientation is resolved in shared Rust. Explicit selection/materialization and fresh
+physical verification remain separate. No empirical profile is inferred from a
+generic enzyme name. [Contract and remaining F13 scope](PUBLISHED_LIGATION_PROFILES.md).
+
+Directional CACC TOPO now shares source-backed preparation compilation with TA.
+An explicit primer-tail proposal must be reviewed and applied; actual primer/PCR
+calls and declared activated vector strands feed the existing physical engine.
+A displaced flap remains visible and can withhold a paired contour. This does not
+complete repair, graph composition or broader F15 chemistry. MCP160 / worker62
+append these interfaces; plan/candidate/science versions remain unchanged.
+
+Focused official Benchling reviews confirm connected preparation/primer/junction/
+product review and row-specific diagnostics. Public documentation does not settle
+every retained-edit gesture or physical chemistry guarantee. Existing flows should
+be refined around those interactions; no project administration is introduced.
+The full implementation and deferred final acceptance remain active.

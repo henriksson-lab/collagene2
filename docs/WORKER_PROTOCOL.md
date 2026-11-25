@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **59** and reads supported schemas 1–58. Candidate files write schema 12; workspace plan schema is 10; the verifier is science-15.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **62** and reads supported schemas 1–61. Candidate files write schema 12; workspace plan schema is 10; the verifier is science-15.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -795,3 +795,19 @@ New scientific reports identify science15 and cannot be relabelled58; workspace
 candidates, recorded runs and batch/release attachments also preserve their nested
 minimum versions. Saved candidate intent never restores a private session or
 fresh authority. Envelope limits are unchanged. [Reaction matrix contract](COMBINATORIAL_POOLS.md).
+
+
+## Published ligation profiles and physical competitors (schema62)
+
+Jobs143 `ListLigationProfiles`,144 `ScorePublishedLigation`,145
+`RankGoldenGateFusions` and146 `ScoreLigationCompetition` append results135–138.
+New tags reject pre62 envelopes before decoding. All use the ordinary32 MiB cap;
+no large-workspace allowance is added. Profile scoring binds exact profile/model,
+intended junctions and separately declared literal physical competitors. Ranking
+binds all original sources and the explicit conditional formulation hypothesis.
+Catalog/revision/result guards are cheap and do not decode XLSX on the main thread.
+
+Free linear outer ends enter denominators only, in their actual5′→3′ orientation;
+absent complements and intended joins are not invented. The original job138 /
+result130 supplied-count layout and model remain unchanged. Candidate12/plan10 /
+science15 are unchanged. [Scientific and UI contract](PUBLISHED_LIGATION_PROFILES.md).

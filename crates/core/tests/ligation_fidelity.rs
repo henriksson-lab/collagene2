@@ -487,3 +487,128 @@ fn wide_count_json_is_exact_decimal_while_postcard_keeps_native_u128() {
         partial
     );
 }
+
+#[test]
+fn literal_competitors_change_denominators_without_inventing_complements_or_intended_joins() {
+    let data = dataset(
+        3,
+        &[
+            ("AAA", "AAA", 10),
+            ("AAA", "TTT", 90),
+            ("AAA", "CCC", 20),
+            ("AAA", "GGG", 500),
+            ("TTT", "AAA", 30),
+            ("TTT", "TTT", 10),
+            ("TTT", "CCC", 10),
+            ("TTT", "GGG", 300),
+        ],
+    );
+    let intended = ends(&["AAA"]);
+    let extras = ends(&["CCC"]);
+    let scored = fidelity::score_competition(&data, &intended, &extras).unwrap();
+    assert_eq!(scored.requested_ends, intended);
+    assert_eq!(scored.physical_competitors, extras);
+    assert_eq!(scored.physical_ends, ends(&["AAA", "CCC", "TTT"]));
+    assert_eq!(
+        scored.pairs.len(),
+        1,
+        "free CCC does not become an intended CCC/GGG join"
+    );
+    assert_eq!(
+        scored.pairs[0].estimate,
+        Estimate::Known {
+            correct_count: 120,
+            total_count: 170,
+            fidelity: 12.0 / 17.0
+        }
+    );
+    assert_eq!(scored.overall_fidelity, Some(12.0 / 17.0));
+    assert_eq!(
+        fidelity::score(&data, &intended).unwrap().overall_fidelity,
+        Some(6.0 / 7.0)
+    );
+    let old_incorrect_scope = fidelity::score(&data, &ends(&["AAA", "CCC"])).unwrap();
+    assert_eq!(
+        old_incorrect_scope.overall_fidelity, None,
+        "fabricating paired CCC/GGG would require unrelated missing rows"
+    );
+    scored
+        .validate_binding(&fidelity::competition_revision(&data, &intended, &extras).unwrap())
+        .unwrap();
+    assert_eq!(
+        serde_json::from_value::<fidelity::CompetitionReport>(
+            serde_json::to_value(&scored).unwrap()
+        )
+        .unwrap(),
+        scored
+    );
+    assert_eq!(
+        postcard::from_bytes::<fidelity::CompetitionReport>(
+            &postcard::to_allocvec(&scored).unwrap()
+        )
+        .unwrap(),
+        scored
+    );
+    let mut absent = data.clone();
+    absent
+        .cells
+        .retain(|c| !(c.end_5to3 == "AAA" && c.partner_5to3 == "CCC"));
+    absent.content_revision = fidelity::content_revision(&absent).unwrap();
+    assert_eq!(
+        fidelity::score_competition(&absent, &intended, &extras)
+            .unwrap()
+            .pairs[0]
+            .estimate,
+        Estimate::Unknown {
+            reason: UnknownReason::MissingCounts
+        }
+    );
+    let duplicated = fidelity::score_competition(&data, &intended, &ends(&["CCC", "CCC"])).unwrap();
+    assert_eq!(duplicated.overall_fidelity, scored.overall_fidelity);
+    assert_ne!(duplicated.context_revision, scored.context_revision);
+    let mut forged = scored.clone();
+    forged.physical_ends.push("GGG".into());
+    assert!(forged.validate_binding(&scored.context_revision).is_err());
+    let mut forged = scored.clone();
+    forged.physical_competitors = ends(&["GGG"]);
+    assert!(forged.validate_binding(&scored.context_revision).is_err());
+}
+#[test]
+fn unpaired_palindrome_is_only_a_competitor_and_no_intended_join_has_no_overall_estimate() {
+    let data = dataset(
+        4,
+        &[
+            ("AAAA", "AAAA", 10),
+            ("AAAA", "TTTT", 90),
+            ("AAAA", "ATAT", 5),
+            ("TTTT", "AAAA", 30),
+            ("TTTT", "TTTT", 10),
+            ("TTTT", "ATAT", 15),
+        ],
+    );
+    let scored = fidelity::score_competition(&data, &ends(&["AAAA"]), &ends(&["ATAT"])).unwrap();
+    assert_eq!(scored.pairs.len(), 1);
+    assert_eq!(scored.overall_fidelity, Some(0.75));
+    assert!(matches!(
+        scored.pairs[0].estimate,
+        Estimate::Known {
+            correct_count: 120,
+            total_count: 160,
+            ..
+        }
+    ));
+    for extras in [ends(&["ATAT"]), vec![]] {
+        let empty = fidelity::score_competition(&data, &[], &extras).unwrap();
+        assert_eq!(empty.overall_fidelity, None);
+        assert_eq!(empty.log_overall_fidelity, None);
+        assert!(empty.pairs.is_empty());
+        assert_eq!(empty.physical_ends, extras);
+        empty
+            .validate_binding(&fidelity::competition_revision(&data, &[], &extras).unwrap())
+            .unwrap();
+    }
+    assert!(
+        fidelity::score(&data, &[]).is_err(),
+        "old API nonempty contract is preserved"
+    );
+}

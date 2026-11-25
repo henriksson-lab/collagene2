@@ -20,9 +20,11 @@ pub struct MaterializeQuery {
 pub struct FidelityQuery {
     pub dataset: ligation_fidelity::Dataset,
     pub ends: Vec<String>,
+    #[serde(default)]
+    pub physical_competitors: Option<Vec<String>>,
 }
 impl CollageneServer {
-    fn fusion_sources(
+    pub(super) fn fusion_sources(
         &self,
         bindings: &[BoundInput],
         request: &fusion::Request,
@@ -101,8 +103,15 @@ impl CollageneServer {
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
         self.compute(move || {
-            let report = ligation_fidelity::score(&args.dataset, &args.ends).map_err(bad)?;
-            report.validate_binding(&ligation_fidelity::revision(&args.dataset, &args.ends).map_err(bad)?).map_err(bad)?;
+            let report = if let Some(extras) = &args.physical_competitors {
+                let report = ligation_fidelity::score_competition(&args.dataset, &args.ends, extras).map_err(bad)?;
+                report.validate_binding(&ligation_fidelity::competition_revision(&args.dataset, &args.ends, extras).map_err(bad)?).map_err(bad)?;
+                serde_json::to_value(report).map_err(bad)?
+            } else {
+                let report = ligation_fidelity::score(&args.dataset, &args.ends).map_err(bad)?;
+                report.validate_binding(&ligation_fidelity::revision(&args.dataset, &args.ends).map_err(bad)?).map_err(bad)?;
+                serde_json::to_value(report).map_err(bad)?
+            };
             let artifact = server.text_artifact(
                 bounded_json_limit(&json!({"dataset":args.dataset,"report":report}),16*1024*1024)?,
                 "application/json", "ligation-fidelity.json",

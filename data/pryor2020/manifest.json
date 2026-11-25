@@ -1,0 +1,62 @@
+[
+  {
+    "file": "pone.0238592.s001.xlsx",
+    "downloaded_utc_date": "2026-11-25",
+    "url": "https://journals.plos.org/plosone/article/file?id=10.1371/journal.pone.0238592.s001&type=supplementary",
+    "supplement_doi": "10.1371/journal.pone.0238592.s001",
+    "bytes": 202549,
+    "sha256": "320dd058f3ca6372768c7ddfe9cda2a2ea2a076c4f86dd08587d8f295aae1d15",
+    "profile_id": "pryor2020-bsai-hfv2",
+    "data_license": "CC-BY-4.0",
+    "conversion_version": "pryor2020-plos-s1-s5-1",
+    "interpretation": "Published symmetric integer pair-frequency weights; original directional/replicate preprocessing unspecified"
+  },
+  {
+    "file": "pone.0238592.s002.xlsx",
+    "downloaded_utc_date": "2026-11-25",
+    "url": "https://journals.plos.org/plosone/article/file?id=10.1371/journal.pone.0238592.s002&type=supplementary",
+    "supplement_doi": "10.1371/journal.pone.0238592.s002",
+    "bytes": 203006,
+    "sha256": "7c444e99e5e4d245461a892e8543a35c84987f93abcee7098de9d9d817237e94",
+    "profile_id": "pryor2020-bsmbi-v2",
+    "data_license": "CC-BY-4.0",
+    "conversion_version": "pryor2020-plos-s1-s5-1",
+    "interpretation": "Published symmetric integer pair-frequency weights; original directional/replicate preprocessing unspecified"
+  },
+  {
+    "file": "pone.0238592.s003.xlsx",
+    "downloaded_utc_date": "2026-11-25",
+    "url": "https://journals.plos.org/plosone/article/file?id=10.1371/journal.pone.0238592.s003&type=supplementary",
+    "supplement_doi": "10.1371/journal.pone.0238592.s003",
+    "bytes": 202302,
+    "sha256": "1557e62cfa4f89cd021420b75e145dae2f453ecf26dcca340a8c29008736ea66",
+    "profile_id": "pryor2020-esp3i",
+    "data_license": "CC-BY-4.0",
+    "conversion_version": "pryor2020-plos-s1-s5-1",
+    "interpretation": "Published symmetric integer pair-frequency weights; original directional/replicate preprocessing unspecified"
+  },
+  {
+    "file": "pone.0238592.s004.xlsx",
+    "downloaded_utc_date": "2026-11-25",
+    "url": "https://journals.plos.org/plosone/article/file?id=10.1371/journal.pone.0238592.s004&type=supplementary",
+    "supplement_doi": "10.1371/journal.pone.0238592.s004",
+    "bytes": 203060,
+    "sha256": "56143bb445e6d84bba646429402e0948793395269cc5d8ba0e80962c0cac6492",
+    "profile_id": "pryor2020-bbsi-hf",
+    "data_license": "CC-BY-4.0",
+    "conversion_version": "pryor2020-plos-s1-s5-1",
+    "interpretation": "Published symmetric integer pair-frequency weights; original directional/replicate preprocessing unspecified"
+  },
+  {
+    "file": "pone.0238592.s005.xlsx",
+    "downloaded_utc_date": "2026-11-25",
+    "url": "https://journals.plos.org/plosone/article/file?id=10.1371/journal.pone.0238592.s005&type=supplementary",
+    "supplement_doi": "10.1371/journal.pone.0238592.s005",
+    "bytes": 24232,
+    "sha256": "dfa2df906bd306e3971652c4b95d004818fdb8dd9e49f4522691959d28f537cb",
+    "profile_id": "pryor2020-sapi",
+    "data_license": "CC-BY-4.0",
+    "conversion_version": "pryor2020-plos-s1-s5-1",
+    "interpretation": "Published symmetric integer pair-frequency weights; original directional/replicate preprocessing unspecified"
+  }
+]

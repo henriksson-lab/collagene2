@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 156;
+pub const CURRENT_TOOL_COUNT: usize = 160;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -5430,6 +5430,42 @@ impl CollageneServer {
         self.fidelity_score(args).await
     }
     #[tool(
+        description = "List exact versioned published ligation-frequency profiles, including formulation, conditions, source/conversion hashes, citation and separate CC-BY attribution. These data do not establish the actual preparation conditions or reaction efficiency."
+    )]
+    async fn list_ligation_profiles(
+        &self,
+        Parameters(args): Parameters<published_ligation_tools::ListQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.published_profiles_list(args).await
+    }
+    #[tool(
+        description = "Score an explicit set of fusion ends using one exact published symmetric pair-frequency profile. Preserves literal published weights, zeros, palindromic/unknown cases and full conditions. No raw independent directional reads, measured yield or chemical verification is inferred."
+    )]
+    async fn score_published_ligation_profile(
+        &self,
+        Parameters(args): Parameters<published_ligation_tools::ScoreQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.published_profile_score(args).await
+    }
+    #[tool(
+        description = "Freshly search source-bound Golden Gate fusion placements once and rank retained sets using one exact published profile prepared once. Requires an explicit conditional formulation assumption; never substitutes formulation from a generic enzyme name, selects a reaction winner, changes intended DNA or applies primers. Complete source/profile-bound evidence is returned as a bounded artifact."
+    )]
+    async fn rank_golden_gate_fusions(
+        &self,
+        Parameters(args): Parameters<published_ligation_tools::RankQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.published_fusion_rank(args).await
+    }
+    #[tool(
+        description = "Compile explicit source-backed TA or directional CACC TOPO preparation declarations into the shared native recipe. Preserves actual ordered primers, vector strand geometry, terminal states and activation assumptions. Does not simulate activation or repair, add a tail silently, select transfers or invent a closed clone. Reuse inspect_topo_orientations and existing projection/target checks with the returned fields."
+    )]
+    async fn compile_topo_preparation(
+        &self,
+        Parameters(args): Parameters<published_ligation_tools::TopoQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.topo_compile_preparation(args).await
+    }
+    #[tool(
         description = "Inspect source-bound restriction sites, explicit retained/protected ranges and coding-feature constraints for internal-site domestication. Uses exact catalog/feature/source pins and reports unsupported geometry or translation semantics rather than assuming a silent change. Reference inspection only; no physical stock is made."
     )]
     async fn inspect_domestication(
@@ -6268,6 +6304,7 @@ mod catalog_tools;
 mod combinatorial_tools;
 mod domestication_tools;
 mod fusion_design_tools;
+mod published_ligation_tools;
 mod recombination_tools;
 
 #[cfg(test)]

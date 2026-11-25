@@ -159,8 +159,11 @@ pub mod assembly_diagnostics;
 pub mod domestication;
 pub mod domestication_preparation;
 pub mod golden_gate_fusion_design;
+pub mod golden_gate_fusion_rank;
 pub mod golden_gate_junction_edit;
 pub mod ligation_fidelity;
+pub mod ligation_profiles;
+pub mod topo_preparation;
 
 pub mod prepared_golden_gate;
 

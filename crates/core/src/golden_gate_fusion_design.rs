@@ -47,6 +47,40 @@ dto! {pub struct Report {
     pub terminal_fusions:Vec<String>,pub candidates:Vec<Candidate>,pub states_examined:usize,
     pub search_complete:bool,pub limits:Vec<String>,pub warnings:Vec<String>,
 }}
+// Intended joining pairs and literal, unpaired physical competitors. Linear
+// terminal keys in Report are assembly-top keys; the right physical 5′ end
+// therefore has the reverse-complement orientation.
+dto! {#[derive(PartialEq,Eq)] pub struct EndScope {pub intended_junctions:Vec<String>,pub physical_competitors:Vec<String>}}
+pub(crate) fn candidate_end_scope(
+    report: &Report,
+    candidate: &Candidate,
+) -> Result<EndScope, Error> {
+    Ok(EndScope {
+        intended_junctions: candidate.fusions.clone(),
+        physical_competitors: if report.request.base.base.circular {
+            Vec::new()
+        } else {
+            if report.terminal_fusions.len() != 2 {
+                return Err(bad("linear terminal end count changed"));
+            }
+            vec![
+                report.terminal_fusions[0].clone(),
+                rc(&report.terminal_fusions[1])?,
+            ]
+        },
+    })
+}
+/// Read-only scope extraction, never a fresh scientific receipt or a default
+/// candidate selection. Imported reports must still be recomputed for authority.
+pub fn end_scope(report: &Report, candidate_id: &str) -> Result<EndScope, Error> {
+    report.validate_binding(&report.context_revision)?;
+    let candidate = report
+        .candidates
+        .iter()
+        .find(|c| c.id == candidate_id)
+        .ok_or_else(|| bad("explicit candidate is not retained"))?;
+    candidate_end_scope(report, candidate)
+}
 dto! {pub struct Placement {pub role:String,pub input_id:String,pub start:usize,pub end:usize,pub reverse:bool,pub prefix:String,pub suffix:String,pub oriented_top:String}}
 dto! {pub struct Materialized {
     pub context_revision:String,pub parent_context:String,pub request:Request,pub selection:Selection,

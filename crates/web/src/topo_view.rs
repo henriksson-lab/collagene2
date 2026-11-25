@@ -1,4 +1,4 @@
-//! Explicit TA preparation wizard and fresh physical TOPO inspection. Source
+//! Explicit TA/directional preparation and fresh physical TOPO inspection. Source
 //! activation is declared, never inferred from a supplier label or DNA record.
 use crate::{
     app::download,
@@ -14,6 +14,7 @@ use collagene_core::{
         self,
         physical::{self, projection},
     },
+    topo_preparation::PreparationMode,
     topo_worker,
     transfer::Candidate,
     verification::{DesignPlan, Operation, PlanInput, Source, TopoSource},
@@ -266,6 +267,7 @@ pub fn TopoPanel(
     on_candidate: Callback<(Candidate, Vec<InputEventBinding>)>,
 ) -> impl IntoView {
     let draft = RwSignal::new(Draft::default());
+    let cacc_proposal = RwSignal::new(None::<(Context, String)>);
     let orientation = RwSignal::new(String::new());
     let component = RwSignal::new(String::new());
     let strand = RwSignal::new(String::new());
@@ -294,7 +296,7 @@ pub fn TopoPanel(
         };
         d.vector_top_length = find(&d.vector_top)?.length;
         d.vector_bottom_length = find(&d.vector_bottom)?.length;
-        let (roles, _) = topo_preparation::ta_request(&d)?;
+        let (roles, _) = topo_preparation::compile_request(&d)?;
         let mut bytes = 0usize;
         let mut bindings = vec![];
         for (role, id) in roles {
@@ -338,6 +340,7 @@ pub fn TopoPanel(
         projected.set(None);
         checked.set(None);
         reviewed.set(false);
+        cacc_proposal.set(None);
         orientation.set(String::new());
         component.set(String::new());
         strand.set(String::new());
@@ -396,13 +399,17 @@ pub fn TopoPanel(
                 return;
             }
         };
-        let request = match topo_preparation::ta_request(&ctx.draft) {
-            Ok((_, request)) => request,
+        let compiled = match topo_preparation::compile_request(&ctx.draft) {
+            Ok((_, compiled)) => compiled,
             Err(error) => {
                 status.set(error);
                 return;
             }
         };
+        let directional = compiled.directional;
+        let vector = compiled.vector_strands;
+        let insert = compiled.insert_strands;
+        let request = compiled.request;
         let captured = match capture.run(CaptureRequest {
             sources: ctx.sources.clone(),
             target: ctx.target.binding.clone(),
@@ -423,9 +430,9 @@ pub fn TopoPanel(
         let revision = match topo_worker::orientations_revision(
             &captured.inputs,
             &request,
-            [0, 1],
-            [2, 3],
-            false,
+            vector,
+            insert,
+            directional,
         ) {
             Ok(value) => value,
             Err(error) => {
@@ -445,8 +452,7 @@ pub fn TopoPanel(
         projected.set(None);
         checked.set(None);
         reviewed.set(false);
-        status
-            .set("Preparing explicit strands and inspecting both declared TA orientations…".into());
+        status.set(if directional {"Preparing actual blunt PCR and both directional CACC orientations; flap or contour withholding remains explicit."}else{"Preparing explicit strands and inspecting both declared TA orientations…"}.into());
         let alive = inspect_alive.clone();
         spawn_local(async move {
             let result = analyze(
@@ -456,9 +462,9 @@ pub fn TopoPanel(
                 AnalysisJob::InspectTopoOrientations {
                     inputs: captured.inputs.clone(),
                     request: request.clone(),
-                    vector: [0, 1],
-                    insert: [2, 3],
-                    directional: false,
+                    vector,
+                    insert,
+                    directional,
                 },
             )
             .await;
@@ -795,13 +801,61 @@ pub fn TopoPanel(
             status.set(error);
         }
     });
+    let propose_cacc = move |_| {
+        if locked.get_untracked() || busy.get_untracked() {
+            return;
+        }
+        let result = (|| -> Result<(Context, String), String> {
+            let current = context.get_untracked()?;
+            if current.draft.mode != PreparationMode::DirectionalCacc {
+                return Err(
+                    "Choose directional preparation before proposing a CACC prefix.".into(),
+                );
+            }
+            let proposed = topo_preparation::cacc_prefix_proposal(&current.draft)?;
+            Ok((current, proposed.forward_sequence))
+        })();
+        match result {
+            Ok(proposal) => {
+                cacc_proposal.set(Some(proposal));
+                status.set("CACC prefix proposed only. Review the exact ordered forward oligo and explicitly Apply; PCR and transfer eligibility remain unchecked.".into());
+            }
+            Err(error) => status.set(error),
+        }
+    };
+    let apply_cacc = move |_| {
+        if locked.get_untracked() || busy.get_untracked() {
+            return;
+        }
+        let result = (|| -> Result<String, String> {
+            let (before, ordered) = cacc_proposal
+                .get_untracked()
+                .ok_or("Propose a CACC prefix first.")?;
+            if context.get_untracked()? != before {
+                return Err(
+                    "Source events or primer declarations changed; propose the prefix again."
+                        .into(),
+                );
+            }
+            Ok(ordered)
+        })();
+        match result {
+            Ok(ordered) => {
+                draft.update(|value| value.forward_sequence = ordered);
+                cacc_proposal.set(None);
+                status.set("The explicit CACC prefix was applied to the forward oligo. Reinspect actual PCR and both orientations; the independent target was not changed.".into());
+            }
+            Err(error) => status.set(error),
+        }
+    };
     view! {
         <div class="inspector-content topo-panel"><h2>"TOPO cloning"</h2>
-            <p class="helper">"Explicit TA strand preparation and elementary phosphotyrosyl transfers. DNA records do not prove vector activation. This workflow retains both declared insert orientations, every reciprocal component, nicks and displaced strands; it does not predict kit efficacy or repair."</p>
+            <p class="helper">"Explicit prepared-strand declarations and elementary phosphotyrosyl transfers. DNA records do not prove vector activation. Both insert orientations, reciprocal components, nicks and displaced strands remain visible. Directional flaps can withhold a paired contour; no repair or closed reference DNA is invented."</p>
+            <label>"Preparation geometry"<select disabled=move||locked.get()||busy.get() prop:value=move||draft.with(|value|if value.mode==PreparationMode::Ta{"ta"}else{"directional"}) on:change=move|event|draft.update(|value|value.mode=if event_target_value(&event)=="directional"{PreparationMode::DirectionalCacc}else{PreparationMode::Ta})><option value="ta">"TA — explicitly A-tailed PCR"</option><option value="directional">"Directional CACC — actual blunt PCR"</option></select></label>
             <p><strong>"Independent target: "</strong>{move||target.with(|target|format!("{} · {} bases · document {} / event {}",target.name,target.length,target.binding.document_id,target.binding.event_id))}</p>
             <SourcePicker label="TOPO vector top strand source" role="vector_top" draft=draft sources=sources locked=locked/>
             <SourcePicker label="TOPO vector bottom strand source" role="vector_bottom" draft=draft sources=sources locked=locked/>
-            <p class="helper">"Choose actual 5′→3′ source sequences for both vector strands. This TA form declares equal-length strands with one 3′ overhang and an antiparallel paired core; it does not excise a circle or infer ends from a plasmid label."</p>
+            <p class="helper">{move||draft.with(|value|if value.mode==PreparationMode::Ta{"Choose both actual vector strands written5′→3′: equal lengths, paired over all but one base, with one explicit3′ overhang. No circle is excised or activated from a label."}else{"Choose both actual vector strands written5′→3′. The bottom strand is four bases longer and begins with stored GGTG (not the reversed drawing GTGG); its paired core begins at offset4. Actual bases and pairing are checked natively."})}</p>
             <label>"Vector preparation assumption"<textarea aria-label="TOPO preparation assumption" rows="3" maxlength="4096" disabled=move||locked.get() prop:value=move||draft.with(|d|d.preparation_assumption.clone()) on:input=move|e|draft.update(|d|d.preparation_assumption=event_target_value(&e))/></label>
             <label class="checkbox-label"><input type="checkbox" aria-label="Declare activated TOPO vector chemistry" disabled=move||locked.get() prop:checked=move||draft.with(|d|d.activation_confirmed) on:change=move|e|draft.update(|d|d.activation_confirmed=event_target_checked(&e))/>"I explicitly declare vector 5′ phosphate and 3′ vaccinia Tyr274-phosphotyrosyl termini; sequence alone does not establish activation."</label>
             <SourcePicker label="TOPO insert PCR template" role="insert_template" draft=draft sources=sources locked=locked/>
@@ -810,8 +864,12 @@ pub fn TopoPanel(
             <label>"Reverse ordered oligo 5′→3′"<input aria-label="TOPO reverse ordered primer" maxlength="1024" disabled=move||locked.get() prop:value=move||draft.with(|d|d.reverse_sequence.clone()) on:input=move|e|draft.update(|d|d.reverse_sequence=event_target_value(&e))/></label>
             <label>"Reverse 3′ annealing length"<input type="number" min="1" max="1024" aria-label="TOPO reverse annealing length" disabled=move||locked.get() prop:value=move||draft.with(|d|if d.reverse_annealing==0{String::new()}else{d.reverse_annealing.to_string()}) on:input=move|e|draft.update(|d|d.reverse_annealing=event_target_value(&e).parse().unwrap_or(0))/></label>
             <label class="checkbox-label"><input type="checkbox" aria-label="Declare single A tail on both PCR strands" disabled=move||locked.get() prop:checked=move||draft.with(|d|d.add_a_tail) on:change=move|e|draft.update(|d|d.add_a_tail=event_target_checked(&e))/>"Explicitly synthesize one A on each PCR strand's 3′ end after exact PCR."</label>
-            <p class="helper">"The declared annealing suffix is split from each whole ordered oligo; the remaining 5′ prefix is retained as a tail. Exact binding and product alternatives are checked by the model, not assumed from primer names."</p>
-            <button class="button primary full" disabled=move||busy.get()||locked.get()||context.get().is_err() on:click=move|_|inspect.run(())>"Inspect both TA orientations"</button>
+            <p class="helper">"The declared annealing suffix is split from each whole ordered oligo; the remaining5′ prefix stays literal. TA requires an explicitly selected A addition. Directional preparation requires no terminal addition and actual PCR top DNA beginning CACC; no CACC or phosphorylation is inferred. Exact binding and product alternatives are checked natively."</p>
+            <Show when=move||draft.with(|value|value.mode==PreparationMode::DirectionalCacc)>
+                <button class="text-tool" disabled=move||locked.get()||busy.get()||context.get().is_err() on:click=propose_cacc>"Propose literal CACC forward-primer prefix"</button>
+                {move||cacc_proposal.get().map(|(_,ordered)|view!{<section><h4>"Forward oligo prefix proposal — not applied"</h4><pre>{ordered}</pre><p class="helper">"Four new literal bases will be supplied by this ordered primer. The existing annealing length and independent target stay unchanged; native PCR and transfer checks may still reject the design."</p><button class="button secondary" disabled=move||locked.get()||busy.get() on:click=apply_cacc>"Apply this exact forward oligo"</button></section>})}
+            </Show>
+            <button class="button primary full" disabled=move||busy.get()||locked.get()||context.get().is_err() on:click=move|_|inspect.run(())>{move||draft.with(|value|if value.mode==PreparationMode::Ta{"Inspect both TA orientations"}else{"Inspect both directional orientations"})}</button>
             <Show when=move||busy.get()><button class="button secondary full" on:click=move|_|{cancel.run(());status.set("TOPO calculation cancelled; no late result will be used.".into());}>"Cancel TOPO"</button></Show>
             <p class="helper" role="status">{move||if status.get().is_empty(){context.get().err().unwrap_or_default()}else{status.get()}}</p>
             {move||current_bound().map(|b|view!{

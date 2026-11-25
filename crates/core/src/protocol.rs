@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 61;
+pub const WORKER_SCHEMA_VERSION: u16 = 62;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 12;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -835,6 +835,21 @@ pub enum AnalysisJob {
         input: crate::verification::PlanInput,
         request: crate::domestication_preparation::Request,
     },
+    ListLigationProfiles,
+    ScorePublishedLigation {
+        profile: crate::ligation_profiles::ProfileRef,
+        ends: Vec<String>,
+        physical_competitors: Vec<String>,
+    },
+    RankGoldenGateFusions {
+        inputs: Vec<crate::verification::PlanInput>,
+        request: crate::golden_gate_fusion_rank::Request,
+    },
+    ScoreLigationCompetition {
+        dataset: crate::ligation_fidelity::Dataset,
+        ends: Vec<String>,
+        physical_competitors: Vec<String>,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -982,6 +997,10 @@ pub enum AnalysisResult {
         target: Molecule,
     },
     DomesticationPrepared(crate::domestication_preparation::Prepared),
+    LigationProfiles(Vec<crate::ligation_profiles::Summary>),
+    PublishedLigationScore(crate::ligation_profiles::Report),
+    RankedGoldenGateFusions(crate::golden_gate_fusion_rank::Report),
+    LigationCompetition(crate::ligation_fidelity::CompetitionReport),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1202,6 +1221,36 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         crate::pairwise_context::preflight(report, reference, query, *translate)?;
     }
     match &r.job {
+        AnalysisJob::ListLigationProfiles => {
+            crate::ligation_profiles::catalog_revision()?;
+        }
+        AnalysisJob::ScorePublishedLigation {
+            profile,
+            ends,
+            physical_competitors,
+        } => {
+            crate::ligation_profiles::score_revision_with_competitors(
+                profile,
+                ends,
+                physical_competitors,
+            )?;
+        }
+        AnalysisJob::ScoreLigationCompetition {
+            dataset,
+            ends,
+            physical_competitors,
+        } => {
+            crate::ligation_fidelity::competition_revision(dataset, ends, physical_competitors)?;
+        }
+        AnalysisJob::RankGoldenGateFusions { inputs, request } => {
+            crate::golden_gate_fusion_rank::preflight(
+                &inputs
+                    .iter()
+                    .map(|i| (i.id.as_str(), &i.molecule))
+                    .collect::<Vec<_>>(),
+                request,
+            )?;
+        }
         AnalysisJob::InspectDomestication { source, request }
         | AnalysisJob::ProposeDomestication { source, request }
         | AnalysisJob::CheckDomestication {
@@ -1334,6 +1383,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_combinatorial_release_tag(bytes, &[123, 124, 125, 126, 127])?;
     preflight_fusion_design_tag(bytes, &[128, 129, 130])?;
     preflight_domestication_tag(bytes, &[131, 132, 133, 134])?;
+    preflight_published_ligation_tag(bytes, &[135, 136, 137, 138])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1387,6 +1437,10 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         _ => decode_with_limit(b"CGR\0", bytes, maximum)?,
     };
     let required = match &response.result {
+        AnalysisResult::LigationProfiles(_)
+        | AnalysisResult::PublishedLigationScore(_)
+        | AnalysisResult::RankedGoldenGateFusions(_)
+        | AnalysisResult::LigationCompetition(_) => 62,
         AnalysisResult::DomesticationInspected(_)
         | AnalysisResult::DomesticationProposed(_)
         | AnalysisResult::DomesticationChecked { .. }
@@ -1539,6 +1593,24 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
     }
     match &response.result {
+        AnalysisResult::LigationProfiles(items) => {
+            let expected = crate::ligation_profiles::list()?;
+            if items.len() != expected.len()
+                || response.revision != crate::ligation_profiles::catalog_revision()?
+                || crate::assembly_recipe::hash(items)? != crate::assembly_recipe::hash(&expected)?
+            {
+                return Err(Error::Format("Published ligation catalog changed".into()));
+            }
+        }
+        AnalysisResult::PublishedLigationScore(report) => {
+            report.validate_binding(&response.revision)?
+        }
+        AnalysisResult::RankedGoldenGateFusions(report) => {
+            report.validate_binding(&response.revision)?
+        }
+        AnalysisResult::LigationCompetition(report) => {
+            report.validate_binding(&response.revision)?
+        }
         AnalysisResult::DomesticationInspected(report) => {
             report.validate_binding(&response.revision)?
         }
@@ -2114,6 +2186,14 @@ fn preflight_domestication_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> 
     }
     Ok(())
 }
+fn preflight_published_ligation_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 62)?;
+    }
+    Ok(())
+}
 // Dot plots retain the ordinary scientific budget; gate the new selector before
 // deserializing any schema-14 source/query body under a historical envelope.
 fn preflight_dotplot_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
@@ -2674,6 +2754,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_combinatorial_release_tag(bytes, &[131, 132, 133, 134, 135])?;
     preflight_fusion_design_tag(bytes, &[136, 137, 138])?;
     preflight_domestication_tag(bytes, &[139, 140, 141, 142])?;
+    preflight_published_ligation_tag(bytes, &[143, 144, 145, 146])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -2681,6 +2762,10 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::ListLigationProfiles
+        | AnalysisJob::ScorePublishedLigation { .. }
+        | AnalysisJob::RankGoldenGateFusions { .. }
+        | AnalysisJob::ScoreLigationCompetition { .. } => 62,
         AnalysisJob::InspectDomestication { .. }
         | AnalysisJob::ProposeDomestication { .. }
         | AnalysisJob::CheckDomestication { .. }
@@ -3260,6 +3345,51 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             if crate::golden_gate_reaction::selection_revision(report, selection)? != r.revision {
                 return Err(Error::Format(
                     "Golden Gate reaction selection changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::ListLigationProfiles => {
+            if crate::ligation_profiles::catalog_revision()? != r.revision {
+                return Err(Error::Format(
+                    "Published ligation catalog context changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::ScorePublishedLigation {
+            profile,
+            ends,
+            physical_competitors,
+        } => {
+            if crate::ligation_profiles::score_revision_with_competitors(
+                profile,
+                ends,
+                physical_competitors,
+            )? != r.revision
+            {
+                return Err(Error::Format(
+                    "Published ligation profile/end context changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::ScoreLigationCompetition {
+            dataset,
+            ends,
+            physical_competitors,
+        } => {
+            if crate::ligation_fidelity::competition_revision(dataset, ends, physical_competitors)?
+                != r.revision
+            {
+                return Err(Error::Format("Ligation competition context changed".into()));
+            }
+            None
+        }
+        AnalysisJob::RankGoldenGateFusions { inputs, request } => {
+            if crate::golden_gate_fusion_rank::inspect_revision(inputs, request)? != r.revision {
+                return Err(Error::Format(
+                    "Fusion ranking source/profile context changed".into(),
                 ));
             }
             None
@@ -3969,6 +4099,27 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let result = match r.job {
+        AnalysisJob::ListLigationProfiles => {
+            crate::ligation_profiles::list().map(AnalysisResult::LigationProfiles)
+        }
+        AnalysisJob::ScorePublishedLigation {
+            profile,
+            ends,
+            physical_competitors,
+        } => {
+            crate::ligation_profiles::score_with_competitors(&profile, &ends, &physical_competitors)
+                .map(AnalysisResult::PublishedLigationScore)
+        }
+        AnalysisJob::ScoreLigationCompetition {
+            dataset,
+            ends,
+            physical_competitors,
+        } => crate::ligation_fidelity::score_competition(&dataset, &ends, &physical_competitors)
+            .map(AnalysisResult::LigationCompetition),
+        AnalysisJob::RankGoldenGateFusions { inputs, request } => {
+            crate::golden_gate_fusion_rank::inspect(&inputs, &request)
+                .map(AnalysisResult::RankedGoldenGateFusions)
+        }
         AnalysisJob::InspectDomestication { source, request } => {
             crate::domestication::inspect(&source, &request)
                 .map(AnalysisResult::DomesticationInspected)

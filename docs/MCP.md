@@ -752,3 +752,25 @@ Legacy uncut, starter-digest and PCR lanes retain their existing inputs.
 
 Saved setup capture/reopen in the browser remains historical until explicitly
 recomputed. See [named digest semantics](NAMED_DIGESTS.md).
+
+
+## Published profiles and source-backed TOPO declarations (160 tools)
+
+`list_ligation_profiles` returns five exact pinned experimental profiles with
+formulation, conditions and separately licensed data provenance.
+`score_published_ligation_profile` accepts `profile`, intended `ends` and optional
+`physical_competitors` (literal5′→3′ singleton ends). `rank_golden_gate_fusions`
+accepts original `inputs` plus `{design,profile,enzyme_formulation}`. It returns
+advisory rows and a full artifact; use the original selection context and explicit
+candidate ID with `materialize_golden_gate_fusions`, then freshly verify the recipe.
+
+`score_ligation_fidelity` accepts optional `physical_competitors`; omission preserves
+the old directed-count report, presence uses the separately versioned competition
+report. Free physical ends are not scored as intended joins. No combined estimate
+is produced when there are no joins. [Model contract](PUBLISHED_LIGATION_PROFILES.md).
+
+`compile_topo_preparation` accepts exact historical `sources` and a shared typed
+TA/directional-CACC `declaration`. It returns the source-backed native request,
+strand indexes and direction flag for existing `inspect_topo_orientations` /
+projection/check tools. Declared activation is an assumption; neither compilation
+nor a transferred source-call graph implies a repaired or closed clone.

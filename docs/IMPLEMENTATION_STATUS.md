@@ -22,6 +22,42 @@ and review proposals are implemented, despite older gap tables. See
 [workflow decisions](BENCHLING_WORKFLOW_DECISIONS.md). This documentation-only
 checkpoint adds no runtime/build/browser checks.
 
+## Published ligation profiles and directional TOPO preparation
+
+Five Pryor2020 matrices now have exact source/model/formulation bindings and
+separate CC-BY attribution. Rust imports the original data, ranks retained fusion
+sets and exposes detailed pair evidence through workers, the cloning dock and MCP.
+An experiment is explicitly selected; geometry alone never substitutes a physical
+enzyme formulation. Linear free ends compete in their actual orientation, without
+invented complements or extra intended-join factors. The old supplied-data report
+layout remains readable. [Contract](PUBLISHED_LIGATION_PROFILES.md).
+
+Directional CACC and TA share native source-backed preparation compilation.
+CACC primer additions require review and Apply. Actual PCR and explicitly declared
+activated vector strands feed the existing orientation/physical graph review;
+unaccounted flap repair cannot produce an accepted paired contour. F15 graph
+composition and broader repair chemistry remain unfinished.
+[Preparation contract](TOPO_WEB_WORKFLOW.md).
+
+Two focused parallel reviews of current official Benchling documentation confirm
+connected preparation/primer/product review and row-specific errors/warnings.
+Dedicated public directional TOPO or BP/LR procedures were not located; this is an
+evidence limit, not proof of absence. Recommendations and documented behavior are
+separate in the [assembly follow-up](BENCHLING_ASSEMBLY_WORKFLOW_REVIEW.md) and
+[method follow-up](research/BENCHLING_CLONING_WORKFLOWS.md).
+
+The preceding c8cf748 checkpoint passed every configured CI job, including native
+Windows/macOS/Linux and web ([run](https://github.com/henriksson-lab/collagene2/actions/runs/45665755108)).
+Current source uses worker62/MCP160, with candidate12/plan10/science15 unchanged.
+Focused scientific and binary checks passed:47 unique native core cases and four
+actual MCP SDK cases, plus eight MCP internal checks. These cover original-source
+preparation, literal end competitors, independent published numerical examples,
+hostile data files, stale bindings and append-only protocol/version gates. The
+application/worker WASM compiler check and three native TOPO form checks passed.
+No full application bundle was rebuilt this checkpoint.
+No browser/HTTP checks run; port8082 still serves the preceding immutable snapshot.
+Remaining cloning/delivery work and final GUI acceptance stay active.
+
 ## Source/CDS domestication and explicit physical preparation
 
 **Remove internal sites** now connects source inspection, retained/protected sites,

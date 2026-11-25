@@ -316,6 +316,13 @@ pub fn AssemblyFusionView(
         <button class="text-tool" disabled=move||!pending.get() on:click=move|_|{cancel.run(());status.set("Fusion design cancelled; no draft changed.".into());}>"Cancel fusion design"</button>
         {move||evidence.get().map(|saved|{
             let total=saved.report.candidates.len();let pages=total.max(1).div_ceil(20);let current=page.get().min(pages-1);
+            let ranking_source=saved.clone();
+            let ranking_capture=Callback::new(move|()|->Result<crate::assembly_profile_view::Capture,String>{
+                search_guard.run(ranking_source.clone())?;
+                Ok(crate::assembly_profile_view::Capture{inputs:ranking_source.capture.inputs.clone(),request:ranking_source.request.clone(),search_revision:ranking_source.report.context_revision.clone()})
+            });
+            let ranking_source=saved.clone();
+            let ranking_guard=Callback::new(move|()|search_guard.run(ranking_source.clone()));
             let candidates=saved.report.candidates.iter().skip(current*20).take(20).map(|candidate|{
                 let id=candidate.id.clone();let score_id=id.clone();view!{<article><h4>"Candidate placement"</h4>
                     <p>{format!("Signed shifts {:?} · fusion words {}",candidate.shifts,candidate.fusions.join(" · "))}</p>
@@ -324,16 +331,15 @@ pub fn AssemblyFusionView(
                     <button class="text-tool" disabled=move||pending.get() on:click=move|_|fidelity_candidate.set(Some(score_id.clone()))>"Review empirical score for this set"</button>
                 </article>}
             }).collect_view();
-            view!{<section><p>{format!("{} candidate placements · {} states · finite search complete {}",total,saved.report.states_examined,saved.report.search_complete)}</p>
+            view!{<section><p>{format!("{} candidate placements · {} states · finite search complete {}",total,saved.report.states_examined,saved.report.search_complete)}</p><crate::assembly_profile_view::FusionProfileView capture=ranking_capture guard=ranking_guard on_materialize=materialize/>
                 {saved.report.limits.iter().chain(&saved.report.warnings).map(|warning|view!{<p>{warning.clone()}</p>}).collect_view()}{candidates}
                 <p>{format!("Candidate page {} of {pages}",current+1)}</p>
                 <button class="text-tool" disabled=current==0 on:click=move|_|page.set(current.saturating_sub(1))>"Previous placements"</button>
                 <button class="text-tool" disabled={current+1>=pages} on:click=move|_|page.set(current+1)>"Next placements"</button>
             </section>}
         })}
-        {move||fidelity_candidate.get().and_then(|id|evidence.get().and_then(|saved|saved.report.candidates.iter().find(|candidate|candidate.id==id).map(|candidate|{
-            let mut ends=candidate.fusions.clone();ends.extend(saved.report.terminal_fusions.iter().cloned());
-            view!{<FidelityView saved=saved.clone() ends dataset_text guard=search_guard/>}
+        {move||fidelity_candidate.get().and_then(|id|evidence.get().and_then(|saved|saved.report.candidates.iter().find(|candidate|candidate.id==id).and_then(|candidate|fusion::end_scope(&saved.report,&candidate.id).ok()).map(|scope|{
+            view!{<FidelityView saved=saved.clone() ends=scope.intended_junctions physical_competitors=scope.physical_competitors dataset_text guard=search_guard/>}
         })))}
         {move||materialized.get().map(|saved|view!{<section><h4>"Materialized original-source preparations"</h4>
             <p>{format!("Independent target: {} · {} bases",saved.report.original_intent.target.name,saved.report.original_intent.target.sequence.len())}</p>
@@ -353,13 +359,15 @@ pub fn AssemblyFusionView(
 fn FidelityView(
     saved: Arc<SearchEvidence>,
     ends: Vec<String>,
+    physical_competitors: Vec<String>,
     dataset_text: RwSignal<String>,
     guard: Callback<Arc<SearchEvidence>, Result<(), String>>,
 ) -> impl IntoView {
     use collagene_core::ligation_fidelity as fidelity;
     let saved = StoredValue::new(saved);
     let ends = StoredValue::new(ends);
-    let report = RwSignal::new(None::<Arc<fidelity::Report>>);
+    let physical_competitors = StoredValue::new(physical_competitors);
+    let report = RwSignal::new(None::<Arc<fidelity::CompetitionReport>>);
     let pending = RwSignal::new(false);
     let status = RwSignal::new(String::new());
     let generation = RwSignal::new(0u32);
@@ -443,8 +451,12 @@ fn FidelityView(
             let text = dataset_text.get_untracked();
             let dataset = fidelity::decode(text.as_bytes()).map_err(|error| error.to_string())?;
             let requested = ends.get_value();
-            let revision =
-                fidelity::revision(&dataset, &requested).map_err(|error| error.to_string())?;
+            let revision = fidelity::competition_revision(
+                &dataset,
+                &requested,
+                &physical_competitors.get_value(),
+            )
+            .map_err(|error| error.to_string())?;
             Ok((
                 text,
                 dataset,
@@ -472,9 +484,10 @@ fn FidelityView(
                 .ask(Request {
                     id: token,
                     revision: revision.clone(),
-                    job: AnalysisJob::ScoreLigationFidelity {
+                    job: AnalysisJob::ScoreLigationCompetition {
                         dataset: dataset.clone(),
                         ends: requested.clone(),
+                        physical_competitors: physical_competitors.get_value(),
                     },
                 })
                 .await;
@@ -484,7 +497,7 @@ fn FidelityView(
             }
             pending.set(false);
             worker.set_value(None);
-            let result = (|| -> Result<Arc<fidelity::Report>, String> {
+            let result = (|| -> Result<Arc<fidelity::CompetitionReport>, String> {
                 guard.run(saved.get_value())?;
                 if dataset_text.get_untracked() != text {
                     return Err("Provided matrix text changed; score again.".into());
@@ -494,7 +507,7 @@ fn FidelityView(
                     return Err("Empirical score response differs from its request.".into());
                 }
                 let scored = match response.result {
-                    AnalysisResult::LigationFidelity(value) => value,
+                    AnalysisResult::LigationCompetition(value) => value,
                     AnalysisResult::Error(error) => return Err(error),
                     _ => return Err("Unexpected empirical count score response.".into()),
                 };
@@ -503,6 +516,7 @@ fn FidelityView(
                     .map_err(|error| error.to_string())?;
                 if scored.dataset_revision != dataset.content_revision
                     || scored.requested_ends != requested
+                    || scored.physical_competitors != physical_competitors.get_value()
                 {
                     return Err("Score is bound to different counts or fusion ends.".into());
                 }
@@ -519,7 +533,8 @@ fn FidelityView(
     };
     view!{<details open class="ligation-fidelity"><summary>"Provided empirical count matrix"</summary>
         <p class="helper">"Supply a licensed matrix in Collagene directed-count JSON format, including conditions and provenance. Missing counts stay unknown. No bundled dataset is assumed, and no winner is selected automatically."</p>
-        <p>{ends.with_value(|ends|format!("Exact selected end set, including fixed linear terminal fusions: {}",ends.join(" · ")))}</p>
+        <p>{ends.with_value(|ends|format!("Intended junctions: {}",ends.join(" · ")))}</p>
+        <p>{physical_competitors.with_value(|ends|format!("Additional physical competing ends (5′→3′): {}",ends.join(" · ")))}</p>
         <label>"Matrix JSON"<textarea maxlength=fidelity::MAX_BYTES.to_string() prop:value=move||dataset_text.get() on:input=move|event|{
             let input=event_target::<web_sys::HtmlTextAreaElement>(&event);let value=input.value();
             if value.len()>fidelity::MAX_BYTES{input.set_value(&dataset_text.get_untracked());status.set("Provided matrix exceeds16MiB; previous text retained.".into());}else{dataset_text.set(value);}

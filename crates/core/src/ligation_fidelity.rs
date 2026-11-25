@@ -71,7 +71,7 @@ dto! {pub struct Report {
 }}
 // JSON numbers cannot portably carry these exact aggregate counts. Human
 // formats use bounded canonical decimal strings; binary formats retain rawu128.
-mod decimal_u128 {
+pub(crate) mod decimal_u128 {
     use serde::{Deserialize, Serialize};
     pub fn serialize<S: serde::Serializer>(value: &u128, s: S) -> Result<S::Ok, S::Error> {
         if s.is_human_readable() {
@@ -116,7 +116,7 @@ mod decimal_u128 {
         }
     }
 }
-mod optional_decimal_u128 {
+pub(crate) mod optional_decimal_u128 {
     use super::decimal_u128::Value;
     use serde::{Deserialize, Serialize};
     pub fn serialize<S: serde::Serializer>(value: &Option<u128>, s: S) -> Result<S::Ok, S::Error> {
@@ -315,60 +315,124 @@ impl<'a> Prepared<'a> {
         })
     }
     pub fn score(&self, ends: &[String]) -> Result<Report, Error> {
-        let (physical, pairs) = request(ends, self.data.overhang_length)?;
-        let scores = pairs
-            .into_iter()
-            .map(|(end, occurrences)| {
-                let complement = rc(&end);
-                let oriented = if end == complement {
-                    vec![end.clone()]
-                } else {
-                    vec![end.clone(), complement.clone()]
-                };
-                let mut orientations = vec![];
-                for source in oriented {
-                    let partner = rc(&source);
-                    let mut total = 0u128;
-                    let mut missing = vec![];
-                    for destination in &physical {
-                        match self.map.get(&(source.as_str(), destination.as_str())) {
-                            Some(count) => {
-                                total = total
-                                    .checked_add(u128::from(*count))
-                                    .ok_or(Error::TooLarge)?
-                            }
-                            None => missing.push(destination.clone()),
-                        }
-                    }
-                    orientations.push(Orientation {
-                        correct_count: self.map.get(&(source.as_str(), partner.as_str())).copied(),
-                        end_5to3: source,
-                        correct_partner_5to3: partner,
-                        total_count: missing.is_empty().then_some(total),
-                        missing_partners: missing,
-                    });
-                }
-                let estimate = estimate(&orientations, end == complement)?;
-                Ok(PairScore {
-                    canonical_end: end,
-                    reverse_complement: complement,
-                    occurrences,
-                    orientations,
-                    estimate,
-                })
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
-        let overall = overall(&scores);
-        let log_overall_fidelity = log_overall(&scores);
+        let numeric = calculate(self.data.overhang_length, ends, |a, b| {
+            self.map.get(&(a, b)).copied()
+        })?;
+        let scores = numeric.pairs;
+        let physical = numeric.physical_ends;
+        let overall = numeric.overall_fidelity;
+        let log_overall_fidelity = numeric.log_overall_fidelity;
         let report=Report{model:MODEL.into(),context_revision:context(&self.data.content_revision,self.data.overhang_length,&self.data.conditions,&self.data.provenance,ends)?,
             dataset_revision:self.data.content_revision.clone(),overhang_length:self.data.overhang_length,conditions:self.data.conditions.clone(),provenance:self.data.provenance.clone(),
-            requested_ends:ends.to_vec(),physical_ends:physical.into_iter().collect(),pairs:scores,overall_fidelity:overall,log_overall_fidelity,
+            requested_ends:ends.to_vec(),physical_ends:physical,pairs:scores,overall_fidelity:overall,log_overall_fidelity,
             warnings:vec!["Condition-specific count-based ranking only, not ligation efficiency, reaction yield, chemical verification or experimental success.".into(),
                 "Each unique reverse-complement pair contributes once. Both directed rows and every physically present partner, including self-mispairs, enter its conditional denominator. Equal partner abundance and independence of unique pair outcomes are modeling assumptions; duplicate requested ends do not add stoichiometric weighting.".into(),
                 "Caller-supplied provenance, source hash and licensing are documentary declarations; this module neither fetches nor authenticates the original experiment. Floating ratios can round; positive products can underflow to0, so log_overall_fidelity retains their logarithm. No uncertainty intervals or pseudocounts are inferred. A numerical1 means no mismatches observed in the supplied competing counts, not guaranteed specificity.".into()]};
         report.validate_binding(&report.context_revision)?;
         Ok(report)
     }
+}
+pub(crate) struct NumericScore {
+    pub physical_ends: Vec<String>,
+    pub pairs: Vec<PairScore>,
+    pub overall_fidelity: Option<f64>,
+    pub log_overall_fidelity: Option<f64>,
+}
+pub(crate) fn calculate(
+    k: usize,
+    ends: &[String],
+    lookup: impl Fn(&str, &str) -> Option<u64>,
+) -> Result<NumericScore, Error> {
+    request(ends, k)?; // Preserve the original API's nonempty intended-set guard.
+    calculate_with_competitors(k, ends, &[], lookup)
+}
+pub(crate) fn physical_scope(
+    k: usize,
+    ends: &[String],
+    extras: &[String],
+) -> Result<(BTreeSet<String>, BTreeMap<String, Vec<usize>>), Error> {
+    if !matches!(k, 3 | 4)
+        || ends.len() > MAX_ENDS
+        || extras.len() > MAX_ENDS
+        || ends.iter().chain(extras).any(|s| !dna(s, k))
+    {
+        return Err(bad(
+            "invalid bounded intended joins or literal physical competitors",
+        ));
+    }
+    let (mut physical, pairs) = if ends.is_empty() {
+        (BTreeSet::new(), BTreeMap::new())
+    } else {
+        request(ends, k)?
+    };
+    physical.extend(extras.iter().cloned()); // Actual singleton ends: never invent RC.
+    Ok((physical, pairs))
+}
+pub(crate) fn calculate_with_competitors(
+    k: usize,
+    ends: &[String],
+    extras: &[String],
+    lookup: impl Fn(&str, &str) -> Option<u64>,
+) -> Result<NumericScore, Error> {
+    let (physical, pairs) = physical_scope(k, ends, extras)?;
+    let scores = pairs
+        .into_iter()
+        .map(|(end, occurrences)| {
+            let complement = rc(&end);
+            let oriented = if end == complement {
+                vec![end.clone()]
+            } else {
+                vec![end.clone(), complement.clone()]
+            };
+            let mut orientations = vec![];
+            for source in oriented {
+                let partner = rc(&source);
+                let mut total = 0u128;
+                let mut missing = vec![];
+                for destination in &physical {
+                    match lookup(source.as_str(), destination.as_str()) {
+                        Some(count) => {
+                            total = total
+                                .checked_add(u128::from(count))
+                                .ok_or(Error::TooLarge)?
+                        }
+                        None => missing.push(destination.clone()),
+                    }
+                }
+                orientations.push(Orientation {
+                    correct_count: lookup(source.as_str(), partner.as_str()),
+                    end_5to3: source,
+                    correct_partner_5to3: partner,
+                    total_count: missing.is_empty().then_some(total),
+                    missing_partners: missing,
+                });
+            }
+            let estimate = estimate(&orientations, end == complement)?;
+            Ok(PairScore {
+                canonical_end: end,
+                reverse_complement: complement,
+                occurrences,
+                orientations,
+                estimate,
+            })
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
+    let overall = if ends.is_empty() {
+        None
+    } else {
+        overall(&scores)
+    };
+    let log_overall_fidelity = if ends.is_empty() {
+        None
+    } else {
+        log_overall(&scores)
+    };
+    Ok(NumericScore {
+        physical_ends: physical.into_iter().collect(),
+        pairs: scores,
+        overall_fidelity: overall,
+        log_overall_fidelity,
+    })
 }
 fn estimate(rows: &[Orientation], palindrome: bool) -> Result<Estimate, Error> {
     if palindrome {
@@ -428,7 +492,7 @@ impl Report {
         if !matches!(self.overhang_length, 3 | 4) {
             return Err(bad("unsupported end length"));
         }
-        let (physical, pairs) = request(&self.requested_ends, self.overhang_length)?;
+        request(&self.requested_ends, self.overhang_length)?;
         if self.model != MODEL
             || !hex(&self.dataset_revision)
             || !matches!(self.overhang_length, 3 | 4)
@@ -446,51 +510,191 @@ impl Report {
         {
             return Err(bad("score binding or metadata changed"));
         }
-        if self.physical_ends != physical.iter().cloned().collect::<Vec<_>>()
-            || self.pairs.len() != pairs.len()
-        {
-            return Err(bad("physical end scope changed"));
-        }
-        for (pair, (canonical, occurrences)) in self.pairs.iter().zip(pairs) {
-            let complement = rc(&canonical);
-            let sources = if canonical == complement {
-                vec![canonical.clone()]
-            } else {
-                vec![canonical.clone(), complement.clone()]
-            };
-            if pair.canonical_end != canonical
-                || pair.reverse_complement != complement
-                || pair.occurrences != occurrences
-                || pair.orientations.len() != sources.len()
-            {
-                return Err(bad("pair identity changed"));
-            }
-            for (row, source) in pair.orientations.iter().zip(sources) {
-                if row.end_5to3 != source
-                    || row.correct_partner_5to3 != rc(&source)
-                    || row.missing_partners.len() > physical.len()
-                    || row.missing_partners.iter().any(|v| !physical.contains(v))
-                    || row.missing_partners.windows(2).any(|w| w[0] >= w[1])
-                    || row.total_count.is_some() != row.missing_partners.is_empty()
-                    || row.correct_count.is_none()
-                        != row.missing_partners.contains(&row.correct_partner_5to3)
-                    || row.total_count.is_some_and(|n| {
-                        n > u128::from(u64::MAX) * (physical.len() as u128)
-                            || row.correct_count.is_some_and(|v| u128::from(v) > n)
-                    })
-                {
-                    return Err(bad("orientation count shape changed"));
-                }
-            }
-            if pair.estimate != estimate(&pair.orientations, canonical == complement)? {
-                return Err(bad("pair conditional estimate changed"));
-            }
-        }
-        if self.overall_fidelity != overall(&self.pairs)
-            || self.log_overall_fidelity != log_overall(&self.pairs)
-        {
-            return Err(bad("overall estimate changed"));
-        }
+        validate_numeric(
+            self.overhang_length,
+            &self.requested_ends,
+            &self.physical_ends,
+            &self.pairs,
+            self.overall_fidelity,
+            self.log_overall_fidelity,
+        )?;
         Ok(())
+    }
+}
+
+pub(crate) fn validate_numeric(
+    k: usize,
+    requested: &[String],
+    physical_ends: &[String],
+    scores: &[PairScore],
+    overall_fidelity: Option<f64>,
+    log_overall_fidelity: Option<f64>,
+) -> Result<(), Error> {
+    request(requested, k)?; // Original DTO keeps its original nonempty contract.
+    validate_numeric_with_competitors(
+        k,
+        requested,
+        &[],
+        physical_ends,
+        scores,
+        overall_fidelity,
+        log_overall_fidelity,
+    )
+}
+pub(crate) fn validate_numeric_with_competitors(
+    k: usize,
+    requested: &[String],
+    extras: &[String],
+    physical_ends: &[String],
+    scores: &[PairScore],
+    overall_fidelity: Option<f64>,
+    log_overall_fidelity: Option<f64>,
+) -> Result<(), Error> {
+    let (physical, pairs) = physical_scope(k, requested, extras)?;
+    if physical_ends != physical.iter().cloned().collect::<Vec<_>>().as_slice()
+        || scores.len() != pairs.len()
+    {
+        return Err(bad("physical end scope changed"));
+    }
+    for (pair, (canonical, occurrences)) in scores.iter().zip(pairs) {
+        let complement = rc(&canonical);
+        let sources = if canonical == complement {
+            vec![canonical.clone()]
+        } else {
+            vec![canonical.clone(), complement.clone()]
+        };
+        if pair.canonical_end != canonical
+            || pair.reverse_complement != complement
+            || pair.occurrences != occurrences
+            || pair.orientations.len() != sources.len()
+        {
+            return Err(bad("pair identity changed"));
+        }
+        for (row, source) in pair.orientations.iter().zip(sources) {
+            if row.end_5to3 != source
+                || row.correct_partner_5to3 != rc(&source)
+                || row.missing_partners.len() > physical.len()
+                || row.missing_partners.iter().any(|v| !physical.contains(v))
+                || row.missing_partners.windows(2).any(|w| w[0] >= w[1])
+                || row.total_count.is_some() != row.missing_partners.is_empty()
+                || row.correct_count.is_none()
+                    != row.missing_partners.contains(&row.correct_partner_5to3)
+                || row.total_count.is_some_and(|n| {
+                    n > u128::from(u64::MAX) * (physical.len() as u128)
+                        || row.correct_count.is_some_and(|v| u128::from(v) > n)
+                })
+            {
+                return Err(bad("orientation count shape changed"));
+            }
+        }
+        if pair.estimate != estimate(&pair.orientations, canonical == complement)? {
+            return Err(bad("pair conditional estimate changed"));
+        }
+    }
+    let expected_overall = if requested.is_empty() {
+        None
+    } else {
+        overall(scores)
+    };
+    let expected_log = if requested.is_empty() {
+        None
+    } else {
+        log_overall(scores)
+    };
+    if overall_fidelity != expected_overall || log_overall_fidelity != expected_log {
+        return Err(bad("overall estimate changed"));
+    }
+    Ok(())
+}
+
+pub const COMPETITION_MODEL: &str = "directed-count-literal-physical-competition-1";
+// Separate versioned DTO: original Report/postcard layout and meaning unchanged.
+dto! {pub struct CompetitionReport{
+    pub model:String,pub context_revision:String,pub dataset_revision:String,
+    pub overhang_length:usize,pub conditions:Conditions,pub provenance:Provenance,
+    pub requested_ends:Vec<String>,pub physical_competitors:Vec<String>,pub physical_ends:Vec<String>,pub pairs:Vec<PairScore>,
+    pub overall_fidelity:Option<f64>,pub log_overall_fidelity:Option<f64>,pub warnings:Vec<String>,
+}}
+fn competition_context(
+    revision: &str,
+    k: usize,
+    c: &Conditions,
+    p: &Provenance,
+    joins: &[String],
+    extras: &[String],
+) -> Result<String, Error> {
+    assembly_recipe::hash(&(COMPETITION_MODEL, revision, k, c, p, joins, extras))
+}
+pub fn competition_revision(
+    data: &Dataset,
+    joins: &[String],
+    extras: &[String],
+) -> Result<String, Error> {
+    data.validate()?;
+    physical_scope(data.overhang_length, joins, extras)?;
+    competition_context(
+        &data.content_revision,
+        data.overhang_length,
+        &data.conditions,
+        &data.provenance,
+        joins,
+        extras,
+    )
+}
+impl Prepared<'_> {
+    pub fn score_competition(
+        &self,
+        joins: &[String],
+        extras: &[String],
+    ) -> Result<CompetitionReport, Error> {
+        let score =
+            calculate_with_competitors(self.data.overhang_length, joins, extras, |a, b| {
+                self.map.get(&(a, b)).copied()
+            })?;
+        Ok(CompetitionReport{model:COMPETITION_MODEL.into(),context_revision:competition_context(&self.data.content_revision,self.data.overhang_length,&self.data.conditions,&self.data.provenance,joins,extras)?,dataset_revision:self.data.content_revision.clone(),overhang_length:self.data.overhang_length,conditions:self.data.conditions.clone(),provenance:self.data.provenance.clone(),requested_ends:joins.to_vec(),physical_competitors:extras.to_vec(),physical_ends:score.physical_ends,pairs:score.pairs,overall_fidelity:score.overall_fidelity,log_overall_fidelity:score.log_overall_fidelity,
+            warnings:vec!["Condition-specific directed-observation estimate only; not chemical verification, reaction yield or experimental success.".into(),"Intended junctions contribute unique reverse-complement pairs. Extra physical5′→3′ ends enter denominators literally as singletons; their complements are not invented and they are not multiplied as intended successful joins. Empty intended scope has no overall estimate.".into(),"Equal physical-partner weighting and independent intended-pair outcomes are declared assumptions; duplicate declarations do not supply stoichiometry. Missing counts remain unknown and no pseudocount is invented. Documentary provenance is not authenticated experimental evidence.".into()]})
+    }
+}
+pub fn score_competition(
+    data: &Dataset,
+    joins: &[String],
+    extras: &[String],
+) -> Result<CompetitionReport, Error> {
+    Prepared::new(data)?.score_competition(joins, extras)
+}
+impl CompetitionReport {
+    pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
+        metadata(&self.conditions, &self.provenance)?;
+        physical_scope(
+            self.overhang_length,
+            &self.requested_ends,
+            &self.physical_competitors,
+        )?;
+        if self.model != COMPETITION_MODEL
+            || !hex(&self.dataset_revision)
+            || self.context_revision != expected
+            || expected
+                != competition_context(
+                    &self.dataset_revision,
+                    self.overhang_length,
+                    &self.conditions,
+                    &self.provenance,
+                    &self.requested_ends,
+                    &self.physical_competitors,
+                )?
+            || self.warnings.len() > 16
+            || self.warnings.iter().any(|s| s.len() > 4096)
+        {
+            return Err(bad("competition scope or metadata binding changed"));
+        }
+        validate_numeric_with_competitors(
+            self.overhang_length,
+            &self.requested_ends,
+            &self.physical_competitors,
+            &self.physical_ends,
+            &self.pairs,
+            self.overall_fidelity,
+            self.log_overall_fidelity,
+        )
     }
 }

@@ -278,3 +278,68 @@ async fn topo_sdk_rejects_foreign_claims_stale_sources_and_selection_without_rep
     c.cancel().await.unwrap();
     s.await.unwrap();
 }
+
+#[tokio::test]
+async fn directional_preparation_compiles_actual_sources_without_inventing_repaired_contour() {
+    use collagene_core::{analysis::Primer, topo_preparation as prep};
+    use t::physical::{self as p, projection};
+    let (c, s) = setup().await;
+    let mut sources = vec![];
+    for (role, dna) in [
+        ("vt", "AAGGGGCATCCCTT"),
+        ("vb", "GGTGAAGGGATGCCCCTT"),
+        ("template", "CACCATGACG"),
+    ] {
+        sources.push(json!({"role":role,"document":import(&c,role,dna,false).await}));
+    }
+    let declaration = prep::PreparationRequest {
+        mode: prep::PreparationMode::DirectionalCacc,
+        vector: prep::PreparedVectorDeclaration {
+            declaration_id: "literal directional fixture".into(),
+            assumption: "Explicit synthetic activation hypothesis, not a stock observation".into(),
+            strands: vec![strand("vt", 14, true), strand("vb", 18, true)],
+            pairing: vec![p::PairSpan {
+                strand_a: 0,
+                start_a: 0,
+                strand_b: 1,
+                start_b: 4,
+                length: 14,
+            }],
+        },
+        insert: prep::ExactPcrDeclaration {
+            material_id: "actual blunt PCR".into(),
+            template_role: "template".into(),
+            forward: Primer::new("Forward", "CACCA", "").unwrap(),
+            reverse: Primer::new("Reverse", "CGTCA", "").unwrap(),
+            tail: None,
+        },
+        engine_limits: p::Limits::default(),
+        projection_options: projection::Options::default(),
+    };
+    let compiled = call(
+        &c,
+        "compile_topo_preparation",
+        json!({"sources":sources,"declaration":declaration}),
+    )
+    .await;
+    assert_eq!(compiled["verified"], false);
+    assert_eq!(compiled["compiled"]["directional"], true);
+    assert_eq!(compiled["compiled"]["request"]["transfers"], json!([]));
+    let inspection=call(&c,"inspect_topo_orientations",json!({"sources":sources,"request":compiled["compiled"]["request"],"vector":compiled["compiled"]["vector_strands"],"insert":compiled["compiled"]["insert_strands"],"directional":true})).await;
+    let full = evidence(&c, &inspection["artifact_id"]).await;
+    assert!(
+        full.to_string().contains("GGTGAAGGGATGCCCCTTCGTCATGGTG"),
+        "physical graph must retain the actual displaced bases"
+    );
+    assert_eq!(inspection["biochemical_mixture_exhaustive"], false);
+    let mut stale = sources.clone();
+    stale[0]["document"]["revision"] = json!("0".repeat(64));
+    reject(
+        &c,
+        "compile_topo_preparation",
+        json!({"sources":stale,"declaration":declaration}),
+    )
+    .await;
+    c.cancel().await.unwrap();
+    s.abort();
+}

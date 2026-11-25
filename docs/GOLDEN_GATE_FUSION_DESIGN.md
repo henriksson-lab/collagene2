@@ -42,7 +42,9 @@ automatically acquire the original feature annotations or chemical provenance.
 ## Explicit empirical data
 
 `ligation_fidelity` accepts supplied 3- or 4-base directed count matrices. No
-experimental dataset or third-party optimizer code is bundled. Each dataset binds
+experimental data is implied by this supplied-data API. Separately attributed
+published profiles are now available through [their explicit API](PUBLISHED_LIGATION_PROFILES.md).
+No third-party optimizer code is bundled. Each supplied dataset binds
 its conditions, source citation, attribution, license, documentary source hash,
 normalization description and canonical content revision. A documentary hash is
 not proof that Collagene fetched or authenticated the cited observations.
@@ -86,8 +88,13 @@ review and optional supplied-matrix scoring. Source, draft, form and workspace
 changes invalidate pending proposals. No browser acceptance or scrolling/performance
 claim follows from native fixtures or compilation.
 
-Complete F13 still includes broader biological constraints, curated and licensed
-empirical profiles/ranking, internal-site domestication and its actual mutagenic
-preparation, and richer cycling-mixture behavior. The current bounded search and
-count model do not redefine that completion boundary.
+Published-profile ranking and an initial original-template domestication route
+now exist; see [published profiles](PUBLISHED_LIGATION_PROFILES.md) and
+[domestication](DOMESTICATION.md). The UI uses the separate competition report
+when linear outer ends are present, avoiding invented complementary competitors
+or extra intended joins. The original supplied-data DTO remains readable.
+
+Complete F13 still includes joint biological constraints, broader physical
+domestication routes, calibrated experimental profiles and richer cycling-mixture
+behavior. These increments do not redefine that completion boundary.
 [Research and licensing decisions](GOLDEN_GATE_OPTIMIZATION_DESIGN.md).

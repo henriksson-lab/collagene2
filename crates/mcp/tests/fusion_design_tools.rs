@@ -142,6 +142,40 @@ async fn sdk_search_materialization_and_condition_bound_scores_remain_advisory()
         json!({"inputs":bindings,"request":request,"selection":selection}),
     )
     .await;
+    let catalog = call(&c, "list_ligation_profiles", json!({})).await;
+    assert_eq!(catalog["profiles"].as_array().unwrap().len(), 5);
+    let profile = catalog["profiles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["enzyme_formulation"] == "BsaI-HFv2")
+        .unwrap()["profile"]
+        .clone();
+    let empirical = call(
+        &c,
+        "score_published_ligation_profile",
+        json!({"profile":profile,"ends":["AACC"],"physical_competitors":["ATGA","ATCC"]}),
+    )
+    .await;
+    assert_eq!(empirical["verified"], false);
+    assert_eq!(empirical["report"]["pairs"].as_array().unwrap().len(), 1);
+    assert!(
+        !empirical["report"]["physical_ends"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("GGAT"))
+    );
+    let ranked=call(&c,"rank_golden_gate_fusions",json!({"inputs":bindings,"request":{"design":request,"profile":profile,"enzyme_formulation":"BsaI-HFv2"}})).await;
+    assert_eq!(ranked["verified"], false);
+    assert_eq!(
+        ranked["selection_context_revision"],
+        search["context_revision"]
+    );
+    let ranked_preparation=call(&c,"materialize_golden_gate_fusions",json!({"inputs":bindings,"request":request,"selection":{"context_revision":ranked["selection_context_revision"],"candidate_id":ranked["ranked"][0]["candidate_id"]}})).await;
+    assert_eq!(
+        ranked_preparation["target_revision"],
+        search["target_revision"]
+    );
     let data = dataset();
     let scored = call(
         &c,
@@ -152,6 +186,14 @@ async fn sdk_search_materialization_and_condition_bound_scores_remain_advisory()
     assert_eq!(scored["verified"], false);
     assert_eq!(scored["report"]["overall_fidelity"], 0.9);
     assert_eq!(scored["report"]["pairs"].as_array().unwrap().len(), 1);
+    let competition = call(
+        &c,
+        "score_ligation_fidelity",
+        json!({"dataset":data,"ends":["AACC"],"physical_competitors":[]}),
+    )
+    .await;
+    assert_eq!(competition["report"]["overall_fidelity"], 0.9);
+    assert_ne!(competition["report"]["model"], scored["report"]["model"]);
     // Legal sums of observed u64 cells can exceed JSON's exact integer type.
     let mut wide = data.clone();
     for cell in &mut wide.cells {

@@ -136,7 +136,104 @@ fn empirical_scores_are_condition_bound_and_keep_missing_counts_unknown_over_bin
     };
     assert_eq!(report.overall_fidelity, None);
     assert_eq!(report.pairs[0].orientations[0].correct_count, Some(9));
+    let extras = vec!["CCC".into()];
+    let revision = fidelity::competition_revision(&dataset, &ends, &extras).unwrap();
+    let AnalysisResult::LigationCompetition(competition) = exchange(
+        AnalysisJob::ScoreLigationCompetition {
+            dataset: dataset.clone(),
+            ends: ends.clone(),
+            physical_competitors: extras.clone(),
+        },
+        revision,
+        146,
+        138,
+    ) else {
+        panic!("competition report")
+    };
+    assert_eq!(competition.physical_competitors, extras);
+    assert_eq!(competition.overall_fidelity, None);
+    assert!(!competition.physical_ends.contains(&"GGG".into()));
     let mut changed = dataset;
     changed.conditions.buffer = "different declared buffer".into();
     assert!(fidelity::revision(&changed, &ends).is_err());
+}
+
+#[test]
+fn published_catalog_score_and_ranking_use_version62_and_preserve_selection_context() {
+    use collagene_core::{golden_gate_fusion_rank as rank, ligation_profiles as profiles};
+    fn exchange62(job: AnalysisJob, revision: String, jt: u32, rt: u32) -> AnalysisResult {
+        let bytes = protocol::encode_request(&Request {
+            id: 620,
+            revision,
+            job,
+        })
+        .unwrap();
+        assert_eq!(selector(&bytes), jt);
+        let mut old = bytes.clone();
+        old[4..6].copy_from_slice(&61u16.to_le_bytes());
+        assert!(protocol::process_request(&old).is_err());
+        let response = protocol::process_request(&bytes).unwrap();
+        assert_eq!(selector(&response), rt);
+        let mut old = response.clone();
+        old[4..6].copy_from_slice(&61u16.to_le_bytes());
+        assert!(protocol::decode_response(&old).is_err());
+        protocol::decode_response(&response).unwrap().result
+    }
+    let AnalysisResult::LigationProfiles(items) = exchange62(
+        AnalysisJob::ListLigationProfiles,
+        profiles::catalog_revision().unwrap(),
+        143,
+        135,
+    ) else {
+        panic!("catalog")
+    };
+    assert_eq!(items.len(), 5);
+    let profile = items
+        .iter()
+        .find(|p| p.enzyme_formulation == "BsaI-HFv2")
+        .unwrap()
+        .profile
+        .clone();
+    let ends = vec!["AACC".into()];
+    let extras = vec!["ATGA".into(), "ATCC".into()];
+    let AnalysisResult::PublishedLigationScore(score) = exchange62(
+        AnalysisJob::ScorePublishedLigation {
+            profile: profile.clone(),
+            ends: ends.clone(),
+            physical_competitors: extras.clone(),
+        },
+        profiles::score_revision_with_competitors(&profile, &ends, &extras).unwrap(),
+        144,
+        136,
+    ) else {
+        panic!("score")
+    };
+    assert_eq!(score.pairs.len(), 1);
+    assert_eq!(score.physical_competitors, extras);
+    assert!(!score.physical_ends.contains(&"GGAT".into()));
+    let (inputs, design) = fixture();
+    let request = rank::Request {
+        design,
+        profile,
+        enzyme_formulation: "BsaI-HFv2".into(),
+    };
+    let AnalysisResult::RankedGoldenGateFusions(ranked) = exchange62(
+        AnalysisJob::RankGoldenGateFusions {
+            inputs: inputs.clone(),
+            request: request.clone(),
+        },
+        rank::inspect_revision(&inputs, &request).unwrap(),
+        145,
+        137,
+    ) else {
+        panic!("ranking")
+    };
+    let chosen = &ranked.ranked[0];
+    let selected = rank::select(&ranked, &ranked.context_revision, &chosen.candidate_id).unwrap();
+    assert_eq!(selected.context_revision, ranked.search.context_revision);
+    let materialized = fusion::materialize(&inputs, &request.design, &selected).unwrap();
+    assert_eq!(
+        materialized.original_intent.target,
+        ranked.search.original_intent.target
+    );
 }

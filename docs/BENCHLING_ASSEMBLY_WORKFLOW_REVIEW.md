@@ -138,3 +138,49 @@ core assembly flow. Do not add project administration to solve output naming.
 - No GUI acceptance result is claimed for the current repository. Later focused
   user review should assess the connected cloning route once in-scope code is
   complete, as requested; this research introduces no new test gate.
+
+## Focused follow-up: topology, retained primers and uncertainty (2026-11-25)
+
+Reopened the two official guides above rather than introducing another broad
+workflow audit. The current combinatorial article explicitly permits linear or
+circular products, per-bin production choices, and an explicitly populated
+construct table instead of every combination. It documents primer status that can
+differ between constructs. Errors must be resolved before assembly, while warnings
+may be accepted. Sequence/map and primer review precede optional primer/fragment
+output creation. These are documented interactions; the page does **not** specify
+probabilistic fusion-set ranking, outer-end competition, domestication search,
+exhaustive alternative-product verification, or exact source-event identity.
+[Official combinatorial guide](https://help.benchling.com/hc/en-us/articles/39922419457165-How-to-use-the-combinatorial-cloning-and-concatenation-assembly-tools).
+
+The ordinary wizard's documented recovery is to change insert orientation and
+review the preview. Its Gibson FAQ explicitly uses sense-strand cuts rather than
+overhang direction. This is a stated limitation of that wizard, not a requirement
+to drop strand/end evidence in our implementation.
+[Official single-construct guide](https://help.benchling.com/hc/en-us/articles/39656605989901-Create-assemblies-with-the-assembly-wizard).
+
+Current-source implications, not Benchling claims:
+
+- The earlier Golden Gate gap table predates the shared PCR/digest planner,
+  whole-pool selection, fusion placement and immutable batch/release work. These
+  engines and their GUI connections now exist in source; do not commission a
+  replacement implementation from that historical table.
+- `crates/web/src/assembly_fusion_view.rs` now carries explicit signed placement,
+  retained manual rows, profile choice, and separately scoped physical outer-end
+  competitors. Keep mathematical candidate feasibility, empirical conditional
+  ranking and actual product reconstruction visibly distinct. The official pages
+  establish no basis for presenting ranking as experimental success.
+- `crates/web/src/assembly_workspace.rs` already offers explicit selected-row
+  regeneration. Retain that deliberate application rather than copying the
+  documented preferred-primer replacement behavior without review. Diagnostics
+  should name the retained/new row and affected junction, including per-construct
+  differences.
+- `crates/web/src/assembly_release_view.rs` already reconstructs selected rows
+  privately before publication. Keep its optional primers/prepared-document
+  choices connected to those same receipts. The remaining user-facing assessment
+  is discoverability and continuity, not a missing output compiler.
+
+Unresolved public-documentation questions remain narrow: exact manual-edit
+persistence through every dialog, invalid-junction focus/recovery gestures, and
+physical competition/chemistry guarantees are unspecified. No additional wizard,
+project administration, runtime GUI inspection or new acceptance gate follows
+from this review.

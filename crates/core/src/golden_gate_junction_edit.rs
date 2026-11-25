@@ -46,7 +46,7 @@ fn rc(s: &str) -> Result<String, Error> {
         Ok(Sequence::dna(s)?.reverse_complement()?.as_str().into())
     }
 }
-fn dimensions(r: &Request) -> Result<usize, Error> {
+pub(crate) fn dimensions(r: &Request) -> Result<usize, Error> {
     let p = r.enzyme.profile();
     let k = usize::try_from(p.bottom_cut - p.top_cut).map_err(|_| Error::TooLarge)?;
     let spacer = usize::try_from(p.top_cut)
@@ -135,7 +135,7 @@ fn retained_raw(row: &ligation_recipe::Fragment) -> Result<(), Error> {
     selection.validate()?;
     Ok(())
 }
-fn retained_pin(
+pub(crate) fn retained_pin(
     row: &ligation_recipe::Fragment,
     catalog: &catalog_digest::catalog::Catalog,
     enzyme: GoldenGateEnzyme,

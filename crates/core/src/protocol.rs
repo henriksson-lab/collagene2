@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 59;
+pub const WORKER_SCHEMA_VERSION: u16 = 60;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 12;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -805,6 +805,19 @@ pub enum AnalysisJob {
         manifest_hash: String,
         options: crate::combinatorial_export::Options,
     },
+    SearchGoldenGateFusions {
+        inputs: Vec<crate::verification::PlanInput>,
+        request: crate::golden_gate_fusion_design::Request,
+    },
+    MaterializeGoldenGateFusions {
+        inputs: Vec<crate::verification::PlanInput>,
+        request: crate::golden_gate_fusion_design::Request,
+        selection: crate::golden_gate_fusion_design::Selection,
+    },
+    ScoreLigationFidelity {
+        dataset: crate::ligation_fidelity::Dataset,
+        ends: Vec<String>,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -942,6 +955,9 @@ pub enum AnalysisResult {
     CombinatorialReleaseInspected(crate::combinatorial_release::Inspection),
     CombinatorialReleaseFinished(crate::combinatorial_release::Commit),
     CombinatorialOutputsArchive(crate::combinatorial_export::Archive),
+    GoldenGateFusions(crate::golden_gate_fusion_design::Report),
+    GoldenGateFusionMaterialized(crate::golden_gate_fusion_design::Materialized),
+    LigationFidelity(crate::ligation_fidelity::Report),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1162,6 +1178,21 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         crate::pairwise_context::preflight(report, reference, query, *translate)?;
     }
     match &r.job {
+        AnalysisJob::SearchGoldenGateFusions { inputs, request }
+        | AnalysisJob::MaterializeGoldenGateFusions {
+            inputs, request, ..
+        } => {
+            crate::golden_gate_fusion_design::preflight(
+                &inputs
+                    .iter()
+                    .map(|input| (input.id.as_str(), &input.molecule))
+                    .collect::<Vec<_>>(),
+                request,
+            )?;
+        }
+        AnalysisJob::ScoreLigationFidelity { dataset, ends } => {
+            crate::ligation_fidelity::revision(dataset, ends)?;
+        }
         AnalysisJob::BeginCombinatorialBatch { workspace, matrix } => {
             crate::combinatorial_batch::begin_revision(workspace, matrix)?;
         }
@@ -1267,6 +1298,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_pairwise_export_tag(bytes, &[117, 118, 119])?;
     preflight_combinatorial_batch_tag(bytes, &[120, 121, 122])?;
     preflight_combinatorial_release_tag(bytes, &[123, 124, 125, 126, 127])?;
+    preflight_fusion_design_tag(bytes, &[128, 129, 130])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1320,6 +1352,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         _ => decode_with_limit(b"CGR\0", bytes, maximum)?,
     };
     let required = match &response.result {
+        AnalysisResult::GoldenGateFusions(_)
+        | AnalysisResult::GoldenGateFusionMaterialized(_)
+        | AnalysisResult::LigationFidelity(_) => 60,
         AnalysisResult::PcrOutputs(_) => 50,
         AnalysisResult::MismatchPcrOutputs(_) => 51,
         AnalysisResult::ReviewedComparison(_) => 52,
@@ -1465,6 +1500,11 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
     }
     match &response.result {
+        AnalysisResult::GoldenGateFusions(report) => report.validate_binding(&response.revision)?,
+        AnalysisResult::GoldenGateFusionMaterialized(report) => {
+            report.validate_binding(&response.revision)?
+        }
+        AnalysisResult::LigationFidelity(report) => report.validate_binding(&response.revision)?,
         AnalysisResult::EditedAssemblyIntent(intent) => {
             intent.validate_binding(&response.revision)?
         }
@@ -2000,6 +2040,14 @@ fn preflight_codon_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
         .map_err(|e| Error::Format(e.to_string()))?;
     if tags.contains(&tag) {
         check_variant_version(bytes, 13)?;
+    }
+    Ok(())
+}
+fn preflight_fusion_design_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 60)?;
     }
     Ok(())
 }
@@ -2561,6 +2609,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_pairwise_export_tag(bytes, &[125, 126, 127])?;
     preflight_combinatorial_batch_tag(bytes, &[128, 129, 130])?;
     preflight_combinatorial_release_tag(bytes, &[131, 132, 133, 134, 135])?;
+    preflight_fusion_design_tag(bytes, &[136, 137, 138])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -2568,6 +2617,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::SearchGoldenGateFusions { .. }
+        | AnalysisJob::MaterializeGoldenGateFusions { .. }
+        | AnalysisJob::ScoreLigationFidelity { .. } => 60,
         AnalysisJob::PreparePcrOutputs { .. } => 50,
         AnalysisJob::PrepareMismatchPcrOutputs { .. } => 51,
         AnalysisJob::CompareSequences { .. } => 52,
@@ -3140,6 +3192,34 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             if crate::golden_gate_reaction::selection_revision(report, selection)? != r.revision {
                 return Err(Error::Format(
                     "Golden Gate reaction selection changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::SearchGoldenGateFusions { inputs, request } => {
+            if crate::golden_gate_fusion_design::inspect_revision(inputs, request)? != r.revision {
+                return Err(Error::Format(
+                    "Golden Gate fusion search context changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::MaterializeGoldenGateFusions {
+            inputs,
+            request,
+            selection,
+        } => {
+            if crate::golden_gate_fusion_design::materialize_revision(inputs, request, selection)?
+                != r.revision
+            {
+                return Err(Error::Format("Golden Gate fusion selection changed".into()));
+            }
+            None
+        }
+        AnalysisJob::ScoreLigationFidelity { dataset, ends } => {
+            if crate::ligation_fidelity::revision(dataset, ends)? != r.revision {
+                return Err(Error::Format(
+                    "Ligation fidelity data or ends changed".into(),
                 ));
             }
             None
@@ -3785,6 +3865,19 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let result = match r.job {
+        AnalysisJob::SearchGoldenGateFusions { inputs, request } => {
+            crate::golden_gate_fusion_design::inspect(&inputs, &request)
+                .map(AnalysisResult::GoldenGateFusions)
+        }
+        AnalysisJob::MaterializeGoldenGateFusions {
+            inputs,
+            request,
+            selection,
+        } => crate::golden_gate_fusion_design::materialize(&inputs, &request, &selection)
+            .map(AnalysisResult::GoldenGateFusionMaterialized),
+        AnalysisJob::ScoreLigationFidelity { dataset, ends } => {
+            crate::ligation_fidelity::score(&dataset, &ends).map(AnalysisResult::LigationFidelity)
+        }
         AnalysisJob::FinalizeCloningOutputs {
             workspace,
             plan,

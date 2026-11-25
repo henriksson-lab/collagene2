@@ -211,7 +211,7 @@ fn released() -> release::Commit {
 fn selected_opcode18_requires_candidate12_and_worker59_without_rejecting_index_only_history() {
     let (w, d, row) = fixture();
     let compiled = design::compile(&d, &row, &w).unwrap();
-    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 59);
+    assert!(protocol::WORKER_SCHEMA_VERSION >= 59);
     assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 12);
     assert_eq!(workspace::PLAN_SCHEMA_VERSION, 10);
     assert_eq!(

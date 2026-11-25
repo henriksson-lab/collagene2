@@ -24,6 +24,10 @@ mod assembly_batch_view;
 mod assembly_draft_model;
 #[cfg(target_arch = "wasm32")]
 mod assembly_finalize;
+#[cfg(any(target_arch = "wasm32", test))]
+mod assembly_fusion_design;
+#[cfg(target_arch = "wasm32")]
+mod assembly_fusion_view;
 #[cfg(target_arch = "wasm32")]
 mod assembly_library_add_view;
 #[cfg(any(target_arch = "wasm32", test))]

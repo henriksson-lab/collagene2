@@ -22,6 +22,37 @@ and review proposals are implemented, despite older gap tables. See
 [workflow decisions](BENCHLING_WORKFLOW_DECISIONS.md). This documentation-only
 checkpoint adds no runtime/build/browser checks.
 
+## Signed Golden Gate fusion placement and supplied-count scoring
+
+The junction editor now exposes signed placement windows, explicit candidate
+materialization and Apply through the existing source/preparation transaction.
+Original independent DNA, source slots and earlier literal edits stay unchanged;
+physical primers explicitly introduce any transferred prefix/suffix bases. Fixed
+manual preparations remain literal. Both boundary directions, reverse sources and
+circular closing shifts use the actual PCR/digest engines and directed target
+policy. Search limits remain visible and do not establish an optimal or unique
+mixture outcome.
+
+Optional supplied 3/4-base directed count matrices retain conditions, provenance,
+license and data revisions. Missing observations stay unknown. Exact wide totals
+use decimal JSON strings and binary 128-bit counts; the declared conditional model
+does not claim commercial optimizer equivalence or experimental efficiency.
+Worker60 appends advisory search/materialization/scoring jobs; MCP152 exposes the
+same paths. Candidate12, plan10 and science15 remain unchanged.
+[Contracts and unfinished F13 work](GOLDEN_GATE_FUSION_DESIGN.md).
+
+Validation passed:153 unique focused native checks (core31, web119, MCP SDK3),
+including signed/reverse/circular actual preparation and ligation, retained
+manual settings, original intent, bounds, stale selections, worker downgrade
+guards, partial count data and exact wide JSON/binary count roundtrips. The final
+application/worker WASM compiler check passed. No browser/HTTP checks or new full
+Trunk preview build ran for this checkpoint.
+
+The complete goal remains active: broader biological constraints and curated
+empirical profiles/ranking, internal-site domestication and physical mutagenic
+preparation, richer methods/mixtures and remaining delivery/acceptance still need
+work. Port8082 still serves the earlier reaction-matrix snapshot774db29.
+
 ## Reviewed library bin editing and exact recovery
 
 The construct library now supports explicit add/remove/reorder proposals with

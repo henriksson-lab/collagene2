@@ -1003,3 +1003,24 @@ monotonic allocation highwater. MCP149 provides read-only recovery data access.
 Broader cloning methods, optimization/domestication, recovery retention management
 and remaining delivery/acceptance work stay active. Current library restoration
 requires the same design identity and never restores scientific verification.
+
+### Signed fusion-placement and supplied-count checkpoint
+
+Golden Gate junction review now searches signed placement windows while retaining
+the original independent intended DNA. Explicit candidate materialization uses
+original-template PCR, declared primer-added prefixes/suffixes and pinned Type IIS
+digests. Fixed manual preparations survive unchanged; circular closing shifts
+retain the directed target policy. Native work/candidate caps and incomplete
+searches remain visible, and Apply still leads to fresh complete-recipe review.
+
+Optional supplied 3/4-base directed ligation-count matrices carry conditions,
+provenance, licensing and canonical revisions. Missing observations remain unknown;
+the explicitly named count model is separate from exact compatibility and does
+not claim experimental efficiency. Worker60 and MCP152 expose the proposal and
+scoring paths. Existing candidate12/plan10/science15 operations remain unchanged.
+[Contracts and remaining scope](GOLDEN_GATE_FUSION_DESIGN.md).
+
+Broader biological optimization constraints, curated/licensed empirical data and
+ranking, internal-site domestication with physical mutagenic preparation, richer
+cycling mixtures, unfinished cloning methods and delivery/acceptance remain part
+of the active full plan.

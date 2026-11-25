@@ -467,12 +467,18 @@ pub fn AssemblyWorkspace(
                         selection,
                         fragment_index,
                         repair: None,
-                    } if matches!(&proposal.report, JunctionReport::GoldenGate(_)) => (
-                        forward,
-                        reverse,
-                        Some(selection.clone()),
-                        Some(*fragment_index),
-                    ),
+                    } if matches!(
+                        &proposal.report,
+                        JunctionReport::GoldenGate(_) | JunctionReport::Fusion { .. }
+                    ) =>
+                    {
+                        (
+                            forward,
+                            reverse,
+                            Some(selection.clone()),
+                            Some(*fragment_index),
+                        )
+                    }
                     _ => {
                         return Err(
                             "Selected row does not contain its proposed preparation chain.".into(),
@@ -902,34 +908,52 @@ impl Default for JunctionSettings {
 enum JunctionReport {
     Overlap(selective_junction_edit::Report),
     GoldenGate(golden_gate_junction_edit::Report),
+    Fusion {
+        report: collagene_core::golden_gate_fusion_design::Materialized,
+        retained_rows: Vec<usize>,
+    },
 }
 impl JunctionReport {
     fn intent(&self) -> &assembly_junction_edit::Intent {
         match self {
             Self::Overlap(r) => &r.intent,
             Self::GoldenGate(r) => &r.intent,
+            Self::Fusion { report, .. } => &report.original_intent,
         }
     }
     fn edits(&self) -> &[assembly_junction_edit::Edit] {
         match self {
             Self::Overlap(r) => &r.request.edits,
             Self::GoldenGate(r) => &r.request.edits,
+            Self::Fusion { report, .. } => &report.request.base.edits,
         }
     }
     fn len(&self) -> usize {
         match self {
             Self::Overlap(r) => r.recipe.fragments.len(),
             Self::GoldenGate(r) => r.recipe.fragments.len(),
+            Self::Fusion { report, .. } => report.recipe.fragments.len(),
         }
     }
     fn fragment(&self, index: usize) -> Option<&collagene_core::assembly_recipe::FragmentSpec> {
         match self {
             Self::Overlap(r) => r.recipe.fragments.get(index),
             Self::GoldenGate(r) => r.recipe.fragments.get(index).map(|f| &f.source),
+            Self::Fusion { report, .. } => report
+                .recipe
+                .fragments
+                .get(index)
+                .map(|fragment| &fragment.source),
         }
     }
     fn retained(&self, index: usize) -> Option<bool> {
         match self {
+            Self::Fusion { report, .. } => report
+                .request
+                .base
+                .rows
+                .get(index)
+                .map(|row| matches!(row, golden_gate_junction_edit::Row::Retain(_))),
             Self::Overlap(r) => r
                 .request
                 .rows
@@ -946,24 +970,30 @@ impl JunctionReport {
         match self {
             Self::Overlap(r) => r.designs.iter().filter(|d| d.is_some()).count(),
             Self::GoldenGate(r) => r.designs.iter().filter(|d| d.is_some()).count(),
+            Self::Fusion { report, .. } => {
+                report.designs.iter().filter(|row| row.is_some()).count()
+            }
         }
     }
     fn retained_rows(&self) -> &[usize] {
         match self {
             Self::Overlap(r) => &r.retained_rows,
             Self::GoldenGate(r) => &r.retained_rows,
+            Self::Fusion { retained_rows, .. } => retained_rows,
         }
     }
     fn warnings(&self) -> &[String] {
         match self {
             Self::Overlap(r) => &r.warnings,
             Self::GoldenGate(r) => &r.warnings,
+            Self::Fusion { report, .. } => &report.warnings,
         }
     }
     fn validate_binding(&self, revision: &str) -> Result<(), collagene_core::Error> {
         match self {
             Self::Overlap(r) => r.validate_binding(revision),
             Self::GoldenGate(r) => r.validate_binding(revision),
+            Self::Fusion { report, .. } => report.validate_binding(revision),
         }
     }
 }
@@ -1163,69 +1193,13 @@ fn JunctionEditor(
                     };
                 }
             }
-            let (_, fragments) = crate::cloning_methods::prepared_rows(&retained, inputs.len())?;
             let (revision, job) = if before.methods.mode == Mode::GoldenGate {
-                let gate = &before.methods.golden_gate;
-                let (forward_length, reverse_length) =
-                    if selected_rows.iter().any(|selected| *selected) {
-                        (
-                            gate.forward_length
-                                .parse()
-                                .map_err(|_| "Enter a Golden Gate forward annealing length.")?,
-                            gate.reverse_length
-                                .parse()
-                                .map_err(|_| "Enter a Golden Gate reverse annealing length.")?,
-                        )
-                    } else {
-                        (0, 0)
-                    }; // Not serialized: Retain rows carry no PCR length fields.
-
-                let rows = fragments
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, fragment)| {
-                        if selected_rows[i] {
-                            golden_gate_junction_edit::Row::DesignPcr {
-                                role: fragment.role,
-                                input_id: fragment.input_id,
-                                reverse: fragment.reverse,
-                                forward_length,
-                                reverse_length,
-                            }
-                        } else {
-                            golden_gate_junction_edit::Row::Retain(
-                                collagene_core::ligation_recipe::Fragment {
-                                    source: fragment,
-                                    treatment: before.methods.rows[i].treatment.operation(),
-                                },
-                            )
-                        }
-                    })
-                    .collect();
-                let terminal_right_overhang =
-                    if !before.circular && selected_rows.last() == Some(&true) {
-                        Some(
-                            before
-                                .methods
-                                .rows
-                                .last()
-                                .ok_or("Missing terminal fragment.")?
-                                .right_fusion
-                                .clone(),
-                        )
-                    } else {
-                        None
-                    };
-                let request = golden_gate_junction_edit::Request {
+                let request = crate::assembly_fusion_design::base_request(
+                    &before,
                     base,
                     edits,
-                    rows,
-                    enzyme: gate.enzyme,
-                    clamp: gate.clamp.clone(),
-                    spacer: gate.spacer.clone(),
-                    terminal_right_overhang,
-                    allow_nicked: before.methods.allow_nicked,
-                };
+                    &selected_rows,
+                )?;
                 let revision = golden_gate_junction_edit::design_revision(&inputs, &request)
                     .map_err(|e| e.to_string())?;
                 (
@@ -1240,6 +1214,8 @@ fn JunctionEditor(
                 {
                     return Err("Primer settings exceed their field bounds.".into());
                 }
+                let (_, fragments) =
+                    crate::cloning_methods::prepared_rows(&retained, inputs.len())?;
                 let rows = fragments
                     .into_iter()
                     .enumerate()
@@ -1401,6 +1377,85 @@ fn JunctionEditor(
             status.set(error);
         }
     };
+    let fusion_capture = Callback::new(
+        move |()| -> Result<crate::assembly_fusion_view::Capture, String> {
+            if unstaged.get_untracked() {
+                return Err("Set the literal junction edit before fusion-position search.".into());
+            }
+            let before = draft.get_untracked();
+            let edits = proposed.get_untracked();
+            let selected_rows = regenerate.get_untracked();
+            let mut declared = before.clone();
+            declared.junction_edits = edits.clone();
+            let (inputs, base, sources) = inputs_request(&declared)?;
+            let base =
+                crate::assembly_fusion_design::base_request(&before, base, edits, &selected_rows)?;
+            Ok(crate::assembly_fusion_view::Capture {
+                before,
+                epoch: epoch.get_untracked(),
+                inputs,
+                base,
+                sources,
+                regenerate: selected_rows,
+            })
+        },
+    );
+    let fusion_guard = Callback::new(
+        move |saved: Arc<crate::assembly_fusion_view::Capture>| -> Result<(), String> {
+            if saved.epoch != epoch.get_untracked()
+                || saved.before != draft.get_untracked()
+                || saved.base.edits != proposed.get_untracked()
+                || saved.regenerate != regenerate.get_untracked()
+                || unstaged.get_untracked()
+            {
+                return Err("The original sources, literal edits or regeneration choices changed; search fusion placements again.".into());
+            }
+            Ok(())
+        },
+    );
+    let fusion_apply = Callback::new(
+        move |saved: Arc<crate::assembly_fusion_view::MaterializedEvidence>| -> Result<(), String> {
+            fusion_guard.run(saved.capture.clone())?;
+            let retained_rows = saved
+                .capture
+                .regenerate
+                .iter()
+                .enumerate()
+                .filter_map(|(index, regenerate)| (!regenerate).then_some(index))
+                .collect();
+            let proposal = Arc::new(JunctionProposal {
+                before: saved.capture.before.clone(),
+                report: JunctionReport::Fusion {
+                    report: saved.report.clone(),
+                    retained_rows,
+                },
+                sources: saved.capture.sources.clone(),
+                settings: settings.get_untracked(),
+                regenerate: saved.capture.regenerate.clone(),
+                epoch: saved.capture.epoch,
+            });
+            on_apply.run(proposal)
+        },
+    );
+    let fusion_labels = Memo::new(move |_| {
+        draft.with(|draft| {
+            let count = draft.slots.len().saturating_sub(1) + usize::from(draft.circular);
+            (0..count)
+                .map(|index| {
+                    format!(
+                        "{} → {}{}",
+                        draft.slots[index].label,
+                        draft.slots[(index + 1) % draft.slots.len()].label,
+                        if index + 1 == draft.slots.len() {
+                            " (circle closure)"
+                        } else {
+                            ""
+                        }
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
+    });
     view! {<details class="assembly-junction-editor"><summary>"Edit a junction and redesign its PCR preparation"</summary>
         <p class="helper">"Trim bases from the upstream core's assembly-facing end and/or the downstream core's beginning, then insert literal DNA between them. Original source regions stay pinned. Choose which rows receive newly designed PCR primers. Apply replaces only those checked rows; retained manual primers and digest preparations stay unchanged. This does not establish cloning success."</p>
         <label>"Junction"<select aria-label="Assembly junction to edit" prop:value=move||junction.get().to_string() on:change=move|e|if let Ok(index)=event_target_value(&e).parse(){load_edit.run(index)}>{move||draft.with(|d|{let count=d.slots.len().saturating_sub(1)+usize::from(d.circular);(0..count).map(|i|view!{<option value=i.to_string()>{format!("{} → {}{}",d.slots[i].label,d.slots[(i+1)%d.slots.len()].label,if i+1==d.slots.len(){" (circle closure)"}else{""})}</option>}).collect_view()})}</select></label>
@@ -1427,6 +1482,9 @@ fn JunctionEditor(
         <button class="button primary" disabled=move||pending.get()||unstaged.get()||draft.with(|d|!matches!(d.methods.mode,Mode::Overlap|Mode::GoldenGate)) on:click=move|_|preview.run(())>"Preview edited construct and PCR primers"</button>
         <button class="text-tool" disabled=move||!pending.get() on:click=move|_|{generation.update(|g|*g=g.wrapping_add(1));if let Some(w)=worker.get_value(){w.close();}worker.set_value(None);pending.set(false);result.set(None);status.set("Junction proposal cancelled.".into());}>"Cancel junction proposal"</button>
         <p role="status">{move||status.get()}</p>
+        <Show when=move||draft.with(|draft|draft.methods.mode==Mode::GoldenGate)>
+            <crate::assembly_fusion_view::AssemblyFusionView epoch invalidation=generation junction_labels=fusion_labels capture=fusion_capture guard=fusion_guard on_apply=fusion_apply/>
+        </Show>
         {move||result.get().map(|proof|view!{<section class="assembly-junction-proposal"><h3>"Edited construct and proposed PCR preparation"</h3><p>{format!("{} · {} bases",proof.report.intent().target.name,proof.report.intent().target.sequence.len())}</p><pre>{let dna=proof.report.intent().target.sequence.as_str();format!("{}{}",dna.chars().take(240).collect::<String>(),if dna.len()>240{"… (bounded preview)"}else{""})}</pre>
             {proof.report.intent().fragments.iter().enumerate().map(|(i,fragment)|view!{<p>{format!("{}: original core {}–{} → adjusted core {}–{}{}; output span {}–{} includes any outgoing synthetic insert",proof.before.slots[i].label,proof.before.slots[i].start+1,proof.before.slots[i].end,fragment.start+1,fragment.end,if fragment.reverse{" reverse"}else{" forward"},fragment.output_start+1,fragment.output_end)}</p>}).collect_view()}
             <p>{format!("Retained preparations: {} · regenerated PCR rows: {}",proof.report.retained_rows().len(),proof.report.designed_count())}</p>
@@ -1440,6 +1498,7 @@ fn JunctionEditor(
 
 fn junction_primers(report: &JunctionReport) -> AnyView {
     match report {
+        JunctionReport::Fusion{..}=>().into_any(),
         JunctionReport::Overlap(report)=>report.designs.iter().enumerate().filter_map(|(i,design)|design.as_ref().map(|design|(i,design))).map(|(i,design)|view!{<article><h4>{format!("Fragment {} proposed overlap PCR primers",i+1)}</h4>{design.pairs.first().map(|pair|view!{<pre>{format!("{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nAdded tail: {}\n\n{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nAdded tail: {}",pair.forward.primer.name,pair.forward.primer.tail,pair.forward.primer.annealing.as_str(),pair.forward.primer.annealing.as_str(),pair.forward.primer.tail,pair.reverse.primer.name,pair.reverse.primer.tail,pair.reverse.primer.annealing.as_str(),pair.reverse.primer.annealing.as_str(),pair.reverse.primer.tail)}</pre><p>{format!("Annealing Tm {} / {} · pair ΔTm {:.1}°C",pair.forward.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.reverse.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.tm_difference_c)}</p>})}{design.warnings.iter().map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view()}</article>}).collect_view().into_any(),
         JunctionReport::GoldenGate(report)=>report.designs.iter().enumerate().filter_map(|(i,design)|design.as_ref().map(|design|(i,design))).map(|(i,design)|view!{<article><h4>{format!("Fragment {} proposed Type IIS PCR/digest chain",i+1)}</h4><pre>{format!("{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nTail: clamp [{}] · motif [{}] · spacer [{}] · fusion [{}] · inserted [{}]\n\n{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nTail: clamp [{}] · motif [{}] · spacer [{}] · fusion [{}] · inserted [{}]",design.forward.name,design.forward.tail,design.forward.annealing.as_str(),design.forward.annealing.as_str(),design.forward_tail.clamp,design.forward_tail.motif,design.forward_tail.spacer,design.forward_tail.fusion,design.forward_tail.inserted,design.reverse.name,design.reverse.tail,design.reverse.annealing.as_str(),design.reverse.annealing.as_str(),design.reverse_tail.clamp,design.reverse_tail.motif,design.reverse_tail.spacer,design.reverse_tail.fusion,design.reverse_tail.inserted)}</pre><p>{format!("Actual digested fragment {} · assembly-oriented top DNA: {}{}",design.fragment_index+1,design.oriented_top.chars().take(240).collect::<String>(),if design.oriented_top.len()>240{"… (bounded preview)"}else{""})}</p><p>{format!("Left end: {}",crate::cloning_methods::method_end(Some(&design.left)))}</p><p>{format!("Right end: {}",crate::cloning_methods::method_end(Some(&design.right)))}</p><p class="helper">"Tail segments are shown in each actual oligo's own 5′→3′ direction. Literal insert and fusion segments may therefore be reverse-complemented; the displayed digested top DNA is in assembly direction."</p></article>}).collect_view().into_any(),
     }

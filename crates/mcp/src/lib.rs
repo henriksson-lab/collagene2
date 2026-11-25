@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 149;
+pub const CURRENT_TOOL_COUNT: usize = 152;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -5402,6 +5402,18 @@ impl CollageneServer {
                 "target_revision":report.intent.target.revision(),"recipe":report.recipe,"ordered_oligos":ordered,"design_count":ordered.len(),"retained_rows":report.retained_rows,"warnings":report.warnings,"artifact_id":artifact}))
         }).await
     }
+    #[tool(description = "Search bounded signed Golden Gate fusion-placement windows while retaining the original independently declared intended DNA and fixed manual preparations. Mathematical palindrome/end-distance constraints are not ligation fidelity or PCR feasibility. Returns complete candidate evidence as an artifact; explicitly select and materialize a candidate before fresh recipe verification.")]
+    async fn search_golden_gate_fusions(&self, Parameters(args): Parameters<fusion_design_tools::SearchQuery>) -> Result<CallToolResult, ErrorData> {
+        self.fusion_search(args).await
+    }
+    #[tool(description = "Freshly materialize an explicitly selected source-bound Golden Gate fusion placement using original-template PCR and pinned Type IIS digests. Retains original intended DNA, records primer-added prefixes/suffixes, and preserves fixed preparations. Advisory only: verify the full returned ligation recipe against the original independent target before publication.")]
+    async fn materialize_golden_gate_fusions(&self, Parameters(args): Parameters<fusion_design_tools::MaterializeQuery>) -> Result<CallToolResult, ErrorData> {
+        self.fusion_materialize(args).await
+    }
+    #[tool(description = "Estimate conditional ligation fidelity from an explicitly supplied, provenance-bound directed count matrix and selected fusion ends. Reports conditions and missing-data uncertainty; does not infer empirical data from exact complementarity or claim experimental yield. No external optimizer or runtime software is called.")]
+    async fn score_ligation_fidelity(&self, Parameters(args): Parameters<fusion_design_tools::FidelityQuery>) -> Result<CallToolResult, ErrorData> {
+        self.fidelity_score(args).await
+    }
     #[tool(
         description = "Build an unverified intended reference by explicitly replacing, inserting or deleting a single source interval. Uses only immutable source DNA and the requested edit, independently of any PCR or cloning simulator. Supports linear DNA and at most one circular turn with explicit origin shift. Atomically retains the intended target and full source-bound JSON. Does not mutate the source or claim physical material, successful cloning or observed DNA; design and verify inverse-PCR or another preparation separately against this frozen reference."
     )]
@@ -6201,6 +6213,7 @@ mod genome_store;
 mod unit_tools;
 
 mod assembly_library_history_tools;
+mod fusion_design_tools;
 mod catalog_tools;
 mod combinatorial_tools;
 mod recombination_tools;

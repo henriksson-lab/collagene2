@@ -290,15 +290,43 @@ pub(crate) fn design_row(
     selection: &CatalogSelection,
     enzymes: &[analysis::Enzyme],
 ) -> Result<(FragmentSpec, Row), Error> {
+    design_row_with_flanks(input, r, f, "", inserted, selection, enzymes)
+}
+/// Same actual PCR/digest materializer with explicitly introduced assembly-top
+/// prefix/suffix. Old public paths pass an empty prefix and retain their DTOs.
+pub(crate) fn design_row_with_flanks(
+    input: &PlanInput,
+    r: &Request,
+    f: &Fragment,
+    prefix: &str,
+    inserted: &str,
+    selection: &CatalogSelection,
+    enzymes: &[analysis::Enzyme],
+) -> Result<(FragmentSpec, Row), Error> {
     let (_, k) = dimensions(r)?;
-    if inserted.len() > 200 || !inserted.bytes().all(|b| b"ACGT".contains(&b)) {
+    if prefix.len() > 200
+        || !prefix.bytes().all(|b| b"ACGT".contains(&b))
+        || inserted.len() > 200
+        || !inserted.bytes().all(|b| b"ACGT".contains(&b))
+    {
         return Err(bad("literal outgoing insert must be bounded concrete DNA"));
     }
     let profile = r.enzyme.profile();
     let m = &input.molecule;
     let core = extract(m, f.start, f.end)?;
-    let annealed_end = f.end - if f.reverse { k } else { 0 };
+    let annealed_end = f
+        .end
+        .checked_sub(if f.reverse { k } else { 0 })
+        .ok_or_else(|| bad("source interval is shorter than its oriented fusion"))?;
     let annealed = extract(m, f.start, annealed_end)?;
+    if f.forward_length
+        .checked_add(f.reverse_length)
+        .is_none_or(|n| n > annealed.len())
+    {
+        return Err(bad(
+            "introduced flanks cannot replace overlapping or missing original annealing domains",
+        ));
+    }
     let mut ft = tail(
         r,
         if f.reverse {
@@ -315,6 +343,11 @@ pub(crate) fn design_row(
             rc(&f.right_overhang)?
         },
     );
+    if f.reverse {
+        rt.fusion = format!("{prefix}{}", rt.fusion);
+    } else {
+        ft.fusion.push_str(prefix);
+    }
     if !inserted.is_empty() {
         if f.reverse {
             ft.fusion.push_str(&rc(inserted)?);
@@ -371,7 +404,7 @@ pub(crate) fn design_row(
     let amplicon = Molecule::dna("proposed PCR", &expected, Topology::Linear)?;
     let sites = analysis::restriction_sites(&amplicon, &profile)?;
     let left = r.clamp.len() + profile.recognition.len() + r.spacer.len();
-    let right = left + core.len() + inserted.len();
+    let right = left + prefix.len() + core.len() + inserted.len();
     if sites.len() != 2
         || sites.iter().any(|s| !s.certain)
         || !sites
@@ -389,7 +422,9 @@ pub(crate) fn design_row(
     let selected = cut
         .iter()
         .enumerate()
-        .filter(|(_, d)| d.top_start == left && d.duplex.top.len() == core.len() + inserted.len())
+        .filter(|(_, d)| {
+            d.top_start == left && d.duplex.top.len() == prefix.len() + core.len() + inserted.len()
+        })
         .collect::<Vec<_>>();
     if selected.len() != 1 {
         return Err(bad("digest does not isolate exactly one intended core"));
@@ -401,7 +436,8 @@ pub(crate) fn design_row(
         fragment.duplex.clone()
     };
     let wanted = format!(
-        "{}{}",
+        "{}{}{}",
+        prefix,
         if f.reverse { rc(&core)? } else { core.clone() },
         inserted
     );

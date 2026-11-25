@@ -157,6 +157,8 @@ pub mod selective_junction_edit;
 pub mod assembly_diagnostics;
 
 pub mod golden_gate_junction_edit;
+pub mod golden_gate_fusion_design;
+pub mod ligation_fidelity;
 
 pub mod prepared_golden_gate;
 

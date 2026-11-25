@@ -6,6 +6,8 @@ mod annotation_geometry;
 mod annotation_layout;
 #[cfg(target_arch = "wasm32")]
 mod app;
+#[cfg(target_arch = "wasm32")]
+mod assembly_product_view;
 #[cfg(any(target_arch = "wasm32", test))]
 mod assembly_review;
 #[cfg(target_arch = "wasm32")]

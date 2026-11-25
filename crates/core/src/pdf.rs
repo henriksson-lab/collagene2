@@ -912,6 +912,16 @@ pub fn export_protocol_pdf(plan: &DesignPlan, target: &Molecule) -> Result<PdfRe
                 reverse.annealing.as_str(),
                 reverse.tail
             ),
+            Operation::CatalogDigest {
+                template,
+                selection,
+                fragment_index,
+            } => format!(
+                "Catalog-pinned complete digest of {}. Exact ordered identity/name/geometry selection: {}. Select zero-based fragment {} in top-reference cut ordering. The embedded catalog pin is checked; complete cleavage/conditions remain assumptions. Supplier documentary observations do not prove methylation compatibility, reaction kinetics or experimental completion.",
+                source_name(template),
+                serde_json::to_string(selection).unwrap_or_default(),
+                fragment_index
+            ),
             Operation::Digest {
                 template,
                 enzymes,

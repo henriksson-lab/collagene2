@@ -21,7 +21,7 @@ const MAX_INPUT_BASES: usize = 8 << 20;
 pub(crate) const MAX_ROLE_BASES: usize = 16 << 20;
 const MAX_PREPARATION_WORK: usize = 100_000_000;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
-dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus}}}
+dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>}}}
 dto! {pub struct FragmentSpec {pub role:String,pub input_id:String,pub preparation:Preparation,pub reverse:bool}}
 dto! {pub struct Recipe {pub name:String,pub fragments:Vec<FragmentSpec>,pub overlaps:Vec<usize>,pub circular:bool,pub options:ProfileOptions}}
 dto! {pub struct PreparedRow {pub row_index:usize,pub role:String,pub input_id:String,pub input_revision:String,pub preparation_step:Option<usize>,pub repair_step:Option<usize>,pub prepared_source:Source,pub reverse:bool}}
@@ -162,6 +162,14 @@ pub fn preparation_source_preflight(
     let mut role_bases = 0usize;
     let mut work = 0usize;
     let catalog = crate::analysis::starter_enzymes();
+    let pinned_catalog = if fragments
+        .iter()
+        .any(|f| matches!(f.preparation, Preparation::CatalogDigest { .. }))
+    {
+        Some(crate::catalog_digest::builtin_catalog()?)
+    } else {
+        None
+    };
     for row in fragments {
         token(&row.role, 128)?;
         token(&row.input_id, 128)?;
@@ -199,6 +207,22 @@ pub fn preparation_source_preflight(
                     .checked_mul(forward.annealing.len() + reverse.annealing.len())
                     .and_then(|n| n.checked_mul(4))
                     .ok_or(Error::TooLarge)?
+            }
+            Preparation::CatalogDigest {
+                selection,
+                fragment_index,
+                ..
+            } => {
+                if *fragment_index > 100_000 {
+                    return Err(Error::TooLarge);
+                }
+                let enzymes =
+                    selection.resolved_enzymes(pinned_catalog.as_ref().ok_or(Error::TooLarge)?)?;
+                let width = enzymes.iter().try_fold(0usize, |sum, e| {
+                    sum.checked_add(e.recognition.len() * 2)
+                        .ok_or(Error::TooLarge)
+                })?;
+                m.sequence.len().checked_mul(width).ok_or(Error::TooLarge)?
             }
             Preparation::Digest {
                 enzymes,
@@ -312,6 +336,15 @@ pub fn compile_preparations(
                 left: *left,
                 right: *right,
             }),
+            Preparation::CatalogDigest {
+                selection,
+                fragment_index,
+                ..
+            } => Some(Operation::CatalogDigest {
+                template: input.clone(),
+                selection: selection.clone(),
+                fragment_index: *fragment_index,
+            }),
             Preparation::Digest {
                 enzymes,
                 fragment_index,
@@ -336,6 +369,10 @@ pub fn compile_preparations(
             input
         };
         let repair_step = if let Preparation::Digest {
+            repair: Some(method),
+            ..
+        }
+        | Preparation::CatalogDigest {
             repair: Some(method),
             ..
         } = &row.preparation
@@ -566,6 +603,7 @@ impl Preview {
                         step,
                         Operation::Pcr { .. }
                             | Operation::Digest { .. }
+                            | Operation::CatalogDigest { .. }
                             | Operation::RepairEnds { .. }
                             | Operation::DeclareSourceTermini { .. }
                     )

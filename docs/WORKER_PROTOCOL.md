@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **36** and reads supported schemas 1–35. Candidate files write schema 10; workspace plan schema is 8; the verifier is science-13.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **37** and reads supported schemas 1–36. Candidate files write schema 11; workspace plan schema is 9; the verifier is science-14.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -408,3 +408,18 @@ The response describes declared intent and contribution coordinates, not a
 scientific verification result. Its reference-only target is separately passed
 to existing preparation/planning and fresh verification. Candidate 10, plan 8
 and science-13 layouts are unchanged.
+
+## Catalog-pinned digest preparation (schema 37)
+
+The append-only operation `CatalogDigest` is tag 17 and shared preparation
+`CatalogDigest` is tag 4. They carry an exact catalog selection and fragment index;
+preparation can append explicit end repair. Fresh reconstruction validates the
+selection against the embedded catalog and uses the same tracked digest engine
+as existing restriction operations, without converting catalog IDs to starter-only
+names. Complete cleavage remains an explicit assumption.
+
+Existing overlap/ligation recipe jobs require schema 37 when their rows contain
+this preparation. Plans with the new operation require worker 37, candidate 11
+and workspace-plan 9. Science-14 reports also require worker 37; nested candidate,
+run and archive semantics are checked even when wrapped in an older message.
+Historical operations and reports retain their previous minimum versions.

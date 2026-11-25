@@ -163,9 +163,17 @@ The first dedicated assembly dock now pins exact source events, captures selecte
 regions or circular complements into named slots, builds an expected reference
 independently of reaction simulation, and connects existing preparation/primer
 controls to that fixed target. Draft declarations survive document switching and
-native workspace/autosave restore; fresh evidence is recomputed. Exact cut-pair
-selection, full actual-product/junction editing and the output chooser remain
+native workspace/autosave restore; fresh evidence is recomputed. Direct cut-pair
+selection, integrated actual-product/junction editing and the output chooser remain
 required. [Interaction state](CLONING_INTERACTION_DESIGN.md).
+
+Fresh catalog digest fragments can now populate the active assembly slot with
+original-source event, full enzyme identity/geometry pin and explicit preparation.
+Reversed sticky fragments use the actual bottom-strand source interval for intended
+top DNA. Fresh overlap/ligation evidence also has an actual-product sequence/map
+view with local selection and optional fresh junction inspection. Direct cut-pair
+selection, integrated primer/junction editing and output choices remain required.
+[Catalog preparation](CATALOG_DIGEST_PREPARATION.md) · [Actual product review](ASSEMBLY_PRODUCT_REVIEW.md).
 
 Parallel reviews of Benchling's public restriction/Golden Gate, primer/mutagenesis
 and verification/history workflows are complete. The immediate UI work is the

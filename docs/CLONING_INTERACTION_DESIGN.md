@@ -70,10 +70,17 @@ analysis. Reviewing a proposed preparation creates an intended-reference documen
 with exact source parents and opens the existing plan review. Historical source
 navigation opens a separate retained-source document without rewinding its head.
 
+The virtual digest table now commits a freshly determined fragment into the active
+slot, including the original source event, selected catalog definitions and both
+strand intervals. The operation reconstructs that digest afresh. Reversal uses the
+original bottom-strand interval for the intended reversed top DNA; top/bottom
+lengths and positions need not agree. Explicit repair stays a separate operation.
+Fresh overlap/ligation evidence also displays the actual final product in a
+read-only sequence/WebGL map view and can launch fresh junction inspection.
+
 This is the first connected workflow, not full Benchling interaction parity.
-Remaining work includes exact cut-pair/digest-fragment selection into slots,
-central inspection of the actual reconstructed product, editable primer/junction
-geometry and an optional-primer/fragment output chooser. Keep these connections
+Remaining work includes direct cut-pair selection in the main viewer, integrated
+product/primer/junction editing and an optional-primer/fragment output chooser. Keep these connections
 central rather than adding more standalone parameter panels. Browser checks remain
 deferred until implementation is complete, as instructed; no GUI acceptance claim
 is made from source or compiler checks alone.

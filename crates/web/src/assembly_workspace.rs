@@ -49,6 +49,14 @@ mod optional_snapshot {
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct DigestGeometry {
+    pub top_start: usize,
+    pub top_length: usize,
+    pub bottom_start: i64,
+    pub bottom_length: usize,
+}
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Slot {
     pub label: String,
     #[serde(with = "optional_snapshot")]
@@ -56,6 +64,8 @@ pub struct Slot {
     pub start: usize,
     pub end: usize,
     pub reverse: bool,
+    #[serde(default)]
+    pub digest_geometry: Option<DigestGeometry>,
 }
 impl Slot {
     fn empty(label: &str) -> Self {
@@ -65,6 +75,7 @@ impl Slot {
             start: 0,
             end: 0,
             reverse: false,
+            digest_geometry: None,
         }
     }
 }
@@ -192,6 +203,9 @@ impl Draft {
             .collect::<Vec<_>>();
         collagene_core::model::bounds::model_preflight(&models).map_err(|e| e.to_string())?;
         for row in &self.methods.rows {
+            if let Some(selection) = &row.catalog_selection {
+                selection.validate().map_err(|e| e.to_string())?;
+            }
             for text in [
                 &row.enzymes,
                 &row.fragment,
@@ -272,7 +286,7 @@ impl Draft {
                 }
             }
             let Some(captured) = slot.captured.as_deref() else {
-                if slot.start != 0 || slot.end != 0 {
+                if slot.start != 0 || slot.end != 0 || slot.digest_geometry.is_some() {
                     return Err("An empty slot cannot retain a source interval".into());
                 }
                 continue;
@@ -302,6 +316,10 @@ impl Draft {
                 || (molecule.topology == Topology::Linear && slot.end > n)
             {
                 return Err("Invalid pinned DNA source or one-turn interval".into());
+            }
+            if let Some(geometry) = &slot.digest_geometry {
+                digest_interval(source, geometry, false)?;
+                digest_interval(source, geometry, true)?;
             }
             if molecule.revision() != source.binding.revision {
                 return Err("Pinned source content differs from its captured revision".into());
@@ -339,6 +357,7 @@ impl Draft {
                         s.start,
                         s.end,
                         s.reverse,
+                        s.digest_geometry.clone(),
                     )
                 })
                 .collect(),
@@ -363,7 +382,14 @@ pub fn decode(bytes: &[u8]) -> Result<Draft, String> {
 struct IntentIdentity {
     name: String,
     circular: bool,
-    slots: Vec<(String, Option<SourceInfo>, usize, usize, bool)>,
+    slots: Vec<(
+        String,
+        Option<SourceInfo>,
+        usize,
+        usize,
+        bool,
+        Option<DigestGeometry>,
+    )>,
 }
 #[derive(Clone)]
 pub struct SelectionNavigation {
@@ -559,6 +585,7 @@ pub fn AssemblyWorkspace(
         next.slots[index].captured = Some(Arc::new(CapturedSource { source, molecule }));
         next.slots[index].start = start;
         next.slots[index].end = end;
+        next.slots[index].digest_geometry = None;
         let orientation = next.slots[index].reverse;
         next.methods.rows[index] = OverlapInput {
             preparation: OverlapPreparation::ExactPcr,
@@ -669,7 +696,7 @@ pub fn AssemblyWorkspace(
             <p>{move||draft.with(|d|d.slots.get(i).map(|s|match s.captured.as_deref(){Some(c)=>format!("{} · {}–{} (1-based inclusive, unrolled) · {} bp · {}",c.source.name,s.start+1,s.end,s.end-s.start,if s.reverse{"reverse"}else{"forward"}),None=>"No source fragment set".into()}).unwrap_or_default())}</p>
             <details class="assembly-source-details"><summary>"Source details"</summary><p class="helper">{move||draft.with(|d|d.slots.get(i).and_then(|s|s.captured.as_ref()).map(|c|format!("Pinned source event {} · revision {}",c.source.binding.event_id,c.source.binding.revision)).unwrap_or_default())}</p></details>
             <p class="helper">{move||{let captured=draft.with(|d|d.slots.get(i).and_then(|s|s.captured.clone()));captured.map(|c|sources.with(|current|if current.iter().any(|s|s.binding==c.source.binding){"Current source version is pinned"}else{"Using the captured source version; current tabs do not replace it"})).unwrap_or("")}}</p>
-            <label class="checkbox-label"><input type="checkbox" aria-label=format!("Reverse assembly slot {}",i+1) prop:checked=move||draft.with(|d|d.slots.get(i).is_some_and(|s|s.reverse)) on:change=move|e|draft.update(|d|{if let Some(s)=d.slots.get_mut(i){s.reverse=event_target_checked(&e);}d.sync_rows();})/>"Reverse fragment in construct"</label>
+            <label class="checkbox-label"><input type="checkbox" aria-label=format!("Reverse assembly slot {}",i+1) prop:checked=move||draft.with(|d|d.slots.get(i).is_some_and(|s|s.reverse)) on:change=move|e|draft.update(|d|{let reversed=event_target_checked(&e);if i<d.slots.len(){let adjusted=d.slots[i].captured.as_ref().zip(d.slots[i].digest_geometry.as_ref()).filter(|_|d.methods.rows[i].preparation==OverlapPreparation::CatalogDigest&&d.methods.rows[i].repair.is_none()).map(|(capture,geometry)|digest_interval(&capture.source,geometry,reversed));match adjusted{Some(Ok((start,end)))=>{d.slots[i].start=start;d.slots[i].end=end;},Some(Err(error))=>{status.set(error);return;},None=>{}}d.slots[i].reverse=reversed;}d.sync_rows();})/>"Reverse fragment in construct"</label>
             <div class="method-row-actions"><button class="text-tool" on:click=move|_|{if let Some(nav)=draft.with_untracked(|d|d.slots.get(i).and_then(|s|s.captured.as_ref().map(|c|SelectionNavigation{source:c.source.binding.clone(),start:s.start,end:s.end,reverse:s.reverse}))){on_navigate.run(nav);}}>"View source region"</button><button class="text-tool" disabled=i==0 on:click=move|_|draft.update(|d|{if i>0&&i<d.slots.len(){d.slots.swap(i,i-1);d.methods.rows.swap(i,i-1);d.active_slot=i-1;d.sync_rows();}})>"Move earlier"</button><button class="text-tool" disabled=move||draft.with(|d|i+1>=d.slots.len()) on:click=move|_|draft.update(|d|{if i+1<d.slots.len(){d.slots.swap(i,i+1);d.methods.rows.swap(i,i+1);d.active_slot=i+1;d.sync_rows();}})>"Move later"</button><button class="text-tool" disabled=move||draft.with(|d|d.slots.len()<=1) on:click=move|_|draft.update(|d|{if d.slots.len()>1&&i<d.slots.len(){d.slots.remove(i);d.methods.rows.remove(i);d.active_slot=d.active_slot.min(d.slots.len()-1);d.sync_rows();}})>"Remove slot"</button></div>
         </article>}/></div>
         <button class="button secondary" disabled=move||draft.with(|d|d.slots.len()>=12) on:click=move|_|draft.update(|d|{if d.slots.len()<12{d.slots.push(Slot::empty(&format!("Fragment {}",d.slots.len()+1)));d.methods.rows.push(OverlapInput{preparation:OverlapPreparation::ExactPcr,..Default::default()});d.active_slot=d.slots.len()-1;d.sync_rows();}})>"Add fragment slot"</button>
@@ -798,4 +825,152 @@ fn FrozenWorkspace(
         <CloningMethodsPanel molecule=target query_options get_query source_info target_info selected_region=Callback::new(|()|None) config=methods epoch on_candidate=review on_products primer_sources list_primers resolve_primer fixed_sources=true/>
         <p role="status">{move||status.get()}</p>
     </section>}
+}
+
+fn digest_interval(
+    source: &SourceInfo,
+    geometry: &DigestGeometry,
+    reverse: bool,
+) -> Result<(usize, usize), String> {
+    let n = source.length;
+    if n == 0 {
+        return Err("Digest source is empty".into());
+    }
+    let (start, length) = if reverse {
+        geometry
+            .bottom_start
+            .checked_add(
+                i64::try_from(geometry.bottom_length)
+                    .map_err(|_| "Bottom interval length overflow")?,
+            )
+            .ok_or("Bottom interval coordinate overflow")?;
+        if geometry.bottom_length == 0 || geometry.bottom_length > n {
+            return Err("Digest bottom-strand interval is empty or exceeds one source turn".into());
+        }
+        let start = if source.topology == Topology::Circular {
+            let size =
+                i64::try_from(n).map_err(|_| "Source length exceeds signed coordinate range")?;
+            usize::try_from(geometry.bottom_start.rem_euclid(size))
+                .map_err(|_| "Invalid bottom-strand coordinate")?
+        } else {
+            usize::try_from(geometry.bottom_start)
+                .map_err(|_| "Linear digest bottom interval starts outside its source")?
+        };
+        (start, geometry.bottom_length)
+    } else {
+        (geometry.top_start, geometry.top_length)
+    };
+    if start >= n || length == 0 || length > n {
+        return Err("Digest interval is outside its original source".into());
+    }
+    let end = start
+        .checked_add(length)
+        .ok_or("Digest interval overflow")?;
+    if source.topology == Topology::Linear && end > n {
+        return Err("Linear digest interval extends beyond its source".into());
+    }
+    Ok((start, end))
+}
+/// Pin a fresh private digest selection, retaining its original source and full
+/// catalog identity. This checks bindings/bounds, not cleavage; the compiled
+/// CatalogDigest operation must reconstruct the actual fragment in the worker.
+/// The host must check payload epoch and actual retained source-event identity.
+/// Error leaves the original draft untouched.
+pub fn set_digest_fragment(
+    draft: &mut Draft,
+    fragment: crate::digest::AssemblyFragment,
+) -> Result<(), String> {
+    use collagene_core::{catalog_digest, restriction_history};
+    draft.validate()?;
+    if !token(&fragment.source.binding.document_id, 512)
+        || !token(&fragment.source.binding.event_id, 512)
+        || !hex(&fragment.source.binding.revision)
+    {
+        return Err("Invalid original-source event binding".into());
+    }
+    let index = draft.active_slot;
+    let catalog = catalog_digest::builtin_catalog().map_err(|e| e.to_string())?;
+    let role =
+        restriction_history::source_role(&fragment.source.binding).map_err(|e| e.to_string())?;
+    catalog_digest::source_preflight(
+        &catalog,
+        &fragment.selection,
+        &role,
+        &fragment.molecule,
+        &fragment.options,
+    )
+    .map_err(|e| e.to_string())?;
+    let n = fragment.molecule.sequence.len();
+    if fragment.source.length != n
+        || fragment.source.name != fragment.molecule.name
+        || fragment.source.topology != fragment.molecule.topology
+        || fragment.source.alphabet != fragment.molecule.sequence.alphabet()
+        || fragment.source.alphabet != Alphabet::Dna
+        || fragment.molecule.revision() != fragment.source.binding.revision
+    {
+        return Err("Digest original source differs from its captured document revision".into());
+    }
+    if fragment.fragment_index >= fragment.options.max_fragments
+        || !hex(&fragment.batch_revision)
+        || catalog_digest::batch_revision(
+            &catalog,
+            &fragment.selection,
+            &role,
+            &fragment.molecule,
+            &fragment.options,
+        )
+        .map_err(|e| e.to_string())?
+            != fragment.batch_revision
+    {
+        return Err("Digest selection/source/options changed; run the digest again".into());
+    }
+    let geometry = DigestGeometry {
+        top_start: fragment.top_start,
+        top_length: fragment.top_length,
+        bottom_start: fragment.bottom_start,
+        bottom_length: fragment.bottom_length,
+    };
+    digest_interval(&fragment.source, &geometry, false)?;
+    digest_interval(&fragment.source, &geometry, true)?;
+    let (start, end) = digest_interval(&fragment.source, &geometry, draft.slots[index].reverse)?;
+    let mut borrowed = draft
+        .slots
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != index)
+        .filter_map(|(_, slot)| slot.captured.as_ref().map(|c| &c.molecule))
+        .collect::<Vec<_>>();
+    borrowed.push(&fragment.molecule);
+    collagene_core::model::bounds::model_preflight(&borrowed).map_err(|e| e.to_string())?;
+    let mut bases = 0usize;
+    for source in &borrowed {
+        bases = bases
+            .checked_add(source.sequence.len())
+            .filter(|n| *n <= 8 << 20)
+            .ok_or("Pinned assembly sources exceed8MiB")?;
+    }
+    let display_index = fragment
+        .fragment_index
+        .checked_add(1)
+        .ok_or("Digest fragment index overflow")?;
+    let mut next = draft.clone();
+    next.slots[index].captured = Some(Arc::new(CapturedSource {
+        source: fragment.source,
+        molecule: fragment.molecule.as_ref().clone(),
+    }));
+    next.slots[index].start = start;
+    next.slots[index].end = end;
+    next.slots[index].digest_geometry = Some(geometry);
+    next.methods.rows[index] = OverlapInput {
+        preparation: OverlapPreparation::CatalogDigest,
+        catalog_selection: Some(fragment.selection),
+        fragment: display_index.to_string(),
+        repair: None,
+        reverse: next.slots[index].reverse,
+        ..Default::default()
+    };
+    next.sync_rows();
+    next.validate()?;
+    *draft = next;
+    Ok(())
 }

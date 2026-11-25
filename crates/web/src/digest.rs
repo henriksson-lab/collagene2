@@ -31,6 +31,22 @@ pub struct SourceInfo {
     pub alphabet: Alphabet,
     pub topology: Topology,
 }
+/// A fresh digest UI selection. The molecule is the ORIGINAL source, never a
+/// materialized fragment. Catalog replay, not this range, prepares the duplex.
+#[derive(Clone)]
+pub struct AssemblyFragment {
+    pub source: SourceInfo,
+    pub molecule: Arc<Molecule>,
+    pub selection: CatalogSelection,
+    pub options: InspectionOptions,
+    pub fragment_index: usize,
+    pub batch_revision: String,
+    pub top_start: usize,
+    pub top_length: usize,
+    pub bottom_start: i64,
+    pub bottom_length: usize,
+    pub epoch: u64,
+}
 #[derive(Clone)]
 pub struct Navigation {
     pub source: EventBinding,
@@ -135,6 +151,7 @@ pub fn DigestPanel(
     epoch: RwSignal<u64>,
     on_navigate: Callback<Navigation>,
     on_open: Callback<crate::digest_product::DigestOpenRequest, Result<(), String>>,
+    on_assembly: Callback<AssemblyFragment, Result<(), String>>,
     on_methylation: Callback<()>,
 ) -> impl IntoView {
     let catalog = StoredValue::new(
@@ -423,6 +440,105 @@ pub fn DigestPanel(
             status.set(e);
         }
     });
+    let assembly_alive = alive.clone();
+    let use_in_assembly = Callback::new(move |index: usize| {
+        if !assembly_alive.load(Ordering::Relaxed) {
+            return;
+        }
+        let Some(data) = bound.get_untracked() else {
+            return;
+        };
+        if busy.get_untracked()
+            || !current.run(data.clone())
+            || !data.report.scan_complete
+            || !data.report.products_determined
+        {
+            status.set("Run a fresh complete digest before choosing an assembly fragment.".into());
+            return;
+        }
+        let Some(fragment) = data.report.fragments.get(index) else {
+            status.set("This digest fragment is unavailable.".into());
+            return;
+        };
+        let n = data.molecule.sequence.len();
+        let end = fragment.top_start.checked_add(fragment.duplex.top_length);
+        if fragment.index != index
+            || fragment.duplex.topology != Topology::Linear
+            || fragment.duplex.top_length == 0
+            || fragment.duplex.top_length > n
+            || fragment.top_start >= n
+            || end.is_none_or(|end| data.molecule.topology == Topology::Linear && end > n)
+        {
+            status.set(
+                "Choose a nonempty linear digest product; an uncut circle has no assembly ends."
+                    .into(),
+            );
+            return;
+        }
+        if fragment.duplex.bottom_length == 0
+            || fragment.duplex.bottom_length > n
+            || i64::try_from(fragment.top_start)
+                .ok()
+                .and_then(|top| fragment.bottom_start.checked_sub(top))
+                != Some(fragment.duplex.bottom_start)
+        {
+            status.set("Digest strand coordinates are unavailable or inconsistent.".into());
+            return;
+        }
+        let payload = AssemblyFragment {
+            source: data.source.clone(),
+            molecule: data.molecule.clone(),
+            selection: data.inputs.selection.clone(),
+            options: data.inputs.limits.options(),
+            fragment_index: index,
+            batch_revision: data.catalog_revision.clone(),
+            top_start: fragment.top_start,
+            top_length: fragment.duplex.top_length,
+            bottom_start: fragment.bottom_start,
+            bottom_length: fragment.duplex.bottom_length,
+            epoch: data.epoch,
+        };
+        if !current.run(data.clone()) {
+            status.set("Source or digest settings changed; run the digest again.".into());
+            return;
+        }
+        match on_assembly.run(payload){Ok(())=>status.set("Digest fragment assigned to the active assembly slot with its original source and exact catalog selection. Review the intended construct and preparation.".into()),Err(error)=>status.set(error)}
+    });
+    let navigate_fragment = Callback::new(move |index: usize| {
+        let Some(data) = bound.get_untracked() else {
+            return;
+        };
+        if !current.run(data.clone()) {
+            status.set("Source or digest settings changed; run the digest again.".into());
+            return;
+        }
+        let Some(fragment) = data.report.fragments.get(index) else {
+            return;
+        };
+        let n = data.molecule.sequence.len();
+        let Some(end) = fragment.top_start.checked_add(fragment.duplex.top_length) else {
+            return;
+        };
+        if n == 0
+            || fragment.top_start >= n
+            || fragment.duplex.top_length == 0
+            || fragment.duplex.top_length > n
+        {
+            return;
+        }
+        let spans = if end <= n {
+            vec![(fragment.top_start, end)]
+        } else if data.molecule.topology == Topology::Circular {
+            vec![(fragment.top_start, n), (0, end - n)]
+        } else {
+            return;
+        };
+        on_navigate.run(Navigation {
+            source: data.source.binding.clone(),
+            epoch: data.epoch,
+            spans,
+        });
+    });
     let export_product = {
         let alive = alive.clone();
         Callback::new(move |index: usize| {
@@ -613,7 +729,7 @@ pub fn DigestPanel(
         {move||bound.get().map(|data|{let sites=data.report.sites.len();let fragments=data.report.fragments.len();view!{<div class="digest-results" data-scan-complete=data.report.scan_complete.to_string() data-products-determined=data.report.products_determined.to_string()><h3>"Recognition and products"</h3><p>{format!("Recognition scan: {}. Product set: {}.",if data.report.scan_complete{"finished"}else{"incomplete"},if data.report.products_determined{"determined under complete-cleavage assumptions"}else{"not determined"})}</p>{data.report.limits.iter().map(|limit|view!{<p class="digest-warning">{format!("{} reached. Incomplete evidence cannot establish absence or complete products.",limit_label(*limit))}</p>}).collect_view()}{data.report.diagnostics.iter().map(|d|view!{<p class="digest-warning">{d.clone()}</p>}).collect_view()}
         <h3>{format!("{sites} recognition sites")}</h3><p class="helper">"Recognition ranges are original source bases, 1-based inclusive. Strand cuts are boundaries measured from the source origin; 0 is before the first base."</p>{data.report.sites.iter().skip(site_page.get()*25).take(25).map(|site|{let index=site.index;view!{<article class="digest-site"><button class="result-entry" on:click=move|_|navigate.run(index)>{format!("{} · {} · {}{}",site.enzyme,span_label(site),if site.reverse{"reverse"}else{"forward"},if site.certain{""}else{" · possible"})}</button><p>{format!("Top / bottom cut boundaries: {} / {}",cut_label(site.top_cut,site.top_boundary),cut_label(site.bottom_cut,site.bottom_boundary))}</p>{site.diagnostics.iter().map(|d|view!{<p class="digest-warning">{site_diagnostic(*d)}</p>}).collect_view()}</article>}}).collect_view()}<div class="digest-actions"><button class="button secondary" disabled=move||site_page.get()==0 on:click=move|_|site_page.update(|p|*p=p.saturating_sub(1))>"Previous digest sites"</button><button class="button secondary" disabled={move||(site_page.get()+1)*25>=sites} on:click=move|_|site_page.update(|p|*p+=1)>"Next digest sites"</button></div>
         <h3>"Reference-strand fragment lengths"</h3><p class="fragment-sizes">{data.report.ref_top_lengths.as_ref().map(|lengths|lengths.iter().take(100).map(|n|format!("{n} nt")).collect::<Vec<_>>().join(" · ")).unwrap_or_else(||"Not determined from this recognition evidence.".into())}</p><p class="helper">"First 100 lengths shown, following the reference/top strand and sorted by size. The JSON evidence retains every determined length. Physical summaries below use ascending reference cut order; staggered ends can give different top and bottom lengths."</p>
-        <h3>{format!("{fragments} virtual fragment(s)")}</h3>{data.report.fragments.iter().skip(fragment_page.get()*25).take(25).map(|fragment|{let index=fragment.index;let ends=fragment.duplex.ends.as_ref().map(|(a,b)|format!("Left: {} · right: {}",end_label(a),end_label(b))).unwrap_or_else(||"Uncut circular substrate: no free ends".into());view!{<article class="digest-fragment"><h4>{format!("Fragment {} · {}",index+1,if fragment.duplex.topology==Topology::Circular{"circular"}else{"linear"})}</h4><p>{format!("{} nt top / {} nt bottom · original reference start {}",fragment.duplex.top_length,fragment.duplex.bottom_length,fragment.top_start+1)}</p><p>{ends}</p><div class="digest-actions"><button class="button secondary" disabled=move||busy.get() on:click=move|_|open.run(index)>"Open fragment"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|export_product.run(index)>{move||if product_busy.get()==Some(index){"Reconstructing…"}else{"Export fragment GenBank"}}</button></div></article>}}).collect_view()}<div class="digest-actions"><button class="button secondary" disabled=move||fragment_page.get()==0 on:click=move|_|fragment_page.update(|p|*p=p.saturating_sub(1))>"Previous digest fragments"</button><button class="button secondary" disabled={move||(fragment_page.get()+1)*25>=fragments} on:click=move|_|fragment_page.update(|p|*p+=1)>"Next digest fragments"</button></div><button class="button secondary full" on:click=export_report>"Download digest evidence"</button><p class="helper">"Opening reconstructs the fragment again and retains its exact source event in the workspace. GenBank comments preserve descriptive, unverified producer/end information; native workspace files retain full source history."</p></div>}})}
+        <h3>{format!("{fragments} virtual fragment(s)")}</h3>{data.report.fragments.iter().skip(fragment_page.get()*25).take(25).map(|fragment|{let index=fragment.index;let circular=fragment.duplex.topology==Topology::Circular;let ends=fragment.duplex.ends.as_ref().map(|(a,b)|format!("Left: {} · right: {}",end_label(a),end_label(b))).unwrap_or_else(||"Uncut circular substrate: no free ends".into());view!{<article class="digest-fragment"><h4>{format!("Fragment {} · {}",index+1,if fragment.duplex.topology==Topology::Circular{"circular"}else{"linear"})}</h4><p>{format!("{} nt top / {} nt bottom · original reference start {}",fragment.duplex.top_length,fragment.duplex.bottom_length,fragment.top_start+1)}</p><p>{ends}</p><div class="digest-actions"><button class="button secondary" disabled=move||busy.get() on:click=move|_|navigate_fragment.run(index)>"View fragment in source"</button><button class="button primary" disabled=move||busy.get()||circular on:click=move|_|use_in_assembly.run(index)>"Use in active assembly slot"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|open.run(index)>"Open fragment"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|export_product.run(index)>{move||if product_busy.get()==Some(index){"Reconstructing…"}else{"Export fragment GenBank"}}</button></div></article>}}).collect_view()}<div class="digest-actions"><button class="button secondary" disabled=move||fragment_page.get()==0 on:click=move|_|fragment_page.update(|p|*p=p.saturating_sub(1))>"Previous digest fragments"</button><button class="button secondary" disabled={move||(fragment_page.get()+1)*25>=fragments} on:click=move|_|fragment_page.update(|p|*p+=1)>"Next digest fragments"</button></div><button class="button secondary full" on:click=export_report>"Download digest evidence"</button><p class="helper">"Opening reconstructs the fragment again and retains its exact source event in the workspace. GenBank comments preserve descriptive, unverified producer/end information; native workspace files retain full source history."</p></div>}})}
         </section>
     }
 }

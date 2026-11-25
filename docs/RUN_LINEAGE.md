@@ -8,7 +8,7 @@ The capture calls the current deterministic verifier. Every step must reconstruc
 
 A run has a full 64-character BLAKE3 ID over its schema, plan, exact input and target roles, product revisions and recorded assessment. Product document IDs derive from the run ID and step index, with deterministic suffixes for existing-ID collisions. Events bind the run ID, operation position, product revision and exact source event parents. Product molecules remain in the workspace revision store; attachments contain their bindings rather than duplicate product snapshots. The plan retains its independently bound source snapshots, options and intended target revision.
 
-New run schema-version-1 records use plan schema 8. Historical plan-schema-3 through 7 records remain readable with their recorded engine. Tracked operations and science-8 assessments require at least plan schema 4; explicit terminal declarations and science-13 assessments require plan schema 8. A native archive with an older outer plan schema cannot contain these records. Each record is limited to 32 MiB, with at most 128 runs per workspace, in addition to the existing workspace document, history, attachment and expanded-byte limits. Plans remain limited to 1,000 operations and 1,000 inputs. Finding strings are limited to 64 KiB, with at most 10,000 findings and 1,000 assumptions. Unknown fields, invalid references and noncanonical IDs are rejected.
+New run schema-version-1 records use plan schema 9. Historical plan-schema-3 through 8 records remain readable with their recorded engine. Tracked operations and science-8 assessments require at least plan schema 4; explicit terminal declarations and science-13 assessments require plan schema 8; catalog-pinned digestion and science-14 assessments require plan schema 9. A native archive with an older outer plan schema cannot contain these records. Each record is limited to 32 MiB, with at most 128 runs per workspace, in addition to the existing workspace document, history, attachment and expanded-byte limits. Plans remain limited to 1,000 operations and 1,000 inputs. Finding strings are limited to 64 KiB, with at most 10,000 findings and 1,000 assumptions. Unknown fields, invalid references and noncanonical IDs are rejected.
 
 `Workspace::validate`, native load and native save validate attachment hashes, schema, run identity, exact event/revision references, source snapshots and declared parent edges. This is structural validation and does not rerun scientific calculations on autosave. A recorded assessment is untrusted historical producer evidence. Editing a serialized attachment cannot establish physical source chemistry or grant verification authority; the verifier still reconstructs physical intermediates from an explicit graph.
 
@@ -19,3 +19,11 @@ New run schema-version-1 records use plan schema 8. Historical plan-schema-3 thr
 Public helpers include `list_runs`, `load_run`, `load_run_record`, `save_run_record`, `RunCommit::validate`, `ReplayReport::validate`, and `ReplayReport::validate_for_workspace`. The last helper additionally binds report comparisons, plan/target revisions and recorded assessment to the source workspace without repeating scientific calculations. The actual fresh reconstruction occurs exclusively in `replay_run`.
 
 Browser capture, storage and historical display behavior is described in [RUN_LINEAGE_UI.md](RUN_LINEAGE_UI.md).
+
+New retained runs use workspace-plan schema 9 and science-14. Catalog-pinned digest
+operations preserve the selected catalog identities/geometry, chosen fragment and
+explicit downstream repair in the actual graph. Historical records with plan
+schemas 3–8 remain readable under their original rules; a new operation or
+science-14 assessment cannot be hidden under an older plan schema. Replay still
+reconstructs the actual original source events rather than restoring imported
+physical summaries.

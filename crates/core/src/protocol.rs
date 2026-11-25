@@ -6,8 +6,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 36;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 10;
+pub const WORKER_SCHEMA_VERSION: u16 = 37;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 11;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
@@ -1683,6 +1683,9 @@ fn preflight_crispr_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     Ok(())
 }
 fn check_scientific_report_version(bytes: &[u8], engine: &str) -> Result<(), Error> {
+    if engine.ends_with("/science-14") {
+        check_variant_version(bytes, 37)?;
+    }
     if engine.ends_with("/science-13") {
         check_variant_version(bytes, 34)?;
     }
@@ -1720,6 +1723,9 @@ fn check_workspace_version(
             check_variant_version(bytes, plan_worker_version(&record.plan))?;
             if record.plan_schema >= 4 {
                 check_variant_version(bytes, 17)?;
+            }
+            if record.plan_schema >= 9 {
+                check_variant_version(bytes, 37)?;
             }
             if record.plan_schema >= 8 {
                 check_variant_version(bytes, 34)?;
@@ -1804,6 +1810,7 @@ fn plan_worker_version(plan: &crate::verification::DesignPlan) -> u16 {
     plan.steps
         .iter()
         .map(|step| match step {
+            crate::verification::Operation::CatalogDigest { .. } => 37,
             crate::verification::Operation::DeclareSourceTermini { .. } => 34,
             crate::verification::Operation::CheckedTopo { .. } => 28,
             crate::verification::Operation::Topo { .. } => 25,
@@ -1861,6 +1868,26 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         AnalysisJob::BuildAssemblyIntent { .. } => 36,
         AnalysisJob::DesignOverlapPrimers { .. } => 35,
         AnalysisJob::InspectAssemblyJunctions { plan, .. } => plan_worker_version(plan).max(33),
+        AnalysisJob::PreviewOverlapRecipe { recipe, .. }
+            if recipe.fragments.iter().any(|row| {
+                matches!(
+                    row.preparation,
+                    crate::assembly_recipe::Preparation::CatalogDigest { .. }
+                )
+            }) =>
+        {
+            37
+        }
+        AnalysisJob::PreviewLigationRecipe { recipe, .. }
+            if recipe.fragments.iter().any(|row| {
+                matches!(
+                    row.source.preparation,
+                    crate::assembly_recipe::Preparation::CatalogDigest { .. }
+                )
+            }) =>
+        {
+            37
+        }
         AnalysisJob::PreviewOverlapRecipe { recipe, .. }
             if recipe.fragments.iter().any(|row| {
                 matches!(

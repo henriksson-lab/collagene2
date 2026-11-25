@@ -468,3 +468,20 @@ The core constructs this intended reference without running PCR, digestion, liga
 Report and target installation are atomic under existing managed-session limits. Borrowed source guards precede copying/hashing; full report JSON is bounded to 32 MiB, with the same shared 64 MiB session accounting and document/artifact capacities. Repeated identical requests deduplicate. The exact target reference can be passed directly to `design_overlap_primers` and `propose_overlap_assembly` with the original inputs. Those separate steps design actual oligos, reconstruct preparations and verify their output against the already frozen intent. Expected DNA is never obtained by copying the verifier's product. A separately imported desired target remains an alternative input route for reverse design and AI checking.
 
 The source-authored SDK fixture constructs a literal 40-base intended reference from two actual 20-base sources before invoking the primer planner or simulator, then checks real PCR/overlap agreement. It also covers reversed regions and exact output placement, circular intent, unchanged original exports, idempotence, stale/invalid/missing bindings and explicit wrong-source rebinding followed by failed original preparation. The stdio smoke now follows source selection → intended target → oligo design → separate assembly verification, with no complete-target import prerequisite. Execution evidence is recorded separately.
+
+## Catalog-pinned cloning preparation
+
+Existing `propose_overlap_assembly`, `propose_ligation_assembly` and `propose_plan`
+accept the catalog-pinned digest preparation/operation. The shared preparation is
+`CatalogDigest { selection, fragment_index, repair }`, retaining the exact
+`CatalogSelection` from embedded-catalog inspection and a zero-based fragment.
+The compiler emits `Operation::CatalogDigest` and optional explicit `RepairEnds`.
+The original immutable document is the input; a downloaded fragment's producer
+metadata does not restore a physical substrate. Validate the actual plan against
+its independent intended target and export HTML/PDF from that same plan.
+
+Fresh evaluation checks the catalog edition/content/IDs and exact geometry before
+using the existing tracked digest engine. The catalog pin does not predict
+methylation compatibility, reaction conditions or experimental completion.
+Candidate 11, workspace-plan 9, worker 37 and science-14 identify this extension;
+older supported operation layouts remain readable under their original rules.

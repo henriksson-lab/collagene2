@@ -61,6 +61,9 @@ pub fn source_preflight(
                     }
                 }
             }
+            preparation::Preparation::CatalogDigest { selection, .. } => {
+                selection.validate()?;
+            }
             preparation::Preparation::Digest { enzymes, .. } => {
                 if enzymes.len() > 32 || enzymes.iter().any(|s| s.len() > 128) {
                     return Err(Error::TooLarge);
@@ -344,6 +347,7 @@ impl Preview {
                         Operation::Pcr { .. }
                             | Operation::DeclareSourceTermini { .. }
                             | Operation::Digest { .. }
+                            | Operation::CatalogDigest { .. }
                             | Operation::RepairEnds { .. }
                             | Operation::TreatEnds { .. }
                     )

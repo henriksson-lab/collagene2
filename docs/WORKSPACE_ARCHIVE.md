@@ -23,7 +23,7 @@ Generic attachments are keyed by BLAKE3 of raw bytes and preserve kind, name and
 
 ## Container and content addressing
 
-The ZIP contains exactly one `manifest.json` and entries named `blobs/<64 lowercase hex digits>`. Every file is declared in the manifest, hash/length checked, and reachable from a recognized record. There are no directory entries or extraction paths. The manifest has format `collagene-workspace`, version `1`, molecule schema `1` and plan schema `8` (with compatible plan schemas 1–7 still readable).
+The ZIP contains exactly one `manifest.json` and entries named `blobs/<64 lowercase hex digits>`. Every file is declared in the manifest, hash/length checked, and reachable from a recognized record. There are no directory entries or extraction paths. The manifest has format `collagene-workspace`, version `1`, molecule schema `1` and plan schema `9` (with compatible plan schemas 1–8 still readable).
 
 The manifest maps molecule revisions to molecule-record blobs. A molecule record references separate sequence, name, feature JSON, metadata-value and optional original-GenBank chunks. Sequences use canonical ASCII and carry explicit alphabet/topology. A plan record references existing source revisions and its operations JSON; it does not duplicate source molecules inside each plan. Hash-addressed raw attachments, metadata values and original sequence evidence are shared across revisions.
 
@@ -74,8 +74,8 @@ A `genome-reference-link-v1` attachment is a bounded typed external-reference li
 
 Plan schema 8 adds explicit original-source terminal hypotheses. Loading refuses
 `DeclareSourceTermini` under older plan schemas, including nested retained-run
-records. Candidate 10 and worker 34 carry the same operation floor; current
-verification uses science-13. Earlier operation layouts and recorded engine
+records. Candidate 10 and worker 34 carry the same historical operation floor; that
+operation was introduced with science-13. Earlier operation layouts and recorded engine
 identities remain historical data, and the outer archive stays version 1.
 
 ## Assembly draft declarations
@@ -93,3 +93,10 @@ Frozen intent reports, verification status and private reconstructed chemistry
 are not draft fields. Reopening retains declarations only; reviewing and checking
 uses fresh worker computation. Created intended-reference documents record the
 actual source parents and remain explicitly distinct from simulated material.
+
+Catalog-pinned digest plans write plan schema 9. Loading that operation from a
+manifest below 9 fails explicitly, including an archive whose manifest was
+relabeled. Existing historical operation layouts remain readable. Shared draft
+rows can retain the optional catalog selection and original top/bottom source
+intervals; these are declared preparation inputs and geometry receipts, not
+restored verification or physical intermediates.

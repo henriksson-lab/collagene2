@@ -143,6 +143,13 @@ pub enum Operation {
         left: chemistry::Terminus,
         right: chemistry::Terminus,
     },
+    /// Complete cleavage under an exact embedded-catalog identity/geometry pin.
+    /// Supplier documentary data never establishes reaction completion.
+    CatalogDigest {
+        template: Source,
+        selection: crate::catalog_digest::CatalogSelection,
+        fragment_index: usize,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -197,7 +204,7 @@ pub struct AnnotationStepReport {
     pub evidence: crate::topo_annotations::AnnotationEvidence,
 }
 
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-13");
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-14");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrDocument {
@@ -614,8 +621,32 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
     if plan.steps.len() > 1000 || plan.inputs.len() > 1000 {
         return Err(Error::TooLarge);
     }
+    let pinned_catalog = if plan
+        .steps
+        .iter()
+        .any(|s| matches!(s, Operation::CatalogDigest { .. }))
+    {
+        Some(crate::catalog_digest::builtin_catalog()?)
+    } else {
+        None
+    };
     let mut count = 0usize;
     for step in &plan.steps {
+        if let Operation::CatalogDigest {
+            template,
+            selection,
+            fragment_index,
+        } = step
+        {
+            selection
+                .validate_for(pinned_catalog.as_ref().ok_or(Error::TooLarge)?)
+                .map_err(|error| Error::Format(format!("Catalog digest pin rejected: {error}")))?;
+            if *fragment_index > 100_000
+                || matches!(template,Source::Input(id) if id.is_empty()||id.len()>128)
+            {
+                return Err(Error::TooLarge);
+            }
+        }
         if let Operation::DeclareSourceTermini {
             template: Source::Input(id),
             ..
@@ -682,10 +713,12 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
         }
     }
     if count > 0
-        || plan
-            .steps
-            .iter()
-            .any(|s| matches!(s, Operation::DeclareSourceTermini { .. }))
+        || plan.steps.iter().any(|s| {
+            matches!(
+                s,
+                Operation::DeclareSourceTermini { .. } | Operation::CatalogDigest { .. }
+            )
+        })
     {
         if plan.name.len() > 1024 || plan.target_revision.len() != 64 {
             return Err(Error::TooLarge);
@@ -717,6 +750,7 @@ pub(crate) fn operation_sources(op: &Operation) -> Vec<&Source> {
         Operation::Pcr { template, .. }
         | Operation::PcrWithMismatches { template, .. }
         | Operation::Digest { template, .. }
+        | Operation::CatalogDigest { template, .. }
         | Operation::CheckedDigest { template, .. }
         | Operation::DeclareSourceModifications { template, .. }
         | Operation::DeclareSourceTermini { template, .. }
@@ -798,6 +832,7 @@ fn evaluate(
                     | Operation::Topo { .. }
                     | Operation::CheckedTopo { .. }
                     | Operation::DeclareSourceTermini { .. }
+                    | Operation::CatalogDigest { .. }
             )
         }) {
             let mut models = plan.inputs.iter().map(|i| &i.molecule).collect::<Vec<_>>();
@@ -2208,25 +2243,43 @@ fn reconstruct(
             }
             Operation::Digest {
                 template,
-                enzymes,
                 fragment_index,
+                ..
+            }
+            | Operation::CatalogDigest {
+                template,
+                fragment_index,
+                ..
             } => {
                 let source = resolve_tracked(template)?;
-                let catalog = analysis::starter_enzymes();
-                let enzymes = enzymes
-                    .iter()
-                    .map(|name| {
-                        catalog
+                let enzymes = match step {
+                    Operation::CatalogDigest { selection, .. } => {
+                        let catalog = crate::catalog_digest::builtin_catalog()?;
+                        let resolved = selection.resolved_enzymes(&catalog).map_err(|error| {
+                            Error::Format(format!("Catalog digest pin rejected: {error}"))
+                        })?;
+                        findings.push(format!("Step {} uses explicit embedded catalog edition {} / content {} and exact ordered enzyme IDs {}. Selected identity/geometry is validated against the catalog; documentary supplier conditions do not establish complete cleavage.",index+1,selection.catalog_edition,selection.catalog_content_hash,selection.enzymes.iter().map(|e|e.id.as_str()).collect::<Vec<_>>().join(", ")));
+                        resolved
+                    }
+                    Operation::Digest { enzymes, .. } => {
+                        let catalog = analysis::starter_enzymes();
+                        enzymes
                             .iter()
-                            .find(|e| e.name.eq_ignore_ascii_case(name))
-                            .cloned()
-                            .ok_or_else(|| {
-                                Error::Unsupported(format!(
-                                    "enzyme {name} is not in the embedded catalog"
-                                ))
+                            .map(|name| {
+                                catalog
+                                    .iter()
+                                    .find(|e| e.name.eq_ignore_ascii_case(name))
+                                    .cloned()
+                                    .ok_or_else(|| {
+                                        Error::Unsupported(format!(
+                                            "enzyme {name} is not in the embedded catalog"
+                                        ))
+                                    })
                             })
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
+                            .collect::<Result<Vec<_>, _>>()?
+                    }
+                    _ => unreachable!("matched digest operation"),
+                };
                 if !source.generation.is_empty() {
                     let state = modified_duplex::summary(&source)?;
                     if state.known_modified > 0 || state.unknown_eligible > 0 {
@@ -2646,6 +2699,7 @@ pub fn export_protocol_html(plan: &DesignPlan, target: &Molecule) -> String {
             Operation::DeclareSourceTermini{template,left,right}=>body.push_str(&format!("<li>Declare original intact linear duplex source termini for {}: left <code>{}</code>, right <code>{}</code>. Explicit operator hypothesis only; not measured chemistry, synthesis, repair, recovered imported physical state or experimental success. Original sequence/features/citations are retained; methylation remains unknown.</li>",source(template),e(&serde_json::to_string(left).unwrap_or_default()),e(&serde_json::to_string(right).unwrap_or_default()))),
             Operation::DeclareSourceModifications{template,assumptions}=>body.push_str(&format!("<li>Declare closed Dam/Dcm/CpG source generation for {} under explicit assumptions <code>{}</code>. Bind the original input revision; these are not measured modifications. Descendant strand states are propagated without resynthesizing methylation.</li>",source(template),e(&serde_json::to_string(assumptions).unwrap_or_default()))),
             Operation::CheckedDigest{template,enzymes,profile_revision,fragment_index}=>body.push_str(&format!("<li>Checked positional-modification digest of {} with {}. Profile <code>{}</code>; zero-based fragment {}. Blocked sites remain intact; unknown/impaired or incomplete evidence withholds fully determined products. Reaction conditions and experimental success remain unspecified.</li>",source(template),e(&enzymes.join(", ")),e(profile_revision),fragment_index)),
+            Operation::CatalogDigest{template,selection,fragment_index}=>body.push_str(&format!("<li>Catalog-pinned complete digest of {} under exact selection <code>{}</code>; select zero-based fragment {} in top-reference cut ordering. Identity/name/geometry are checked against the embedded catalog. Complete cleavage and compatible conditions remain assumptions; supplier observations do not establish kinetics, methylation compatibility or experimental completion.</li>",source(template),e(&serde_json::to_string(selection).unwrap_or_default()),fragment_index)),
             Operation::Digest{template,enzymes,fragment_index}=>body.push_str(&format!("<li>Complete restriction digest of {} with {}. Select zero-based fragment index {} in ascending top-reference cut order. Cleavage assumes compatible conditions and no blocking methylation.</li>",source(template),e(&enzymes.join(", ")),fragment_index)),
             Operation::TreatEnds{template,treatment}=>body.push_str(&format!("<li>Terminal {:?} treatment of {}. Internal nick repair is not assumed; reaction conditions and quantities are unspecified.</li>",treatment,source(template))),
             Operation::Tail3Prime{template,base}=>body.push_str(&format!("<li>Append one {} nucleotide to both strand 3′ ends of {}. Requires reconstructed blunt linear DNA with accessible 3′-OH. Five-prime chemistry and internal nicks remain unchanged; no template ancestry or polymerase/kit activity is inferred.</li>",base.as_str(),source(template))),

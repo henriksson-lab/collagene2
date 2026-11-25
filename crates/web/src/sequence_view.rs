@@ -302,6 +302,8 @@ pub fn SequenceView(
     restriction_sites: Memo<Option<Arc<Vec<restriction_inspection::InspectionSite>>>>,
     restriction_visible: RwSignal<bool>,
     on_show_restrictions: Callback<()>,
+    #[prop(default = false)] read_only: bool,
+    #[prop(default = true)] shared_restrictions: bool,
 ) -> impl IntoView {
     let canvas = NodeRef::<html::Canvas>::new();
     let glyph_canvas = NodeRef::<html::Canvas>::new();
@@ -641,7 +643,7 @@ pub fn SequenceView(
             end: (start + rows * cols).min(n),
         }
     });
-    let shared_restrictions = Memo::new(move |_| {
+    let shared_restriction_tracks = Memo::new(move |_| {
         if !restriction_visible.get() || molecule.with(|m| m.sequence.alphabet() != Alphabet::Dna) {
             return Arc::new(Vec::<TrackItem>::new());
         }
@@ -966,6 +968,9 @@ pub fn SequenceView(
                 let len = molecule.with_untracked(|m| m.sequence.len());
                 set_cursor.run((0, len, None));
             } else if let Some(redo) = history {
+                if read_only {
+                    return;
+                }
                 match on_history.run(redo) {
                     Ok(()) => edit_cursor.set_value(None),
                     Err(error) => on_message.run(error),
@@ -1043,7 +1048,7 @@ pub fn SequenceView(
             return;
         };
         e.prevent_default();
-        if locked.get_untracked() {
+        if read_only || locked.get_untracked() {
             on_message.run("The workspace is busy. Wait before editing the sequence.".into());
             return;
         }
@@ -1181,7 +1186,7 @@ pub fn SequenceView(
             let cell = 8.5;
             let counts = lane_counts.get();
             let offset = offsets(counts);
-            let shared_items = shared_restrictions.get();
+            let shared_items = shared_restriction_tracks.get();
             let mut boxes = vec![];
             let mut base_glyphs = Vec::<Glyph>::with_capacity(
                 count
@@ -1544,7 +1549,7 @@ pub fn SequenceView(
         }
     });
     view! {
-        <div class="sequence-editor-hint">"Drag bases to select · type reference symbols to edit · Shift + arrows to extend"</div>
+        <div class="sequence-editor-hint">{if read_only{"Read-only sequence · drag bases to select · Shift + arrows to extend"}else{"Drag bases to select · type reference symbols to edit · Shift + arrows to extend"}}</div>
         <div class="track-toolbar"><button class="text-tool" aria-expanded=move||show_controls.get().to_string() on:click=move|_|show_controls.update(|v|*v=!*v)>"Sequence tracks"</button><span class="track-status" role="status">{move||status.get()}</span><button class="text-tool" title="Reload sequence tracks" on:click=move|_|retry.update(|n|*n=n.wrapping_add(1))>"↻"</button></div>
         <Show when=move||restriction_visible.get()&&molecule.with(|m|m.sequence.alphabet()==Alphabet::Dna)><div class="shared-restriction-status" role="status">{move||restriction_sites.with(|sites|sites.as_ref().map(|sites|format!("Restriction tracks: {} selected sites from the shared source scan.",sites.len())).unwrap_or_else(||"Restriction tracks: shared source scan pending or unavailable.".into()))}</div></Show>
         <Show when=move||{layout_overflow.get()>0 || (annotation_layout.with(|p|p.as_ref().is_err()) && options.with(|o|o.features||o.primers))}>
@@ -1555,14 +1560,14 @@ pub fn SequenceView(
             <div class="track-toggles">
                 <label><input type="checkbox" aria-label="Feature tracks" prop:checked=move||settings.get().features on:change=move|e|settings.update(|o|o.features=event_target_checked(&e))/><span>"Features"</span></label>
                 <label><input type="checkbox" aria-label="Primer tracks" prop:checked=move||settings.get().primers on:change=move|e|settings.update(|o|o.primers=event_target_checked(&e))/><span>"Primers"</span></label>
-                <label><input type="checkbox" aria-label="Restriction site tracks" prop:checked=move||restriction_visible.get() disabled=move||molecule.with(|m|m.sequence.alphabet()!=Alphabet::Dna) on:change=move|e|restriction_visible.set(event_target_checked(&e))/><span>"Restriction sites and cuts"</span></label>
+                <Show when=move||shared_restrictions>                <label><input type="checkbox" aria-label="Restriction site tracks" prop:checked=move||restriction_visible.get() disabled=move||molecule.with(|m|m.sequence.alphabet()!=Alphabet::Dna) on:change=move|e|restriction_visible.set(event_target_checked(&e))/><span>"Restriction sites and cuts"</span></label></Show>
                 <label><input type="checkbox" aria-label="Translation tracks" prop:checked=move||options.get().translations disabled=move||molecule.with(|m|m.sequence.alphabet()==Alphabet::Protein) on:change=move|e|settings.update(|o|o.translations=event_target_checked(&e))/><span>"Six-frame translation"</span></label>
                 <label><input type="checkbox" aria-label="CDS tracks" prop:checked=move||options.get().known_cds==KnownCdsPolicy::Validated disabled=move||molecule.with(|m|m.sequence.alphabet()==Alphabet::Protein) on:change=move|e|settings.update(|o|o.known_cds=if event_target_checked(&e){KnownCdsPolicy::Validated}else{KnownCdsPolicy::Off})/><span>"Reviewed CDS"</span></label>
                 <label><input type="checkbox" aria-label="ORF tracks" prop:checked=move||options.get().orfs disabled=move||molecule.with(|m|m.sequence.alphabet()==Alphabet::Protein) on:change=move|e|settings.update(|o|o.orfs=event_target_checked(&e))/><span>"Predicted ORFs"</span></label>
             </div>
-            <button class="text-tool" on:click=move|_|on_show_restrictions.run(())>"Choose restriction enzymes"</button>
+            <Show when=move||shared_restrictions>            <button class="text-tool" on:click=move|_|on_show_restrictions.run(())>"Choose restriction enzymes"</button>
             <p class="helper">"Restriction sites and cut boundaries come from the shared source scan. Viewport report downloads contain the sequence worker tracks only."</p>
-            <Show when=move||restriction_visible.get()&&restriction_sites.with(|sites|sites.is_none())><p class="helper" role="status">"Shared restriction sites are not available yet. Choose restriction enzymes to inspect the source scan."</p></Show>
+            <Show when=move||restriction_visible.get()&&restriction_sites.with(|sites|sites.is_none())><p class="helper" role="status">"Shared restriction sites are not available yet. Choose restriction enzymes to inspect the source scan."</p></Show></Show>
             <label>"Track direction"<select aria-label="Track direction" prop:value=move||format!("{:?}",settings.get().orientation) on:change=move|e|settings.update(|o|o.orientation=match event_target_value(&e).as_str(){"Forward"=>TrackOrientation::Forward,"Reverse"=>TrackOrientation::Reverse,_=>TrackOrientation::Both})><option value="Both">"Both strands"</option><option value="Forward">"Forward"</option><option value="Reverse">"Reverse"</option></select></label>
             <div class="track-toggles">{(0u8..3).map(|frame|view!{<label><input type="checkbox" aria-label=format!("Track frame {}",frame+1) prop:checked=move||settings.with(|o|o.frames.contains(&frame)) on:change=move|e|settings.update(|o|{o.frames.retain(|f|*f!=frame);if event_target_checked(&e){o.frames.push(frame);o.frames.sort_unstable();}})/><span>{format!("Frame {}",frame+1)}</span></label>}).collect_view()}</div>
             <label>"Minimum ORF length (aa)"<input type="number" min="0" max="100000" aria-label="Track minimum ORF length" prop:value=move||settings.get().min_orf_amino_acids.to_string() on:change=move|e|settings.update(|o|o.min_orf_amino_acids=event_target_value(&e).parse::<usize>().unwrap_or(20).min(100000))/></label>
@@ -1574,7 +1579,7 @@ pub fn SequenceView(
         <div class="sequence-scroll" node_ref=container on:scroll=move|_|if let Some(c)=container.get(){scroll.set(c.scroll_top()as f64);}>
             <div class="sequence-spacer" style:height=move||format!("{}px",molecule.with(|m|m.sequence.len()).div_ceil(columns.get())as f64*row_height.get())>
                 <div node_ref=paint_stack class="sequence-paint-stack">
-                <canvas node_ref=canvas class="sequence-canvas" role="textbox" aria-multiline="true" aria-readonly=move||locked.get().to_string() tabindex="0" aria-label="Sequence editor. Drag reference or complement bases to select. Shift extends selection; type to replace reference symbols. Arrow keys move the caret; Shift and arrows extend. Home and End move to document boundaries." on:keydown=keydown
+                <canvas node_ref=canvas class="sequence-canvas" role="textbox" aria-multiline="true" aria-readonly=move||(read_only||locked.get()).to_string() tabindex="0" aria-label=if read_only{"Read-only sequence. Drag reference or complement bases to select. Shift and arrow keys extend selection. Home and End move to sequence boundaries."}else{"Sequence editor. Drag reference or complement bases to select. Shift extends selection; type to replace reference symbols. Arrow keys move the caret; Shift and arrows extend. Home and End move to document boundaries."} on:keydown=keydown
                     on:pointerdown=move|e:web_sys::PointerEvent|{
                         if e.button()!=0 || locked.get_untracked(){return;}
                         if let Some(c)=canvas.get(){

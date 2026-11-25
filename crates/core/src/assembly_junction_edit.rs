@@ -52,7 +52,7 @@ pub(crate) fn inserts(
     for e in edits {
         if e.junction >= count
             || !seen.insert(e.junction)
-            || e.inserted.len() > 200
+            || e.inserted.len() > 400
             || !e.inserted.is_ascii()
         {
             return Err(bad(
@@ -64,9 +64,9 @@ pub(crate) fn inserts(
         } else {
             Sequence::dna(&e.inserted)?.as_str().to_owned()
         };
-        if text.len() > 100 {
+        if text.len() > 200 {
             return Err(bad(
-                "each explicit junction insert is limited to100 DNA bases",
+                "each explicit junction insert is limited to200 DNA bases",
             ));
         }
         total = total

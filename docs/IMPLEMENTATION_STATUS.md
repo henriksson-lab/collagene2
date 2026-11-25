@@ -593,3 +593,40 @@ retaining previously versioned workers for existing tabs. Index SHA256:
 `5338dcc50e30f7b717c2ad6620b9cf5b961c5be0986666a03902f9be88b4ce58`. The server exposes no writes or filesystem API. Detailed local evidence:
 `/tmp/collagene2-diagnostics-public-evidence.json`. This is build and publication
 evidence, not GUI acceptance or completion of the product.
+
+
+## Selected Golden Gate junction preparations
+
+The assembly dock's existing junction editor now supports Golden Gate alongside
+overlap designs. Source-core trims and literal inserts define independent intended
+DNA first. Selected originals produce explicit PCR→pinned Type IIS digest
+proposals; tail segmentation distinguishes actual own-5′ fusion and inserted
+bases. The core reconstructs real PCR products, eligible cuts and oriented strand
+ends before reporting new preparations. Retained rows preserve named oligos,
+catalog pins, digest choices, repair and end treatment byte-for-byte. Their
+compatibility is decided by the later fresh complete-recipe verifier.
+
+Apply installs selected replacements and edited target declarations together,
+reuses existing actual-product/diagnostic/output workflows and keeps protected
+Undo. Unedited Golden Gate suggestions cannot overwrite an applied edited intent.
+Last-linear selected PCR rows require an explicit terminal fusion; circles use
+the first adjusted core's prefix. No terminal choice is invented for a retained
+last row. The shared intent supports up to 200 normalized inserted bases per
+junction (400 raw bytes), while complete new ordered oligos must fit 200 bases.
+
+Worker46/job112/result104 and MCP132 provide the same advisory route. The older
+Golden Gate DTOs and public empty-insert behavior remain unchanged. Candidate11,
+plan9, science14 and archive1 remain unchanged. No external scientific program,
+fusion optimizer, internal-site domestication or cycling-mixture solver is added.
+
+The focused native batch passed 20 tests: five new scientific junction fixtures,
+one new worker binding/selector fixture, two real MCP SDK groups, five existing
+Golden Gate designer cases, two existing designer protocol cases and five existing
+junction-intent cases. They include independent 42-base targets, true reversed
+strand preparations, BsaI/SapI geometry, exact retained-row identity and full
+fresh target mismatch checks. No browser checks ran.
+
+The web WASM target also passed its background compiler check. Native/WASM checks
+used the existing shared cache; no full Trunk rebuild, browser check or preview
+refresh was run for this checkpoint. Port8082 retains the previous successful
+immutable diagnostic/pair-draft snapshot until the next suitable publication.

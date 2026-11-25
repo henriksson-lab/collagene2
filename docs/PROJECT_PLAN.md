@@ -715,3 +715,24 @@ MCP131, candidate11, plan9, science14 and archive1 unchanged. Remaining work inc
 Golden Gate junction editing/optimization, broader method/form draft persistence,
 the synchronized reference/read/trace surface, output continuity and the rest of
 the in-scope delivery gates. No browser acceptance is claimed.
+
+
+### Golden Gate junction edits in the assembly dock
+
+The same junction-edit transaction now supports explicit selected Golden Gate
+PCR→Type IIS preparations. Independent trimmed original cores plus literal inserts
+remain the target declaration. New tails distinguish clamp, motif, spacer, fusion
+and synthetic inserted bases; original-source PCR and real digest/end reconstruction
+check the proposed material. Reverse rows retain correct strand geometry, and
+three-base SapI and four-base profiles keep their own cut dimensions. Retained
+preparations remain exact; Apply updates only selected oligos/pins together with
+the target declarations and recipe. Undo does not overwrite subsequent edits.
+
+The edited route reuses the dock's source selection, method configuration,
+actual-product/junction review, local diagnostics, output chooser and exports.
+Fresh complete-recipe verification remains mandatory; a retained preparation may
+be incompatible with the edited intent. Worker46/MCP132 expose the advisory model
+without changing existing scientific operations or native schemas. This closes
+the explicit single-design Golden Gate junction-edit gap; fusion optimization,
+internal-site domestication, exhaustive mixture/cycling and bulk cloning remain
+required. [Core contract](GOLDEN_GATE_JUNCTION_EDIT.md).

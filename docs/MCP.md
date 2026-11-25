@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current registry has 131 tools. Reference recombination adds explicit profile discovery, source inspection, independent target checking and fresh selected-component reconstruction. The optional `plan_sources` bridge binds a returned selection to typed plan sources without requiring a client to reproduce internal hash recipes. [Recombination tool contracts](RECOMBINATION_MCP.md).
+The current registry has 132 tools. Reference recombination adds explicit profile discovery, source inspection, independent target checking and fresh selected-component reconstruction. The optional `plan_sources` bridge binds a returned selection to typed plan sources without requiring a client to reproduce internal hash recipes. [Recombination tool contracts](RECOMBINATION_MCP.md).
 
 Build and configure:
 
@@ -661,3 +661,18 @@ locations can identify overlap problems; available ligation endpoints do not by
 themselves identify an incompatible junction or establish chemistry. Full original
 findings, prepared products and verification remain available. This adds no tool,
 new authority or protocol version. [Detailed contract](ASSEMBLY_DIAGNOSTICS_MCP.md).
+
+
+## Golden Gate junction primer proposals
+
+`design_golden_gate_junction_primers {inputs,request}` proposes original-source
+PCR→catalog-digest preparations only for selected rows of an independently
+junction-edited construct. Retained names/domains/tails, source direction, catalog
+pins, fragment index, repair and terminal treatment stay exact. The full bounded
+artifact retains source bindings and the entire report; `ordered_oligos` includes
+only selected replacements. The returned intent/target revision agrees with
+separately building `build_edited_assembly_intent` for those sources/base/edits.
+Pass the complete recipe and that target to `propose_ligation_assembly` for fresh
+preparation and final verification. This does not simulate exhaustive reaction
+cycling, optimize fusion choices or domesticate internal sites. See
+[SDK contract](GOLDEN_GATE_JUNCTION_MCP.md).

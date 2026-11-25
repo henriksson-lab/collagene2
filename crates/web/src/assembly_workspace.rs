@@ -10,7 +10,8 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    Alphabet, Molecule, Topology, assembly_intent, assembly_junction_edit, primer_reuse,
+    Alphabet, Molecule, Topology, assembly_intent, assembly_junction_edit,
+    golden_gate_junction_edit, primer_reuse,
     protocol::{AnalysisJob, AnalysisResult, Request},
     run_lineage::EventBinding,
     selective_junction_edit,
@@ -234,10 +235,12 @@ impl Draft {
         }
         let junction_count = self.slots.len().saturating_sub(1) + usize::from(self.circular);
         if self.junction_edits.len() > 12
-            || (!self.junction_edits.is_empty() && self.methods.mode != Mode::Overlap)
+            || (!self.junction_edits.is_empty()
+                && !matches!(self.methods.mode, Mode::Overlap | Mode::GoldenGate))
         {
             return Err(
-                "Junction edits currently require overlap assembly and at most 12 edits".into(),
+                "Junction edits require overlap or Golden Gate assembly and at most 12 edits"
+                    .into(),
             );
         }
         let mut junctions = std::collections::BTreeSet::new();
@@ -815,36 +818,61 @@ pub fn AssemblyWorkspace(
                 );
             }
             let mut next = proposal.before.clone();
-            if proposal.report.recipe.fragments.len() != next.slots.len() {
+            if proposal.report.len() != next.slots.len() {
                 return Err(
                     "Proposed PCR preparation does not cover every pinned source slot.".into(),
                 );
             }
-            for (i, fragment) in proposal.report.recipe.fragments.iter().enumerate() {
+            for i in 0..proposal.report.len() {
+                let fragment = proposal
+                    .report
+                    .fragment(i)
+                    .ok_or("Proposed fragment is missing.")?;
                 if fragment.input_id != format!("source-{}", i + 1)
                     || fragment.role != format!("fragment-{}", i + 1)
                     || fragment.reverse != next.slots[i].reverse
                 {
                     return Err("Proposed source order or orientation changed.".into());
                 }
-                match proposal.report.request.rows.get(i) {
-                    Some(selective_junction_edit::Row::Retain(_)) => {
-                        continue;
-                    }
-                    Some(selective_junction_edit::Row::DesignPcr { .. }) => {}
+                match proposal.report.retained(i) {
+                    Some(true) => continue,
+                    Some(false) => {}
                     None => return Err("Proposed row preservation choices are incomplete.".into()),
                 }
-                let collagene_core::assembly_recipe::Preparation::ExactPcr { forward, reverse } =
-                    &fragment.preparation
-                else {
-                    return Err(
-                        "A selected replacement row must use its explicit proposed PCR primers."
-                            .into(),
-                    );
+                let (forward, reverse, selection, fragment_index) = match &fragment.preparation {
+                    collagene_core::assembly_recipe::Preparation::ExactPcr { forward, reverse }
+                        if matches!(&proposal.report, JunctionReport::Overlap(_)) =>
+                    {
+                        (forward, reverse, None, None)
+                    }
+                    collagene_core::assembly_recipe::Preparation::PcrCatalogDigest {
+                        forward,
+                        reverse,
+                        selection,
+                        fragment_index,
+                        repair: None,
+                    } if matches!(&proposal.report, JunctionReport::GoldenGate(_)) => (
+                        forward,
+                        reverse,
+                        Some(selection.clone()),
+                        Some(*fragment_index),
+                    ),
+                    _ => {
+                        return Err(
+                            "Selected row does not contain its proposed preparation chain.".into(),
+                        );
+                    }
                 };
                 let row = &mut next.methods.rows[i];
-                row.preparation = OverlapPreparation::ExactPcr;
-                row.catalog_selection = None;
+                row.preparation = if selection.is_some() {
+                    OverlapPreparation::PcrCatalogDigest
+                } else {
+                    OverlapPreparation::ExactPcr
+                };
+                row.catalog_selection = selection;
+                if let Some(index) = fragment_index {
+                    row.fragment = (index + 1).to_string();
+                }
                 row.repair = None;
                 row.treatment = crate::cloning_methods::Treatment::Keep;
                 row.forward_name = forward.name.clone();
@@ -854,20 +882,20 @@ pub fn AssemblyWorkspace(
                 row.reverse_primer = reverse.annealing.as_str().into();
                 row.reverse_tail = reverse.tail.clone();
             }
-            next.junction_edits = proposal.report.request.edits.clone();
-            next.methods.mode = Mode::Overlap;
-            next.methods.overlaps = proposal
-                .report
-                .recipe
-                .overlaps
-                .iter()
-                .map(usize::to_string)
-                .collect::<Vec<_>>()
-                .join(",");
+            next.junction_edits = proposal.report.edits().to_vec();
+            if let JunctionReport::Overlap(report) = &proposal.report {
+                next.methods.overlaps = report
+                    .recipe
+                    .overlaps
+                    .iter()
+                    .map(usize::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",");
+            }
             next.sync_rows();
             next.validate()?;
             let identity = next.identity();
-            let intent = IntendedReference::Junctions(proposal.report.intent.clone());
+            let intent = IntendedReference::Junctions(proposal.report.intent().clone());
             let target_revision = intent.target().revision();
             undo_junction.set(Some((proposal.before.clone(), next.clone())));
             methods.set(next.methods.clone());
@@ -1292,9 +1320,77 @@ impl Default for JunctionSettings {
         }
     }
 }
+enum JunctionReport {
+    Overlap(selective_junction_edit::Report),
+    GoldenGate(golden_gate_junction_edit::Report),
+}
+impl JunctionReport {
+    fn intent(&self) -> &assembly_junction_edit::Intent {
+        match self {
+            Self::Overlap(r) => &r.intent,
+            Self::GoldenGate(r) => &r.intent,
+        }
+    }
+    fn edits(&self) -> &[assembly_junction_edit::Edit] {
+        match self {
+            Self::Overlap(r) => &r.request.edits,
+            Self::GoldenGate(r) => &r.request.edits,
+        }
+    }
+    fn len(&self) -> usize {
+        match self {
+            Self::Overlap(r) => r.recipe.fragments.len(),
+            Self::GoldenGate(r) => r.recipe.fragments.len(),
+        }
+    }
+    fn fragment(&self, index: usize) -> Option<&collagene_core::assembly_recipe::FragmentSpec> {
+        match self {
+            Self::Overlap(r) => r.recipe.fragments.get(index),
+            Self::GoldenGate(r) => r.recipe.fragments.get(index).map(|f| &f.source),
+        }
+    }
+    fn retained(&self, index: usize) -> Option<bool> {
+        match self {
+            Self::Overlap(r) => r
+                .request
+                .rows
+                .get(index)
+                .map(|row| matches!(row, selective_junction_edit::Row::Retain(_))),
+            Self::GoldenGate(r) => r
+                .request
+                .rows
+                .get(index)
+                .map(|row| matches!(row, golden_gate_junction_edit::Row::Retain(_))),
+        }
+    }
+    fn designed_count(&self) -> usize {
+        match self {
+            Self::Overlap(r) => r.designs.iter().filter(|d| d.is_some()).count(),
+            Self::GoldenGate(r) => r.designs.iter().filter(|d| d.is_some()).count(),
+        }
+    }
+    fn retained_rows(&self) -> &[usize] {
+        match self {
+            Self::Overlap(r) => &r.retained_rows,
+            Self::GoldenGate(r) => &r.retained_rows,
+        }
+    }
+    fn warnings(&self) -> &[String] {
+        match self {
+            Self::Overlap(r) => &r.warnings,
+            Self::GoldenGate(r) => &r.warnings,
+        }
+    }
+    fn validate_binding(&self, revision: &str) -> Result<(), collagene_core::Error> {
+        match self {
+            Self::Overlap(r) => r.validate_binding(revision),
+            Self::GoldenGate(r) => r.validate_binding(revision),
+        }
+    }
+}
 struct JunctionProposal {
     before: Draft,
-    report: selective_junction_edit::Report,
+    report: JunctionReport,
     sources: Vec<Arc<CapturedSource>>,
     settings: JunctionSettings,
     regenerate: Vec<bool>,
@@ -1462,24 +1558,19 @@ fn JunctionEditor(
         let form = settings.get_untracked();
         let selected_rows = regenerate.get_untracked();
         let captured_epoch = epoch.get_untracked();
+        let bound_edits = edits.clone();
         let prepared = (|| -> Result<_, String> {
-            if before.methods.mode != Mode::Overlap {
-                return Err("Junction editing currently prepares overlap-PCR assemblies. Choose overlap mode first.".into());
+            if !matches!(before.methods.mode, Mode::Overlap | Mode::GoldenGate) {
+                return Err(
+                    "Choose overlap or Golden Gate mode before preparing junction edits.".into(),
+                );
             }
             if edits.is_empty() && before.junction_edits.is_empty() {
                 return Err("Set at least one proposed junction edit first.".into());
             }
-            if form.overlap.len() > 256
-                || [&form.minimum, &form.maximum, &form.tm]
-                    .iter()
-                    .any(|s| s.len() > 32)
-            {
-                return Err("Primer settings exceed their field bounds.".into());
-            }
             let mut candidate = before.clone();
             candidate.junction_edits = edits.clone();
             let (inputs, base, sources) = inputs_request(&candidate)?;
-            let profile_options = before.methods.profile_options()?;
             if selected_rows.len() != before.slots.len() {
                 return Err("Select a preparation choice for every slot.".into());
             }
@@ -1494,58 +1585,139 @@ fn JunctionEditor(
                 }
             }
             let (_, fragments) = crate::cloning_methods::prepared_rows(&retained, inputs.len())?;
-            let rows = fragments
-                .into_iter()
-                .enumerate()
-                .map(|(i, fragment)| {
-                    if selected_rows[i] {
-                        selective_junction_edit::Row::DesignPcr {
-                            role: fragment.role,
-                            input_id: fragment.input_id,
-                            reverse: fragment.reverse,
-                        }
+            let (revision, job) = if before.methods.mode == Mode::GoldenGate {
+                let gate = &before.methods.golden_gate;
+                let (forward_length, reverse_length) =
+                    if selected_rows.iter().any(|selected| *selected) {
+                        (
+                            gate.forward_length
+                                .parse()
+                                .map_err(|_| "Enter a Golden Gate forward annealing length.")?,
+                            gate.reverse_length
+                                .parse()
+                                .map_err(|_| "Enter a Golden Gate reverse annealing length.")?,
+                        )
                     } else {
-                        selective_junction_edit::Row::Retain(fragment)
-                    }
-                })
-                .collect();
-            let request = selective_junction_edit::Request {
-                base,
-                edits,
-                rows,
-                overlaps: form
-                    .overlap
-                    .split(',')
-                    .map(|part| {
-                        part.trim()
-                            .parse::<usize>()
-                            .map_err(|_| "Enter one comma-separated homology length per junction.")
+                        (0, 0)
+                    }; // Not serialized: Retain rows carry no PCR length fields.
+
+                let rows = fragments
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, fragment)| {
+                        if selected_rows[i] {
+                            golden_gate_junction_edit::Row::DesignPcr {
+                                role: fragment.role,
+                                input_id: fragment.input_id,
+                                reverse: fragment.reverse,
+                                forward_length,
+                                reverse_length,
+                            }
+                        } else {
+                            golden_gate_junction_edit::Row::Retain(
+                                collagene_core::ligation_recipe::Fragment {
+                                    source: fragment,
+                                    treatment: before.methods.rows[i].treatment.operation(),
+                                },
+                            )
+                        }
                     })
-                    .collect::<Result<Vec<_>, _>>()?,
-                primer_options: collagene_core::primers::DesignOptions {
-                    min_length: form
-                        .minimum
-                        .parse()
-                        .map_err(|_| "Enter a minimum annealing length.")?,
-                    max_length: form
-                        .maximum
-                        .parse()
-                        .map_err(|_| "Enter a maximum annealing length.")?,
-                    target_tm_c: form
-                        .tm
-                        .parse()
-                        .map_err(|_| "Enter an annealing target Tm.")?,
-                    max_pairs: 1,
-                    ..Default::default()
-                },
-                profile_options,
+                    .collect();
+                let terminal_right_overhang =
+                    if !before.circular && selected_rows.last() == Some(&true) {
+                        Some(
+                            before
+                                .methods
+                                .rows
+                                .last()
+                                .ok_or("Missing terminal fragment.")?
+                                .right_fusion
+                                .clone(),
+                        )
+                    } else {
+                        None
+                    };
+                let request = golden_gate_junction_edit::Request {
+                    base,
+                    edits,
+                    rows,
+                    enzyme: gate.enzyme,
+                    clamp: gate.clamp.clone(),
+                    spacer: gate.spacer.clone(),
+                    terminal_right_overhang,
+                    allow_nicked: before.methods.allow_nicked,
+                };
+                let revision = golden_gate_junction_edit::design_revision(&inputs, &request)
+                    .map_err(|e| e.to_string())?;
+                (
+                    revision,
+                    AnalysisJob::DesignGoldenGateJunctionPrimers { inputs, request },
+                )
+            } else {
+                if form.overlap.len() > 256
+                    || [&form.minimum, &form.maximum, &form.tm]
+                        .iter()
+                        .any(|text| text.len() > 32)
+                {
+                    return Err("Primer settings exceed their field bounds.".into());
+                }
+                let rows = fragments
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, fragment)| {
+                        if selected_rows[i] {
+                            selective_junction_edit::Row::DesignPcr {
+                                role: fragment.role,
+                                input_id: fragment.input_id,
+                                reverse: fragment.reverse,
+                            }
+                        } else {
+                            selective_junction_edit::Row::Retain(fragment)
+                        }
+                    })
+                    .collect();
+                let request = selective_junction_edit::Request {
+                    base,
+                    edits,
+                    rows,
+                    overlaps: form
+                        .overlap
+                        .split(',')
+                        .map(|part| {
+                            part.trim().parse::<usize>().map_err(
+                                |_| "Enter one comma-separated homology length per junction.",
+                            )
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                    primer_options: collagene_core::primers::DesignOptions {
+                        min_length: form
+                            .minimum
+                            .parse()
+                            .map_err(|_| "Enter a minimum annealing length.")?,
+                        max_length: form
+                            .maximum
+                            .parse()
+                            .map_err(|_| "Enter a maximum annealing length.")?,
+                        target_tm_c: form
+                            .tm
+                            .parse()
+                            .map_err(|_| "Enter an annealing target Tm.")?,
+                        max_pairs: 1,
+                        ..Default::default()
+                    },
+                    profile_options: before.methods.profile_options()?,
+                };
+                let revision = selective_junction_edit::design_revision(&inputs, &request)
+                    .map_err(|e| e.to_string())?;
+                (
+                    revision,
+                    AnalysisJob::DesignSelectiveAssemblyPrimers { inputs, request },
+                )
             };
-            let revision = selective_junction_edit::design_revision(&inputs, &request)
-                .map_err(|e| e.to_string())?;
             let w = Rc::new(CachedWorker::new()?);
-            Ok((inputs, request, sources, revision, w))
+            Ok((job, sources, revision, w))
         })();
-        let (inputs, request, sources, revision, w) = match prepared {
+        let (job, sources, revision, w) = match prepared {
             Ok(value) => value,
             Err(error) => {
                 status.set(error);
@@ -1570,10 +1742,7 @@ fn JunctionEditor(
                 .ask(Request {
                     id: token,
                     revision: revision.clone(),
-                    job: AnalysisJob::DesignSelectiveAssemblyPrimers {
-                        inputs,
-                        request: request.clone(),
-                    },
+                    job,
                 })
                 .await;
             w.close();
@@ -1582,7 +1751,7 @@ fn JunctionEditor(
                 || epoch.get_untracked() != captured_epoch
                 || draft.get_untracked() != before
                 || settings.get_untracked() != form
-                || proposed.get_untracked() != request.edits
+                || proposed.get_untracked() != bound_edits
                 || regenerate.get_untracked() != selected_rows
             {
                 return;
@@ -1595,13 +1764,25 @@ fn JunctionEditor(
                     return Err("Junction proposal response identity changed.".into());
                 }
                 let report = match response.result {
-                    AnalysisResult::SelectiveAssemblyPrimers(report) => report,
+                    AnalysisResult::SelectiveAssemblyPrimers(report)
+                        if before.methods.mode == Mode::Overlap =>
+                    {
+                        JunctionReport::Overlap(report)
+                    }
+                    AnalysisResult::GoldenGateJunctionPrimers(report)
+                        if before.methods.mode == Mode::GoldenGate =>
+                    {
+                        JunctionReport::GoldenGate(report)
+                    }
                     AnalysisResult::Error(error) => return Err(error),
                     _ => return Err("Unexpected junction primer proposal result.".into()),
                 };
                 report
                     .validate_binding(&revision)
                     .map_err(|e| e.to_string())?;
+                if report.edits() != bound_edits.as_slice() {
+                    return Err("Junction proposal edits differ from the requested changes.".into());
+                }
                 Ok(Arc::new(JunctionProposal {
                     before,
                     report,
@@ -1628,7 +1809,7 @@ fn JunctionEditor(
             if proof.before != draft.get_untracked()
                 || proof.epoch != epoch.get_untracked()
                 || proof.settings != settings.get_untracked()
-                || proof.report.request.edits != proposed.get_untracked()
+                || proof.report.edits() != proposed.get_untracked().as_slice()
                 || proof.regenerate != regenerate.get_untracked()
             {
                 return Err(
@@ -1650,20 +1831,37 @@ fn JunctionEditor(
         {move||proposed.get().into_iter().map(|edit|{let index=edit.junction;view!{<p>{format!("Junction {}: remove {} upstream / {} downstream; insert {}",index+1,edit.remove_left,edit.remove_right,if edit.inserted.is_empty(){"(none)"}else{&edit.inserted})}<button class="text-tool" on:click=move|_|{proposed.update(|items|items.retain(|e|e.junction!=index));if junction.get_untracked()==index{remove_left.set("0".into());remove_right.set("0".into());inserted.set(String::new());}}>"Remove proposed edit"</button></p>}}).collect_view()}
         <h4>"Preparation choices"</h4><p class="helper">"Recommended boxes start with changed upstream fragments, downstream trims and unconfigured PCR rows. After you change a box, later edit changes do not override that choice. Retaining an incompatible preparation can prevent reconstruction; it is never silently replaced."</p>
         {move||draft.with(|d|d.slots.iter().enumerate().map(|(i,slot)|view!{<label class="checkbox-label"><input type="checkbox" aria-label=format!("Regenerate PCR primers for slot {}",i+1) prop:checked=move||regenerate.with(|rows|rows.get(i).copied().unwrap_or(false)) on:change=move|e|{manual_regeneration.set(true);regenerate.update(|rows|if let Some(row)=rows.get_mut(i){*row=event_target_checked(&e)});}/>{format!("{} — regenerate PCR primers",slot.label)}</label><p class="helper">{move||draft.with(|current|current.methods.rows.get(i).map(|row|format!("{}: {}",if regenerate.with(|rows|rows.get(i).copied().unwrap_or(false)){"Replace after explicit Apply"}else{"Retain exact current preparation"},row.summary())).unwrap_or_default())}</p>}).collect_view())}
+        <Show when=move||draft.with(|d|d.methods.mode==Mode::Overlap)>
         <p class="helper">{move||draft.with(|d|format!("Enter {} explicit homology lengths in junction order, including circle closure when present. Existing values are preserved; no uniform length is inferred.",d.slots.len().saturating_sub(1)+usize::from(d.circular)))}</p>
         <div class="primer-grid"><label>"Per-junction homology lengths (comma-separated)"<input aria-label="Edited junction homology" prop:value=move||settings.with(|s|s.overlap.clone()) on:input=move|e|settings.update(|s|s.overlap=event_target_value(&e))/></label><label>"Minimum annealing length"<input type="number" min="1" max="200" aria-label="Edited junction primer minimum" prop:value=move||settings.with(|s|s.minimum.clone()) on:input=move|e|settings.update(|s|s.minimum=event_target_value(&e))/></label><label>"Maximum annealing length"<input type="number" min="1" max="200" aria-label="Edited junction primer maximum" prop:value=move||settings.with(|s|s.maximum.clone()) on:input=move|e|settings.update(|s|s.maximum=event_target_value(&e))/></label><label>"Target annealing Tm (°C)"<input type="number" aria-label="Edited junction primer target Tm" prop:value=move||settings.with(|s|s.tm.clone()) on:input=move|e|settings.update(|s|s.tm=event_target_value(&e))/></label></div>
         <p class="helper">"The selected Gibson/HiFi/In-Fusion profile is retained. Primer metrics are model calculations, not reagent conditions or demonstrated binding. Concrete source and inserted DNA are required for these primer proposals; ambiguous calls are not silently resolved."</p>
+        </Show>
+        <Show when=move||draft.with(|d|d.methods.mode==Mode::GoldenGate)>
+            <h4>"Golden Gate junction preparation"</h4><p class="helper">"Checked rows receive PCR-added Type IIS sites and the literal junction insert. Internal outgoing fusion bases come from the next adjusted source core; no overlap Tm or homology-length setting is used. Retained rows keep their exact digest/primer/end-treatment choices."</p>
+            <div class="primer-grid"><label>"Type IIS enzyme"<select aria-label="Junction Type IIS enzyme" prop:value=move||format!("{:?}",draft.with(|d|d.methods.golden_gate.enzyme)) on:change=move|e|draft.update(|d|d.methods.golden_gate.enzyme=match event_target_value(&e).as_str(){"BsmBI"=>collagene_core::golden_gate::GoldenGateEnzyme::BsmBI,"BbsI"=>collagene_core::golden_gate::GoldenGateEnzyme::BbsI,"SapI"=>collagene_core::golden_gate::GoldenGateEnzyme::SapI,_=>collagene_core::golden_gate::GoldenGateEnzyme::BsaI})><option value="BsaI">"BsaI · 4-base fusion"</option><option value="BsmBI">"BsmBI · 4-base fusion"</option><option value="BbsI">"BbsI · 4-base fusion"</option><option value="SapI">"SapI · 3-base fusion"</option></select></label>
+            <label>"Pre-recognition clamp"<input maxlength="12" aria-label="Junction Golden Gate clamp" prop:value=move||draft.with(|d|d.methods.golden_gate.clamp.clone()) on:input=move|e|draft.update(|d|d.methods.golden_gate.clamp=event_target_value(&e))/></label><label>"Cleavage spacer"<input maxlength="2" aria-label="Junction Golden Gate spacer" prop:value=move||draft.with(|d|d.methods.golden_gate.spacer.clone()) on:input=move|e|draft.update(|d|d.methods.golden_gate.spacer=event_target_value(&e))/></label>
+            <label>"Forward annealing length"<input type="number" min="1" max="200" aria-label="Junction Golden Gate forward length" prop:value=move||draft.with(|d|d.methods.golden_gate.forward_length.clone()) on:input=move|e|draft.update(|d|d.methods.golden_gate.forward_length=event_target_value(&e))/></label><label>"Reverse annealing length"<input type="number" min="1" max="200" aria-label="Junction Golden Gate reverse length" prop:value=move||draft.with(|d|d.methods.golden_gate.reverse_length.clone()) on:input=move|e|draft.update(|d|d.methods.golden_gate.reverse_length=event_target_value(&e))/></label></div>
+            <Show when=move||draft.with(|d|!d.circular)&&regenerate.with(|selected|selected.last()==Some(&true))><label>"Terminal right fusion (assembly direction, 5′→3′)"<input maxlength="4" aria-label="Junction Golden Gate terminal fusion" prop:value=move||draft.with(|d|d.methods.rows.last().map(|row|row.right_fusion.clone()).unwrap_or_default()) on:input=move|e|draft.update(|d|if let Some(row)=d.methods.rows.last_mut(){row.right_fusion=event_target_value(&e)})/></label><p class="helper">"A selected terminal linear fragment requires this explicit fusion DNA (3 bases for SapI; 4 for the other listed enzymes). It is not filled from the intended target."</p></Show>
+            <label class="checkbox-label"><input type="checkbox" aria-label="Junction Golden Gate allow retained nicks" prop:checked=move||draft.with(|d|d.methods.allow_nicked) on:change=move|e|draft.update(|d|d.methods.allow_nicked=event_target_checked(&e))/>"Allow explicitly retained nicks"</label><p class="helper">"Clamp/spacer and terminal fusion are explicit design choices, not supplier conditions. Preview checks the actual PCR/digest ends and the full ordered ligation; it does not establish reaction efficiency or mixture uniqueness."</p>
+        </Show>
         <Show when=move||unstaged.get()><p class="helper">"Set the proposed junction edit before previewing, so the changed trim and inserted bases are included."</p></Show>
-        <button class="button primary" disabled=move||pending.get()||unstaged.get()||draft.with(|d|d.methods.mode!=Mode::Overlap) on:click=move|_|preview.run(())>"Preview edited construct and PCR primers"</button>
+        <button class="button primary" disabled=move||pending.get()||unstaged.get()||draft.with(|d|!matches!(d.methods.mode,Mode::Overlap|Mode::GoldenGate)) on:click=move|_|preview.run(())>"Preview edited construct and PCR primers"</button>
         <button class="text-tool" disabled=move||!pending.get() on:click=move|_|{generation.update(|g|*g=g.wrapping_add(1));if let Some(w)=worker.get_value(){w.close();}worker.set_value(None);pending.set(false);result.set(None);status.set("Junction proposal cancelled.".into());}>"Cancel junction proposal"</button>
         <p role="status">{move||status.get()}</p>
-        {move||result.get().map(|proof|view!{<section class="assembly-junction-proposal"><h3>"Edited construct and proposed PCR preparation"</h3><p>{format!("{} · {} bases",proof.report.intent.target.name,proof.report.intent.target.sequence.len())}</p><pre>{let dna=proof.report.intent.target.sequence.as_str();format!("{}{}",dna.chars().take(240).collect::<String>(),if dna.len()>240{"… (bounded preview)"}else{""})}</pre>
-            {proof.report.intent.fragments.iter().enumerate().map(|(i,fragment)|view!{<p>{format!("{}: original core {}–{} → adjusted core {}–{}{}; output span {}–{} includes any outgoing synthetic insert",proof.before.slots[i].label,proof.before.slots[i].start+1,proof.before.slots[i].end,fragment.start+1,fragment.end,if fragment.reverse{" reverse"}else{" forward"},fragment.output_start+1,fragment.output_end)}</p>}).collect_view()}
-            <p>{format!("Retained preparations: {} · regenerated PCR rows: {}",proof.report.retained_rows.len(),proof.report.designs.iter().filter(|design|design.is_some()).count())}</p>
-            {proof.report.retained_rows.iter().filter_map(|&i|proof.before.methods.rows.get(i).map(|row|(i,row))).map(|(i,row)|view!{<p class="helper">{format!("Retained {}: {}",proof.before.slots[i].label,row.summary())}</p>}).collect_view()}
-            {proof.report.designs.iter().enumerate().filter_map(|(i,design)|design.as_ref().map(|design|(i,design))).map(|(i,design)|view!{<article><h4>{format!("Fragment {} PCR primers",i+1)}</h4>{design.pairs.first().map(|pair|view!{<pre>{format!("{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nAdded 5′ tail: {}\n\n{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nAdded 5′ tail: {}",pair.forward.primer.name,pair.forward.primer.tail,pair.forward.primer.annealing.as_str(),pair.forward.primer.annealing.as_str(),pair.forward.primer.tail,pair.reverse.primer.name,pair.reverse.primer.tail,pair.reverse.primer.annealing.as_str(),pair.reverse.primer.annealing.as_str(),pair.reverse.primer.tail)}</pre><p>{format!("Annealing Tm {} / {} · pair ΔTm {:.1}°C",pair.forward.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.reverse.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.tm_difference_c)}</p>})}{design.warnings.iter().map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view()}</article>}).collect_view()}
-            {proof.report.warnings.iter().chain(proof.report.intent.warnings.iter()).map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view()}
+        {move||result.get().map(|proof|view!{<section class="assembly-junction-proposal"><h3>"Edited construct and proposed PCR preparation"</h3><p>{format!("{} · {} bases",proof.report.intent().target.name,proof.report.intent().target.sequence.len())}</p><pre>{let dna=proof.report.intent().target.sequence.as_str();format!("{}{}",dna.chars().take(240).collect::<String>(),if dna.len()>240{"… (bounded preview)"}else{""})}</pre>
+            {proof.report.intent().fragments.iter().enumerate().map(|(i,fragment)|view!{<p>{format!("{}: original core {}–{} → adjusted core {}–{}{}; output span {}–{} includes any outgoing synthetic insert",proof.before.slots[i].label,proof.before.slots[i].start+1,proof.before.slots[i].end,fragment.start+1,fragment.end,if fragment.reverse{" reverse"}else{" forward"},fragment.output_start+1,fragment.output_end)}</p>}).collect_view()}
+            <p>{format!("Retained preparations: {} · regenerated PCR rows: {}",proof.report.retained_rows().len(),proof.report.designed_count())}</p>
+            {proof.report.retained_rows().iter().filter_map(|&i|proof.before.methods.rows.get(i).map(|row|(i,row))).map(|(i,row)|view!{<p class="helper">{format!("Retained {}: {}",proof.before.slots[i].label,row.summary())}</p>}).collect_view()}
+            {junction_primers(&proof.report)}
+            {proof.report.warnings().iter().chain(proof.report.intent().warnings.iter()).map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view()}
             <button class="button primary" on:click=apply>"Apply junction edits and selected PCR primers"</button>
         </section>})}
     </details>}
+}
+
+fn junction_primers(report: &JunctionReport) -> AnyView {
+    match report {
+        JunctionReport::Overlap(report)=>report.designs.iter().enumerate().filter_map(|(i,design)|design.as_ref().map(|design|(i,design))).map(|(i,design)|view!{<article><h4>{format!("Fragment {} proposed overlap PCR primers",i+1)}</h4>{design.pairs.first().map(|pair|view!{<pre>{format!("{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nAdded tail: {}\n\n{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nAdded tail: {}",pair.forward.primer.name,pair.forward.primer.tail,pair.forward.primer.annealing.as_str(),pair.forward.primer.annealing.as_str(),pair.forward.primer.tail,pair.reverse.primer.name,pair.reverse.primer.tail,pair.reverse.primer.annealing.as_str(),pair.reverse.primer.annealing.as_str(),pair.reverse.primer.tail)}</pre><p>{format!("Annealing Tm {} / {} · pair ΔTm {:.1}°C",pair.forward.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.reverse.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.tm_difference_c)}</p>})}{design.warnings.iter().map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view()}</article>}).collect_view().into_any(),
+        JunctionReport::GoldenGate(report)=>report.designs.iter().enumerate().filter_map(|(i,design)|design.as_ref().map(|design|(i,design))).map(|(i,design)|view!{<article><h4>{format!("Fragment {} proposed Type IIS PCR/digest chain",i+1)}</h4><pre>{format!("{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nTail: clamp [{}] · motif [{}] · spacer [{}] · fusion [{}] · inserted [{}]\n\n{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nTail: clamp [{}] · motif [{}] · spacer [{}] · fusion [{}] · inserted [{}]",design.forward.name,design.forward.tail,design.forward.annealing.as_str(),design.forward.annealing.as_str(),design.forward_tail.clamp,design.forward_tail.motif,design.forward_tail.spacer,design.forward_tail.fusion,design.forward_tail.inserted,design.reverse.name,design.reverse.tail,design.reverse.annealing.as_str(),design.reverse.annealing.as_str(),design.reverse_tail.clamp,design.reverse_tail.motif,design.reverse_tail.spacer,design.reverse_tail.fusion,design.reverse_tail.inserted)}</pre><p>{format!("Actual digested fragment {} · assembly-oriented top DNA: {}{}",design.fragment_index+1,design.oriented_top.chars().take(240).collect::<String>(),if design.oriented_top.len()>240{"… (bounded preview)"}else{""})}</p><p>{format!("Left end: {}",crate::cloning_methods::method_end(Some(&design.left)))}</p><p>{format!("Right end: {}",crate::cloning_methods::method_end(Some(&design.right)))}</p><p class="helper">"Tail segments are shown in each actual oligo's own 5′→3′ direction. Literal insert and fusion segments may therefore be reverse-complemented; the displayed digested top DNA is in assembly direction."</p></article>}).collect_view().into_any(),
+    }
 }

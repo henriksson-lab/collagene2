@@ -307,7 +307,7 @@ fn stale_context_duplicate_overtrim_ambiguity_and_full_tail_work_profiles_fail_h
         .is_err()
     );
     let mut long = r.clone();
-    long.edits[0].inserted = "A".repeat(101);
+    long.edits[0].inserted = "A".repeat(201);
     assert!(build_intent(&inputs, &long.base, &long.edits).is_err());
     let mut tails = r;
     tails.primer_options.forward_tail = "AC".into();

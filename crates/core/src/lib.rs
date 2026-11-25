@@ -142,3 +142,5 @@ pub mod assembly_junction_edit;
 pub mod selective_junction_edit;
 
 pub mod assembly_diagnostics;
+
+pub mod golden_gate_junction_edit;

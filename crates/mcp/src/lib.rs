@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 131;
+pub const CURRENT_TOOL_COUNT: usize = 132;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -1021,6 +1021,12 @@ pub struct EditedAssemblyPrimersQuery {
 pub struct SelectiveAssemblyPrimersQuery {
     pub inputs: Vec<BoundInput>,
     pub request: collagene_core::selective_junction_edit::Request,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GoldenGateJunctionPrimersQuery {
+    pub inputs: Vec<BoundInput>,
+    pub request: collagene_core::golden_gate_junction_edit::Request,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -5144,6 +5150,37 @@ impl CollageneServer {
                     _=>Err(bad("selected primer proposal lost its exact original-source PCR"))
                 })
             }).collect::<Result<Vec<_>,_>>()?;
+            output(json!({"state":"advisory","verified":false,"context_revision":report.context_revision,"intent_context_revision":report.intent.context_revision,
+                "target_revision":report.intent.target.revision(),"recipe":report.recipe,"ordered_oligos":ordered,"design_count":ordered.len(),"retained_rows":report.retained_rows,"warnings":report.warnings,"artifact_id":artifact}))
+        }).await
+    }
+    #[tool(
+        description = "Propose explicitly selected original-source PCR and catalog-pinned Type IIS digest preparations for a junction-edited Golden Gate design. Builds independent source-core trim/insert intent before any PCR/digest. Actual tails distinguish fusion and inserted DNA, and fresh original-source PCR/cut/end geometry checks reject extra sites or nonunique binding. Retained rows, named oligos, catalog pins, treatments and repairs stay exact. This is an advisory ordered preparation/ligation recipe, not a cycling, domestication, fusion-optimization or experimental result. Build the edited intent independently and freshly check the returned complete recipe using propose_ligation_assembly."
+    )]
+    async fn design_golden_gate_junction_primers(
+        &self,
+        Parameters(args): Parameters<GoldenGateJunctionPrimersQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.inputs.is_empty() || args.inputs.len() > 32 {
+            return Err(bad("choose1..32 actual original source bindings"));
+        }
+        let server = self.clone();
+        self.compute(move||{
+            let inputs={let store=server.store.lock().unwrap();let mut seen=BTreeSet::new();let mut sources=Vec::with_capacity(args.inputs.len());
+                for input in &args.inputs{if input.id.trim().is_empty()||input.id.len()>128||!seen.insert(input.id.as_str()){return Err(bad("invalid or duplicate original source ID"));}sources.push((input.id.as_str(),store.document(&input.document)?));}
+                collagene_core::golden_gate_junction_edit::preflight(&sources,&args.request).map_err(bad)?;
+                sources.into_iter().map(|(id,m)|PlanInput{id:id.into(),revision:m.revision(),molecule:m.clone()}).collect::<Vec<_>>()};
+            let report=collagene_core::golden_gate_junction_edit::design(&inputs,&args.request).map_err(bad)?;
+            let expected=collagene_core::golden_gate_junction_edit::design_revision(&inputs,&args.request).map_err(bad)?;report.validate_binding(&expected).map_err(bad)?;
+            let evidence=json!({"inputs":args.inputs,"report":report});
+            let artifact=server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","golden-gate-junction-primers.json")?;
+            let ordered=report.recipe.fragments.iter().zip(&report.request.rows).filter_map(|(fragment,row)|{let f=&fragment.source;match row {
+                collagene_core::golden_gate_junction_edit::Row::Retain(_) => None,
+                collagene_core::golden_gate_junction_edit::Row::DesignPcr{..} => Some(match &f.preparation {
+                    collagene_core::assembly_recipe::Preparation::PcrCatalogDigest{forward,reverse,..}=>Ok(json!({"role":f.role,"input_id":f.input_id,"reverse_fragment":f.reverse,"forward":forward,"reverse":reverse,"forward_ordered":forward.ordered_sequence(),"reverse_ordered":reverse.ordered_sequence()})),
+                    _=>Err(bad("selected Golden Gate proposal lost its original-source PCR/digest chain"))
+                })
+            }}).collect::<Result<Vec<_>,_>>()?;
             output(json!({"state":"advisory","verified":false,"context_revision":report.context_revision,"intent_context_revision":report.intent.context_revision,
                 "target_revision":report.intent.target.revision(),"recipe":report.recipe,"ordered_oligos":ordered,"design_count":ordered.len(),"retained_rows":report.retained_rows,"warnings":report.warnings,"artifact_id":artifact}))
         }).await

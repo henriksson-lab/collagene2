@@ -82,7 +82,7 @@ fn dimensions(r: &Request) -> Result<(usize, usize), Error> {
     }
     Ok((spacer, k))
 }
-fn physical_source(m: &Molecule) -> Result<(), Error> {
+pub(crate) fn physical_source(m: &Molecule) -> Result<(), Error> {
     if chemistry::has_unmapped_physical_evidence(m)
         || m.metadata.keys().any(|k| {
             k == "duplex_model"
@@ -255,7 +255,6 @@ fn tail(r: &Request, fusion: String) -> TailSegments {
 }
 pub fn design(inputs: &[PlanInput], target: &Molecule, r: &Request) -> Result<Report, Error> {
     let context_revision = preview_revision(inputs, target, r)?;
-    let (_, k) = dimensions(r)?;
     let catalog = catalog_digest::builtin_catalog()?;
     let profile = r.enzyme.profile();
     let selection = catalog_digest::select(&catalog, &[profile.name.to_ascii_lowercase()])?;
@@ -273,139 +272,177 @@ pub fn design(inputs: &[PlanInput], target: &Molecule, r: &Request) -> Result<Re
             .iter()
             .find(|i| i.id == f.input_id)
             .ok_or_else(|| bad("missing original"))?;
-        let m = &input.molecule;
-        let core = extract(m, f.start, f.end)?;
-        let annealed_end = f.end - if f.reverse { k } else { 0 };
-        let annealed = extract(m, f.start, annealed_end)?;
-        let ft = tail(
-            r,
-            if f.reverse {
-                rc(&f.right_overhang)?
-            } else {
-                String::new()
-            },
-        );
-        let rt = tail(
-            r,
-            if f.reverse {
-                rc(&core[core.len() - k..])?
-            } else {
-                rc(&f.right_overhang)?
-            },
-        );
-        let forward = Primer::new(
-            format!("{}-forward", f.role),
-            &annealed[..f.forward_length],
-            &ft.sequence(),
-        )?;
-        let reverse = Primer::new(
-            format!("{}-reverse", f.role),
-            &rc(&annealed[annealed.len() - f.reverse_length..])?,
-            &rt.sequence(),
-        )?;
-        // Reject alternate binding sites before the PCR materializer can enumerate/copy them.
-        let fwd = analysis::find_matches(m, forward.annealing.as_str(), false)?;
-        let frev = analysis::find_matches(m, &rc(forward.annealing.as_str())?, false)?;
-        let rplus = analysis::find_matches(m, reverse.annealing.as_str(), false)?;
-        let rminus = analysis::find_matches(m, &rc(reverse.annealing.as_str())?, false)?;
-        if fwd.len() != 1
-            || !frev.is_empty()
-            || !rplus.is_empty()
-            || rminus.len() != 1
-            || fwd[0].start != f.start % m.sequence.len()
-            || rminus[0].start != (annealed_end - f.reverse_length) % m.sequence.len()
-        {
-            return Err(bad(
-                "anchored primers do not have a unique exact original-source geometry",
-            ));
-        }
-        let products = analysis::simulate_pcr_geometry(m, &forward, &reverse)?;
-        if products.len() != 1 {
-            return Err(bad(
-                "exact PCR does not uniquely reconstruct the declared interval",
-            ));
-        }
-        let p = &products[0].product;
-        let expected = format!("{}{}{}", forward.tail, annealed, rc(&reverse.tail)?);
-        if p.sequence.as_str() != expected {
-            return Err(bad(
-                "fresh PCR differs from independently declared primer/source geometry",
-            ));
-        }
-        let amplicon = Molecule::dna("proposed PCR", &expected, Topology::Linear)?;
-        let sites = analysis::restriction_sites(&amplicon, &profile)?;
-        let left = r.clamp.len() + profile.recognition.len() + r.spacer.len();
-        let right = left + core.len();
-        if sites.len() != 2
-            || sites.iter().any(|s| !s.certain)
-            || !sites
-                .iter()
-                .any(|s| !s.reverse && s.top_cut == left && s.bottom_cut == left + k)
-            || !sites
-                .iter()
-                .any(|s| s.reverse && s.top_cut == right && s.bottom_cut == right + k)
-        {
-            return Err(bad(
-                "requires exactly the two eligible added Type IIS cuts; internal/extra sites are unsupported",
-            ));
-        }
-        let cut = chemistry::digest(&Duplex::exact_pcr(&p.sequence)?, &enzymes)?;
-        let selected = cut
-            .iter()
-            .enumerate()
-            .filter(|(_, d)| d.top_start == left && d.duplex.top.len() == core.len())
-            .collect::<Vec<_>>();
-        if selected.len() != 1 {
-            return Err(bad("digest does not isolate exactly one intended core"));
-        }
-        let (index, fragment) = selected[0];
-        let oriented = if f.reverse {
-            fragment.duplex.reverse()?
-        } else {
-            fragment.duplex.clone()
-        };
-        let wanted = if f.reverse { rc(&core)? } else { core.clone() };
-        let (le, re) = oriented.ends()?;
-        if oriented.top.as_str() != wanted
-            || le.polarity != Polarity::FivePrime
-            || re.polarity != Polarity::FivePrime
-            || le.overhang != wanted[..k]
-            || re.overhang != rc(&f.right_overhang)?
-        {
-            return Err(bad(
-                "actual staggered duplex/orientation/fusion differs from declared source core",
-            ));
-        }
-        fragments.push(FragmentSpec {
-            role: f.role.clone(),
-            input_id: f.input_id.clone(),
-            reverse: f.reverse,
-            preparation: Preparation::PcrCatalogDigest {
-                forward: forward.clone(),
-                reverse: reverse.clone(),
-                selection: selection.clone(),
-                fragment_index: index,
-                repair: None,
-            },
-        });
-        rows.push(Row {
-            role: f.role.clone(),
-            input_id: f.input_id.clone(),
-            input_revision: input.revision.clone(),
-            forward,
-            reverse,
-            forward_tail: ft,
-            reverse_tail: rt,
-            selection: selection.clone(),
-            fragment_index: index,
-            oriented_top: wanted,
-            left: le,
-            right: re,
-        });
+        let (fragment, row) = design_row(input, r, f, "", &selection, &enzymes)?;
+        fragments.push(fragment);
+        rows.push(row);
     }
     let report=Report{context_revision,source_revisions:inputs.iter().map(|i|i.revision.clone()).collect(),request:r.clone(),fragments,rows,warnings:vec!["Source-bound exact-PCR/cut geometry only, not empirical amplification, cleavage efficiency, methylation clearance or ligation-mixture uniqueness. Clamp/spacer are operator choices, not kit recommendations.".into(),"Right fusion is specified in the desired assembly-top reference direction; the actual protruding right-bottom strand is its reverse complement. Reverse rows use the original bottom-strand geometry, not reverse-complementing a full selected top fragment after digestion.".into(),"The independent target is bound but never determines oligo sequence. Freshly verify the returned preparations and full ordered ligation against that target; existing-site rows may remain separate.".into()]};
     report.validate()?;
     Ok(report)
+}
+/// Shared actual original-source PCR and physical digest reconstruction. The
+/// old public design path passes an empty insert and keeps its serialized DTOs.
+pub(crate) fn design_row(
+    input: &PlanInput,
+    r: &Request,
+    f: &Fragment,
+    inserted: &str,
+    selection: &CatalogSelection,
+    enzymes: &[analysis::Enzyme],
+) -> Result<(FragmentSpec, Row), Error> {
+    let (_, k) = dimensions(r)?;
+    if inserted.len() > 200 || !inserted.bytes().all(|b| b"ACGT".contains(&b)) {
+        return Err(bad("literal outgoing insert must be bounded concrete DNA"));
+    }
+    let profile = r.enzyme.profile();
+    let m = &input.molecule;
+    let core = extract(m, f.start, f.end)?;
+    let annealed_end = f.end - if f.reverse { k } else { 0 };
+    let annealed = extract(m, f.start, annealed_end)?;
+    let mut ft = tail(
+        r,
+        if f.reverse {
+            rc(&f.right_overhang)?
+        } else {
+            String::new()
+        },
+    );
+    let mut rt = tail(
+        r,
+        if f.reverse {
+            rc(&core[core.len() - k..])?
+        } else {
+            rc(&f.right_overhang)?
+        },
+    );
+    if !inserted.is_empty() {
+        if f.reverse {
+            ft.fusion.push_str(&rc(inserted)?);
+        } else {
+            rt.fusion.push_str(&rc(inserted)?);
+        }
+    }
+    let forward = Primer::new(
+        format!("{}-forward", f.role),
+        &annealed[..f.forward_length],
+        &ft.sequence(),
+    )?;
+    let reverse = Primer::new(
+        format!("{}-reverse", f.role),
+        &rc(&annealed[annealed.len() - f.reverse_length..])?,
+        &rt.sequence(),
+    )?;
+    if forward.annealing.len() + forward.tail.len() > 200
+        || reverse.annealing.len() + reverse.tail.len() > 200
+    {
+        return Err(bad(
+            "complete ordered oligo including literal insert exceeds200 bases",
+        ));
+    }
+    // Reject alternate binding sites before the PCR materializer can enumerate/copy them.
+    let fwd = analysis::find_matches(m, forward.annealing.as_str(), false)?;
+    let frev = analysis::find_matches(m, &rc(forward.annealing.as_str())?, false)?;
+    let rplus = analysis::find_matches(m, reverse.annealing.as_str(), false)?;
+    let rminus = analysis::find_matches(m, &rc(reverse.annealing.as_str())?, false)?;
+    if fwd.len() != 1
+        || !frev.is_empty()
+        || !rplus.is_empty()
+        || rminus.len() != 1
+        || fwd[0].start != f.start % m.sequence.len()
+        || rminus[0].start != (annealed_end - f.reverse_length) % m.sequence.len()
+    {
+        return Err(bad(
+            "anchored primers do not have a unique exact original-source geometry",
+        ));
+    }
+    let products = analysis::simulate_pcr_geometry(m, &forward, &reverse)?;
+    if products.len() != 1 {
+        return Err(bad(
+            "exact PCR does not uniquely reconstruct the declared interval",
+        ));
+    }
+    let p = &products[0].product;
+    let expected = format!("{}{}{}", forward.tail, annealed, rc(&reverse.tail)?);
+    if p.sequence.as_str() != expected {
+        return Err(bad(
+            "fresh PCR differs from independently declared primer/source geometry",
+        ));
+    }
+    let amplicon = Molecule::dna("proposed PCR", &expected, Topology::Linear)?;
+    let sites = analysis::restriction_sites(&amplicon, &profile)?;
+    let left = r.clamp.len() + profile.recognition.len() + r.spacer.len();
+    let right = left + core.len() + inserted.len();
+    if sites.len() != 2
+        || sites.iter().any(|s| !s.certain)
+        || !sites
+            .iter()
+            .any(|s| !s.reverse && s.top_cut == left && s.bottom_cut == left + k)
+        || !sites
+            .iter()
+            .any(|s| s.reverse && s.top_cut == right && s.bottom_cut == right + k)
+    {
+        return Err(bad(
+            "requires exactly the two eligible added Type IIS cuts; internal/extra sites are unsupported",
+        ));
+    }
+    let cut = chemistry::digest(&Duplex::exact_pcr(&p.sequence)?, enzymes)?;
+    let selected = cut
+        .iter()
+        .enumerate()
+        .filter(|(_, d)| d.top_start == left && d.duplex.top.len() == core.len() + inserted.len())
+        .collect::<Vec<_>>();
+    if selected.len() != 1 {
+        return Err(bad("digest does not isolate exactly one intended core"));
+    }
+    let (index, fragment) = selected[0];
+    let oriented = if f.reverse {
+        fragment.duplex.reverse()?
+    } else {
+        fragment.duplex.clone()
+    };
+    let wanted = format!(
+        "{}{}",
+        if f.reverse { rc(&core)? } else { core.clone() },
+        inserted
+    );
+    let (le, re) = oriented.ends()?;
+    if oriented.top.as_str() != wanted
+        || le.polarity != Polarity::FivePrime
+        || re.polarity != Polarity::FivePrime
+        || le.overhang != wanted[..k]
+        || re.overhang != rc(&f.right_overhang)?
+    {
+        return Err(bad(
+            "actual staggered duplex/orientation/fusion differs from declared source core",
+        ));
+    }
+    let fragment = FragmentSpec {
+        role: f.role.clone(),
+        input_id: f.input_id.clone(),
+        reverse: f.reverse,
+        preparation: Preparation::PcrCatalogDigest {
+            forward: forward.clone(),
+            reverse: reverse.clone(),
+            selection: selection.clone(),
+            fragment_index: index,
+            repair: None,
+        },
+    };
+    let row = Row {
+        role: f.role.clone(),
+        input_id: f.input_id.clone(),
+        input_revision: input.revision.clone(),
+        forward,
+        reverse,
+        forward_tail: ft,
+        reverse_tail: rt,
+        selection: selection.clone(),
+        fragment_index: index,
+        oriented_top: wanted,
+        left: le,
+        right: re,
+    };
+    Ok((fragment, row))
 }
 impl Report {
     /// Bounded readonly consistency. Imported reports never authorize physical preparation.

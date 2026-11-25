@@ -64,6 +64,58 @@ This closes the ordinary-PCR automatic-all-products handoff identified in the
 source/target events into general candidate review and reuses the actual-product,
 construct/primer/prepared-output chooser and order exports described in
 [cloning outputs](CLONING_OUTPUTS.md). Mismatch-PCR and standalone
-primer-analysis output actions should reuse these contracts where appropriate.
+primer-analysis now reuse the same oligo table and collection contracts, as
+described below.
 No expected target is synthesized from a PCR result merely to enter an assembly
 finalizer.
+
+## Conditional mismatch-PCR outputs
+
+Mismatch-PCR now retains the actual submitted named pair, source molecule/event,
+viewed-reference event, raw form and applied draft with its private worker result.
+All reported products are reachable in pages; selected DNA, primer substitutions
+and projection findings are also paged. The selected geometry shows actual oligo
+roles, including same-oligo amplification, source/product mismatch coordinates,
+certainty and search completeness. An alternative is never selected by index-zero
+convention when several results exist.
+
+`core::mismatch_pcr_outputs::prepare` freshly calls the existing mismatch preview
+engine and requires the selected original preview revision before naming outputs.
+The result preserves the selected native bindings/substitutions and a full search
+summary: options, products reported, pair checks, unsupported/conflicting/ambiguous
+counts, rejected geometries, completeness and warnings. It does not duplicate the
+DNA of every unselected product in the output response. Capped searches stay
+incomplete; a selected preview is not evidence of uniqueness or target agreement.
+
+Worker51 appends job118 `PrepareMismatchPcrOutputs` and result110
+`MismatchPcrOutputs`, with old-schema prefix rejection and the ordinary 32 MiB
+envelope limit. Original source/viewed-reference events, epoch, literal form,
+applied pair and displayed result identity are checked around the worker and at
+installation. The host stages the optional named reference, optional oligo
+collection and compact `mismatch-pcr-output-v1` provenance attachment together,
+then validates the complete workspace before publishing. The reference history
+parent is the original source event. The viewed reference is context, not a
+verified independent target of this output operation.
+
+An existing exact-PCR or mismatch-PCR preview never gains physical verification
+through output creation. The existing inverse-PCR graph/finalizer is the separate
+route for an explicit complete preparation checked against independently declared
+DNA.
+
+## Standalone oligo outputs
+
+`core::oligo_orders::from_primers` constructs the existing bounded oligo table for
+one or more literal named primers. It preserves row order, duplicate names, full
+ordered bases and domain/tail fields. It reuses the existing table's field/byte
+limits and evidence-only policy for oligos outside the reusable-primer profile;
+no binding, synthesis or stock state is inferred. `pcr_outputs::primer_table`
+delegates to that helper, so exact and mismatch PCR use the same format.
+
+The primer panel offers CSV/TSV and collection saving for a single analyzed oligo
+or a particular ranked pair. Pair actions are collapsed behind “Order or save this
+pair.” Source event, epoch, generation and literal calculation/form fields are
+checked synchronously before actions; no action relies only on an eventual render
+invalidation. Collection saving uses the existing atomic oligo installer; export
+uses the standard spreadsheet-safe format while retained source rows keep literal
+names. Changing a name/domain/tail requires analyzing or selecting again, rather
+than exporting stale calculation evidence under new inputs.

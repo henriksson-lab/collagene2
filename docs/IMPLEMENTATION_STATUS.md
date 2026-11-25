@@ -14,7 +14,52 @@ is postponed until the rest of the software is implemented. Existing modules are
 retained; no more alignment/index features or integration are scheduled now.
 Browser checks remain deferred and compiler checks run alongside coding.
 
-## Explicit ordinary PCR outputs
+## Primer-led reference outputs
+
+Mismatch-PCR now retains the submitted named pair and exact source/viewed-reference
+events with the current form and worker evidence. Product, DNA, substitution and
+finding pages replace the former first-50-only preview. Users select and name one
+geometry, then choose reference and/or oligo outputs; fresh worker reconstruction
+checks the original preview revision before atomic installation with source-event
+ancestry and a compact search/geometry receipt. Capped, ambiguous and unsupported
+search states remain explicit. This route asserts no independent-target agreement
+or physical PCR success.
+
+Single analyzed oligos and individual ranked pairs now export CSV/TSV or save an
+oligo collection. Source/event, literal form, epoch and generation guards prevent
+stale actions. The shared generic order constructor retains one row per declared
+oligo, full named tails/domains and existing evidence-only/size policies; exact-PCR
+pair tables delegate to it. Pair order actions are collapsed in their result row.
+
+Worker51 adds job118/result110 under the ordinary 32 MiB limit. Candidate11,
+plan9, science-14, archive1 and MCP136 remain unchanged. Sixty-two native cases
+passed: four selected-mismatch-output groups, two generic order groups, four
+existing selected-PCR groups, 15 oligo-format regressions and 37 native web cases.
+The full Trunk web/worker build passed and the immutable preview was published
+on port8082. [Output contract](PCR_OUTPUTS.md).
+
+### Current public preview checkpoint
+
+The successful primer/mismatch build replaces the earlier diagnostics/pair-draft
+snapshot at `http://130.239.192.39:8082/`. It includes the intervening whole-reaction
+Golden Gate, exact/inverse/mismatch-PCR and primer-output connections. The server
+loads only the staged compiled assets into RAM and exposes no filesystem API,
+uploads or writes. Old versioned worker bundles remain available for open tabs.
+
+- Immutable root: `/tmp/collagene2-primer-mismatch-public-dist`
+- Assets: 42 files, 192,291,826 bytes including retained older workers
+- Index SHA256: `ebbbde7ff68c0f74b49a9f7ab4671ebc40ff6bc41fb308ac5ef7b382b4c993b7`
+- Active worker bundle: `fcfbaa00f4db4cf8278aac24f2dae380eb9971dcdc5d0ba49da159d936ef7d41`
+- Publication evidence: `/tmp/collagene2-primer-mismatch-public-evidence.json`
+- Native log: `/tmp/collagene2-primer-mismatch-native.log`
+- Full build log: `/tmp/collagene2-primer-mismatch-build.log`
+
+The replacement listener was confirmed on `0.0.0.0:8082`. No browser, HTTP smoke,
+screenshot or GUI acceptance checks were run. This proves build/publication, not
+finished GUI readiness or completion of the full product objective. Earlier
+checkpoint statements about the old preview record their publication state then.
+
+## Explicit ordinary and inverse PCR outputs
 
 Follow-up: inverse-PCR now forwards the original source event, independent target
 event and epoch into candidate review. The main plan panel reuses the existing
@@ -48,8 +93,9 @@ covering selected alternatives, annotations, stale inputs, complete named orders
 optional outputs, IUPAC/long tails and old-schema binary rejection, alongside
 existing PCR-document and oligo-format regression cases. The web application and
 analysis worker also passed the WASM compiler check. Browser acceptance remains
-deferred. Mismatch-PCR/standalone primer output connections and the wider product
-goal remain unfinished. [Output contract](PCR_OUTPUTS.md).
+deferred. The wider product goal remains unfinished; saved-run event navigation
+and the remaining cloning/editor/delivery work stay active.
+[Output contract](PCR_OUTPUTS.md).
 
 ## Coherent assembly junction edits
 

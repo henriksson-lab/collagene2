@@ -45,3 +45,10 @@ An intended edit remains reference-only; this connection does not promote it to
 prepared material or use simulated DNA as its own expected target. Existing
 inverse-PCR PCR/treatment/ligation assumptions and finalizer assessment policy
 remain explicit.
+
+Mismatch-PCR now separately reviews every returned geometry, selected DNA and
+substitution evidence in pages. Selected named reference/oligo outputs require
+fresh native preview reconstruction and exact draft/event checks before atomic
+installation. Search bounds and uncertainty remain explicit; this does not turn
+the preview into a complete independently checked cloning plan.
+[Reference output contract](PCR_OUTPUTS.md#conditional-mismatch-pcr-outputs).

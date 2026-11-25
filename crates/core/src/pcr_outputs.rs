@@ -4,7 +4,7 @@
 use crate::{
     Alphabet, Error, Molecule,
     analysis::{PcrProduct, Primer},
-    oligo_formats::{self, ColumnMapping, Delimiter, OligoImportOptions, OligoTable},
+    oligo_formats::OligoTable,
     verification,
 };
 use serde::{Deserialize, Serialize};
@@ -91,53 +91,7 @@ pub fn revision(request: &Request) -> Result<String, Error> {
 pub fn primer_table(forward: &Primer, reverse: &Primer) -> Result<OligoTable, Error> {
     primer(forward)?;
     primer(reverse)?;
-    // This is the existing oligo-table cell bound, not a PCR geometry limit.
-    // Product-only previews remain available for longer domains/tails.
-    if [forward, reverse]
-        .iter()
-        .any(|p| p.annealing.len().saturating_add(p.tail.len()) > 8192)
-    {
-        return Err(Error::TooLarge);
-    }
-    let mut writer = csv::WriterBuilder::new()
-        .quote_style(csv::QuoteStyle::Always)
-        .from_writer(Vec::new());
-    writer
-        .write_record([
-            "Name",
-            "Ordered sequence",
-            "Annealing domain",
-            "5prime tail",
-        ])
-        .map_err(|e| bad(&e.to_string()))?;
-    for p in [forward, reverse] {
-        writer
-            .write_record([
-                p.name.as_str(),
-                p.ordered_sequence().as_str(),
-                p.annealing.as_str(),
-                p.tail.as_str(),
-            ])
-            .map_err(|e| bad(&e.to_string()))?;
-    }
-    let bytes = writer.into_inner().map_err(|e| bad(&e.to_string()))?;
-    let text = String::from_utf8(bytes).map_err(|e| bad(&e.to_string()))?;
-    oligo_formats::import_oligos(
-        &text,
-        &OligoImportOptions {
-            delimiter: Delimiter::Comma,
-            has_header: true,
-            columns: ColumnMapping {
-                name: 0,
-                ordered_sequence: Some(1),
-                annealing_sequence: Some(2),
-                tail: Some(3),
-                modification: None,
-                amount: None,
-                unit: None,
-            },
-        },
-    )
+    crate::oligo_orders::from_primers(&[forward.clone(), reverse.clone()])
 }
 /// Recompute before selecting; serialized previews and user-facing indices are
 /// never accepted as proof of a source/primer geometry. Run in an analysis worker.

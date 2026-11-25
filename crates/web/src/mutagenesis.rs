@@ -3,7 +3,7 @@ use crate::{worker, worker::CachedWorker};
 use collagene_core::{
     Molecule,
     analysis::Primer,
-    mutagenesis::{InversePcrDesign, InversePcrOptions, PcrOptions, PcrReport},
+    mutagenesis::{InversePcrDesign, InversePcrOptions, PcrOptions},
     primers::BindingOptions,
     protocol::{AnalysisJob, AnalysisResult, Request, Response},
     run_lineage::{EventBinding, InputEventBinding},
@@ -76,18 +76,20 @@ struct AppliedPair {
     target: EventBinding,
     epoch: u64,
 }
-#[derive(Clone)]
-struct PcrEvidence {
-    report: PcrReport,
-    documents: Vec<Molecule>,
-    findings: Vec<String>,
+pub struct OutputOpen {
+    pub source: EventBinding,
+    pub target: EventBinding,
+    pub epoch: u64,
+    pub revision: String,
+    pub options: collagene_core::pcr_outputs::Options,
+    pub prepared: collagene_core::mismatch_pcr_outputs::Prepared,
 }
-fn preview_document(bound: &PcrEvidence, index: usize) -> Result<Molecule, String> {
-    bound
-        .documents
-        .get(index)
-        .cloned()
-        .ok_or_else(|| "Product preview no longer exists".into())
+struct PcrEvidence {
+    review: Arc<crate::mismatch_pcr_outputs::Review>,
+    generation: u32,
+    form: (String, String),
+    draft: crate::primer_pair_model::PairDraft,
+    inverse_form: InverseForm,
 }
 #[component]
 pub fn MutagenesisPanel(
@@ -95,7 +97,7 @@ pub fn MutagenesisPanel(
     query_options: Memo<Vec<(usize, String)>>,
     get_query: Callback<usize, Option<Molecule>>,
     on_candidate: Callback<CandidateOpen>,
-    on_products: Callback<Vec<Molecule>, Result<(), String>>,
+    on_outputs: Callback<OutputOpen, Result<(), String>>,
     pair_draft: RwSignal<crate::primer_pair_model::PairDraft>,
     pair_selection: Callback<(), Result<crate::primer_pair_model::SelectionSeed, String>>,
     anchor_available: Callback<EventBinding, bool>,
@@ -434,6 +436,14 @@ pub fn MutagenesisPanel(
             let captured_epoch = epoch.get_untracked();
             let captured_draft = pair_draft.get_untracked();
             let captured_form = inverse_form.run(());
+            let captured_pcr_form = (mismatches.get_untracked(), exact.get_untracked());
+            let captured_oligos = match &job {
+                AnalysisJob::MismatchPcrPreview {
+                    forward, reverse, ..
+                } => Some((forward.clone(), reverse.clone())),
+                _ => None,
+            };
+            let captured_molecule = Arc::new(expected_source);
             let alive = alive.clone();
             spawn_local(async move {
                 let response = worker::analyze_cancellable(
@@ -450,6 +460,7 @@ pub fn MutagenesisPanel(
                     || epoch.get_untracked() != captured_epoch
                     || pair_draft.get_untracked() != captured_draft
                     || inverse_form.run(()) != captured_form
+                    || (mismatches.get_untracked(), exact.get_untracked()) != captured_pcr_form
                     || source_binding.get_untracked() != captured_source
                     || target_binding.get_untracked() != captured_target
                 {
@@ -472,10 +483,38 @@ pub fn MutagenesisPanel(
                         AnalysisResult::MismatchPcrPreview(preview) => {
                             let report = preview.report;
                             status.set(format!("{} candidate geometries · search complete: {} · complete under declared model: {}. No empirical amplification claim.",report.products.len(),report.search_complete,report.enumeration_complete));
+                            let Some(source) = captured_source else {
+                                status.set(
+                                    "The original mismatch-PCR source event is missing.".into(),
+                                );
+                                return;
+                            };
+                            let Some((forward, reverse)) = captured_oligos else {
+                                status.set("Mismatch-PCR oligo bindings are unavailable.".into());
+                                return;
+                            };
+                            if report.source_revision != source.revision
+                                || report.products.len() != preview.documents.len()
+                            {
+                                status.set("Mismatch-PCR preview differs from the requested source or geometry count.".into());
+                                return;
+                            }
                             pcr.set(Some(Arc::new(PcrEvidence {
-                                report,
-                                documents: preview.documents,
-                                findings: preview.findings,
+                                review: Arc::new(crate::mismatch_pcr_outputs::Review {
+                                    source,
+                                    target: captured_target,
+                                    epoch: captured_epoch,
+                                    source_molecule: captured_molecule,
+                                    forward,
+                                    reverse,
+                                    report,
+                                    documents: preview.documents,
+                                    findings: preview.findings,
+                                }),
+                                generation: token,
+                                form: captured_pcr_form,
+                                draft: captured_draft,
+                                inverse_form: captured_form,
                             })));
                         }
                         AnalysisResult::InversePcr(report) => {
@@ -587,6 +626,43 @@ pub fn MutagenesisPanel(
             Err(e) => status.set(e),
         }
     };
+    let current_pcr = Callback::new(move |bound: Arc<PcrEvidence>| -> Result<(), String> {
+        let r = &bound.review;
+        if generation.get_untracked() != bound.generation
+            || epoch.get_untracked() != r.epoch
+            || pair_draft.get_untracked() != bound.draft
+            || inverse_form.run(()) != bound.inverse_form
+            || (mismatches.get_untracked(), exact.get_untracked()) != bound.form
+            || source_binding.get_untracked().as_ref() != Some(&r.source)
+            || target_binding.get_untracked() != r.target
+            || !anchor_available.run(r.source.clone())
+            || !anchor_available.run(r.target.clone())
+            || source
+                .get_untracked()
+                .is_none_or(|source| source.revision() != r.source.revision)
+            || !pcr.with_untracked(|current| {
+                current
+                    .as_ref()
+                    .is_some_and(|current| Arc::ptr_eq(current, &bound))
+            })
+        {
+            return Err("The primer pair, template or PCR settings changed; apply and simulate again before using this preview.".into());
+        }
+        let applied = applied_pair
+            .get_untracked()
+            .ok_or("Apply the named primer pair again before using PCR outputs.")?;
+        if applied.draft != bound.draft
+            || applied.source != r.source
+            || applied.target != r.target
+            || applied.epoch != r.epoch
+        {
+            return Err(
+                "The applied primer pair no longer belongs to this source and reference context."
+                    .into(),
+            );
+        }
+        Ok(())
+    });
     let review_inverse = Callback::new(move |bound: Arc<BoundInverse>| {
         if epoch.get_untracked() != bound.epoch
             || generation.get_untracked() != bound.generation
@@ -664,7 +740,12 @@ pub fn MutagenesisPanel(
         <crate::primer_pair_editor::PrimerPairEditor draft=pair_draft selection=pair_selection anchor_available=anchor_available primer_sources=primer_sources list_primers=list_primers resolve_primer=resolve_primer epoch=epoch on_apply=apply_pair apply_label="Apply pair to mismatch PCR".to_string()/>
         <p class="helper" role="status">{move || applied_pair.get().map(|pair| format!("Applied: {} / {}. Draft edits require Apply again.",pair.primers.0.name,pair.primers.1.name)).unwrap_or_else(|| "No applied primer pair. Edit or reuse primers, then Apply before simulation.".into())}</p>
         <div class="mutation-grid"><label>"Allowed disjoint mismatches"<input aria-label="Mutagenesis allowed mismatches" type="number" min="0" prop:value=move||mismatches.get() on:input=move|e|mismatches.set(event_target_value(&e))/></label><label>"Required exact 3′ bases"<input aria-label="Mutagenesis exact 3prime bases" type="number" min="0" prop:value=move||exact.get() on:input=move|e|exact.set(event_target_value(&e))/></label></div><button class="button primary full" disabled=move||busy.get()||intent_busy.get()||source.get().is_none()||applied_pair.get().is_none() on:click=simulate>"Simulate mismatch PCR"</button>
-        {move||pcr.get().map(|bound|{let report=&bound.report;let download=bound.clone();view!{<section class="mutation-pcr-result"><h3>{format!("{} conditional PCR products",report.products.len())}</h3><p class="helper">{format!("Search complete: {} · complete model: {} · unsupported geometries {} · conflicting overlaps {}",report.search_complete,report.enumeration_complete,report.unsupported_geometries,report.conflicting_overlaps)}</p><ul>{report.warnings.iter().chain(bound.findings.iter()).cloned().map(|w|view!{<li>{w}</li>}).collect_view()}</ul>{report.products.iter().take(50).enumerate().map(|(index,p)|{let action=bound.clone();view!{<article class="mutation-product"><strong>{format!("Product {} · {} bp · {} primer substitutions",index+1,p.sequence.len(),p.substitutions.len())}</strong><p>{format!("Source starts F {} / R {} · domains overlap: {} · concrete: {}",p.forward_start+1,p.reverse_start+1,p.overlapping_domains,p.certain)}</p><pre>{p.sequence.as_str().chars().take(160).collect::<String>()}</pre><button class="button secondary" on:click=move|_|match preview_document(&action,index).and_then(|m|on_products.run(vec![m])){Ok(())=>status.set("Reference preview opened with source annotation mapping. Changed or uncertain features require review.".into()),Err(e)=>status.set(e)}>"Open product reference preview"</button></article>}}).collect_view()}<p class="helper">"First 50 geometries shown. Previews retain source annotation mappings and binding evidence; changed or uncertain features require review. They assert neither target verification nor physical chemistry. JSON retains all returned products and limits."</p><button class="button secondary full" on:click=move|_|match serde_json::to_vec_pretty(&download.report){Ok(bytes)=>if let Err(e)=crate::app::download("mismatch-pcr.json","application/json",&bytes){status.set(e)},Err(e)=>status.set(e.to_string())}>"Download mismatch PCR evidence"</button></section>}})}
+        {move||pcr.get().map(|bound|{
+            let review=bound.review.clone();
+            let guard=Callback::new(move|()|current_pcr.run(bound.clone()));
+            view!{<crate::mismatch_pcr_outputs::MismatchPcrOutputsPanel review guard on_outputs/>}
+        })}
+
         <h3>"3. Design inverse-PCR preparation"</h3><p class="helper">{move||format!("Active document is the independently specified intended circular target: {}. Choose the original circular source above.",molecule.get().name)}</p>
         <div class="mutation-grid">{[("Forward annealing length","Mutation forward length",f_length),("Reverse annealing length","Mutation reverse length",r_length),("Inserted bases on reverse tail","Mutation tail split",split)].into_iter().map(|(label,aria,value)|view!{<label>{label}<input aria-label=aria type="number" prop:value=move||value.get() on:input=move|e|value.set(event_target_value(&e))/></label>}).collect_view()}</div><button class="button primary full" disabled=move||busy.get()||intent_busy.get()||source.get().is_none() on:click=design>"Design inverse-PCR candidate"</button>
         {move||inverse.get().map(|bound|{let report=&bound.report;let action=bound.clone();let download=bound.clone();view!{<section class="inverse-pcr-result"><h3>{format!("Inverse-PCR check: {:?}",report.verification.status)}</h3><pre>{format!("F  {}\nR  {}",report.forward.ordered_sequence(),report.reverse.ordered_sequence())}</pre><p class="helper">{format!("Retained template {} bp · intended target {}…",report.retained_template_length,report.target_revision.chars().take(12).collect::<String>())}</p><ol><li>"Exact back-to-back PCR with explicit tails"</li><li>"Explicit terminal phosphorylation"</li><li>"Sealed blunt circular ligation"</li></ol><ul>{report.verification.findings.iter().chain(report.warnings.iter()).cloned().map(|w|view!{<li>{w}</li>}).collect_view()}</ul><button class="button primary full" on:click=move|_|review_inverse.run(action.clone())>"Review inverse-PCR candidate"</button><button class="button secondary full" on:click=move|_|match serde_json::to_vec_pretty(&download.report){Ok(bytes)=>if let Err(e)=crate::app::download("inverse-pcr-design.json","application/json",&bytes){status.set(e)},Err(e)=>status.set(e.to_string())}>"Download inverse-PCR evidence"</button></section>}})}

@@ -55,6 +55,8 @@ mod history_view;
 #[cfg(target_arch = "wasm32")]
 mod map_labels;
 #[cfg(target_arch = "wasm32")]
+mod mismatch_pcr_outputs;
+#[cfg(target_arch = "wasm32")]
 mod oligo_import;
 #[cfg(target_arch = "wasm32")]
 mod protein_properties;
@@ -117,6 +119,8 @@ mod mutagenesis;
 mod mutation_review;
 #[cfg(target_arch = "wasm32")]
 mod pcr_outputs;
+#[cfg(target_arch = "wasm32")]
+mod primer_orders;
 #[cfg(target_arch = "wasm32")]
 mod primer_pair_editor;
 #[cfg(any(target_arch = "wasm32", test))]

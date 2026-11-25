@@ -3391,6 +3391,151 @@ pub fn App() -> impl IntoView {
             Ok(())
         },
     );
+    let open_mismatch_outputs = Callback::new(
+        move |opened: crate::mutagenesis::OutputOpen| -> Result<(), String> {
+            if workspace_restoring.get_untracked()
+                || opened.epoch != workspace_epoch.get_untracked()
+            {
+                return Err(
+                    "The workspace changed; compute and review the current PCR draft again.".into(),
+                );
+            }
+            let mut staged_docs = documents.get_untracked();
+            let mut staged_active = active.get_untracked();
+            if staged_docs
+                .get(staged_active)
+                .is_none_or(|doc| current_event_binding(doc) != opened.target)
+                || !staged_docs
+                    .iter()
+                    .any(|doc| current_event_binding(doc) == opened.source)
+            {
+                return Err(
+                    "The original PCR source or viewed reference changed; compute again.".into(),
+                );
+            }
+            opened.options.validate().map_err(|e| e.to_string())?;
+            opened
+                .prepared
+                .validate_binding(&opened.revision)
+                .map_err(|e| e.to_string())?;
+            let prepared = opened.prepared;
+            if prepared.search.source_revision != opened.source.revision
+                || prepared.product.is_some() != opened.options.save_product
+                || prepared.primers.is_some() != opened.options.save_primers
+                || prepared
+                    .product
+                    .as_ref()
+                    .is_some_and(|product| product.name != opened.options.name)
+            {
+                return Err("PCR output choices differ from the reviewed request.".into());
+            }
+            let mut assets = attachments.get_untracked();
+            let mut product_event = None;
+            if let Some(mut product) = prepared.product {
+                product.metadata.insert(
+                    "pcr:template_document".into(),
+                    opened.source.document_id.clone(),
+                );
+                product
+                    .metadata
+                    .insert("pcr:template_event".into(), opened.source.event_id.clone());
+                let source = staged_docs
+                    .iter()
+                    .find(|doc| current_event_binding(doc) == opened.source)
+                    .ok_or("Original PCR source event is unavailable")?;
+                let prefix = format!("mismatch-pcr-{}", &product.revision()[..16]);
+                let mut suffix = 1usize;
+                let id = loop {
+                    let id = format!("{prefix}-{suffix}");
+                    if !staged_docs.iter().any(|doc| doc.id == id) {
+                        break id;
+                    }
+                    suffix += 1;
+                };
+                let derived=source.derive_event(&opened.source.event_id,id,product,
+                "Selected intentional-mismatch PCR reference preview; no independent target or physical chemistry verification asserted")
+                .map_err(|e|e.to_string())?;
+                product_event = Some(current_event_binding(&derived));
+                staged_active = staged_docs.len();
+                staged_docs.push(derived);
+            }
+            if staged_docs.len() > 1000
+                || staged_docs
+                    .iter()
+                    .map(|doc| document_bytes(&doc.molecule))
+                    .sum::<usize>()
+                    > MAX_WORKSPACE_BYTES
+            {
+                return Err("The selected PCR output exceeds the workspace document budget; nothing created.".into());
+            }
+            let table = prepared.primers.map(std::sync::Arc::new);
+            let mut primer_asset = None;
+            if let Some(table) = &table {
+                table.validate().map_err(|e| e.to_string())?;
+                let bytes = serde_json::to_vec(table.as_ref()).map_err(|e| e.to_string())?;
+                let hash = blake3::hash(&bytes).to_hex().to_string();
+                primer_asset = Some(hash.clone());
+                assets.insert(
+                    hash,
+                    workspace::WorkspaceAttachment {
+                        kind: "oligo-table-v1".into(),
+                        name: format!("{} primers", opened.options.name),
+                        media_type: "application/json".into(),
+                        bytes,
+                    },
+                );
+            }
+            let geometry = prepared.geometry;
+            let bytes=serde_json::to_vec(&serde_json::json!({
+            "schema_version":1,"source":opened.source,"viewed_reference":opened.target,
+            "context_revision":opened.revision,"selected_index":prepared.selected_index,
+            "outputs":opened.options,"product":product_event,"primer_attachment":primer_asset,
+            "search":prepared.search,"findings":prepared.findings,
+            "geometry":{"forward_start":geometry.forward_start,"reverse_start":geometry.reverse_start,
+                "template_length":geometry.template_length,"crosses_origin":geometry.crosses_origin,
+                "forward_primer_index":geometry.forward_primer_index,"reverse_primer_index":geometry.reverse_primer_index,
+                "forward_tail_length":geometry.forward_tail_length,"reverse_tail_length":geometry.reverse_tail_length,
+                "forward_binding":geometry.forward_binding,"reverse_binding":geometry.reverse_binding,
+                "substitutions":geometry.substitutions,"overlapping_domains":geometry.overlapping_domains,"certain":geometry.certain},
+            "model":"Intentional-mismatch sequence-reference preview; search limits retained. No independent target, physical chemistry or experimental success verification asserted."
+        })).map_err(|e|e.to_string())?;
+            assets.insert(
+                blake3::hash(&bytes).to_hex().to_string(),
+                workspace::WorkspaceAttachment {
+                    kind: "mismatch-pcr-output-v1".into(),
+                    name: format!("{} PCR source", opened.options.name),
+                    media_type: "application/json".into(),
+                    bytes,
+                },
+            );
+            workspace_snapshot(
+                &staged_docs,
+                staged_active,
+                candidate.get_untracked().as_ref(),
+                &stored_candidates.get_untracked(),
+                &assets,
+                &workspace_name.get_untracked(),
+            )?
+            .validate()
+            .map_err(|e| e.to_string())?;
+            batch(|| {
+                documents.set(staged_docs);
+                active.set(staged_active);
+                attachments.set(assets);
+                if let Some(table) = table {
+                    oligo_tables.update(|tables| {
+                        if !tables.iter().any(|old| {
+                            old.source_blake3 == table.source_blake3 && old.options == table.options
+                        }) {
+                            tables.push(table);
+                        }
+                    });
+                }
+                message.set("Selected mismatch-PCR reference outputs retained with the original source event. Search limitations and conditional substitutions remain evidence, not a successful cloning claim.".into());
+            });
+            Ok(())
+        },
+    );
     let restore_revision = Callback::new(move |event: String| {
         if workspace_restoring.get_untracked() {
             return Err("Wait for workspace restoration to finish.".into());
@@ -4054,7 +4199,7 @@ pub fn App() -> impl IntoView {
                                     <Show when=move||panel.get()=="plan"><div class="inspector-content"><h2>"Cloning plan"</h2><div class="plan-exchange"><button class="button secondary full" on:click=export_workspace>"Export for AI"</button><button class="button secondary full" on:click=move|_|if let Some(input)=file_input.get(){input.click();}>"Open candidate"</button></div><p class="helper">"Export the active target and open inputs for your MCP client. Open its returned candidate here for review."</p><Show when=move||candidate.get().is_some()><div class="candidate-review"><h3>"Candidate · review before use"</h3>{move||candidate.get().map(|c|view!{<p><strong>{c.plan.name.clone()}</strong></p><p class="helper">{format!("Target revision {}…",&c.plan.target_revision[..12])}</p><h4>"Bound inputs"</h4><ul>{c.plan.inputs.iter().map(|i|view!{<li>{format!("{}: {} · {} bases · {}…",i.id,i.molecule.name,i.molecule.sequence.len(),&i.revision[..12])}</li>}).collect_view()}</ul><h4>"Ordered steps"</h4><ol>{c.plan.steps.iter().map(|step|{let description=match step{Operation::CatalogDigest{selection,..}=>format!("Catalog digest with {}",selection.enzymes.iter().map(|e|e.enzyme.name.as_str()).collect::<Vec<_>>().join(", ")),Operation::DeclareSourceTermini{..}=>"Declare original duplex termini".into(),Operation::CheckedTopo{..}=>"TOPO graph with explicit target acceptance".into(),Operation::Topo{..}=>"TOPO physical strand reconstruction".into(),Operation::RecombineReference{request,..}=>format!("Reference-only {:?} exchange",request.reaction),Operation::DeclareSourceModifications{..}=>"Declare original source modifications".into(),Operation::CheckedDigest{enzymes,..}=>format!("Checked digest with {}",enzymes.join(", ")),Operation::Tail3Prime{base,..}=>format!("Add {} to both 3′ ends",base.as_str()),Operation::ProfiledOverlap{options,..}=>format!("Profiled {:?} overlap assembly",options.method),Operation::RepairEnds{method,..}=>format!("End repair: {:?}",method),Operation::AnnealOligos{candidate_index,..}=>format!("Anneal oligos: zero-based candidate {}",candidate_index),Operation::PcrWithMismatches{..}=>"Intentional-mismatch PCR".into(),Operation::GoldenGate{options,..}=>format!("Golden Gate with {:?}",options.enzyme),Operation::Digest{enzymes,..}=>format!("Digest with {}",enzymes.join(", ")),Operation::TreatEnds{treatment,..}=>format!("Terminal {treatment:?}"),Operation::Ligate{fragments,circular,..}=>format!("Ligation of {} fragments → {}",fragments.len(),if *circular {"circular"}else{"linear"}),Operation::Pcr{forward,reverse,..}=>format!("PCR with {} and {}",forward.name,reverse.name),Operation::Overlap{fragments,circular,..}=>format!("Overlap assembly of {} fragments → {}",fragments.len(),if *circular {"circular"} else {"linear"})};let details=describe_step(step);view!{<li><details><summary>{description}</summary><pre>{details}</pre></details></li>}}).collect_view()}</ol>})}<button class="button primary full" on:click=verify_candidate>"Verify candidate"</button><button class="button secondary full" on:click=move|_|{candidate_events.set(None);candidate.set(None);plan_report.set(None);last_plan.set(None);last_plan_target.set(None);plan_generation.update(|g|*g=g.wrapping_add(1));}>"Discard candidate"</button></div></Show><Show when=move||candidate.get().is_none()><h3>"Manual cloning plan"</h3><p class="helper">"The active document is the intended target. Choose source documents and a cloning method; the core reconstructs the ordered candidate."</p><label>"First fragment"<select aria-label="First source document" prop:value=move||first_input.get().to_string() on:change=move|e|first_input.set(event_target_value(&e).parse().unwrap_or(0))>{move||documents.get().iter().enumerate().map(|(i,d)|view!{<option value=i.to_string()>{d.molecule.name.clone()}</option>}).collect_view()}</select></label><Show when=move||plan_method.get()!="restriction"||(restriction_final.get()=="ligate"&&second_restriction.get())><label>"Second fragment"<select aria-label="Second source document" prop:value=move||second_input.get().to_string() on:change=move|e|second_input.set(event_target_value(&e).parse().unwrap_or(0))>{move||documents.get().iter().enumerate().map(|(i,d)|view!{<option value=i.to_string()>{d.molecule.name.clone()}</option>}).collect_view()}</select></label></Show><label>"Method"<select aria-label="Cloning method" prop:value=move||plan_method.get() on:change=move|e|plan_method.set(if event_target_value(&e)=="restriction"{"restriction"}else{"overlap"})><option value="overlap">"Overlap assembly"</option><option value="restriction">"Restriction and ligation"</option></select></label><Show when=move||plan_method.get()=="restriction"><div class="checked-restriction-options"><label>"Restriction model"<select aria-label="Restriction model" prop:value=move||restriction_policy.get() on:change=move|e|restriction_policy.set(if event_target_value(&e)=="checked"{"checked"}else{"legacy"})><option value="legacy">"Assume complete cleavage (legacy)"</option><option value="checked">"Check inherited modification state"</option></select></label><label>"Final restriction product"<select aria-label="Restriction final product" prop:value=move||restriction_final.get() on:change=move|e|restriction_final.set(if event_target_value(&e)=="fragment"{"fragment"}else{"ligate"})><option value="ligate">"Ligate selected substrates"</option><option value="fragment">"Single processed fragment (no ligation)"</option></select></label><p class="helper">"Single-fragment mode keeps the selected digest product, or its explicitly repaired/treated descendant, as the final product. A blocked circle can remain an uncut circle without claiming a ligation."</p><Show when=move||restriction_final.get()=="ligate"><label class="checkbox-label"><input type="checkbox" aria-label="Use second restriction substrate" prop:checked=move||second_restriction.get() on:change=move|e|second_restriction.set(event_target_checked(&e))/>"Use a second restriction substrate"</label></Show><Show when=move||restriction_policy.get()=="checked"><p class="helper">"Declare the original source generation under a closed Dam/Dcm/CpG model. Original eligible positions inherit the declared state; positions outside these original motifs and newly synthesized bases are unmodified under this scope. Descendant motifs are not rescanned. Other modification systems and experimental conditions are not modeled. Unknown or impaired checked cleavage withholds undetermined products; blocked sites stay uncut."</p><details class="checked-profile-identities"><summary>"Pinned positional profiles and formulation identities"</summary><p>{format!("{} · revision {}",modified_duplex::PROFILE_VERSION,modified_duplex::profile_revision())}</p>{methylation::profiles().into_iter().map(|p|view!{<p>{format!("{}: {}",p.enzyme,p.supplier_identity)}</p>}).collect_view()}<p class="helper">"This positional profile is distinct from the source-context methylation review. Generic and HF/v2 enzyme formulations are not substituted. Imported summaries cannot authorize checked state."</p></details></Show>
         <RestrictionFields side="First" enzymes=first_enzymes fragment=first_fragment treatment=first_treatment repair=first_repair reverse=first_reverse/><Show when=move||restriction_policy.get()=="checked"><p class="checked-source-binding">{move||documents.with(|docs|docs.get(first_input.get()).map(|d|format!("First source: document {} · event {}",d.id,d.head_event())).unwrap_or_else(||"Choose a first source".into()))}</p><crate::checked_cloning::SourceAssumptions side="First" signals=first_modifications/></Show>
         <Show when=move||second_restriction.get()&&restriction_final.get()=="ligate"><RestrictionFields side="Second" enzymes=second_enzymes fragment=second_fragment treatment=second_treatment repair=second_repair reverse=second_reverse/><Show when=move||restriction_policy.get()=="checked"><p class="checked-source-binding">{move||documents.with(|docs|docs.get(second_input.get()).map(|d|format!("Second source: document {} · event {}",d.id,d.head_event())).unwrap_or_else(||"Choose a second source".into()))}</p><crate::checked_cloning::SourceAssumptions side="Second" signals=second_modifications/></Show></Show><Show when=move||restriction_final.get()=="ligate"><label class="checkbox-label"><input type="checkbox" aria-label="Allow restriction ligation nicks" prop:checked=move||allow_nicked.get() on:change=move|e|allow_nicked.set(event_target::<HtmlInputElement>(&e).checked())/>"Allow explicitly reported nicks"</label></Show><p class="helper">"Fragment numbers follow ascending reference-strand cut order, not size. Intact circles cannot ligate. The active document remains the independent target; declared source state is not measured modification evidence."</p></div></Show><Show when=move||plan_method.get()=="overlap"><label>"Junction overlap (bp)"<input type="number" min="1" prop:value=move||overlap.get() on:input=move|e|overlap.set(event_target_value(&e))/></label><Show when=move||molecule.get().topology==Topology::Circular><label>"Circular closure overlap (bp)"<input type="number" min="1" prop:value=move||closure_overlap.get() on:input=move|e|closure_overlap.set(event_target_value(&e))/></label></Show></Show><button class="button primary full" on:click=do_plan>"Reconstruct and verify"</button></Show>{move||plan_report.with(|report|report.as_ref().map(|report|view!{<div class="verification-result"><strong>{format!("{:?}",report.status)}</strong>{report.findings.iter().cloned().map(|f|view!{<p>{f}</p>}).collect_view()}{report.annotation_reports.iter().map(|step|view!{<details class="annotation-evidence"><summary>{format!("Step {} · source annotation correspondence",step.step_index+1)}</summary><p class="helper">"Mapped coordinates follow the actual selected top-reference calls. Review PCR-derived and disrupted annotations. Original unmapped features remain evidence in the reconstruction JSON, not invented product coordinates."</p>{step.evidence.sources.iter().map(|source|view!{<p>{format!("{} · {} projected · {} outside contour · {} unmapped originals · projection supported {}",source.role,source.projected,source.dropped,source.unmapped.len(),source.projection_supported)}</p>}).collect_view()}</details>}).collect_view()}{report.step_reports.iter().filter_map(|step|step.topo.as_ref().map(|topo|{let outcome=match &topo.projection.outcome{collagene_core::topo::physical::projection::Outcome::Proven(contour)=>format!("Paired contour proven; {} nicks retained. No repair is inferred.",contour.nicks.len()),collagene_core::topo::physical::projection::Outcome::Withheld(_)=>"No unique paired contour; physical graph retained and reference withheld.".into()};view!{<details class="physical-evidence"><summary>{format!("Step {} · TOPO physical graph",step.step_index+1)}</summary><p>{outcome}</p><p>{format!("{} physical components · batch {}",topo.projection.physical.product.components.len(),topo.batch_revision)}</p><p class="helper">"Download the reconstruction report for the full physical graph, original source maps and projection evidence. Saved evidence needs fresh replay before use."</p></details>}})).collect_view()}{report.products.iter().enumerate().filter_map(|(i,p)|p.metadata.get("duplex_model").and_then(|s|serde_json::from_str::<chemistry::DuplexSummary>(s).ok()).map(|summary|view!{<details class="physical-evidence"><summary>{format!("Step {} · {}",i+1,p.name)}</summary><pre>{summary.describe()}</pre></details>})).collect_view()}{report.products.iter().enumerate().filter_map(|(i,p)|crate::checked_cloning::modification_summary(p).map(|summary|view!{<details class="checked-modification-summary"><summary>{format!("Step {} · positional modification evidence",i+1)}</summary><p>{summary}</p></details>})).collect_view()}<details><summary>"Assumptions and limits"</summary><ul>{report.assumptions.iter().cloned().map(|a|view!{<li>{a}</li>}).collect_view()}</ul></details><p class="helper">"Alternative assemblies and experimental feasibility are not exhaustively checked."</p></div>}))}<Show when=move||reviewed_product_current.get()>{move||last_plan.get().zip(plan_report.get()).map(|((plan,target),report)|view!{<crate::assembly_product_view::AssemblyProductView plan target report epoch=workspace_epoch guard=Some(reviewed_product_guard) on_products=Callback::new(move|products:Vec<Molecule>|{reviewed_product_guard.run(())?;add_documents(documents,active,workspace_restoring,products)}) on_finalize=Some(finalize_reviewed_candidate)/>})}</Show><button class="button secondary full" disabled=move||plan_report.with(Option::is_none) on:click=move|_|{let result=plan_report.with_untracked(|report|report.as_ref().map(crate::checked_cloning::export_report));if let Some(Err(error))=result{message.set(error);}}>"Download reconstruction report"</button><button class="button secondary full" disabled=move||candidate.get().is_none()&&last_plan.get().is_none() on:click=move|_|{let value=candidate.get_untracked().or_else(||last_plan.get_untracked().map(|(plan,_)|transfer::Candidate::new(plan)));if let Some(value)=value {match transfer::save_candidate(&value){Ok(bytes)=>{if let Err(e)=download("candidate.cg2plan","application/octet-stream",&bytes){message.set(e);}},Err(e)=>message.set(e.to_string())}}}>"Save candidate"</button><button class="button secondary full" disabled=move||last_plan.get().is_none() on:click=move|_|{modal_error.set(String::new());modal.set("record_run");}>"Keep reconstructed products"</button></div></Show>
-                                    <Show when=move||panel.get()=="primers"><crate::primers::PrimerPanel molecule=molecule selection=selection selected_feature=selected_feature seed=primer_seed source_binding=primer_context pair_draft pair_selection anchor_available=primer_anchor_available primer_sources list_primers=list_saved_primers resolve_primer=resolve_saved_primer epoch=workspace_epoch on_use=Callback::new(move|(forward,reverse):(Primer,Primer)|{pcr_forward_name.set(forward.name);pcr_reverse_name.set(reverse.name);pcr_forward.set(forward.annealing.as_str().into());pcr_forward_tail.set(forward.tail);pcr_reverse.set(reverse.annealing.as_str().into());pcr_reverse_tail.set(reverse.tail);panel.set("pcr");message.set("Candidate primers loaded. Compute PCR products to inspect alternative binding geometries.".into());}) on_annotate=Callback::new(move|(binding,feature):(collagene_core::run_lineage::EventBinding,Feature)|{if primer_context.get_untracked()!=binding{return Err("The document event changed; rerun primer analysis before annotating it.".into());}let current=molecule.get_untracked();let edited=editing::set_feature(&current,None,feature).map_err(|e|e.to_string())?;commit_document(documents,active,workspace_restoring,&binding.revision,edited)})/></Show>
+                                    <Show when=move||panel.get()=="primers"><crate::primers::PrimerPanel on_collection=Callback::new(move|table:oligo_formats::OligoTable|import_oligos.run((table,Vec::new()))) molecule=molecule selection=selection selected_feature=selected_feature seed=primer_seed source_binding=primer_context pair_draft pair_selection anchor_available=primer_anchor_available primer_sources list_primers=list_saved_primers resolve_primer=resolve_saved_primer epoch=workspace_epoch on_use=Callback::new(move|(forward,reverse):(Primer,Primer)|{pcr_forward_name.set(forward.name);pcr_reverse_name.set(reverse.name);pcr_forward.set(forward.annealing.as_str().into());pcr_forward_tail.set(forward.tail);pcr_reverse.set(reverse.annealing.as_str().into());pcr_reverse_tail.set(reverse.tail);panel.set("pcr");message.set("Candidate primers loaded. Compute PCR products to inspect alternative binding geometries.".into());}) on_annotate=Callback::new(move|(binding,feature):(collagene_core::run_lineage::EventBinding,Feature)|{if primer_context.get_untracked()!=binding{return Err("The document event changed; rerun primer analysis before annotating it.".into());}let current=molecule.get_untracked();let edited=editing::set_feature(&current,None,feature).map_err(|e|e.to_string())?;commit_document(documents,active,workspace_restoring,&binding.revision,edited)})/></Show>
                                     <Show when=move||panel.get()=="gel"><crate::gel::GelPanel molecule=molecule query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone())))/></Show>
                                     <Show when=move||panel.get()=="methods"><crate::cloning_methods::CloningMethodsPanel molecule=molecule selected_region=Callback::new(move|():()|{if inspected_feature.get_untracked().is_some_and(|f|f.location.spans().len()>1){return None;}selection.get_untracked().filter(|(a,b)|a<b).map(|(a,b)|(active.get_untracked(),a,b))}) target_info=Memo::new(move|_|crate::cloning_methods::TargetContext::Document(documents.with(|docs|recombination_source_info(&docs[active.get()])))) source_info=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(recombination_source_info))) primer_sources=primer_sources list_primers=list_saved_primers resolve_primer=resolve_saved_primer query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone()))) config=method_config epoch=workspace_epoch on_candidate=Callback::new(move|value:transfer::Candidate|{
                                     if workspace_restoring.get_untracked(){return;}
@@ -4087,7 +4232,7 @@ pub fn App() -> impl IntoView {
                                         let preferred=(opened.candidate.plan_revision.clone(),opened.epoch,opened.target,opened.sources);
                                         batch(||{candidate_events.set(None);candidate.set(Some(opened.candidate));candidate_events.set(Some(preferred));plan_report.set(None);last_plan.set(None);last_plan_target.set(None);last_plan_events.set(None);plan_generation.update(|g|*g=g.wrapping_add(1));panel.set("plan");});
                                         message.set("Inverse-PCR candidate opened with its original source and intended-target events. Verify, inspect the reconstructed product, then choose outputs.".into());
-                                    }) on_products=Callback::new(move|products:Vec<Molecule>|add_documents(documents,active,workspace_restoring,products))/></Show>
+                                    }) on_outputs=open_mismatch_outputs/></Show>
                                     <Show when=move||panel.get()=="golden_gate"><crate::golden_gate::GoldenGatePanel molecule=molecule query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone()))) on_candidate=Callback::new(move|value:transfer::Candidate|{candidate_events.set(None);candidate.set(Some(value));plan_report.set(None);last_plan.set(None);last_plan_target.set(None);plan_generation.update(|g|*g=g.wrapping_add(1));panel.set("plan");message.set("Candidate opened for review. Verify it against the independently selected target and current input revisions.".into());})/></Show>
                                     <Show when=move||panel.get()=="topo"><crate::topo_view::TopoPanel
                                         target=Memo::new(move|_|documents.with(|docs|recombination_source_info(&docs[active.get()])))

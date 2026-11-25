@@ -10,7 +10,11 @@ no longer wholly absent. [Current contract](PCR_OUTPUTS.md). Inverse-PCR now als
 preserves exact source/target events through candidate review and reaches the
 shared actual-product/output/order route; [current output contract](CLONING_OUTPUTS.md).
 The comparison below records the original audit, rather than an unchanged backlog.
-Mismatch-PCR and standalone primer-analysis follow-ups remain active.
+Mismatch-PCR now has explicit paged geometry selection, fresh named optional
+outputs and pair order export. Single analyzed primers and individual ranked
+pairs also have guarded CSV/TSV and collection actions. These connections update
+the original audit, without asserting runtime GUI acceptance or Benchling's
+undocumented scientific semantics. [Current contract](PCR_OUTPUTS.md).
 
 ## Documented Benchling behavior
 

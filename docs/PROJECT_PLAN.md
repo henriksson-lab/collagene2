@@ -595,7 +595,12 @@ verification claim. Worker50 appends only this output job/result. Inverse-PCR no
 also preserves source/target events through review and uses the existing actual
 product viewer, shared output chooser and order/protocol exports. Its finalizer
 reconstructs from exact original events without creating another expected reference.
-Mismatch-PCR and standalone primer-analysis output actions remain follow-ups.
+Mismatch-PCR now has paged geometry/substitution review, fresh selected-reference
+and optional oligo output, while standalone analyzed primers and ranked pairs can
+export CSV/TSV or retain collections. Worker51 appends the mismatch output request
+and result; no new chemistry operation or independent-target claim is introduced.
+The next connected history work is exact source/target-event navigation from saved
+cloning runs, reusing retained events without rewinding document heads.
 [Selected PCR outputs](PCR_OUTPUTS.md).
 
 The latest source-aware workflow reviews supersede older gap lists where those

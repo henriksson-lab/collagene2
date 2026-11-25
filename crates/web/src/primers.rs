@@ -38,12 +38,20 @@ fn annotation(
         needs_review: review,
     }
 }
+#[derive(Clone, PartialEq, Eq)]
+struct OrderContext {
+    source: collagene_core::run_lineage::EventBinding,
+    epoch: u64,
+    generation: u32,
+    form: Vec<String>,
+}
 #[component]
 pub fn PrimerPanel(
     molecule: Memo<Molecule>,
     selection: RwSignal<Option<(usize, usize)>>,
     selected_feature: RwSignal<Option<usize>>,
     on_use: Callback<(Primer, Primer)>,
+    on_collection: Callback<collagene_core::oligo_formats::OligoTable, Result<(), String>>,
     on_annotate: Callback<(collagene_core::run_lineage::EventBinding, Feature), Result<(), String>>,
     source_binding: Memo<collagene_core::run_lineage::EventBinding>,
     pair_draft: RwSignal<crate::primer_pair_model::PairDraft>,
@@ -117,6 +125,41 @@ pub fn PrimerPanel(
     let status = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
     let generation = RwSignal::new(0u32);
+    let order_context = RwSignal::new(None::<OrderContext>);
+    let order_form = Callback::new(move |()| {
+        vec![
+            name.get_untracked(),
+            annealing.get_untracked(),
+            tail.get_untracked(),
+            sodium.get_untracked(),
+            concentration.get_untracked(),
+            mismatches.get_untracked(),
+            three_prime.get_untracked(),
+            start.get_untracked(),
+            end.get_untracked(),
+            min_length.get_untracked(),
+            max_length.get_untracked(),
+            target_tm.get_untracked(),
+            max_delta.get_untracked(),
+            min_gc.get_untracked(),
+            max_gc.get_untracked(),
+            max_homopolymer.get_untracked(),
+            max_complementarity.get_untracked(),
+            forward_tail.get_untracked(),
+            reverse_tail.get_untracked(),
+        ]
+    });
+    let order_guard = Callback::new(move |bound: OrderContext| -> Result<(), String> {
+        if epoch.get_untracked() != bound.epoch
+            || source_binding.get_untracked() != bound.source
+            || generation.get_untracked() != bound.generation
+            || order_form.run(()) != bound.form
+            || !order_context.with_untracked(|current| current.as_ref() == Some(&bound))
+        {
+            return Err("The source, primer inputs or calculation changed; analyze/select again before exporting or saving oligos.".into());
+        }
+        Ok(())
+    });
     let alive = Arc::new(AtomicBool::new(true));
     {
         let alive = alive.clone();
@@ -126,6 +169,7 @@ pub fn PrimerPanel(
         let _ = (
             molecule.get().revision(),
             source_binding.get(),
+            epoch.get(),
             name.get(),
             annealing.get(),
             tail.get(),
@@ -149,6 +193,7 @@ pub fn PrimerPanel(
         generation.update(|g| *g = g.wrapping_add(1));
         evidence.set(None);
         design.set(None);
+        order_context.set(None);
         status.set(String::new());
         busy.set(false);
     });
@@ -167,20 +212,28 @@ pub fn PrimerPanel(
             busy.set(true);
             evidence.set(None);
             design.set(None);
+            order_context.set(None);
             status.set("Calculating in background…".into());
             let alive = alive.clone();
             let expected_event = source_binding.get_untracked();
+            let captured_epoch = epoch.get_untracked();
+            let captured_form = order_form.run(());
             spawn_local(async move {
-                let response = worker::analyze(Request {
-                    id: token,
-                    revision: revision.clone(),
-                    job,
-                })
+                let response = worker::analyze_cancellable(
+                    Request {
+                        id: token,
+                        revision: revision.clone(),
+                        job,
+                    },
+                    alive.clone(),
+                )
                 .await;
                 if !alive.load(Ordering::Relaxed)
                     || generation.get_untracked() != token
                     || molecule.get_untracked().revision() != revision
                     || source_binding.get_untracked() != expected_event
+                    || epoch.get_untracked() != captured_epoch
+                    || order_form.run(()) != captured_form
                 {
                     return;
                 }
@@ -194,10 +247,22 @@ pub fn PrimerPanel(
                         match result {
                             AnalysisResult::PrimerEvidence(report) => {
                                 status.set(format!("{} reference binding hit(s){}; inspect alternatives before PCR.",report.bindings.hits.len(),if report.bindings.truncated{" · incomplete enumeration"}else{""}));
+                                order_context.set(Some(OrderContext {
+                                    source: expected_event.clone(),
+                                    epoch: captured_epoch,
+                                    generation: token,
+                                    form: captured_form,
+                                }));
                                 evidence.set(Some((expected_event.clone(), report)));
                             }
                             AnalysisResult::PrimerDesign(report) => {
                                 status.set(format!("{} ranked pair(s); binding uniqueness has not been established.",report.pairs.len()));
+                                order_context.set(Some(OrderContext {
+                                    source: expected_event.clone(),
+                                    epoch: captured_epoch,
+                                    generation: token,
+                                    form: captured_form,
+                                }));
                                 design.set(Some((expected_event.clone(), report)));
                             }
                             AnalysisResult::Error(error) => status.set(error),
@@ -314,13 +379,13 @@ pub fn PrimerPanel(
         <div class="primer-grid"><label>"Allowed mismatches"<input aria-label="Primer allowed mismatches" type="number" min="0" prop:value=move||mismatches.get() on:input=move|e|mismatches.set(event_target_value(&e))/></label><label>"Required exact 3′ bases"<input aria-label="Primer exact 3prime bases" type="number" min="0" prop:value=move||three_prime.get() on:input=move|e|three_prime.set(event_target_value(&e))/></label></div>
         <button class="button primary full" disabled=move||busy.get()||molecule.get().sequence.alphabet()!=Alphabet::Dna on:click=analyze>"Analyze primer & binding"</button>
         <p class="primer-status" role="status">{move||status.get()}</p>
-        {move||evidence.get().map(|(revision,report)|{let metrics=report.analysis.clone();let primer=Primer::new(&metrics.name,&metrics.annealing,&metrics.tail).expect("worker validated primer");let for_download=report.clone();let keep_forward=primer.clone();let keep_reverse=primer.clone();view!{<section class="primer-evidence"><h3>"Oligo evidence"</h3><pre>{report.analysis.ordered_sequence.clone()}</pre><div class="primer-actions"><button class="button secondary" on:click=move|_|pair_draft.update(|draft|draft.forward=crate::primer_pair_model::OligoDraft{name:keep_forward.name.clone(),annealing:keep_forward.annealing.as_str().into(),tail:keep_forward.tail.clone(),anchor:None})>"Keep as forward primer"</button><button class="button secondary" on:click=move|_|pair_draft.update(|draft|draft.reverse=crate::primer_pair_model::OligoDraft{name:keep_reverse.name.clone(),annealing:keep_reverse.annealing.as_str().into(),tail:keep_reverse.tail.clone(),anchor:None})>"Keep as reverse primer"</button></div><p>{format!("Annealing {} nt · tail {} nt · GC {:.1}–{:.1}%",report.analysis.annealing.len(),report.analysis.tail.len(),report.analysis.annealing_gc.minimum_fraction*100.,report.analysis.annealing_gc.maximum_fraction*100.)}</p><p class="primer-tm">{report.analysis.tm.as_ref().map(|t|format!("Tm {:.2} °C · {}",t.tm_c,t.model)).unwrap_or_else(||report.analysis.tm_unavailable.clone().unwrap_or_else(||"Tm unavailable".into()))}</p><p>{format!("Contiguous possible runs: hairpin {} · homodimer {} · homodimer at a 3′ end {}",metrics.hairpin.max_run,metrics.homodimer.max_run,metrics.homodimer.max_three_prime_run)}</p><ul>{report.analysis.warnings.into_iter().chain(report.bindings.warnings.clone()).map(|w|view!{<li>{w}</li>}).collect_view()}</ul><h4>{format!("{} binding hits{}",report.bindings.hits.len(),if report.bindings.truncated{" · truncated"}else{""})}</h4>{report.bindings.hits.into_iter().take(100).map(|hit|{let spans=hit.location.spans();let first=spans.first().map(|(a,b,_)|(*a,*b));let saved=annotation(&primer,hit.location.clone(),&metrics,!hit.certain,&revision.revision);let source=revision.clone();let select_source=revision.clone();view!{<article class="primer-hit"><strong>{format!("{}–{}{}{}",hit.start+1,hit.start+hit.length,if hit.reverse{" · reverse"}else{" · forward"},if hit.crosses_origin{" · crosses origin"}else{""})}</strong><p>{format!("{} mismatches · {} ambiguous positions · {} exact 3′ bases",hit.mismatches.len(),hit.ambiguous_positions.len(),hit.three_prime_exact)}</p><div class="primer-actions"><button class="button secondary" on:click=move|_|{if source_binding.get_untracked()!=select_source{status.set("The source event changed; rerun primer analysis before navigating.".into());return;}selected_feature.set(None);selection.set(first);status.set(if spans.len()>1{"Origin-spanning binding: first reference span selected; annotation preserves every span.".into()}else{"Binding interval selected.".into()});}>"Select binding"</button><button class="button secondary" on:click=move|_|match on_annotate.run((source.clone(),saved.clone())){Ok(())=>status.set("Primer annotation saved; binding source revision is retained in its qualifiers.".into()),Err(error)=>status.set(error)}>"Save primer annotation"</button></div></article>}}).collect_view()}<p class="helper">"Showing up to 100 hits; the JSON report retains all returned hits. Compatibility is not amplification or genome-wide specificity."</p><button class="button secondary full" on:click=move|_|match serde_json::to_vec_pretty(&for_download){Ok(bytes)=>if let Err(error)=crate::app::download("primer-evidence.json","application/json",&bytes){status.set(error)},Err(error)=>status.set(error.to_string())}>"Download primer evidence"</button></section>}})}
+        {move||evidence.get().map(|(revision,report)|{let metrics=report.analysis.clone();let primer=Primer::new(&metrics.name,&metrics.annealing,&metrics.tail).expect("worker validated primer");let for_download=report.clone();let keep_forward=primer.clone();let keep_reverse=primer.clone();let orders=order_context.get().map(|bound|view!{<crate::primer_orders::PrimerOrdersPanel primers=vec![primer.clone()] guard=Callback::new(move|()|order_guard.run(bound.clone())) on_collection/>});view!{<section class="primer-evidence"><h3>"Oligo evidence"</h3><pre>{report.analysis.ordered_sequence.clone()}</pre>{orders}<div class="primer-actions"><button class="button secondary" on:click=move|_|pair_draft.update(|draft|draft.forward=crate::primer_pair_model::OligoDraft{name:keep_forward.name.clone(),annealing:keep_forward.annealing.as_str().into(),tail:keep_forward.tail.clone(),anchor:None})>"Keep as forward primer"</button><button class="button secondary" on:click=move|_|pair_draft.update(|draft|draft.reverse=crate::primer_pair_model::OligoDraft{name:keep_reverse.name.clone(),annealing:keep_reverse.annealing.as_str().into(),tail:keep_reverse.tail.clone(),anchor:None})>"Keep as reverse primer"</button></div><p>{format!("Annealing {} nt · tail {} nt · GC {:.1}–{:.1}%",report.analysis.annealing.len(),report.analysis.tail.len(),report.analysis.annealing_gc.minimum_fraction*100.,report.analysis.annealing_gc.maximum_fraction*100.)}</p><p class="primer-tm">{report.analysis.tm.as_ref().map(|t|format!("Tm {:.2} °C · {}",t.tm_c,t.model)).unwrap_or_else(||report.analysis.tm_unavailable.clone().unwrap_or_else(||"Tm unavailable".into()))}</p><p>{format!("Contiguous possible runs: hairpin {} · homodimer {} · homodimer at a 3′ end {}",metrics.hairpin.max_run,metrics.homodimer.max_run,metrics.homodimer.max_three_prime_run)}</p><ul>{report.analysis.warnings.into_iter().chain(report.bindings.warnings.clone()).map(|w|view!{<li>{w}</li>}).collect_view()}</ul><h4>{format!("{} binding hits{}",report.bindings.hits.len(),if report.bindings.truncated{" · truncated"}else{""})}</h4>{report.bindings.hits.into_iter().take(100).map(|hit|{let spans=hit.location.spans();let first=spans.first().map(|(a,b,_)|(*a,*b));let saved=annotation(&primer,hit.location.clone(),&metrics,!hit.certain,&revision.revision);let source=revision.clone();let select_source=revision.clone();view!{<article class="primer-hit"><strong>{format!("{}–{}{}{}",hit.start+1,hit.start+hit.length,if hit.reverse{" · reverse"}else{" · forward"},if hit.crosses_origin{" · crosses origin"}else{""})}</strong><p>{format!("{} mismatches · {} ambiguous positions · {} exact 3′ bases",hit.mismatches.len(),hit.ambiguous_positions.len(),hit.three_prime_exact)}</p><div class="primer-actions"><button class="button secondary" on:click=move|_|{if source_binding.get_untracked()!=select_source{status.set("The source event changed; rerun primer analysis before navigating.".into());return;}selected_feature.set(None);selection.set(first);status.set(if spans.len()>1{"Origin-spanning binding: first reference span selected; annotation preserves every span.".into()}else{"Binding interval selected.".into()});}>"Select binding"</button><button class="button secondary" on:click=move|_|match on_annotate.run((source.clone(),saved.clone())){Ok(())=>status.set("Primer annotation saved; binding source revision is retained in its qualifiers.".into()),Err(error)=>status.set(error)}>"Save primer annotation"</button></div></article>}}).collect_view()}<p class="helper">"Showing up to 100 hits; the JSON report retains all returned hits. Compatibility is not amplification or genome-wide specificity."</p><button class="button secondary full" on:click=move|_|match serde_json::to_vec_pretty(&for_download){Ok(bytes)=>if let Err(error)=crate::app::download("primer-evidence.json","application/json",&bytes){status.set(error)},Err(error)=>status.set(error.to_string())}>"Download primer evidence"</button></section>}})}
         <crate::primer_pair_editor::PrimerPairEditor draft=pair_draft selection=pair_selection anchor_available primer_sources list_primers resolve_primer epoch on_apply=Callback::new(move|pair|{on_use.run(pair);Ok(())}) apply_label="Use pair for PCR".to_string()/>
         <h3>"Select an anchored primer pair"</h3><p class="helper">"One-based inclusive target coordinates. For a circle, end may exceed the document length to cross the origin, up to one turn."</p><button class="button secondary full" disabled=move||selection.get().is_none() on:click=move|_|if let Some((a,b))=selection.get_untracked(){start.set((a+1).to_string());end.set(b.to_string());}>"Use selection as target"</button>
         <div class="primer-grid">{[("Target start","Primer target start",start),("Target end","Primer target end",end),("Min length","Primer minimum length",min_length),("Max length","Primer maximum length",max_length),("Target Tm (°C)","Primer target Tm",target_tm),("Pair ΔTm (°C)","Primer pair Tm difference",max_delta),("Min GC (%)","Primer minimum GC",min_gc),("Max GC (%)","Primer maximum GC",max_gc),("Homopolymer limit","Primer homopolymer limit",max_homopolymer),("3′ run limit","Primer complementarity limit",max_complementarity)].into_iter().map(|(label,aria,value)|view!{<label>{label}<input aria-label=aria type="number" prop:value=move||value.get() on:input=move|e|value.set(event_target_value(&e))/></label>}).collect_view()}</div>
         <label>"Forward 5′ tail"<input aria-label="Design forward tail" prop:value=move||forward_tail.get() on:input=move|e|forward_tail.set(event_target_value(&e))/></label><label>"Reverse 5′ tail"<input aria-label="Design reverse tail" prop:value=move||reverse_tail.get() on:input=move|e|reverse_tail.set(event_target_value(&e))/></label>
         <button class="button primary full" disabled=move||busy.get()||molecule.get().sequence.alphabet()!=Alphabet::Dna on:click=select_design>"Select primer pairs"</button>
-        {move||design.get().map(|(source,report)|{let for_download=report.clone();view!{<section class="primer-design"><h3>{format!("{} ranked primer pairs",report.pairs.len())}</h3><ul>{report.warnings.into_iter().map(|w|view!{<li>{w}</li>}).collect_view()}</ul>{report.pairs.into_iter().enumerate().map(|(i,pair)|{let f=pair.forward.primer.clone();let r=pair.reverse.primer.clone();let save_f=annotation(&f,pair.forward.location.clone(),&pair.forward.analysis,false,&source.revision);let save_r=annotation(&r,pair.reverse.location.clone(),&pair.reverse.analysis,false,&source.revision);let source_f=source.clone();let source_r=source.clone();view!{<article class="primer-pair"><strong>{format!("Pair {} · {} bp including tails",i+1,pair.product_length)}</strong><pre>{format!("F  {}\nR  {}",f.ordered_sequence(),r.ordered_sequence())}</pre><p>{format!("Tm {:.2} / {:.2} °C · Δ {:.2} °C · score {:.3}",pair.forward.analysis.tm.as_ref().unwrap().tm_c,pair.reverse.analysis.tm.as_ref().unwrap().tm_c,pair.tm_difference_c,pair.score)}</p><div class="primer-actions"><button class="button primary" on:click=move|_|on_use.run((f.clone(),r.clone()))>"Use pair for PCR"</button><button class="button secondary" on:click=move|_|match on_annotate.run((source_f.clone(),save_f.clone())){Ok(())=>status.set("Forward primer annotation saved. Re-run selection against the new document revision to save another.".into()),Err(error)=>status.set(error)}>"Save forward primer"</button><button class="button secondary" on:click=move|_|match on_annotate.run((source_r.clone(),save_r.clone())){Ok(())=>status.set("Reverse primer annotation saved. Re-run selection against the new document revision to save another.".into()),Err(error)=>status.set(error)}>"Save reverse primer"</button></div></article>}}).collect_view()}<button class="button secondary full" on:click=move|_|match serde_json::to_vec_pretty(&for_download){Ok(bytes)=>if let Err(error)=crate::app::download("primer-pairs.json","application/json",&bytes){status.set(error)},Err(error)=>status.set(error.to_string())}>"Download primer pairs"</button></section>}})}
+        {move||design.get().map(|(source,report)|{let for_download=report.clone();view!{<section class="primer-design"><h3>{format!("{} ranked primer pairs",report.pairs.len())}</h3><ul>{report.warnings.into_iter().map(|w|view!{<li>{w}</li>}).collect_view()}</ul>{report.pairs.into_iter().enumerate().map(|(i,pair)|{let f=pair.forward.primer.clone();let r=pair.reverse.primer.clone();let save_f=annotation(&f,pair.forward.location.clone(),&pair.forward.analysis,false,&source.revision);let save_r=annotation(&r,pair.reverse.location.clone(),&pair.reverse.analysis,false,&source.revision);let source_f=source.clone();let source_r=source.clone();let orders=order_context.get().map(|bound|view!{<details><summary>"Order or save this pair"</summary><crate::primer_orders::PrimerOrdersPanel primers=vec![f.clone(),r.clone()] guard=Callback::new(move|()|order_guard.run(bound.clone())) on_collection/></details>});view!{<article class="primer-pair"><strong>{format!("Pair {} · {} bp including tails",i+1,pair.product_length)}</strong>{orders}<pre>{format!("F  {}\nR  {}",f.ordered_sequence(),r.ordered_sequence())}</pre><p>{format!("Tm {:.2} / {:.2} °C · Δ {:.2} °C · score {:.3}",pair.forward.analysis.tm.as_ref().unwrap().tm_c,pair.reverse.analysis.tm.as_ref().unwrap().tm_c,pair.tm_difference_c,pair.score)}</p><div class="primer-actions"><button class="button primary" on:click=move|_|on_use.run((f.clone(),r.clone()))>"Use pair for PCR"</button><button class="button secondary" on:click=move|_|match on_annotate.run((source_f.clone(),save_f.clone())){Ok(())=>status.set("Forward primer annotation saved. Re-run selection against the new document revision to save another.".into()),Err(error)=>status.set(error)}>"Save forward primer"</button><button class="button secondary" on:click=move|_|match on_annotate.run((source_r.clone(),save_r.clone())){Ok(())=>status.set("Reverse primer annotation saved. Re-run selection against the new document revision to save another.".into()),Err(error)=>status.set(error)}>"Save reverse primer"</button></div></article>}}).collect_view()}<button class="button secondary full" on:click=move|_|match serde_json::to_vec_pretty(&for_download){Ok(bytes)=>if let Err(error)=crate::app::download("primer-pairs.json","application/json",&bytes){status.set(error)},Err(error)=>status.set(error.to_string())}>"Download primer pairs"</button></section>}})}
         </div>
     }
 }

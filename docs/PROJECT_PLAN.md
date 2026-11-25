@@ -736,3 +736,29 @@ without changing existing scientific operations or native schemas. This closes
 the explicit single-design Golden Gate junction-edit gap; fusion optimization,
 internal-site domestication, exhaustive mixture/cycling and bulk cloning remain
 required. [Core contract](GOLDEN_GATE_JUNCTION_EDIT.md).
+
+
+### Prepared Golden Gate alternatives and candidate handoff
+
+The Golden Gate dock now inspects the declared pool of selected prepared roles
+using fresh raw strands from the same native preparation pass. Existing bounded
+complete-digest/one-copy enumeration reports self/subset backgrounds, competing
+paths, recutting and independent target correspondence. Missing required physical
+preparation withholds the pool; state/product limits retain incomplete-search
+labels. Candidates and recut sites remain accessible through paging.
+
+An exact parent context/index/key selection preserves original sources and all
+preparation/treatment steps, changing only final ordered ligation to the existing
+GoldenGate operation. The result goes through the normal fresh verification,
+product review, output and protocol routes. The same inspection/selection contract
+is available in worker47/MCP134. No saved pool duplex grants physical authority.
+This covers the explicitly selected prepared pool; original whole-template/
+amplicon one-pot mixtures, discarded material, broader cycling, fusion optimization,
+domestication and bulk design remain in scope for subsequent work. See
+[prepared pool model](PREPARED_GOLDEN_GATE.md).
+
+The existing actual-product map/sequence and fresh verifier support the selected
+GoldenGate plan. The junction-window adapter currently covers ordered ligation
+and overlap final steps; adding the selected GoldenGate path's exact junction
+windows remains required. Its current unsupported-method result must not be
+presented as complete junction inspection.

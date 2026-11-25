@@ -193,9 +193,18 @@ fn junctions(physical: &[Option<DuplexSummary>], rows: usize, circular: bool) ->
         .collect()
 }
 pub fn preview(inputs: &[PlanInput], target: &Molecule, recipe: &Recipe) -> Result<Preview, Error> {
+    Ok(preview_with_physical(inputs, target, recipe)?.0)
+}
+/// Same fresh verifier pass as public preview; private raw-orientation duplexes
+/// cannot be reconstructed from the serialized summaries or molecule metadata.
+pub(crate) fn preview_with_physical(
+    inputs: &[PlanInput],
+    target: &Molecule,
+    recipe: &Recipe,
+) -> Result<(Preview, Vec<Option<Duplex>>), Error> {
     let context_revision = preview_revision(inputs, target, recipe)?;
     let compiled = compile(inputs, target, recipe)?;
-    let (verification, trace) = verification::verify_with_physical(&compiled.plan, target);
+    let (verification, mut trace) = verification::verify_with_physical(&compiled.plan, target);
     let mut available = Vec::with_capacity(compiled.rows.len());
     for row in &compiled.rows {
         let m = match &row.prepared_source {
@@ -224,23 +233,20 @@ pub fn preview(inputs: &[PlanInput], target: &Molecule, recipe: &Recipe) -> Resu
     preparation::hash(&available)?;
     let preparation_complete = available.len() == compiled.rows.len();
     let mut physical = Vec::with_capacity(available.len());
-    for (row, m) in compiled.rows.iter().zip(&available) {
-        let state = match &row.prepared_source {
-            Source::Step(i) => trace
-                .get(*i)
-                .and_then(Option::as_ref)
+    let mut fresh: Vec<Option<Duplex>> = vec![None; compiled.rows.len()];
+    for (index, (row, m)) in compiled.rows.iter().zip(&available).enumerate() {
+        let raw = match &row.prepared_source {
+            Source::Step(i) => trace.get_mut(*i).and_then(Option::take),
+            // Existing original intact-reference assumption only. Markers may
+            // restrict it; serialized end/graph summaries never restore state.
+            Source::Input(_) => Duplex::from_molecule(m).ok(),
+        };
+        physical.push(
+            raw.as_ref()
                 .map(|d| summary(d, row.preparation.reverse))
                 .transpose()?,
-            Source::Input(_) => {
-                // Same existing intact-reference assumption as the verifier, with UNKNOWN
-                // termini. Imported intermediate/ssDNA markers can only restrict this path.
-                Duplex::from_molecule(m)
-                    .ok()
-                    .map(|d| summary(&d, row.preparation.reverse))
-                    .transpose()?
-            }
-        };
-        physical.push(state);
+        );
+        fresh[index] = raw;
     }
     let product_physical = trace
         .get(compiled.ligation_step)
@@ -260,7 +266,7 @@ pub fn preview(inputs: &[PlanInput], target: &Molecule, recipe: &Recipe) -> Resu
         preparation_complete,
     };
     result.validate()?;
-    Ok(result)
+    Ok((result, fresh))
 }
 fn same(a: &Source, b: &Source) -> bool {
     match (a, b) {

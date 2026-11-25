@@ -238,7 +238,7 @@ fn rotation_bytes(sequence: &str) -> Vec<u8> {
         .copied()
         .collect()
 }
-fn sequence_keys(duplex: &Duplex) -> Result<(String, String), Error> {
+pub(crate) fn sequence_keys(duplex: &Duplex) -> Result<(String, String), Error> {
     let directed = if duplex.topology == Topology::Circular {
         rotation_bytes(duplex.top.as_str())
     } else {

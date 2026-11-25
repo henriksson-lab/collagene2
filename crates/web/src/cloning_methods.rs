@@ -1351,6 +1351,16 @@ pub fn CloningMethodsPanel(
             let preparations=proof.config.rows.iter().map(OverlapInput::summary).collect::<Vec<_>>();
             view!{<div class="method-evidence">
             {diagnostics.map(|result|match result{Ok(diagnostics)=>view!{<MethodDiagnostics diagnostics names preparations on_edit=edit on_source=view_source/>}.into_any(),Err(error)=>view!{<p class="helper">{format!("Structured preparation diagnostics unavailable: {error}. The full fresh findings remain below.")}</p>}.into_any()})}
+            {(proof.config.mode==Mode::GoldenGate).then(||{
+                let pool_capture=Callback::new(move|()|current.with_value(|saved|{
+                    diagnostic_guard.run(saved.clone())?;
+                    let original=sources.get_untracked().ok_or("Original preparation sources are unavailable.")?;
+                    let target=molecule.get_untracked();
+                    let (inputs,recipe)=ligation_request(&saved.config,original,&target)?;
+                    Ok::<_,String>((inputs,target,recipe))
+                }));
+                view!{<PreparedPool proof=proof.clone() guard=diagnostic_guard capture=pool_capture epoch on_candidate on_finalize on_edit=edit on_source=view_source/>}
+            })}
             {proof.ligation.as_ref().map(|p|(&p.compiled.plan,&p.verification)).or_else(||proof.overlap.as_ref().map(|p|(&p.compiled.plan,&p.verification))).map(|(plan,report)|{
                 let captured = StoredValue::new(proof.clone());
                 let captured_sources = StoredValue::new(Some(proof.context.clone()));
@@ -2021,4 +2031,356 @@ fn MethodDiagnostics(
         <ul>{diagnostics.warnings.into_iter().map(|warning|view!{<li class="helper">{warning}</li>}).collect_view()}</ul>
         <details><summary>"Full fresh findings"</summary><ul>{diagnostics.findings.into_iter().map(|finding|view!{<li>{finding}</li>}).collect_view()}</ul></details>
     </section>}
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct PoolForm {
+    circular: bool,
+    both: bool,
+    minimum: String,
+    maximum: String,
+    products: String,
+    states: String,
+}
+struct PoolEvidence {
+    report: collagene_core::prepared_golden_gate::Report,
+    form: PoolForm,
+    epoch: u64,
+}
+#[component]
+fn PreparedPool(
+    proof: Arc<Evidence>,
+    guard: Callback<Arc<Evidence>, Result<(), String>>,
+    capture: Callback<
+        (),
+        Result<
+            (
+                Vec<PlanInput>,
+                Molecule,
+                collagene_core::ligation_recipe::Recipe,
+            ),
+            String,
+        >,
+    >,
+    epoch: RwSignal<u64>,
+    on_candidate: Callback<Candidate>,
+    #[prop(optional_no_strip)] on_finalize: Option<Callback<Candidate, Result<(), String>>>,
+    on_edit: Callback<usize>,
+    #[prop(optional_no_strip)] on_source: Option<Callback<usize>>,
+) -> impl IntoView {
+    use collagene_core::{golden_gate::GoldenGateOptions, prepared_golden_gate as pool};
+    let form = RwSignal::new(PoolForm {
+        circular: proof.config.circular,
+        both: true,
+        minimum: "1".into(),
+        maximum: "16".into(),
+        products: "128".into(),
+        states: "50000".into(),
+    });
+    let proof = StoredValue::new(proof);
+    let evidence = RwSignal::new(None::<Arc<PoolEvidence>>);
+    let page = RwSignal::new(0usize);
+    let status = RwSignal::new(String::new());
+    let pending = RwSignal::new(false);
+    let generation = RwSignal::new(0u32);
+    let worker = StoredValue::new_local(None::<Rc<CachedWorker>>);
+    let alive = Arc::new(AtomicBool::new(true));
+    let cleanup = alive.clone();
+    on_cleanup(move || {
+        cleanup.store(false, Ordering::Relaxed);
+        if let Some(w) = worker.get_value() {
+            w.close();
+        }
+    });
+    Effect::new(move |_| {
+        let _ = (form.get(), epoch.get());
+        generation.update(|g| *g = g.wrapping_add(1));
+        if let Some(w) = worker.get_value() {
+            w.close();
+        }
+        worker.set_value(None);
+        pending.set(false);
+        evidence.set(None);
+        page.set(0);
+    });
+    let pool_guard = Callback::new(move |saved: Arc<PoolEvidence>| -> Result<(), String> {
+        guard.run(proof.get_value())?;
+        if epoch.get_untracked() != saved.epoch
+            || form.get_untracked() != saved.form
+            || !evidence.with_untracked(|current| {
+                current
+                    .as_ref()
+                    .is_some_and(|current| Arc::ptr_eq(current, &saved))
+            })
+        {
+            return Err(
+                "Prepared pool options or source context changed. Inspect the pool again.".into(),
+            );
+        }
+        Ok(())
+    });
+    let inspect_alive = alive.clone();
+    let inspect = move |_| {
+        let options = form.get_untracked();
+        let captured_epoch = epoch.get_untracked();
+        let prepared = (|| -> Result<_, String> {
+            guard.run(proof.get_value())?;
+            if [
+                &options.minimum,
+                &options.maximum,
+                &options.products,
+                &options.states,
+            ]
+            .iter()
+            .any(|field| field.len() > 20)
+            {
+                return Err("Pool limits exceed their field bounds.".into());
+            }
+            let (inputs, target, recipe) = capture.run(())?;
+            let request = pool::Request {
+                recipe,
+                options: GoldenGateOptions {
+                    enzyme: proof.with_value(|p| p.config.golden_gate.enzyme),
+                    circular: options.circular,
+                    both_orientations: options.both,
+                    min_fragments: options
+                        .minimum
+                        .parse()
+                        .map_err(|_| "Enter a minimum fragment count.")?,
+                    max_fragments: options
+                        .maximum
+                        .parse()
+                        .map_err(|_| "Enter a maximum fragment count.")?,
+                    max_products: options
+                        .products
+                        .parse()
+                        .map_err(|_| "Enter a product limit.")?,
+                    max_states: options
+                        .states
+                        .parse()
+                        .map_err(|_| "Enter a search-state limit.")?,
+                },
+            };
+            let revision =
+                pool::inspect_revision(&inputs, &target, &request).map_err(|e| e.to_string())?;
+            let w = Rc::new(CachedWorker::new()?);
+            Ok((inputs, target, request, revision, w))
+        })();
+        let (inputs, target, request, revision, w) = match prepared {
+            Ok(value) => value,
+            Err(error) => {
+                status.set(error);
+                return;
+            }
+        };
+        if let Some(old) = worker.get_value() {
+            old.close();
+        }
+        worker.set_value(Some(w.clone()));
+        let token = generation.get_untracked().wrapping_add(1);
+        generation.set(token);
+        pending.set(true);
+        evidence.set(None);
+        page.set(0);
+        status.set(
+            "Reconstructing every preparation and exploring the finite raw-substrate pool…".into(),
+        );
+        let alive = inspect_alive.clone();
+        spawn_local(async move {
+            let response = w
+                .ask(Request {
+                    id: token,
+                    revision: revision.clone(),
+                    job: AnalysisJob::InspectPreparedGoldenGatePool {
+                        inputs,
+                        target,
+                        request,
+                    },
+                })
+                .await;
+            w.close();
+            if !alive.load(Ordering::Relaxed)
+                || generation.get_untracked() != token
+                || epoch.get_untracked() != captured_epoch
+                || form.get_untracked() != options
+            {
+                return;
+            }
+            pending.set(false);
+            worker.set_value(None);
+            let outcome = (|| -> Result<_, String> {
+                guard.run(proof.get_value())?;
+                let response = response?;
+                if response.id != token || response.revision != revision {
+                    return Err("Prepared pool response identity changed.".into());
+                }
+                let report = match response.result {
+                    AnalysisResult::PreparedGoldenGatePool(report) => report,
+                    AnalysisResult::Error(error) => return Err(error),
+                    _ => return Err("Unexpected prepared pool result.".into()),
+                };
+                report
+                    .validate_binding(&revision)
+                    .map_err(|e| e.to_string())?;
+                Ok(Arc::new(PoolEvidence {
+                    report,
+                    form: options,
+                    epoch: captured_epoch,
+                }))
+            })();
+            match outcome {
+                Ok(bound) => {
+                    let withheld = bound.report.pool.is_none();
+                    evidence.set(Some(bound));
+                    status.set(if withheld{"Prepared physical state is missing; pool search is withheld. Review the fresh preparation diagnostics."}else{"Finite pool evidence ready. No candidate is automatically preferred; review alternatives and the independent target assessment."}.into());
+                }
+                Err(error) => status.set(error),
+            }
+        });
+    };
+    let select_alive = alive.clone();
+    let select = Callback::new(
+        move |(saved, index, finalize): (Arc<PoolEvidence>, usize, bool)| {
+            let prepared = (|| -> Result<_, String> {
+                pool_guard.run(saved.clone())?;
+                let candidate = saved
+                    .report
+                    .pool
+                    .as_ref()
+                    .and_then(|report| report.candidates.get(index))
+                    .ok_or("The selected pool candidate is unavailable.")?;
+                if !candidate.restriction_site_free {
+                    return Err("Only site-free candidates can be selected. Retained/recreated recognition remains visible for diagnosis.".into());
+                }
+                if finalize && on_finalize.is_none() {
+                    return Err("Output creation is unavailable in this standalone context; review the candidate instead.".into());
+                }
+                let selection = pool::Selection {
+                    context_revision: saved.report.context_revision.clone(),
+                    candidate_index: index,
+                    directed_sequence_key: candidate.directed_sequence_key.clone(),
+                    physical_sequence_key: candidate.physical_sequence_key.clone(),
+                };
+                let revision = pool::selection_revision(&saved.report, &selection)
+                    .map_err(|e| e.to_string())?;
+                let w = Rc::new(CachedWorker::new()?);
+                Ok((selection, revision, w))
+            })();
+            let (selection, revision, w) = match prepared {
+                Ok(value) => value,
+                Err(error) => {
+                    status.set(error);
+                    return;
+                }
+            };
+            if let Some(old) = worker.get_value() {
+                old.close();
+            }
+            worker.set_value(Some(w.clone()));
+            let token = generation.get_untracked().wrapping_add(1);
+            generation.set(token);
+            pending.set(true);
+            status.set(
+                "Binding the exact candidate keys into an unverified source-backed plan…".into(),
+            );
+            let alive = select_alive.clone();
+            spawn_local(async move {
+                let response = w
+                    .ask(Request {
+                        id: token,
+                        revision: revision.clone(),
+                        job: AnalysisJob::SelectPreparedGoldenGateCandidate {
+                            report: Box::new(saved.report.clone()),
+                            selection: selection.clone(),
+                        },
+                    })
+                    .await;
+                w.close();
+                if !alive.load(Ordering::Relaxed) || generation.get_untracked() != token {
+                    return;
+                }
+                pending.set(false);
+                worker.set_value(None);
+                let outcome = (|| -> Result<(), String> {
+                    pool_guard.run(saved.clone())?;
+                    let response = response?;
+                    if response.id != token || response.revision != revision {
+                        return Err("Pool selection response identity changed.".into());
+                    }
+                    let result = match response.result {
+                        AnalysisResult::PreparedGoldenGateCandidate(result) => result,
+                        AnalysisResult::Error(error) => return Err(error),
+                        _ => return Err("Unexpected prepared pool selection result.".into()),
+                    };
+                    result
+                        .validate_binding(&revision)
+                        .map_err(|e| e.to_string())?;
+                    if result.parent_context != saved.report.context_revision
+                        || result.selection.context_revision != selection.context_revision
+                        || result.selection.candidate_index != selection.candidate_index
+                        || result.selection.directed_sequence_key != selection.directed_sequence_key
+                        || result.selection.physical_sequence_key != selection.physical_sequence_key
+                    {
+                        return Err(
+                            "Selected candidate keys or parent pool context changed.".into()
+                        );
+                    }
+                    let candidate = Candidate::new(result.plan);
+                    if finalize {
+                        on_finalize
+                            .ok_or("Output creation context is unavailable.")?
+                            .run(candidate)
+                    } else {
+                        on_candidate.run(candidate);
+                        Ok(())
+                    }
+                })();
+                match outcome{Ok(())=>status.set("Unverified candidate submitted for fresh plan reconstruction. A target mismatch can remain Invalid; no mixture uniqueness or experimental success was established.".into()),Err(error)=>status.set(error)}
+            });
+        },
+    );
+    view! {<section class="prepared-gate-pool" aria-label="Prepared Golden Gate pool alternatives"><h3>"Explore prepared-pool alternatives"</h3>
+        <p class="helper">"This recomputes original-source preparation before exploring only the selected prepared-role products, after their digest, repair and end-treatment steps. Other digest pieces are assumed excluded. Whole-source/whole-amplicon one-pot mixtures, uncut original-source carryover and discarded fragments are not represented unless declared as prepared roles. Paths may use a subset or different orientation/order; they are separate from the ordered candidate above and are never installed as DNA directly."</p>
+        <details><summary>"Finite pool scope and limits"</summary><p>{proof.with_value(|p|format!("Recut profile: {:?}. Bounds do not model kinetics, partial digestion, repeated copies or all real mixture outcomes.",p.config.golden_gate.enzyme))}</p>
+            <label class="checkbox-label"><input type="checkbox" aria-label="Prepared pool circular products" prop:checked=move||form.with(|f|f.circular) on:change=move|e|form.update(|f|f.circular=event_target_checked(&e))/>"Search circular products (otherwise linear)"</label>
+            <label class="checkbox-label"><input type="checkbox" aria-label="Prepared pool both raw orientations" prop:checked=move||form.with(|f|f.both) on:change=move|e|form.update(|f|f.both=event_target_checked(&e))/>"Explore both raw substrate orientations"</label><p class="helper">"If unchecked, each prepared substrate uses its original, unreversed preparation orientation. Ordered-row reverse checkboxes do not constrain this pool search."</p>
+            <div class="primer-grid"><label>"Minimum fragments (1 includes background)"<input type="number" min="1" aria-label="Prepared pool minimum fragments" prop:value=move||form.with(|f|f.minimum.clone()) on:input=move|e|form.update(|f|f.minimum=event_target_value(&e))/></label><label>"Maximum fragments"<input type="number" min="1" aria-label="Prepared pool maximum fragments" prop:value=move||form.with(|f|f.maximum.clone()) on:input=move|e|form.update(|f|f.maximum=event_target_value(&e))/></label><label>"Product limit"<input type="number" min="1" aria-label="Prepared pool product limit" prop:value=move||form.with(|f|f.products.clone()) on:input=move|e|form.update(|f|f.products=event_target_value(&e))/></label><label>"Search-state limit"<input type="number" min="1" aria-label="Prepared pool state limit" prop:value=move||form.with(|f|f.states.clone()) on:input=move|e|form.update(|f|f.states=event_target_value(&e))/></label></div>
+        </details>
+        <button class="button secondary" disabled=move||pending.get() on:click=inspect>"Inspect prepared pool"</button><button class="text-tool" disabled=move||!pending.get() on:click=move|_|{generation.update(|g|*g=g.wrapping_add(1));if let Some(w)=worker.get_value(){w.close();}worker.set_value(None);pending.set(false);status.set("Prepared-pool computation cancelled.".into());}>"Cancel prepared pool"</button><p role="status">{move||status.get()}</p>
+        {move||evidence.get().map(|bound|{let request=StoredValue::new(bound.clone());let diagnostics=collagene_core::assembly_diagnostics::ligation(&bound.report.preview);let names=proof.with_value(|p|p.context.iter().map(|s|s.name.clone()).collect::<Vec<_>>());let preparations=proof.with_value(|p|p.config.rows.iter().map(OverlapInput::summary).collect::<Vec<_>>());view!{<section class="prepared-gate-report">
+            <h4>"Fresh pool reconstruction"</h4><p>{format!("Ordered recipe assessment during recomputation: {}. This does not select the best pool alternative.",method_status(&bound.report.preview.verification.status))}</p>
+            {(!bound.report.missing_physical.is_empty()).then(||view!{<p role="alert">{format!("Pool withheld: physical substrate state is unavailable for rows {}. No partial search is presented as complete.",bound.report.missing_physical.iter().map(|i|(i+1).to_string()).collect::<Vec<_>>().join(", "))}</p>})}
+            <ul>{bound.report.warnings.iter().map(|warning|view!{<li>{warning.clone()}</li>}).collect_view()}</ul>
+            {match diagnostics{Ok(diagnostics)=>view!{<details><summary>"Recomputed row preparation diagnostics"</summary><MethodDiagnostics diagnostics names preparations on_edit on_source/></details>}.into_any(),Err(error)=>view!{<p class="helper">{format!("Structured diagnostics unavailable: {error}")}</p>}.into_any()}}
+            {bound.report.pool.as_ref().map(|pool|{let count=pool.candidates.len();let pages=count.max(1).div_ceil(50);let start=page.get().min(pages-1)*50;view!{<h4>{format!("{} directed candidates · {} physical sequence groups",count,pool.stable_physical_product_count)}</h4><p>{if pool.enumeration_complete{"Declared finite prepared-role pool search completed within the selected options."}else{"Search incomplete: additional declared prepared-pool alternatives may exist."}}</p><p class="helper">{format!("States examined {}. Repeated-copy/real-mixture exhaustiveness is outside this model. Circular prepared-role carryover rows: {} (not implicit original-source carryover). Sequence grouping is not a unique source/annotation history.",pool.states_examined,if pool.carryover_sources.is_empty(){"none".into()}else{pool.carryover_sources.iter().map(|row|(row+1).to_string()).collect::<Vec<_>>().join(", ")})}</p><ul>{pool.truncation_reasons.iter().chain(pool.warnings.iter()).map(|warning|view!{<li>{warning.clone()}</li>}).collect_view()}</ul>
+                {pool.candidates.iter().enumerate().skip(start).take(50).map(|(index,candidate)|{let assessment=bound.report.assessments.iter().find(|a|a.candidate_index==index);let allowed=candidate.restriction_site_free;view!{<article class="prepared-gate-candidate"><h4>{format!("Candidate {} · {} top-strand bases · {} pool fragments",index+1,candidate.duplex.top.len(),candidate.path.len())}</h4><p>{if allowed{"Recognition-site-free under the chosen profile"}else{"Recognition retained/recreated — diagnosis only"}}</p><p>{format!("Independent target match: {} · used recipe rows (unique): {}",assessment.map(|a|a.target_matches.to_string()).unwrap_or_else(||"unavailable".into()),assessment.map(|a|a.source_roles.iter().map(|&row|proof.with_value(|p|format!("{} ({})",row+1,p.context.get(row).map(|s|s.name.as_str()).unwrap_or("unknown source")))).collect::<Vec<_>>().join(", ")).unwrap_or_else(||"unavailable".into()))}</p><p class="helper">{format!("Raw path: {}",candidate.path.iter().map(|step|pool.fragments.get(step.fragment).map(|fragment|format!("pool fragment {} · row {} / digest {}{}",step.fragment+1,fragment.source_index+1,fragment.fragment_index+1,if step.reverse{" reverse"}else{" forward"})).unwrap_or_else(||"unavailable pool fragment".into())).collect::<Vec<_>>().join(" → "))}</p><pre>{short(candidate.duplex.top.as_str())}</pre><p>{format!("{} recut/recognition observations",candidate.recut_sites.len())}</p><PoolCandidateDetails bound=bound.clone() index/>
+                    <button class="button secondary" disabled=move||pending.get()||!allowed on:click=move|_|select.run((request.get_value(),index,false))>"Review pool candidate"</button>{on_finalize.map(|_|view!{<button class="button primary" disabled=move||pending.get()||!allowed on:click=move|_|select.run((request.get_value(),index,true))>"Create outputs from this candidate"</button>})}
+                </article>}}).collect_view()}
+                <p>{format!("Page {} of {} · candidates {}–{} of {}",page.get().min(pages-1)+1,pages,if count==0{0}else{start+1},(start+50).min(count),count)}</p><button class="text-tool" disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous pool candidates"</button><button class="text-tool" disabled=move||{page.get()+1>=pages} on:click=move|_|page.update(|p|*p=(*p+1).min(pages-1))>"Next pool candidates"</button>
+            }})}
+            <button class="button secondary" on:click=move|_|{let saved=request.get_value();let result=pool_guard.run(saved.clone()).and_then(|()|serde_json::to_vec_pretty(&saved.report).map_err(|e|e.to_string())).and_then(|bytes|download("prepared-golden-gate-pool.json","application/json",&bytes));if let Err(error)=result{status.set(error);}}>"Download full prepared-pool evidence"</button>
+        </section>}})}
+    </section>}
+}
+
+#[component]
+fn PoolCandidateDetails(bound: Arc<PoolEvidence>, index: usize) -> impl IntoView {
+    let bound = StoredValue::new(bound);
+    let page = RwSignal::new(0usize);
+    let total = bound.with_value(|saved| {
+        saved
+            .report
+            .pool
+            .as_ref()
+            .and_then(|pool| pool.candidates.get(index))
+            .map(|candidate| candidate.recut_sites.len())
+            .unwrap_or(0)
+    });
+    let pages = total.max(1).div_ceil(25);
+    view! {<details><summary>"Candidate identity and recut evidence"</summary>
+        {bound.with_value(|saved|saved.report.pool.as_ref().and_then(|pool|pool.candidates.get(index)).map(|candidate|view!{<p>{format!("Directed key {} · physical key {}",candidate.directed_sequence_key,candidate.physical_sequence_key)}</p>}))}
+        {move||bound.with_value(|saved|saved.report.pool.as_ref().and_then(|pool|pool.candidates.get(index)).map(|candidate|candidate.recut_sites.iter().skip(page.get()*25).take(25).map(|site|view!{<p>{format!("Recognition at {}{} · paired {} · cleavable under model {}",site.recognition_start+1,if site.reverse{" reverse"}else{" forward"},site.fully_double_stranded,site.cleavable_under_model)}</p>}).collect_view()))}
+        <p>{move||format!("{} recut observations · page {} of {}",total,page.get()+1,pages)}</p>
+        <button class="text-tool" disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous recut observations"</button><button class="text-tool" disabled=move||{page.get()+1>=pages} on:click=move|_|page.update(|p|*p=(*p+1).min(pages-1))>"Next recut observations"</button>
+    </details>}
 }

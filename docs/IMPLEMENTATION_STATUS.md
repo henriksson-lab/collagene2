@@ -630,3 +630,42 @@ The web WASM target also passed its background compiler check. Native/WASM check
 used the existing shared cache; no full Trunk rebuild, browser check or preview
 refresh was run for this checkpoint. Port8082 retains the previous successful
 immutable diagnostic/pair-draft snapshot until the next suitable publication.
+
+
+## Prepared Golden Gate alternatives
+
+The Golden Gate method evidence can now inspect a finite pool of explicitly
+selected prepared roles, using raw physical strands retained privately by the
+same fresh preparation verifier pass. The pool engine redigests those substrates
+and retains self/subset backgrounds, alternate paths, recut sites, target
+correspondence and explicit search caps. Missing material withholds the pool.
+Discarded digest pieces, unrepresented original templates/amplicons and their
+carryover are outside this declared scope. This is not a complete original one-pot
+reaction or experimental-yield model.
+
+Candidates and recut sites are paged without hiding reported alternatives. Exact
+context/index/directed+physical keys select an unverified native plan retaining
+all original inputs and preparation/treatment steps. Only the final operation
+changes from ordered Ligate to existing GoldenGate. Review and output creation
+use the existing fresh-verification path; no pool duplex becomes an imported
+physical substrate or automatically installed DNA document. The exact selected
+GoldenGate path's junction-window adapter remains pending; existing actual-product
+sequence/map review and final verification remain available.
+
+Worker47 adds inspection113/result105 and selection114/result106. MCP134 adds
+inspection plus atomic selected-plan/binary publication using the same original
+source/target bindings. Existing candidate11, plan9, science14 and archive1 formats
+are unchanged. Ligation's public preview still uses the same single native pass;
+its internal helper now makes the actual prepared raw strands available privately.
+
+The focused native batch passed 15 cases: five new scientific prepared-pool fixtures,
+one two-way worker selector/binding fixture, two real MCP SDK groups and seven
+existing ligation/worker regressions. Independent literal targets distinguish the
+full desired construct from self-products; fresh selection verification confirms
+the difference. Recutting, missing preparation, metadata-only physical claims,
+truncated search, raw orientation and stale/key tampering remain explicit.
+
+The web WASM compiler check also passed. Both checks used the existing shared
+cache while documentation work continued. No browser check or preview rebuild
+ran; port8082 retains the last published immutable snapshot. Further one-pot
+reaction coverage and selected-path junction windows remain active work.

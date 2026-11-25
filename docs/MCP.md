@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current registry has 132 tools. Reference recombination adds explicit profile discovery, source inspection, independent target checking and fresh selected-component reconstruction. The optional `plan_sources` bridge binds a returned selection to typed plan sources without requiring a client to reproduce internal hash recipes. [Recombination tool contracts](RECOMBINATION_MCP.md).
+The current registry has 134 tools. Reference recombination adds explicit profile discovery, source inspection, independent target checking and fresh selected-component reconstruction. The optional `plan_sources` bridge binds a returned selection to typed plan sources without requiring a client to reproduce internal hash recipes. [Recombination tool contracts](RECOMBINATION_MCP.md).
 
 Build and configure:
 
@@ -676,3 +676,25 @@ Pass the complete recipe and that target to `propose_ligation_assembly` for fres
 preparation and final verification. This does not simulate exhaustive reaction
 cycling, optimize fusion choices or domesticate internal sites. See
 [SDK contract](GOLDEN_GATE_JUNCTION_MCP.md).
+
+
+## Prepared Golden Gate alternatives
+
+`inspect_prepared_golden_gate_pool {inputs,target,request}` uses fresh actual
+preparation strands with the existing bounded Golden Gate pool model. It reports
+all compact candidate summaries, target matches, subset/source roles, recutting
+and exact search completeness; the full immutable JSON artifact retains source
+bindings, independent target, ordered preparation evidence and every pool result.
+Only selected prepared roles are included. Unrepresented discarded digest pieces
+and original-source carryover are outside that declared pool. Missing material
+withholds enumeration instead of silently narrowing the pool.
+
+`select_prepared_golden_gate_candidate {artifact_id,selection}` requires exact
+parent context, candidate index and both keys. It atomically stores an unverified
+native plan and binary `candidate.cg2plan` artifact, retaining every preparation
+step and original input. Only the final operation changes to existing GoldenGate
+with the recorded search options/index. Its `artifact_id` and
+`candidate_artifact_id` identify the same binary bytes; `export_candidate` and
+`verify_plan` remain available by the new plan revision. Selection and reported
+target correspondence do not grant a positive cloning verdict. See
+[MCP contracts](PREPARED_GOLDEN_GATE_MCP.md).

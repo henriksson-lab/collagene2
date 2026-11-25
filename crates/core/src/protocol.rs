@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 46;
+pub const WORKER_SCHEMA_VERSION: u16 = 47;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 11;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -707,6 +707,15 @@ pub enum AnalysisJob {
         inputs: Vec<crate::verification::PlanInput>,
         request: crate::golden_gate_junction_edit::Request,
     },
+    InspectPreparedGoldenGatePool {
+        inputs: Vec<crate::verification::PlanInput>,
+        target: Molecule,
+        request: crate::prepared_golden_gate::Request,
+    },
+    SelectPreparedGoldenGateCandidate {
+        report: Box<crate::prepared_golden_gate::Report>,
+        selection: crate::prepared_golden_gate::Selection,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -821,6 +830,8 @@ pub enum AnalysisResult {
     EditedAssemblyPrimers(crate::assembly_junction_edit::Report),
     SelectiveAssemblyPrimers(crate::selective_junction_edit::Report),
     GoldenGateJunctionPrimers(crate::golden_gate_junction_edit::Report),
+    PreparedGoldenGatePool(crate::prepared_golden_gate::Report),
+    PreparedGoldenGateCandidate(crate::prepared_golden_gate::SelectionReport),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1079,6 +1090,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_edited_assembly_tag(bytes, &[101, 102])?;
     preflight_selective_assembly_tag(bytes, &[103])?;
     preflight_golden_gate_junction_tag(bytes, &[104])?;
+    preflight_prepared_golden_gate_tag(bytes, &[105, 106])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1135,6 +1147,8 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         AnalysisResult::EditedAssemblyIntent(_) | AnalysisResult::EditedAssemblyPrimers(_) => 44,
         AnalysisResult::SelectiveAssemblyPrimers(_) => 45,
         AnalysisResult::GoldenGateJunctionPrimers(_) => 46,
+        AnalysisResult::PreparedGoldenGatePool(_)
+        | AnalysisResult::PreparedGoldenGateCandidate(_) => 47,
         AnalysisResult::ReadReviewPreview(_) | AnalysisResult::ReadReviewCommitted(_) => 43,
         AnalysisResult::ReadCheckCaptured(_) | AnalysisResult::ReadCheckReplayed(_) => 42,
         AnalysisResult::MutationIntent(_) => 41,
@@ -1265,6 +1279,12 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::GoldenGateJunctionPrimers(report) => {
+            report.validate_binding(&response.revision)?
+        }
+        AnalysisResult::PreparedGoldenGatePool(report) => {
+            report.validate_binding(&response.revision)?
+        }
+        AnalysisResult::PreparedGoldenGateCandidate(report) => {
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::ReadReviewPreview(preview) => {
@@ -1736,6 +1756,14 @@ fn preflight_topo_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     }
     Ok(())
 }
+fn preflight_prepared_golden_gate_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 47)?;
+    }
+    Ok(())
+}
 fn preflight_golden_gate_junction_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -2109,6 +2137,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_edited_assembly_tag(bytes, &[109, 110])?;
     preflight_selective_assembly_tag(bytes, &[111])?;
     preflight_golden_gate_junction_tag(bytes, &[112])?;
+    preflight_prepared_golden_gate_tag(bytes, &[113, 114])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -2120,6 +2149,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         | AnalysisJob::DesignEditedAssemblyPrimers { .. } => 44,
         AnalysisJob::DesignSelectiveAssemblyPrimers { .. } => 45,
         AnalysisJob::DesignGoldenGateJunctionPrimers { .. } => 46,
+        AnalysisJob::InspectPreparedGoldenGatePool { .. }
+        | AnalysisJob::SelectPreparedGoldenGateCandidate { .. } => 47,
         AnalysisJob::PreviewReadReview { .. } | AnalysisJob::CommitReadReview { .. } => 43,
         AnalysisJob::CaptureReadCheck { .. } | AnalysisJob::ReplayReadCheck { .. } => 42,
         AnalysisJob::BuildMutationIntent { .. } => 41,
@@ -2491,6 +2522,27 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             if crate::golden_gate_junction_edit::design_revision(inputs, request)? != r.revision {
                 return Err(Error::Format(
                     "Golden Gate junction source/primers changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::InspectPreparedGoldenGatePool {
+            inputs,
+            target,
+            request,
+        } => {
+            if crate::prepared_golden_gate::inspect_revision(inputs, target, request)? != r.revision
+            {
+                return Err(Error::Format(
+                    "Prepared Golden Gate pool context changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::SelectPreparedGoldenGateCandidate { report, selection } => {
+            if crate::prepared_golden_gate::selection_revision(report, selection)? != r.revision {
+                return Err(Error::Format(
+                    "Prepared Golden Gate selection context changed".into(),
                 ));
             }
             None
@@ -3138,6 +3190,16 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         AnalysisJob::DesignGoldenGateJunctionPrimers { inputs, request } => {
             crate::golden_gate_junction_edit::design(&inputs, &request)
                 .map(AnalysisResult::GoldenGateJunctionPrimers)
+        }
+        AnalysisJob::InspectPreparedGoldenGatePool {
+            inputs,
+            target,
+            request,
+        } => crate::prepared_golden_gate::inspect(&inputs, &target, &request)
+            .map(AnalysisResult::PreparedGoldenGatePool),
+        AnalysisJob::SelectPreparedGoldenGateCandidate { report, selection } => {
+            crate::prepared_golden_gate::select(&report, &selection)
+                .map(AnalysisResult::PreparedGoldenGateCandidate)
         }
         AnalysisJob::PreviewReadReview { workspace, request } => {
             crate::read_review::preview(&workspace, &request).map(AnalysisResult::ReadReviewPreview)

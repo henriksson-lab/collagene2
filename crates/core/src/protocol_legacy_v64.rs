@@ -31,6 +31,7 @@ impl From<Report> for verification::VerificationReport {
             annotation_reports: r.annotation_reports,
             processed_step_reports: Vec::new(),
             physical_processing_reports: Vec::new(),
+            reference_step_reports: Vec::new(),
         }
     }
 }
@@ -63,6 +64,41 @@ impl From<ReportV65> for verification::VerificationReport {
             annotation_reports: r.annotation_reports,
             processed_step_reports: r.processed_step_reports,
             physical_processing_reports: Vec::new(),
+            reference_step_reports: Vec::new(),
+        }
+    }
+}
+#[derive(Deserialize)]
+struct ReportV67 {
+    plan_revision: String,
+    target_revision: String,
+    engine_version: String,
+    status: verification::Status,
+    findings: Vec<String>,
+    assumptions: Vec<String>,
+    products: Vec<Molecule>,
+    exhaustive_alternative_search: bool,
+    step_reports: Vec<verification::StepReport>,
+    annotation_reports: Vec<verification::AnnotationStepReport>,
+    processed_step_reports: Vec<verification::ProcessedTopoStepReport>,
+    physical_processing_reports: Vec<verification::PhysicalProcessingStepReport>,
+}
+impl From<ReportV67> for verification::VerificationReport {
+    fn from(r: ReportV67) -> Self {
+        Self {
+            plan_revision: r.plan_revision,
+            target_revision: r.target_revision,
+            engine_version: r.engine_version,
+            status: r.status,
+            findings: r.findings,
+            assumptions: r.assumptions,
+            products: r.products,
+            exhaustive_alternative_search: r.exhaustive_alternative_search,
+            step_reports: r.step_reports,
+            annotation_reports: r.annotation_reports,
+            processed_step_reports: r.processed_step_reports,
+            physical_processing_reports: r.physical_processing_reports,
+            reference_step_reports: Vec::new(),
         }
     }
 }
@@ -94,6 +130,7 @@ impl From<ReportV24> for verification::VerificationReport {
             annotation_reports: Vec::new(),
             processed_step_reports: Vec::new(),
             physical_processing_reports: Vec::new(),
+            reference_step_reports: Vec::new(),
         }
     }
 }
@@ -124,6 +161,7 @@ impl From<ReportV26> for verification::VerificationReport {
             annotation_reports: Vec::new(),
             processed_step_reports: Vec::new(),
             physical_processing_reports: Vec::new(),
+            reference_step_reports: Vec::new(),
         }
     }
 }
@@ -393,7 +431,7 @@ pub(crate) fn decode(bytes: &[u8], maximum: usize) -> Result<Option<protocol::Re
     if blake3::hash(&bytes[HEADER..]).as_bytes() != &bytes[10..42] {
         return Err(invalid("binary checksum mismatch"));
     }
-    if version > 65 {
+    if version > 67 {
         return Ok(None);
     }
     let ((id, revision, tag), rest) =
@@ -404,6 +442,21 @@ pub(crate) fn decode(bytes: &[u8], maximum: usize) -> Result<Option<protocol::Re
     }
     use protocol::AnalysisResult as A;
     let result = match tag {
+        4 if version >= 66 => A::Verification(payload::<ReportV67>(rest)?.into()),
+        16 if version >= 66 => A::InversePcr(payload::<Inverse<ReportV67>>(rest)?.into()),
+        41 if version >= 66 => A::RunReplay(payload::<Replay<ReportV67>>(rest)?.into()),
+        86 if version >= 66 => A::OverlapRecipePreview(payload::<Overlap<ReportV67>>(rest)?.into()),
+        87 if version >= 66 => {
+            A::LigationRecipePreview(payload::<Ligation<ReportV67>>(rest)?.into())
+        }
+        88 if version >= 66 => {
+            A::AssemblyJunctionInspection(payload::<Junction<ReportV67>>(rest)?.into())
+        }
+        105 if version >= 66 => A::PreparedGoldenGatePool(payload::<Pool<ReportV67>>(rest)?.into()),
+        107 if version >= 66 => A::GoldenGateReaction(payload::<Reaction<ReportV67>>(rest)?.into()),
+        134 if version >= 66 => {
+            A::DomesticationPrepared(payload::<Domestication<ReportV67>>(rest)?.into())
+        }
         4 if version == 65 => A::Verification(payload::<ReportV65>(rest)?.into()),
         16 if version == 65 => A::InversePcr(payload::<Inverse<ReportV65>>(rest)?.into()),
         41 if version == 65 => A::RunReplay(payload::<Replay<ReportV65>>(rest)?.into()),

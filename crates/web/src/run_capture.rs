@@ -292,6 +292,7 @@ fn operation_title(operation: &Operation) -> &'static str {
             "Processed TOPO source reconstruction and faithful material bridge"
         }
         Operation::TopoActions { .. } => "TOPO ordered source-backed physical actions",
+        Operation::MultiSiteRecombineReference { .. } => "Multi-parent reference exchange",
         Operation::RecombineReference { .. } => "Reference-only BP/LR exchange",
         Operation::TreatEnds { .. } => "Treat ends",
         Operation::RepairEnds { .. } => "Repair ends",
@@ -311,6 +312,7 @@ fn reference_only_steps(plan: &DesignPlan) -> Vec<bool> {
             Operation::Topo { .. }
                 | Operation::CheckedTopo { .. }
                 | Operation::RecombineReference { .. }
+                | Operation::MultiSiteRecombineReference { .. }
         );
         let inherited = collagene_core::verification::operation_sources(operation)
             .into_iter()
@@ -591,7 +593,7 @@ pub fn RunDetailsPanel(
         evidence_worker.set_value(Some(executor.clone()));
         evidence_pending.set(true);
         pending.set(true);
-        status.set("Loading recorded processed graph evidence. This does not replay or validate the cloning result.".into());
+        status.set("Loading recorded reference and physical graph evidence. This does not replay or validate the cloning result.".into());
         let alive = historical_alive.clone();
         spawn_local(async move {
             let reply = executor
@@ -644,12 +646,12 @@ pub fn RunDetailsPanel(
                             }
                             match value.bytes {
                             Some(bytes)if bytes.len()<=32*1024*1024&&value.step_count>0=>{
-                                match download("recorded-processed-topo-evidence.json","application/json",&bytes){
+                                match download("recorded-cloning-evidence.json","application/json",&bytes){
                                     Ok(())=>status.set("Recorded graph evidence downloaded. This historical assessment does not restore physical authority or establish laboratory success.".into()),
                                     Err(e)=>status.set(e),
                                 }
                             },
-                            None if value.step_count==0=>status.set("This run has no retained processed graph attachment. Older records are not reconstructed by this download action; use explicit replay for fresh session evidence.".into()),
+                            None if value.step_count==0=>status.set("This run has no retained reference or physical graph attachment. Older records are not reconstructed by this download action; use explicit replay for fresh session evidence.".into()),
                             _=>status.set("Historical graph evidence exceeds its bound or has an inconsistent step count.".into()),
                         }
                         }
@@ -718,8 +720,8 @@ pub fn RunDetailsPanel(
                     }.into_any()
                 }
             }}
-            <p class="helper">"Recorded processed graphs are historical evidence, separate from fresh replay. Downloading them restores no scientific or physical-material authority."</p>
-            <button class="button secondary" disabled=move||pending.get()||epoch.get()!=opened_epoch on:click=move|_|download_history.run(())>"Download recorded processed graph JSON"</button>
+            <p class="helper">"Recorded reference and physical graphs are historical evidence, separate from fresh replay. Downloading them restores no scientific or physical-material authority."</p>
+            <button class="button secondary" disabled=move||pending.get()||epoch.get()!=opened_epoch on:click=move|_|download_history.run(())>"Download recorded cloning evidence JSON"</button>
             <Show when=move||evidence_pending.get()><button class="text-tool" on:click=move|_|cancel_history.run(())>"Cancel historical evidence download"</button></Show>
             <button class="button primary" disabled=move||pending.get() on:click=replay_run>"Replay cloning run"</button>
             <button class="button secondary" disabled=move||replay.get().is_none()||pending.get() on:click=export>"Download run replay JSON"</button>

@@ -146,10 +146,10 @@ pub fn batch_revision(inputs: &[reference::Input], request: &Request) -> Result<
     hash(&(ENGINE_VERSION, revision, request))
 }
 #[derive(Default)]
-struct Work {
-    units: usize,
-    bytes: usize,
-    features: usize,
+pub(crate) struct Work {
+    pub(crate) units: usize,
+    pub(crate) bytes: usize,
+    pub(crate) features: usize,
 }
 fn nodes(location: &Location) -> usize {
     match location {
@@ -158,7 +158,7 @@ fn nodes(location: &Location) -> usize {
         Location::Join(p) | Location::Order(p) => 1 + p.iter().map(nodes).sum::<usize>(),
     }
 }
-fn charge(
+pub(crate) fn charge(
     source: &Molecule,
     maps: usize,
     limits: &AnnotationLimits,
@@ -228,7 +228,7 @@ fn normalize(mut maps: Vec<MappingSegment>) -> Result<Vec<MappingSegment>, Error
     }
     Ok(out)
 }
-fn annotation_maps(
+pub(crate) fn annotation_maps(
     product: &reference::Product,
     input: usize,
 ) -> Result<(Vec<MappingSegment>, Vec<MappingSegment>), Error> {
@@ -272,7 +272,7 @@ fn annotation_maps(
     }
     Ok((normalize(maps)?, normalize(co)?))
 }
-fn mark_co_source(features: &mut [Feature], co: &[MappingSegment]) {
+pub(crate) fn mark_co_source(features: &mut [Feature], co: &[MappingSegment]) {
     for feature in features {
         if feature.location.spans().iter().any(|(a, b, _)| {
             co.iter().any(|m| {

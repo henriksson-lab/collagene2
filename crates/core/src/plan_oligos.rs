@@ -552,6 +552,13 @@ pub fn build(plan: &DesignPlan, target: &Molecule, options: &Options) -> Result<
                     options.bottom_chemistry,
                 )?;
             }
+            Operation::MultiSiteRecombineReference { .. } => warning(
+                &mut builder.warnings,
+                format!(
+                    "Step {} MultiSite reference exchange supplies no PCR oligos. No attachment-site primer or upstream entry-clone preparation was inferred; only separately declared typed PCR steps contribute primers.",
+                    index + 1
+                ),
+            ),
             Operation::Topo { .. }
             | Operation::CheckedTopo { .. }
             | Operation::ProcessedTopo { .. }

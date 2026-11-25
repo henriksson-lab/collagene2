@@ -46,3 +46,11 @@ The optional `json-schema` feature provides schema derives for the public types 
 Fixtures independently concatenate literal manufacturer-vector arms at source boundaries: pDONR221651/2902, pENTR/D-TOPO651/721, pDEST14 74/1904 (zero-based). Tests cover both BP/LR reciprocal sequences, shortened P-like LR hybrids, exact source conservation, both linear/circular source topologies, reverse complements, circular origin spans, all16 site orientation configurations across4 topology pairs (including a literal three-component oracle and independent target checks for each component), wrong subtype/mutated/incomplete contexts, IUPAC uncertainty, duplicate alternatives, limits, malformed inputs/maps, stale source bindings, imported report forgery and independent target mutation/topology/origin/policy. Circular oracle comparison explicitly permits reference reversal; caller target checks do so only with explicit permission.
 
 Audit follow-up fixtures verify an alternative-rich three-component search stopping at11 cheap graph plans with zero DNA materializations, a cumulative two-materialization cap, a report-byte-withheld attempt remaining charged, native wide/deep source and target trees, shared annotation budgets, forged deep report trees and oversized report structures, positive literal mixed-family reciprocal products, possible-site and odd-orientation no-match uncertainty, and ambiguous payload/target representation matches. Current native suite has22 tests, including the64 orientation/topology combinations; the crate also passes a wasm32-unknown-unknown check.
+
+
+The independent `multisite` module adds finite-profile, two-to-five-parent
+whole-network reference exchange. It scans all registered families before reaction
+filtering and preserves every reciprocal component/source interval. Maximal
+full-context classification handles nested B/L/P contexts without inventing
+site arms. This remains a reference design, with no physical chemistry or kit
+success authority. [Application contract](../../docs/MULTISITE_REFERENCE.md).

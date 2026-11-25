@@ -259,6 +259,7 @@ fn version_three_report_with_recorded_engine_is_not_migrated_as_unrecorded() {
         annotation_reports: vec![],
         processed_step_reports: vec![],
         physical_processing_reports: vec![],
+        reference_step_reports: vec![],
     };
     // Independently preserve the actual pre-25 positional report layout.
     let historical_report = (

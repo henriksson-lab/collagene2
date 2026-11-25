@@ -186,6 +186,8 @@ mod golden_gate;
 #[cfg(target_arch = "wasm32")]
 mod methylation;
 #[cfg(target_arch = "wasm32")]
+mod multisite;
+#[cfg(target_arch = "wasm32")]
 mod mutagenesis;
 #[cfg(any(target_arch = "wasm32", test))]
 mod mutation_review;

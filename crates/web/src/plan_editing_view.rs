@@ -32,6 +32,7 @@ fn title(op: &Operation) -> &'static str {
         Operation::GoldenGate { .. } | Operation::SelectedGoldenGate { .. } => "Golden Gate",
         Operation::DeclareSourceModifications { .. } => "Source modification assumptions",
         Operation::DeclareSourceTermini { .. } => "Source terminal assumptions",
+        Operation::MultiSiteRecombineReference { .. } => "Multi-parent reference exchange",
         Operation::RecombineReference { .. } => "Reference recombination",
         Operation::Topo { .. } | Operation::CheckedTopo { .. } => "TOPO reference inspection",
         Operation::ProcessedTopo { .. } => "Processed TOPO",

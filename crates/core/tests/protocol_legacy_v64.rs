@@ -155,6 +155,10 @@ fn compare<T: Serialize>(tag: u32, value: T, path: &str) {
         .as_object_mut()
         .unwrap()
         .insert("physical_processing_reports".into(), json!([]));
+    report
+        .as_object_mut()
+        .unwrap()
+        .insert("reference_step_reports".into(), json!([]));
     assert_eq!(*actual, expected, "legacy result tag {tag}");
     let mut trailing = postcard::to_allocvec(&Wire {
         id: 733,
@@ -473,6 +477,7 @@ fn public_era_roundtrip<T: Serialize>(version: u16, tag: u32, payload: T, path: 
     p.insert("annotation_reports".into(), json!([]));
     p.insert("processed_step_reports".into(), json!([]));
     p.insert("physical_processing_reports".into(), json!([]));
+    p.insert("reference_step_reports".into(), json!([]));
     let bytes = envelope(
         &postcard::to_allocvec(&Wire {
             id: 912,
@@ -710,6 +715,9 @@ fn compare65<T: Serialize>(tag: u32, value: T, path: &str) {
     old.as_object_mut()
         .unwrap()
         .insert("physical_processing_reports".into(), json!([]));
+    old.as_object_mut()
+        .unwrap()
+        .insert("reference_step_reports".into(), json!([]));
     let oldbytes = encode(tag, &value, 65);
     let response = decoder::decode(&oldbytes, 32 << 20).unwrap().unwrap();
     let actual = serde_json::to_value(&response.result).unwrap();

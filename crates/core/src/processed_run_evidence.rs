@@ -217,13 +217,21 @@ pub struct Download {
 }
 pub fn download(w: &Workspace, run_id: &str) -> Result<Download, Error> {
     let r = run_lineage::load_run(w, run_id)?;
-    if let Some(physical) = crate::physical_run_evidence::find(w, run_id)? {
+    let physical = crate::physical_run_evidence::find(w, run_id)?;
+    let reference = crate::reference_run_evidence::find(w, run_id)?;
+    if physical.is_some() || reference.is_some() {
         let legacy = load(w, run_id)?;
-        let step_count = physical.steps.len() + legacy.as_ref().map_or(0, |e| e.steps.len());
+        let step_count = physical.as_ref().map_or(0, |e| e.steps.len())
+            + reference.as_ref().map_or(0, |e| e.steps.len())
+            + legacy.as_ref().map_or(0, |e| e.steps.len());
         let attachments = w
             .attachments
             .iter()
-            .filter(|(_, a)| a.kind == KIND || a.kind == crate::physical_run_evidence::KIND)
+            .filter(|(_, a)| {
+                a.kind == KIND
+                    || a.kind == crate::physical_run_evidence::KIND
+                    || a.kind == crate::reference_run_evidence::KIND
+            })
             .filter_map(|(hash, a)| {
                 #[derive(Deserialize)]
                 struct Owner {
@@ -235,7 +243,11 @@ pub fn download(w: &Workspace, run_id: &str) -> Result<Download, Error> {
             .collect::<Vec<_>>();
         let mut output = Bounded(vec![]);
         output
-            .write_all(b"{\"format\":\"physical-processing-run-bundle-v1\",\"run_id\":")
+            .write_all(if reference.is_some() {
+                b"{\"format\":\"scientific-run-bundle-v1\",\"run_id\":"
+            } else {
+                b"{\"format\":\"physical-processing-run-bundle-v1\",\"run_id\":"
+            })
             .map_err(|_| Error::TooLarge)?;
         serde_json::to_writer(&mut output, run_id).map_err(|_| Error::TooLarge)?;
         output

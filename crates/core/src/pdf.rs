@@ -1260,6 +1260,25 @@ pub(crate) fn export_protocol_pdf_checked(
             Operation::TopoActions { sources, request } => {
                 topo_actions_step_text(sources, request, plan, &report)?
             }
+            Operation::MultiSiteRecombineReference {
+                sources,
+                request,
+                selection,
+            } => format!(
+                "Multi-parent {:?} reference exchange of {}. Declared full-context profile {} / {}; specificities {:?}. Candidate {}, component {} from batch {}. All reciprocal components retained. Reference sequence agreement establishes neither physical chemistry nor kit success.",
+                request.reaction.reaction,
+                sources
+                    .iter()
+                    .map(|s| format!("{}: {}", s.role, source_name(&s.source)))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                request.reaction.profile.id,
+                request.reaction.profile.edition,
+                request.reaction.specificities,
+                selection.candidate_id + 1,
+                selection.component_id + 1,
+                selection.batch_revision
+            ),
             Operation::RecombineReference {
                 sources,
                 request,
@@ -1496,6 +1515,25 @@ pub(crate) fn export_protocol_pdf_checked(
                 9.0,
                 INK,
             )?;
+        }
+        if let Some(entry) = report
+            .reference_step_reports
+            .iter()
+            .find(|entry| entry.step_index == index)
+        {
+            let verification::ReferenceStepEvidence::MultiSiteRecombination { selection, batch } =
+                &entry.evidence;
+            layout.paragraph_size(&format!("Whole reference network: {} original parents, {} candidate networks, {} reciprocal components retained; complete within declared model {}. Selected candidate {}, component {}. No target chooses pairings. Reference provenance supplies no physical strand/modification authority.",batch.sources.len(),batch.reference.candidates.len(),batch.documents.len(),batch.reference.complete,selection.candidate_id+1,selection.component_id+1),9.0,INK)?;
+            for note in batch
+                .reference
+                .warnings
+                .iter()
+                .chain(&batch.reference.limits)
+                .chain(&batch.reference.unsupported)
+                .chain(&batch.warnings)
+            {
+                layout.paragraph_size(note, 9.0, INK)?;
+            }
         }
         if let Some(entry) = report
             .physical_processing_reports

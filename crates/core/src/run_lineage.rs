@@ -187,13 +187,25 @@ fn validate_texts(values: &[String], limit: usize) -> Result<(), Error> {
 }
 fn validate_record(r: &RunRecord) -> Result<(), Error> {
     if r.schema_version != 1
-        || !matches!(r.plan_schema, 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13)
+        || !matches!(
+            r.plan_schema,
+            3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14
+        )
         || !digest(&r.run_id)
         || r.assessment.engine_version.is_empty()
         || r.assessment.engine_version.len() > 128
         || r.assessment.status == Status::Invalid
     {
         return Err(bad("invalid schema or assessment"));
+    }
+    if r.plan_schema < 14
+        && (r.assessment.engine_version.ends_with("/science-19")
+            || r.plan
+                .steps
+                .iter()
+                .any(|step| matches!(step, Operation::MultiSiteRecombineReference { .. })))
+    {
+        return Err(bad("Multi-site reference exchange requires plan schema14"));
     }
     if r.plan_schema < 13
         && (r.assessment.engine_version.ends_with("/science-18")
@@ -504,6 +516,7 @@ pub fn record_run(
     let mut report = verification::verify(plan, target);
     let processed_graphs = std::mem::take(&mut report.processed_step_reports);
     let physical_graphs = std::mem::take(&mut report.physical_processing_reports);
+    let reference_graphs = std::mem::take(&mut report.reference_step_reports);
     if report.products.len() != plan.steps.len()
         || !report
             .products
@@ -583,6 +596,10 @@ pub fn record_run(
         });
         next.revisions.insert(m.revision(), m);
         next.history.push(event);
+    }
+    if let Some(attachment) = crate::reference_run_evidence::attachment(&r, reference_graphs)? {
+        let hash = blake3::hash(&attachment.bytes).to_hex().to_string();
+        next.attachments.insert(hash, attachment);
     }
     if let Some(attachment) = crate::physical_run_evidence::attachment(&r, physical_graphs)? {
         let hash = blake3::hash(&attachment.bytes).to_hex().to_string();

@@ -6,8 +6,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 67;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 15;
+pub const WORKER_SCHEMA_VERSION: u16 = 68;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 16;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
@@ -870,6 +870,21 @@ pub enum AnalysisJob {
         inputs: Vec<crate::topo::Input>,
         request: crate::topo_actions::ActionsRequest,
     },
+    SimulateMultiSiteRecombination {
+        inputs: Vec<crate::recombination::reference::Input>,
+        request: crate::multisite_recombination::Request,
+    },
+    ProjectMultiSiteRecombination {
+        inputs: Vec<crate::recombination::reference::Input>,
+        request: crate::multisite_recombination::Request,
+        selection: crate::multisite_recombination::Selection,
+    },
+    CheckMultiSiteRecombination {
+        inputs: Vec<crate::recombination::reference::Input>,
+        request: crate::multisite_recombination::Request,
+        selection: crate::multisite_recombination::Selection,
+        target: Molecule,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1026,6 +1041,9 @@ pub enum AnalysisResult {
     HistoricalProcessedRunEvidence(crate::processed_run_evidence::Download),
     TopoActionsProduct(crate::topo_actions::Report),
     TopoActionsInspected(crate::topo_actions::Inspection),
+    MultiSiteRecombination(crate::multisite_recombination::Batch),
+    MultiSiteRecombinationProduct(crate::multisite_recombination::ProductDocument),
+    MultiSiteRecombinationChecked(crate::multisite_recombination::CheckedProduct),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1073,6 +1091,7 @@ impl From<LegacyVerificationReport> for crate::verification::VerificationReport 
             annotation_reports: Vec::new(),
             processed_step_reports: Vec::new(),
             physical_processing_reports: Vec::new(),
+            reference_step_reports: Vec::new(),
         }
     }
 }
@@ -1120,6 +1139,7 @@ impl From<LegacyVerificationReportV24> for crate::verification::VerificationRepo
             annotation_reports: Vec::new(),
             processed_step_reports: Vec::new(),
             physical_processing_reports: Vec::new(),
+            reference_step_reports: Vec::new(),
         }
     }
 }
@@ -1167,6 +1187,7 @@ impl From<LegacyVerificationReportV26> for crate::verification::VerificationRepo
             annotation_reports: Vec::new(),
             processed_step_reports: Vec::new(),
             physical_processing_reports: Vec::new(),
+            reference_step_reports: Vec::new(),
         }
     }
 }
@@ -1252,6 +1273,24 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         crate::pairwise_context::preflight(report, reference, query, *translate)?;
     }
     match &r.job {
+        AnalysisJob::SimulateMultiSiteRecombination { inputs, request } => {
+            crate::multisite_recombination::preflight(inputs, request)?;
+        }
+        AnalysisJob::ProjectMultiSiteRecombination {
+            inputs,
+            request,
+            selection,
+        } => {
+            crate::multisite_recombination::product_revision(inputs, request, selection)?;
+        }
+        AnalysisJob::CheckMultiSiteRecombination {
+            inputs,
+            request,
+            selection,
+            target,
+        } => {
+            crate::multisite_recombination::check_revision(inputs, request, selection, target)?;
+        }
         AnalysisJob::ProcessTopoActions { inputs, request } => {
             crate::topo_actions::preflight(inputs, request)?
         }
@@ -1432,6 +1471,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_processed_topo_tag(bytes, &[140])?;
     preflight_processed_run_tag(bytes, &[141])?;
     preflight_topo_actions_tag(bytes, &[142, 143])?;
+    preflight_multisite_recombination_tag(bytes, &[144, 145, 146])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1488,6 +1528,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         },
     };
     let required = match &response.result {
+        AnalysisResult::MultiSiteRecombination(_)
+        | AnalysisResult::MultiSiteRecombinationProduct(_)
+        | AnalysisResult::MultiSiteRecombinationChecked(_) => 68,
         AnalysisResult::TopoActionsProduct(_) | AnalysisResult::TopoActionsInspected(_) => 66,
         AnalysisResult::HistoricalProcessedRunEvidence(_) => 65,
         AnalysisResult::ProcessedTopoProduct(_) => 64,
@@ -1963,6 +2006,25 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             if report.revision != response.revision {
                 return Err(Error::Format(
                     "read alignment disposal response mismatch".into(),
+                ));
+            }
+        }
+        AnalysisResult::MultiSiteRecombination(report) => {
+            report.validate_binding(&response.revision)?;
+        }
+        AnalysisResult::MultiSiteRecombinationProduct(report) => {
+            report.validate_binding(&report.selection.batch_revision)?;
+            if report.context_revision()? != response.revision {
+                return Err(Error::Format(
+                    "multisite selected-component reply context mismatch".into(),
+                ));
+            }
+        }
+        AnalysisResult::MultiSiteRecombinationChecked(report) => {
+            report.validate_binding(&report.product.selection.batch_revision)?;
+            if report.context_revision()? != response.revision {
+                return Err(Error::Format(
+                    "multisite independent-target reply context mismatch".into(),
                 ));
             }
         }
@@ -2576,6 +2638,14 @@ fn preflight_read_alignment_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error>
     }
     Ok(())
 }
+fn preflight_multisite_recombination_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 68)?;
+    }
+    Ok(())
+}
 fn preflight_recombination_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -2621,6 +2691,31 @@ fn check_verification_report_version(
     report: &crate::verification::VerificationReport,
 ) -> Result<(), Error> {
     check_scientific_report_version(bytes, &report.engine_version)?;
+    if !report.reference_step_reports.is_empty() {
+        check_variant_version(bytes, 68)?;
+        if report.reference_step_reports.len() > 64 {
+            return Err(Error::TooLarge);
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for step in &report.reference_step_reports {
+            if step.step_index >= 1000 || !seen.insert(step.step_index) {
+                return Err(Error::Format("Invalid reference step index".into()));
+            }
+            match &step.evidence {
+                crate::verification::ReferenceStepEvidence::MultiSiteRecombination {
+                    selection,
+                    batch,
+                } => {
+                    batch.validate_binding(&selection.batch_revision)?;
+                    if !batch.documents.iter().any(|p| p.selection == *selection) {
+                        return Err(Error::Format(
+                            "Reference selection is missing from its batch".into(),
+                        ));
+                    }
+                }
+            }
+        }
+    }
     if !report.physical_processing_reports.is_empty() {
         check_variant_version(bytes, 66)?;
         if report.physical_processing_reports.len() > 64 {
@@ -2659,6 +2754,9 @@ fn check_verification_report_version(
     Ok(())
 }
 fn check_scientific_report_version(bytes: &[u8], engine: &str) -> Result<(), Error> {
+    if engine.ends_with("/science-19") {
+        check_variant_version(bytes, 68)?;
+    }
     if engine.ends_with("/science-18") {
         check_variant_version(bytes, 67)?;
     }
@@ -2732,6 +2830,9 @@ fn check_workspace_version(
             check_variant_version(bytes, 12)?;
             let record = crate::run_lineage::load_run_record(&attachment.bytes)?;
             check_variant_version(bytes, plan_worker_version(&record.plan))?;
+            if record.plan_schema >= 14 {
+                check_variant_version(bytes, 68)?;
+            }
             if record.plan_schema >= 13 {
                 check_variant_version(bytes, 67)?;
             }
@@ -2848,6 +2949,7 @@ fn plan_worker_version(plan: &crate::verification::DesignPlan) -> u16 {
     plan.steps
         .iter()
         .map(|step| match step {
+            crate::verification::Operation::MultiSiteRecombineReference { .. } => 68,
             step if crate::verification::topo_uses_step_source(step) => 67,
             crate::verification::Operation::TopoActions { .. } => 66,
             crate::verification::Operation::ProcessedTopo { .. } => 65,
@@ -2945,6 +3047,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_processed_topo_tag(bytes, &[148])?;
     preflight_processed_run_tag(bytes, &[149])?;
     preflight_topo_actions_tag(bytes, &[150, 151])?;
+    preflight_multisite_recombination_tag(bytes, &[152, 153, 154])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -2952,6 +3055,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::SimulateMultiSiteRecombination { .. }
+        | AnalysisJob::ProjectMultiSiteRecombination { .. }
+        | AnalysisJob::CheckMultiSiteRecombination { .. } => 68,
         AnalysisJob::ProcessTopoActions { .. } | AnalysisJob::InspectTopoActions { .. } => 66,
         AnalysisJob::LoadProcessedRunEvidence { .. } => 65,
         AnalysisJob::ProjectProcessedTopo { .. } => 64,
@@ -3948,6 +4054,41 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
                 "read alignment operations require a persistent worker session".into(),
             ));
         }
+        AnalysisJob::SimulateMultiSiteRecombination { inputs, request } => {
+            if crate::multisite_recombination::revision(inputs, request)? != r.revision {
+                return Err(Error::Format(
+                    "multisite sources/profile/options changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::ProjectMultiSiteRecombination {
+            inputs,
+            request,
+            selection,
+        } => {
+            if crate::multisite_recombination::product_revision(inputs, request, selection)?
+                != r.revision
+            {
+                return Err(Error::Format("multisite selected component changed".into()));
+            }
+            None
+        }
+        AnalysisJob::CheckMultiSiteRecombination {
+            inputs,
+            request,
+            selection,
+            target,
+        } => {
+            if crate::multisite_recombination::check_revision(inputs, request, selection, target)?
+                != r.revision
+            {
+                return Err(Error::Format(
+                    "multisite independent target context changed".into(),
+                ));
+            }
+            None
+        }
         AnalysisJob::InspectRecombination { inputs, request } => {
             if crate::recombination::batch_revision(inputs, request)? != r.revision {
                 return Err(Error::Format(
@@ -4638,6 +4779,23 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         | AnalysisJob::DisposeReadAlignments { .. } => Err(Error::Unsupported(
             "read alignment operations require a persistent worker session".into(),
         )),
+        AnalysisJob::SimulateMultiSiteRecombination { inputs, request } => {
+            crate::multisite_recombination::simulate(&inputs, &request)
+                .map(AnalysisResult::MultiSiteRecombination)
+        }
+        AnalysisJob::ProjectMultiSiteRecombination {
+            inputs,
+            request,
+            selection,
+        } => crate::multisite_recombination::product(&inputs, &request, &selection)
+            .map(AnalysisResult::MultiSiteRecombinationProduct),
+        AnalysisJob::CheckMultiSiteRecombination {
+            inputs,
+            request,
+            selection,
+            target,
+        } => crate::multisite_recombination::check_target(&inputs, &request, &selection, &target)
+            .map(AnalysisResult::MultiSiteRecombinationChecked),
         AnalysisJob::InspectRecombination { inputs, request } => {
             crate::recombination::simulate(&inputs, &request)
                 .map(AnalysisResult::RecombinationInspection)

@@ -56,3 +56,21 @@ A published 94-base putative L3 flank also occurs verbatim in unrecombined P3,
 so it cannot define family-specific L3 alone. Resolve its distinguishing context
 from a real entry sequence or explicit source-derived BP provenance before using
 it as a closed built-in LR profile. No missing arms or insert bases were invented.
+
+
+## Whole-network reference implementation increment
+
+The separate [whole-network model and Plan bridge](MULTISITE_REFERENCE.md) now
+implements the bounded multi-parent graph, explicit candidate/component selection,
+source annotation evidence, independent-target checks, binary worker/MCP and exact
+historical attachments. It does not yet complete the destination/entry intent and
+combinatorial interaction criteria above. Its explicit profile import is not a
+bundled universally applicable Gateway kit profile.
+
+The actual original-lab L3 context is96 bases and remains nested in the longer P3
+context. Classification must therefore consider all registered full contexts
+before filtering LR families. Adding an arbitrary insert base to make L3 unique
+would be incorrect. The new finite model uses maximal certain physical contexts
+and withholds conflicting maximal families. Complete source fixtures remain outside
+the repository while redistribution terms are unresolved; synthetic fixtures
+independently establish reference graph bookkeeping, not biological kit validity.

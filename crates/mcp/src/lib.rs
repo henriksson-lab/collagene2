@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 165;
+pub const CURRENT_TOOL_COUNT: usize = 168;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -2949,6 +2949,33 @@ impl CollageneServer {
         self.recombination_select(args).await
     }
     #[tool(
+        description = "Inspect simultaneous multi-parent reciprocal BP/LR reference alternatives from 2..5 exact immutable source roles using a complete caller-supplied finite profile and explicit specificity set. Optional native source pins are attested by owner/event/revision and literal molecule equality. Returns bounded candidate/component summaries and full typed batch/annotation JSON; no curated biological profile, automatic winner or physical activity claim."
+    )]
+    async fn inspect_multisite_recombination(
+        &self,
+        Parameters(args): Parameters<multisite_recombination_tools::InspectQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.multisite_inspect(args).await
+    }
+    #[tool(
+        description = "Freshly reconstruct one explicitly selected multisite reference component pinned to its exact source/profile/options batch. Atomically retains the projected reference document and full JSON with exact source bindings, reciprocal identities and conservative annotations. No independent target match, repaired state or physical reaction is inferred; this is reference-only material."
+    )]
+    async fn select_multisite_recombination_component(
+        &self,
+        Parameters(args): Parameters<multisite_recombination_tools::ProductQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.multisite_select(args).await
+    }
+    #[tool(
+        description = "Freshly compare one explicitly selected multisite reference component against an independent immutable target. Target never determines site matching, component selection or product DNA. Retains full typed evidence, mismatch and incomplete/unsupported search diagnostics; does not install documents or establish chemical success."
+    )]
+    async fn check_multisite_recombination_target(
+        &self,
+        Parameters(args): Parameters<multisite_recombination_tools::CheckQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.multisite_check(args).await
+    }
+    #[tool(
         description = "Design a literal source-derived homology editing donor against an independently supplied immutable target. Explicit edit/deletion/replacement/arm/orientation options and an optional exact source-bound guide are independently checked base by base. The target is a noncausal requirement, never donor source DNA. Returns bounded donor/edited-reference previews and full immutable JSON; installs an immutable donor document only when the independent check is consistent, atomically with the artifact. Sequence consistency is not cellular HDR, nuclease activity or editing success. No physical operation or persistent application writes."
     )]
     async fn design_edit_template(
@@ -4373,7 +4400,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Read the immutable historical processed-TOPO graph attachment for a retained run. Checks exact run/plan/engine/source/target/product-event bindings but does not replay chemistry or restore physical authority. Older runs may have no historical graph; fresh replay is a separate tool."
+        description = "Read immutable historical reference-design and processed physical graph attachments for a retained run. Checks exact run/plan/engine/source/target/product-event bindings but does not replay chemistry or restore physical authority. Older runs may have no historical graph; fresh replay is a separate tool."
     )]
     async fn inspect_workspace_run_evidence(
         &self,
@@ -4384,7 +4411,7 @@ impl CollageneServer {
             let workspace=server.restore_workspace(&args.workspace)?;
             let record=collagene_core::run_lineage::load_run(&workspace,&args.run_id).map_err(bad)?;
             let evidence=collagene_core::processed_run_evidence::download(&workspace,&args.run_id).map_err(bad)?;
-            let artifact=evidence.bytes.as_ref().map(|bytes|server.text_artifact(String::from_utf8(bytes.clone()).map_err(bad)?,"application/json","historical-physical-graphs.json")).transpose()?;
+            let artifact=evidence.bytes.as_ref().map(|bytes|server.text_artifact(String::from_utf8(bytes.clone()).map_err(bad)?,"application/json","historical-cloning-graphs.json")).transpose()?;
             output(json!({"state":"historical","verified":false,"run_id":record.run_id,"recorded_engine":record.assessment.engine_version,"processed_step_count":evidence.step_count,"artifact_id":artifact,"authority":"Stored historical graph evidence only. Fresh replay of exact original inputs is required for current material state or verification."}))
         }).await
     }
@@ -6199,7 +6226,8 @@ impl CollageneServer {
         let report = verification::verify(&saved.plan, &saved.target);
         let processed_step_count =
             report.processed_step_reports.len() + report.physical_processing_reports.len();
-        let artifact = if processed_step_count > 0 {
+        let reference_step_count = report.reference_step_reports.len();
+        let artifact = if processed_step_count > 0 || reference_step_count > 0 {
             Some(self.text_artifact(
                 bounded_json_limit(&report, 32 * 1024 * 1024)?,
                 "application/json",
@@ -6210,7 +6238,7 @@ impl CollageneServer {
         };
         let products:Vec<_>=report.products.iter().enumerate().map(|(i,m)|json!({"step":i,"revision":m.revision(),"length":m.sequence.len(),"topology":m.topology,"duplex":m.metadata.get("duplex_model").and_then(|s|serde_json::from_str::<Value>(s).ok()),"tracked_modifications":m.metadata.get("tracked_modifications").and_then(|s|serde_json::from_str::<Value>(s).ok())})).collect();
         output(
-            json!({"plan_revision":report.plan_revision,"target_revision":report.target_revision,"engine_version":report.engine_version,"status":report.status,"findings":report.findings,"assumptions":report.assumptions,"products":products,"exhaustive_alternative_search":report.exhaustive_alternative_search,"processed_step_count":processed_step_count,"artifact_id":artifact}),
+            json!({"plan_revision":report.plan_revision,"target_revision":report.target_revision,"engine_version":report.engine_version,"status":report.status,"findings":report.findings,"assumptions":report.assumptions,"products":products,"exhaustive_alternative_search":report.exhaustive_alternative_search,"processed_step_count":processed_step_count,"reference_step_count":reference_step_count,"artifact_id":artifact}),
         )
     }
     #[tool(
@@ -6367,6 +6395,7 @@ mod catalog_tools;
 mod combinatorial_tools;
 mod domestication_tools;
 mod fusion_design_tools;
+mod multisite_recombination_tools;
 mod published_ligation_tools;
 mod recombination_tools;
 mod topo_actions_tools;

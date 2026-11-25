@@ -7,7 +7,7 @@ use crate::{
     modified_duplex::{self, CheckedDigestOptions, GenerationAssumptions, TrackedDuplex},
 };
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -170,6 +170,12 @@ pub enum Operation {
         sources: Vec<TopoSource>,
         request: crate::topo_actions::Request,
     },
+    /// Complete declared multi-parent reference network; no physical duplex authority.
+    MultiSiteRecombineReference {
+        sources: Vec<TopoSource>,
+        request: crate::multisite_recombination::Request,
+        selection: crate::recombination::Selection,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -210,6 +216,9 @@ pub struct VerificationReport {
     pub processed_step_reports: Vec<ProcessedTopoStepReport>,
     #[serde(default)]
     pub physical_processing_reports: Vec<PhysicalProcessingStepReport>,
+    /// Typed reference-design evidence, distinct from actual material state.
+    #[serde(default)]
+    pub reference_step_reports: Vec<ReferenceStepReport>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -249,7 +258,23 @@ pub struct PhysicalProcessingStepReport {
     pub step_index: usize,
     pub evidence: PhysicalProcessingEvidence,
 }
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-18");
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum ReferenceStepEvidence {
+    MultiSiteRecombination {
+        selection: crate::recombination::Selection,
+        batch: crate::multisite_recombination::Batch,
+    },
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ReferenceStepReport {
+    pub step_index: usize,
+    pub evidence: ReferenceStepEvidence,
+}
+
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-19");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrDocument {
@@ -807,6 +832,39 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
                 return Err(Error::Format("invalid TOPO source selection".into()));
             }
         }
+        if let Operation::MultiSiteRecombineReference {
+            sources,
+            request,
+            selection,
+        } = step
+        {
+            count += 1;
+            if count > 64 || !(2..=5).contains(&sources.len()) {
+                return Err(Error::TooLarge);
+            }
+            let mut roles = BTreeSet::new();
+            for source in sources {
+                if source.role.trim().is_empty()
+                    || source.role.len() > 256
+                    || !roles.insert(source.role.as_str())
+                {
+                    return Err(Error::Format(
+                        "Multi-site roles must be unique and bounded".into(),
+                    ));
+                }
+            }
+            crate::multisite_recombination::request_preflight(request)?;
+            if selection.batch_revision.len() != 64
+                || !selection
+                    .batch_revision
+                    .bytes()
+                    .all(|b| b.is_ascii_hexdigit())
+                || selection.candidate_id >= request.reaction.limits.max_candidates
+                || selection.component_id >= request.reaction.limits.max_components_per_candidate
+            {
+                return Err(Error::Format("Invalid multi-site selection".into()));
+            }
+        }
         if let Operation::TopoActions { sources, request } = step {
             count += 1;
             if count > 64 {
@@ -894,7 +952,10 @@ pub fn operation_sources(op: &Operation) -> Vec<&Source> {
         Operation::Topo { sources, .. }
         | Operation::CheckedTopo { sources, .. }
         | Operation::ProcessedTopo { sources, .. }
-        | Operation::TopoActions { sources, .. } => sources.iter().map(|s| &s.source).collect(),
+        | Operation::TopoActions { sources, .. }
+        | Operation::MultiSiteRecombineReference { sources, .. } => {
+            sources.iter().map(|s| &s.source).collect()
+        }
         Operation::Pcr { template, .. }
         | Operation::PcrWithMismatches { template, .. }
         | Operation::Digest { template, .. }
@@ -929,7 +990,8 @@ pub fn operation_sources_mut(op: &mut Operation) -> Vec<&mut Source> {
         Operation::Topo { sources, .. }
         | Operation::CheckedTopo { sources, .. }
         | Operation::ProcessedTopo { sources, .. }
-        | Operation::TopoActions { sources, .. } => {
+        | Operation::TopoActions { sources, .. }
+        | Operation::MultiSiteRecombineReference { sources, .. } => {
             sources.iter_mut().map(|s| &mut s.source).collect()
         }
         Operation::Pcr { template, .. }
@@ -1044,6 +1106,7 @@ fn evaluate_captured(
             matches!(
                 s,
                 Operation::RecombineReference { .. }
+                    | Operation::MultiSiteRecombineReference { .. }
                     | Operation::Topo { .. }
                     | Operation::CheckedTopo { .. }
                     | Operation::ProcessedTopo { .. }
@@ -1061,11 +1124,11 @@ fn evaluate_captured(
     });
     if let Err(error) = preflight {
         return (VerificationReport { plan_revision: String::new(), target_revision: String::new(), engine_version: ENGINE_VERSION.into(), status: Status::Invalid,
-            findings: vec![error.to_string()], assumptions: vec!["Reference/TOPO request rejected before plan hashing; no current result binding established.".into()], products: vec![], exhaustive_alternative_search: false, step_reports: vec![], annotation_reports: vec![], processed_step_reports: vec![], physical_processing_reports: vec![] }, Vec::new());
+            findings: vec![error.to_string()], assumptions: vec!["Reference/TOPO request rejected before plan hashing; no current result binding established.".into()], products: vec![], exhaustive_alternative_search: false, step_reports: vec![], annotation_reports: vec![], processed_step_reports: vec![], physical_processing_reports: vec![], reference_step_reports: vec![] }, Vec::new());
     }
     let mut report = VerificationReport {
         plan_revision: plan_revision(plan), target_revision: target.revision(), engine_version: ENGINE_VERSION.into(),
-        status: Status::Invalid, findings: vec![], products: vec![], exhaustive_alternative_search: false, step_reports: vec![], annotation_reports: vec![], processed_step_reports: vec![], physical_processing_reports: vec![],
+        status: Status::Invalid, findings: vec![], products: vec![], exhaustive_alternative_search: false, step_reports: vec![], annotation_reports: vec![], processed_step_reports: vec![], physical_processing_reports: vec![], reference_step_reports: vec![],
         assumptions: vec!["Exact annealing/overlap model; no experimental outcome is guaranteed.".into(),
             "RecombineReference is a bounded full-site-profile reciprocal reference exchange. All components are computed before an explicit selection; neither its selected DNA nor target agreement establishes chemical strand state, biological repair, efficacy or a selected experimental winner. Reference-only ancestry cannot supply physical PCR or annealing material.".into(),
             "TOPO reconstructs explicitly declared strands, pairing and elementary transfers. Its full physical graph is retained; a selected proven paired contour supplies a restrictive reference view only. No implicit target acceptance policy, nick/flap repair, supplier-kit state or experimental success is asserted. Downstream physical graph consumption is not yet modeled.".into(),
@@ -1092,6 +1155,7 @@ fn evaluate_captured(
         &mut report.annotation_reports,
         &mut report.processed_step_reports,
         &mut report.physical_processing_reports,
+        &mut report.reference_step_reports,
         &mut physical,
         final_golden_gate,
     ) {
@@ -1920,6 +1984,7 @@ fn reconstruct(
     annotation_reports: &mut Vec<AnnotationStepReport>,
     processed_step_reports: &mut Vec<ProcessedTopoStepReport>,
     physical_processing_reports: &mut Vec<PhysicalProcessingStepReport>,
+    reference_step_reports: &mut Vec<ReferenceStepReport>,
     physical: &mut Vec<Option<TrackedDuplex>>,
     final_golden_gate: &mut Option<crate::golden_gate::GoldenGateReport>,
 ) -> Result<Vec<String>, Error> {
@@ -1996,6 +2061,45 @@ fn reconstruct(
             |source: &Source| -> Result<Duplex, Error> { Ok(resolve_tracked(source)?.duplex) };
         let mut next_physical = None;
         let mut product = match step {
+            Operation::MultiSiteRecombineReference {
+                sources,
+                request,
+                selection,
+            } => {
+                let resolved = sources
+                    .iter()
+                    .map(|source| resolve(&source.source))
+                    .collect::<Result<Vec<_>, _>>()?;
+                crate::multisite_recombination::source_preflight(&resolved, request)?;
+                let inputs = sources
+                    .iter()
+                    .zip(&resolved)
+                    .map(
+                        |(source, molecule)| crate::recombination::reference::Input {
+                            role: source.role.clone(),
+                            molecule: (*molecule).clone(),
+                        },
+                    )
+                    .collect::<Vec<_>>();
+                let fresh = crate::multisite_recombination::simulate(&inputs, request)?;
+                let bytes = evidence_bytes(&fresh, 32 * 1024 * 1024)?;
+                step_evidence_bytes = step_evidence_bytes
+                    .checked_add(bytes)
+                    .filter(|n| *n <= 32 * 1024 * 1024)
+                    .ok_or(Error::TooLarge)?;
+                let selected = fresh.selected(selection);
+                findings.push(format!("Step {} retains a whole {}-parent multi-site reference exchange: {} candidate networks and every reciprocal component. No target selects pairings; reference provenance is not physical strand/modification authority.",index+1,inputs.len(),fresh.reference.candidates.len()));
+                reference_step_reports.push(ReferenceStepReport {
+                    step_index: index,
+                    evidence: ReferenceStepEvidence::MultiSiteRecombination {
+                        selection: selection.clone(),
+                        batch: fresh,
+                    },
+                });
+                let selected = selected?;
+                incomplete.push(format!("Step {} is a declared multi-site reference design. Recombination chemistry, source-strand inheritance, reaction efficacy and mixture selection remain unestablished.",index+1));
+                selected.molecule
+            }
             Operation::TopoActions { sources, request } => {
                 let molecules = sources
                     .iter()
@@ -3026,6 +3130,7 @@ fn reconstruct(
             || matches!(
                 step,
                 Operation::RecombineReference { .. }
+                    | Operation::MultiSiteRecombineReference { .. }
                     | Operation::Topo { .. }
                     | Operation::CheckedTopo { .. }
             );
@@ -3241,6 +3346,7 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
             Operation::PcrWithMismatches{template,forward,reverse,options}=>body.push_str(&format!("<li>Intentional-mismatch PCR of {}. Oligos 5′→3′: <code>{}</code> and <code>{}</code>. Binding/search policy: <code>{}</code>. Primer-derived changes are reconstructed; amplification is not established.</li>",source(template),e(&forward.ordered_sequence()),e(&reverse.ordered_sequence()),e(&serde_json::to_string(options).unwrap_or_default()))),
             Operation::GoldenGate{templates,options,candidate_index}=>body.push_str(&format!("<li>Golden Gate with {:?}, inputs {}. Explicit zero-based candidate {} under policy <code>{}</code>. Cleavage, orientation, cohesive ends and recognition-site removal are checked. Finite one-copy fragment search does not establish exhaustive mixture uniqueness; conditions and quantities are unspecified.</li>",options.enzyme,templates.iter().map(source).collect::<Vec<_>>().join(", "),candidate_index,e(&serde_json::to_string(options).unwrap_or_default()))),
             Operation::SelectedGoldenGate{templates,options,candidate_index,directed_sequence_key,physical_sequence_key}=>body.push_str(&format!("<li>Key-bound Golden Gate with {:?}, inputs {}. Explicit zero-based candidate {} under policy <code>{}</code>. Cleavage, orientation, cohesive ends and recognition-site removal are checked. Finite one-copy fragment search does not establish exhaustive mixture uniqueness; conditions and quantities are unspecified. Fresh enumeration must match directed key <code>{}</code> and physical key <code>{}</code>.</li>",options.enzyme,templates.iter().map(source).collect::<Vec<_>>().join(", "),candidate_index,e(&serde_json::to_string(options).unwrap_or_default()),e(directed_sequence_key),e(physical_sequence_key))),
+            Operation::MultiSiteRecombineReference{sources,request,selection}=>body.push_str(&format!("<li>Declared multi-site {:?} reference exchange using sources {}. Profile <code>{}</code>; specificity order {:?}; select candidate {}, component {} from bound batch <code>{}</code>. Retain all reciprocal components. This is a reference design, not established chemical material, experimental selection or kit success.</li>",request.reaction.reaction,e(&sources.iter().map(|s|format!("{}: {}",s.role,source(&s.source))).collect::<Vec<_>>().join(", ")),e(&request.reaction.profile.id),request.reaction.specificities,selection.candidate_id,selection.component_id,e(&selection.batch_revision))),
             Operation::Pcr { template, forward, reverse } => body.push_str(&format!("<li>PCR of {} with {}: <code>{}</code> and {}: <code>{}</code>. Primers shown 5′→3′. Reaction conditions and quantities are unspecified.</li>",source(template),e(&forward.name),e(&forward.ordered_sequence()),e(&reverse.name),e(&reverse.ordered_sequence()))),
             Operation::DeclareSourceTermini{template,left,right}=>body.push_str(&format!("<li>Declare original intact linear duplex source termini for {}: left <code>{}</code>, right <code>{}</code>. Explicit operator hypothesis only; not measured chemistry, synthesis, repair, recovered imported physical state or experimental success. Original sequence/features/citations are retained; methylation remains unknown.</li>",source(template),e(&serde_json::to_string(left).unwrap_or_default()),e(&serde_json::to_string(right).unwrap_or_default()))),
             Operation::DeclareSourceModifications{template,assumptions}=>body.push_str(&format!("<li>Declare closed Dam/Dcm/CpG source generation for {} under explicit assumptions <code>{}</code>. Bind the original input revision; these are not measured modifications. Descendant strand states are propagated without resynthesizing methylation.</li>",source(template),e(&serde_json::to_string(assumptions).unwrap_or_default()))),
@@ -3318,6 +3424,25 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
                 }
                 body.push_str("</ul></li>");
             }
+        }
+        body.push_str("</ul>");
+    }
+    if !report.reference_step_reports.is_empty() {
+        body.push_str("<h2>Whole reference-network evidence</h2><ul>");
+        for step in &report.reference_step_reports {
+            let ReferenceStepEvidence::MultiSiteRecombination { selection, batch } = &step.evidence;
+            body.push_str(&format!("<li>Step {}: {} original parents; {} candidate networks; {} reciprocal components retained. Complete within declared model: {}. Selected candidate {}, component {}. No target determined a pairing; reference agreement does not establish physical chemistry.<ul>",step.step_index+1,batch.sources.len(),batch.reference.candidates.len(),batch.documents.len(),batch.reference.complete,selection.candidate_id+1,selection.component_id+1));
+            for note in batch
+                .reference
+                .warnings
+                .iter()
+                .chain(&batch.reference.limits)
+                .chain(&batch.reference.unsupported)
+                .chain(&batch.warnings)
+            {
+                body.push_str(&format!("<li>{}</li>", e(note)));
+            }
+            body.push_str("</ul></li>");
         }
         body.push_str("</ul>");
     }

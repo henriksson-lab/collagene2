@@ -1545,3 +1545,6 @@ pub fn manufacturer_context_profile() -> Result<Profile, Error> {
     p.validate()?;
     Ok(p)
 }
+
+/// Bounded whole-network multi-parent reference exchange.
+pub mod multisite;

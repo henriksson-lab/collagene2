@@ -123,6 +123,18 @@ pub fn save_candidate(candidate: &Candidate) -> Result<Vec<u8>, Error> {
 }
 pub fn load_candidate(bytes: &[u8]) -> Result<Candidate, Error> {
     let candidate: Candidate = protocol::decode(b"CGP\0", bytes)?;
+    if u16::from_le_bytes([bytes[4], bytes[5]]) < 16
+        && candidate.plan.steps.iter().any(|s| {
+            matches!(
+                s,
+                crate::verification::Operation::MultiSiteRecombineReference { .. }
+            )
+        })
+    {
+        return Err(Error::Unsupported(
+            "MultiSite reference exchange requires candidate schema16".into(),
+        ));
+    }
     if u16::from_le_bytes([bytes[4], bytes[5]]) < 15
         && candidate
             .plan

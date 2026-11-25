@@ -192,3 +192,8 @@ pub mod physical_run_evidence;
 
 /// Dependency-preserving manual edits to declarative cloning plans.
 pub mod plan_editing;
+
+/// Source-bound multi-parent reference recombination and annotation evidence.
+pub mod multisite_recombination;
+
+pub mod reference_run_evidence;

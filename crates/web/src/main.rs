@@ -146,6 +146,8 @@ mod selection_toolbar;
 mod sequence_view;
 #[cfg(any(target_arch = "wasm32", test))]
 mod source_identity;
+#[cfg(target_arch = "wasm32")]
+mod topo_nick_view;
 #[cfg(any(target_arch = "wasm32", test))]
 mod topo_preparation;
 #[cfg(target_arch = "wasm32")]

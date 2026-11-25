@@ -26,7 +26,31 @@ pub struct TopoQuery {
     pub sources: Vec<TopoSourceRef>,
     pub declaration: topo_preparation::PreparationRequest,
 }
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NickQuery {
+    pub sources: Vec<TopoSourceRef>,
+    pub request: collagene_core::topo_nick_sealing::Request,
+}
 impl CollageneServer {
+    pub(super) async fn topo_seal_nicks(
+        &self,
+        args: NickQuery,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || {
+            if args.request.sealing.nicks.len()>16 || args.request.sealing.ligase_assumption.len()>4096 {
+                return Err(bad("Bounded explicit nick and ligase declarations required"));
+            }
+            let (inputs,_) = server.topo_sources(&args.sources,&args.request.preparation,None)?;
+            let report=collagene_core::topo_nick_sealing::inspect(&inputs,&args.request).map_err(bad)?;
+            report.validate_binding(&collagene_core::topo_nick_sealing::revision(&inputs,&args.request).map_err(bad)?).map_err(bad)?;
+            let artifact=server.text_artifact(bounded_json_limit(&json!({"sources":args.sources,"report":report}),32*1024*1024)?,"application/json","topo-nick-sealing.json")?;
+            output(json!({"state":"declared-downstream-graph","verified":false,"context_revision":report.context_revision,
+                "sources":args.sources,"steps":report.sealing.steps,"physical":json!({"chains":report.sealing.product.chains.len(),"components":report.sealing.product.components.len(),"nicks":report.sealing.product.nicks.len(),"unpaired_runs":report.sealing.product.unpaired.len(),"released_activations":report.sealing.product.released_activations}),
+                "artifact_id":artifact,"authority":"Fresh explicit ligase-step reconstruction. Every original strand/component/displaced call is retained. No kinase, flap deletion, host repair, graph-to-duplex authority or independent-target acceptance is inferred."}))
+        }).await
+    }
     pub(super) async fn published_profiles_list(
         &self,
         _args: ListQuery,

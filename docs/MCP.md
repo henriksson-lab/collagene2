@@ -774,3 +774,14 @@ TA/directional-CACC `declaration`. It returns the source-backed native request,
 strand indexes and direction flag for existing `inspect_topo_orientations` /
 projection/check tools. Declared activation is an assumption; neither compilation
 nor a transferred source-call graph implies a repaired or closed clone.
+
+
+## Explicit downstream TOPO nick sealing (161 tools)
+
+`seal_topo_nicks` accepts immutable `sources` and
+`request: { preparation, sealing: { ligase_assumption, nicks: [{ three, five }] } }`.
+Each call is `{ strand, index }` in original prepared-strand coordinates. Fresh
+preparation and original transfers precede the selected treatment. Blocked,
+unknown and unsupported choices remain explicit; all source calls/components and
+released activation remain in the evidence artifact. A sealed graph is not an
+accepted candidate or ordinary tracked duplex. [Contract](TOPO_NICK_SEALING.md).

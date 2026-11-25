@@ -22,6 +22,31 @@ and review proposals are implemented, despite older gap tables. See
 [workflow decisions](BENCHLING_WORKFLOW_DECISIONS.md). This documentation-only
 checkpoint adds no runtime/build/browser checks.
 
+## Explicit downstream TOPO nick sealing
+
+An inspected TOPO orientation now opens a downstream ligase review with actual
+source-call nicks, explicit selection and a required ligase/conditions assumption.
+Fresh reconstruction performs original preparation/transfers once, then joins
+only supported exposed3′OH/5′phosphate nicks across a continuous antiparallel
+template. The original and treated graphs retain every source nucleotide,
+pairing, released activation, displaced flap and coupled component. Blocked,
+unknown and unsupported steps preserve their incoming graph.
+
+The shared physical engine, source adapter, worker63 and MCP161 use the same
+request and scientific checks. Original wire/plan/candidate/science layouts are
+unchanged. A treated graph cannot automatically replace the original projection,
+become a tracked duplex or establish independent-target acceptance.
+[Contract and remaining F15 work](TOPO_NICK_SEALING.md).
+
+Five source-backed native checks and three real MCP SDK cases passed, including
+binary version/downgrade guards, exact source contexts, conditional two-nick TA
+closure and retained directional flap. The corrected application/worker WASM
+compiler check passed. Seven independent nick-sealing fixtures and29 existing
+physical/projection regressions passed (44 total focused native/SDK cases).
+No browser/HTTP check or full preview build ran. Port8082 remains the prior
+immutable snapshot. Accounted flap processing, post-treatment contour/duplex
+composition, durable graph-only handoff and remaining delivery work stay active.
+
 ## Published ligation profiles and directional TOPO preparation
 
 Five Pryor2020 matrices now have exact source/model/formulation bindings and

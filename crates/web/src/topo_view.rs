@@ -79,6 +79,7 @@ struct Choice {
     policies: Policies,
 }
 struct Bound {
+    ticket: u32,
     context: Context,
     captured: Arc<Captured>,
     request: topo::Request,
@@ -373,6 +374,51 @@ pub fn TopoPanel(
             .get()
             .filter(|b| context.with(|c| c.as_ref().ok() == Some(&b.context)) && !locked.get())
     };
+    let nick_locked = Memo::new(move |_| locked.get() || busy.get());
+    let nick_frame = Memo::new(move |_| {
+        let b = current_bound()?;
+        if nick_locked.get() {
+            return None;
+        }
+        let index = orientation.get().parse::<usize>().ok()?;
+        b.report.candidate_requests.get(index)?;
+        b.report.reference.candidates.get(index)?;
+        Some(crate::topo_nick_view::Frame {
+            epoch: b.context.epoch,
+            sources: b.context.sources.clone(),
+            target: b.context.target.binding.clone(),
+            inspection_revision: b.report.batch_revision.clone(),
+            inspection_generation: b.ticket,
+            orientation: index,
+        })
+    });
+    let nick_capture = Callback::new(move |expected: crate::topo_nick_view::Frame| {
+        if nick_locked.get_untracked() || nick_frame.get_untracked().as_ref() != Some(&expected) {
+            return Err("The inspected source path changed; reload nicks.".into());
+        }
+        let b = current_bound().ok_or("The exact TOPO source context changed.")?;
+        if b.ticket != expected.inspection_generation
+            || orientation.get_untracked().parse::<usize>().ok() != Some(expected.orientation)
+        {
+            return Err("The TOPO orientation changed.".into());
+        }
+        let request = b
+            .report
+            .candidate_requests
+            .get(expected.orientation)
+            .ok_or("No inspected orientation request.")?;
+        let physical = b
+            .report
+            .reference
+            .candidates
+            .get(expected.orientation)
+            .ok_or("No inspected physical graph.")?;
+        Ok(crate::topo_nick_view::Capture {
+            inputs: b.captured.inputs.clone(),
+            request: request.clone(),
+            nicks: physical.product.nicks.clone(),
+        })
+    });
     let current_projection = move || {
         projected.get().filter(|p| {
             context.with(|c| c.as_ref().ok() == Some(&p.bound.context))
@@ -481,6 +527,7 @@ pub fn TopoPanel(
                     match topo_worker::validate_orientations(&report, &revision) {
                         Ok(()) => {
                             bound.set(Some(Arc::new(Bound {
+                                ticket,
                                 context: ctx,
                                 captured,
                                 request,
@@ -884,6 +931,7 @@ pub fn TopoPanel(
                     <button class="text-tool" disabled=move||busy.get()||locked.get() on:click=move|_|export.run(())>"Download TOPO evidence JSON"</button>
                 </section>
             })}
+            <crate::topo_nick_view::TopoNickView frame=nick_frame capture=nick_capture locked=nick_locked/>
             <fieldset class="topo-acceptance"><legend>"Explicit independent-target acceptance policy"</legend><p class="helper">"Every permission starts off. Accepting a retained limitation does not repair it or prove laboratory success; changing policy requires fresh projection and target checking."</p>
                 <label class="checkbox-label"><input type="checkbox" disabled=move||locked.get() prop:checked=move||policies.with(|p|p.nicks) on:change=move|e|policies.update(|p|p.nicks=event_target_checked(&e))/>"Accept explicitly retained nicks"</label>
                 <label class="checkbox-label"><input type="checkbox" disabled=move||locked.get() prop:checked=move||policies.with(|p|p.unknown) on:change=move|e|policies.update(|p|p.unknown=event_target_checked(&e))/>"Accept unknown terminal chemistry"</label>

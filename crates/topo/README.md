@@ -79,3 +79,21 @@ The engine does not model activation preparation/cleavage of a circular referenc
 - [Manufacturer PCR-cloning technical support](https://www.thermofisher.com/uk/en/home/technical-resources/technical-reference-library/cloning-technical-support-center/pcr-cloning/pcr-cloning-getting-started.html):5′-phosphate inhibition and vector terminal-chemistry distinction.
 
 No implementation code from these sources or other cloning applications was consulted.
+
+## Explicit downstream ligase treatment
+
+`nick_sealing` composes a fresh source-based TOPO reconstruction with an explicit
+list of ideal templated DNA ligase nick seals. It requires actual 3′OH/5′phosphate
+ends and continuous antiparallel pairing. This is separate from topoisomerase
+`NickReseal`, which consumes a declared phosphotyrosyl activation and a 5′OH.
+
+Every source call, pairing and displaced strand remains in the resulting graph.
+The original transfer report is retained, and blocked/unknown/unsupported selected
+treatments preserve their incoming state. No phosphorylation, flap processing,
+kinetics, host repair or automatic target acceptance is inferred. Public entry
+points reconstruct from original substrates and transfers; serialized product
+reports are not accepted as physical starting state.
+
+The application adapter, binary worker, MCP and downstream review controls are
+described in [the source-bound contract](../../docs/TOPO_NICK_SEALING.md). Ordinary
+paired-contour projection and tracked-duplex composition remain separate stages.

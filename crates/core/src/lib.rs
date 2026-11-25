@@ -177,3 +177,5 @@ pub mod pairwise_search;
 pub mod reference_transfer;
 
 pub mod enzyme_sets;
+
+pub mod topo_nick_sealing;

@@ -1067,3 +1067,17 @@ product review and row-specific diagnostics. Public documentation does not settl
 every retained-edit gesture or physical chemistry guarantee. Existing flows should
 be refined around those interactions; no project administration is introduced.
 The full implementation and deferred final acceptance remain active.
+
+
+### Explicit TOPO downstream ligase treatment
+
+Source-backed TOPO transfer graphs now support an explicitly requested downstream
+nick-sealing step, with actual exposed termini and continuous-template geometry.
+Every original source call, displaced flap and coupled component remains accounted
+for. The desktop review and MCP use the same fresh native reconstruction; no
+imported graph restores physical authority. Worker63/MCP161 append the interfaces
+without changing existing plan/candidate/science versions.
+[Contract and remaining F15 work](TOPO_NICK_SEALING.md).
+
+Accounted flap processing, graph-to-duplex composition, durable graph-only handoff,
+broader methods and remaining delivery/acceptance work remain active.

@@ -96,7 +96,7 @@ available through the existing adapter rather than being relabeled as this profi
 ## Remaining physical scope
 
 This increment does not complete F15. Further transfer composition, source-call
-accounted directional flap processing, generic nick sealing and a proven
+accounted directional flap processing, broader ligase profiles and a proven
 fresh-graph-to-duplex bridge remain separate work. A target-policy allowance must
 never delete an adduct, nick, flap, unpaired call or coupled component, or promote
 a reference-only contour to digest/PCR/ligation material. No current action claims
@@ -109,3 +109,13 @@ complete. Source review, native fixtures and compiler results do not establish G
 usability or experimental performance.
 
 Try the supplied [synthetic TA example](../fixtures/topo-ta-demo.md) for literal source strands, primers and an independent target with two retained nicks.
+
+
+## Downstream ligase review
+
+An inspected orientation now opens a separate [nick-sealing review](TOPO_NICK_SEALING.md).
+Load its actual nicks, explicitly select source-call pairs and state the ligase
+assumption before computing. The original and treated graphs remain evidence;
+source/orientation/treatment changes cancel or invalidate pending results. This
+panel does not substitute its treated graph into the earlier projection/target
+workflow or infer an ordinary duplex from a closed-backbone summary.

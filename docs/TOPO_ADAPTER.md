@@ -152,3 +152,14 @@ restriction; allowing nicks or residual components does not remove them.
 Candidate9/workspace plan7/worker28/science12 identify the checked operation;
 report layouts remain unchanged from schema27. Full experimental success and
 unmodeled downstream graph composition remain outside this acceptance claim.
+
+
+## Explicit downstream nick sealing
+
+The [source-bound ligase step](TOPO_NICK_SEALING.md) now reconstructs original
+preparations/transfers and then explicitly seals selected supported nicks. It
+retains both original and treated graphs, all displaced calls and released
+activation. This is the first downstream graph-composition operation; it does not
+complete accounted flap processing, a post-treatment contour proof or a bridge
+to ordinary tracked duplex operations. Existing TOPO candidate acceptance and
+historical layouts are unchanged.

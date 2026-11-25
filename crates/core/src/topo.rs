@@ -339,7 +339,7 @@ pub fn source_preflight(inputs: &[Input], r: &Request) -> Result<(), Error> {
     }
     Ok(())
 }
-fn identities(inputs: &[Input]) -> Vec<SourceIdentity> {
+pub(crate) fn identities(inputs: &[Input]) -> Vec<SourceIdentity> {
     inputs
         .iter()
         .map(|x| SourceIdentity {
@@ -378,7 +378,7 @@ fn mark(coverage: &mut [bool], start: usize, length: usize) {
         coverage[(start + k) % n] = true;
     }
 }
-fn prepare(inputs: &[Input], r: &Request) -> Result<PreparationEvidence, Error> {
+pub(crate) fn prepare(inputs: &[Input], r: &Request) -> Result<PreparationEvidence, Error> {
     let mut substrates = physical::Substrates {
         strands: vec![],
         pairing: vec![],

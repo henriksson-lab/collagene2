@@ -153,6 +153,46 @@ async fn topo_sdk_retains_nicks_all_orientations_and_explicit_independent_target
         simulated["physical"].get("product").is_none(),
         "large physical graph belongs in artifact"
     );
+    let sealing = json!({"ligase_assumption":"Explicit ideal ATP-dependent ligase nick sealing under compatible conditions; no host repair", "nicks":[
+        {"three":{"strand":2,"index":6},"five":{"strand":0,"index":0}},
+        {"three":{"strand":3,"index":6},"five":{"strand":1,"index":0}}
+    ]});
+    let processed = call(
+        &c,
+        "seal_topo_nicks",
+        json!({"sources":sources,"request":{"preparation":request,"sealing":sealing}}),
+    )
+    .await;
+    assert_eq!(processed["verified"], false);
+    assert_eq!(processed["physical"]["nicks"], 0);
+    assert_eq!(processed["physical"]["components"], 1);
+    let proof = evidence(&c, &processed["artifact_id"]).await;
+    assert_eq!(
+        proof["report"]["sealing"]["parent"]["product"]["nicks"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert!(
+        proof["report"]["sealing"]["product"]["chains"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|chain| chain["ends"] == "CovalentlyCircular")
+    );
+    let mut wrong = sealing.clone();
+    wrong["nicks"][0]["five"]["index"] = json!(1);
+    let retained = call(
+        &c,
+        "seal_topo_nicks",
+        json!({"sources":sources,"request":{"preparation":request,"sealing":wrong}}),
+    )
+    .await;
+    assert!(
+        retained["physical"]["nicks"].as_u64().unwrap() > 0,
+        "wrong actual terminus cannot be sealed"
+    );
     let selection = json!({"batch_revision":simulated["batch_revision"],"component":0,"reference_seed":{"strand":0,"index":0}});
     let projected = call(
         &c,

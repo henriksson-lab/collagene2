@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 160;
+pub const CURRENT_TOOL_COUNT: usize = 161;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -5464,6 +5464,15 @@ impl CollageneServer {
         Parameters(args): Parameters<published_ligation_tools::TopoQuery>,
     ) -> Result<CallToolResult, ErrorData> {
         self.topo_compile_preparation(args).await
+    }
+    #[tool(
+        description = "Freshly reconstruct source-backed TOPO transfers followed by explicitly selected DNA ligase nick sealing. Requires a declared ligase assumption, actual 3′OH/5′phosphate termini and a continuous paired antiparallel template. Retains blocked/unknown steps, every original call, components, displacement and released activation. Does not phosphorylate, trim flaps, infer kit repair, create a tracked duplex or establish target verification."
+    )]
+    async fn seal_topo_nicks(
+        &self,
+        Parameters(args): Parameters<published_ligation_tools::NickQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.topo_seal_nicks(args).await
     }
     #[tool(
         description = "Inspect source-bound restriction sites, explicit retained/protected ranges and coding-feature constraints for internal-site domestication. Uses exact catalog/feature/source pins and reports unsupported geometry or translation semantics rather than assuming a silent change. Reference inspection only; no physical stock is made."

@@ -1,5 +1,35 @@
 # Benchling workflow decisions after parallel follow-up
 
+## Latest review policy
+
+Use parallel official-documentation research for remaining uncertain interactions,
+as requested by the user. Compare against current source and prior implementation
+follow-ups before proposing changes. Public interaction guidance can inform our
+controls; it does not establish scientific correctness, undocumented algorithms
+or a reason to copy Benchling's project administration.
+
+The [methods follow-up](BENCHLING_METHODS_FOLLOWUP.md) establishes explicit oligo
+strand/offset selection and local invalid-offset feedback, separately from
+reference concatenation. Dedicated TOPO, TA/GC and end-repair setup remains
+unestablished in the reviewed public help. Reuse our physical engines; connect
+stable-library tailing/annealing and broader directional TOPO preparations as
+existing delivery gaps, without inferring chemistry from a method name.
+
+The latest [editing follow-up](BENCHLING_EDITING_FOLLOWUP.md) clarifies grouped
+translations, genetic-code selection and the distinction between hiding,
+unlinking and detaching primers. Exact compound/CDS translation and junction
+review already exist; undocumented phase or edit-propagation behavior does not
+justify another engine or silently changing a saved design.
+
+The [verification follow-up](BENCHLING_VERIFICATION_FOLLOWUP.md) distinguishes
+assembly readiness, sequence comparison, reference correction and protocol export.
+Retain separate product-to-design and product-to-read-check routes, and require a
+new check for a derived reference. Public majority-consensus descriptions do not
+resolve ties, uncovered positions or whole-construct acceptance.
+
+The earlier sections below retain their dated findings and implementation
+follow-ups. They are not an unchanged feature backlog.
+
 Reviewed 25 November 2026 by three parallel read-only research workers against
 official public Benchling documentation and the current repository. This records
 interaction decisions, not browser acceptance or evidence of Benchling's scientific

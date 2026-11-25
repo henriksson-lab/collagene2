@@ -82,6 +82,22 @@ Use documented interaction patterns as references while keeping our document/wor
 organization simple. These are static source/documentation comparisons; usability
 acceptance remains deferred, and undocumented Benchling behavior is not a requirement.
 
+For remaining uncertain interactions, delegate independent public-documentation
+reviews in parallel before designing another workflow. Start from the current
+implementation and prior reviews so completed connections are not reopened as
+gaps. Record the documented user actions, unresolved questions and our adaptation
+separately, with primary links. Prefer the existing sequence-centred dock, source
+selection, preparation, product review and output routes over another wizard.
+This reference work does not introduce Benchling's project hierarchy or excluded
+laboratory administration, nor does it authorize borrowing implementation code.
+
+The latest parallel follow-ups cover [remaining cloning methods](BENCHLING_METHODS_FOLLOWUP.md),
+[editing and translation semantics](BENCHLING_EDITING_FOLLOWUP.md) and
+[verification/output continuity](BENCHLING_VERIFICATION_FOLLOWUP.md).
+They preserve existing engines and identify public-evidence limits rather than
+turning undocumented behavior into requirements. Their decisions are consolidated
+in [workflow follow-up](BENCHLING_WORKFLOW_DECISIONS.md#latest-review-policy).
+
 Three further parallel reviews consolidate the remaining decisions in
 [workflow follow-up](BENCHLING_WORKFLOW_DECISIONS.md): distinguish creating a primer
 from attaching/comparing an existing oligo, keep failure recovery local, complete

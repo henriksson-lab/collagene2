@@ -651,3 +651,16 @@ notes receive factual provenance defaults. Worker43/MCP128 expose the same path;
 science-14 and native archive1 remain unchanged. Integrated assembly junction/oligo
 edit transactions, unfinished-draft persistence and the remaining cloning/bulk
 workflows stay in the active queue. [Decision scope](READ_REVIEW.md).
+
+### Coherent junction intent and oligo transaction checkpoint
+
+The assembly dock now previews declared source-core trims plus literal junction DNA
+and proposes actual original-source PCR/overlap oligos with complete-tail analysis.
+Explicit Apply updates target declarations, primers and overlaps together; safe Undo
+will not overwrite later edits and never restores scientific authority. Draft reload
+retains declarations/oligos and requires fresh intent/method computation. Edited
+intent is typed separately from pure source concatenation and retains exact native
+source parents when staged with a candidate. Worker44/MCP130 expose the same model.
+This first transaction route regenerates all rows as PCR-overlap preparations;
+selective edits preserving unaffected manual/mixed preparations and Golden Gate
+junction editing remain required. [Core scope](ASSEMBLY_JUNCTION_EDIT.md).

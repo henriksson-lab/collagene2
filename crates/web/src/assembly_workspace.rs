@@ -1,6 +1,7 @@
 //! Persistent declared assembly slots. Frozen intent/scientific evidence is
 //! component-private and is never restored from a serialized draft.
 use crate::{
+    assembly_review::IntendedReference,
     cloning_methods::{
         CloningMethodsPanel, MethodsState, Mode, OverlapInput, OverlapPreparation, TargetContext,
     },
@@ -9,7 +10,7 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    Alphabet, Molecule, Topology, assembly_intent, primer_reuse,
+    Alphabet, Molecule, Topology, assembly_intent, assembly_junction_edit, primer_reuse,
     protocol::{AnalysisJob, AnalysisResult, Request},
     run_lineage::EventBinding,
     transfer::Candidate,
@@ -89,6 +90,39 @@ pub struct Draft {
     pub slots: Vec<Slot>,
     pub active_slot: usize,
     pub methods: MethodsState,
+    #[serde(default, deserialize_with = "deserialize_junction_edits")]
+    pub junction_edits: Vec<assembly_junction_edit::Edit>,
+}
+fn deserialize_junction_edits<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<assembly_junction_edit::Edit>, D::Error> {
+    struct Visitor;
+    impl<'de> serde::de::Visitor<'de> for Visitor {
+        type Value = Vec<assembly_junction_edit::Edit>;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("at most 12 explicit junction edits")
+        }
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(
+            self,
+            mut seq: A,
+        ) -> Result<Self::Value, A::Error> {
+            if seq.size_hint().is_some_and(|n| n > 12) {
+                return Err(serde::de::Error::custom("at most 12 junction edits"));
+            }
+            let mut values = Vec::new();
+            while values.len() < 12 {
+                match seq.next_element()? {
+                    Some(value) => values.push(value),
+                    None => return Ok(values),
+                }
+            }
+            if seq.next_element::<serde::de::IgnoredAny>()?.is_some() {
+                return Err(serde::de::Error::custom("at most 12 junction edits"));
+            }
+            Ok(values)
+        }
+    }
+    deserializer.deserialize_seq(Visitor)
 }
 fn deserialize_slots<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
@@ -130,6 +164,7 @@ impl Default for Draft {
             slots: vec![Slot::empty("Backbone"), Slot::empty("Insert")],
             active_slot: 0,
             methods: MethodsState::default(),
+            junction_edits: Vec::new(),
         };
         value.sync_rows();
         for row in &mut value.methods.rows {
@@ -195,6 +230,26 @@ impl Draft {
             || self.methods.circular != self.circular
         {
             return Err("Invalid bounded assembly draft or unsupported draft mode".into());
+        }
+        let junction_count = self.slots.len().saturating_sub(1) + usize::from(self.circular);
+        if self.junction_edits.len() > 12
+            || (!self.junction_edits.is_empty() && self.methods.mode != Mode::Overlap)
+        {
+            return Err(
+                "Junction edits currently require overlap assembly and at most 12 edits".into(),
+            );
+        }
+        let mut junctions = std::collections::BTreeSet::new();
+        for edit in &self.junction_edits {
+            if edit.junction >= junction_count
+                || !junctions.insert(edit.junction)
+                || edit.inserted.len() > 200
+            {
+                return Err(
+                    "Invalid or duplicate junction edit; inserted text is limited to 200 bytes"
+                        .into(),
+                );
+            }
         }
         let models = self
             .slots
@@ -356,6 +411,7 @@ impl Draft {
         IntentIdentity {
             name: self.name.clone(),
             circular: self.circular,
+            junction_edits: self.junction_edits.clone(),
             slots: self
                 .slots
                 .iter()
@@ -372,6 +428,15 @@ impl Draft {
                 .collect(),
         }
     }
+}
+fn same_declaration(current: &Draft, applied: &Draft) -> bool {
+    // The active slot is view state, not a change to the declared design.
+    current.version == applied.version
+        && current.name == applied.name
+        && current.circular == applied.circular
+        && current.slots == applied.slots
+        && current.methods == applied.methods
+        && current.junction_edits == applied.junction_edits
 }
 pub fn encode(draft: &Draft) -> Result<Vec<u8>, String> {
     draft.validate()?;
@@ -391,6 +456,7 @@ pub fn decode(bytes: &[u8]) -> Result<Draft, String> {
 struct IntentIdentity {
     name: String,
     circular: bool,
+    junction_edits: Vec<assembly_junction_edit::Edit>,
     slots: Vec<(
         String,
         Option<SourceInfo>,
@@ -411,12 +477,24 @@ pub struct SelectionNavigation {
 pub struct ReviewRequest {
     pub candidate: Candidate,
     pub sources: Vec<EventBinding>,
-    pub intent: assembly_intent::Report,
+    pub intent: IntendedReference,
+}
+fn context(intent: &IntendedReference) -> &str {
+    match intent {
+        IntendedReference::Regions(i) => &i.context_revision,
+        IntendedReference::Junctions(i) => &i.context_revision,
+    }
+}
+fn warnings(intent: &IntendedReference) -> &[String] {
+    match intent {
+        IntendedReference::Regions(i) => &i.warnings,
+        IntendedReference::Junctions(i) => &i.warnings,
+    }
 }
 struct Frozen {
     identity: IntentIdentity,
     epoch: u64,
-    intent: assembly_intent::Report,
+    intent: IntendedReference,
     sources: Vec<Arc<CapturedSource>>,
     target_revision: String,
 }
@@ -469,6 +547,10 @@ fn inputs_request(
         .map(|(id, c)| (id.as_str(), &c.molecule))
         .collect::<Vec<_>>();
     assembly_intent::preflight(&borrowed, &request).map_err(|e| e.to_string())?;
+    if !draft.junction_edits.is_empty() {
+        assembly_junction_edit::intent_preflight(&borrowed, &request, &draft.junction_edits)
+            .map_err(|e| e.to_string())?;
+    }
     let inputs = ids
         .into_iter()
         .zip(&captures)
@@ -512,6 +594,7 @@ pub fn AssemblyWorkspace(
         }
     });
     let frozen = RwSignal::new(None::<Arc<Frozen>>);
+    let undo_junction = RwSignal::new(None::<(Draft, Draft)>);
     let busy = RwSignal::new(false);
     let status = RwSignal::new(String::new());
     let generation = RwSignal::new(0u32);
@@ -526,7 +609,14 @@ pub fn AssemblyWorkspace(
         worker.set_value(None);
     });
     Effect::new(move |_| {
-        let _ = (identity.get(), epoch.get());
+        let (current, current_epoch) = (identity.get(), epoch.get());
+        if frozen.with_untracked(|value| {
+            value
+                .as_ref()
+                .is_some_and(|f| f.identity == current && f.epoch == current_epoch)
+        }) {
+            return;
+        }
         generation.update(|g| *g = g.wrapping_add(1));
         if let Some(w) = worker.get_value() {
             w.close();
@@ -596,6 +686,7 @@ pub fn AssemblyWorkspace(
         next.slots[index].start = start;
         next.slots[index].end = end;
         next.slots[index].digest_geometry = None;
+        next.junction_edits.clear();
         let orientation = next.slots[index].reverse;
         next.methods.rows[index] = OverlapInput {
             preparation: OverlapPreparation::ExactPcr,
@@ -622,11 +713,24 @@ pub fn AssemblyWorkspace(
                 return;
             }
         };
-        let revision = match assembly_intent::intent_revision(&inputs, &request) {
-            Ok(v) => v,
-            Err(e) => {
-                status.set(e.to_string());
+        let revision = match if declared.junction_edits.is_empty() {
+            assembly_intent::intent_revision(&inputs, &request)
+        } else {
+            assembly_junction_edit::intent_revision(&inputs, &request, &declared.junction_edits)
+        } {
+            Ok(value) => value,
+            Err(error) => {
+                status.set(error.to_string());
                 return;
+            }
+        };
+        let job = if declared.junction_edits.is_empty() {
+            AnalysisJob::BuildAssemblyIntent { inputs, request }
+        } else {
+            AnalysisJob::BuildEditedAssemblyIntent {
+                inputs,
+                base: request,
+                edits: declared.junction_edits.clone(),
             }
         };
         let current = match CachedWorker::new() {
@@ -651,7 +755,7 @@ pub fn AssemblyWorkspace(
                 .ask(Request {
                     id: token,
                     revision: revision.clone(),
-                    job: AnalysisJob::BuildAssemblyIntent { inputs, request },
+                    job,
                 })
                 .await;
             current.close();
@@ -665,30 +769,112 @@ pub fn AssemblyWorkspace(
             worker.set_value(None);
             busy.set(false);
             match response {
-                Ok(response) => match response.result {
-                    AnalysisResult::AssemblyIntent(intent) => {
-                        match intent.validate_binding(&revision) {
-                            Ok(()) => {
-                                let target_revision = intent.target.revision();
-                                frozen.set(Some(Arc::new(Frozen {
-                                    identity: state,
-                                    epoch: bound_epoch,
-                                    intent,
-                                    sources: captures,
-                                    target_revision,
-                                })));
-                                status.set("Intended construct ready for review. It describes the sequence you want; no cloning method has been verified.".into());
-                            }
-                            Err(e) => status.set(e.to_string()),
+                Ok(response) if response.id == token && response.revision == revision => {
+                    let result = match response.result {
+                        AnalysisResult::AssemblyIntent(intent) => intent
+                            .validate_binding(&revision)
+                            .map(|()| IntendedReference::Regions(intent)),
+                        AnalysisResult::EditedAssemblyIntent(intent) => intent
+                            .validate_binding(&revision)
+                            .map(|()| IntendedReference::Junctions(intent)),
+                        AnalysisResult::Error(error) => {
+                            status.set(error);
+                            return;
                         }
+                        _ => {
+                            status.set("Unexpected intended-construct response.".into());
+                            return;
+                        }
+                    };
+                    match result {
+                        Ok(intent) => {
+                            let target_revision = intent.target().revision();
+                            frozen.set(Some(Arc::new(Frozen {
+                                identity: state,
+                                epoch: bound_epoch,
+                                intent,
+                                sources: captures,
+                                target_revision,
+                            })));
+                            status.set("Intended construct ready for review. No cloning method has been verified.".into());
+                        }
+                        Err(error) => status.set(error.to_string()),
                     }
-                    AnalysisResult::Error(error) => status.set(error),
-                    _ => status.set("Unexpected intended-construct response.".into()),
-                },
+                }
+                Ok(_) => status.set("Intended-construct response identity changed.".into()),
                 Err(error) => status.set(error),
             }
         });
     });
+    let apply_junction = Callback::new(
+        move |proposal: Arc<JunctionProposal>| -> Result<(), String> {
+            if epoch.get_untracked() != proposal.epoch || draft.get_untracked() != proposal.before {
+                return Err(
+                    "Source slots or settings changed. Preview the junction edit again.".into(),
+                );
+            }
+            let mut next = proposal.before.clone();
+            if proposal.report.recipe.fragments.len() != next.slots.len() {
+                return Err(
+                    "Proposed PCR preparation does not cover every pinned source slot.".into(),
+                );
+            }
+            for (i, fragment) in proposal.report.recipe.fragments.iter().enumerate() {
+                if fragment.input_id != format!("source-{}", i + 1)
+                    || fragment.role != format!("fragment-{}", i + 1)
+                    || fragment.reverse != next.slots[i].reverse
+                {
+                    return Err("Proposed source order or orientation changed.".into());
+                }
+                let collagene_core::assembly_recipe::Preparation::ExactPcr { forward, reverse } =
+                    &fragment.preparation
+                else {
+                    return Err(
+                        "Junction edit proposal must prepare every original source by exact PCR."
+                            .into(),
+                    );
+                };
+                let row = &mut next.methods.rows[i];
+                row.preparation = OverlapPreparation::ExactPcr;
+                row.catalog_selection = None;
+                row.repair = None;
+                row.treatment = crate::cloning_methods::Treatment::Keep;
+                row.forward_name = forward.name.clone();
+                row.forward = forward.annealing.as_str().into();
+                row.forward_tail = forward.tail.clone();
+                row.reverse_name = reverse.name.clone();
+                row.reverse_primer = reverse.annealing.as_str().into();
+                row.reverse_tail = reverse.tail.clone();
+            }
+            next.junction_edits = proposal.report.request.edits.clone();
+            next.methods.mode = Mode::Overlap;
+            next.methods.overlaps = proposal
+                .report
+                .recipe
+                .overlaps
+                .iter()
+                .map(usize::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            next.sync_rows();
+            next.validate()?;
+            let identity = next.identity();
+            let intent = IntendedReference::Junctions(proposal.report.intent.clone());
+            let target_revision = intent.target().revision();
+            undo_junction.set(Some((proposal.before.clone(), next.clone())));
+            methods.set(next.methods.clone());
+            draft.set(next);
+            frozen.set(Some(Arc::new(Frozen {
+                identity,
+                epoch: proposal.epoch,
+                intent,
+                sources: proposal.sources.clone(),
+                target_revision,
+            })));
+            status.set("Junction edits and all proposed PCR primers applied together. Compute fresh method evidence against the revised intended reference.".into());
+            Ok(())
+        },
+    );
     let cancel = move |_| {
         generation.update(|g| *g = g.wrapping_add(1));
         if let Some(w) = worker.get_value() {
@@ -700,18 +886,28 @@ pub fn AssemblyWorkspace(
         status.set("Intended-construct review cancelled.".into());
     };
     view! {<section class="assembly-workspace"><header class="assembly-workspace-header"><h2>"Assembly workspace"</h2><p class="helper">"Choose a slot, select its source in the viewer above, then set the fragment. Switching source tabs preserves every pinned fragment. Preparation is reviewed against a separate intended construct."</p></header>
-        <div class="assembly-draft-settings"><label>"Assembly name"<input maxlength="256" aria-label="Assembly draft name" prop:value=move||draft.with(|d|d.name.clone()) on:input=move|e|draft.update(|d|d.name=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label="Intended assembly circular" prop:checked=move||draft.with(|d|d.circular) on:change=move|e|draft.update(|d|{d.circular=event_target_checked(&e);d.sync_rows();})/>"Circular intended construct"</label></div>
+        <div class="assembly-draft-settings"><label>"Assembly name"<input maxlength="256" aria-label="Assembly draft name" prop:value=move||draft.with(|d|d.name.clone()) on:input=move|e|draft.update(|d|d.name=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label="Intended assembly circular" prop:checked=move||draft.with(|d|d.circular) on:change=move|e|draft.update(|d|{d.circular=event_target_checked(&e);d.junction_edits.clear();d.sync_rows();})/>"Circular intended construct"</label></div>
         <h3>"1. Set original source fragments"</h3><div class="assembly-slot-list" role="group" aria-label="Ordered assembly fragment slots">
         <For each=move||draft.with(|d|(0..d.slots.len()).collect::<Vec<_>>()) key=|i|*i children=move|i|view!{<article class="assembly-slot" class:active=move||draft.with(|d|d.active_slot==i)><button class="button secondary" aria-pressed=move||draft.with(|d|d.active_slot==i) on:click=move|_|draft.update(|d|d.active_slot=i)>{move||draft.with(|d|format!("{} · {}",i+1,d.slots.get(i).map(|s|s.label.as_str()).unwrap_or("slot")))}</button><label>"Slot label"<input maxlength="80" aria-label=format!("Assembly slot {} label",i+1) prop:value=move||draft.with(|d|d.slots.get(i).map(|s|s.label.clone()).unwrap_or_default()) on:input=move|e|draft.update(|d|if let Some(s)=d.slots.get_mut(i){s.label=event_target_value(&e)})/></label>
             <p>{move||draft.with(|d|d.slots.get(i).map(|s|match s.captured.as_deref(){Some(c)=>format!("{} · {}–{} (1-based inclusive, unrolled) · {} bp · {}",c.source.name,s.start+1,s.end,s.end-s.start,if s.reverse{"reverse"}else{"forward"}),None=>"No source fragment set".into()}).unwrap_or_default())}</p>
             <details class="assembly-source-details"><summary>"Source details"</summary><p class="helper">{move||draft.with(|d|d.slots.get(i).and_then(|s|s.captured.as_ref()).map(|c|format!("Pinned source event {} · revision {}",c.source.binding.event_id,c.source.binding.revision)).unwrap_or_default())}</p></details>
             <p class="helper">{move||{let captured=draft.with(|d|d.slots.get(i).and_then(|s|s.captured.clone()));captured.map(|c|sources.with(|current|if current.iter().any(|s|s.binding==c.source.binding){"Current source version is pinned"}else{"Using the captured source version; current tabs do not replace it"})).unwrap_or("")}}</p>
-            <label class="checkbox-label"><input type="checkbox" aria-label=format!("Reverse assembly slot {}",i+1) prop:checked=move||draft.with(|d|d.slots.get(i).is_some_and(|s|s.reverse)) on:change=move|e|draft.update(|d|{let reversed=event_target_checked(&e);if i<d.slots.len(){let adjusted=d.slots[i].captured.as_ref().zip(d.slots[i].digest_geometry.as_ref()).filter(|_|d.methods.rows[i].preparation==OverlapPreparation::CatalogDigest&&d.methods.rows[i].repair.is_none()).map(|(capture,geometry)|digest_interval(&capture.source,geometry,reversed));match adjusted{Some(Ok((start,end)))=>{d.slots[i].start=start;d.slots[i].end=end;},Some(Err(error))=>{status.set(error);return;},None=>{}}d.slots[i].reverse=reversed;}d.sync_rows();})/>"Reverse fragment in construct"</label>
-            <div class="method-row-actions"><button class="text-tool" on:click=move|_|{if let Some(nav)=draft.with_untracked(|d|d.slots.get(i).and_then(|s|s.captured.as_ref().map(|c|SelectionNavigation{source:c.source.binding.clone(),start:s.start,end:s.end,reverse:s.reverse}))){on_navigate.run(nav);}}>"View source region"</button><button class="text-tool" disabled=i==0 on:click=move|_|draft.update(|d|{if i>0&&i<d.slots.len(){d.slots.swap(i,i-1);d.methods.rows.swap(i,i-1);d.active_slot=i-1;d.sync_rows();}})>"Move earlier"</button><button class="text-tool" disabled=move||draft.with(|d|i+1>=d.slots.len()) on:click=move|_|draft.update(|d|{if i+1<d.slots.len(){d.slots.swap(i,i+1);d.methods.rows.swap(i,i+1);d.active_slot=i+1;d.sync_rows();}})>"Move later"</button><button class="text-tool" disabled=move||draft.with(|d|d.slots.len()<=1) on:click=move|_|draft.update(|d|{if d.slots.len()>1&&i<d.slots.len(){d.slots.remove(i);d.methods.rows.remove(i);d.active_slot=d.active_slot.min(d.slots.len()-1);d.sync_rows();}})>"Remove slot"</button></div>
+            <label class="checkbox-label"><input type="checkbox" aria-label=format!("Reverse assembly slot {}",i+1) prop:checked=move||draft.with(|d|d.slots.get(i).is_some_and(|s|s.reverse)) on:change=move|e|draft.update(|d|{let reversed=event_target_checked(&e);if i<d.slots.len(){let adjusted=d.slots[i].captured.as_ref().zip(d.slots[i].digest_geometry.as_ref()).filter(|_|d.methods.rows[i].preparation==OverlapPreparation::CatalogDigest&&d.methods.rows[i].repair.is_none()).map(|(capture,geometry)|digest_interval(&capture.source,geometry,reversed));match adjusted{Some(Ok((start,end)))=>{d.slots[i].start=start;d.slots[i].end=end;},Some(Err(error))=>{status.set(error);return;},None=>{}}d.slots[i].reverse=reversed;d.junction_edits.clear();}d.sync_rows();})/>"Reverse fragment in construct"</label>
+            <div class="method-row-actions"><button class="text-tool" on:click=move|_|{if let Some(nav)=draft.with_untracked(|d|d.slots.get(i).and_then(|s|s.captured.as_ref().map(|c|SelectionNavigation{source:c.source.binding.clone(),start:s.start,end:s.end,reverse:s.reverse}))){on_navigate.run(nav);}}>"View source region"</button><button class="text-tool" disabled=i==0 on:click=move|_|draft.update(|d|{if i>0&&i<d.slots.len(){d.slots.swap(i,i-1);d.methods.rows.swap(i,i-1);d.junction_edits.clear();d.active_slot=i-1;d.sync_rows();}})>"Move earlier"</button><button class="text-tool" disabled=move||draft.with(|d|i+1>=d.slots.len()) on:click=move|_|draft.update(|d|{if i+1<d.slots.len(){d.slots.swap(i,i+1);d.methods.rows.swap(i,i+1);d.junction_edits.clear();d.active_slot=i+1;d.sync_rows();}})>"Move later"</button><button class="text-tool" disabled=move||draft.with(|d|d.slots.len()<=1) on:click=move|_|draft.update(|d|{if d.slots.len()>1&&i<d.slots.len(){d.slots.remove(i);d.methods.rows.remove(i);d.junction_edits.clear();d.active_slot=d.active_slot.min(d.slots.len()-1);d.sync_rows();}})>"Remove slot"</button></div>
         </article>}/></div>
-        <button class="button secondary" disabled=move||draft.with(|d|d.slots.len()>=12) on:click=move|_|draft.update(|d|{if d.slots.len()<12{d.slots.push(Slot::empty(&format!("Fragment {}",d.slots.len()+1)));d.methods.rows.push(OverlapInput{preparation:OverlapPreparation::ExactPcr,..Default::default()});d.active_slot=d.slots.len()-1;d.sync_rows();}})>"Add fragment slot"</button>
+        <button class="button secondary" disabled=move||draft.with(|d|d.slots.len()>=12) on:click=move|_|draft.update(|d|{if d.slots.len()<12{d.slots.push(Slot::empty(&format!("Fragment {}",d.slots.len()+1)));d.methods.rows.push(OverlapInput{preparation:OverlapPreparation::ExactPcr,..Default::default()});d.active_slot=d.slots.len()-1;d.junction_edits.clear();d.sync_rows();}})>"Add fragment slot"</button>
         <section class="assembly-set-fragment"><p>{move||format!("Active viewer source: {} · set {}",active_source.get().name,draft.with(|d|d.slots.get(d.active_slot).map(|s|s.label.as_str()).unwrap_or("selected slot").to_owned()))}</p><button class="button primary" on:click=move|_|pin.run(1)>"Set from sequence selection"</button><button class="button secondary" on:click=move|_|pin.run(0)>"Use whole source"</button><button class="button secondary" on:click=move|_|pin.run(2)>"Keep outside selection"</button><p class="helper">"Keep outside selection retains the complementary path on circular DNA, including an origin crossing. This sets intended source coordinates; it does not digest, amplify or prove a physical fragment."</p></section>
         <button class="button primary" disabled=move||busy.get() on:click=move|_|review_intent.run(())>"Review intended construct"</button><button class="text-tool" disabled=move||!busy.get() on:click=cancel>"Cancel intended construct"</button><p class="assembly-workspace-status" role="status">{move||status.get()}</p>
+        <JunctionEditor draft epoch on_apply=apply_junction/>
+        <button class="text-tool" disabled=move||undo_junction.with(|undo|undo.as_ref().is_none_or(|(_,applied)|!same_declaration(&draft.get(),applied))) on:click=move|_|{
+            if let Some((mut previous,applied))=undo_junction.get_untracked(){
+                let current=draft.get_untracked();
+                if !same_declaration(&current,&applied){status.set("Undo is available only before further draft changes. Your later changes were preserved.".into());return;}
+                if current.active_slot<previous.slots.len(){previous.active_slot=current.active_slot;}
+                methods.set(previous.methods.clone());draft.set(previous);frozen.set(None);undo_junction.set(None);status.set("Previous assembly draft restored. Review its intent and recompute evidence; no positive result was restored.".into());
+            }
+        }>"Undo applied junction edit"</button>
+        <Show when=move||undo_junction.with(|undo|undo.as_ref().is_some_and(|(_,applied)|!same_declaration(&draft.get(),applied)))><p class="helper">"Undo available before further draft changes. Later source, primer or design edits are preserved."</p></Show>
         {move||frozen.get().map(|bound|view!{<FrozenWorkspace bound draft methods epoch on_navigate on_review on_finalize on_products primer_sources list_primers resolve_primer/>})}
     </section>}
 }
@@ -759,10 +955,10 @@ fn FrozenWorkspace(
     let bound = StoredValue::new(bound);
     let junction = RwSignal::new(0usize);
     let status = RwSignal::new(String::new());
-    let target = Memo::new(move |_| bound.with_value(|f| f.intent.target.clone()));
+    let target = Memo::new(move |_| bound.with_value(|f| f.intent.target().clone()));
     let target_info = Memo::new(move |_| {
         bound.with_value(|f| TargetContext::Intent {
-            context_revision: f.intent.context_revision.clone(),
+            context_revision: context(&f.intent).to_string(),
             revision: f.target_revision.clone(),
         })
     });
@@ -827,7 +1023,7 @@ fn FrozenWorkspace(
     });
     let navigate = Callback::new(move |i: usize| {
         if let Some(nav) = bound.with_value(|f| {
-            f.intent.request.fragments.get(i).and_then(|region| {
+            f.intent.fragments().get(i).and_then(|region| {
                 f.sources.get(i).map(|source| SelectionNavigation {
                     source: source.source.binding.clone(),
                     start: region.start,
@@ -839,12 +1035,13 @@ fn FrozenWorkspace(
             on_navigate.run(nav);
         }
     });
-    view! {<section class="assembly-intended-review"><h3>"2. Review the intended construct"</h3><p>{bound.with_value(|f|format!("{} · {} bp · {}",f.intent.target.name,f.intent.target.sequence.len(),if f.intent.target.topology==Topology::Circular{"circular"}else{"linear"}))}</p><p class="helper">"This sequence is your declared design requirement, assembled only from the chosen source regions. It is separate from any simulated cloning outcome. Editing a slot clears this review."</p>
-        <div class="assembly-fragment-ribbon" role="group" aria-label="Intended construct fragments">{bound.with_value(|f|f.intent.fragments.iter().enumerate().map(|(i,fragment)|view!{<button class="assembly-ribbon-fragment" on:click=move|_|navigate.run(i)>{format!("{}{} · {} bp · {}–{}",f.identity.slots[i].0,if fragment.reverse{" ←"}else{" →"},fragment.output_end-fragment.output_start,fragment.output_start+1,fragment.output_end)}</button>}).collect_view())}</div>
-        {bound.with_value(|f|{let count=f.intent.fragments.len().saturating_sub(1)+usize::from(f.intent.target.topology==Topology::Circular);if count==0{return view!{<p>"One linear fragment has no internal junction."</p>}.into_any();}view!{<div class="assembly-intended-junction">{move||bound.with_value(|f|{let i=junction.get().min(count-1);let next=(i+1)%f.sources.len();let boundary=f.intent.fragments[i].output_end;view!{<h4>{format!("Intended junction {} · {} → {}{}",i+1,f.identity.slots[i].0,f.identity.slots[next].0,if i+1==f.sources.len(){" · circle closure"}else{""})}</h4><pre>{intended_window(&f.intent.target,boundary)}</pre><p class="helper">{format!("| marks intended product boundary {} (zero-based). These letters are not a digest/ligation/homology validation.",if boundary==f.intent.target.sequence.len()&&f.intent.target.topology==Topology::Circular{0}else{boundary})}</p><button class="text-tool" on:click=move|_|navigate.run(i)>"View upstream source"</button><button class="text-tool" on:click=move|_|navigate.run(next)>"View downstream source"</button>}})}<div class="method-row-actions"><button class="text-tool" disabled=move||junction.get()==0 on:click=move|_|junction.update(|i|*i=i.saturating_sub(1))>"Previous intended junction"</button><button class="text-tool" disabled=move||{junction.get()+1>=count} on:click=move|_|junction.update(|i|*i=(*i+1).min(count-1))>"Next intended junction"</button></div></div>}.into_any()})}
-        {bound.with_value(|f|f.intent.warnings.iter().map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view())}
+    view! {<section class="assembly-intended-review"><h3>"2. Review the intended construct"</h3><p>{bound.with_value(|f|format!("{} · {} bp · {}",f.intent.target().name,f.intent.target().sequence.len(),if f.intent.target().topology==Topology::Circular{"circular"}else{"linear"}))}</p><p class="helper">"This sequence is your declared design requirement, assembled from chosen source regions and any explicit junction edits. It is separate from any simulated cloning outcome. Editing a slot clears this review."</p>
+        {bound.with_value(|f|match &f.intent{IntendedReference::Junctions(intent)=>Some(view!{<p class="helper">{format!("{} explicit junction edits are included. Ribbon output spans include each adjusted source core and its outgoing synthetic insert; source navigation selects only the adjusted original-source core.",intent.edits.len())}</p>}),_=>None})}
+        <div class="assembly-fragment-ribbon" role="group" aria-label="Intended construct fragments">{bound.with_value(|f|f.intent.fragments().iter().enumerate().map(|(i,fragment)|view!{<button class="assembly-ribbon-fragment" on:click=move|_|navigate.run(i)>{format!("{}{} · {} bp · {}–{}",f.identity.slots[i].0,if fragment.reverse{" ←"}else{" →"},fragment.output_end-fragment.output_start,fragment.output_start+1,fragment.output_end)}</button>}).collect_view())}</div>
+        {bound.with_value(|f|{let count=f.intent.fragments().len().saturating_sub(1)+usize::from(f.intent.target().topology==Topology::Circular);if count==0{return view!{<p>"One linear fragment has no internal junction."</p>}.into_any();}view!{<div class="assembly-intended-junction">{move||bound.with_value(|f|{let i=junction.get().min(count-1);let next=(i+1)%f.sources.len();let boundary=f.intent.fragments()[i].output_end;view!{<h4>{format!("Intended junction {} · {} → {}{}",i+1,f.identity.slots[i].0,f.identity.slots[next].0,if i+1==f.sources.len(){" · circle closure"}else{""})}</h4><pre>{intended_window(f.intent.target(),boundary)}</pre><p class="helper">{format!("| marks intended product boundary {} (zero-based). These letters are not a digest/ligation/homology validation.",if boundary==f.intent.target().sequence.len()&&f.intent.target().topology==Topology::Circular{0}else{boundary})}</p><button class="text-tool" on:click=move|_|navigate.run(i)>"View upstream source"</button><button class="text-tool" on:click=move|_|navigate.run(next)>"View downstream source"</button>}})}<div class="method-row-actions"><button class="text-tool" disabled=move||junction.get()==0 on:click=move|_|junction.update(|i|*i=i.saturating_sub(1))>"Previous intended junction"</button><button class="text-tool" disabled=move||{junction.get()+1>=count} on:click=move|_|junction.update(|i|*i=(*i+1).min(count-1))>"Next intended junction"</button></div></div>}.into_any()})}
+        {bound.with_value(|f|warnings(&f.intent).iter().map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view())}
         <h3>"3. Prepare fragments and verify the method"</h3><p class="helper">"PCR rows begin with no primer sequences. Suggest and explicitly apply primers, or choose another declared preparation. The pinned original sources remain the inputs; the intended reference is never used as physical source material."</p>
-        <CloningMethodsPanel molecule=target query_options get_query source_info target_info selected_region=Callback::new(|()|None) config=methods epoch on_candidate=review on_finalize=Some(finalize) on_products primer_sources list_primers resolve_primer fixed_sources=true/>
+        <CloningMethodsPanel molecule=target query_options get_query source_info target_info selected_region=Callback::new(|()|None) config=methods epoch on_candidate=review on_finalize=Some(finalize) on_products primer_sources list_primers resolve_primer fixed_sources=true disable_plain_primer_design=bound.with_value(|f|!f.identity.junction_edits.is_empty())/>
         <p role="status">{move||status.get()}</p>
     </section>}
 }
@@ -983,6 +1180,7 @@ pub fn set_digest_fragment(
     next.slots[index].start = start;
     next.slots[index].end = end;
     next.slots[index].digest_geometry = Some(geometry);
+    next.junction_edits.clear();
     next.methods.rows[index] = OverlapInput {
         preparation: OverlapPreparation::CatalogDigest,
         catalog_selection: Some(fragment.selection),
@@ -995,4 +1193,327 @@ pub fn set_digest_fragment(
     next.validate()?;
     *draft = next;
     Ok(())
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct JunctionSettings {
+    overlap: String,
+    minimum: String,
+    maximum: String,
+    tm: String,
+}
+impl Default for JunctionSettings {
+    fn default() -> Self {
+        Self {
+            overlap: "20".into(),
+            minimum: "18".into(),
+            maximum: "30".into(),
+            tm: "60".into(),
+        }
+    }
+}
+struct JunctionProposal {
+    before: Draft,
+    report: assembly_junction_edit::Report,
+    sources: Vec<Arc<CapturedSource>>,
+    settings: JunctionSettings,
+    epoch: u64,
+}
+#[component]
+fn JunctionEditor(
+    draft: RwSignal<Draft>,
+    epoch: RwSignal<u64>,
+    on_apply: Callback<Arc<JunctionProposal>, Result<(), String>>,
+) -> impl IntoView {
+    let proposed = RwSignal::new(draft.with_untracked(|d| d.junction_edits.clone()));
+    let junction = RwSignal::new(0usize);
+    let remove_left = RwSignal::new("0".to_string());
+    let remove_right = RwSignal::new("0".to_string());
+    let inserted = RwSignal::new(String::new());
+    let settings = RwSignal::new(JunctionSettings::default());
+    let result = RwSignal::new(None::<Arc<JunctionProposal>>);
+    let status = RwSignal::new(String::new());
+    let pending = RwSignal::new(false);
+    let generation = RwSignal::new(0u32);
+    let worker = StoredValue::new_local(None::<Rc<CachedWorker>>);
+    let alive = Arc::new(AtomicBool::new(true));
+    let cleanup = alive.clone();
+    on_cleanup(move || {
+        cleanup.store(false, Ordering::Relaxed);
+        if let Some(w) = worker.get_value() {
+            w.close();
+        }
+    });
+    let source_context = Memo::new(move |_| draft.with(Draft::identity));
+    Effect::new(move |_| {
+        let _ = (source_context.get(), epoch.get());
+        let edits = draft.with_untracked(|d| d.junction_edits.clone());
+        let first = edits.iter().find(|edit| edit.junction == 0);
+        remove_left.set(
+            first
+                .map(|e| e.remove_left.to_string())
+                .unwrap_or_else(|| "0".into()),
+        );
+        remove_right.set(
+            first
+                .map(|e| e.remove_right.to_string())
+                .unwrap_or_else(|| "0".into()),
+        );
+        inserted.set(first.map(|e| e.inserted.clone()).unwrap_or_default());
+        proposed.set(edits);
+        junction.set(0);
+    });
+    Effect::new(move |_| {
+        let _ = (
+            draft.get(),
+            proposed.get(),
+            settings.get(),
+            epoch.get(),
+            remove_left.get(),
+            remove_right.get(),
+            inserted.get(),
+            junction.get(),
+        );
+        generation.update(|g| *g = g.wrapping_add(1));
+        if let Some(w) = worker.get_value() {
+            w.close();
+        }
+        worker.set_value(None);
+        pending.set(false);
+        result.set(None);
+    });
+    let load_edit = Callback::new(move |index: usize| {
+        junction.set(index);
+        let edit =
+            proposed.with_untracked(|edits| edits.iter().find(|e| e.junction == index).cloned());
+        remove_left.set(
+            edit.as_ref()
+                .map(|e| e.remove_left.to_string())
+                .unwrap_or_else(|| "0".into()),
+        );
+        remove_right.set(
+            edit.as_ref()
+                .map(|e| e.remove_right.to_string())
+                .unwrap_or_else(|| "0".into()),
+        );
+        inserted.set(edit.map(|e| e.inserted).unwrap_or_default());
+    });
+    let unstaged = Memo::new(move |_| {
+        let current = junction.get();
+        proposed.with(|edits| {
+            let edit = edits.iter().find(|edit| edit.junction == current);
+            remove_left.get().parse::<usize>().ok()
+                != Some(edit.map(|e| e.remove_left).unwrap_or(0))
+                || remove_right.get().parse::<usize>().ok()
+                    != Some(edit.map(|e| e.remove_right).unwrap_or(0))
+                || inserted.get() != edit.map(|e| e.inserted.as_str()).unwrap_or("")
+        })
+    });
+    let set_edit = move |_| {
+        let outcome = (|| -> Result<_, String> {
+            let junction = junction.get_untracked();
+            let count =
+                draft.with_untracked(|d| d.slots.len().saturating_sub(1) + usize::from(d.circular));
+            if junction >= count {
+                return Err("Choose an available junction.".into());
+            }
+            let left = remove_left.get_untracked();
+            let right = remove_right.get_untracked();
+            let inserted = inserted.get_untracked();
+            if left.len() > 20 || right.len() > 20 || inserted.len() > 200 {
+                return Err(
+                    "Trim fields or inserted text exceed their bounds (200 raw inserted bytes)."
+                        .into(),
+                );
+            }
+            Ok(assembly_junction_edit::Edit {
+                junction,
+                remove_left: left.parse().map_err(|_| "Enter an upstream trim length.")?,
+                remove_right: right
+                    .parse()
+                    .map_err(|_| "Enter a downstream trim length.")?,
+                inserted,
+            })
+        })();
+        match outcome {
+            Ok(edit) => {
+                proposed.update(|items| {
+                    if let Some(old) = items.iter_mut().find(|e| e.junction == edit.junction) {
+                        *old = edit;
+                    } else {
+                        items.push(edit);
+                        items.sort_by_key(|e| e.junction);
+                    }
+                });
+                status.set("Proposed edit updated. Preview all junction edits and PCR primers before applying.".into());
+            }
+            Err(error) => status.set(error),
+        }
+    };
+    let design_alive = alive.clone();
+    let preview = Callback::new(move |()| {
+        let before = draft.get_untracked();
+        let edits = proposed.get_untracked();
+        let form = settings.get_untracked();
+        let captured_epoch = epoch.get_untracked();
+        let prepared = (|| -> Result<_, String> {
+            if before.methods.mode != Mode::Overlap {
+                return Err("Junction editing currently prepares overlap-PCR assemblies. Choose overlap mode first.".into());
+            }
+            if edits.is_empty() {
+                return Err("Set at least one proposed junction edit first.".into());
+            }
+            if [&form.overlap, &form.minimum, &form.maximum, &form.tm]
+                .iter()
+                .any(|s| s.len() > 32)
+            {
+                return Err("Primer settings exceed their field bounds.".into());
+            }
+            let mut candidate = before.clone();
+            candidate.junction_edits = edits.clone();
+            let (inputs, base, sources) = inputs_request(&candidate)?;
+            let (_, profile_options) = before.methods.profile()?;
+            let request = assembly_junction_edit::Request {
+                base,
+                edits,
+                overlap: form
+                    .overlap
+                    .parse()
+                    .map_err(|_| "Enter a homology length.")?,
+                primer_options: collagene_core::primers::DesignOptions {
+                    min_length: form
+                        .minimum
+                        .parse()
+                        .map_err(|_| "Enter a minimum annealing length.")?,
+                    max_length: form
+                        .maximum
+                        .parse()
+                        .map_err(|_| "Enter a maximum annealing length.")?,
+                    target_tm_c: form
+                        .tm
+                        .parse()
+                        .map_err(|_| "Enter an annealing target Tm.")?,
+                    max_pairs: 1,
+                    ..Default::default()
+                },
+                profile_options,
+            };
+            let revision = assembly_junction_edit::design_revision(&inputs, &request)
+                .map_err(|e| e.to_string())?;
+            let w = Rc::new(CachedWorker::new()?);
+            Ok((inputs, request, sources, revision, w))
+        })();
+        let (inputs, request, sources, revision, w) = match prepared {
+            Ok(value) => value,
+            Err(error) => {
+                status.set(error);
+                return;
+            }
+        };
+        if let Some(old) = worker.get_value() {
+            old.close();
+        }
+        worker.set_value(Some(w.clone()));
+        let token = generation.get_untracked().wrapping_add(1);
+        generation.set(token);
+        pending.set(true);
+        result.set(None);
+        status.set(
+            "Building the edited intended reference and proposing original-source PCR primers…"
+                .into(),
+        );
+        let alive = design_alive.clone();
+        spawn_local(async move {
+            let response = w
+                .ask(Request {
+                    id: token,
+                    revision: revision.clone(),
+                    job: AnalysisJob::DesignEditedAssemblyPrimers {
+                        inputs,
+                        request: request.clone(),
+                    },
+                })
+                .await;
+            w.close();
+            if !alive.load(Ordering::Relaxed)
+                || generation.get_untracked() != token
+                || epoch.get_untracked() != captured_epoch
+                || draft.get_untracked() != before
+                || settings.get_untracked() != form
+                || proposed.get_untracked() != request.edits
+            {
+                return;
+            }
+            pending.set(false);
+            worker.set_value(None);
+            let outcome = (|| -> Result<_, String> {
+                let response = response?;
+                if response.id != token || response.revision != revision {
+                    return Err("Junction proposal response identity changed.".into());
+                }
+                let report = match response.result {
+                    AnalysisResult::EditedAssemblyPrimers(report) => report,
+                    AnalysisResult::Error(error) => return Err(error),
+                    _ => return Err("Unexpected junction primer proposal result.".into()),
+                };
+                report
+                    .validate_binding(&revision)
+                    .map_err(|e| e.to_string())?;
+                Ok(Arc::new(JunctionProposal {
+                    before,
+                    report,
+                    sources,
+                    settings: form,
+                    epoch: captured_epoch,
+                }))
+            })();
+            match outcome {
+                Ok(proposal) => {
+                    result.set(Some(proposal));
+                    status.set("Proposal ready. Applying replaces every preparation row with these exact original-source PCR primers; existing oligos remain unchanged until you Apply.".into());
+                }
+                Err(error) => status.set(error),
+            }
+        });
+    });
+    let apply = move |_| {
+        let outcome = (|| -> Result<(), String> {
+            let proof = result
+                .get_untracked()
+                .ok_or("Preview the proposed junction edits first.")?;
+            if proof.before != draft.get_untracked()
+                || proof.epoch != epoch.get_untracked()
+                || proof.settings != settings.get_untracked()
+                || proof.report.request.edits != proposed.get_untracked()
+            {
+                return Err(
+                    "Sources, proposed edits or primer settings changed. Preview again.".into(),
+                );
+            }
+            on_apply.run(proof)
+        })();
+        if let Err(error) = outcome {
+            status.set(error);
+        }
+    };
+    view! {<details class="assembly-junction-editor"><summary>"Edit a junction and redesign its PCR preparation"</summary>
+        <p class="helper">"Trim bases from the upstream core's assembly-facing end and/or the downstream core's beginning, then insert literal DNA between them. Original source regions stay pinned. Preview proposes PCR for every fragment; Apply explicitly replaces all existing preparation primers. This does not establish cloning success."</p>
+        <label>"Junction"<select aria-label="Assembly junction to edit" prop:value=move||junction.get().to_string() on:change=move|e|if let Ok(index)=event_target_value(&e).parse(){load_edit.run(index)}>{move||draft.with(|d|{let count=d.slots.len().saturating_sub(1)+usize::from(d.circular);(0..count).map(|i|view!{<option value=i.to_string()>{format!("{} → {}{}",d.slots[i].label,d.slots[(i+1)%d.slots.len()].label,if i+1==d.slots.len(){" (circle closure)"}else{""})}</option>}).collect_view()})}</select></label>
+        <div class="primer-grid"><label>"Remove upstream bases"<input type="number" min="0" aria-label="Junction upstream trim" prop:value=move||remove_left.get() on:input=move|e|remove_left.set(event_target_value(&e))/></label><label>"Remove downstream bases"<input type="number" min="0" aria-label="Junction downstream trim" prop:value=move||remove_right.get() on:input=move|e|remove_right.set(event_target_value(&e))/></label></div>
+        <label>"Insert literal DNA at this junction"<textarea maxlength="200" aria-label="Junction inserted DNA" prop:value=move||inserted.get() on:input=move|e|inserted.set(event_target_value(&e))></textarea></label>
+        <button class="button secondary" on:click=set_edit>"Set proposed junction edit"</button>
+        {move||proposed.get().into_iter().map(|edit|{let index=edit.junction;view!{<p>{format!("Junction {}: remove {} upstream / {} downstream; insert {}",index+1,edit.remove_left,edit.remove_right,if edit.inserted.is_empty(){"(none)"}else{&edit.inserted})}<button class="text-tool" on:click=move|_|proposed.update(|items|items.retain(|e|e.junction!=index))>"Remove proposed edit"</button></p>}}).collect_view()}
+        <div class="primer-grid"><label>"Homology length"<input type="number" min="1" aria-label="Edited junction homology" prop:value=move||settings.with(|s|s.overlap.clone()) on:input=move|e|settings.update(|s|s.overlap=event_target_value(&e))/></label><label>"Minimum annealing length"<input type="number" min="1" max="200" aria-label="Edited junction primer minimum" prop:value=move||settings.with(|s|s.minimum.clone()) on:input=move|e|settings.update(|s|s.minimum=event_target_value(&e))/></label><label>"Maximum annealing length"<input type="number" min="1" max="200" aria-label="Edited junction primer maximum" prop:value=move||settings.with(|s|s.maximum.clone()) on:input=move|e|settings.update(|s|s.maximum=event_target_value(&e))/></label><label>"Target annealing Tm (°C)"<input type="number" aria-label="Edited junction primer target Tm" prop:value=move||settings.with(|s|s.tm.clone()) on:input=move|e|settings.update(|s|s.tm=event_target_value(&e))/></label></div>
+        <p class="helper">"The selected Gibson/HiFi/In-Fusion profile is retained. Primer metrics are model calculations, not reagent conditions or demonstrated binding. Concrete source and inserted DNA are required for these primer proposals; ambiguous calls are not silently resolved."</p>
+        <Show when=move||unstaged.get()><p class="helper">"Set the proposed junction edit before previewing, so the changed trim and inserted bases are included."</p></Show>
+        <button class="button primary" disabled=move||pending.get()||unstaged.get()||draft.with(|d|d.methods.mode!=Mode::Overlap) on:click=move|_|preview.run(())>"Preview edited construct and PCR primers"</button>
+        <button class="text-tool" disabled=move||!pending.get() on:click=move|_|{generation.update(|g|*g=g.wrapping_add(1));if let Some(w)=worker.get_value(){w.close();}worker.set_value(None);pending.set(false);result.set(None);status.set("Junction proposal cancelled.".into());}>"Cancel junction proposal"</button>
+        <p role="status">{move||status.get()}</p>
+        {move||result.get().map(|proof|view!{<section class="assembly-junction-proposal"><h3>"Edited construct and proposed PCR preparation"</h3><p>{format!("{} · {} bases",proof.report.intent.target.name,proof.report.intent.target.sequence.len())}</p><pre>{let dna=proof.report.intent.target.sequence.as_str();format!("{}{}",dna.chars().take(240).collect::<String>(),if dna.len()>240{"… (bounded preview)"}else{""})}</pre>
+            {proof.report.intent.fragments.iter().enumerate().map(|(i,fragment)|view!{<p>{format!("{}: original core {}–{} → adjusted core {}–{}{}; output span {}–{} includes any outgoing synthetic insert",proof.before.slots[i].label,proof.before.slots[i].start+1,proof.before.slots[i].end,fragment.start+1,fragment.end,if fragment.reverse{" reverse"}else{" forward"},fragment.output_start+1,fragment.output_end)}</p>}).collect_view()}
+            {proof.report.designs.iter().enumerate().map(|(i,design)|view!{<article><h4>{format!("Fragment {} PCR primers",i+1)}</h4>{design.pairs.first().map(|pair|view!{<pre>{format!("{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nAdded 5′ tail: {}\n\n{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nAdded 5′ tail: {}",pair.forward.primer.name,pair.forward.primer.tail,pair.forward.primer.annealing.as_str(),pair.forward.primer.annealing.as_str(),pair.forward.primer.tail,pair.reverse.primer.name,pair.reverse.primer.tail,pair.reverse.primer.annealing.as_str(),pair.reverse.primer.annealing.as_str(),pair.reverse.primer.tail)}</pre><p>{format!("Annealing Tm {} / {} · pair ΔTm {:.1}°C",pair.forward.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.reverse.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.tm_difference_c)}</p>})}{design.warnings.iter().map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view()}</article>}).collect_view()}
+            {proof.report.warnings.iter().chain(proof.report.intent.warnings.iter()).map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view()}
+            <button class="button primary" on:click=apply>"Apply junction edits and replace all PCR primers"</button>
+        </section>})}
+    </details>}
 }

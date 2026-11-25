@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 43;
+pub const WORKER_SCHEMA_VERSION: u16 = 44;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 11;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -690,6 +690,15 @@ pub enum AnalysisJob {
         workspace: crate::workspace::Workspace,
         request: crate::read_review::Request,
     },
+    BuildEditedAssemblyIntent {
+        inputs: Vec<crate::verification::PlanInput>,
+        base: crate::assembly_intent::Request,
+        edits: Vec<crate::assembly_junction_edit::Edit>,
+    },
+    DesignEditedAssemblyPrimers {
+        inputs: Vec<crate::verification::PlanInput>,
+        request: crate::assembly_junction_edit::Request,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -800,6 +809,8 @@ pub enum AnalysisResult {
     ReadCheckReplayed(crate::read_checks::Checked),
     ReadReviewPreview(crate::read_review::Preview),
     ReadReviewCommitted(crate::read_review::Commit),
+    EditedAssemblyIntent(crate::assembly_junction_edit::Intent),
+    EditedAssemblyPrimers(crate::assembly_junction_edit::Report),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1055,6 +1066,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_mutation_intent_tag(bytes, &[96])?;
     preflight_read_check_tag(bytes, &[97, 98])?;
     preflight_read_review_tag(bytes, &[99, 100])?;
+    preflight_edited_assembly_tag(bytes, &[101, 102])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1108,6 +1120,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         _ => decode_with_limit(b"CGR\0", bytes, maximum)?,
     };
     let required = match &response.result {
+        AnalysisResult::EditedAssemblyIntent(_) | AnalysisResult::EditedAssemblyPrimers(_) => 44,
         AnalysisResult::ReadReviewPreview(_) | AnalysisResult::ReadReviewCommitted(_) => 43,
         AnalysisResult::ReadCheckCaptured(_) | AnalysisResult::ReadCheckReplayed(_) => 42,
         AnalysisResult::MutationIntent(_) => 41,
@@ -1228,6 +1241,12 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
     }
     match &response.result {
+        AnalysisResult::EditedAssemblyIntent(intent) => {
+            intent.validate_binding(&response.revision)?
+        }
+        AnalysisResult::EditedAssemblyPrimers(report) => {
+            report.validate_binding(&response.revision)?
+        }
         AnalysisResult::ReadReviewPreview(preview) => {
             preview.validate_binding(&response.revision)?
         }
@@ -1697,6 +1716,14 @@ fn preflight_topo_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     }
     Ok(())
 }
+fn preflight_edited_assembly_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 44)?;
+    }
+    Ok(())
+}
 fn preflight_read_review_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -2043,6 +2070,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_mutation_intent_tag(bytes, &[104])?;
     preflight_read_check_tag(bytes, &[105, 106])?;
     preflight_read_review_tag(bytes, &[107, 108])?;
+    preflight_edited_assembly_tag(bytes, &[109, 110])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -2050,6 +2078,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::BuildEditedAssemblyIntent { .. }
+        | AnalysisJob::DesignEditedAssemblyPrimers { .. } => 44,
         AnalysisJob::PreviewReadReview { .. } | AnalysisJob::CommitReadReview { .. } => 43,
         AnalysisJob::CaptureReadCheck { .. } | AnalysisJob::ReplayReadCheck { .. } => 42,
         AnalysisJob::BuildMutationIntent { .. } => 41,
@@ -2385,6 +2415,26 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             if crate::assembly_intent::intent_revision(inputs, request)? != r.revision {
                 return Err(Error::Format(
                     "assembly intent source/region/options changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::BuildEditedAssemblyIntent {
+            inputs,
+            base,
+            edits,
+        } => {
+            if crate::assembly_junction_edit::intent_revision(inputs, base, edits)? != r.revision {
+                return Err(Error::Format(
+                    "Edited assembly source/intent changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::DesignEditedAssemblyPrimers { inputs, request } => {
+            if crate::assembly_junction_edit::design_revision(inputs, request)? != r.revision {
+                return Err(Error::Format(
+                    "Edited assembly source/primers changed".into(),
                 ));
             }
             None
@@ -3014,6 +3064,16 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         )),
         AnalysisJob::BuildAssemblyIntent { inputs, request } => {
             crate::assembly_intent::build(&inputs, &request).map(AnalysisResult::AssemblyIntent)
+        }
+        AnalysisJob::BuildEditedAssemblyIntent {
+            inputs,
+            base,
+            edits,
+        } => crate::assembly_junction_edit::build_intent(&inputs, &base, &edits)
+            .map(AnalysisResult::EditedAssemblyIntent),
+        AnalysisJob::DesignEditedAssemblyPrimers { inputs, request } => {
+            crate::assembly_junction_edit::design(&inputs, &request)
+                .map(AnalysisResult::EditedAssemblyPrimers)
         }
         AnalysisJob::PreviewReadReview { workspace, request } => {
             crate::read_review::preview(&workspace, &request).map(AnalysisResult::ReadReviewPreview)

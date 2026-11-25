@@ -43,7 +43,7 @@ fn hex(s: &str) -> bool {
         && s.bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
-fn options(request: &Request) -> Result<(), Error> {
+pub(crate) fn options(request: &Request) -> Result<(), Error> {
     if request.fragments.is_empty()
         || request.fragments.len() > MAX_ROWS
         || request.overlap == 0
@@ -103,7 +103,7 @@ fn options(request: &Request) -> Result<(), Error> {
     }
     Ok(())
 }
-fn pcr_source(m: &Molecule) -> Result<(), Error> {
+pub(crate) fn pcr_source(m: &Molecule) -> Result<(), Error> {
     let raw_marker = m.original_genbank.as_ref().is_some_and(|raw| {
         raw.lines()
             .filter_map(|line| {

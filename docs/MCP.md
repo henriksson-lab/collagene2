@@ -606,3 +606,30 @@ these records does not restore current verification. Limits are256 decisions,
 1024-byte reasons,100,000 replacement bases and128 native review records under the
 existing model/workspace/session budgets. Both output artifacts and workspace slots
 are reserved before publication. [Read review scope](READ_REVIEW.md).
+
+## Junction-edited assembly intent and original-source primers
+
+`build_edited_assembly_intent {inputs,base,edits}` takes exact immutable `BoundInput`
+records and the existing base assembly-intent request. Each edit is
+`{junction,remove_left,remove_right,inserted}`: trim the upstream oriented core's
+end, trim the downstream oriented core's start, then place literal DNA between them.
+Junctions are zero-based and circular assemblies include closing junction n−1.
+Sources remain unchanged. The tool atomically retains an unverified intended target
+`DocumentRef` and full `{inputs,intent}` JSON artifact before any reaction simulation.
+
+`design_edited_assembly_primers {inputs,request}` takes
+`{base,edits,overlap,primer_options,profile_options}` and returns advisory `recipe`,
+`ordered_oligos`, design count, context/intent/target revisions and full
+`{inputs,report}` artifact. It does not choose a target from a simulated product or
+silently install oligos. Verify that `target_revision` matches the independently
+built target, then use `propose_overlap_assembly` with that target, same originals
+and returned recipe. Primer analysis includes actual complete synthetic tails;
+existing filters/conditions and scientific uncertainty remain explicit.
+
+This route proposes every row as exact PCR followed by profiled overlap assembly;
+it is separate from selecting an existing digest fragment or Golden Gate preparation.
+Reverse rows use original source intervals and the appropriate original primer tail.
+Limits are32 rows/edits,100 normalized bases per insert,4096 inserted bases overall,
+existing200-base ordered oligos, bounded source/annotation/design work and32MiB
+artifacts. Invalid trims, stale inputs, ambiguous concrete proposals and failed
+filters do not mutate originals or promote candidates. [Model](ASSEMBLY_JUNCTION_EDIT.md).

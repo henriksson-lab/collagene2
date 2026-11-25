@@ -136,3 +136,5 @@ pub mod mutation_intent;
 pub mod read_checks;
 
 pub mod read_review;
+
+pub mod assembly_junction_edit;

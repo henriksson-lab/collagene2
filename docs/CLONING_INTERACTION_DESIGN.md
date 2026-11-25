@@ -191,3 +191,11 @@ a new check; original calls, qualities and heads stay intact. Historical decisio
 reopen as choices with fresh replay still required. Optional notes default to
 factual nominated-evidence provenance, avoiding mandatory per-base free text.
 Unselected sites remain unreviewed. [Read review](READ_REVIEW.md).
+
+The assembly dock now has a coherent junction-edit transaction for the PCR-overlap
+route. Explicit trims/inserts produce an independent intended reference and a
+reviewable all-PCR primer proposal; Apply updates both together. Synthetic bases are
+labelled and adjusted source navigation preserves exact original event bindings.
+Safe Undo refuses to overwrite later source/primer/declaration changes. Fresh method
+reconstruction remains required. Mixed-preparation selective editing and Golden Gate
+junction transactions are still pending. [Edit scope](ASSEMBLY_JUNCTION_EDIT.md).

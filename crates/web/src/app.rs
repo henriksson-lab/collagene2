@@ -2586,7 +2586,7 @@ pub fn App() -> impl IntoView {
             })?;
             let fingerprint = collagene_core::run_lineage::workspace_fingerprint(&frame)
                 .map_err(|e| e.to_string())?;
-            let staged = crate::assembly_review::stage(
+            let staged = crate::assembly_review::stage_any(
                 &frame,
                 &request.intent,
                 &request.sources,
@@ -2645,7 +2645,7 @@ pub fn App() -> impl IntoView {
                     &workspace_name.get_untracked(),
                 )
             })?;
-            let staged = crate::assembly_review::stage(
+            let staged = crate::assembly_review::stage_any(
                 &frame,
                 &request.intent,
                 &request.sources,

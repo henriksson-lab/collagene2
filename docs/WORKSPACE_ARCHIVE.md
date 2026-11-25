@@ -140,3 +140,13 @@ require a new read check. Source heads/raw calls remain unchanged, including whe
 previous proposed output was subsequently edited. Limits are128 records and32MiB
 per attachment under existing workspace budgets; archive1 is unchanged.
 [Decision contract](READ_REVIEW.md).
+
+## Junction edits in assembly drafts
+
+Existing `assembly-draft-v1` JSON now retains bounded `junction_edits` declarations
+with serde defaults for older drafts. Base pinned source regions remain unchanged;
+original-source PCR primers and overlap settings persist with the same declared
+edit transaction. Restoring recomputes edited intent and scientific evidence rather
+than restoring a positive result. A staged expected-reference document retains
+exact original source-event parents. Candidate11/plan9/archive1 are unchanged.
+[Typed intent/staging](ASSEMBLY_JUNCTION_STAGING.md).

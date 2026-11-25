@@ -189,3 +189,6 @@ pub mod processed_run_evidence;
 pub mod topo_actions;
 
 pub mod physical_run_evidence;
+
+/// Dependency-preserving manual edits to declarative cloning plans.
+pub mod plan_editing;

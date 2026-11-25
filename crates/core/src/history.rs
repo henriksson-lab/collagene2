@@ -203,6 +203,11 @@ impl DocumentHistory {
     pub fn revision_molecule(&self, event: &str) -> Result<Molecule, Error> {
         Ok(self.node(event)?.molecule.as_ref().clone())
     }
+    /// Borrow immutable retained sequence data without cloning it. Reading a
+    /// history event does not restore a scientific assessment or material state.
+    pub fn revision_molecule_ref(&self, event: &str) -> Result<&Molecule, Error> {
+        Ok(self.node(event)?.molecule.as_ref())
+    }
     fn node(&self, id: &str) -> Result<&Node, Error> {
         self.nodes
             .iter()

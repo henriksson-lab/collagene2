@@ -1,0 +1,32 @@
+LOCUS       Adaptor_top                10 bp    DNA     linear   SYN 25-NOV-2026
+DEFINITION  Independent top oligo reference, written 5-prime to 3-prime.
+COMMENT     Synthetic coordinate fixture. Terminal chemistry and ligase activity
+            require explicit declarations; no experimental outcome is asserted.
+FEATURES             Location/Qualifiers
+ORIGIN
+        1 aattgctacg
+//
+LOCUS       Adaptor_bottom             10 bp    DNA     linear   SYN 25-NOV-2026
+DEFINITION  Independent bottom oligo reference, written 5-prime to 3-prime.
+COMMENT     Synthetic coordinate fixture. Terminal chemistry and ligase activity
+            require explicit declarations; no experimental outcome is asserted.
+FEATURES             Location/Qualifiers
+ORIGIN
+        1 aattcgtagc
+//
+LOCUS       Original_backbone          12 bp    DNA     circular SYN 25-NOV-2026
+DEFINITION  Original circular synthetic backbone with one EcoRI site.
+COMMENT     Synthetic coordinate fixture. Terminal chemistry and ligase activity
+            require explicit declarations; no experimental outcome is asserted.
+FEATURES             Location/Qualifiers
+ORIGIN
+        1 ggaattctta cg
+//
+LOCUS       Independent_target         22 bp    DNA     circular SYN 25-NOV-2026
+DEFINITION  Frozen intended 22-base target; not a physical source input.
+COMMENT     Synthetic coordinate fixture. Terminal chemistry and ligase activity
+            require explicit declarations; no experimental outcome is asserted.
+FEATURES             Location/Qualifiers
+ORIGIN
+        1 aattcttacg ggaattgcta cg
+//

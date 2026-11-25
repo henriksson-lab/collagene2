@@ -254,3 +254,11 @@ fn main() {
 
 #[cfg(target_arch = "wasm32")]
 mod assembly_junctions_view;
+
+#[cfg(target_arch = "wasm32")]
+mod plan_editing_host;
+#[cfg(target_arch = "wasm32")]
+mod plan_editing_view;
+
+#[cfg(any(target_arch = "wasm32", test))]
+mod plan_editing_sources;

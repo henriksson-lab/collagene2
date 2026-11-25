@@ -29,6 +29,33 @@ selected-reference GC already exist in the separate toolbar; the compact exact-e
 provenance overview is now implemented over the existing exact-event viewers.
 [Research and decisions](BENCHLING_WORKFLOW_DECISIONS.md).
 
+## Manual cloning-plan composition
+
+New manual plans and explicit candidate editing now connect original inputs and
+earlier native products through typed PCR, digest, annealing, end treatment/repair,
+tailing and ordered ligation controls. Exact source event choices and the separate
+target are preserved; edits create an unverified candidate, clear old result state
+and reuse the existing verification/output/protocol route. The core remaps producer
+identities on valid graph edits and refuses unsafe ordering/removal atomically.
+[Workflow, independent adaptor fixture and limits](MANUAL_PLAN_EDITING.md).
+
+A current source audit found the practical gap: the annealing candidate could not
+add a separately digested backbone. All three engines already existed. A parallel
+[Gateway audit](GATEWAY_MULTISITE_SCOPE.md) records the broader remaining MultiSite
+and physical work without reopening the existing BP/LR reference workflow.
+Validation passes: 15 focused native cases (eight graph edits, three complete
+adaptor/backbone/protocol/history cases and four exact-event catalog cases), plus
+the full application/worker WASM build and formatting checks. Port8082 now serves
+an immutable worker67 snapshot: 21 assets /150,564,558 bytes, retaining65/61/59
+compatibility workers. The static preview exposes no host filesystem API. No
+application browser or HTTP smoke checks ran. A [loadable example](../fixtures/manual-adaptor-demo.md)
+provides the separate original inputs and frozen intended target. Older deployment
+descriptions below are historical checkpoints.
+
+The preceding pushed checkpoint passed all native macOS/Windows/Linux CI jobs and
+WASM ([run](https://github.com/henriksson-lab/collagene2/actions/runs/45689734905)).
+Browser checks remain deferred.
+
 ## Upstream PCR synthesis and compact assembly provenance
 
 A prior native product can now supply a template to an explicitly new ExactPcr

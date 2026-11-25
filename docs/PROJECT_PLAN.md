@@ -1171,3 +1171,36 @@ present in the separate toolbar, so no duplicate controls were added.
 Broader inherited-material preparation and its direct UI composition, graph-only
 reviews, other unfinished cloning/batch methods and all remaining platform/delivery/
 GUI acceptance continue under the full active goal.
+
+
+### Dependency-safe manual plan composition
+
+The Cloning plan panel now opens empty manual drafts and edits existing candidates
+with typed ordinary preparation/ligation controls, exact original input capture and
+explicit earlier-step products. This connects the existing annealer, backbone
+digester and ligase into one editable plan without another scientific engine.
+Core graph edits preserve producer identity through insertion/movement and reject
+unsafe deletion/order atomically. Apply creates an unverified candidate and clears
+old result state; existing Verify, junction/product review, finalize and HTML/PDF
+routes remain the scientific workflow. [Contract](MANUAL_PLAN_EDITING.md).
+
+The latest [Gateway scope audit](GATEWAY_MULTISITE_SCOPE.md) distinguishes the
+implemented two-parent BP/LR reference model from the remaining physical chemistry
+and connected multi-entry MultiSite LR workflow. Additional site numbers require
+a coherent multi-parent graph and exact source contexts, not a profile-only patch
+or sequential reference exchanges that lose reciprocal products. This remains
+part of F15, alongside inherited-material preparation, richer method controls,
+graph-only review and all unfinished cloning/batch/platform/GUI acceptance work.
+
+
+The [MultiSite primary-source acquisition](MULTISITE_GATEWAY_SOURCES.md) resolves
+several numbered contexts and exact vector editions. A distinguishing full L3
+context remains unresolved; the printed 94-base suffix also matches P3 and cannot
+safely be labelled L3 by itself. Continue source acquisition or explicit derived-BP
+provenance alongside the coherent multi-parent model; do not infer missing arms.
+
+
+Manual-plan delivery validation passes 15 focused native cases and a full web/worker
+build. Port8082 now serves its staged immutable worker67 snapshot, retaining older
+worker URLs. This is a compiled implementation checkpoint; application/browser
+acceptance and the complete remaining plan are still outstanding.

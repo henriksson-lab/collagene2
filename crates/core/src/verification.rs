@@ -921,6 +921,43 @@ pub fn operation_sources(op: &Operation) -> Vec<&Source> {
     }
 }
 
+/// Mutable typed dependency references only. Callers must revalidate ordering and
+/// source membership after edits; this visitor confers no scientific authority.
+pub fn operation_sources_mut(op: &mut Operation) -> Vec<&mut Source> {
+    match op {
+        Operation::RecombineReference { sources, .. } => sources.iter_mut().collect(),
+        Operation::Topo { sources, .. }
+        | Operation::CheckedTopo { sources, .. }
+        | Operation::ProcessedTopo { sources, .. }
+        | Operation::TopoActions { sources, .. } => {
+            sources.iter_mut().map(|s| &mut s.source).collect()
+        }
+        Operation::Pcr { template, .. }
+        | Operation::PcrWithMismatches { template, .. }
+        | Operation::Digest { template, .. }
+        | Operation::CatalogDigest { template, .. }
+        | Operation::CheckedDigest { template, .. }
+        | Operation::DeclareSourceModifications { template, .. }
+        | Operation::DeclareSourceTermini { template, .. }
+        | Operation::TreatEnds { template, .. }
+        | Operation::RepairEnds { template, .. }
+        | Operation::Tail3Prime { template, .. } => vec![template],
+        Operation::Overlap { fragments, .. }
+        | Operation::GoldenGate {
+            templates: fragments,
+            ..
+        }
+        | Operation::SelectedGoldenGate {
+            templates: fragments,
+            ..
+        } => fragments.iter_mut().collect(),
+        Operation::Ligate { fragments, .. } | Operation::ProfiledOverlap { fragments, .. } => {
+            fragments.iter_mut().map(|f| &mut f.source).collect()
+        }
+        Operation::AnnealOligos { top, bottom, .. } => vec![top, bottom],
+    }
+}
+
 /// Roles bind ordered slots and typed ancestry, independently of molecule display names.
 pub fn recombination_inputs(
     sources: &[Source; 2],

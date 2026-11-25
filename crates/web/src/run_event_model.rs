@@ -92,7 +92,7 @@ fn preflight(frame: &Workspace, request: &Request) -> Result<(), String> {
         collagene_core::model::bounds::model_preflight(&[molecule]).map_err(|e| e.to_string())?;
     }
     for candidate in &frame.candidates {
-        if candidate.plan.inputs.len() > 128 || candidate.plan.steps.len() > 1000 {
+        if candidate.plan.inputs.len() > 1000 || candidate.plan.steps.len() > 1000 {
             return Err("The retained candidate exceeds its native bounds.".into());
         }
         for input in &candidate.plan.inputs {
@@ -398,5 +398,28 @@ mod tests {
             revision: event.revision.clone(),
         };
         assert!(resolve(&next, &substitute).is_err());
+    }
+    #[test]
+    fn unrelated_supported_candidate_does_not_block_saved_run_navigation() {
+        let (mut frame, request) = fixture();
+        let mut plan = run_lineage::load_run(&frame, &request.run_id).unwrap().plan;
+        let input = plan.inputs[0].clone();
+        plan.inputs.extend((1..129).map(|i| {
+            let mut input = input.clone();
+            input.id = format!("unused-{i}");
+            input
+        }));
+        let proposal = collagene_core::transfer::Candidate::new(plan);
+        proposal.validate().unwrap();
+        frame.candidates.push(proposal);
+        frame.validate().unwrap();
+        assert_eq!(
+            resolve(&frame, &request)
+                .unwrap()
+                .molecule
+                .sequence
+                .as_str(),
+            ORIGINAL
+        );
     }
 }

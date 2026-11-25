@@ -25,6 +25,7 @@ pub mod annotations;
 pub mod translation;
 
 pub mod alignment;
+pub mod pairwise_review;
 
 pub mod editing;
 
@@ -151,3 +152,5 @@ pub mod golden_gate_junction_edit;
 pub mod prepared_golden_gate;
 
 pub mod golden_gate_reaction;
+
+pub mod pairwise_history;

@@ -121,6 +121,12 @@ mod methylation;
 mod mutagenesis;
 #[cfg(any(target_arch = "wasm32", test))]
 mod mutation_review;
+#[cfg(any(target_arch = "wasm32", test))]
+mod pairwise_pages;
+#[cfg(target_arch = "wasm32")]
+mod pairwise_result_view;
+#[cfg(target_arch = "wasm32")]
+mod pairwise_source_view;
 #[cfg(target_arch = "wasm32")]
 mod pcr_outputs;
 #[cfg(target_arch = "wasm32")]

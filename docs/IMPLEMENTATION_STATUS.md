@@ -14,6 +14,39 @@ is postponed until the rest of the software is implemented. Existing modules are
 retained; no more alignment/index features or integration are scheduled now.
 Browser checks remain deferred and compiler checks run alongside coding.
 
+## Retained construct comparison
+
+The comparison panel now keeps a reference pinned while navigating reference/query
+differences. Stored origin/orientation supports global, local and query-in-reference
+alignment; explicit whole-construct policy reuses native bounded circular-origin
+and reverse-query search. Candidate limits, best-score scope, uncertain calls,
+coverage and unaligned flanks remain visible. No alignment is a sample identity
+or physical cloning verification claim.
+
+All alignment columns, differences and CIGAR text are paged, with discrepancy
+stepping and number/column jumps. Native-coordinate navigation supports insertion
+and deletion carets, reverse queries and two-part circular-origin spans. Current
+one-span events navigate the main document without retargeting the comparison;
+historical/origin-spanning positions use the shared read-only reference canvas.
+
+Comparison records use bounded `pairwise-review-v1` native attachments with exact
+reference/query events and options. Saving stages only the new attachment after
+source/path consistency checks; it does not run a second dynamic program or change
+heads. Historical reopening restores no current/fresh flag; explicit Compute
+reanalyzes the pinned versions. Native archive loading checks path letters,
+statistics, differences, CIGAR and path score, without treating an imported
+optimality assertion as current evidence.
+
+Worker52 adds job119/result111 under the ordinary 32 MiB limit. Candidate11, plan9,
+science-14, archive1 and MCP136 remain unchanged. Fifty native cases passed: four
+core review groups, three archive groups and 43 native web cases, including two
+gap/late-page display groups and a supported unrelated-candidate history regression.
+The final web/worker WASM compiler check passed. Browser checks
+and full preview rebuilding remain deferred for this checkpoint; port8082 retains
+the last successful primer/mismatch publication. Integrated trace review and the
+broader cloning/editor/native delivery scope remain unfinished.
+[Comparison contract](PAIRWISE_REVIEW.md).
+
 ## Exact versions from saved cloning runs
 
 Saved runs now offer exact target/source/product-version navigation. The host

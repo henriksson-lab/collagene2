@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **51** and reads supported schemas 1–50. Candidate files write schema 11; workspace plan schema is 9; the verifier is science-14.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **52** and reads supported schemas 1–51. Candidate files write schema 11; workspace plan schema is 9; the verifier is science-14.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -131,6 +131,7 @@ Postcard enum indexes are append-only. Existing tags and supported historical la
 | 116 | SelectGoldenGateReaction | 49 |
 | 117 | PreparePcrOutputs | 50 |
 | 118 | PrepareMismatchPcrOutputs | 51 |
+| 119 | CompareSequences | 52 |
 
 Result tags 0–29 retain their selectors (verification gains explicit versioned step evidence in schema 25) (`Search`, `Restriction`, `Error`, `Pcr`, `Verification`, `DuplexDigest`, `Translation`, `CdsTranslation`, `Orfs`, `Alignment`, `PcrDocuments`, `PrimerEvidence`, `PrimerDesign`, `ProtocolPdf`, `GoldenGate`, `MismatchPcr`, `InversePcr`, `Gel`, `DiagnosticDigest`, `MismatchPcrPreview`, `WorkspaceSaved`, `WorkspaceLoaded`, `TraceValidation`, `FeatureLibraryScan`, `AnnotatedDocument`, `AnnotationImport`, `AnnotationExport`, `RepairPreview`, `AnnealPreview`, `PhysicalPreviewDocument`). Schema 9 appends `ViewTracks` at tag 30, `DocumentSearch` at tag 31 and `TracksPrepared` at tag 32. New response variants cannot be decoded under older version labels.
 
@@ -662,3 +663,14 @@ geometry, optional reference/collection and full search summary. Both selectors
 require schema51 before payload decoding; ordinary 32 MiB limits apply. No new
 scientific operation or candidate format is introduced. Hosts retain exact source
 history and live draft checks. [Output contract](PCR_OUTPUTS.md#conditional-mismatch-pcr-outputs).
+
+## Event-bound pairwise comparison (schema 52)
+
+Job119 `CompareSequences { reference, query, options }` binds both full source
+revisions and either stored-orientation affine options or explicit whole-molecule
+origin/strand budgets. Result111 `ReviewedComparison` retains the native result,
+source lengths, context and interpretation version. Both selectors require
+schema52 before new payload decoding and use the ordinary 32 MiB envelope.
+Existing Align job/result layouts remain supported. Exact history events and
+current/historical state are host/archive concerns; neither checksum nor saved
+report proves native optimality. [Comparison contract](PAIRWISE_REVIEW.md).

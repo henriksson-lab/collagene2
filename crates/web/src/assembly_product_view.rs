@@ -354,6 +354,7 @@ pub(crate) fn ReferenceCanvas(
     identity: String,
     current: Memo<bool>,
     on_message: Callback<String>,
+    #[prop(optional)] initial_spans: Vec<(usize, usize)>,
 ) -> impl IntoView {
     let source = StoredValue::new(Arc::new(product));
     // One memo-owned model for the existing virtual viewer. Source access in
@@ -361,9 +362,17 @@ pub(crate) fn ReferenceCanvas(
     let molecule = Memo::new(move |_| source.with_value(|source| source.as_ref().clone()));
     let revision = StoredValue::new(source.with_value(|source| source.revision()));
     let identity = StoredValue::new(identity);
-    let selection = RwSignal::new(None::<(usize, usize)>);
+    let selection = RwSignal::new(if initial_spans.len() == 1 {
+        initial_spans.first().copied()
+    } else {
+        None
+    });
     let selected_feature = RwSignal::new(None::<usize>);
-    let regions = RwSignal::new(None::<(String, Vec<(usize, usize)>)>);
+    let regions = RwSignal::new(if initial_spans.len() > 1 {
+        Some((revision.get_value(), initial_spans))
+    } else {
+        None
+    });
     let features_open = RwSignal::new(false);
     let feature_page = RwSignal::new(0usize);
     let mode = RwSignal::new(Mode::Split);

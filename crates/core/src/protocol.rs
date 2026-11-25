@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 51;
+pub const WORKER_SCHEMA_VERSION: u16 = 52;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 11;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -731,6 +731,11 @@ pub enum AnalysisJob {
     PrepareMismatchPcrOutputs {
         request: crate::mismatch_pcr_outputs::Request,
     },
+    CompareSequences {
+        reference: Molecule,
+        query: Molecule,
+        options: crate::pairwise_review::Options,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -851,6 +856,7 @@ pub enum AnalysisResult {
     GoldenGateReactionCandidate(crate::prepared_golden_gate::SelectionReport),
     PcrOutputs(crate::pcr_outputs::Prepared),
     MismatchPcrOutputs(crate::mismatch_pcr_outputs::Prepared),
+    ReviewedComparison(crate::pairwise_review::Report),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1113,6 +1119,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_golden_gate_reaction_tag(bytes, &[107, 108])?;
     preflight_pcr_outputs_tag(bytes, &[109])?;
     preflight_mismatch_pcr_outputs_tag(bytes, &[110])?;
+    preflight_pairwise_review_tag(bytes, &[111])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1168,6 +1175,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     let required = match &response.result {
         AnalysisResult::PcrOutputs(_) => 50,
         AnalysisResult::MismatchPcrOutputs(_) => 51,
+        AnalysisResult::ReviewedComparison(_) => 52,
         AnalysisResult::GoldenGateReaction(_) | AnalysisResult::GoldenGateReactionCandidate(_) => {
             49
         }
@@ -1318,6 +1326,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             report.validate_binding(&response.revision)?;
         }
         AnalysisResult::MismatchPcrOutputs(report) => {
+            report.validate_binding(&response.revision)?;
+        }
+        AnalysisResult::ReviewedComparison(report) => {
             report.validate_binding(&response.revision)?;
         }
         AnalysisResult::GoldenGateReaction(report) => {
@@ -1801,6 +1812,14 @@ fn preflight_topo_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     }
     Ok(())
 }
+fn preflight_pairwise_review_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 52)?;
+    }
+    Ok(())
+}
 fn preflight_mismatch_pcr_outputs_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -2210,6 +2229,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_golden_gate_reaction_tag(bytes, &[115, 116])?;
     preflight_pcr_outputs_tag(bytes, &[117])?;
     preflight_mismatch_pcr_outputs_tag(bytes, &[118])?;
+    preflight_pairwise_review_tag(bytes, &[119])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -2219,6 +2239,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     let required = match &r.job {
         AnalysisJob::PreparePcrOutputs { .. } => 50,
         AnalysisJob::PrepareMismatchPcrOutputs { .. } => 51,
+        AnalysisJob::CompareSequences { .. } => 52,
         AnalysisJob::InspectGoldenGateReaction { .. }
         | AnalysisJob::SelectGoldenGateReaction { .. } => 49,
         AnalysisJob::BuildEditedAssemblyIntent { .. }
@@ -2608,6 +2629,18 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         AnalysisJob::PreparePcrOutputs { request } => {
             if crate::pcr_outputs::revision(request)? != r.revision {
                 return Err(Error::Format("PCR output selection changed".into()));
+            }
+            None
+        }
+        AnalysisJob::CompareSequences {
+            reference,
+            query,
+            options,
+        } => {
+            if crate::pairwise_review::revision(reference, query, options)? != r.revision {
+                return Err(Error::Format(
+                    "Comparison sources or options changed".into(),
+                ));
             }
             None
         }
@@ -3308,6 +3341,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         AnalysisJob::PrepareMismatchPcrOutputs { request } => {
             crate::mismatch_pcr_outputs::prepare(&request).map(AnalysisResult::MismatchPcrOutputs)
         }
+        AnalysisJob::CompareSequences {
+            reference,
+            query,
+            options,
+        } => crate::pairwise_review::compare(&reference, &query, &options)
+            .map(AnalysisResult::ReviewedComparison),
         AnalysisJob::SelectGoldenGateReaction { report, selection } => {
             crate::golden_gate_reaction::select(&report, &selection)
                 .map(AnalysisResult::GoldenGateReactionCandidate)

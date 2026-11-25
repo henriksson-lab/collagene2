@@ -602,10 +602,12 @@ and result; no new chemistry operation or independent-target claim is introduced
 Saved cloning runs now open exact target/source/product events in a shared
 read-only reference viewer. Explicit forking retains the selected parent event
 without rewinding original heads or replacing unfinished drafts. Role membership,
-event identity and host epoch are checked separately from DNA equality. The next
-supporting review connections are complete ordinary pairwise comparison evidence
-and integrated reference/read/trace navigation, alongside the remaining core
-cloning/editor work. [Run UI contract](RUN_LINEAGE_UI.md).
+event identity and host epoch are checked separately from DNA equality. Ordinary
+pairwise comparison now retains exact source events, pages all columns/differences,
+navigates insertion/deletion carets and offers explicit native origin/strand
+policy. Reopened records stay historical until recomputed. Integrated
+reference/read/trace navigation and remaining core cloning/editor work stay active.
+[Run UI contract](RUN_LINEAGE_UI.md) · [Comparison contract](PAIRWISE_REVIEW.md).
 [Selected PCR outputs](PCR_OUTPUTS.md).
 
 The latest source-aware workflow reviews supersede older gap lists where those

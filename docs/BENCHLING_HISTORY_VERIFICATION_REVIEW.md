@@ -18,7 +18,11 @@ version actions. A shared read-only reference viewer opens the retained event;
 explicit forking rechecks membership and preserves original document heads.
 The remaining-source-navigation assessment below records the original audit and
 is superseded for that connection by the [current run UI contract](RUN_LINEAGE_UI.md).
-Pairwise comparison and integrated trace-review recommendations remain active.
+Pairwise comparison now also has retained exact events, full column/difference
+paging, caret navigation and explicit native origin/orientation policy. The
+original comparison-gap assessment below is superseded for those connections
+by [the current contract](PAIRWISE_REVIEW.md). Integrated trace review and retained
+manual trimming remain active.
 
 ## What the public documentation establishes
 

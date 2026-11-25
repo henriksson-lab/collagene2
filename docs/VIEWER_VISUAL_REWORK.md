@@ -56,6 +56,17 @@ full combinatorial assembly document. Further assembly presentation should reuse
 the existing source, preparation, independent-intent, review and output engines,
 showing one active fragment rather than exposing every preparation form at once.
 
+The ordinary dock now has an ordered fragment strip with source name, retained
+length and direction. Only the active fragment editor is mounted; switching slots
+changes view state without replacing pinned sources or scientific evidence.
+Fragment capture sits beside that editor, while name/method/topology, reordering
+and library alternatives use expandable controls. Intended junction edits remain
+available separately; explicit intended review opens the existing preparation
+and verification controls. The initial dock height is reduced to preserve source
+viewing. A new draft starts with a compact method choice; a draft with captured sources
+resumes directly in its active editor. The complete compact product/finalization
+presentation remains future work.
+
 Twenty focused geometry cases plus one doctest pass: existing label placement,
 radial leaders/boxes, terminal heads, clipping, origin/cut footprints and actual
 overlap lanes. The full web/worker build validates the application integration.

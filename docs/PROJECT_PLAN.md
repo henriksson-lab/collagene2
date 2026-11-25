@@ -1321,3 +1321,21 @@ scientific compilers. [Wizard reference](BENCHLING_ASSEMBLY_WIZARD_VISUAL.md).
 Native numerical fixtures and a full web build cover this increment; browser
 checks remain deferred under the user's instruction and GUI acceptance remains
 outstanding. The full original in-scope plan and exclusions remain intact.
+
+### Ordinary assembly dock presentation
+
+The source stage now shows an ordered fragment strip and one active editor rather
+than full forms for every source. Exact pinned identity, source coordinates,
+orientation, preparation and source navigation remain available. Name/method/
+topology, row management, source alternatives and intended junction edits expand
+in context. The existing explicit intended review and fresh method verification
+continue to own scientific evidence. A new draft starts with an explicit method
+choice, while captured drafts resume directly. Compact product review remains
+subsequent presentation work; this checkpoint does not establish visual acceptance
+or completion of the assembly interface.
+
+This presentation checkpoint uses the existing binary/scientific contracts and
+adds no algorithm or external runtime dependency. The WASM compiler check and
+format/diff checks pass. No browser checks were run.
+Public8082 remains on the preceding published viewer graphics checkpoint until
+a later compiled preview includes this source-stage change.

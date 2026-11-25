@@ -55,6 +55,8 @@ mod assembly_review;
 #[cfg(any(target_arch = "wasm32", test))]
 mod assembly_role_ids;
 #[cfg(target_arch = "wasm32")]
+mod assembly_strategy_view;
+#[cfg(target_arch = "wasm32")]
 mod assembly_workspace;
 #[cfg(target_arch = "wasm32")]
 mod checked_cloning;

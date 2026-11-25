@@ -247,6 +247,8 @@ pub fn AssemblyWorkspace(
     list_primers: Callback<EventBinding, Result<primer_reuse::List, String>>,
     resolve_primer: Callback<ResolveRequest, Result<primer_reuse::Resolved, String>>,
 ) -> impl IntoView {
+    let strategy_chosen =
+        RwSignal::new(draft.with_untracked(|d| d.slots.iter().any(|s| s.captured.is_some())));
     let identity = Memo::new(move |_| draft.with(Draft::identity));
     let methods = RwSignal::new(draft.with_untracked(|d| d.methods.clone()));
     Effect::new(move |_| {
@@ -592,7 +594,18 @@ pub fn AssemblyWorkspace(
         frozen.set(None);
         status.set("Intended-construct review cancelled.".into());
     };
-    view! {<section class="assembly-workspace"><header class="assembly-workspace-header"><h2>"Assembly workspace"</h2><p class="helper">"Choose a slot, select its source in the viewer above, then set the fragment. Switching source tabs preserves every pinned fragment. Preparation is reviewed against a separate intended construct."</p></header>
+    view! {<section class="assembly-workspace"><header class="assembly-workspace-header"><h2>"Design assembly"</h2><p class="helper">"Choose a fragment, then select its source in the sequence viewer above."</p></header>
+        <Show when=move||!strategy_chosen.get()>
+            <crate::assembly_strategy_view::AssemblyStrategyPicker initial=draft.with_untracked(|d|d.methods.mode) on_start=Callback::new(move|mode|{
+                draft.update(|d|{
+                    d.methods.mode=mode;
+                    if mode==Mode::MultiSiteReference && d.methods.multisite.is_none(){d.methods.multisite=Some(crate::multisite_form::Form::default());}
+                });
+                strategy_chosen.set(true);
+            })/>
+        </Show>
+        <Show when=move||strategy_chosen.get()>
+        <details class="assembly-design-settings"><summary>{move||draft.with(|d|format!("{} · {} · {}",d.name,method_overview(&d.methods),if d.circular{"circular"}else{"linear"}))}</summary>
         <div class="assembly-draft-settings"><label>"Assembly name"<input maxlength="256" aria-label="Assembly draft name" prop:value=move||draft.with(|d|d.name.clone()) on:input=move|e|draft.update(|d|d.name=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label="Intended assembly circular" prop:checked=move||draft.with(|d|d.circular) on:change=move|e|draft.update(|d|{d.circular=event_target_checked(&e);d.junction_edits.clear();d.sync_rows();})/>"Circular intended construct"</label></div>
         <label>"Cloning method"<select aria-label="Ordinary assembly cloning method" disabled=move||workspace_busy.get() prop:value=move||draft.with(|d|match d.methods.mode{Mode::Overlap=>"overlap",Mode::Ligation=>"ligation",Mode::GoldenGate=>"golden_gate",Mode::MultiSiteReference=>"multisite",Mode::Tailing=>"tailing"}) on:change=move|e|draft.update(|d|{
             d.methods.mode=match event_target_value(&e).as_str(){"ligation"=>Mode::Ligation,"golden_gate"=>Mode::GoldenGate,"multisite"=>Mode::MultiSiteReference,_=>Mode::Overlap};
@@ -600,15 +613,24 @@ pub fn AssemblyWorkspace(
         })><option value="overlap">"Gibson / HiFi / In-Fusion overlap"</option><option value="ligation">"Ordered ligation"</option><option value="golden_gate">"Golden Gate"</option><option value="multisite">"BP/LR multi-parent reference exchange"</option></select></label>
         <Show when=move||draft.with(|d|d.methods.mode==Mode::MultiSiteReference)><crate::assembly_multisite_view::MultisiteSettings draft epoch busy=workspace_busy/></Show>
         <p class="helper" aria-label="Current assembly method"><strong>"Current method: "</strong>{move||draft.with(|d|method_overview(&d.methods))}". Review the intended construct to edit preparation settings in step 3."</p>
-        <h3>"1. Set original source fragments"</h3><div class="assembly-slot-list" role="group" aria-label="Ordered assembly fragment slots">
-        <For each=move||draft.with(|d|(0..d.slots.len()).collect::<Vec<_>>()) key=|i|*i children=move|i|view!{<article class="assembly-slot" class:active=move||draft.with(|d|d.active_slot==i)><button class="button secondary" aria-pressed=move||draft.with(|d|d.active_slot==i) on:click=move|_|draft.update(|d|d.active_slot=i)>{move||draft.with(|d|format!("{} · {}",i+1,d.slots.get(i).map(|s|s.label.as_str()).unwrap_or("slot")))}</button><label>"Slot label"<input maxlength="80" aria-label=format!("Assembly slot {} label",i+1) prop:value=move||draft.with(|d|d.slots.get(i).map(|s|s.label.clone()).unwrap_or_default()) on:input=move|e|draft.update(|d|if let Some(s)=d.slots.get_mut(i){s.label=event_target_value(&e)})/></label>
+        </details>
+        <nav class="assembly-slot-ribbon" aria-label="Assembly fragment order">
+        <For each=move||draft.with(|d|(0..d.slots.len()).collect::<Vec<_>>()) key=|i|*i children=move|i|view!{
+            <button class="assembly-slot-tab" class:active=move||draft.with(|d|d.active_slot==i) aria-pressed=move||draft.with(|d|d.active_slot==i) on:click=move|_|draft.update(|d|d.active_slot=i)>
+                <strong>{move||draft.with(|d|format!("{}. {}",i+1,d.slots.get(i).map(|s|s.label.as_str()).unwrap_or("Fragment")))}</strong>
+                <span>{move||draft.with(|d|d.slots.get(i).map(|s|match s.captured.as_deref(){Some(c)=>format!("{} · {} bp {}",c.source.name,s.end.saturating_sub(s.start),if s.reverse{"←"}else{"→"}),None=>"Choose source…".into()}).unwrap_or_default())}</span>
+            </button>
+        }/>
+        </nav>
+        <div class="assembly-source-stage"><div class="assembly-slot-list" role="group" aria-label="Ordered assembly fragment slots">
+        <For each=move||draft.with(|d|(0..d.slots.len()).collect::<Vec<_>>()) key=|i|*i children=move|i|view!{<Show when=move||draft.with(|d|d.active_slot==i)><article class="assembly-slot"><h3>{move||draft.with(|d|d.slots.get(i).map(|s|s.label.clone()).unwrap_or_default())}</h3><details class="assembly-fragment-options"><summary>"Fragment options"</summary><label>"Slot label"<input maxlength="80" aria-label=format!("Assembly slot {} label",i+1) prop:value=move||draft.with(|d|d.slots.get(i).map(|s|s.label.clone()).unwrap_or_default()) on:input=move|e|draft.update(|d|if let Some(s)=d.slots.get_mut(i){s.label=event_target_value(&e)})/></label><div class="method-row-actions"><button class="text-tool" disabled=move||i==0||draft.with(|d|d.alternatives.is_some()) on:click=move|_|draft.update(|d|{if d.alternatives.is_none()&&i>0&&i<d.slots.len(){d.slots.swap(i,i-1);d.methods.swap_rows(i,i-1);d.junction_edits.clear();d.active_slot=i-1;d.sync_rows();}})>"Move earlier"</button><button class="text-tool" disabled=move||draft.with(|d|d.alternatives.is_some()||i+1>=d.slots.len()) on:click=move|_|draft.update(|d|{if d.alternatives.is_none()&&i+1<d.slots.len(){d.slots.swap(i,i+1);d.methods.swap_rows(i,i+1);d.junction_edits.clear();d.active_slot=i+1;d.sync_rows();}})>"Move later"</button><button class="text-tool" disabled=move||draft.with(|d|d.alternatives.is_some()||d.slots.len()<=1) on:click=move|_|draft.update(|d|{if d.alternatives.is_none()&&d.slots.len()>1&&i<d.slots.len(){d.slots.remove(i);d.methods.remove_row(i);d.junction_edits.clear();d.active_slot=d.active_slot.min(d.slots.len()-1);d.sync_rows();}})>"Remove slot"</button></div></details>
             <p>{move||draft.with(|d|d.slots.get(i).map(|s|match s.captured.as_deref(){Some(c)=>format!("{} · {}–{} (1-based inclusive, unrolled) · {} bp · {}",c.source.name,s.start+1,s.end,s.end-s.start,if s.reverse{"reverse"}else{"forward"}),None=>"No source fragment set".into()}).unwrap_or_default())}</p>
             <p class="helper"><strong>"Declared preparation: "</strong>{move||draft.with(|d|preparation_overview(&d.methods,i))}</p>
             <details class="assembly-source-details"><summary>"Source details"</summary><p class="helper">{move||draft.with(|d|d.slots.get(i).and_then(|s|s.captured.as_ref()).map(|c|format!("Pinned source event {} · revision {}",c.source.binding.event_id,c.source.binding.revision)).unwrap_or_default())}</p></details>
             <p class="helper">{move||{let captured=draft.with(|d|d.slots.get(i).and_then(|s|s.captured.clone()));captured.map(|c|sources.with(|current|if current.iter().any(|s|s.binding==c.source.binding){"Current source version is pinned"}else{"Using the captured source version; current tabs do not replace it"})).unwrap_or("")}}</p>
             <label class="checkbox-label"><input type="checkbox" aria-label=format!("Reverse assembly slot {}",i+1) prop:checked=move||draft.with(|d|d.slots.get(i).is_some_and(|s|s.reverse)) on:change=move|e|draft.update(|d|{let reversed=event_target_checked(&e);if i<d.slots.len(){let adjusted=d.slots[i].captured.as_ref().zip(d.slots[i].digest_geometry.as_ref()).filter(|_|d.methods.rows[i].preparation==OverlapPreparation::CatalogDigest&&d.methods.rows[i].repair.is_none()).map(|(capture,geometry)|digest_interval(&capture.source,geometry,reversed));match adjusted{Some(Ok((start,end)))=>{d.slots[i].start=start;d.slots[i].end=end;},Some(Err(error))=>{status.set(error);return;},None=>{}}d.slots[i].reverse=reversed;d.junction_edits.clear();}d.sync_rows();})/>"Reverse fragment in construct"</label>
-            <div class="method-row-actions"><button class="text-tool" on:click=move|_|{if let Some(nav)=draft.with_untracked(|d|d.slots.get(i).and_then(|s|s.captured.as_ref().map(|c|SelectionNavigation{source:c.source.binding.clone(),start:s.start,end:s.end,reverse:s.reverse}))){on_navigate.run(nav);}}>"View source region"</button><button class="text-tool" disabled=move||i==0||draft.with(|d|d.alternatives.is_some()) on:click=move|_|draft.update(|d|{if d.alternatives.is_none()&&i>0&&i<d.slots.len(){d.slots.swap(i,i-1);d.methods.swap_rows(i,i-1);d.junction_edits.clear();d.active_slot=i-1;d.sync_rows();}})>"Move earlier"</button><button class="text-tool" disabled=move||draft.with(|d|d.alternatives.is_some()||i+1>=d.slots.len()) on:click=move|_|draft.update(|d|{if d.alternatives.is_none()&&i+1<d.slots.len(){d.slots.swap(i,i+1);d.methods.swap_rows(i,i+1);d.junction_edits.clear();d.active_slot=i+1;d.sync_rows();}})>"Move later"</button><button class="text-tool" disabled=move||draft.with(|d|d.alternatives.is_some()||d.slots.len()<=1) on:click=move|_|draft.update(|d|{if d.alternatives.is_none()&&d.slots.len()>1&&i<d.slots.len(){d.slots.remove(i);d.methods.remove_row(i);d.junction_edits.clear();d.active_slot=d.active_slot.min(d.slots.len()-1);d.sync_rows();}})>"Remove slot"</button></div>
-        </article>}/></div>
+            <div class="method-row-actions"><button class="text-tool" on:click=move|_|{if let Some(nav)=draft.with_untracked(|d|d.slots.get(i).and_then(|s|s.captured.as_ref().map(|c|SelectionNavigation{source:c.source.binding.clone(),start:s.start,end:s.end,reverse:s.reverse}))){on_navigate.run(nav);}}>"View source region"</button></div>
+        </article></Show>}/></div>
         <button class="button secondary" disabled=move||draft.with(|d|d.alternatives.is_some()||d.slots.len()>=12) on:click=move|_|{
             let mut next=draft.get_untracked();
             if next.alternatives.is_some()||next.slots.len()>=12{return;}
@@ -616,21 +638,21 @@ pub fn AssemblyWorkspace(
             next.slots.push(Slot::empty(&format!("Fragment {}",next.slots.len()+1)));
             next.active_slot=next.slots.len()-1;next.junction_edits.clear();next.sync_rows();draft.set(next);
         }>"Add fragment slot"</button>
-        <crate::assembly_alternatives_view::AssemblyAlternativesView draft epoch/>
-        <section class="assembly-set-fragment"><p>{move||format!("Active viewer source: {} · set {}",active_source.get().name,draft.with(|d|d.slots.get(d.active_slot).map(|s|s.label.as_str()).unwrap_or("selected slot").to_owned()))}</p><button class="button primary" on:click=move|_|pin.run(1)>"Set from sequence selection"</button><button class="button secondary" on:click=move|_|pin.run(0)>"Use whole source"</button><button class="button secondary" on:click=move|_|pin.run(2)>"Keep outside selection"</button><p class="helper">"Keep outside selection retains the complementary path on circular DNA, including an origin crossing. This sets intended source coordinates; it does not digest, amplify or prove a physical fragment."</p></section>
-        <button class="button primary" disabled=move||busy.get() on:click=move|_|review_intent.run(())>"Review intended construct"</button><button class="text-tool" disabled=move||!busy.get() on:click=cancel>"Cancel intended construct"</button><p class="assembly-workspace-status" role="status">{move||status.get()}</p>
-        <JunctionEditor draft epoch on_apply=apply_junction/>
-        <button class="text-tool" disabled=move||undo_junction.with(|undo|undo.as_ref().is_none_or(|(_,applied)|!same_declaration(&draft.get(),applied))) on:click=move|_|{
+        <details class="assembly-library-options"><summary>"Source alternatives / library"</summary><crate::assembly_alternatives_view::AssemblyAlternativesView draft epoch/></details>
+        <section class="assembly-set-fragment"><p>{move||format!("Active viewer source: {} · set {}",active_source.get().name,draft.with(|d|d.slots.get(d.active_slot).map(|s|s.label.as_str()).unwrap_or("selected slot").to_owned()))}</p><button class="button primary" on:click=move|_|pin.run(1)>"Set from sequence selection"</button><button class="button secondary" on:click=move|_|pin.run(0)>"Use whole source"</button><button class="button secondary" on:click=move|_|pin.run(2)>"Keep outside selection"</button><p class="helper">"Keep outside selection retains the complementary path on circular DNA, including an origin crossing. This sets intended source coordinates; it does not digest, amplify or prove a physical fragment."</p></section></div>
+        <button class="button primary" disabled=move||busy.get() on:click=move|_|review_intent.run(())>"Review intended construct"</button><Show when=move||busy.get()><button class="text-tool" on:click=cancel>"Cancel intended construct"</button></Show><p class="assembly-workspace-status" role="status">{move||status.get()}</p>
+        <details class="assembly-junction-options"><summary>"Edit intended junctions"</summary><JunctionEditor draft epoch on_apply=apply_junction/></details>
+        <Show when=move||undo_junction.with(|undo|undo.is_some())><button class="text-tool" disabled=move||undo_junction.with(|undo|undo.as_ref().is_none_or(|(_,applied)|!same_declaration(&draft.get(),applied))) on:click=move|_|{
             if let Some((mut previous,applied))=undo_junction.get_untracked(){
                 let current=draft.get_untracked();
                 if !same_declaration(&current,&applied){status.set("Undo is available only before further draft changes. Your later changes were preserved.".into());return;}
                 if current.active_slot<previous.slots.len(){previous.active_slot=current.active_slot;}
                 methods.set(previous.methods.clone());draft.set(previous);frozen.set(None);undo_junction.set(None);status.set("Previous assembly draft restored. Review its intent and recompute evidence; no positive result was restored.".into());
             }
-        }>"Undo applied junction edit"</button>
+        }>"Undo applied junction edit"</button></Show>
         <Show when=move||undo_junction.with(|undo|undo.as_ref().is_some_and(|(_,applied)|!same_declaration(&draft.get(),applied)))><p class="helper">"Undo available before further draft changes. Later source, primer or design edits are preserved."</p></Show>
         {move||frozen.get().map(|bound|view!{<FrozenWorkspace bound draft methods epoch snapshot workspace_busy on_navigate on_review on_finalize on_products primer_sources list_primers resolve_primer/>})}
-    </section>}
+    </Show></section>}
 }
 
 fn intended_window(molecule: &Molecule, boundary: usize) -> String {

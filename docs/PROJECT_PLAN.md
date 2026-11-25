@@ -1443,3 +1443,20 @@ The integrated WASM compiler check and format/diff checks pass. No browser or HT
 checks were run. Public8082 still serves the preceding compiled cloning-review
 snapshot, including draft switching, primer tables and physical-end diagrams;
 closable tabs will be included in the next bundled preview.
+
+### Clipboard routing follows the focused sequence viewer
+
+Window-level class-based shortcut routing has been removed: it could select the
+active source while the user focused an inline read-only reconstructed product.
+Each sequence canvas now handles native clipboard events with its own displayed
+molecule and read-only/locked policy. Copying a product cannot use another source;
+read-only cut/paste cannot mutate the source. Menu operations share the same
+reference-part guards and normalization, with selected parts included in their
+asynchronous freshness context. No new toolbar controls or molecular engine are
+added. Four pure fixture groups pass; browser acceptance remains deferred.
+
+Clipboard scoping passes the four native fixture groups, integrated WASM compiler
+check and format/diff checks. A parallel source review found no concrete routing
+blocker. The next public bundle combines this fix with closable working tabs.
+The native event path uses the documented browser clipboard-event interface;
+interactive acceptance remains deferred under the user's instruction.

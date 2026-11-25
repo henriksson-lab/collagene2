@@ -1081,6 +1081,162 @@ pub fn SequenceView(
         };
         set_cursor.run((a, p, Some(anchor)));
     });
+    // Clipboard events belong to this exact canvas and model, including readonly
+    // product/reference views. Never route by the app's currently active source.
+    let clipboard_gesture = |event: &web_sys::ClipboardEvent| {
+        event.is_trusted()
+            && !event.default_prevented()
+            && !web_sys::window()
+                .and_then(|window| window.get_selection().ok().flatten())
+                .is_some_and(|selected| selected.to_string().length() != 0)
+    };
+    let copy = move |event: web_sys::ClipboardEvent| {
+        if !clipboard_gesture(&event) {
+            return;
+        }
+        event.prevent_default();
+        event.stop_propagation();
+        if locked.get_untracked() {
+            on_message.run("The sequence view is busy.".into());
+            return;
+        }
+        let text = molecule.with_untracked(|m| {
+            highlighted_spans.with_untracked(|parts| {
+                crate::clipboard_model::copy_text(
+                    m,
+                    selected_feature.get_untracked(),
+                    selection.get_untracked(),
+                    parts,
+                )
+            })
+        });
+        match (event.clipboard_data(), text) {
+            (Some(data), Ok(text)) if data.set_data("text/plain", &text).is_ok() => {
+                on_message.run("Selected sequence copied as plain 5′→3′ text.".into())
+            }
+            (_, Err(error)) => on_message.run(error),
+            _ => on_message.run(
+                "The browser did not accept clipboard text; no sequence edit was made.".into(),
+            ),
+        }
+    };
+    let cut = move |event: web_sys::ClipboardEvent| {
+        if !clipboard_gesture(&event) {
+            return;
+        }
+        event.prevent_default();
+        event.stop_propagation();
+        let prepared = molecule.with_untracked(|m| {
+            highlighted_spans.with_untracked(|parts| {
+                let feature = selected_feature.get_untracked();
+                let span = selection.get_untracked();
+                let edit = crate::clipboard_model::cut(
+                    m,
+                    feature,
+                    span,
+                    parts,
+                    read_only,
+                    locked.get_untracked(),
+                )?;
+                let text = crate::clipboard_model::copy_text(m, feature, span, parts)?;
+                Ok::<_, String>((edit, text))
+            })
+        });
+        let (edit, text) = match prepared {
+            Ok(value) => value,
+            Err(error) => {
+                on_message.run(error);
+                return;
+            }
+        };
+        let Some(data) = event.clipboard_data() else {
+            on_message.run("Clipboard text is unavailable; no sequence edit was made.".into());
+            return;
+        };
+        if data.set_data("text/plain", &text).is_err() {
+            on_message.run(
+                "The browser did not accept clipboard text; no sequence edit was made.".into(),
+            );
+            return;
+        }
+        match on_edit.run((
+            source.get_untracked(),
+            edit.start,
+            edit.end,
+            edit.replacement,
+        )) {
+            Ok(()) => {
+                stop_drag();
+                set_cursor.run((edit.caret, edit.caret, None));
+                on_message.run(
+                    "Selected reference copied and cut. Undo restores the previous document."
+                        .into(),
+                );
+            }
+            Err(error) => on_message.run(format!("Sequence copied, but no edit was made. {error}")),
+        }
+    };
+    let paste = move |event: web_sys::ClipboardEvent| {
+        if !clipboard_gesture(&event) {
+            return;
+        }
+        event.prevent_default();
+        event.stop_propagation();
+        if read_only {
+            on_message.run("This displayed reference is read-only.".into());
+            return;
+        }
+        if locked.get_untracked() {
+            on_message.run("The sequence view is busy.".into());
+            return;
+        }
+        let Some(data) = event.clipboard_data() else {
+            on_message.run("Clipboard text is unavailable; no sequence edit was made.".into());
+            return;
+        };
+        let text = match data.get_data("text/plain") {
+            Ok(text) => text,
+            Err(_) => {
+                on_message
+                    .run("Clipboard text could not be read; no sequence edit was made.".into());
+                return;
+            }
+        };
+        let edit = molecule.with_untracked(|m| {
+            highlighted_spans.with_untracked(|parts| {
+                crate::clipboard_model::paste(
+                    m,
+                    selected_feature.get_untracked(),
+                    selection.get_untracked(),
+                    parts,
+                    read_only,
+                    locked.get_untracked(),
+                    &text,
+                )
+            })
+        });
+        let edit = match edit {
+            Ok(edit) => edit,
+            Err(error) => {
+                on_message.run(error);
+                return;
+            }
+        };
+        match on_edit.run((
+            source.get_untracked(),
+            edit.start,
+            edit.end,
+            edit.replacement,
+        )) {
+            Ok(()) => {
+                stop_drag();
+                set_cursor.run((edit.caret, edit.caret, None));
+                on_message
+                    .run("Clipboard sequence applied. Undo restores the previous document.".into());
+            }
+            Err(error) => on_message.run(format!("No sequence edit was made. {error}")),
+        }
+    };
     let keydown = move |e: web_sys::KeyboardEvent| {
         if e.is_composing() || e.alt_key() {
             return;
@@ -1098,7 +1254,7 @@ pub fn SequenceView(
             };
             if !select_all && history.is_none() {
                 return;
-            } // Leave C/X/V and other shortcuts untouched.
+            } // Native clipboard events handle C/X/V in this viewer.
             e.prevent_default();
             if locked.get_untracked() {
                 return;
@@ -1964,12 +2120,16 @@ pub fn SequenceView(
         <div class="sequence-scroll" node_ref=container on:scroll=move|_|if let Some(c)=container.get(){scroll.set(c.scroll_top()as f64);}>
             <div class="sequence-spacer" style:height=move||format!("{}px",molecule.with(|m|m.sequence.len()).div_ceil(columns.get())as f64*row_height.get())>
                 <div node_ref=paint_stack class="sequence-paint-stack">
-                <canvas node_ref=canvas class="sequence-canvas" role="textbox" aria-multiline="true" aria-readonly=move||(read_only||locked.get()).to_string() tabindex="0" aria-label=if read_only{"Read-only sequence. Drag reference or complement bases to select. Shift and arrow keys extend selection. Home and End move to sequence boundaries."}else{"Sequence editor. Drag reference or complement bases to select. Shift extends selection; type to replace reference symbols. Arrow keys move the caret; Shift and arrows extend. Home and End move to document boundaries."} on:keydown=keydown
+                <canvas node_ref=canvas class="sequence-canvas" role="textbox" aria-multiline="true" aria-readonly=move||(read_only||locked.get()).to_string() tabindex="0" aria-label=if read_only{"Read-only sequence. Drag reference or complement bases to select. Shift and arrow keys extend selection. Home and End move to sequence boundaries."}else{"Sequence editor. Drag reference or complement bases to select. Shift extends selection; type to replace reference symbols. Arrow keys move the caret; Shift and arrows extend. Home and End move to document boundaries."} on:keydown=keydown on:copy=copy on:cut=cut on:paste=paste
                     on:pointerdown=move|e:web_sys::PointerEvent|{
                         if e.button()!=0 || locked.get_untracked(){return;}
                         show_controls.set(false);
                         if let Some(c)=canvas.get(){
-                            let _=c.focus();let rect=c.get_bounding_client_rect();let x=e.client_x()as f64-rect.left();let y=e.client_y()as f64-rect.top();
+                            let _=c.focus();
+                            // Custom canvas dragging prevents browser selection defaults.
+                            // Drop an older DOM text selection when the user chooses DNA.
+                            if let Some(selected)=web_sys::window().and_then(|window|window.get_selection().ok().flatten()){let _=selected.remove_all_ranges();}
+                            let rect=c.get_bounding_client_rect();let x=e.client_x()as f64-rect.left();let y=e.client_y()as f64-rect.top();
                             if restriction_overflow_boxes.with_value(|boxes|boxes.iter().any(|&(a,b,w,h)|x>=a&&x<a+w&&y>=b&&y<b+h)){e.prevent_default();on_show_restrictions.run(());return;}
                             let hit=hit_boxes.with_value(|boxes|boxes.iter().rev().find(|b|x>=b.x&&x<b.x+b.width&&y>=b.y&&y<b.y+b.height).map(|b|b.item.clone()));
                             if let Some(hit)=hit{e.prevent_default();stop_drag();edit_cursor.set_value(None);choose.run(hit);return;}

@@ -64,6 +64,8 @@ mod assembly_workspace;
 mod checked_cloning;
 #[cfg(target_arch = "wasm32")]
 mod clipboard;
+#[cfg(any(target_arch = "wasm32", test))]
+mod clipboard_model;
 #[cfg(target_arch = "wasm32")]
 mod cloning_methods;
 #[cfg(any(target_arch = "wasm32", test))]

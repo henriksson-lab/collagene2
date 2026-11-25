@@ -193,3 +193,35 @@ event, primer, preparation or history graph and changes no scientific/archive
 schema. The four pure-model fixture groups cover opening/order,
 background/active/last closure and reopening, reconciliation without catalogue
 mutation, and reset between workspaces. Browser acceptance remains deferred.
+
+## Clipboard belongs to the displayed sequence
+
+The old window-level shortcut listener matched any `sequence-canvas` element,
+then used the app's active source molecule. An inline read-only product canvas
+could therefore route a copy/cut/paste shortcut to a different source. That
+listener is removed. Trusted native copy/cut/paste events are handled by each
+SequenceView using its own molecule, feature, range and read-only/locked state.
+Readonly products can copy their displayed DNA; cut/paste cannot edit them or the
+active source. Ordinary form fields, dialogs and selectable DOM text keep browser
+clipboard behavior. Choosing bases on a canvas clears an older DOM text selection.
+
+The implementation follows the [W3C Clipboard API/events draft](https://www.w3.org/TR/clipboard-apis/#clipboard-event-interfaces):
+clipboard events reach focused contexts even when they are not native text
+editors, with event clipboardData for explicit handling. Canvas shortcuts use
+those user-agent events rather than the asynchronous navigator clipboard API.
+Existing menu buttons retain asynchronous access and its secure-context/browser
+permission requirements. Browser policy and platform acceptance remain runtime
+constraints; no browser checks were run.
+
+Copy preserves an annotation's biological complement/join order. Other copies
+require one matching reference span; multiple highlights cannot silently copy
+only their first part. Cut/paste require explicit reference coordinates, reject
+read-only/busy/ambiguous/stale selections and pass the displayed revision through
+the host's existing edit/history callback. Cut stages text in the clipboard event
+before requesting an edit; host failure leaves sequence unchanged. Undo retains
+the removed sequence in history. Paste validates the input byte limit, normalizes
+using the displayed DNA/RNA/protein alphabet and positions the caret using the
+normalized length. Menu paste/insert use these same guards, including selected
+parts in their asynchronous freshness context. Annotated-reference paste retains
+its separate explicit preview/apply route. Four pure fixture groups cover scoped
+source/product copy, biological joins, rejected edits and normalized edits/bounds.

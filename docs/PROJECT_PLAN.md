@@ -585,6 +585,28 @@ remaining cloning workflows remain active priorities. See [outputs](CLONING_OUTP
 
 ### Next connected cloning workflows
 
+The latest source-aware workflow reviews supersede older gap lists where those
+connections have since been implemented: [PCR and selected outputs](BENCHLING_PCR_OUTPUT_REVIEW.md),
+[sequence editing and restriction controls](BENCHLING_EDITOR_WORKFLOW_REVIEW.md),
+and [history and sequencing verification](BENCHLING_HISTORY_VERIFICATION_REVIEW.md).
+Use public Benchling documentation to resolve interaction questions, with parallel
+reviews for independent workflows. Distinguish documented interactions from our
+adaptations and unknown scientific semantics; do not introduce project management
+or excluded scope merely to mirror its interface.
+
+Prioritize ordinary PCR's explicit selected-product review and output/order route
+over further Golden Gate optimization or domestication. Preserve alternative
+binding geometries, named oligos, original source events and separate intended-target
+checking: a simulator-derived PCR preview is not an independently verified design.
+Reuse the existing output and oligo-export machinery where its contracts fit;
+do not invent an intended reference merely to satisfy an assembly-only finalizer.
+Inverse-PCR already reaches general candidate review, verification and protocol
+export, but its handoff currently clears source-event preferences and does not
+reach the assembly output chooser. Preserve those exact bindings and reuse output
+review rather than duplicating its existing candidate tools. Existing editor selection, keyboard
+edits, enzyme cut-count filters, saved read checks and human review decisions
+must not be rebuilt from stale gap descriptions.
+
 The follow-up [interaction audits](CLONING_INTERACTION_DESIGN.md#follow-up-workflow-audits-25-november-2026)
 prioritize a shared directional primer-pair editor, source-bound mutation handoff,
 and Golden Gate preparations that actually emit PCR followed by Type IIS digestion

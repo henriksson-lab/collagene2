@@ -138,6 +138,15 @@ Do not build another parallel set of unconnected parameter panels.
 
 ## Follow-up workflow audits (25 November 2026)
 
+For the latest source comparison, see [PCR/output review](BENCHLING_PCR_OUTPUT_REVIEW.md),
+[editor review](BENCHLING_EDITOR_WORKFLOW_REVIEW.md), and
+[history/verification review](BENCHLING_HISTORY_VERIFICATION_REVIEW.md). The checkpoint
+paragraphs below record incremental progress; their remaining-work statements are
+historical and must be checked against these newer reviews and current source.
+In particular, pair-draft persistence, selective junction transactions, prepared
+and whole-reaction Golden Gate enumeration, and sequencing review decisions now
+have implementations. Their presence does not establish runtime GUI acceptance.
+
 Parallel checks of official Benchling documentation and current repository source
 identified these next connections, rather than additional standalone tools:
 

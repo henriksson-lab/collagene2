@@ -7,7 +7,7 @@ use crate::annotation_geometry::{MAX_FEATURES, MAX_SPANS};
 use collagene_core::Location;
 use collagene_core::Molecule;
 use collagene_view_layout::{Interval, Item, Limits, Placement};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Group {
@@ -61,6 +61,17 @@ pub fn prepare(
     feature_cap: usize,
     primer_cap: usize,
 ) -> Result<AnnotationLayout, String> {
+    prepare_visible(molecule, feature_cap, primer_cap, &BTreeSet::new())
+}
+
+/// Display preferences retain native feature IDs and do not consume lanes or
+/// overflow slots. Hidden source trees still receive borrowed resource checks.
+pub fn prepare_visible(
+    molecule: &Molecule,
+    feature_cap: usize,
+    primer_cap: usize,
+    hidden: &BTreeSet<usize>,
+) -> Result<AnnotationLayout, String> {
     if feature_cap > collagene_view_layout::MAX_LANES
         || primer_cap > collagene_view_layout::MAX_LANES
     {
@@ -69,7 +80,11 @@ pub fn prepare(
     let geometry = crate::annotation_geometry::prepare(molecule)?;
     let mut features = Vec::new();
     let mut primers = Vec::new();
-    for located in geometry.located {
+    for located in geometry
+        .located
+        .into_iter()
+        .filter(|f| !hidden.contains(&f.index))
+    {
         let item = Item {
             id: located.index as u64,
             spans: located
@@ -90,7 +105,11 @@ pub fn prepare(
     Ok(AnnotationLayout {
         features: group(&features, molecule.sequence.len() as u64, feature_cap)?,
         primers: group(&primers, molecule.sequence.len() as u64, primer_cap)?,
-        unplaced: geometry.unplaced,
+        unplaced: geometry
+            .unplaced
+            .into_iter()
+            .filter(|i| !hidden.contains(i))
+            .collect(),
     })
 }
 
@@ -202,6 +221,33 @@ mod tests {
         assert_eq!(l.features.placements, BTreeMap::from([(2, 0)]));
         assert_eq!(l.primers.placements, BTreeMap::from([(1, 0)]));
         assert_eq!(l.unplaced, vec![3, 4]);
+    }
+
+    #[test]
+    fn hidden_features_free_lanes_preserve_ids_and_do_not_count_as_overflow() {
+        let m = molecule(vec![
+            feature("CDS", range(0, 10)),
+            feature("misc_feature", range(1, 9)),
+            feature("primer_bind", range(0, 10)),
+            feature("primer_bind", range(1, 9)),
+            feature("misc_feature", Location::Unresolved("remote:1..3".into())),
+        ]);
+        let before = m.clone();
+        let hidden = BTreeSet::from([0, 2, 4, usize::MAX]);
+        let layout = prepare_visible(&m, 1, 1, &hidden).unwrap();
+        assert_eq!(layout.features.placements, BTreeMap::from([(1, 0)]));
+        assert_eq!(layout.primers.placements, BTreeMap::from([(3, 0)]));
+        assert!(layout.features.overflow.is_empty());
+        assert!(layout.primers.overflow.is_empty());
+        assert!(layout.unplaced.is_empty());
+        assert_eq!(m, before);
+        let all = prepare_visible(&m, 1, 1, &BTreeSet::new()).unwrap();
+        assert_eq!(all, prepare(&m, 1, 1).unwrap());
+        assert_eq!(all.features.overflow, vec![1]);
+        assert_eq!(all.primers.overflow, vec![3]);
+        assert_eq!(all.unplaced, vec![4]);
+        let none = prepare_visible(&m, 1, 1, &(0..m.features.len()).collect()).unwrap();
+        assert_eq!(none, AnnotationLayout::default());
     }
 
     #[test]

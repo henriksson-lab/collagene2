@@ -7,6 +7,7 @@ use collagene_core::{Molecule, Topology, model::Feature};
 use js_sys::Float32Array;
 use std::{
     cell::RefCell,
+    collections::BTreeSet,
     f64::consts::{PI, TAU},
     rc::Rc,
     sync::Arc,
@@ -18,6 +19,9 @@ use web_sys::{
 };
 
 pub fn color(feature: &Feature) -> [f32; 4] {
+    if let Some([r, g, b]) = collagene_core::annotation_batch::feature_rgb(feature) {
+        return [r as f32 / 255., g as f32 / 255., b as f32 / 255., 1.];
+    }
     match feature.kind.as_str() {
         "CDS" => [0.17, 0.53, 0.46, 1.0],
         "promoter" => [0.84, 0.57, 0.23, 1.0],
@@ -27,13 +31,23 @@ pub fn color(feature: &Feature) -> [f32; 4] {
         _ => [0.48, 0.64, 0.59, 1.0],
     }
 }
+fn color_for_strand(feature: &Feature, reverse: bool) -> [f32; 4] {
+    collagene_core::annotation_batch::feature_rgb_for_strand(feature, reverse)
+        .map(|[r, g, b]| [r as f32 / 255., g as f32 / 255., b as f32 / 255., 1.])
+        .unwrap_or_else(|| color(feature))
+}
+pub fn css_color_for_strand(feature: &Feature, reverse: bool) -> String {
+    rgba_css(color_for_strand(feature, reverse))
+}
 pub fn css_color(feature: &Feature) -> String {
-    let c = color(feature);
+    rgba_css(color(feature))
+}
+fn rgba_css(c: [f32; 4]) -> String {
     format!(
         "rgb({},{},{})",
-        (c[0] * 255.) as u8,
-        (c[1] * 255.) as u8,
-        (c[2] * 255.) as u8
+        (c[0] * 255.).round() as u8,
+        (c[1] * 255.).round() as u8,
+        (c[2] * 255.).round() as u8
     )
 }
 
@@ -160,9 +174,12 @@ struct State {
     revision: String,
     interaction_context: String,
     geometry: PreparedGeometry,
+    hidden_features: BTreeSet<usize>,
+    selection_spans: Vec<(usize, usize)>,
     geometry_valid: bool,
     terminals: Vec<Option<(usize, usize, bool)>>,
     annotation_total: usize,
+    annotation_source_total: usize,
     labels: Option<map_labels::Cache>,
     label_hits: Vec<map_labels::Hit>,
     restriction_sites: Arc<Vec<collagene_core::restriction_inspection::InspectionSite>>,
@@ -303,9 +320,12 @@ impl MapRenderer {
             interaction_context: String::new(),
             molecule,
             geometry,
+            hidden_features: BTreeSet::new(),
+            selection_spans: Vec::new(),
             geometry_valid,
             terminals,
             annotation_total,
+            annotation_source_total: annotation_total,
             labels,
             label_hits: Vec::new(),
             restriction_sites: Arc::new(Vec::new()),
@@ -352,11 +372,17 @@ impl MapRenderer {
                 // A gesture started on another source cannot select this document.
                 state.drag = None;
                 state.range_preview.clear();
-                let prepared = annotation_geometry::prepare(molecule);
+                let prepared = visible_geometry(molecule, &state.hidden_features);
                 state.geometry_valid = prepared.is_ok();
                 state.geometry = prepared.unwrap_or_default();
                 state.terminals = prepare_terminals(molecule, &state.geometry);
-                state.annotation_total = molecule.features.len();
+                state.annotation_source_total = molecule.features.len();
+                state.annotation_total = molecule
+                    .features
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| !state.hidden_features.contains(i))
+                    .count();
                 // Reject the annotation cache without recursively cloning an invalid tree.
                 // This private fallback retains only reference symbols for baseline display.
                 state.molecule = if state.geometry_valid {
@@ -391,6 +417,39 @@ impl MapRenderer {
             state.selected_feature = selected_feature;
         }
         self.update(selection);
+    }
+
+    /// Change display preferences without changing source identity, camera,
+    /// selection or an active gesture. Original feature IDs remain intact.
+    pub fn set_hidden_features(&self, hidden: &BTreeSet<usize>) {
+        let selection = {
+            let mut state = self.0.borrow_mut();
+            if state.hidden_features == *hidden {
+                return;
+            }
+            state.hidden_features = hidden.clone();
+            state.annotation_total = state
+                .annotation_source_total
+                .saturating_sub(hidden.range(..state.annotation_source_total).count());
+            let prepared = visible_geometry(&state.molecule, hidden);
+            // A source previously rejected by the borrowed geometry guard is
+            // represented only by a baseline fallback, never recover its status
+            // by validating that stripped fallback as if it were the source.
+            if state.geometry_valid {
+                state.geometry_valid = prepared.is_ok();
+                state.geometry = prepared.unwrap_or_default();
+                state.terminals = prepare_terminals(&state.molecule, &state.geometry);
+                state.labels = state.geometry_valid.then(|| {
+                    map_labels::Cache::prepare(&state.molecule, &state.geometry, &state.overlay_ctx)
+                });
+            }
+            state.label_hits.clear();
+            state.hit_dataset.clear();
+            let _ = state.canvas.set_attribute("data-label-hits", "[]");
+            let _ = state.canvas.remove_attribute("title");
+            state.selection_spans.clone()
+        };
+        self.update(&selection);
     }
 
     /// Gestures belong to a document event, including equal-content documents.
@@ -632,6 +691,7 @@ impl MapRenderer {
     }
     fn update(&self, selection: &[(usize, usize)]) {
         let mut s = self.0.borrow_mut();
+        s.selection_spans = selection.to_vec();
         const MAX_FLOATS: usize = 3_000_000;
         // Reserve only the bounded numeric payload estimate, so an ordinary
         // plasmid does not allocate the full 12 MB geometry ceiling on selection.
@@ -679,8 +739,8 @@ impl MapRenderer {
                     limited = true;
                     break;
                 }
-                let rgba = color(feature);
                 for &(a, b, reverse) in &located.spans {
+                    let rgba = color_for_strand(feature, reverse);
                     if s.molecule.topology == Topology::Linear {
                         let y = 0.08 + (ordinal % 3) as f64 * 0.12;
                         quad(
@@ -800,6 +860,16 @@ impl Drop for State {
         self.gl.delete_buffer(Some(&self.buffer));
         self.gl.delete_program(Some(&self.program));
     }
+}
+
+fn visible_geometry(
+    molecule: &Molecule,
+    hidden: &BTreeSet<usize>,
+) -> Result<PreparedGeometry, String> {
+    let mut geometry = annotation_geometry::prepare(molecule)?;
+    geometry.located.retain(|f| !hidden.contains(&f.index));
+    geometry.unplaced.retain(|i| !hidden.contains(i));
+    Ok(geometry)
 }
 
 fn prepare_terminals(

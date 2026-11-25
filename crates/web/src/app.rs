@@ -1,7 +1,4 @@
-use crate::{
-    renderer::{MapRenderer, css_color},
-    storage, worker,
-};
+use crate::{renderer::MapRenderer, storage, worker};
 use collagene_core::{
     analysis::Primer,
     formats, protocol, transfer,
@@ -150,6 +147,7 @@ struct RestoredWorkspace {
 fn restore_workspace_state(
     frame: &collagene_core::workspace::Workspace,
 ) -> Result<RestoredWorkspace, String> {
+    crate::annotation_visibility::validate_workspace(frame)?;
     let documents = OpenDocument::restore_all(frame).map_err(|e| e.to_string())?;
     if documents
         .iter()
@@ -844,7 +842,6 @@ pub fn App() -> impl IntoView {
     let molecule_revision = Memo::new(move |_| molecule.with(Molecule::revision));
     let selection = RwSignal::new(None::<(usize, usize)>);
     let selected_feature = RwSignal::new(None::<usize>);
-    let feature_page = RwSignal::new(0usize);
     let feature_for_editor = RwSignal::new(None::<usize>);
     let feature_initial_location = RwSignal::new(None::<Location>);
     let primer_seed = RwSignal::new(None::<Primer>);
@@ -856,11 +853,6 @@ pub fn App() -> impl IntoView {
                 .get()
                 .and_then(|i| m.features.get(i).cloned())
         })
-    });
-    Effect::new(move |_| {
-        if let Some(index) = selected_feature.get() {
-            feature_page.set(index / 500);
-        }
     });
     let search_regions = RwSignal::new(None::<(String, Vec<(usize, usize)>)>);
     let highlighted_spans = Memo::new(move |_| {
@@ -948,6 +940,26 @@ pub fn App() -> impl IntoView {
         documents.with(|docs| {
             let doc = &docs[active.get()];
             format!("{}:{}:{}", workspace_epoch.get(), doc.id, doc.head_event())
+        })
+    });
+    let annotation_hidden = Memo::new(move |_| {
+        documents.with(|docs| {
+            let doc = &docs[active.get()];
+            attachments.with(|assets| {
+                match crate::annotation_visibility::load(
+                    assets,
+                    &current_event_binding(doc),
+                    doc.molecule.features.len(),
+                ) {
+                    Ok(hidden) => hidden,
+                    Err(error) => {
+                        message.set(format!(
+                            "Annotation display preferences need attention: {error}"
+                        ));
+                        Default::default()
+                    }
+                }
+            })
         })
     });
     let restriction_selection = Memo::new(move |_| {
@@ -1634,6 +1646,7 @@ pub fn App() -> impl IntoView {
                         &selected,
                         selected_index,
                     );
+                    map.set_hidden_features(&annotation_hidden.get());
                 } else {
                     match MapRenderer::new(
                         canvas.unchecked_ref::<HtmlCanvasElement>().clone(),
@@ -1650,6 +1663,7 @@ pub fn App() -> impl IntoView {
                     ) {
                         Ok(map) => {
                             map.set_selection_mode(map_select.get_untracked());
+                            map.set_hidden_features(&annotation_hidden.get());
                             renderer.set_value(Some(map));
                         }
                         Err(error) => render_error.set(error),
@@ -1675,7 +1689,6 @@ pub fn App() -> impl IntoView {
         let _ = active.get();
         plan_generation.update(|g| *g = g.wrapping_add(1));
         selected_feature.set(None);
-        feature_page.set(0);
         selection.set(None);
         search_regions.set(None);
         plan_report.set(None);
@@ -1685,7 +1698,6 @@ pub fn App() -> impl IntoView {
     Effect::new(move |_| {
         let _ = molecule.get().revision();
         selected_feature.set(None);
-        feature_page.set(0);
         let _ = documents.with(|docs| {
             docs.iter()
                 .map(|d| {
@@ -3853,6 +3865,101 @@ pub fn App() -> impl IntoView {
             })
         })
     });
+    let set_annotation_visibility = Callback::new(
+        move |(indices, hide): (Vec<usize>, bool)| -> Result<(), String> {
+            if workspace_restoring.get_untracked() {
+                return Err("Wait for the workspace update to finish.".into());
+            }
+            let mut frame = contig_snapshot.run(())?;
+            let (source, count) = documents.with_untracked(|docs| {
+                let doc = &docs[active.get_untracked()];
+                (current_event_binding(doc), doc.molecule.features.len())
+            });
+            let mut hidden =
+                crate::annotation_visibility::load(&frame.attachments, &source, count)?;
+            for index in indices {
+                if index >= count {
+                    return Err("Annotation indices changed; select them again.".into());
+                }
+                if hide {
+                    hidden.insert(index);
+                } else {
+                    hidden.remove(&index);
+                }
+            }
+            frame.attachments = crate::annotation_visibility::store(
+                &frame.attachments,
+                crate::annotation_visibility::Record {
+                    schema_version: 1,
+                    source,
+                    feature_count: count,
+                    hidden,
+                },
+            )?;
+            frame.validate().map_err(|e| e.to_string())?;
+            crate::annotation_visibility::validate_workspace(&frame)?;
+            attachments.set(frame.attachments);
+            Ok(())
+        },
+    );
+    let apply_annotation_batch = Callback::new(
+        move |request: collagene_core::annotation_batch::Request| -> Result<(), String> {
+            if workspace_restoring.get_untracked() {
+                return Err("Wait for the workspace update to finish.".into());
+            }
+            let index = active.get_untracked();
+            let mut staged_docs = documents.get_untracked();
+            let doc = staged_docs
+                .get_mut(index)
+                .ok_or("Active annotation document is unavailable.")?;
+            let previous = current_event_binding(doc);
+            let edited = collagene_core::annotation_batch::apply(&doc.molecule, &request)
+                .map_err(|e| e.to_string())?;
+            if edited == doc.molecule {
+                return Ok(());
+            }
+            let hidden = attachments.with_untracked(|assets| {
+                crate::annotation_visibility::load(assets, &previous, doc.molecule.features.len())
+            })?;
+            doc.commit(edited, "Batch edited annotations")
+                .map_err(|e| e.to_string())?;
+            let source = current_event_binding(doc);
+            let count = doc.molecule.features.len();
+            if staged_docs
+                .iter()
+                .map(|d| document_bytes(&d.molecule))
+                .sum::<usize>()
+                > MAX_WORKSPACE_BYTES
+            {
+                return Err("This edit exceeds the current workspace size limit.".into());
+            }
+            let mut frame = workspace_snapshot(
+                &staged_docs,
+                index,
+                candidate.get_untracked().as_ref(),
+                &stored_candidates.get_untracked(),
+                &attachments.get_untracked(),
+                &workspace_name.get_untracked(),
+            )?;
+            frame.attachments = crate::annotation_visibility::store(
+                &frame.attachments,
+                crate::annotation_visibility::Record {
+                    schema_version: 1,
+                    source,
+                    feature_count: count,
+                    hidden,
+                },
+            )?;
+            frame.validate().map_err(|e| e.to_string())?;
+            crate::annotation_visibility::validate_workspace(&frame)?;
+            batch(|| {
+                documents.set(staged_docs);
+                attachments.set(frame.attachments);
+            });
+            message.set("Annotation changes saved as one undoable edit.".into());
+            Ok(())
+        },
+    );
     let saved_enzyme_sets = Memo::new(move |_| {
         let frame = workspace_snapshot(
             &documents.get(),
@@ -4671,7 +4778,7 @@ pub fn App() -> impl IntoView {
                                 on_clear=Callback::new(move|()|batch(||{selection.set(None);selected_feature.set(None);search_regions.set(None);restrictions.selected.set(None);}))
                             />
                             <div class="editor-grid" class:sequence-only=move||editor_view.get()=="sequence" class:map-only=move||editor_view.get()=="map">
-                                <section class="sequence-panel"><div class="panel-heading"><div><h2>"Sequence"</h2></div><span class="panel-subtitle">{move||molecule.with(|doc|if doc.sequence.alphabet()==Alphabet::Protein{"Amino-acid reference"}else{"Reference & complement"})}</span></div><Show when=move||molecule.with(|doc|doc.metadata.contains_key("legacy:upper_aligned"))><details class="legacy-source-rows"><summary>"Original aligned source rows"</summary><p class="helper">"Upper is stored 5′→3′; lower is aligned 3′→5′. These original rows may describe an earlier document revision. The editor displays the reference and its calculated complement."</p><pre>{move||molecule.with(|doc|format!("{}\n{}",doc.metadata.get("legacy:upper_aligned").map(|value|value.chars().take(2000).collect::<String>()).unwrap_or_default(),doc.metadata.get("legacy:lower_aligned").map(|value|value.chars().take(2000).collect::<String>()).unwrap_or_default()))}</pre><p class="helper">"First 2,000 columns shown; original legacy-file download retains all source evidence."</p></details></Show><Show when=move||molecule.get().metadata.contains_key("trace_original_base64")><button class="text-tool" on:click=move|_|trace_view.update(|v|*v=!*v)>{move||if trace_view.get(){"Show sequence"}else{"Show chromatogram"}}</button></Show><Show when=move||trace_view.get()&&molecule.get().metadata.contains_key("trace_original_base64") fallback=move||view!{<crate::sequence_view::SequenceView molecule=molecule selection=selection selected_feature=selected_feature highlighted_spans=highlighted_spans search_regions=search_regions on_show_features=Callback::new(move|()|panel.set("features")) identity=Memo::new(move|_|documents.with(|docs|format!("{}:{}",workspace_epoch.get(),docs[active.get()].id))) locked=Memo::new(move|_|workspace_restoring.get()) on_message=Callback::new(move|text:String|message.set(text)) on_history=Callback::new(move|redo:bool|{if workspace_restoring.get_untracked(){return Err("Workspace restoration is in progress.".into());}let mut result=Ok(());documents.update(|docs|{let doc=&mut docs[active.get_untracked()];result=if redo{doc.redo()}else{doc.undo()}.map(|_|()).map_err(|e|e.to_string());});result}) restriction_sites=restrictions.displayed restriction_visible=restrictions.visible on_show_restrictions=Callback::new(move|()|panel.set("restriction")) on_select_restriction=navigate_restriction on_edit=Callback::new(move|(base,a,b,replacement):(String,usize,usize,String)|{let current=molecule.get_untracked();if current.revision()!=base{return Err("The sequence changed before this edit could be applied.".into());}let edited=current.replace(a,b,&replacement).map_err(|e|e.to_string())?;commit_document(documents,active,workspace_restoring,&base,edited)})/>}><crate::trace_view::TraceView molecule=molecule selection=selection/></Show></section>
+                                <section class="sequence-panel"><div class="panel-heading"><div><h2>"Sequence"</h2></div><span class="panel-subtitle">{move||molecule.with(|doc|if doc.sequence.alphabet()==Alphabet::Protein{"Amino-acid reference"}else{"Reference & complement"})}</span></div><Show when=move||molecule.with(|doc|doc.metadata.contains_key("legacy:upper_aligned"))><details class="legacy-source-rows"><summary>"Original aligned source rows"</summary><p class="helper">"Upper is stored 5′→3′; lower is aligned 3′→5′. These original rows may describe an earlier document revision. The editor displays the reference and its calculated complement."</p><pre>{move||molecule.with(|doc|format!("{}\n{}",doc.metadata.get("legacy:upper_aligned").map(|value|value.chars().take(2000).collect::<String>()).unwrap_or_default(),doc.metadata.get("legacy:lower_aligned").map(|value|value.chars().take(2000).collect::<String>()).unwrap_or_default()))}</pre><p class="helper">"First 2,000 columns shown; original legacy-file download retains all source evidence."</p></details></Show><Show when=move||molecule.get().metadata.contains_key("trace_original_base64")><button class="text-tool" on:click=move|_|trace_view.update(|v|*v=!*v)>{move||if trace_view.get(){"Show sequence"}else{"Show chromatogram"}}</button></Show><Show when=move||trace_view.get()&&molecule.get().metadata.contains_key("trace_original_base64") fallback=move||view!{<crate::sequence_view::SequenceView hidden_features=Some(annotation_hidden) molecule=molecule selection=selection selected_feature=selected_feature highlighted_spans=highlighted_spans search_regions=search_regions on_show_features=Callback::new(move|()|panel.set("features")) identity=Memo::new(move|_|documents.with(|docs|format!("{}:{}",workspace_epoch.get(),docs[active.get()].id))) locked=Memo::new(move|_|workspace_restoring.get()) on_message=Callback::new(move|text:String|message.set(text)) on_history=Callback::new(move|redo:bool|{if workspace_restoring.get_untracked(){return Err("Workspace restoration is in progress.".into());}let mut result=Ok(());documents.update(|docs|{let doc=&mut docs[active.get_untracked()];result=if redo{doc.redo()}else{doc.undo()}.map(|_|()).map_err(|e|e.to_string());});result}) restriction_sites=restrictions.displayed restriction_visible=restrictions.visible on_show_restrictions=Callback::new(move|()|panel.set("restriction")) on_select_restriction=navigate_restriction on_edit=Callback::new(move|(base,a,b,replacement):(String,usize,usize,String)|{let current=molecule.get_untracked();if current.revision()!=base{return Err("The sequence changed before this edit could be applied.".into());}let edited=current.replace(a,b,&replacement).map_err(|e|e.to_string())?;commit_document(documents,active,workspace_restoring,&base,edited)})/>}><crate::trace_view::TraceView molecule=molecule selection=selection/></Show></section>
                                 <crate::workspace_layout::PaneResize layout=layout pane=crate::workspace_layout::Pane::Sequence/>
                                 <section class="map-panel"><div class="panel-heading"><div><h2>{move||if molecule.get().topology==Topology::Circular{"Plasmid map"}else{"Linear map"}}</h2></div><div class="map-controls"><button class="icon-button" title="Zoom out" on:click=move|_|if let Some(r)=renderer.get_value(){r.zoom(1./1.15);}>"−"</button><button class="icon-button" title="Reset map view" on:click=move|_|if let Some(r)=renderer.get_value(){r.reset();}>"Fit"</button><button class="icon-button" title="Zoom in" on:click=move|_|if let Some(r)=renderer.get_value(){r.zoom(1.15);}>"+"</button></div></div>
                                     <div class="map-stage"><canvas node_ref=gl_canvas aria-label=move||if map_select.get(){"Interactive sequence map; drag to select a range, click labels to inspect, scroll to zoom"}else if molecule.with(|m|m.topology==Topology::Circular){"Interactive circular sequence overview; drag to rotate, use zoom buttons, click to select"}else{"Interactive linear sequence overview; use zoom buttons, click to select"} on:pointerdown=move|e|{if let Some(canvas)=gl_canvas.get(){let _=canvas.set_pointer_capture(e.pointer_id());}if let Some(r)=renderer.get_value(){r.pointer_down(e.client_x()as f64,e.client_y()as f64);}} on:pointermove=move|e|if let Some(r)=renderer.get_value(){r.pointer_move(e.client_x()as f64,e.client_y()as f64);} on:pointerup=move|e|if let Some(r)=renderer.get_value(){if let Some(hit)=r.pointer_up(e.client_x()as f64,e.client_y()as f64){if let Some(index)=hit.restriction_index{if let Some(site)=restrictions.scan.with_untracked(|s|s.as_ref().and_then(|s|s.sites.iter().find(|site|site.index==index).cloned())){navigate_restriction.run(site);}}else{batch(||{restrictions.selected.set(None);search_regions.set(None);selected_feature.set(hit.feature_index);selection.set(if hit.spans.len()==1{Some(hit.span)}else{None});if hit.spans.len()>1{search_regions.set(Some((molecule_revision.get_untracked(),hit.spans.clone())));}if hit.feature_index.is_some(){panel.set("features");}});}}} on:pointercancel=move|_|if let Some(r)=renderer.get_value(){r.pointer_cancel();} on:lostpointercapture=move|_|if let Some(r)=renderer.get_value(){r.pointer_cancel();} on:wheel=move|e|{e.prevent_default();if let Some(r)=renderer.get_value(){r.zoom(if e.delta_y()>0.{0.95}else{1.05});}}></canvas><canvas node_ref=label_canvas class="map-labels" aria-hidden="true"></canvas><p class="map-geometry-note" role="status">"Overview is simplified. Browse the annotation pages or export the full annotation set."</p><p class="restriction-map-note" role="status">"Some restriction labels are hidden for space. Open RE sites to inspect the selected positions."</p>
@@ -4689,7 +4796,7 @@ pub fn App() -> impl IntoView {
                                     <crate::read_checks_view::SavedReadChecksPanel on_review=open_read_review event_available=primer_anchor_available attachment_available=read_check_attachment_available reference=read_check_reference snapshot=contig_snapshot epoch=workspace_epoch on_read=navigate_read_call on_reference=navigate_check_reference/>
                                     <crate::read_review_history::ReadReviewHistory reference=read_check_reference snapshot=contig_snapshot epoch=workspace_epoch on_open=reopen_read_review on_reference=navigate_check_reference/>
                                     <crate::trace_validation::TraceValidationPanel molecule=read_check_molecule reference_info=read_check_source source_info=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(recombination_source_info))) epoch=workspace_epoch on_read=navigate_read_call on_record=record_read_check on_reference=navigate_check_reference query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone()))) selection=selection selected_feature=selected_feature on_consensus=Callback::new(move|doc:Molecule|add_documents(documents,active,workspace_restoring,vec![doc]))/></div></Show>
-                                    <Show when=move||panel.get()=="features"><div class="inspector-content"><h2>"Annotations"<span class="count">{move||molecule.get().features.len()}</span></h2><p class="helper">"Select an annotation to inspect all of its parts and biological sequence."</p><button class="button secondary full" on:click=move|_|{feature_for_editor.set(None);feature_initial_location.set(None);modal.set("feature");}>"New annotation"</button>{move||inspected_feature.get().map(|f|{let location=editing::location_text(&f.location).unwrap_or_else(|_|"unresolved".into());let size=f.location.spans().iter().try_fold(0usize,|n,(a,b,_)|n.checked_add(b-a)).unwrap_or(usize::MAX);let exact=if size<=10_000 {f.location.extract(&molecule.get().sequence).unwrap_or_else(|e|e.to_string())}else{"Sequence exceeds this inspector's 10,000-symbol display limit; use a region/sequence export.".into()};view!{<div class="annotation-details"><h3>{f.label().to_string()}</h3><button class="text-tool" on:click=move|_|panel.set("library")>"Use selected annotation in library"</button><p>{location}</p><pre class="annotation-sequence">{exact}</pre><p class="helper">"Compound selections highlight every span. Choose contiguous bases to edit the underlying sequence."</p><button class="button secondary" on:click=move|_|{feature_for_editor.set(selected_feature.get_untracked());modal.set("feature");}>"Edit annotation"</button><button class="text-tool" on:click=move|_|if let Some(i)=selected_feature.get_untracked(){let current=molecule.get_untracked();match editing::delete_feature(&current,i){Ok(edited)=>if let Err(e)=commit_document(documents,active,workspace_restoring,&current.revision(),edited){message.set(e);},Err(e)=>message.set(e.to_string())}}>"Delete annotation"</button><details><summary>"Annotation qualifiers"</summary><dl>{f.qualifiers.into_iter().take(200).map(|(key,value)|view!{<dt>{key}</dt><dd>{value.unwrap_or_else(||"flag".into())}</dd>}).collect_view()}</dl></details></div>}})}<div class="feature-list">{move||molecule.get().features.into_iter().enumerate().skip(feature_page.get()*500).take(500).map(|(index,f)|{let spans=f.location.spans();let span=spans.first().map(|(a,b,_)|(*a,*b));let label=f.label().to_owned();let color=css_color(&f);let coordinates=spans.iter().map(|(a,b,r)|format!("{}–{}{}",a+1,b,if *r{" reverse"}else{""})).collect::<Vec<_>>().join(", ");view!{<button class="feature-entry" class:active=move||selected_feature.get()==Some(index) on:click=move|_|{selected_feature.set(Some(index));selection.set(span);}><i style=format!("background:{color}")></i><span><strong>{label}</strong><small>{coordinates}</small><small>{format!("{}{}",f.kind,if f.needs_review{" · review required"}else{""})}</small></span></button>}}).collect_view()}</div><Show when=move||{molecule.get().features.len()>500}><div class="annotation-pages"><p class="helper">{move||molecule.with(|m|format!("Annotations {}–{} of {}",feature_page.get()*500+1,((feature_page.get()+1)*500).min(m.features.len()),m.features.len()))}</p><button class="button secondary" disabled=move||feature_page.get()==0 on:click=move|_|{selected_feature.set(None);feature_page.update(|page|*page=page.saturating_sub(1));}>"Previous annotations"</button><button class="button secondary" disabled=move||molecule.with(|m|(feature_page.get()+1)*500>=m.features.len()) on:click=move|_|{selected_feature.set(None);feature_page.update(|page|*page+=1);}>"Next annotations"</button></div></Show></div></Show>
+                                    <Show when=move||panel.get()=="features"><div class="inspector-content"><h2>"Annotations"<span class="count">{move||molecule.get().features.len()}</span></h2><p class="helper">"Select an annotation to inspect all of its parts and biological sequence."</p><crate::annotation_table::AnnotationTable molecule context=restriction_identity locked=Memo::new(move|_|workspace_restoring.get()) selected_feature hidden=annotation_hidden on_visibility=set_annotation_visibility on_apply=apply_annotation_batch on_inspect=Callback::new(move|index:usize|{molecule.with_untracked(|m|{if let Some(feature)=m.features.get(index){batch(||{selected_feature.set(Some(index));selection.set(feature.location.spans().first().map(|(a,b,_)|(*a,*b)));search_regions.set(None);});}});}) on_edit=Callback::new(move|index:Option<usize>|{feature_for_editor.set(index);feature_initial_location.set(None);modal.set("feature");})/>{move||inspected_feature.get().map(|f|{let location=editing::location_text(&f.location).unwrap_or_else(|_|"unresolved".into());let size=f.location.spans().iter().try_fold(0usize,|n,(a,b,_)|n.checked_add(b-a)).unwrap_or(usize::MAX);let exact=if size<=10_000 {f.location.extract(&molecule.get().sequence).unwrap_or_else(|e|e.to_string())}else{"Sequence exceeds this inspector's 10,000-symbol display limit; use a region/sequence export.".into()};view!{<div class="annotation-details"><h3>{f.label().to_string()}</h3><button class="text-tool" on:click=move|_|panel.set("library")>"Use selected annotation in library"</button><p>{location}</p><pre class="annotation-sequence">{exact}</pre><p class="helper">"Compound selections highlight every span. Choose contiguous bases to edit the underlying sequence."</p><button class="button secondary" on:click=move|_|{feature_for_editor.set(selected_feature.get_untracked());modal.set("feature");}>"Edit annotation"</button><button class="text-tool" on:click=move|_|if let Some(i)=selected_feature.get_untracked(){let current=molecule.get_untracked();match editing::delete_feature(&current,i){Ok(edited)=>if let Err(e)=commit_document(documents,active,workspace_restoring,&current.revision(),edited){message.set(e);},Err(e)=>message.set(e.to_string())}}>"Delete annotation"</button><details><summary>"Annotation qualifiers"</summary><dl>{f.qualifiers.into_iter().take(200).map(|(key,value)|view!{<dt>{key}</dt><dd>{value.unwrap_or_else(||"flag".into())}</dd>}).collect_view()}</dl></details></div>}})}</div></Show>
                                     <Show when=move||panel.get()=="enzymes"><crate::digest::DigestPanel source=Memo::new(move|_|documents.with(|docs|{let d=&docs[active.get()];crate::digest::SourceInfo{binding:collagene_core::run_lineage::EventBinding{document_id:d.id.clone(),event_id:d.head_event().to_string(),revision:molecule_revision.get()},name:d.molecule.name.clone(),length:d.molecule.sequence.len(),alphabet:d.molecule.sequence.alphabet(),topology:d.molecule.topology}})) get_molecule=Callback::new(move|()|molecule.get_untracked()) epoch=workspace_epoch on_navigate=navigate_digest on_open=open_digest on_assembly=use_digest_in_assembly boundary_pick=digest_boundary_pick initial_enzymes=restrictions.names.get_untracked() on_methylation=Callback::new(move|()|panel.set("methylation"))/></Show>
                                     <Show when=move||panel.get()=="pcr"><div class="inspector-content"><h2>"Simulate PCR"</h2><p class="helper">"Enter both primers 5′→3′. Annealing must match exactly; tails are introduced into the product."</p><crate::primer_picker::PrimerPicker label="Forward".to_string() sources=primer_sources list_primers=list_saved_primers resolve_primer=resolve_saved_primer epoch=workspace_epoch on_copy=Callback::new(move|primer:Primer|batch(||{pcr_forward_name.set(primer.name);pcr_forward.set(primer.annealing.as_str().into());pcr_forward_tail.set(primer.tail);pcr_generation.update(|g|*g=g.wrapping_add(1));}))/>
     <crate::primer_picker::PrimerPicker label="Reverse".to_string() sources=primer_sources list_primers=list_saved_primers resolve_primer=resolve_saved_primer epoch=workspace_epoch on_copy=Callback::new(move|primer:Primer|batch(||{pcr_reverse_name.set(primer.name);pcr_reverse.set(primer.annealing.as_str().into());pcr_reverse_tail.set(primer.tail);pcr_generation.update(|g|*g=g.wrapping_add(1));}))/>

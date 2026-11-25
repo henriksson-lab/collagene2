@@ -43,6 +43,14 @@ sets retain catalog identity and refuse changed definitions
 history, not the current missing-feature queue. Annotation list operations and
 editor-to-design continuity remain candidates for follow-up.
 
+## Annotation implementation follow-up
+
+Annotation list/batch type, strand and color controls are now implemented, together
+with native-workspace display preferences and synchronized map/sequence hiding.
+[Implementation, scientific semantics and limits](ANNOTATION_MANAGEMENT.md).
+The annotation recommendations below remain research history; the source-linked
+translation/CDS and digest/comparison connections remain outstanding.
+
 ## Prioritized remaining connections
 
 These are Collagene recommendations inferred from the research and source comparison, not assertions about Benchling internals.

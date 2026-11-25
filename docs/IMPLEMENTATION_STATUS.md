@@ -14,6 +14,23 @@ is postponed until the rest of the software is implemented. Existing modules are
 retained; no more alignment/index features or integration are scheduled now.
 Browser checks remain deferred and compiler checks run alongside coding.
 
+## Annotation management
+
+Annotations now have a searchable paged table, source-bound multi-selection and
+one-commit type/strand/color edits. Native batch operations preserve unfamiliar
+qualifiers and compound/fuzzy locations; strand changes retain stale coding
+assertions as source evidence and withhold unsupported coordinate reinterpretation.
+
+Independent show/hide preferences filter map/sequence geometry, labels, hits and
+lane occupancy without altering annotations or scientific reports. Exact-event
+preferences persist in native workspaces and survive supported batch edits.
+Literal RGB colors, including safe imported ApE strand colors, are shared across
+renderers. [Controls, persistence and current resource bounds](ANNOTATION_MANAGEMENT.md).
+
+Native checks passed: ten core scientific fixtures and 55 native web tests,
+including exact-event display/archive and layout cases. The final web WASM compile
+passed. Browser checks and preview publication remain deferred at this checkpoint.
+
 ## Retained Golden Gate reaction settings
 
 The assembly draft now retains prepared-pool/reaction mode, each role's substrate

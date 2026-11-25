@@ -98,8 +98,10 @@ concrete connections:
 - Connect the applied primer pair, selected binding placements and PCR geometry to
   synchronized source overlays. Improve domain/tail boundary editing and local failure
   recovery using the existing primer model and native checks.
-- Complete annotation list/bulk operations and direct source-linked translation/CDS
-  workflows; then improve retained diagnostic digest and comparison presentation.
+- Annotation list/bulk operations and exact-event display preferences are now
+  implemented ([details](ANNOTATION_MANAGEMENT.md)). Continue with direct
+  source-linked translation/CDS workflows, then retained diagnostic digest and
+  comparison presentation.
 - After ordinary designs, implement genuine alternative source bins and per-combination
   output identity over the shared compiler. Reaction-product enumeration alone does
   not complete combinatorial cloning. Inspectable fusion-end proposals and intentional

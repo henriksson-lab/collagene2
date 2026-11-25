@@ -2,7 +2,7 @@
 use crate::{
     annotation_layout::AnnotationLayout,
     glyph_renderer::{Glyph, GlyphRenderer},
-    renderer::{ResizeListener, css_color},
+    renderer::{ResizeListener, css_color, css_color_for_strand},
     worker::CachedWorker,
 };
 use collagene_core::{
@@ -13,6 +13,7 @@ use collagene_core::{
 };
 use leptos::{html, prelude::*};
 use std::{
+    collections::BTreeSet,
     rc::Rc,
     sync::{
         Arc,
@@ -273,7 +274,10 @@ fn slot(
 fn track_color(item: &TrackItem, m: &Molecule) -> String {
     if let Some(i) = item.source_feature {
         if let Some(f) = m.features.get(i) {
-            return css_color(f);
+            return item
+                .reverse
+                .map(|reverse| css_color_for_strand(f, reverse))
+                .unwrap_or_else(|| css_color(f));
         }
     }
     match item.kind {
@@ -302,6 +306,7 @@ pub fn SequenceView(
     restriction_sites: Memo<Option<Arc<Vec<restriction_inspection::InspectionSite>>>>,
     restriction_visible: RwSignal<bool>,
     on_show_restrictions: Callback<()>,
+    #[prop(optional_no_strip)] hidden_features: Option<Memo<BTreeSet<usize>>>,
     #[prop(default = false)] read_only: bool,
     #[prop(default = true)] shared_restrictions: bool,
     #[prop(optional)] on_select_restriction: Option<
@@ -326,12 +331,22 @@ pub fn SequenceView(
     let show_controls = RwSignal::new(false);
     let feature_rows = RwSignal::new(3usize);
     let primer_rows = RwSignal::new(2usize);
-    let annotation_layout =
-        Memo::new(move |_| {
-            Arc::new(molecule.with(|m| {
+    let hidden = Memo::new(move |_| hidden_features.map(|h| h.get()).unwrap_or_default());
+    let annotation_layout = Memo::new(move |_| {
+        Arc::new(molecule.with(|m| {
+            let hidden = hidden.get();
+            if hidden.is_empty() {
                 crate::annotation_layout::prepare(m, feature_rows.get(), primer_rows.get())
-            }))
-        });
+            } else {
+                crate::annotation_layout::prepare_visible(
+                    m,
+                    feature_rows.get(),
+                    primer_rows.get(),
+                    &hidden,
+                )
+            }
+        }))
+    });
     let report = RwSignal::new(None::<TrackReport>);
     let status = RwSignal::new("Loading sequence tracks…".to_string());
     let selected_item = RwSignal::new(None::<TrackItem>);
@@ -893,6 +908,12 @@ pub fn SequenceView(
         }
     });
     let choose = Callback::new(move |item: TrackItem| {
+        if item
+            .source_feature
+            .is_some_and(|i| hidden.with_untracked(|h| h.contains(&i)))
+        {
+            return;
+        }
         let selected_site = item
             .id
             .strip_prefix("restriction:")
@@ -1145,6 +1166,7 @@ pub fn SequenceView(
             let current = report
                 .get()
                 .filter(|r| r.source_revision == revision && r.options == opts);
+            let hidden = hidden.get();
             let packed = annotation_layout.get();
             let layout = packed.as_ref().as_ref().ok();
             let Some(canvas) = canvas.get() else {
@@ -1293,6 +1315,7 @@ pub fn SequenceView(
                         .as_ref()
                         .into_iter()
                         .flat_map(|r| r.items.iter())
+                        .filter(|item| item.source_feature.is_none_or(|i| !hidden.contains(&i)))
                         .chain(shared_items.iter())
                     {
                         let group = lane(item);
@@ -1539,7 +1562,12 @@ pub fn SequenceView(
                 "data-track-item-count",
                 &current
                     .as_ref()
-                    .map(|r| r.items.len())
+                    .map(|r| {
+                        r.items
+                            .iter()
+                            .filter(|item| item.source_feature.is_none_or(|i| !hidden.contains(&i)))
+                            .count()
+                    })
                     .unwrap_or(0)
                     .to_string(),
             );
@@ -1603,7 +1631,7 @@ pub fn SequenceView(
             <label>"Minimum ORF length (aa)"<input type="number" min="0" max="100000" aria-label="Track minimum ORF length" prop:value=move||settings.get().min_orf_amino_acids.to_string() on:change=move|e|settings.update(|o|o.min_orf_amino_acids=event_target_value(&e).parse::<usize>().unwrap_or(20).min(100000))/></label>
             <label>"Track genetic code"<select aria-label="Track genetic code" on:change=move|e|settings.update(|o|o.genetic_code=event_target_value(&e).parse().unwrap_or(1))>{collagene_core::translation::genetic_codes().iter().map(|c|view!{<option value=c.id.to_string()>{format!("{} · {}",c.id,c.name)}</option>}).collect_view()}</select></label>
             <p class="helper">"Nonoverlapping annotations share rows. Joined annotations stay together; additional annotations remain in Features and the viewport list. Predicted ORFs and ambiguous sites are provisional. Blue/red ticks are reference top/bottom cut boundaries. Tracks are bounded and refresh after scrolling."</p>
-            <details class="viewport-tracks"><summary>"Viewport items and warnings"</summary>{move||report.get().map(|r|{let count=r.items.len();view!{<p class="helper">{format!("{} items · {} work units · {}",count,r.work.used_units,if r.complete{"complete"}else{"incomplete"})}</p>{r.warnings.into_iter().map(|w|view!{<p class="helper">{w}</p>}).collect_view()}{r.items.into_iter().skip(page.get()*50).take(50).map(|item|{let text=format!("{:?} · {} · {}{}",item.kind,item.label,item.parts.iter().map(|p|format!("{}–{}",p.start+1,p.end)).collect::<Vec<_>>().join(", "),if item.certain{""}else{" · possible/review"});view!{<button class="result-entry viewport-item" data-kind=format!("{:?}",item.kind) on:click=move|_|choose.run(item.clone())>{text}</button>}}).collect_view()}<Show when=move||{count>50}><button class="text-tool" disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous track items"</button><button class="text-tool" disabled=move||{(page.get()+1)*50>=count} on:click=move|_|page.update(|p|*p+=1)>"Next track items"</button></Show>}})}<button class="text-tool" disabled=move||report.get().is_none() on:click=move|_|if let Some(r)=report.get_untracked(){match serde_json::to_vec_pretty(&r){Ok(bytes)=>{let _=crate::app::download("viewport-tracks.json","application/json",&bytes);},Err(e)=>status.set(e.to_string())}}>"Download viewport report"</button></details>
+            <details class="viewport-tracks"><summary>"Viewport items and warnings"</summary>{move||report.get().map(|mut r|{let hidden=hidden.get();r.items.retain(|item|item.source_feature.is_none_or(|i|!hidden.contains(&i)));let count=r.items.len();view!{<p class="helper">{format!("{} items · {} work units · {}",count,r.work.used_units,if r.complete{"complete"}else{"incomplete"})}</p>{r.warnings.into_iter().map(|w|view!{<p class="helper">{w}</p>}).collect_view()}{r.items.into_iter().skip(page.get()*50).take(50).map(|item|{let text=format!("{:?} · {} · {}{}",item.kind,item.label,item.parts.iter().map(|p|format!("{}–{}",p.start+1,p.end)).collect::<Vec<_>>().join(", "),if item.certain{""}else{" · possible/review"});view!{<button class="result-entry viewport-item" data-kind=format!("{:?}",item.kind) on:click=move|_|choose.run(item.clone())>{text}</button>}}).collect_view()}<Show when=move||{count>50}><button class="text-tool" disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous track items"</button><button class="text-tool" disabled=move||{(page.get()+1)*50>=count} on:click=move|_|page.update(|p|*p+=1)>"Next track items"</button></Show>}})}<button class="text-tool" disabled=move||report.get().is_none() on:click=move|_|if let Some(r)=report.get_untracked(){match serde_json::to_vec_pretty(&r){Ok(bytes)=>{let _=crate::app::download("viewport-tracks.json","application/json",&bytes);},Err(e)=>status.set(e.to_string())}}>"Download viewport report"</button></details>
         </div></Show>
         {move||selected_item.get().map(|item|view!{<div class="track-selection"><strong>{item.label}</strong><span>{format!(" · {:?}{}",item.kind,if item.certain{""}else{" · possible/review"})}</span><span>{item.cuts.as_ref().map(|c|format!(" · top {}, bottom {}",crate::search_view::boundary_label(c.top),crate::search_view::boundary_label(c.bottom)))}</span></div>})}
         <div class="sequence-scroll" node_ref=container on:scroll=move|_|if let Some(c)=container.get(){scroll.set(c.scroll_top()as f64);}>

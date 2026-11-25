@@ -5,6 +5,10 @@ mod annotation_geometry;
 #[cfg(any(target_arch = "wasm32", test))]
 mod annotation_layout;
 #[cfg(target_arch = "wasm32")]
+mod annotation_table;
+#[cfg(any(target_arch = "wasm32", test))]
+mod annotation_visibility;
+#[cfg(target_arch = "wasm32")]
 mod app;
 #[cfg(target_arch = "wasm32")]
 mod assembly_finalize;

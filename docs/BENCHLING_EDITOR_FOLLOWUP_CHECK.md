@@ -26,13 +26,21 @@ These are code observations, not claims of tested appearance or performance.
 | Imports | [source_import.rs](../crates/web/src/source_import.rs), [sources](../crates/sources/src/lib.rs), and [formats.rs](../crates/core/src/formats.rs) supply file/text entry and remote sources, including NCBI, ENA, DDBJ, Addgene's authorized API with explicit sequence-record choice, and direct HTTPS. Provider identity, returned-accession checks, retained originals, and retrieval provenance already exist. Browser authentication/CORS errors are explicit, with native/MCP or downloaded-file routes. |
 | Design history | [run_capture.rs](../crates/web/src/run_capture.rs), [run_event_view.rs](../crates/web/src/run_event_view.rs), and core lineage already retain source/target/product events, operation parameters, historical reference viewing, explicit forks, and fresh replay. Opening old evidence does not restore a current verification flag. Do not add a competing history model. |
 
+## Annotation implementation follow-up
+
+Annotation list/batch type, strand and color controls are now implemented, together
+with native-workspace display preferences and synchronized map/sequence hiding.
+[Implementation, scientific semantics and limits](ANNOTATION_MANAGEMENT.md).
+The annotation recommendations below remain research history; the source-linked
+translation/CDS and digest/comparison connections remain outstanding.
+
 ## Remaining actionable connections
 
 The following are recommendations inferred by comparing those documented interactions with source. They are not statements about Benchling internals.
 
 1. **Annotation management in one list.** The current `app.rs` annotation panel selects one feature, and `FeatureEditor` edits one feature with generic location/qualifier fields. Add an expanded selectable table, dedicated strand/color controls, and batch type/strand/color edits. Add visibility preferences independent of deletion and scientific history. Preserve qualifier multiplicity, compound/fuzzy locations, and review flags; commit scientific batch changes once against the originating event. Existing library/import proposal multi-selection does not implement editing existing annotations in bulk.
 
-2. **Finish translation outputs and circular ORF selection.** `BiologyPanel` can compute selected bases or a CDS, annotate an ORF, and download proteins, but has no action to retain an arbitrary selected-region translation as a CDS or open its protein as a linked document. Connect those outputs to the existing feature/history model with explicit code, orientation, initiation policy, and exact source event. Its current “Select ORF” action highlights only the first span of compound results and discloses that limitation; make the complete footprint inspectable. Keep unsupported codes explicit: the audited native set is currently 1, 2, and 11. Additional codes are independent data/algorithm work, not a UI dropdown change.
+2. **Finish translation outputs and circular ORF selection.** `BiologyPanel` computes a frame over the whole reference or translates a selected CDS, annotates ORFs, and downloads proteins. Its frame action currently sends the entire molecule, so arbitrary selected-region translation must be connected explicitly before adding retain-as-CDS or linked-protein actions. Connect those outputs to the existing feature/history model with explicit code, orientation, initiation policy, and exact source event. Its current “Select ORF” action highlights only the first span of compound results and discloses that limitation; make the complete footprint inspectable. Keep unsupported codes explicit: the audited native set is currently 1, 2, and 11. Additional codes are independent data/algorithm work, not a UI dropdown change.
 
 3. **Saved digest setups and a direct gel route.** `digest.rs` already reconstructs fragments, displays their ends, navigates to source, opens derived products with provenance, and sends fragments to assembly. `gel.rs` already predicts multiple lanes and ranks diagnostic digests. What is missing is the connecting workflow: name/save/reopen a digest setup on its exact source event and send that existing setup to a predicted gel without re-entering enzyme names. Retained fragment producer recipes are not a named digest collection. Reopening must remain historical until explicit recomputation; preserve catalog geometry, source events, methylation assumptions, and chemistry rather than treating an enzyme list as the full digest.
 

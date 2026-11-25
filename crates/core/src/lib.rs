@@ -22,6 +22,7 @@ pub mod traces;
 pub mod svg;
 
 pub mod annotations;
+pub mod annotation_batch;
 
 pub mod translation;
 

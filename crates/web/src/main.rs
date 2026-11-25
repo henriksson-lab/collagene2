@@ -94,8 +94,12 @@ mod domestication_review;
 mod domestication_view;
 #[cfg(target_arch = "wasm32")]
 mod dotplot;
+#[cfg(any(target_arch = "wasm32", test))]
+mod end_geometry;
 #[cfg(target_arch = "wasm32")]
 mod end_repair;
+#[cfg(target_arch = "wasm32")]
+mod end_view;
 #[cfg(target_arch = "wasm32")]
 mod feature_tools;
 #[cfg(target_arch = "wasm32")]

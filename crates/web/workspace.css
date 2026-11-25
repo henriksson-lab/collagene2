@@ -507,3 +507,21 @@
 .primer-review-oligo code { white-space:pre-wrap; overflow-wrap:anywhere; font-size:11px; }
 .primer-review-warning { padding:5px 8px; margin:5px 0; border-left:3px solid #b27c34; background:#fff9ed; font-size:11px; }
 .primer-review-warning-row>td { padding-top:0; }
+
+.active-fragment-end-preview { border:1px solid #dce3eb; border-radius:4px; padding:9px 12px; margin:10px 0; background:#fbfcfe; }
+.active-fragment-end-preview h3 { margin:0 0 6px; }
+.physical-end-pair,.physical-junction-ends { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.physical-end-diagram { margin:0; min-width:0; overflow-x:auto; }
+.physical-end-diagram svg { display:block; width:100%; height:108px; }
+.physical-end-diagram figcaption { font-size:11px; color:#526b87; text-align:center; }
+.physical-end-top,.physical-end-bottom { stroke:#6682a6; stroke-width:2; }
+.physical-end-base { font:600 13px monospace; fill:#305e97; }
+.physical-end-terminus { font:11px sans-serif; fill:#354961; }
+.physical-end-interior { font:10px sans-serif; fill:#77879a; }
+.physical-end-key,.physical-end-nicks { font-size:10px; color:#69798d; margin:6px 0 0; }
+.physical-end-unavailable { font-size:12px; color:#68798d; }
+.physical-junction-ends h4 { font-size:11px; }
+.primer-review-details .physical-end-pair { grid-template-columns:minmax(0,1fr); }
+
+.physical-end-metadata { font-size:11px; margin-top:5px; }
+.physical-end-metadata>summary { cursor:pointer; color:#526b87; }

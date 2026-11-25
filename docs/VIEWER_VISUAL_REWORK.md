@@ -137,3 +137,29 @@ length or actual cleaved ends remain visible in the summary; no new numerical
 metric is inferred. Warnings stay outside collapsed details. A row with no pair
 says so, and an over-bound report shows an explicit error rather than a partial
 primer list. Existing explicit Apply and evidence download behavior is retained.
+
+## Physical fragment ends
+
+A pure native/WASM layout module now projects typed physical ends into small
+strand diagrams. It places the protruding strand using side and5′/3′ polarity,
+keeps terminal phosphate/hydroxyl/blocked/unknown groups on their actual side, and
+reverses bottom-strand display order without complementing the reported letters.
+No paired letters or end compatibility are invented. Interior geometry and nicks
+are explicitly outside the schematic; complete physical lengths, reference
+offset, end sequences and nick positions remain in a disclosure.
+
+The selected ligation fragment shows its freshly reconstructed ends in assembly
+orientation, after any declared repair/treatment. Existing fragment and junction
+inspection retain the same diagrams, with upstream-right and downstream-left
+ends facing each other. Type IIS primer proposals show their actual predicted
+cleaved ends inside the proposed-chain review. Missing physical state remains
+explicitly unavailable; a circular summary has no external linear end pair.
+These are views of existing receipts/proposals, not another molecular engine.
+
+End input shape, IUPAC letters and sequence-length limits are checked before
+display. Long protrusions show10 leading and10 trailing letters separated by an
+explicit elision; full length remains labeled and the complete end sequence stays
+in metadata. At most24 glyphs are allocated. Diagrams scroll rather than shrink
+long end letters into unreadable text. Four native fixture groups cover all four
+nonpalindromic side/polarity cases, terminal groups, malformed input and bounded
+long-end display. Visual acceptance remains deferred to user review.

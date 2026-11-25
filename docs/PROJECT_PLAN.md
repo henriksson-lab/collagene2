@@ -1387,3 +1387,22 @@ It changes presentation and editable-draft lifecycle only; scientific worker and
 archive schemas remain unchanged. No browser or HTTP checks were run. Public8082
 continues to serve the preceding0a229ad assembly build pending the next bundled
 preview update.
+
+### Physical end diagrams over existing reconstruction
+
+The active ligation fragment, prepared-fragment/junction inspection and Type IIS
+primer-chain review now use small physical-end diagrams from existing typed
+receipts. Side/polarity control the protrusion and terminal-group placement;
+bottom display reverses only, preserving actual own-strand letters. Missing
+physical state is not inferred from a source reference or enzyme label. Interior
+geometry/nicks are not drawn; full physical metadata and positions remain
+accessible. Long ends use bounded explicit elision and horizontal scrolling.
+This changes presentation only; it adds no compatibility verdict or operation.
+Four native fixture groups pass, including nonpalindromic orientations and
+malformed/bounded data. Worker/science/archive contracts remain unchanged.
+
+The end-preview integration passes the WASM compiler check and format/diff checks.
+No browser or HTTP checks were run. The preceding0a229ad published assembly
+checkpoint and5a10568 source-stage checkpoint have completed all CI jobs
+successfully. Public8082 remains on0a229ad until the next bundled preview; current
+source changes do not establish visual acceptance or full-goal completion.

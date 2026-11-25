@@ -1,6 +1,10 @@
 # Preparing ordered overlap fragments
 
-The **Assemble** inspector action opens the ordered overlap workflow. PCR, Assemble and Plan are directly accessible beside Features, RE sites and Digest. The overlap workflow uses original open documents as source roles and the active document as an independently chosen target. Each ordered row explicitly chooses one preparation:
+The **Assemble** action opens the persistent assembly dock. It retains source slots,
+regions and orientation while switching documents, then declares an intended
+reference before preparation and verification. The standalone methods inspector
+remains available for separately supplied targets. The sections below describe
+its shared preparation controls. PCR, Assemble and Plan are directly accessible beside Features, RE sites and Digest. The standalone workflow uses original open documents as source roles and the active document as an independently chosen target. The dock uses its pinned sources and frozen intended reference. Each ordered row explicitly chooses one preparation:
 
 - Whole linear DNA: use the complete source. Circular DNA requires a declared preparation; the stored origin is not treated as a cut.
 - Restriction digest fragment: state enzyme names and the 1-based fragment number. The compiler records the digest operation and zero-based core index. Optional explicit end repair can fill 5′ overhangs, remove 3′ overhangs or blunt ends; the default retains the actual cohesive state, and repair is a separate typed operation. Cleavage is an explicit model assumption, not experimental activity or reagent/methylation permission.
@@ -42,7 +46,23 @@ identity, intervals, orientation, settings or target invalidate a suggestion,
 including switching between distinct documents with identical sequence content.
 The suggestions do not establish binding uniqueness or experimental success.
 
-This inspector route is groundwork for the dedicated sequence-centred assembly
-workspace described in [the interaction design](CLONING_INTERACTION_DESIGN.md).
-That workspace must also support declaring intent directly from selected regions
-without first importing an entire expected construct.
+The same preparation controls also serve the dedicated sequence-centred assembly
+dock described in [the interaction design](CLONING_INTERACTION_DESIGN.md). Its
+expected reference is declared from selected source regions before preparing
+primers or reconstructing the molecular steps.
+
+## Choose digest boundaries and export a reviewed design
+
+With the assembly dock open, select a restriction label in the sequence/map viewer
+or use the digest's site-row boundary buttons. Run the selected enzyme reaction
+and choose first/second boundaries; linear sources also offer their physical
+source ends. Circular selection follows the source-forward path, with an explicit
+opposite-path toggle. Choosing the same circular cut twice retains a full turn.
+Commit only a fresh determined fragment; additional internal cuts must be resolved
+through an actual preparation, not a merged reference slice.
+
+After method reconstruction, the actual-product review offers Primer CSV/TSV and
+Steps HTML/PDF. These actions capture the same reviewed plan/target and use private
+workers. Order export preserves added tails and every use's domain/mismatch
+metadata. Missing order details stop the automatic all-required download; report
+completeness is not amplification or experimental verification.

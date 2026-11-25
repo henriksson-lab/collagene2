@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 118;
+pub const CURRENT_TOOL_COUNT: usize = 119;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -1024,6 +1024,19 @@ pub struct AssemblyJunctionQuery {
     pub plan_revision: String,
     /// Explicit bounded sequence flanks and genetic-code inspection policy.
     pub options: collagene_core::assembly_junctions::Options,
+}
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+pub enum PlanOligoFormat {
+    Csv,
+    Tsv,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PlanOligoExport {
+    pub plan_revision: String,
+    pub format: PlanOligoFormat,
+    #[serde(default)]
+    pub options: collagene_core::plan_oligos::Options,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -5063,6 +5076,40 @@ impl CollageneServer {
         let server = self.clone();
         self.compute(move || server.export_protocol_inner(args))
             .await
+    }
+    #[tool(
+        description = "Export actual declared oligos from an exact saved plan and its stored independent target as spreadsheet-safe CSV or TSV plus complete use/domain/tail/mismatch evidence JSON. Exact ordered DNA/modifications may deduplicate; every original use and name remains separate. No PCR/target verification is run, no primer is designed, and downstream phosphorylation never becomes a supplier order modification. Missing/unrepresentable original order data is explicit complete:false/unavailable; do not order from a partial sheet. No quantities, stocks or supplier codes are invented."
+    )]
+    async fn export_plan_oligos(
+        &self,
+        Parameters(args): Parameters<PlanOligoExport>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let delimiter = match args.format {
+            PlanOligoFormat::Csv => oligo_formats::Delimiter::Comma,
+            PlanOligoFormat::Tsv => oligo_formats::Delimiter::Tab,
+        };
+        let filename = match args.format {
+            PlanOligoFormat::Csv => "plan-oligos.csv",
+            PlanOligoFormat::Tsv => "plan-oligos.tsv",
+        };
+        let server = self.clone();
+        self.compute(move || {
+            let exported={let store=server.store.lock().unwrap();let saved=store.plans.get(&args.plan_revision).ok_or_else(||bad("unknown plan revision"))?;
+                let expected=collagene_core::plan_oligos::export_revision(&saved.plan,&saved.target,&args.options,delimiter).map_err(bad)?;
+                let exported=collagene_core::plan_oligos::export(&saved.plan,&saved.target,&args.options,delimiter).map_err(bad)?;
+                exported.validate_binding(&expected).map_err(bad)?;exported};
+            if exported.report.plan_revision!=args.plan_revision{return Err(bad("stored plan revision changed"));}
+            let result=json!({"plan_revision":exported.report.plan_revision,"target_revision":exported.report.target_revision,
+                "context_revision":exported.context_revision,"options":exported.report.options,"verified":false,
+                "complete":exported.report.complete,"unavailable":exported.report.unavailable,
+                "oligo_count":exported.report.oligos.records.len(),"use_count":exported.report.uses.len(),
+                "uses":exported.report.uses.iter().take(100).collect::<Vec<_>>(),"uses_truncated":exported.report.uses.len()>100,
+                "warnings":exported.report.warnings,"export_warnings":exported.export.warnings,
+                "authority":"Declared order/use evidence only. PCR products, independent target agreement and experimental success require separate verification. Incomplete sheets are review evidence, not all-required orders; declared starting termini are not supplier modification requests."});
+            let report_text=bounded_json_limit(&exported.report,32*1024*1024)?;
+            let (sheet,report)=server.paired_text_artifacts([(exported.export.text,"text/plain",filename),(report_text,"application/json","plan-oligos.json")])?;
+            let mut result=result;result["table_artifact_id"]=json!(sheet);result["report_artifact_id"]=json!(report);result["filename"]=json!(filename);output(result)
+        }).await
     }
     #[tool(
         description = "Generate an embedded vector PDF protocol from an exact saved plan revision, re-verifying all steps and the independent target at export. Invalid/incomplete drafts remain conspicuous. Returns a bounded base64 artifact; read chunks, concatenate and decode to a PDF. No files, browser or external renderer are invoked."

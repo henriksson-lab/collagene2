@@ -175,6 +175,12 @@ view with local selection and optional fresh junction inspection. Direct cut-pai
 selection, integrated primer/junction editing and output choices remain required.
 [Catalog preparation](CATALOG_DIGEST_PREPARATION.md) · [Actual product review](ASSEMBLY_PRODUCT_REVIEW.md).
 
+Direct restriction-boundary choices now connect the sequence/map viewer to fresh
+physical-fragment selection, including circular complement and linear source-end
+cases. Reviewed assemblies can export exact primer order sheets and HTML/PDF
+steps without leaving product review. Source/event/choice and plan/target/options
+remain bound; partial or unavailable orders are explicit. [Cut choice model](DIGEST_CUT_SELECTION.md) · [Order extraction](PLAN_OLIGOS.md).
+
 Parallel reviews of Benchling's public restriction/Golden Gate, primer/mutagenesis
 and verification/history workflows are complete. The immediate UI work is the
 persistent assembly draft, source-selection/slot connection and central product/

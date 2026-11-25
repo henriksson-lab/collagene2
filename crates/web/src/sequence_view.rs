@@ -304,6 +304,9 @@ pub fn SequenceView(
     on_show_restrictions: Callback<()>,
     #[prop(default = false)] read_only: bool,
     #[prop(default = true)] shared_restrictions: bool,
+    #[prop(optional)] on_select_restriction: Option<
+        Callback<restriction_inspection::InspectionSite>,
+    >,
 ) -> impl IntoView {
     let canvas = NodeRef::<html::Canvas>::new();
     let glyph_canvas = NodeRef::<html::Canvas>::new();
@@ -890,6 +893,30 @@ pub fn SequenceView(
         }
     });
     let choose = Callback::new(move |item: TrackItem| {
+        let selected_site = item
+            .id
+            .strip_prefix("restriction:")
+            .and_then(|value| value.parse::<usize>().ok())
+            .and_then(|index| {
+                restriction_sites.with_untracked(|sites| {
+                    sites.as_ref().and_then(|sites| {
+                        sites
+                            .iter()
+                            .find(|site| {
+                                site.index == index
+                                    && item.enzyme.as_deref() == Some(site.enzyme.as_str())
+                                    && item.reverse == Some(site.reverse)
+                                    && item.parts.len() == site.spans.len()
+                                    && item
+                                        .parts
+                                        .iter()
+                                        .zip(&site.spans)
+                                        .all(|(a, b)| a.start == b.start && a.end == b.end)
+                            })
+                            .cloned()
+                    })
+                })
+            });
         let parts = item
             .parts
             .iter()
@@ -905,6 +932,9 @@ pub fn SequenceView(
             search_regions.set(Some((source.get_untracked(), parts)));
             selected_item.set(Some(item));
         });
+        if let (Some(callback), Some(site)) = (on_select_restriction, selected_site) {
+            callback.run(site);
+        }
     });
     let press_base = Callback::new(move |(x, y, shift): (f64, f64, bool)| {
         let len = molecule.with_untracked(|m| m.sequence.len());

@@ -31,6 +31,13 @@ pub struct SourceInfo {
     pub alphabet: Alphabet,
     pub topology: Topology,
 }
+#[derive(Clone, PartialEq, Eq)]
+pub struct BoundaryPick {
+    pub source: EventBinding,
+    pub enzyme: restriction_inspection::EnzymeSpec,
+    pub recognition_start: usize,
+    pub reverse: bool,
+}
 /// A fresh digest UI selection. The molecule is the ORIGINAL source, never a
 /// materialized fragment. Catalog replay, not this range, prepares the duplex.
 #[derive(Clone)]
@@ -152,6 +159,8 @@ pub fn DigestPanel(
     on_navigate: Callback<Navigation>,
     on_open: Callback<crate::digest_product::DigestOpenRequest, Result<(), String>>,
     on_assembly: Callback<AssemblyFragment, Result<(), String>>,
+    boundary_pick: RwSignal<Option<BoundaryPick>>,
+    initial_enzymes: Vec<String>,
     on_methylation: Callback<()>,
 ) -> impl IntoView {
     let catalog = StoredValue::new(
@@ -177,7 +186,11 @@ pub fn DigestPanel(
             })
             .unwrap_or_default()
     }));
-    let names = RwSignal::new(vec!["EcoRI".to_string()]);
+    let names = RwSignal::new(if initial_enzymes.is_empty() {
+        vec!["EcoRI".to_string()]
+    } else {
+        initial_enzymes
+    });
     let filter = RwSignal::new(String::new());
     let comparisons = RwSignal::new("50000000".to_string());
     let max_sites = RwSignal::new("10000".to_string());
@@ -210,6 +223,10 @@ pub fn DigestPanel(
     let busy = RwSignal::new(false);
     let product_busy = RwSignal::new(None::<usize>);
     let generation = RwSignal::new(0u64);
+    let first_boundary = RwSignal::new(None::<collagene_core::digest_cut_selection::Boundary>);
+    let second_boundary = RwSignal::new(None::<collagene_core::digest_cut_selection::Boundary>);
+    let complement = RwSignal::new(false);
+
     let worker = StoredValue::new_local(None::<Rc<CachedWorker>>);
     let site_page = RwSignal::new(0usize);
     let fragment_page = RwSignal::new(0usize);
@@ -236,6 +253,9 @@ pub fn DigestPanel(
         let _ = (source.get(), inputs.get(), epoch.get());
         stop.run(());
         bound.set(None);
+        first_boundary.set(None);
+        second_boundary.set(None);
+        complement.set(false);
         site_page.set(0);
         fragment_page.set(0);
         status.set(
@@ -247,6 +267,112 @@ pub fn DigestPanel(
         data.epoch == epoch.get_untracked()
             && source.get_untracked() == data.source
             && inputs.get_untracked() == Ok(data.inputs.clone())
+    });
+    let choose_boundary = Callback::new(
+        move |(first, boundary): (bool, collagene_core::digest_cut_selection::Boundary)| {
+            use collagene_core::digest_cut_selection::Boundary;
+            let Some(data) = bound.get_untracked() else {
+                status.set(
+                    "Select enzymes and run a complete digest before choosing cut boundaries."
+                        .into(),
+                );
+                return;
+            };
+            if !current.run(data.clone())
+                || !data.report.scan_complete
+                || !data.report.products_determined
+            {
+                status.set(
+                    "A fresh complete digest must determine the selected fragment first.".into(),
+                );
+                return;
+            }
+            let available = match &boundary {
+                Boundary::SourceStart | Boundary::SourceEnd => {
+                    data.source.topology == Topology::Linear
+                }
+                Boundary::Cut { site_index } => {
+                    data.report.sites.get(*site_index).is_some_and(|s| {
+                        s.index == *site_index
+                            && s.certain
+                            && s.top_cut.is_some()
+                            && s.bottom_cut.is_some()
+                    })
+                }
+            };
+            if !available {
+                status.set("This boundary is uncertain, unavailable or outside the linear source. Choose a certain cut or an actual linear DNA end.".into());
+                return;
+            }
+            stop.run(());
+            if first {
+                first_boundary.set(Some(boundary));
+            } else {
+                second_boundary.set(Some(boundary));
+            }
+            status.set("Boundary selected. Review both strand cuts and the retained circular path before assigning the fragment.".into());
+        },
+    );
+    Effect::new(move |_| {
+        let Some(pick) = boundary_pick.get() else {
+            return;
+        };
+        let active = source.get();
+        let data = bound.get();
+        let settings = inputs.get();
+        let current_epoch = epoch.get();
+        if pick.source != active.binding {
+            status.set("The picked restriction site belongs to another document version. Pick a site on the current source or clear the selection.".into());
+            return;
+        }
+        let Some(data) = data else {
+            status.set(format!(
+                "Select {} in Virtual digest and run a digest to choose this cut.",
+                pick.enzyme.name
+            ));
+            return;
+        };
+        if data.epoch != current_epoch
+            || data.source != active
+            || settings != Ok(data.inputs.clone())
+        {
+            status
+                .set("Digest settings changed; run the digest before using the picked cut.".into());
+            return;
+        }
+        stop.run(());
+        if !data.report.scan_complete || !data.report.products_determined {
+            status.set("Complete the digest before selecting cut boundaries; recognition alone does not determine a physical fragment.".into());
+            return;
+        }
+        let site = data.report.sites.iter().find(|site| {
+            site.recognition_start == pick.recognition_start
+                && site.reverse == pick.reverse
+                && data.report.enzymes.get(site.enzyme_index) == Some(&pick.enzyme)
+        });
+        let Some(site) = site else {
+            status.set(format!("The picked {} site is not in this digest. Select the enzyme and explicitly run the digest.",pick.enzyme.name));
+            return;
+        };
+        stop.run(());
+        if first_boundary.get_untracked().is_none() {
+            choose_boundary.run((
+                true,
+                collagene_core::digest_cut_selection::Boundary::Cut {
+                    site_index: site.index,
+                },
+            ));
+        } else if second_boundary.get_untracked().is_none() {
+            choose_boundary.run((
+                false,
+                collagene_core::digest_cut_selection::Boundary::Cut {
+                    site_index: site.index,
+                },
+            ));
+        } else {
+            status.set("Both cut boundaries are set. Clear boundaries to start a new pair, or replace one using its site button.".into());
+        }
+        boundary_pick.set(None);
     });
     let run = {
         let alive = alive.clone();
@@ -539,6 +665,209 @@ pub fn DigestPanel(
             spans,
         });
     });
+    let selection_alive = alive.clone();
+    let use_boundaries = Callback::new(move |()| {
+        if !selection_alive.load(Ordering::Relaxed) {
+            return;
+        }
+        use collagene_core::digest_cut_selection::Choice;
+        let Some(data) = bound.get_untracked() else {
+            return;
+        };
+        if !current.run(data.clone())
+            || !data.report.scan_complete
+            || !data.report.products_determined
+        {
+            status.set("Run a complete current digest before using cut boundaries.".into());
+            return;
+        }
+        let (Some(first), Some(second)) = (
+            first_boundary.get_untracked(),
+            second_boundary.get_untracked(),
+        ) else {
+            status.set("Choose both cut boundaries first.".into());
+            return;
+        };
+        let choice = Choice {
+            first,
+            second,
+            complement: complement.get_untracked(),
+        };
+        let selected_catalog = match catalog.get_value() {
+            Ok(c) => c,
+            Err(e) => {
+                status.set(e);
+                return;
+            }
+        };
+        let role = match restriction_history::source_role(&data.source.binding) {
+            Ok(v) => v,
+            Err(e) => {
+                status.set(e.to_string());
+                return;
+            }
+        };
+        let selection = data.inputs.selection.clone();
+        let options = data.inputs.limits.options();
+        let revision = match collagene_core::digest_cut_selection::selection_revision(
+            &selected_catalog,
+            &selection,
+            &role,
+            &data.molecule,
+            &options,
+            &data.catalog_revision,
+            &choice,
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                status.set(e.to_string());
+                return;
+            }
+        };
+        stop.run(());
+        let w = match CachedWorker::new() {
+            Ok(v) => Rc::new(v),
+            Err(e) => {
+                status.set(e);
+                return;
+            }
+        };
+        worker.set_value(Some(w.clone()));
+        busy.set(true);
+        let token = generation.get_untracked();
+        status.set(
+            "Reconstructing the selected cut-defined fragment before assigning it to assembly…"
+                .into(),
+        );
+        let alive = selection_alive.clone();
+        spawn_local(async move {
+            let result = w
+                .ask(Request {
+                    id: token as u32,
+                    revision: revision.clone(),
+                    job: AnalysisJob::SelectDigestFragment {
+                        selection: selection.clone(),
+                        source_role: role.clone(),
+                        molecule: data.molecule.as_ref().clone(),
+                        options: options.clone(),
+                        expected_batch_revision: data.catalog_revision.clone(),
+                        choice: choice.clone(),
+                    },
+                })
+                .await;
+            w.close();
+            if !alive.load(Ordering::Relaxed)
+                || generation.get_untracked() != token
+                || !current.run(data.clone())
+                || first_boundary.get_untracked() != Some(choice.first.clone())
+                || second_boundary.get_untracked() != Some(choice.second.clone())
+                || complement.get_untracked() != choice.complement
+            {
+                return;
+            }
+            worker.set_value(None);
+            busy.set(false);
+            let chosen = match result {
+                Ok(response) => match response.result {
+                    AnalysisResult::DigestFragmentSelected(value) => value,
+                    AnalysisResult::Error(error) => {
+                        status.set(error);
+                        return;
+                    }
+                    _ => {
+                        status.set("Unexpected cut-boundary selection response.".into());
+                        return;
+                    }
+                },
+                Err(error) => {
+                    status.set(error);
+                    return;
+                }
+            };
+            if let Err(error) = chosen.validate_binding(&revision) {
+                status.set(error.to_string());
+                return;
+            }
+            if chosen.choice != choice || chosen.inspection.batch_revision != data.catalog_revision
+            {
+                status.set(
+                    "Selected fragment belongs to a different digest or boundary pair.".into(),
+                );
+                return;
+            }
+            let index = chosen.product.product.fragment_index;
+            if let Err(error) = chosen.inspection.validate_bindings_for(
+                &selected_catalog,
+                &selection,
+                &role,
+                &data.molecule,
+                &options,
+            ) {
+                status.set(error.to_string());
+                return;
+            }
+            if let Err(error) = chosen.product.validate_bindings_for(
+                &selected_catalog,
+                &selection,
+                &role,
+                &data.molecule,
+                &options,
+                index,
+            ) {
+                status.set(error.to_string());
+                return;
+            }
+            let summary = &chosen.product.product.summary;
+            let n = data.molecule.sequence.len();
+            let end = summary.top_start.checked_add(summary.duplex.top_length);
+            if summary.index != index
+                || summary.duplex.topology != Topology::Linear
+                || summary.top_start >= n
+                || summary.duplex.top_length == 0
+                || summary.duplex.top_length > n
+                || summary.duplex.bottom_length == 0
+                || summary.duplex.bottom_length > n
+                || end.is_none_or(|end| data.source.topology == Topology::Linear && end > n)
+                || i64::try_from(summary.top_start)
+                    .ok()
+                    .and_then(|top| summary.bottom_start.checked_sub(top))
+                    != Some(summary.duplex.bottom_start)
+            {
+                status.set(
+                    "The selected path does not describe one supported linear digest fragment."
+                        .into(),
+                );
+                return;
+            }
+            let payload = AssemblyFragment {
+                source: data.source.clone(),
+                molecule: data.molecule.clone(),
+                selection,
+                options,
+                fragment_index: index,
+                batch_revision: chosen.inspection.batch_revision,
+                top_start: summary.top_start,
+                top_length: summary.duplex.top_length,
+                bottom_start: summary.bottom_start,
+                bottom_length: summary.duplex.bottom_length,
+                epoch: data.epoch,
+            };
+            if !current.run(data.clone()) || generation.get_untracked() != token {
+                return;
+            }
+            match on_assembly.run(payload){Ok(())=>status.set("Cut-defined fragment assigned to the active assembly slot. Its original source, exact enzyme selection and both strand boundaries are retained.".into()),Err(error)=>status.set(error)}
+        });
+    });
+    let clear_boundaries = move |_| {
+        stop.run(());
+        first_boundary.set(None);
+        second_boundary.set(None);
+        complement.set(false);
+        boundary_pick.set(None);
+        status.set(
+            "Cut boundaries cleared. Choose the first and second boundary for a new pair.".into(),
+        );
+    };
     let export_product = {
         let alive = alive.clone();
         Callback::new(move |index: usize| {
@@ -719,19 +1048,20 @@ pub fn DigestPanel(
         }
     };
     view! {
-        <section class="inspector-content digest-panel"><h2>"Virtual digest"</h2><p class="helper">"Choose enzymes to inspect recognition sites and predicted fragments. Products assume complete cleavage; methylation, reaction conditions and laboratory success are not assessed."</p>
-        <label>"Find an enzyme"<input aria-label="Find digest enzyme" prop:value=move||filter.get() on:input=move|e|filter.set(event_target_value(&e)) placeholder="Name or recognition sequence"/></label>
-        <div class="digest-enzyme-picker">{move||{let needle=filter.get().trim().to_ascii_lowercase();enzyme_choices.get_value().into_iter().filter(|e|e.name.to_ascii_lowercase().contains(&needle)||e.geometry.recognition.to_ascii_lowercase().contains(&needle)).map(|enzyme|{let name=enzyme.name.clone();let change=enzyme.name.clone();view!{<label class="checkbox-label digest-enzyme-choice"><input type="checkbox" data-enzyme=enzyme.name.clone() data-catalog-id=enzyme.id.clone() aria-label=format!("Digest enzyme {}",enzyme.name) prop:checked=move||names.with(|names|names.contains(&name)) on:change=move|e|{let checked=event_target_checked(&e);names.update(|names|{names.retain(|n|n!=&change);if checked{names.push(change.clone());}});}/><span><strong>{enzyme.name}</strong><small>{enzyme.geometry.recognition}</small></span></label>}}).collect_view()}}</div>
-        <p class="helper">{move||format!("Selected: {}",names.get().join(", "))}</p>
-        <details class="digest-catalog" data-catalog-edition=move||catalog.with_value(|c|c.as_ref().map(|c|c.edition().edition.clone()).unwrap_or_default()) data-catalog-hash=move||catalog.with_value(|c|c.as_ref().map(|c|c.content_hash().to_string()).unwrap_or_default())><summary>"Catalog and formulation evidence"</summary><p class="helper">{move||catalog.with_value(|c|match c {Ok(c)=>format!("{} enzyme identities · edition {} · content hash {}",c.edition().enzymes.len(),c.edition().edition,c.content_hash()),Err(e)=>format!("Catalog unavailable: {e}")})}</p><p class="helper">"Recognition and strand-cut geometry determine the virtual digest. Same-cut enzymes remain distinct identities; vendor formulations and their documentary conditions are reviewed separately and never change or validate predicted cleavage."</p>{move||catalog.with_value(|c|c.as_ref().ok().map(|c|catalog_evidence(c,&names.get())))}</details><div class="digest-actions"><button class="button primary" disabled=move||busy.get()||names.with(Vec::is_empty)||source.get().alphabet!=Alphabet::Dna on:click=run>"Run virtual digest"</button><button class="button secondary" disabled=move||!busy.get() on:click=move|_|{stop.run(());status.set("Digest request cancelled; no pending result or product was accepted.".into());}>"Cancel digest"</button></div>
-        <p class="digest-status helper" role="status">{move||status.get()}</p>
-        <details class="digest-options"><summary>"Assumptions and analysis limits"</summary><p class="helper">"The pinned catalog selection describes recognition and strand-cut geometry. Documentary vendor formulation evidence is separate and is not a reaction-compatibility assessment. Recognition can be certain while cuts lack sufficient substrate, and ambiguous sites can prevent a complete product set."</p><button class="text-tool" on:click=move|_|on_methylation.run(())>"Review methylation assumptions"</button><label>"Maximum comparisons"<input aria-label="Digest comparison limit" prop:value=move||comparisons.get() on:input=move|e|comparisons.set(event_target_value(&e))/></label><label>"Maximum recognition sites"<input aria-label="Digest site limit" prop:value=move||max_sites.get() on:input=move|e|max_sites.set(event_target_value(&e))/></label><label>"Maximum fragments"<input aria-label="Digest fragment limit" prop:value=move||max_fragments.get() on:input=move|e|max_fragments.set(event_target_value(&e))/></label><label>"Maximum report bytes"<input aria-label="Digest report byte limit" prop:value=move||report_bytes.get() on:input=move|e|report_bytes.set(event_target_value(&e))/></label></details>
-        {move||bound.get().map(|data|{let sites=data.report.sites.len();let fragments=data.report.fragments.len();view!{<div class="digest-results" data-scan-complete=data.report.scan_complete.to_string() data-products-determined=data.report.products_determined.to_string()><h3>"Recognition and products"</h3><p>{format!("Recognition scan: {}. Product set: {}.",if data.report.scan_complete{"finished"}else{"incomplete"},if data.report.products_determined{"determined under complete-cleavage assumptions"}else{"not determined"})}</p>{data.report.limits.iter().map(|limit|view!{<p class="digest-warning">{format!("{} reached. Incomplete evidence cannot establish absence or complete products.",limit_label(*limit))}</p>}).collect_view()}{data.report.diagnostics.iter().map(|d|view!{<p class="digest-warning">{d.clone()}</p>}).collect_view()}
-        <h3>{format!("{sites} recognition sites")}</h3><p class="helper">"Recognition ranges are original source bases, 1-based inclusive. Strand cuts are boundaries measured from the source origin; 0 is before the first base."</p>{data.report.sites.iter().skip(site_page.get()*25).take(25).map(|site|{let index=site.index;view!{<article class="digest-site"><button class="result-entry" on:click=move|_|navigate.run(index)>{format!("{} · {} · {}{}",site.enzyme,span_label(site),if site.reverse{"reverse"}else{"forward"},if site.certain{""}else{" · possible"})}</button><p>{format!("Top / bottom cut boundaries: {} / {}",cut_label(site.top_cut,site.top_boundary),cut_label(site.bottom_cut,site.bottom_boundary))}</p>{site.diagnostics.iter().map(|d|view!{<p class="digest-warning">{site_diagnostic(*d)}</p>}).collect_view()}</article>}}).collect_view()}<div class="digest-actions"><button class="button secondary" disabled=move||site_page.get()==0 on:click=move|_|site_page.update(|p|*p=p.saturating_sub(1))>"Previous digest sites"</button><button class="button secondary" disabled={move||(site_page.get()+1)*25>=sites} on:click=move|_|site_page.update(|p|*p+=1)>"Next digest sites"</button></div>
-        <h3>"Reference-strand fragment lengths"</h3><p class="fragment-sizes">{data.report.ref_top_lengths.as_ref().map(|lengths|lengths.iter().take(100).map(|n|format!("{n} nt")).collect::<Vec<_>>().join(" · ")).unwrap_or_else(||"Not determined from this recognition evidence.".into())}</p><p class="helper">"First 100 lengths shown, following the reference/top strand and sorted by size. The JSON evidence retains every determined length. Physical summaries below use ascending reference cut order; staggered ends can give different top and bottom lengths."</p>
-        <h3>{format!("{fragments} virtual fragment(s)")}</h3>{data.report.fragments.iter().skip(fragment_page.get()*25).take(25).map(|fragment|{let index=fragment.index;let circular=fragment.duplex.topology==Topology::Circular;let ends=fragment.duplex.ends.as_ref().map(|(a,b)|format!("Left: {} · right: {}",end_label(a),end_label(b))).unwrap_or_else(||"Uncut circular substrate: no free ends".into());view!{<article class="digest-fragment"><h4>{format!("Fragment {} · {}",index+1,if fragment.duplex.topology==Topology::Circular{"circular"}else{"linear"})}</h4><p>{format!("{} nt top / {} nt bottom · original reference start {}",fragment.duplex.top_length,fragment.duplex.bottom_length,fragment.top_start+1)}</p><p>{ends}</p><div class="digest-actions"><button class="button secondary" disabled=move||busy.get() on:click=move|_|navigate_fragment.run(index)>"View fragment in source"</button><button class="button primary" disabled=move||busy.get()||circular on:click=move|_|use_in_assembly.run(index)>"Use in active assembly slot"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|open.run(index)>"Open fragment"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|export_product.run(index)>{move||if product_busy.get()==Some(index){"Reconstructing…"}else{"Export fragment GenBank"}}</button></div></article>}}).collect_view()}<div class="digest-actions"><button class="button secondary" disabled=move||fragment_page.get()==0 on:click=move|_|fragment_page.update(|p|*p=p.saturating_sub(1))>"Previous digest fragments"</button><button class="button secondary" disabled={move||(fragment_page.get()+1)*25>=fragments} on:click=move|_|fragment_page.update(|p|*p+=1)>"Next digest fragments"</button></div><button class="button secondary full" on:click=export_report>"Download digest evidence"</button><p class="helper">"Opening reconstructs the fragment again and retains its exact source event in the workspace. GenBank comments preserve descriptive, unverified producer/end information; native workspace files retain full source history."</p></div>}})}
-        </section>
-    }
+            <section class="inspector-content digest-panel"><h2>"Virtual digest"</h2><p class="helper">"Choose enzymes to inspect recognition sites and predicted fragments. Products assume complete cleavage; methylation, reaction conditions and laboratory success are not assessed."</p>
+            <label>"Find an enzyme"<input aria-label="Find digest enzyme" prop:value=move||filter.get() on:input=move|e|filter.set(event_target_value(&e)) placeholder="Name or recognition sequence"/></label>
+            <div class="digest-enzyme-picker">{move||{let needle=filter.get().trim().to_ascii_lowercase();enzyme_choices.get_value().into_iter().filter(|e|e.name.to_ascii_lowercase().contains(&needle)||e.geometry.recognition.to_ascii_lowercase().contains(&needle)).map(|enzyme|{let name=enzyme.name.clone();let change=enzyme.name.clone();view!{<label class="checkbox-label digest-enzyme-choice"><input type="checkbox" data-enzyme=enzyme.name.clone() data-catalog-id=enzyme.id.clone() aria-label=format!("Digest enzyme {}",enzyme.name) prop:checked=move||names.with(|names|names.contains(&name)) on:change=move|e|{let checked=event_target_checked(&e);names.update(|names|{names.retain(|n|n!=&change);if checked{names.push(change.clone());}});}/><span><strong>{enzyme.name}</strong><small>{enzyme.geometry.recognition}</small></span></label>}}).collect_view()}}</div>
+            <p class="helper">{move||format!("Selected: {}",names.get().join(", "))}</p>
+            <details class="digest-catalog" data-catalog-edition=move||catalog.with_value(|c|c.as_ref().map(|c|c.edition().edition.clone()).unwrap_or_default()) data-catalog-hash=move||catalog.with_value(|c|c.as_ref().map(|c|c.content_hash().to_string()).unwrap_or_default())><summary>"Catalog and formulation evidence"</summary><p class="helper">{move||catalog.with_value(|c|match c {Ok(c)=>format!("{} enzyme identities · edition {} · content hash {}",c.edition().enzymes.len(),c.edition().edition,c.content_hash()),Err(e)=>format!("Catalog unavailable: {e}")})}</p><p class="helper">"Recognition and strand-cut geometry determine the virtual digest. Same-cut enzymes remain distinct identities; vendor formulations and their documentary conditions are reviewed separately and never change or validate predicted cleavage."</p>{move||catalog.with_value(|c|c.as_ref().ok().map(|c|catalog_evidence(c,&names.get())))}</details><div class="digest-actions"><button class="button primary" disabled=move||busy.get()||names.with(Vec::is_empty)||source.get().alphabet!=Alphabet::Dna on:click=run>"Run virtual digest"</button><button class="button secondary" disabled=move||!busy.get() on:click=move|_|{stop.run(());status.set("Digest request cancelled; no pending result or product was accepted.".into());}>"Cancel digest"</button></div>
+            <p class="digest-status helper" role="status">{move||status.get()}</p>
+            <details class="digest-options"><summary>"Assumptions and analysis limits"</summary><p class="helper">"The pinned catalog selection describes recognition and strand-cut geometry. Documentary vendor formulation evidence is separate and is not a reaction-compatibility assessment. Recognition can be certain while cuts lack sufficient substrate, and ambiguous sites can prevent a complete product set."</p><button class="text-tool" on:click=move|_|on_methylation.run(())>"Review methylation assumptions"</button><label>"Maximum comparisons"<input aria-label="Digest comparison limit" prop:value=move||comparisons.get() on:input=move|e|comparisons.set(event_target_value(&e))/></label><label>"Maximum recognition sites"<input aria-label="Digest site limit" prop:value=move||max_sites.get() on:input=move|e|max_sites.set(event_target_value(&e))/></label><label>"Maximum fragments"<input aria-label="Digest fragment limit" prop:value=move||max_fragments.get() on:input=move|e|max_fragments.set(event_target_value(&e))/></label><label>"Maximum report bytes"<input aria-label="Digest report byte limit" prop:value=move||report_bytes.get() on:input=move|e|report_bytes.set(event_target_value(&e))/></label></details>
+            {move||bound.get().map(|data|{let sites=data.report.sites.len();let fragments=data.report.fragments.len();let first_report=data.report.clone();let second_report=data.report.clone();let linear_source=data.source.topology==Topology::Linear;view!{<div class="digest-results" data-scan-complete=data.report.scan_complete.to_string() data-products-determined=data.report.products_determined.to_string()><h3>"Recognition and products"</h3><p>{format!("Recognition scan: {}. Product set: {}.",if data.report.scan_complete{"finished"}else{"incomplete"},if data.report.products_determined{"determined under complete-cleavage assumptions"}else{"not determined"})}</p>{data.report.limits.iter().map(|limit|view!{<p class="digest-warning">{format!("{} reached. Incomplete evidence cannot establish absence or complete products.",limit_label(*limit))}</p>}).collect_view()}{data.report.diagnostics.iter().map(|d|view!{<p class="digest-warning">{d.clone()}</p>}).collect_view()}
+            <section class="digest-cut-selection"><h3>"Choose a cut-defined assembly fragment"</h3><p class="helper">"Pick the first cut, then the second in the source sequence/map, or use the buttons below. Circular paths follow first → second; keep the opposite path for a retained backbone. A same-cut pair can describe a full circle opened at that cut. Internal selected-enzyme cuts must not split the retained path."</p><p>{move||cut_boundary_label(first_boundary.get().as_ref(),&first_report,"First")}</p><p>{move||cut_boundary_label(second_boundary.get().as_ref(),&second_report,"Second")}</p><Show when=move||linear_source><div class="digest-actions"><button class="text-tool" disabled=move||busy.get() on:click=move|_|choose_boundary.run((true,collagene_core::digest_cut_selection::Boundary::SourceStart))>"First: source start"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|choose_boundary.run((true,collagene_core::digest_cut_selection::Boundary::SourceEnd))>"First: source end"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|choose_boundary.run((false,collagene_core::digest_cut_selection::Boundary::SourceStart))>"Second: source start"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|choose_boundary.run((false,collagene_core::digest_cut_selection::Boundary::SourceEnd))>"Second: source end"</button></div></Show><Show when=move||!linear_source><label class="checkbox-label"><input type="checkbox" aria-label="Keep complementary digest cut path" prop:checked=move||complement.get() on:change=move|e|{stop.run(());complement.set(event_target_checked(&e));}/>"Keep opposite path (outside selected cut interval)"</label></Show><div class="digest-actions"><button class="text-tool" on:click=clear_boundaries>"Clear boundaries / start new pair"</button><button class="button primary" disabled=move||busy.get()||first_boundary.with(Option::is_none)||second_boundary.with(Option::is_none) on:click=move|_|use_boundaries.run(())>"Use selected cut boundaries in assembly"</button></div></section>
+    <h3>{format!("{sites} recognition sites")}</h3><p class="helper">"Recognition ranges are original source bases, 1-based inclusive. Strand cuts are boundaries measured from the source origin; 0 is before the first base."</p>{data.report.sites.iter().skip(site_page.get()*25).take(25).map(|site|{let index=site.index;view!{<article class="digest-site"><button class="result-entry" on:click=move|_|navigate.run(index)>{format!("{} · {} · {}{}",site.enzyme,span_label(site),if site.reverse{"reverse"}else{"forward"},if site.certain{""}else{" · possible"})}</button><p>{format!("Top / bottom cut boundaries: {} / {}",cut_label(site.top_cut,site.top_boundary),cut_label(site.bottom_cut,site.bottom_boundary))}</p><div class="digest-actions"><button class="text-tool" disabled=move||busy.get() on:click=move|_|{choose_boundary.run((true,collagene_core::digest_cut_selection::Boundary::Cut{site_index:index}));navigate.run(index);}>"Use as first boundary"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|{choose_boundary.run((false,collagene_core::digest_cut_selection::Boundary::Cut{site_index:index}));navigate.run(index);}>"Use as second boundary"</button></div>{site.diagnostics.iter().map(|d|view!{<p class="digest-warning">{site_diagnostic(*d)}</p>}).collect_view()}</article>}}).collect_view()}<div class="digest-actions"><button class="button secondary" disabled=move||site_page.get()==0 on:click=move|_|site_page.update(|p|*p=p.saturating_sub(1))>"Previous digest sites"</button><button class="button secondary" disabled={move||(site_page.get()+1)*25>=sites} on:click=move|_|site_page.update(|p|*p+=1)>"Next digest sites"</button></div>
+            <h3>"Reference-strand fragment lengths"</h3><p class="fragment-sizes">{data.report.ref_top_lengths.as_ref().map(|lengths|lengths.iter().take(100).map(|n|format!("{n} nt")).collect::<Vec<_>>().join(" · ")).unwrap_or_else(||"Not determined from this recognition evidence.".into())}</p><p class="helper">"First 100 lengths shown, following the reference/top strand and sorted by size. The JSON evidence retains every determined length. Physical summaries below use ascending reference cut order; staggered ends can give different top and bottom lengths."</p>
+            <h3>{format!("{fragments} virtual fragment(s)")}</h3>{data.report.fragments.iter().skip(fragment_page.get()*25).take(25).map(|fragment|{let index=fragment.index;let circular=fragment.duplex.topology==Topology::Circular;let ends=fragment.duplex.ends.as_ref().map(|(a,b)|format!("Left: {} · right: {}",end_label(a),end_label(b))).unwrap_or_else(||"Uncut circular substrate: no free ends".into());view!{<article class="digest-fragment"><h4>{format!("Fragment {} · {}",index+1,if fragment.duplex.topology==Topology::Circular{"circular"}else{"linear"})}</h4><p>{format!("{} nt top / {} nt bottom · original reference start {}",fragment.duplex.top_length,fragment.duplex.bottom_length,fragment.top_start+1)}</p><p>{ends}</p><div class="digest-actions"><button class="button secondary" disabled=move||busy.get() on:click=move|_|navigate_fragment.run(index)>"View fragment in source"</button><button class="button primary" disabled=move||busy.get()||circular on:click=move|_|use_in_assembly.run(index)>"Use in active assembly slot"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|open.run(index)>"Open fragment"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|export_product.run(index)>{move||if product_busy.get()==Some(index){"Reconstructing…"}else{"Export fragment GenBank"}}</button></div></article>}}).collect_view()}<div class="digest-actions"><button class="button secondary" disabled=move||fragment_page.get()==0 on:click=move|_|fragment_page.update(|p|*p=p.saturating_sub(1))>"Previous digest fragments"</button><button class="button secondary" disabled={move||(fragment_page.get()+1)*25>=fragments} on:click=move|_|fragment_page.update(|p|*p+=1)>"Next digest fragments"</button></div><button class="button secondary full" on:click=export_report>"Download digest evidence"</button><p class="helper">"Opening reconstructs the fragment again and retains its exact source event in the workspace. GenBank comments preserve descriptive, unverified producer/end information; native workspace files retain full source history."</p></div>}})}
+            </section>
+        }
 }
 
 /// A retained recipe is descriptive evidence; it cannot restore a current digest.
@@ -862,4 +1192,38 @@ fn catalog_evidence(catalog: &catalog::Catalog, names: &[String]) -> impl IntoVi
         }).collect_view();
         view!{<section class="digest-catalog-identity" data-catalog-enzyme=enzyme.id.clone()><h4>{enzyme.name.clone()}</h4><p>{format!("{} · strand-cut boundaries {} / {} relative to recognition start",geometry.recognition,geometry.top_cut,geometry.bottom_cut)}</p><ul class="digest-catalog-citations">{catalog_citations(catalog,&enzyme.citations)}</ul>{if forms.is_empty(){Some(view!{<p class="digest-catalog-unknown">"Unknown: no vendor formulation or condition evidence has been curated for this identity. Geometry alone does not supply reaction conditions."</p>})}else{None}}{form_views}</section>}
     }).collect_view()
+}
+
+fn cut_boundary_label(
+    boundary: Option<&collagene_core::digest_cut_selection::Boundary>,
+    report: &RestrictionInspection,
+    label: &str,
+) -> String {
+    use collagene_core::digest_cut_selection::Boundary;
+    match boundary {
+        None => format!("{label} boundary: not selected"),
+        Some(Boundary::SourceStart) => format!("{label}: source start · top/bottom boundary 0"),
+        Some(Boundary::SourceEnd) => format!(
+            "{label}: source end · top/bottom boundary {}",
+            report.source_length
+        ),
+        Some(Boundary::Cut { site_index }) => report
+            .sites
+            .get(*site_index)
+            .map(|s| {
+                format!(
+                    "{label}: {} at {} · top/bottom cuts {} / {}{}",
+                    s.enzyme,
+                    span_label(s),
+                    cut_label(s.top_cut, s.top_boundary),
+                    cut_label(s.bottom_cut, s.bottom_boundary),
+                    if s.certain {
+                        ""
+                    } else {
+                        " · possible recognition"
+                    }
+                )
+            })
+            .unwrap_or_else(|| format!("{label}: site no longer available; choose again")),
+    }
 }

@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 37;
+pub const WORKER_SCHEMA_VERSION: u16 = 38;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 11;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -638,6 +638,24 @@ pub enum AnalysisJob {
         inputs: Vec<crate::verification::PlanInput>,
         request: crate::assembly_intent::Request,
     },
+    SelectDigestFragment {
+        selection: crate::catalog_digest::CatalogSelection,
+        source_role: String,
+        molecule: Molecule,
+        options: crate::restriction_inspection::InspectionOptions,
+        expected_batch_revision: String,
+        choice: crate::digest_cut_selection::Choice,
+    },
+    ExportPlanOligos {
+        plan: crate::verification::DesignPlan,
+        target: Molecule,
+        options: crate::plan_oligos::Options,
+        delimiter: crate::oligo_formats::Delimiter,
+    },
+    ExportProtocolHtml {
+        plan: crate::verification::DesignPlan,
+        target: Molecule,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -738,6 +756,9 @@ pub enum AnalysisResult {
     AssemblyJunctionInspection(crate::assembly_junctions::Report),
     OverlapPrimersDesigned(crate::overlap_primer_design::Report),
     AssemblyIntent(crate::assembly_intent::Report),
+    DigestFragmentSelected(crate::digest_cut_selection::Report),
+    PlanOligosExported(crate::plan_oligos::Exported),
+    ProtocolHtml(String),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -972,6 +993,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_assembly_junctions_tag(bytes, &[88])?;
     preflight_overlap_primer_design_tag(bytes, &[89])?;
     preflight_assembly_intent_tag(bytes, &[90])?;
+    preflight_cloning_output_tag(bytes, &[91, 92, 93])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1025,6 +1047,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         _ => decode_with_limit(b"CGR\0", bytes, maximum)?,
     };
     let required = match &response.result {
+        AnalysisResult::DigestFragmentSelected(_)
+        | AnalysisResult::PlanOligosExported(_)
+        | AnalysisResult::ProtocolHtml(_) => 38,
         AnalysisResult::AssemblyIntent(_) => 36,
         AnalysisResult::OverlapPrimersDesigned(_) => 35,
         AnalysisResult::AssemblyJunctionInspection(_) => 33,
@@ -1137,6 +1162,12 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
     }
     match &response.result {
+        AnalysisResult::DigestFragmentSelected(report) => {
+            report.validate_binding(&response.revision)?
+        }
+        AnalysisResult::PlanOligosExported(report) => {
+            report.validate_binding(&response.revision)?
+        }
         AnalysisResult::AssemblyIntent(report) => report.validate_binding(&response.revision)?,
         AnalysisResult::OverlapPrimersDesigned(report) => {
             report.validate_binding(&response.revision)?;
@@ -1578,6 +1609,14 @@ fn preflight_topo_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     }
     Ok(())
 }
+fn preflight_cloning_output_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 38)?;
+    }
+    Ok(())
+}
 fn preflight_assembly_intent_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -1858,6 +1897,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_assembly_junctions_tag(bytes, &[96])?;
     preflight_overlap_primer_design_tag(bytes, &[97])?;
     preflight_assembly_intent_tag(bytes, &[98])?;
+    preflight_cloning_output_tag(bytes, &[99, 100, 101])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -1865,6 +1905,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::SelectDigestFragment { .. }
+        | AnalysisJob::ExportPlanOligos { .. }
+        | AnalysisJob::ExportProtocolHtml { .. } => 38,
         AnalysisJob::BuildAssemblyIntent { .. } => 36,
         AnalysisJob::DesignOverlapPrimers { .. } => 35,
         AnalysisJob::InspectAssemblyJunctions { plan, .. } => plan_worker_version(plan).max(33),
@@ -2039,7 +2082,11 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     if let AnalysisJob::ReplayCloningRun { workspace, .. } = &r.job {
         check_workspace_version(bytes, workspace)?;
     }
-    if let AnalysisJob::Verify { plan, .. } | AnalysisJob::ExportProtocolPdf { plan, .. } = &r.job {
+    if let AnalysisJob::Verify { plan, .. }
+    | AnalysisJob::ExportProtocolPdf { plan, .. }
+    | AnalysisJob::ExportProtocolHtml { plan, .. }
+    | AnalysisJob::ExportPlanOligos { plan, .. } = &r.job
+    {
         check_variant_version(bytes, plan_worker_version(plan))?;
         if plan.steps.iter().any(|step| {
             matches!(
@@ -2089,6 +2136,43 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let mol = match &r.job {
+        AnalysisJob::SelectDigestFragment {
+            selection,
+            source_role,
+            molecule,
+            options,
+            expected_batch_revision,
+            choice,
+        } => {
+            let catalog = crate::catalog_digest::builtin_catalog()?;
+            if crate::digest_cut_selection::selection_revision(
+                &catalog,
+                selection,
+                source_role,
+                molecule,
+                options,
+                expected_batch_revision,
+                choice,
+            )? != r.revision
+            {
+                return Err(Error::Format(
+                    "Digest cut selection source/boundaries changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::ExportPlanOligos {
+            plan,
+            target,
+            options,
+            delimiter,
+        } => {
+            if crate::plan_oligos::export_revision(plan, target, options, *delimiter)? != r.revision
+            {
+                return Err(Error::Format("Plan oligo export context changed".into()));
+            }
+            None
+        }
         AnalysisJob::BuildAssemblyIntent { inputs, request } => {
             if crate::assembly_intent::intent_revision(inputs, request)? != r.revision {
                 return Err(Error::Format(
@@ -2596,9 +2680,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         | AnalysisJob::RepairPreview { molecule, .. }
         | AnalysisJob::AnnealPreview { molecule, .. }
         | AnalysisJob::AnnealedDocument { molecule, .. } => Some(molecule),
-        AnalysisJob::Verify { target, .. } | AnalysisJob::ExportProtocolPdf { target, .. } => {
-            Some(target)
-        }
+        AnalysisJob::Verify { target, .. }
+        | AnalysisJob::ExportProtocolPdf { target, .. }
+        | AnalysisJob::ExportProtocolHtml { target, .. } => Some(target),
         AnalysisJob::SaveWorkspace { workspace } => {
             workspace.validate()?;
             let head = workspace.head(&workspace.active_document)?;
@@ -2628,6 +2712,36 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let result = match r.job {
+        AnalysisJob::SelectDigestFragment {
+            selection,
+            source_role,
+            molecule,
+            options,
+            expected_batch_revision,
+            choice,
+        } => {
+            let catalog = crate::catalog_digest::builtin_catalog()?;
+            crate::digest_cut_selection::preview(
+                &catalog,
+                &selection,
+                &source_role,
+                &molecule,
+                &options,
+                &expected_batch_revision,
+                &choice,
+            )
+            .map(AnalysisResult::DigestFragmentSelected)
+        }
+        AnalysisJob::ExportPlanOligos {
+            plan,
+            target,
+            options,
+            delimiter,
+        } => crate::plan_oligos::export(&plan, &target, &options, delimiter)
+            .map(AnalysisResult::PlanOligosExported),
+        AnalysisJob::ExportProtocolHtml { plan, target } => Ok(AnalysisResult::ProtocolHtml(
+            crate::verification::export_protocol_html(&plan, &target),
+        )),
         AnalysisJob::BuildAssemblyIntent { inputs, request } => {
             crate::assembly_intent::build(&inputs, &request).map(AnalysisResult::AssemblyIntent)
         }

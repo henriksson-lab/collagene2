@@ -485,3 +485,11 @@ using the existing tracked digest engine. The catalog pin does not predict
 methylation compatibility, reaction conditions or experimental completion.
 Candidate 11, workspace-plan 9, worker 37 and science-14 identify this extension;
 older supported operation layouts remain readable under their original rules.
+
+### Order sheets for a reviewed plan
+
+`export_plan_oligos` accepts `{plan_revision, format: "Csv"|"Tsv", options: {deduplicate: true}}` (options default to deduplication). It uses the exact saved plan and stored independent target, extracts actual declared PCR/mismatch-PCR oligos and eligible original anneal inputs, and atomically publishes spreadsheet-safe order text plus full JSON use evidence. It does not run verification or design primers. The returned plan/target/context revisions bind the output; `verified: false` explicitly avoids a cloning claim.
+
+Exact ordered DNA/modification dedup preserves separate names, sources, annealing/tail partitions and mismatch policies in `uses`. Same-name different-sequence oligos retain distinct IDs. A differing partition is not silently represented by one misleading domain column. No quantities or supplier modifications are invented; downstream phosphorylation is not an order request. Original anneal termini are per-use state evidence only. Opaque/unrepresentable original order data sets `complete: false` and `unavailable`; partial sheets are review evidence and must not be treated as all-required orders. Step-derived anneal material does not imply a new synthesized oligo order.
+
+The response includes counts, at most 100 uses and explicit truncation, report/export warnings, `table_artifact_id`, `report_artifact_id` and filename. Full `plan-oligos.json` retains all uses. Existing 128-artifact/64 MiB session accounting and paired-output atomic checks apply; each core order receipt is bounded to 32 MiB. Complete order data still does not prove that the plan amplifies or matches its target. Use `verify_plan` and existing HTML/PDF exports independently. See [plan oligo output](PLAN_OLIGOS.md) for profile, bounds and current unsupported cases.

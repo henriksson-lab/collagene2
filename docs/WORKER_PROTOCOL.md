@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **37** and reads supported schemas 1–36. Candidate files write schema 11; workspace plan schema is 9; the verifier is science-14.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **38** and reads supported schemas 1–37. Candidate files write schema 11; workspace plan schema is 9; the verifier is science-14.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -106,6 +106,14 @@ Postcard enum indexes are append-only. Existing tags and supported historical la
 | 91 | PreviewVariantAllele | 29 |
 | 92 | ExportVariants | 29 |
 | 93 | DisposeVariants | 29 |
+| 94 | PreviewOverlapRecipe | 31; catalog preparation requires 37 |
+| 95 | PreviewLigationRecipe | 32; catalog preparation requires 37 |
+| 96 | InspectAssemblyJunctions | 33; nested plan minimum also applies |
+| 97 | DesignOverlapPrimers | 35 |
+| 98 | BuildAssemblyIntent | 36 |
+| 99 | SelectDigestFragment | 38 |
+| 100 | ExportPlanOligos | 38 |
+| 101 | ExportProtocolHtml | 38 |
 
 Result tags 0–29 retain their selectors (verification gains explicit versioned step evidence in schema 25) (`Search`, `Restriction`, `Error`, `Pcr`, `Verification`, `DuplexDigest`, `Translation`, `CdsTranslation`, `Orfs`, `Alignment`, `PcrDocuments`, `PrimerEvidence`, `PrimerDesign`, `ProtocolPdf`, `GoldenGate`, `MismatchPcr`, `InversePcr`, `Gel`, `DiagnosticDigest`, `MismatchPcrPreview`, `WorkspaceSaved`, `WorkspaceLoaded`, `TraceValidation`, `FeatureLibraryScan`, `AnnotatedDocument`, `AnnotationImport`, `AnnotationExport`, `RepairPreview`, `AnnealPreview`, `PhysicalPreviewDocument`). Schema 9 appends `ViewTracks` at tag 30, `DocumentSearch` at tag 31 and `TracksPrepared` at tag 32. New response variants cannot be decoded under older version labels.
 
@@ -423,3 +431,24 @@ this preparation. Plans with the new operation require worker 37, candidate 11
 and workspace-plan 9. Science-14 reports also require worker 37; nested candidate,
 run and archive semantics are checked even when wrapped in an older message.
 Historical operations and reports retain their previous minimum versions.
+
+## Direct cut selection and reviewed outputs (schema 38)
+
+`SelectDigestFragment` (job99/result91) binds the original source role/revision,
+full catalog selection, inspection options, expected fresh catalog batch and two
+explicit boundaries. It reruns inspection and materialization, accepts one actual
+linear fragment with matching top/bottom intervals, and refuses paths split by
+additional cuts. Circular complement exchanges endpoints; identical circular cut
+instances select one full turn. Linear source ends are explicit boundaries.
+
+`ExportPlanOligos` (job100/result92) binds the exact plan, independent target,
+deduplication option and CSV/TSV delimiter. It extracts declared order data without
+rerunning PCR or assigning a positive verification status. The typed result
+includes the table, every use's domains/tails/policies, unavailable diagnostics and
+spreadsheet-safe text. Complete=false is not an all-required order sheet.
+
+`ExportProtocolHtml` (job101/result93) uses the same bound plan/target as the
+existing PDF exporter, with fresh scientific reconstruction in the worker. Its
+response is escaped HTML text under the ordinary message cap. New request/result
+tags refuse pre-38 headers before payload decoding. These additions do not change
+candidate11, plan9 or science-14 operation layouts.

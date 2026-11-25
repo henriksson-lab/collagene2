@@ -254,6 +254,7 @@ pub fn AssemblyProductView(
             <p>{snapshot.with_value(|s|format!("Fresh final-step snapshot · {:?} · {}",s.report.status,s.report.engine_version))}</p>
             <p class="helper">"This view shows actual reconstructed reference DNA, separately from intended DNA. It does not establish experimental success, exhaustive product uniqueness or newly prepared material."</p>
         </header>
+        <crate::assembly_outputs::AssemblyOutputs capture identity epoch/>
         <p class="assembly-product-status" role="status">{move||if !current.get(){"Workspace context changed. This snapshot is historical; reconstruct again before opening or inspecting it.".to_string()}else{status.get()}}</p>
         {snapshot.with_value(|s|s.error.clone()).map(|error|view!{<p class="assembly-product-status" role="alert">{error}</p>})}
         {snapshot.with_value(|s|if s.product_revision.is_some(){s.report.products.last().map(|product|{

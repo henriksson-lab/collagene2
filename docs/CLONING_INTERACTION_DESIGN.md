@@ -79,8 +79,11 @@ Fresh overlap/ligation evidence also displays the actual final product in a
 read-only sequence/WebGL map view and can launch fresh junction inspection.
 
 This is the first connected workflow, not full Benchling interaction parity.
-Remaining work includes direct cut-pair selection in the main viewer, integrated
-product/primer/junction editing and an optional-primer/fragment output chooser. Keep these connections
+Direct cut choices now connect sequence/map restriction labels to the digest
+boundary picker and a freshly reconstructed assembly fragment. The reviewed
+product also exports declared primer CSV/TSV and HTML/PDF steps from its plan.
+Remaining work includes integrated product/primer/junction editing and an
+optional-primer/fragment output chooser. Keep these connections
 central rather than adding more standalone parameter panels. Browser checks remain
 deferred until implementation is complete, as instructed; no GUI acceptance claim
 is made from source or compiler checks alone.

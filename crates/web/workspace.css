@@ -254,3 +254,8 @@
 .assembly-product-details summary { color:#536c62; cursor:pointer; }
 .assembly-product-view pre { overflow-wrap:anywhere; white-space:pre-wrap; font-size:11px; }
 .assembly-product-features { display:grid; gap:5px; margin-top:8px; }
+.assembly-outputs { border-bottom:1px solid #dce7e2; padding-bottom:9px; margin-bottom:10px; font-size:12px; }
+.assembly-outputs h4 { margin:0 0 7px; font-size:12px; }
+.assembly-output-actions { display:flex; gap:6px; flex-wrap:wrap; }
+.digest-cut-selection { border:1px solid #ccded7; border-radius:5px; background:#f2f7f4; padding:10px; margin:10px 0; font-size:12px; }
+.digest-cut-selection .digest-actions { display:flex; gap:5px; flex-wrap:wrap; }

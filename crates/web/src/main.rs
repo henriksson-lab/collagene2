@@ -50,6 +50,8 @@ mod genome_view;
 mod genomes;
 #[cfg(target_arch = "wasm32")]
 mod glyph_renderer;
+#[cfg(any(target_arch = "wasm32", test))]
+mod golden_gate_pool_form;
 #[cfg(target_arch = "wasm32")]
 mod history_view;
 #[cfg(target_arch = "wasm32")]

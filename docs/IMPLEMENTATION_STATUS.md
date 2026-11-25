@@ -14,6 +14,23 @@ is postponed until the rest of the software is implemented. Existing modules are
 retained; no more alignment/index features or integration are scheduled now.
 Browser checks remain deferred and compiler checks run alongside coding.
 
+## Retained Golden Gate reaction settings
+
+The assembly draft now retains prepared-pool/reaction mode, each role's substrate
+choice, topology/orientation policy and finite search limits. Choices follow roles
+when reordered/removed; new roles default to their current prepared fragment.
+Older drafts initialize the existing defaults using their topology and row count.
+Receipts remain transient, and reopened settings require explicit fresh inspection.
+Options edit directly in shared state without remounting their panel; stale worker
+results and candidate selections remain guarded.
+[Persistence and invalidation](GOLDEN_GATE_POOL_SETTINGS.md).
+
+Focused native validation covers editable/runnable state, hostile or oversized
+decoding, evidence-field rejection and agreement with existing native reaction
+limits. A read-only review checked reactive mounts, source/receipt guards and
+role remapping before compilation. All 51 native web tests and the final WASM
+compile passed. No browser checks or preview update were run.
+
 ## Parallel workflow review follow-up
 
 Three further official-document/source reviews cover

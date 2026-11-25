@@ -88,8 +88,10 @@ filtering and persistent named enzyme choices. Older review tables describing th
 as absent are historical. Continue the existing cloning-first queue through these
 concrete connections:
 
-- Preserve editable Golden Gate reaction pool/substrate/topology/search settings in
-  assembly drafts; reopen settings without restoring stale successful evidence.
+- Golden Gate reaction pool/substrate/topology/search settings are now retained in
+  assembly drafts without restoring stale successful evidence
+  ([implementation](GOLDEN_GATE_POOL_SETTINGS.md)). Continue with the connected
+  preparation and product review work below.
 - Keep ordinary source capture, preparation, junction/product review and named outputs
   continuous in the existing assembly dock. Preserve explicit Apply and selective
   regeneration rather than silently replacing intentional primers/edits.

@@ -1,5 +1,5 @@
 //! Explicit preparation graphs for TA/GC ligation and oriented overlap profiles.
-use crate::{app::download, worker::CachedWorker};
+use crate::{app::download, golden_gate_pool_form::PoolForm, worker::CachedWorker};
 use collagene_core::{
     Molecule,
     analysis::Primer,
@@ -248,6 +248,10 @@ pub struct MethodsState {
     pub occurrences: String,
     #[serde(default)]
     pub golden_gate: GoldenGateForm,
+    /// Editable pool/reaction choices only; receipts and selected candidates are transient.
+    /// Missing in older drafts: initialize using their preparation topology and row count.
+    #[serde(default)]
+    pub golden_gate_pool: Option<PoolForm>,
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GoldenGateForm {
@@ -318,10 +322,41 @@ impl Default for MethodsState {
             comparisons: "5000000".into(),
             occurrences: "1000".into(),
             golden_gate: GoldenGateForm::default(),
+            golden_gate_pool: None,
         }
     }
 }
 impl MethodsState {
+    fn preparation_context(&self) -> Self {
+        let mut context = self.clone();
+        context.golden_gate_pool = None;
+        context
+    }
+    fn pool_form(&self) -> PoolForm {
+        self.golden_gate_pool.clone().unwrap_or_else(|| PoolForm {
+            circular: self.circular,
+            choices: vec![0; self.rows.len()],
+            ..PoolForm::default()
+        })
+    }
+    pub(crate) fn swap_rows(&mut self, a: usize, b: usize) {
+        self.rows.swap(a, b);
+        if let Some(form) = &mut self.golden_gate_pool {
+            form.choices.swap(a, b);
+        }
+    }
+    pub(crate) fn remove_row(&mut self, index: usize) {
+        self.rows.remove(index);
+        if let Some(form) = &mut self.golden_gate_pool {
+            form.choices.remove(index);
+        }
+    }
+    pub(crate) fn push_row(&mut self, row: OverlapInput) {
+        self.rows.push(row);
+        if let Some(form) = &mut self.golden_gate_pool {
+            form.choices.push(0);
+        }
+    }
     fn input(&self, vector: bool) -> &TailInput {
         if vector { &self.vector } else { &self.insert }
     }
@@ -1294,8 +1329,27 @@ pub fn CloningMethodsPanel(
             steps,
         }));
     });
+    let reaction_context = Memo::new(move |_| {
+        let state = config.with(MethodsState::preparation_context);
+        if state.mode != Mode::GoldenGate {
+            return None;
+        }
+        let context = source_context.get()?;
+        let revisions = source_revisions.get()?;
+        if state.rows.is_empty() || state.rows.len() > 12 || context.len() != state.rows.len() {
+            return None;
+        }
+        Some(Arc::new(PoolContext {
+            config: state,
+            context,
+            revisions,
+            target_context: target_info.get(),
+            target: target.get(),
+            epoch: epoch.get(),
+        }))
+    });
     let reaction_guard = Callback::new(move |saved: Arc<PoolContext>| -> Result<(), String> {
-        if config.get_untracked() != saved.config
+        if config.with_untracked(MethodsState::preparation_context) != saved.config
             || source_context.get_untracked() != Some(saved.context.clone())
             || source_revisions.get_untracked() != Some(saved.revisions.clone())
             || target_info.get_untracked() != saved.target_context
@@ -1329,7 +1383,7 @@ pub fn CloningMethodsPanel(
             <Show when=move||matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate)><p class="helper">"List fragments in intended ligation order. Preparation, end repair and terminal treatment are explicit source-bound operations. Whole linear DNA retains unknown terminal chemistry; its sequence alone does not imply cleaved or PCR ends. Unknown ends can withhold ligation even after phosphorylation."</p><label class="checkbox-label"><input type="checkbox" aria-label="Allow retained ordered ligation nicks" prop:checked=move||config.get().allow_nicked on:change=move|e|config.update(|c|c.allow_nicked=event_target_checked(&e))/>"Allow explicitly retained nicks"</label></Show>
             <h3>"1. Choose source fragments and regions"</h3>
             <Show when=move||config.with(|c|c.rows.len()>12)><p role="alert">"This preparation exceeds the supported 12 rows. No partial row list is shown."</p></Show><For each=move||config.with(|c|if c.rows.len()<=12{(0..c.rows.len()).collect::<Vec<_>>()}else{Vec::new()}) key=|i|*i children=move|i|view!{<div node_ref=row_nodes.with_value(|nodes|nodes[i]) tabindex="-1" class="method-preparation-focus"><OverlapFields config index=i query_options primer_sources list_primers resolve_primer epoch selected_region fixed_sources edited_junctions=disable_plain_primer_design/></div>}/>
-            <button class="button secondary full" disabled=move||{fixed_sources||config.with(|c|c.rows.len()>=12)} on:click=move|_|config.update(|c|c.rows.push(OverlapInput::default()))>{move||if matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate){"Add ligation fragment"}else{"Add overlap fragment"}}</button><p class="helper">"This panel supports up to 12 ordered fragments; the typed core has its separate documented work bounds."</p><Show when=move||config.get().mode==Mode::Overlap><label>"Overlap lengths in junction order (bp)"<input aria-label="Profile overlap lengths" prop:value=move||config.get().overlaps on:input=move|e|config.update(|c|c.overlaps=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label="Scan repeated overlap words" prop:checked=move||config.get().scan_repeats on:change=move|e|config.update(|c|c.scan_repeats=event_target_checked(&e))/>"Search supplied fragments for repeated homology words"</label><label>"Repeat comparison budget"<input type="number" min="1" aria-label="Overlap repeat budget" prop:value=move||config.get().comparisons on:input=move|e|config.update(|c|c.comparisons=event_target_value(&e))/></label><label>"Maximum reported homology occurrences"<input type="number" min="1" aria-label="Overlap occurrence limit" prop:value=move||config.get().occurrences on:input=move|e|config.update(|c|c.occurrences=event_target_value(&e))/></label></Show>
+            <button class="button secondary full" disabled=move||{fixed_sources||config.with(|c|c.rows.len()>=12)} on:click=move|_|config.update(|c|c.push_row(OverlapInput::default()))>{move||if matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate){"Add ligation fragment"}else{"Add overlap fragment"}}</button><p class="helper">"This panel supports up to 12 ordered fragments; the typed core has its separate documented work bounds."</p><Show when=move||config.get().mode==Mode::Overlap><label>"Overlap lengths in junction order (bp)"<input aria-label="Profile overlap lengths" prop:value=move||config.get().overlaps on:input=move|e|config.update(|c|c.overlaps=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label="Scan repeated overlap words" prop:checked=move||config.get().scan_repeats on:change=move|e|config.update(|c|c.scan_repeats=event_target_checked(&e))/>"Search supplied fragments for repeated homology words"</label><label>"Repeat comparison budget"<input type="number" min="1" aria-label="Overlap repeat budget" prop:value=move||config.get().comparisons on:input=move|e|config.update(|c|c.comparisons=event_target_value(&e))/></label><label>"Maximum reported homology occurrences"<input type="number" min="1" aria-label="Overlap occurrence limit" prop:value=move||config.get().occurrences on:input=move|e|config.update(|c|c.occurrences=event_target_value(&e))/></label></Show>
         </Show>
         <Show when=move||config.get().mode==Mode::GoldenGate&&!disable_plain_primer_design><section class="golden-gate-primer-planner"><h3>"2. Prepare Type IIS fragments"</h3>
             <p class="helper">"Use existing pinned digest fragments, or choose Exact PCR → pinned catalog digest for rows needing new sites. Proposals use each chosen original source region and explicit right fusion. They do not replace existing-site rows or choose a target. This ordered reconstruction does not enumerate every mixture outcome."</p>
@@ -1352,14 +1406,11 @@ pub fn CloningMethodsPanel(
                 <button class="button primary full" disabled=move||busy.get() on:click=move|_|apply_gate.run(())>"Apply Type IIS primer proposals"</button>
             </section>})}
         </section></Show>
-        {move||{let state=config.get();if state.mode!=Mode::GoldenGate{return None;}
-            let context=source_context.get()?;let revisions=source_revisions.get()?;
-            if state.rows.is_empty()||state.rows.len()>12||context.len()!=state.rows.len(){return None;}
-            let snapshot=Arc::new(PoolContext{config:state,context,target_context:target_info.get(),target:target.get(),revisions,epoch:epoch.get()});
+        {move||{let snapshot=reaction_context.get()?;
             let captured=StoredValue::new(snapshot.clone());
             let edit=Callback::new(move|row:usize|{let result=reaction_guard.run(captured.get_value()).and_then(|()|row_nodes.with_value(|nodes|nodes.get(row).and_then(|n|n.get()).ok_or_else(||"Preparation editor unavailable.".to_string()))).and_then(|node|{node.scroll_into_view();node.focus().map_err(|_|"Editor focus unavailable.".to_string())});if let Err(error)=result{status.set(error);}});
             let view_source=on_source.map(|navigate|Callback::new(move|row:usize|{let result=captured.with_value(|ctx|{reaction_guard.run(ctx.clone())?;let input=ctx.config.rows.get(row).ok_or("Source role unavailable.")?;navigate.run((input.document,row))});if let Err(error)=result{status.set(error);}}));
-            Some(view!{<PreparedPool proof=snapshot guard=reaction_guard capture=reaction_capture epoch on_candidate on_finalize on_edit=edit on_source=view_source/>})
+            Some(view!{<PreparedPool proof=snapshot config guard=reaction_guard capture=reaction_capture epoch on_candidate on_finalize on_edit=edit on_source=view_source/>})
         }}
         <Show when=move||config.get().mode==Mode::Overlap&&!disable_plain_primer_design><section class="overlap-primer-planner"><h3>"2. Suggest and review PCR primers"</h3><p class="helper">"Use the selected source regions and order to suggest one primer pair per fragment, including added homology tails. Your current primers stay unchanged until you explicitly apply the proposal. The independent target is never generated or selected by this step."</p><div class="primer-grid"><label>"Junction homology (bp)"<input type="number" min="1" aria-label="Suggested overlap homology bases" prop:value=move||planner_form.with(|f|f.overlap.clone()) on:input=move|e|planner_form.update(|f|f.overlap=event_target_value(&e))/></label><label>"Minimum annealing length"<input type="number" min="1" max="200" aria-label="Suggested primer minimum length" prop:value=move||planner_form.with(|f|f.minimum.clone()) on:input=move|e|planner_form.update(|f|f.minimum=event_target_value(&e))/></label><label>"Maximum annealing length"<input type="number" min="1" max="200" aria-label="Suggested primer maximum length" prop:value=move||planner_form.with(|f|f.maximum.clone()) on:input=move|e|planner_form.update(|f|f.maximum=event_target_value(&e))/></label><label>"Target annealing Tm (°C)"<input type="number" step="0.1" aria-label="Suggested primer target Tm" prop:value=move||planner_form.with(|f|f.tm.clone()) on:input=move|e|planner_form.update(|f|f.tm=event_target_value(&e))/></label></div><p class="helper">"Default filters: GC 20–80%, pair ΔTm ≤5°C, homopolymer run ≤5 and 3′ complementary run ≤3. Tm assumes 50 mM sodium and 500 nM total strands; these are calculations, not reagent or experimental performance predictions."</p><button class="button secondary full" disabled=move||busy.get() on:click=move|_|suggest.run(())>"Suggest PCR primers"</button>
         {move||suggestions.get().map(|proposal|{let saved=proposal.clone();view!{<div class="overlap-primer-suggestions"><h4>"Proposed primer pairs — not yet applied"</h4>{proposal.report.designs.iter().enumerate().map(|(i,design)|{let interval=proposal.report.request.fragments.get(i);view!{<article><h4>{format!("Fragment {} · {}",i+1,proposal.context.get(i).map(|s|s.name.as_str()).unwrap_or("source unavailable"))}</h4>{interval.map(|region|view!{<p>{format!("Source interval {}–{} (1-based inclusive, unrolled) · {}",region.start+1,region.end,if region.reverse{"reverse in assembly"}else{"forward in assembly"})}</p>})}{design.pairs.first().map(|pair|view!{<pre>{format!("{}\nOrdered 5′→3′: {}{}\nAnnealing 5′→3′: {}\n5′ tail: {}\n\n{}\nOrdered 5′→3′: {}{}\nAnnealing 5′→3′: {}\n5′ tail: {}",pair.forward.primer.name,pair.forward.primer.tail,pair.forward.primer.annealing.as_str(),pair.forward.primer.annealing.as_str(),pair.forward.primer.tail,pair.reverse.primer.name,pair.reverse.primer.tail,pair.reverse.primer.annealing.as_str(),pair.reverse.primer.annealing.as_str(),pair.reverse.primer.tail)}</pre><p>{format!("Annealing Tm: {} / {} · pair ΔTm {:.1}°C · proposed PCR length {} bp",pair.forward.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.reverse.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.tm_difference_c,pair.product_length)}</p>})}{design.warnings.iter().map(|w|view!{<p>{w.clone()}</p>}).collect_view()}</article>}}).collect_view()}{proposal.report.warnings.iter().map(|w|view!{<p>{w.clone()}</p>}).collect_view()}<p class="helper">"A deterministic proposal under these filters is not a unique or experimentally validated primer design. Applying changes the preparation to exact PCR; verify the resulting assembly next."</p><button class="button primary full" disabled=move||busy.get() on:click=move|_|apply_suggestions.run(())>"Apply suggested primers"</button><button class="button secondary full" on:click=move|_|{if config.get_untracked()!=saved.config||planner_form.get_untracked()!=saved.form||source_context.get_untracked()!=Some(saved.context.clone())||target_info.get_untracked()!=saved.target_context||target.get_untracked()!=saved.target||epoch.get_untracked()!=saved.epoch{status.set("Sources or settings changed; request fresh suggestions.".into());return;}match serde_json::to_vec_pretty(&serde_json::json!({"sources":saved.context,"target":saved.target_context,"report":saved.report})){Ok(bytes)=>if let Err(e)=download("overlap-primer-suggestions.json","application/json",&bytes){status.set(e)},Err(e)=>status.set(e.to_string())}}>"Download suggested primer evidence"</button></div>}})}
@@ -1498,7 +1549,7 @@ fn OverlapFields(
         <label class="checkbox-label"><input disabled=fixed_sources type="checkbox" aria-label=format!("Reverse overlap source {}",index+1) prop:checked=move||row().reverse on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.reverse=event_target_checked(&e)})/>"Reverse complement prepared fragment"</label>
         <Show when=move||matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate)><label>"Explicit 5′ terminal treatment"<select aria-label=format!("Ligation terminal treatment {}",index+1) prop:value=move||match row().treatment{Treatment::Keep=>"none",Treatment::Phosphorylate=>"phosphorylate",Treatment::Dephosphorylate=>"dephosphorylate"} on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.treatment=match event_target_value(&e).as_str(){"phosphorylate"=>Treatment::Phosphorylate,"dephosphorylate"=>Treatment::Dephosphorylate,_=>Treatment::Keep}})><option value="none">"None — keep reconstructed chemistry"</option><option value="phosphorylate">"Add 5′ phosphorylation"</option><option value="dephosphorylate">"Add 5′ dephosphorylation"</option></select></label><p class="helper">"Treatment does not resolve unknown 3′ chemistry, repair ends or imply host nick repair."</p></Show>
         <p class="helper">{move||row().summary()}</p>
-        <div class="method-row-actions"><button class="text-tool" disabled=move||fixed_sources||index==0 on:click=move|_|config.update(|c|{if index>0&&index<c.rows.len(){c.rows.swap(index,index-1);}})>"Move up"</button><button class="text-tool" disabled=move||fixed_sources||config.with(|c|index+1>=c.rows.len()) on:click=move|_|config.update(|c|{if index+1<c.rows.len(){c.rows.swap(index,index+1);}})>"Move down"</button><button class="text-tool" disabled=move||fixed_sources||config.with(|c|c.rows.len()<=1) on:click=move|_|config.update(|c|{if c.rows.len()>1&&index<c.rows.len(){c.rows.remove(index);}})>"Remove fragment"</button></div>
+        <div class="method-row-actions"><button class="text-tool" disabled=move||fixed_sources||index==0 on:click=move|_|config.update(|c|{if index>0&&index<c.rows.len(){c.swap_rows(index,index-1);}})>"Move up"</button><button class="text-tool" disabled=move||fixed_sources||config.with(|c|index+1>=c.rows.len()) on:click=move|_|config.update(|c|{if index+1<c.rows.len(){c.swap_rows(index,index+1);}})>"Move down"</button><button class="text-tool" disabled=move||fixed_sources||config.with(|c|c.rows.len()<=1) on:click=move|_|config.update(|c|{if c.rows.len()>1&&index<c.rows.len(){c.remove_row(index);}})>"Remove fragment"</button></div>
     </fieldset>}
 }
 
@@ -2060,7 +2111,7 @@ fn MethodDiagnostics(
     </section>}
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 struct PoolContext {
     config: MethodsState,
     context: Vec<crate::digest::SourceInfo>,
@@ -2163,16 +2214,27 @@ impl PoolReceipt {
         .map_err(|e| e.to_string())
     }
 }
-#[derive(Clone, PartialEq, Eq)]
-struct PoolForm {
-    reaction: bool,
-    choices: Vec<u8>,
-    circular: bool,
-    both: bool,
-    minimum: String,
-    maximum: String,
-    products: String,
-    states: String,
+/// A projection into the saved draft. Reading or editing options never stores
+/// scientific evidence, and restoring a draft cannot restore a successful receipt.
+#[derive(Clone, Copy)]
+struct PoolSettings(RwSignal<MethodsState>);
+impl PoolSettings {
+    fn get(&self) -> PoolForm {
+        self.0.with(MethodsState::pool_form)
+    }
+    fn get_untracked(&self) -> PoolForm {
+        self.0.with_untracked(MethodsState::pool_form)
+    }
+    fn with<T>(&self, f: impl FnOnce(&PoolForm) -> T) -> T {
+        self.0.with(|c| f(&c.pool_form()))
+    }
+    fn update(&self, f: impl FnOnce(&mut PoolForm)) {
+        self.0.update(|c| {
+            let mut next = c.pool_form();
+            f(&mut next);
+            c.golden_gate_pool = Some(next);
+        });
+    }
 }
 struct PoolEvidence {
     report: PoolReceipt,
@@ -2182,6 +2244,7 @@ struct PoolEvidence {
 #[component]
 fn PreparedPool(
     proof: Arc<PoolContext>,
+    config: RwSignal<MethodsState>,
     guard: Callback<Arc<PoolContext>, Result<(), String>>,
     capture: Callback<Arc<PoolContext>, Result<(Vec<PlanInput>, Molecule), String>>,
     epoch: RwSignal<u64>,
@@ -2190,17 +2253,8 @@ fn PreparedPool(
     on_edit: Callback<usize>,
     #[prop(optional_no_strip)] on_source: Option<Callback<usize>>,
 ) -> impl IntoView {
-    use collagene_core::{golden_gate::GoldenGateOptions, prepared_golden_gate as pool};
-    let form = RwSignal::new(PoolForm {
-        reaction: false,
-        choices: vec![0; proof.config.rows.len()],
-        circular: proof.config.circular,
-        both: true,
-        minimum: "1".into(),
-        maximum: "16".into(),
-        products: "128".into(),
-        states: "50000".into(),
-    });
+    use collagene_core::prepared_golden_gate as pool;
+    let form = PoolSettings(config);
     let proof = StoredValue::new(proof);
     let evidence = RwSignal::new(None::<Arc<PoolEvidence>>);
     let page = RwSignal::new(0usize);
@@ -2249,39 +2303,13 @@ fn PreparedPool(
         let captured_epoch = epoch.get_untracked();
         let prepared = (|| -> Result<_, String> {
             guard.run(proof.get_value())?;
-            if [
-                &options.minimum,
-                &options.maximum,
-                &options.products,
-                &options.states,
-            ]
-            .iter()
-            .any(|field| field.len() > 20)
-            {
-                return Err("Pool limits exceed their field bounds.".into());
+            options.validate()?;
+            if options.choices.len() != proof.with_value(|p| p.config.rows.len()) {
+                return Err("Reaction substrate choices differ from the source roles.".into());
             }
             let (inputs, target) = capture.run(proof.get_value())?;
-            let pool_options = GoldenGateOptions {
-                enzyme: proof.with_value(|p| p.config.golden_gate.enzyme),
-                circular: options.circular,
-                both_orientations: options.both,
-                min_fragments: options
-                    .minimum
-                    .parse()
-                    .map_err(|_| "Enter a minimum fragment count.")?,
-                max_fragments: options
-                    .maximum
-                    .parse()
-                    .map_err(|_| "Enter a maximum fragment count.")?,
-                max_products: options
-                    .products
-                    .parse()
-                    .map_err(|_| "Enter a product limit.")?,
-                max_states: options
-                    .states
-                    .parse()
-                    .map_err(|_| "Enter a search-state limit.")?,
-            };
+            let pool_options =
+                options.options(proof.with_value(|p| p.config.golden_gate.enzyme))?;
             let (job, revision) = if options.reaction {
                 let config = proof.with_value(|p| p.config.clone());
                 let mut mapped = config.clone();
@@ -2550,6 +2578,7 @@ fn PreparedPool(
     );
     view! {<section class="prepared-gate-pool" aria-label="Prepared Golden Gate pool alternatives"><h3>"Explore Golden Gate alternatives"</h3>
         <p class="helper">"Inspect selected prepared fragments, or explicitly choose what enters the reaction for every role. The finite search reports competing products, recutting and uncut circular carryover without selecting a winner or predicting experimental yield."</p>
+        <p class="helper">"Reaction choices and search limits are kept with the assembly draft. Reopen the draft and inspect again to reconstruct current evidence."</p>
         <label class="checkbox-label"><input type="checkbox" aria-label="Inspect whole Golden Gate reaction" prop:checked=move||form.with(|f|f.reaction) on:change=move|e|form.update(|f|f.reaction=event_target_checked(&e))/>"Declare reaction substrates (whole DNA / whole amplicons / prepared fragments)"</label>
         <Show when=move||form.with(|f|f.reaction)><p class="helper">"Choose what enters the tube for every role. Whole source includes its circular backbone and all cut pieces. Whole amplicon uses the current primers before digestion and omits post-digest repair/treatment. Retaining a prepared fragment keeps its current explicit operations. Primers and the intended target are unchanged."</p>
         {proof.with_value(|p|p.config.rows.iter().enumerate().map(|(i,row)|{let pcr=matches!(row.preparation,OverlapPreparation::ExactPcr|OverlapPreparation::PcrCatalogDigest);view!{<label>{format!("{}: {}",i+1,p.context.get(i).map(|c|c.name.as_str()).unwrap_or("source"))}<select aria-label=format!("Reaction substrate {}",i+1) prop:value=move||form.with(|f|f.choices.get(i).copied().unwrap_or(0).to_string()) on:change=move|e|form.update(|f|if let Some(choice)=f.choices.get_mut(i){*choice=event_target_value(&e).parse().unwrap_or(0)})><option value="0">"Current selected prepared fragment"</option><option value="1">"Whole original source"</option><option value="2" disabled=!pcr>"Complete PCR amplicon before digestion"</option></select></label>}}).collect_view())}</Show>

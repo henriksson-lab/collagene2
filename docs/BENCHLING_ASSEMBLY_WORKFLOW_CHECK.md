@@ -27,6 +27,15 @@ The following are source observations. They must not be reclassified as missing 
 | Junction editing and evidence | [selective_junction_edit.rs](../crates/core/src/selective_junction_edit.rs), [golden_gate_junction_edit.rs](../crates/core/src/golden_gate_junction_edit.rs) and [assembly_junctions.rs](../crates/core/src/assembly_junctions.rs) support selective regeneration and actual selected-path junction windows. The methods UI provides row-level recovery/source actions. | Local diagnostics and Golden Gate junction inspection already exist. Review their presentation and continuity, without claiming they are absent. |
 | Product and output review | [assembly_product_view.rs](../crates/web/src/assembly_product_view.rs), [assembly_finalize.rs](../crates/web/src/assembly_finalize.rs) and [cloning_outputs.rs](../crates/core/src/cloning_outputs.rs) connect actual reconstructed product review, named construct creation, optional oligos/preparation visibility, retained source events and order/protocol exports. | Reuse these outputs for every method. HTML/PDF and primer export are present; no new export engine is implied by this comparison. |
 
+## Implementation follow-up
+
+The editable reaction-choice persistence gap below is now closed in source:
+`MethodsState` retains an optional bounded pool form in the existing draft.
+Substrate choices follow reordered/removed roles; older drafts use their topology
+and existing defaults. Receipts remain transient and require explicit inspection.
+[Details](GOLDEN_GATE_POOL_SETTINGS.md). This does not close combinatorial source
+bins or the remaining interaction recommendations.
+
 ## Prioritized actionable work
 
 **P0 — Keep the ordinary route visually continuous.** The recommended interaction is method → backbone/insert capture → preparation → junction/product review → named outputs. This is our adaptation of the documented pattern. Present the active slot, its source/direction and preparation status together; let an error take the user to the existing source/preparation control. Treat discoverability as a later focused user-review question, not a demonstrated runtime defect. The existing diagnostics table, junction controls and actual-product viewer should supply the information.

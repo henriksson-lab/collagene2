@@ -828,3 +828,12 @@ and full bounded evidence artifact. The ideal hydrolytic profile makes no named
 nuclease, kit-efficiency or host-repair claim. Plan verification retains typed
 generic evidence; historical inspection supports exact generic/mixed-run bundles.
 [Full contract and remaining scope](TOPO_PROCESSING_ACTIONS.md).
+
+
+## Native upstream PCR composition (165 tools, worker67)
+
+Generic `propose_plan`/`verify_plan` support a `TopoActions` role bound to a prior
+step only when that role is solely an ExactPcr template. Fresh native tracked
+material is required; no serialized graph restores it. Historical run inspection
+retains the exact upstream product identity. Standalone source-inspection tools
+remain original-input interfaces. [Contract and limits](TOPO_UPSTREAM_PCR.md).

@@ -1142,10 +1142,32 @@ deferred until the in-scope code is complete.
 Two additional parallel reviews of official public help found presentation
 connections rather than new PCR/export engines. The ordinary dock now shows the
 chosen method and actual per-slot preparation before intended-construct review.
-Next interaction work should reuse the existing directional primer editor from a
-sequence selection and expose a compact exact-event assembly-provenance overview;
-selection statistics can use the existing bounded/model-labelled calculation path.
+The selection toolbar already connects selected DNA to the shared directional
+primer editor and reports bounded selected-reference GC statistics. The next
+interaction work is a compact exact-event assembly-provenance overview; do not
+duplicate the existing toolbar after inspecting only SequenceView or the footer.
 [Source comparison and explicit unknowns](BENCHLING_DESIGN_REVIEW_CONTINUITY.md).
 Do not revive historical gap tables already closed in current source or infer
 chemical correctness from public UI instructions. Further uncertain workflows
 should continue to receive parallel official-documentation reviews.
+
+
+### Upstream PCR synthesis and exact-event provenance
+
+`TopoActions` can now consume a prior native product solely as the template of a
+new exact-PCR preparation. The verifier requires actual aligned unnicked tracked
+material, forbids mixed Prepared correspondence and preserves template state in
+its own upstream product. New PCR copies do not inherit atoms/modifications.
+Full evidence/history binds the exact prior retained product event. Worker67,
+candidate15, plan13 and science18 introduce this capability without new DTO fields.
+[Contract and remaining material/UI work](TOPO_UPSTREAM_PCR.md).
+
+The retained run panel now adds a compact paged source → typed operation → product
+view over existing exact-event navigation. It does not infer sequential edges or
+restore historical scientific authority. Current source inspection also corrected
+the latest review: directional selection shortcuts and bounded GC were already
+present in the separate toolbar, so no duplicate controls were added.
+
+Broader inherited-material preparation and its direct UI composition, graph-only
+reviews, other unfinished cloning/batch methods and all remaining platform/delivery/
+GUI acceptance continue under the full active goal.

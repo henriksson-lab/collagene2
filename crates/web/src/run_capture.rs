@@ -7,7 +7,7 @@ use crate::{
 use collagene_core::{
     protocol::{AnalysisJob, AnalysisResult, Request},
     run_lineage::{self, EventBinding, InputEventBinding},
-    verification::DesignPlan,
+    verification::{DesignPlan, Operation, Source},
     workspace::Workspace,
 };
 use leptos::prelude::*;
@@ -275,6 +275,125 @@ impl std::io::Write for BoundedJson {
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
     }
+}
+
+fn operation_title(operation: &Operation) -> &'static str {
+    match operation {
+        Operation::CatalogDigest { .. } => "Catalog-pinned digest",
+        Operation::DeclareSourceTermini { .. } => "Declare original source termini",
+        Operation::Pcr { .. } => "PCR",
+        Operation::PcrWithMismatches { .. } => "PCR with mismatches",
+        Operation::Digest { .. } => "Digest under cleavage assumptions",
+        Operation::DeclareSourceModifications { .. } => "Declare original source modifications",
+        Operation::CheckedDigest { .. } => "Checked restriction digest",
+        Operation::CheckedTopo { .. } => "TOPO graph with explicit target acceptance",
+        Operation::Topo { .. } => "TOPO physical strand reconstruction",
+        Operation::ProcessedTopo { .. } => {
+            "Processed TOPO source reconstruction and faithful material bridge"
+        }
+        Operation::TopoActions { .. } => "TOPO ordered source-backed physical actions",
+        Operation::RecombineReference { .. } => "Reference-only BP/LR exchange",
+        Operation::TreatEnds { .. } => "Treat ends",
+        Operation::RepairEnds { .. } => "Repair ends",
+        Operation::Ligate { .. } => "Ligate",
+        Operation::Tail3Prime { .. } => "3′ tailing",
+        Operation::AnnealOligos { .. } => "Anneal oligos",
+        Operation::GoldenGate { .. } => "Golden Gate",
+        Operation::SelectedGoldenGate { .. } => "Golden Gate with exact candidate keys",
+        Operation::Overlap { .. } | Operation::ProfiledOverlap { .. } => "Overlap assembly",
+    }
+}
+fn reference_only_steps(plan: &DesignPlan) -> Vec<bool> {
+    let mut flags = Vec::with_capacity(plan.steps.len());
+    for operation in &plan.steps {
+        let direct = matches!(
+            operation,
+            Operation::Topo { .. }
+                | Operation::CheckedTopo { .. }
+                | Operation::RecombineReference { .. }
+        );
+        let inherited = collagene_core::verification::operation_sources(operation)
+            .into_iter()
+            .any(|source| matches!(source,Source::Step(i) if flags.get(*i)==Some(&true)));
+        flags.push(direct || inherited);
+    }
+    flags
+}
+
+#[component]
+fn RunProvenanceOverview(
+    record: StoredValue<Result<run_lineage::RunRecord, String>>,
+    epoch: RwSignal<u64>,
+    opened_epoch: u64,
+    open_event: Callback<(Role, EventBinding)>,
+) -> impl IntoView {
+    let page = RwSignal::new(0usize);
+    let reference_only = StoredValue::new(record.with_value(|r| {
+        r.as_ref()
+            .map(|r| reference_only_steps(&r.plan))
+            .unwrap_or_default()
+    }));
+    let count = record.with_value(|r| r.as_ref().map_or(0, |r| r.products.len()));
+    let pages = count.max(1).div_ceil(10);
+    view! {<Show when=move||{count>0}><section aria-label="Recorded assembly provenance">
+        <h4>"Assembly provenance"</h4><p class="helper">"Historical source versions → declared operation → retained product version. Select a version to inspect it read-only. The independent target is listed separately below."</p>
+        <For each=move||record.with_value(|r|r.as_ref().map(|r|r.products.iter().skip(page.get().min(pages-1)*10).take(10).map(|p|p.step_index).collect::<Vec<_>>()).unwrap_or_default()) key=|index|*index children=move|step_index|view!{<RunProvenanceStep record epoch opened_epoch open_event step_index reference_only/>}/>
+        <p class="helper">{move||format!("Provenance steps {}–{} of {count}",page.get().min(pages-1)*10+1,((page.get().min(pages-1)+1)*10).min(count))}</p>
+        <button class="text-tool" disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous provenance steps"</button>
+        <button class="text-tool" disabled=move||page.get()+1>=pages on:click=move|_|page.update(|p|*p=(*p+1).min(pages-1))>"Next provenance steps"</button>
+    </section></Show>}
+}
+#[component]
+fn RunProvenanceStep(
+    record: StoredValue<Result<run_lineage::RunRecord, String>>,
+    epoch: RwSignal<u64>,
+    opened_epoch: u64,
+    open_event: Callback<(Role, EventBinding)>,
+    step_index: usize,
+    reference_only: StoredValue<Vec<bool>>,
+) -> impl IntoView {
+    let source_page = RwSignal::new(0usize);
+    view! {<article style="border:1px solid var(--border, #d9dfdf);border-radius:8px;padding:10px;margin:8px 0;">
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;">
+            <div style="flex:2 1 220px;min-width:0;"><strong>"Declared sources"</strong>
+                {move||record.with_value(|value|{
+                    let Some(r)=value.as_ref().ok() else{return ().into_any()};
+                    let Some(operation)=r.plan.steps.get(step_index) else{return view!{<p>"Operation unavailable"</p>}.into_any()};
+                    let dependencies=collagene_core::verification::operation_sources(operation);let count=dependencies.len();let pages=count.max(1).div_ceil(6);let current=source_page.get().min(pages-1);
+                    let links=dependencies.into_iter().skip(current*6).take(6).map(|source|{
+                        let resolved=match source {
+                            Source::Input(id)=>r.inputs.iter().find(|input|input.input_id==*id).map(|input|(
+                                r.plan.inputs.iter().find(|source|source.id==*id).map(|source|format!("{} · input",source.molecule.name)).unwrap_or_else(||format!("Input {id}")),Role::Input{input_id:id.clone()},input.event.clone()
+                            )),
+                            Source::Step(index)=>r.products.iter().find(|p|p.step_index==*index).map(|p|(
+                                format!("Step {} product",index+1),Role::Product{step_index:*index},EventBinding{document_id:p.document_id.clone(),event_id:p.event_id.clone(),revision:p.revision.clone()}
+                            )),
+                        };
+                        match resolved {
+                            Some((label,role,binding))=>{
+                                let title=format!("{role:?} · exact document {} · event {} · revision {}",binding.document_id,binding.event_id,binding.revision);
+                                view!{<button class="text-tool" style="display:block;max-width:100%;overflow-wrap:anywhere;text-align:left;" title=title disabled=move||epoch.get()!=opened_epoch on:click=move|_|open_event.run((role.clone(),binding.clone()))>{label}</button>}.into_any()
+                            },
+                            None=>view!{<p class="helper">"Exact retained dependency unavailable"</p>}.into_any(),
+                        }
+                    }).collect_view();
+                    view!{<div>{links}<Show when=move||{count>6}><p class="helper">{format!("Source references {}–{} of {count}",current*6+1,((current+1)*6).min(count))}</p><button class="text-tool" disabled=current==0 on:click=move|_|source_page.set(current.saturating_sub(1))>"Previous sources"</button><button class="text-tool" disabled={current+1>=pages} on:click=move|_|source_page.set((current+1).min(pages-1))>"Next sources"</button></Show></div>}.into_any()
+                })}
+            </div>
+            <span aria-hidden="true">"→"</span>
+            <div style="flex:2 1 200px;min-width:0;"><strong>{record.with_value(|r|r.as_ref().ok().and_then(|r|r.plan.steps.get(step_index)).map(|op|format!("Step {} · {}",step_index+1,operation_title(op))).unwrap_or_else(||"Operation unavailable".into()))}</strong>
+                <p class="helper">{if reference_only.with_value(|flags|flags.get(step_index).copied().unwrap_or(false)){"Reference-only ancestry · historical"}else{"Declared preparation / assembly · historical"}}</p>
+            </div>
+            <span aria-hidden="true">"→"</span>
+            <div style="flex:2 1 200px;min-width:0;"><strong>"Retained product"</strong>
+                {record.with_value(|value|value.as_ref().ok().and_then(|r|r.products.iter().find(|p|p.step_index==step_index)).map(|product|{
+                    let binding=EventBinding{document_id:product.document_id.clone(),event_id:product.event_id.clone(),revision:product.revision.clone()};
+                    let label=format!("Open step {} product",step_index+1);let identity=format!("{} · {}",product.document_id,product.event_id);
+                    view!{<p class="helper" style="overflow-wrap:anywhere;">{identity}</p><button class="text-tool" disabled=move||epoch.get()!=opened_epoch on:click=move|_|open_event.run((Role::Product{step_index},binding.clone()))>{label}</button>}
+                }))}
+            </div>
+        </div>
+    </article>}
 }
 
 #[component]
@@ -561,6 +680,7 @@ pub fn RunDetailsPanel(
         <section class="run-details-panel">
             <p class="run-authority">"Recorded history · unverified on opening"</p>
             <p class="helper">"Saved status and engine describe a historical assessment. Fresh replay is session evidence only. Neither an imported record nor a replay proves which physical reagents were used."</p>
+            <RunProvenanceOverview record epoch opened_epoch open_event/>
             {move||match record.get_value(){
                 Err(error)=>view!{<p role="alert">{error}</p>}.into_any(),
                 Ok(record)=>{
@@ -585,28 +705,7 @@ pub fn RunDetailsPanel(
                             let binding=EventBinding{document_id:product.document_id.clone(),event_id:product.event_id.clone(),revision:product.revision.clone()};
                             let step_index=product.step_index;
                             let operation_details=record.plan.steps.get(product.step_index).map(crate::app::describe_step).unwrap_or_default();
-                            let operation=record.plan.steps.get(product.step_index).map(|op|match op{
-                                collagene_core::verification::Operation::CatalogDigest{..}=>"Catalog-pinned digest",
-                                collagene_core::verification::Operation::DeclareSourceTermini{..}=>"Declare original source termini",
-                                collagene_core::verification::Operation::Pcr{..}=>"PCR",
-                                collagene_core::verification::Operation::PcrWithMismatches{..}=>"PCR with mismatches",
-                                collagene_core::verification::Operation::Digest{..}=>"Digest under cleavage assumptions",
-                                collagene_core::verification::Operation::DeclareSourceModifications{..}=>"Declare original source modifications",
-                                collagene_core::verification::Operation::CheckedDigest{..}=>"Checked restriction digest",
-                                collagene_core::verification::Operation::CheckedTopo{..}=>"TOPO graph with explicit target acceptance",
-                                collagene_core::verification::Operation::Topo{..}=>"TOPO physical strand reconstruction",
-                                collagene_core::verification::Operation::ProcessedTopo{..}=>"Processed TOPO source reconstruction and faithful material bridge",
-                                collagene_core::verification::Operation::TopoActions{..}=>"TOPO ordered source-backed physical actions",
-                                collagene_core::verification::Operation::RecombineReference{..}=>"Reference-only BP/LR exchange",
-                                collagene_core::verification::Operation::TreatEnds{..}=>"Treat ends",
-                                collagene_core::verification::Operation::RepairEnds{..}=>"Repair ends",
-                                collagene_core::verification::Operation::Ligate{..}=>"Ligate",
-                                collagene_core::verification::Operation::Tail3Prime{..}=>"3′ tailing",
-                                collagene_core::verification::Operation::AnnealOligos{..}=>"Anneal oligos",
-                                collagene_core::verification::Operation::GoldenGate{..}=>"Golden Gate",
-                                collagene_core::verification::Operation::SelectedGoldenGate{..}=>"Golden Gate with exact candidate keys",
-                                collagene_core::verification::Operation::Overlap{..}|collagene_core::verification::Operation::ProfiledOverlap{..}=>"Overlap assembly",
-                            }).unwrap_or("Missing operation");
+                            let operation=record.plan.steps.get(product.step_index).map(operation_title).unwrap_or("Missing operation");
                             view!{<div class="run-product" data-step-index=product.step_index data-document-id=product.document_id.clone() data-event-id=product.event_id.clone()>
                                 <strong>{format!("Step {} · {operation}",product.step_index+1)}</strong>
                                 <details><summary>"Operation parameters and source references"</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">{operation_details}</pre></details>

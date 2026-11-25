@@ -187,7 +187,7 @@ fn actual54calls_to50paired_plus4free_then_ecori_digest_matches_frozen25bp_targe
         "{:?}",
         report.findings
     );
-    assert!(report.engine_version.ends_with("/science-17"));
+    assert_eq!(report.engine_version, v::ENGINE_VERSION);
     assert!(report.processed_step_reports.is_empty());
     assert!(report.step_reports.is_empty());
     assert_eq!(report.products.len(), 2);
@@ -389,7 +389,10 @@ fn op20_candidate14_and_worker66_gates_preserve_original_source_context() {
     assert_eq!(postcard::to_allocvec(&p.steps[0]).unwrap()[0], 20);
     let candidate = transfer::Candidate::new(p.clone());
     let bytes = transfer::save_candidate(&candidate).unwrap();
-    assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), 14);
+    assert_eq!(
+        u16::from_le_bytes([bytes[4], bytes[5]]),
+        protocol::CANDIDATE_SCHEMA_VERSION
+    );
     let mut old = bytes;
     old[4..6].copy_from_slice(&13u16.to_le_bytes());
     assert!(transfer::load_candidate(&old).is_err());
@@ -553,7 +556,7 @@ fn native_plan12_and_generic_run_sidecar_keep_main_and_excised_source_events_his
     let archive = workspace::save_workspace(&commit.workspace).unwrap();
     let retained = workspace::load_workspace(&archive).unwrap();
     let record = run_lineage::load_run(&retained, &commit.receipt.run_id).unwrap();
-    assert_eq!(record.plan_schema, 12);
+    assert_eq!(record.plan_schema, workspace::PLAN_SCHEMA_VERSION);
     let saved = physical_run_evidence::load(&retained, &commit.receipt.run_id)
         .unwrap()
         .unwrap();
@@ -672,7 +675,7 @@ fn native_plan12_and_generic_run_sidecar_keep_main_and_excised_source_events_his
         entry.read_to_end(&mut bytes).unwrap();
         if name == "manifest.json" {
             let mut manifest: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-            assert_eq!(manifest["plan_schema"], 12);
+            assert_eq!(manifest["plan_schema"], workspace::PLAN_SCHEMA_VERSION);
             manifest["plan_schema"] = 11.into();
             bytes = serde_json::to_vec(&manifest).unwrap();
         }

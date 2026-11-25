@@ -98,17 +98,24 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
             return Err(bad("processed declaration changed"));
         }
         for (binding, identity) in sources.iter().zip(&report.sources) {
-            let Source::Input(id) = &binding.source else {
-                return Err(bad("unsupported historical processed step source"));
+            let revision = match &binding.source {
+                Source::Input(id) => r
+                    .plan
+                    .inputs
+                    .iter()
+                    .find(|input| &input.id == id)
+                    .map(|input| input.molecule.revision())
+                    .ok_or_else(|| bad("missing original input"))?,
+                Source::Step(prior) if *prior < index => r
+                    .products
+                    .iter()
+                    .find(|product| product.step_index == *prior)
+                    .map(|product| product.revision.clone())
+                    .ok_or_else(|| bad("missing exact upstream product event"))?,
+                Source::Step(_) => return Err(bad("cyclic or forward upstream product")),
             };
-            let input = r
-                .plan
-                .inputs
-                .iter()
-                .find(|i| &i.id == id)
-                .ok_or_else(|| bad("missing original input"))?;
-            if binding.role != identity.role || input.molecule.revision() != identity.revision {
-                return Err(bad("original source role/revision changed"));
+            if binding.role != identity.role || revision != identity.revision {
+                return Err(bad("original or upstream source role/revision changed"));
             }
         }
         // Historical snapshots must remain inspectable after engine/model changes.

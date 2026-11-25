@@ -507,6 +507,47 @@ async fn directional_preparation_compiles_actual_sources_without_inventing_repai
             ["source_bases"],
         52
     );
+    let mut upstream_roles = roles.clone();
+    upstream_roles
+        .iter_mut()
+        .find(|r| r["role"] == "template")
+        .unwrap()["source"] = json!({"Step":0});
+    let proposed = call(&c, "propose_plan", json!({
+        "name":"Native modified template copied by PCR into TOPO preparation", "target":independent_target,
+        "inputs":bindings, "steps":[
+            {"DeclareSourceModifications":{"template":{"Input":"template"},"assumptions":{"dam":"Unknown","dcm":"Unknown","cpg":"FullyModified"}}},
+            {"TopoActions":{"sources":upstream_roles,"request":request}}
+        ]
+    })).await;
+    let verified = call(
+        &c,
+        "verify_plan",
+        json!({"plan_revision":proposed["plan_revision"]}),
+    )
+    .await;
+    assert_eq!(verified["status"], "ConsistentUnderAssumptions");
+    let full = evidence(&c, &verified["artifact_id"]).await;
+    assert_eq!(full["products"].as_array().unwrap().len(), 2);
+    assert_eq!(full["physical_processing_reports"][0]["step_index"], 1);
+    let before: collagene_core::modified_duplex::ModificationSummary = serde_json::from_str(
+        full["products"][0]["metadata"]["tracked_modifications"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(before.known_modified > 0);
+    let actual: collagene_core::modified_duplex::TrackedDuplex = serde_json::from_value(
+        full["physical_processing_reports"][0]["evidence"]["TopoActions"]["tracked"].clone(),
+    )
+    .unwrap();
+    assert_eq!(actual.top.as_str(), "AAGGGGCATCCCTTCACCATGACG");
+    assert_eq!(
+        collagene_core::modified_duplex::summary(&actual)
+            .unwrap()
+            .known_modified,
+        0
+    );
+    assert!(actual.generation.is_empty());
     let mut stale = sources.clone();
     stale[0]["document"]["revision"] = json!("0".repeat(64));
     reject(

@@ -249,7 +249,7 @@ pub struct PhysicalProcessingStepReport {
     pub step_index: usize,
     pub evidence: PhysicalProcessingEvidence,
 }
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-17");
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-18");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrDocument {
@@ -881,8 +881,14 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
     Ok(())
 }
 
+/// Upstream PCR synthesis in TOPO actions needs the newer semantic capability.
+pub(crate) fn topo_uses_step_source(op: &Operation) -> bool {
+    matches!(op, Operation::TopoActions { sources, .. }
+        if sources.iter().any(|source| matches!(source.source, Source::Step(_))))
+}
+
 /// Actual typed dependencies; producer metadata never supplies graph authority.
-pub(crate) fn operation_sources(op: &Operation) -> Vec<&Source> {
+pub fn operation_sources(op: &Operation) -> Vec<&Source> {
     match op {
         Operation::RecombineReference { sources, .. } => sources.iter().collect(),
         Operation::Topo { sources, .. }
@@ -1954,28 +1960,62 @@ fn reconstruct(
         let mut next_physical = None;
         let mut product = match step {
             Operation::TopoActions { sources, request } => {
-                // Converting a private tracked descendant to a plain sequence
-                // would erase known/unknown modification and graph ancestry.
-                if sources.iter().any(|s| matches!(s.source, Source::Step(_))) {
-                    return Err(Error::Unsupported("TopoActions composition currently requires original source inputs. Tracked Step ancestry is not mapped through its declared preparation; use the existing private tracked state directly for downstream digest/repair instead of resetting chemical state.".into()));
-                }
                 let molecules = sources
                     .iter()
                     .map(|s| resolve(&s.source))
                     .collect::<Result<Vec<_>, _>>()?;
-                for molecule in &molecules {
-                    if chemistry::has_unmapped_physical_evidence(molecule)
-                        || molecule.metadata.contains_key("tracked_modifications")
-                        || molecule
-                            .metadata
-                            .contains_key(crate::recombination::REFERENCE_ONLY_KEY)
-                        || molecule.metadata.keys().any(|key| key.starts_with("topo:"))
-                    {
-                        return Err(Error::Unsupported("TopoActions requires original reference sources with explicit preparation declarations; imported physical/reference-only summaries cannot restore their lost graph or tracked modification state.".into()));
+                validate_topo_shape(sources, &request.preparation)?;
+                collagene_model::bounds::model_preflight(&molecules)?;
+                molecules.iter().try_fold(0usize, |sum, molecule| {
+                    sum.checked_add(molecule.sequence.len())
+                        .filter(|n| *n <= 100_000)
+                        .ok_or(Error::TooLarge)
+                })?;
+                let mut templates = Vec::new();
+                for (source, molecule) in sources.iter().zip(&molecules) {
+                    match &source.source {
+                        Source::Step(_) => {
+                            // Only actual fresh private material can enter the
+                            // PCR-only synthesis route. No imported summary or
+                            // matching sequence establishes this permission.
+                            templates.push((source.role.clone(), resolve_tracked(&source.source)?));
+                        }
+                        Source::Input(_) => {
+                            if chemistry::has_unmapped_physical_evidence(molecule)
+                                || molecule.metadata.contains_key("tracked_modifications")
+                                || molecule
+                                    .metadata
+                                    .contains_key(crate::recombination::REFERENCE_ONLY_KEY)
+                                || molecule.metadata.keys().any(|key| key.starts_with("topo:"))
+                            {
+                                return Err(Error::Unsupported("TopoActions requires original reference sources with explicit preparation declarations; imported physical/reference-only summaries cannot restore their lost graph or tracked modification state.".into()));
+                            }
+                        }
                     }
                 }
-                let inputs = topo_inputs(sources, &molecules, &request.preparation)?;
-                let fresh = crate::topo_actions::inspect(&inputs, request)?;
+                // Native input cloning remains bounded before preparation. The
+                // private adapter checks each Step role is PCR-only and agrees
+                // exactly with its tracked template; source metadata is retained.
+                let inputs = sources
+                    .iter()
+                    .zip(&molecules)
+                    .map(|(source, molecule)| crate::topo::Input {
+                        role: source.role.clone(),
+                        molecule: (*molecule).clone(),
+                    })
+                    .collect::<Vec<_>>();
+                let tracked_templates = templates
+                    .iter()
+                    .map(|(role, material)| (role.clone(), material))
+                    .collect::<Vec<_>>();
+                let fresh = crate::topo_actions::inspect_reconstructed(
+                    &inputs,
+                    request,
+                    &tracked_templates,
+                )?;
+                if !templates.is_empty() {
+                    findings.push(format!("Step {} uses {} fresh upstream material role(s) only as templates for explicitly declared new PCR synthesis. Template atoms, internal modifications and generation history are not inherited into the new strands; arbitrary Prepared correspondence from prior products remains unsupported.", index + 1, templates.len()));
+                }
                 let fresh_bytes = evidence_bytes(&fresh, crate::topo_actions::MAX_REPORT_BYTES)?;
                 step_evidence_bytes = step_evidence_bytes
                     .checked_add(fresh_bytes)

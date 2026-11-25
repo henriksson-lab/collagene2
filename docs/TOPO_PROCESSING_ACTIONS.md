@@ -43,8 +43,9 @@ complete graph; visible long lists are paged.
 A current faithful result offers an explicit declaration-only candidate handoff.
 Source/target events, orientation, request revision, workspace epoch and disposal
 are guarded. Verify reconstructs the original inputs and all actions, supplying
-private tracked material to subsequent operations. Step-based upstream preparation
-remains unsupported until tracked modification ancestry is mapped. Portable
+private tracked material to subsequent operations. Step-based upstream material is now supported only as an explicitly new PCR
+template under [fresh private material checks](TOPO_UPSTREAM_PCR.md). Actual
+atom-inheriting preparations still require tracked modification ancestry mapping. Portable
 sequence/reference summaries cannot substitute for that state.
 
 MCP `inspect_topo_actions` and `project_topo_actions` use the same native path.

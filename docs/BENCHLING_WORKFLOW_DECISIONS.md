@@ -63,9 +63,10 @@ that the selected option would ignore. Existing source capture, edit controls,
 scientific checking and candidate state are reused.
 
 A parallel [design-review continuity audit](BENCHLING_DESIGN_REVIEW_CONTINUITY.md)
-finds three remaining presentation connections: selection-to-existing directional
-primer editor, a compact exact-event run-provenance overview, and model-labelled
-selection statistics. Existing selected PCR outputs, saved primer export and bulk
+initially proposed selection/primer shortcuts and GC statistics, but a full
+call-site check found both already present in the separate selection toolbar.
+The compact exact-event run-provenance overview is now implemented with
+bounded source/step paging and existing guarded exact-version navigation. Existing selected PCR outputs, saved primer export and bulk
 construct archives are already implemented. These are interaction follow-ups;
 public documentation does not establish chemical correctness or graph-export parity.
 

@@ -187,13 +187,19 @@ fn validate_texts(values: &[String], limit: usize) -> Result<(), Error> {
 }
 fn validate_record(r: &RunRecord) -> Result<(), Error> {
     if r.schema_version != 1
-        || !matches!(r.plan_schema, 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12)
+        || !matches!(r.plan_schema, 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13)
         || !digest(&r.run_id)
         || r.assessment.engine_version.is_empty()
         || r.assessment.engine_version.len() > 128
         || r.assessment.status == Status::Invalid
     {
         return Err(bad("invalid schema or assessment"));
+    }
+    if r.plan_schema < 13
+        && (r.assessment.engine_version.ends_with("/science-18")
+            || r.plan.steps.iter().any(verification::topo_uses_step_source))
+    {
+        return Err(bad("Upstream TOPO PCR synthesis requires plan schema13"));
     }
     if r.plan_schema < 12
         && (r.assessment.engine_version.ends_with("/science-17")

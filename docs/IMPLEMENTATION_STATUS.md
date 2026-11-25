@@ -24,9 +24,36 @@ checkpoint adds no runtime/build/browser checks.
 
 The latest two parallel official-documentation reviews found presentation seams,
 not missing PCR/export engines. The assembly dock now shows method and actual
-per-slot preparation before construct review. Selection-to-existing-primer-editor
-and compact exact-event provenance are recorded follow-ups.
+per-slot preparation before construct review. A full call-site check confirms that selection-to-primer-editor shortcuts and
+selected-reference GC already exist in the separate toolbar; the compact exact-event
+provenance overview is now implemented over the existing exact-event viewers.
 [Research and decisions](BENCHLING_WORKFLOW_DECISIONS.md).
+
+## Upstream PCR synthesis and compact assembly provenance
+
+A prior native product can now supply a template to an explicitly new ExactPcr
+preparation inside TopoActions. Actual tracked complete aligned unnicked material
+is required; a role cannot also feed Prepared correspondence. Template modifications
+remain on its own retained product, and new strands inherit no atoms/modification
+history. Imported summaries and public standalone source APIs remain strict.
+[Contract and remaining material/UI work](TOPO_UPSTREAM_PCR.md).
+
+Historical evidence binds each upstream role to its exact prior retained product
+event/revision; fresh replay reconstructs the complete plan. Worker67/candidate15/
+plan13/science18 add the capability without changing report or operation fields.
+The run panel now shows paged exact sources → typed operation → retained product,
+with reference-only/historical labels and guarded exact-version navigation.
+66 focused native cases pass, including modified-template PCR composition through
+real MCP SDK calls, exact archive/replay and legacy version gates. The application/
+worker WASM compiler check, core/MCP/web fixture compiler check and formatting
+checks pass.
+The preceding pushed checkpoint's CI found a duplicate field in the legacy test
+fixture, which prevented that test from compiling; the redundant initializer is
+removed here and all seven legacy tests pass. This was a test-source compile
+error, not a scientific acceptance threshold. [Prior run](https://github.com/henriksson-lab/collagene2/actions/runs/45686799125).
+The previous selection-shortcut gap was corrected after checking the separate
+existing toolbar; no duplicate controls were added. Browser checks remain deferred,
+and public8082 remains on the earlier worker65 snapshot.
 
 ## Ordered source-conserving TOPO processing
 

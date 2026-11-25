@@ -101,8 +101,27 @@ use crate::topo_processed_product::{bridge, geometry};
 /// proof. No imported physical graph, reference summary or target selects DNA.
 pub fn inspect(inputs: &[topo::Input], r: &Request) -> Result<Report, Error> {
     preflight(inputs, r)?;
+    let preparation_revision = topo::batch_revision(inputs, &r.preparation)?;
+    inspect_preflighted(inputs, r, preparation_revision)
+}
+/// Fresh plan-only PCR synthesis route. Actual tracked Step templates establish
+/// eligibility, not inherited atoms/modifications or imported receipt authority.
+pub(crate) fn inspect_reconstructed(
+    inputs: &[topo::Input],
+    r: &Request,
+    templates: &[(String, &tracked::TrackedDuplex)],
+) -> Result<Report, Error> {
+    shape(r)?;
+    let preparation_revision =
+        topo::batch_revision_reconstructed(inputs, &r.preparation, templates)?;
+    inspect_preflighted(inputs, r, preparation_revision)
+}
+fn inspect_preflighted(
+    inputs: &[topo::Input],
+    r: &Request,
+    preparation_revision: String,
+) -> Result<Report, Error> {
     let original = &r.preparation;
-    let preparation_revision = topo::batch_revision(inputs, original)?;
     let sources = topo::identities(inputs);
     let context_revision = binding(&preparation_revision, &sources, r)?;
     let preparation = topo::prepare(inputs, original)?;

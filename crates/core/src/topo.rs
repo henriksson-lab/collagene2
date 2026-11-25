@@ -162,6 +162,13 @@ fn interval(inputs: &[Input], p: &SourceInterval) -> Result<(), Error> {
 /// Borrowed aggregate guard before recursive validation, model hashes, sequence
 /// construction or rich input cloning. Bounds apply to native callers as well.
 pub fn source_preflight(inputs: &[Input], r: &Request) -> Result<(), Error> {
+    source_preflight_inner(inputs, r, &BTreeSet::new())
+}
+fn source_preflight_inner(
+    inputs: &[Input],
+    r: &Request,
+    reconstructed_templates: &BTreeSet<String>,
+) -> Result<(), Error> {
     if inputs.is_empty()
         || inputs.len() > 32
         || r.recipe.schema_version != 1
@@ -248,7 +255,9 @@ pub fn source_preflight(inputs: &[Input], r: &Request) -> Result<(), Error> {
                 text(material_id, 256)?;
                 text(template_role, 256)?;
                 let template = source(inputs, template_role)?;
-                if chemistry::has_unmapped_physical_evidence(template) {
+                if chemistry::has_unmapped_physical_evidence(template)
+                    && !reconstructed_templates.contains(template_role)
+                {
                     return Err(bad(
                         "PCR requires reconstructible original template, not imported physical evidence",
                     ));
@@ -350,6 +359,98 @@ pub(crate) fn identities(inputs: &[Input]) -> Vec<SourceIdentity> {
 }
 pub fn batch_revision(inputs: &[Input], r: &Request) -> Result<String, Error> {
     source_preflight(inputs, r)?;
+    batch_binding(inputs, r)
+}
+/// Private synthesis-only route. The caller supplies actual freshly reconstructed
+/// Step material, never a deserialized report or a metadata-derived duplex.
+pub(crate) fn source_preflight_reconstructed(
+    inputs: &[Input],
+    r: &Request,
+    templates: &[(String, &crate::modified_duplex::TrackedDuplex)],
+) -> Result<(), Error> {
+    if inputs.len() > 32 || templates.len() > 32 || templates.len() > inputs.len() {
+        return Err(Error::TooLarge);
+    }
+    let mut roles = BTreeSet::new();
+    for (role, _) in templates {
+        text(role, 256)?;
+        if !roles.insert(role.clone()) || inputs.iter().filter(|i| i.role == *role).count() != 1 {
+            return Err(bad(
+                "reconstructed PCR templates require unique actual source roles",
+            ));
+        }
+    }
+    // This validates all input models, recipe counts/segments and search budgets
+    // before recursive tracked validation or source/recipe hashing.
+    source_preflight_inner(inputs, r, &roles)?;
+    bounded(&templates, MAX_REPORT_BYTES)?;
+    let mut template_bases = 0usize;
+    for (role, tracked) in templates {
+        let mut used = false;
+        for material in &r.recipe.materials {
+            match material {
+                MaterialRecipe::Prepared { strands, .. } => {
+                    if strands
+                        .iter()
+                        .any(|s| s.segments.iter().any(|p| p.source_role == *role))
+                    {
+                        return Err(bad(
+                            "tracked Step material cannot supply reference-only Prepared intervals; only fresh exact-PCR synthesis is supported",
+                        ));
+                    }
+                }
+                MaterialRecipe::ExactPcr { template_role, .. } => {
+                    used |= template_role == role;
+                }
+            }
+        }
+        if !used {
+            return Err(bad(
+                "reconstructed template role is not used by any exact-PCR material",
+            ));
+        }
+        template_bases = template_bases
+            .checked_add(tracked.duplex.top.len())
+            .and_then(|n| n.checked_add(tracked.duplex.bottom.len()))
+            .filter(|n| *n <= 200_000)
+            .ok_or(Error::TooLarge)?;
+        tracked.validate()?;
+        let molecule = source(inputs, role)?;
+        if tracked.duplex.top != molecule.sequence || tracked.duplex.topology != molecule.topology {
+            return Err(bad(
+                "actual tracked PCR template differs from its exact Step sequence/topology",
+            ));
+        }
+        if tracked.duplex.bottom_start != 0
+            || tracked.duplex.bottom.len() != tracked.duplex.top.len()
+            || !tracked.duplex.nicks.is_empty()
+        {
+            return Err(bad(
+                "exact PCR of nicked or staggered tracked templates is not modeled; actual complete aligned strands are required",
+            ));
+        }
+        if molecule.metadata.keys().any(|key| {
+            key.starts_with("variant:")
+                || key.starts_with("recombination:")
+                || key.starts_with("source:recombination:")
+                || key == crate::recombination::CHEMISTRY_UNMAPPED_KEY
+        }) {
+            return Err(bad(
+                "reference-only, variant or unmapped reference ancestry cannot establish a physical PCR template",
+            ));
+        }
+    }
+    Ok(())
+}
+pub(crate) fn batch_revision_reconstructed(
+    inputs: &[Input],
+    r: &Request,
+    templates: &[(String, &crate::modified_duplex::TrackedDuplex)],
+) -> Result<String, Error> {
+    source_preflight_reconstructed(inputs, r, templates)?;
+    batch_binding(inputs, r)
+}
+fn batch_binding(inputs: &[Input], r: &Request) -> Result<String, Error> {
     hash(&(
         ENGINE_VERSION,
         physical::ENGINE,

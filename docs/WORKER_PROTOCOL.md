@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **66** and reads supported schemas 1–65. Candidate files write schema 14; workspace plan schema is 12; the verifier is science-17.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **67** and reads supported schemas 1–66. Candidate files write schema 15; workspace plan schema is 13; the verifier is science-18.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -861,3 +861,12 @@ appended generic `physical_processing_reports` vector. Explicit nine-path
 positional migrations through65 preserve old nonempty processed reports. Job149
 also downloads a bounded exact-evidence bundle for generic/mixed retained runs.
 [Chemistry, UI, MCP, historical binding and limits](TOPO_PROCESSING_ACTIONS.md).
+
+
+## Upstream PCR template composition (schema67)
+
+`TopoActions` with a `Source::Step` requires worker67/candidate15/plan13 and a
+fresh native PCR-only template check. Science18 reports require67. No DTO layout,
+operation tag, report field or worker selector changes. Original-input operation20
+retains its66/14/12 floor and old reports remain documentary data.
+[Native authority, synthesis and exact history](TOPO_UPSTREAM_PCR.md).

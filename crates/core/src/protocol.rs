@@ -6,8 +6,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 66;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 14;
+pub const WORKER_SCHEMA_VERSION: u16 = 67;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 15;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
@@ -2659,6 +2659,9 @@ fn check_verification_report_version(
     Ok(())
 }
 fn check_scientific_report_version(bytes: &[u8], engine: &str) -> Result<(), Error> {
+    if engine.ends_with("/science-18") {
+        check_variant_version(bytes, 67)?;
+    }
     if engine.ends_with("/science-17") {
         check_variant_version(bytes, 66)?;
     }
@@ -2729,6 +2732,9 @@ fn check_workspace_version(
             check_variant_version(bytes, 12)?;
             let record = crate::run_lineage::load_run_record(&attachment.bytes)?;
             check_variant_version(bytes, plan_worker_version(&record.plan))?;
+            if record.plan_schema >= 13 {
+                check_variant_version(bytes, 67)?;
+            }
             if record.plan_schema >= 12 {
                 check_variant_version(bytes, 66)?;
             }
@@ -2842,6 +2848,7 @@ fn plan_worker_version(plan: &crate::verification::DesignPlan) -> u16 {
     plan.steps
         .iter()
         .map(|step| match step {
+            step if crate::verification::topo_uses_step_source(step) => 67,
             crate::verification::Operation::TopoActions { .. } => 66,
             crate::verification::Operation::ProcessedTopo { .. } => 65,
             crate::verification::Operation::SelectedGoldenGate { .. } => 59,

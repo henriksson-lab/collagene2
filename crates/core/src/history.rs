@@ -221,6 +221,22 @@ impl DocumentHistory {
     /// Atomic commit: stale current state, invalid data or capacity errors leave every
     /// navigation stack and event unchanged. Redo branches stay in immutable history.
     pub fn commit(&mut self, next: Molecule, operation: impl Into<String>) -> Result<(), Error> {
+        self.commit_with_source_events(next, operation, &[])
+    }
+    /// Commit a reversible reference edit with explicitly retained source events.
+    /// The host must validate cross-document event ownership in its staged workspace.
+    /// Parent edges record computational ancestry, never physical verification.
+    /// Unlike an ordinary no-op edit, explicit source ancestry records an event
+    /// even when the resulting molecular content is unchanged.
+    pub fn commit_with_source_events(
+        &mut self,
+        next: Molecule,
+        operation: impl Into<String>,
+        source_events: &[String],
+    ) -> Result<(), Error> {
+        if source_events.len() > 128 {
+            return Err(Error::TooLarge);
+        }
         next.validate()?;
         if self.node(&self.head)?.event.revision != self.molecule.revision() {
             return Err(Error::Format(
@@ -228,15 +244,16 @@ impl DocumentHistory {
             ));
         }
         let revision = next.revision();
-        if revision == self.node(&self.head)?.event.revision {
+        if revision == self.node(&self.head)?.event.revision && source_events.is_empty() {
             return Ok(());
         }
-        let event = RevisionEvent::new(
-            self.id.clone(),
-            revision.clone(),
-            vec![self.head.clone()],
-            operation,
-        )?;
+        let mut parents = vec![self.head.clone()];
+        for source in source_events {
+            if !parents.contains(source) {
+                parents.push(source.clone());
+            }
+        }
+        let event = RevisionEvent::new(self.id.clone(), revision.clone(), parents, operation)?;
         let existing = self.nodes.iter().find(|n| n.event.id == event.id).cloned();
         let node = if let Some(existing) = existing {
             existing

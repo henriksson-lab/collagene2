@@ -73,6 +73,8 @@ mod read_review_view;
 #[cfg(target_arch = "wasm32")]
 mod read_source_library;
 #[cfg(target_arch = "wasm32")]
+mod reference_transfer_view;
+#[cfg(target_arch = "wasm32")]
 mod restriction_map;
 #[cfg(target_arch = "wasm32")]
 mod restriction_view;

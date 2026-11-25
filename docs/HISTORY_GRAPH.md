@@ -12,6 +12,15 @@ Click a graph circle or its labeled button to inspect the event without modifyin
 
 `DocumentHistory::fork_event(source_event, new_document_id)` opens an immutable source event as a distinct document whose first event records the exact source-event parent. The source event must remain retained in the workspace; normal workspace validation rejects a dangling parent. Forking copies no verification authority and creates no Undo/Redo entries for the new document. The workspace archive retains this cross-document edge and deduplicates shared molecule revisions. The new document can then be edited normally, preserving its provenance chain.
 
+`commit_with_source_events` supports an in-place reversible reference edit with
+explicit additional source parents. The previous destination head is always the
+first parent; duplicate source IDs are removed, native parent limits still apply,
+and the host validates external event ownership in its staged workspace. Explicit
+source ancestry records an event even for identical molecular content; ordinary
+`commit` keeps its existing no-op behavior. Annotated paste uses this operation
+without inferring a physical reaction from those computational history edges.
+[Reference transfer](REFERENCE_TRANSFER.md).
+
 Dashed graph continuations distinguish parents elsewhere on the current graph's pages from parents outside the current document. External parent display metadata comes from other retained workspace documents. An unavailable display name is explicitly labeled unavailable, never replaced by an inferred source. Full parent IDs remain inspectable. External labels are bounded display text; event IDs and revision IDs retain their full values.
 
 Saved candidate targets can match a node's molecule revision. This is labeled a content match, not proof that the event created or verified that candidate. Candidate snapshots remain proposals for separate review and deterministic verification against exact active inputs and an independently selected target. History operations do not execute recorded operation labels or establish a scientific verification result.

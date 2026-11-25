@@ -14,6 +14,33 @@ is postponed until the rest of the software is implemented. Existing modules are
 retained; no more alignment/index features or integration are scheduled now.
 Browser checks remain deferred and compiler checks run alongside coding.
 
+## Annotated reference transfer
+
+The editor's internal reference clipboard copies exact selected regions or
+biological join/complement selections with annotation projection. It works without
+system clipboard permission and survives source navigation while original events
+remain retained. Paste previews all product bases/annotations and warnings in
+pages, then freshly reconstructs before applying one source-bound undoable edit.
+Both source and previous destination events are retained as computational parents;
+plain OS clipboard actions remain separate.
+
+Projection uses the original source directly against final destination topology.
+Fixtures distinguish a linear preview's broken-origin gene from a restored circular
+gene, and from a genuinely interrupted gene in a larger destination. Source citation
+numbers, raw annotation/header evidence and unmapped features remain scoped evidence.
+Current physical/trace/FASTQ descriptors do not become invented prepared material.
+Native reference editing also handles translation/unsupported coordinate-qualifier
+case variants consistently, preserving untouched assertions.
+
+Worker53 adds copy120/paste121 and results112/113 under ordinary 32 MiB limits.
+Candidate11, plan9, science-14, archive1 and MCP136 remain unchanged. Sixty-four
+native cases passed: six transfer groups, two binary groups, four multi-parent
+history cases, seven existing history cases, two qualifier-case fixtures and 43
+native web cases. The final web/worker WASM compiler check passed. Browser checks
+and full preview rebuilding were not run; port8082 still serves the last immutable
+primer/mismatch publication. The full product objective remains unfinished.
+[Transfer contract](REFERENCE_TRANSFER.md).
+
 ## Retained construct comparison
 
 The comparison panel now keeps a reference pinned while navigating reference/query

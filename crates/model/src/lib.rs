@@ -819,10 +819,9 @@ impl Molecule {
         }
         if self.features.iter().any(|f| {
             f.qualifiers.iter().any(|(key, _)| {
-                matches!(
-                    key.as_str(),
-                    "transl_except" | "anticodon" | "rpt_unit_range" | "coded_by"
-                )
+                ["transl_except", "anticodon", "rpt_unit_range", "coded_by"]
+                    .iter()
+                    .any(|known| key.eq_ignore_ascii_case(known))
             })
         }) {
             return Err(Error::Unsupported("editing coordinate-bearing feature qualifiers is not implemented; the original document remains intact".into()));
@@ -942,7 +941,9 @@ impl Molecule {
                 feature.location = location;
                 if touched {
                     feature.needs_review = true;
-                    feature.qualifiers.retain(|(key, _)| key != "translation");
+                    feature
+                        .qualifiers
+                        .retain(|(key, _)| !key.eq_ignore_ascii_case("translation"));
                 }
                 result.features.push(feature);
             }

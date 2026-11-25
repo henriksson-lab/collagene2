@@ -2,6 +2,12 @@
 
 Reviewed 2026-11-25 against official public documentation and the current Collagene source. This is a source assessment, not a runtime acceptance check. No local browser checks, builds, Benchling application code or authenticated sessions were used. Earlier gap documents describe earlier implementations; the assessment below supersedes their editor-specific claims where the code has since changed.
 
+Subsequent implementation: the editor now has a session-local annotated reference
+clipboard, explicit paste preview and native source/destination projection with
+exact-event parents and Undo/Redo. Plain-text OS clipboard operations remain
+separate; rich transfer does not assert digest/ligation chemistry. This supersedes
+the original missing-rich-transfer recommendation below. [Current contract](REFERENCE_TRANSFER.md).
+
 ## Documented Benchling behavior
 
 **Sequence selection and editing.** The DNA/RNA overview describes drag selection with coordinates, selected length and sequence statistics; sequence, linear and circular views; display toggles; direct base insertion/deletion; and copying regions with their annotations into another location or document. It distinguishes changing a circular sequence's index from moving a map visually. [DNA and RNA sequence overview](https://help.benchling.com/hc/en-us/articles/39110680274189-DNA-and-RNA-sequence-overview), updated September 30, 2025.

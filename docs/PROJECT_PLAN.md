@@ -608,6 +608,15 @@ navigates insertion/deletion carets and offers explicit native origin/strand
 policy. Reopened records stay historical until recomputed. Integrated
 reference/read/trace navigation and remaining core cloning/editor work stay active.
 [Run UI contract](RUN_LINEAGE_UI.md) · [Comparison contract](PAIRWISE_REVIEW.md).
+
+The editor now has an annotated reference clipboard with biological ordered-part
+copy, explicit paste preview, final-destination feature projection and one
+undoable source/destination-parent edit. It does not infer prepared chemistry.
+The next everyday-editor connections are selection-relative restriction filters,
+named enzyme choices and annotation-list operations, alongside remaining actual
+cloning preparation/composition work. Reuse the shared scan/catalog and document
+history; avoid another scanner or clipboard chemistry engine.
+[Reference transfer](REFERENCE_TRANSFER.md).
 [Selected PCR outputs](PCR_OUTPUTS.md).
 
 The latest source-aware workflow reviews supersede older gap lists where those

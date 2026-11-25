@@ -1406,3 +1406,17 @@ No browser or HTTP checks were run. The preceding0a229ad published assembly
 checkpoint and5a10568 source-stage checkpoint have completed all CI jobs
 successfully. Public8082 remains on0a229ad until the next bundled preview; current
 source changes do not establish visual acceptance or full-goal completion.
+
+### Repeatable static preview publication
+
+The staging script now optionally verifies generated index references, declared
+integrity hashes, complete versioned analysis workers and WASM headers before
+creating a new snapshot. It writes a static evidence manifest without executing
+assets or making browser/HTTP requests. Four offline staging tests cover broken
+bundles, exact old-worker retention and refusing overwrite. This promotes the
+previous publication checks into a reusable tool rather than adding application
+filesystem access. [Publication procedure](PREVIEW_PUBLICATION.md).
+
+The accumulated draft lifecycle, primer tables and physical-end diagrams are
+being bundled together for the next public8082 snapshot. Interactive/visual
+acceptance and the full remaining original plan remain outstanding.

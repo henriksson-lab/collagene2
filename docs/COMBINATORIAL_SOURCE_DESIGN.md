@@ -88,9 +88,11 @@ working or saved role tables fail rather than being relabeled by index.
 
 This checkpoint connects explicit choice matrices to ordinary per-construct editing
 and verification. It does not complete F13/F27 bulk delivery. Batch evaluation with
-progress/cancellation, matrix-owned per-construct run/output records, bulk sequence
-and oligo/protocol release, dedicated MCP design operations and library topology
-editing remain in scope. These should build on the typed design layer and existing
+progress/cancellation, immutable batch records and dedicated MCP design operations
+are now implemented ([details](COMBINATORIAL_BATCHES.md)). Matrix-owned per-construct
+run/output records, bulk sequence and oligo/protocol release, full product inspection,
+reaction-pool composition and library topology editing remain in scope.
+These should build on the typed design layer and existing
 compilers, not add another chemistry engine. Fusion-end ranking and domestication
 remain distinct planned capabilities.
 

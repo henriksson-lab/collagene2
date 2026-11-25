@@ -15,6 +15,10 @@ mod assembly_alternatives;
 #[cfg(target_arch = "wasm32")]
 mod assembly_alternatives_view;
 #[cfg(any(target_arch = "wasm32", test))]
+mod assembly_batch_projection;
+#[cfg(target_arch = "wasm32")]
+mod assembly_batch_view;
+#[cfg(any(target_arch = "wasm32", test))]
 mod assembly_draft_model;
 #[cfg(target_arch = "wasm32")]
 mod assembly_finalize;
@@ -36,8 +40,12 @@ mod clipboard;
 mod cloning_methods;
 #[cfg(any(target_arch = "wasm32", test))]
 mod cloning_methods_model;
+#[cfg(any(target_arch = "wasm32", test))]
+mod cloning_preparations;
 #[cfg(target_arch = "wasm32")]
 mod codon_design;
+#[cfg(any(target_arch = "wasm32", test))]
+mod commit_lease;
 #[cfg(target_arch = "wasm32")]
 mod contigs;
 #[cfg(target_arch = "wasm32")]
@@ -118,6 +126,8 @@ mod trace_validation;
 mod variant_source_library;
 #[cfg(target_arch = "wasm32")]
 mod variants_view;
+#[cfg(target_arch = "wasm32")]
+mod workspace_commit;
 #[cfg(target_arch = "wasm32")]
 mod workspace_layout;
 #[cfg(any(target_arch = "wasm32", test))]

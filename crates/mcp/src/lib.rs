@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 136;
+pub const CURRENT_TOOL_COUNT: usize = 142;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -2437,6 +2437,60 @@ impl ServerHandler for CollageneServer {
 
 #[tool_router]
 impl CollageneServer {
+    #[tool(
+        description = "Page a declared alternative-source matrix in an imported native workspace, with exact retained source-event ownership and original interval checks. Uses stable bin/choice identities and bounded lazy enumeration (at most64 rows), not reaction-product enumeration. Does not test preparation, junctions, independent target agreement or experimental success."
+    )]
+    async fn page_combinatorial_design(
+        &self,
+        Parameters(args): Parameters<combinatorial_tools::MatrixQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.combinatorial_matrix(args).await
+    }
+    #[tool(
+        description = "Resolve one explicitly selected construct's exact retained source events, original contributions, per-construct overrides, independent target declaration and typed native preparation recipe. Returns complete source-bound JSON evidence. This inspection does not reconstruct the causal assembly or establish verification; use fresh batch evaluation for that."
+    )]
+    async fn inspect_combinatorial_construct(
+        &self,
+        Parameters(args): Parameters<combinatorial_tools::InspectQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.combinatorial_inspect(args).await
+    }
+    #[tool(
+        description = "Freshly evaluate explicitly selected constructs with the existing deterministic preparation compilers/verifier and retain a named immutable batch record in a NEW native workspace. Stable design/construct/bin/choice identities and exact original events are preserved. Per-construct preparation/method/topology overrides are explicit; unresolved draft rows remain errors. Imported reports never restore fresh authority. Original source heads remain unchanged; native archive and complete historical JSON are returned atomically. This does not release bulk outputs or assert experimental success."
+    )]
+    async fn evaluate_combinatorial_batch(
+        &self,
+        Parameters(args): Parameters<combinatorial_tools::BatchQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.combinatorial_evaluate(args).await
+    }
+    #[tool(
+        description = "List retained combinatorial batch records in an imported native workspace with bounded paging. Recorded statuses are historical evidence; listing never recomputes preparations or restores current verification authority."
+    )]
+    async fn list_combinatorial_batches(
+        &self,
+        Parameters(args): Parameters<combinatorial_tools::ListQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.combinatorial_list(args).await
+    }
+    #[tool(
+        description = "Open one immutable combinatorial batch record as complete historical JSON. Exact source/target bindings, original choices, per-construct settings and recorded outcomes remain inspectable without changing current heads. Opening does not rerun science or establish fresh authority."
+    )]
+    async fn open_combinatorial_batch(
+        &self,
+        Parameters(args): Parameters<combinatorial_tools::OpenQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.combinatorial_open(args).await
+    }
+    #[tool(
+        description = "Freshly replay one explicitly selected row from a saved combinatorial batch using its exact original source events, independent target and preparation settings. Returns recorded and current row evidence separately. Leaves the workspace, batch record and source heads unchanged; current computational consistency does not establish experimental success or release bulk products."
+    )]
+    async fn replay_combinatorial_batch(
+        &self,
+        Parameters(args): Parameters<combinatorial_tools::ReplayQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.combinatorial_replay(args).await
+    }
     #[tool(
         description = "Search or exactly look up the embedded versioned restriction catalog. Returns edition/hash, stable enzyme geometry identities, separate formulation records, aliases and documentary source citations. Search/exact ambiguity pages are bounded to 100 records. Optional edition/hash pin rejects stale editions. Enzyme identity and formulation assay facts are distinct; lookup does not predict cleavage or transfer supplier conditions between related enzymes."
     )]
@@ -6084,6 +6138,7 @@ mod genome_store;
 mod unit_tools;
 
 mod catalog_tools;
+mod combinatorial_tools;
 mod recombination_tools;
 
 #[cfg(test)]

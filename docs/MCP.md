@@ -2,7 +2,14 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current registry has 136 tools. Reference recombination adds explicit profile discovery, source inspection, independent target checking and fresh selected-component reconstruction. The optional `plan_sources` bridge binds a returned selection to typed plan sources without requiring a client to reproduce internal hash recipes. [Recombination tool contracts](RECOMBINATION_MCP.md).
+The current registry has 142 tools. Selected-construct design and batch operations
+add exact-version matrix paging, native inspection, historical capture/list/open
+and explicit fresh replay. [Batch contracts](COMBINATORIAL_BATCHES.md).
+Reference recombination retains explicit profile discovery, source inspection,
+independent target checking and fresh selected-component reconstruction. The
+optional `plan_sources` bridge binds a returned selection to typed plan sources
+without requiring a client to reproduce internal hash recipes.
+[Recombination tool contracts](RECOMBINATION_MCP.md).
 
 Build and configure:
 

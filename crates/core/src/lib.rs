@@ -131,6 +131,7 @@ pub mod assembly_junctions;
 pub mod overlap_primer_design;
 
 pub mod assembly_intent;
+pub mod combinatorial_batch;
 pub mod combinatorial_design;
 
 pub mod digest_cut_selection;

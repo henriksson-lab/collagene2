@@ -47,8 +47,11 @@ dto! {pub enum TargetDeclaration {
     /// Uses existing independent intent builder, never the reconstructed product.
     OriginalRegions{junction_edits:Vec<assembly_junction_edit::Edit>},
 }}
+dto! {pub struct PreparationOverride {pub bin_id:String,pub preparation:Option<assembly_recipe::Preparation>,pub treatment:Option<EndTreatment>}}
+dto! {pub struct ConstructOverrides {pub preparations:Vec<PreparationOverride>,pub method:Option<Method>,pub circular:Option<bool>}}
 dto! {pub struct SelectedConstruct {
     pub id:String,pub name:String,pub choices:Vec<ChoiceSelection>,pub target:TargetDeclaration,
+    #[serde(default)] pub overrides:Option<ConstructOverrides>,
 }}
 dto! {pub struct SelectedMatrix {pub design:Design,pub constructs:Vec<SelectedConstruct>}}
 #[derive(Clone, Debug)]
@@ -199,6 +202,91 @@ pub fn cartesian_page(
     }
     Ok(rows)
 }
+fn preparation_shape(preparation: &assembly_recipe::Preparation) -> Result<(), Error> {
+    match preparation {
+        assembly_recipe::Preparation::ExactPcr { forward, reverse }
+        | assembly_recipe::Preparation::PcrCatalogDigest {
+            forward, reverse, ..
+        } => {
+            for primer in [forward, reverse] {
+                if primer.name.len() > 256
+                    || primer.annealing.len() > 200
+                    || primer.tail.len() > 200
+                    || primer.annealing.len().saturating_add(primer.tail.len())
+                        > crate::primers::MAX_OLIGO
+                {
+                    return Err(Error::TooLarge);
+                }
+                if !label(&primer.name, 256)
+                    || primer.name.trim() != primer.name
+                    || primer.annealing.alphabet() != crate::Alphabet::Dna
+                {
+                    return Err(bad("invalid explicit primer"));
+                }
+                let parsed = crate::analysis::Primer::new(
+                    &primer.name,
+                    primer.annealing.as_str(),
+                    &primer.tail,
+                )?;
+                if parsed.tail != primer.tail || parsed.annealing != primer.annealing {
+                    return Err(bad("typed preparation must retain canonical primer DNA"));
+                }
+            }
+        }
+        assembly_recipe::Preparation::Digest { enzymes, .. } => {
+            if enzymes.len() > 64 || enzymes.iter().any(|e| e.len() > 256) {
+                return Err(Error::TooLarge);
+            }
+        }
+        _ => {}
+    }
+    match preparation {
+        assembly_recipe::Preparation::CatalogDigest { selection, .. }
+        | assembly_recipe::Preparation::PcrCatalogDigest { selection, .. } => {
+            selection.validate()?
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
+fn method_shape(method: &Method, bins: usize, circular: bool) -> Result<(), Error> {
+    if let Method::Overlap { overlaps, options } = method {
+        if overlaps.len() != bins.saturating_sub(1) + usize::from(circular)
+            || overlaps.iter().any(|n| *n == 0 || *n > 10_000)
+        {
+            return Err(bad(
+                "declare one positive overlap length per effective junction",
+            ));
+        }
+        options.validate()?;
+    }
+    Ok(())
+}
+fn effective<'a>(design: &'a Design, construct: &'a SelectedConstruct) -> (&'a Method, bool) {
+    let method = construct
+        .overrides
+        .as_ref()
+        .and_then(|o| o.method.as_ref())
+        .unwrap_or(&design.method);
+    let circular = construct
+        .overrides
+        .as_ref()
+        .and_then(|o| o.circular)
+        .unwrap_or(design.circular);
+    (method, circular)
+}
+fn preparation_override<'a>(
+    construct: &'a SelectedConstruct,
+    bin_id: &str,
+) -> Option<&'a PreparationOverride> {
+    construct
+        .overrides
+        .as_ref()?
+        .preparations
+        .iter()
+        .find(|p| p.bin_id == bin_id)
+}
 pub fn validate_design(design: &Design) -> Result<(), Error> {
     if !identifier(&design.id)
         || !label(&design.name, 256)
@@ -235,65 +323,11 @@ pub fn validate_design(design: &Design) -> Result<(), Error> {
             }
             binding(&choice.source)?;
             if let Some(preparation) = &choice.preparation {
-                match preparation {
-                    assembly_recipe::Preparation::ExactPcr { forward, reverse }
-                    | assembly_recipe::Preparation::PcrCatalogDigest {
-                        forward, reverse, ..
-                    } => {
-                        for primer in [forward, reverse] {
-                            if primer.name.len() > 256
-                                || primer.annealing.len() > 200
-                                || primer.tail.len() > 200
-                                || primer.annealing.len().saturating_add(primer.tail.len())
-                                    > crate::primers::MAX_OLIGO
-                            {
-                                return Err(Error::TooLarge);
-                            }
-                            if !label(&primer.name, 256)
-                                || primer.name.trim() != primer.name
-                                || primer.annealing.alphabet() != crate::Alphabet::Dna
-                            {
-                                return Err(bad("invalid explicit primer"));
-                            }
-                            let parsed = crate::analysis::Primer::new(
-                                &primer.name,
-                                primer.annealing.as_str(),
-                                &primer.tail,
-                            )?;
-                            if parsed.tail != primer.tail || parsed.annealing != primer.annealing {
-                                return Err(bad(
-                                    "typed preparation must retain canonical primer DNA",
-                                ));
-                            }
-                        }
-                    }
-                    assembly_recipe::Preparation::Digest { enzymes, .. } => {
-                        if enzymes.len() > 64 || enzymes.iter().any(|e| e.len() > 256) {
-                            return Err(Error::TooLarge);
-                        }
-                    }
-                    _ => {}
-                }
-                match preparation {
-                    assembly_recipe::Preparation::CatalogDigest { selection, .. }
-                    | assembly_recipe::Preparation::PcrCatalogDigest { selection, .. } => {
-                        selection.validate()?
-                    }
-                    _ => {}
-                }
+                preparation_shape(preparation)?;
             }
         }
     }
-    if let Method::Overlap { overlaps, options } = &design.method {
-        if overlaps.len() != design.bins.len().saturating_sub(1) + usize::from(design.circular)
-            || overlaps
-                .iter()
-                .any(|length| *length == 0 || *length > 10_000)
-        {
-            return Err(bad("declare one overlap length per junction"));
-        }
-        options.validate()?;
-    }
+    method_shape(&design.method, design.bins.len(), design.circular)?;
     count(design)
 }
 fn selected<'a>(
@@ -326,7 +360,10 @@ fn selected<'a>(
         })
         .collect()
 }
-fn combination_key(design: &Design, choices: &[ChoiceSelection]) -> Result<String, Error> {
+pub(crate) fn combination_key(
+    design: &Design,
+    choices: &[ChoiceSelection],
+) -> Result<String, Error> {
     let canonical = selected(design, choices)?
         .iter()
         .map(|(bin, choice)| (&bin.id, &choice.id))
@@ -345,10 +382,26 @@ fn construct_shape(design: &Design, construct: &SelectedConstruct) -> Result<(),
         return Err(bad("invalid selected construct identity"));
     }
     selected(design, &construct.choices)?;
+    let (method, circular) = effective(design, construct);
+    method_shape(method, design.bins.len(), circular)?;
+    if let Some(overrides) = &construct.overrides {
+        if overrides.preparations.len() > MAX_BINS {
+            return Err(Error::TooLarge);
+        }
+        let mut bins = BTreeSet::new();
+        for p in &overrides.preparations {
+            if !bins.insert(&p.bin_id) || !design.bins.iter().any(|b| b.id == p.bin_id) {
+                return Err(bad("invalid or duplicate per-construct preparation bin"));
+            }
+            if let Some(preparation) = &p.preparation {
+                preparation_shape(preparation)?;
+            }
+        }
+    }
     match &construct.target {
         TargetDeclaration::Existing(target) => binding(target)?,
         TargetDeclaration::OriginalRegions { junction_edits } => {
-            let count = design.bins.len().saturating_sub(1) + usize::from(design.circular);
+            let count = design.bins.len().saturating_sub(1) + usize::from(circular);
             let mut junctions = BTreeSet::new();
             if junction_edits.len() > MAX_BINS
                 || junction_edits.iter().any(|edit| {
@@ -362,6 +415,83 @@ fn construct_shape(design: &Design, construct: &SelectedConstruct) -> Result<(),
         }
     }
     count(construct)
+}
+pub fn validate_construct(design: &Design, construct: &SelectedConstruct) -> Result<(), Error> {
+    validate_design(design)?;
+    construct_shape(design, construct)
+}
+pub(crate) fn work_charge(
+    design: &Design,
+    construct: &SelectedConstruct,
+    workspace: &Workspace,
+) -> Result<usize, Error> {
+    construct_shape(design, construct)?;
+    let (method, _) = effective(design, construct);
+    let mut work = 0usize;
+    for (bin, choice) in selected(design, &construct.choices)? {
+        let n = resolve_event(workspace, &choice.source)?.sequence.len();
+        let preparation = preparation_override(construct, &bin.id)
+            .map(|p| &p.preparation)
+            .unwrap_or(&choice.preparation);
+        let mut factor = 1usize;
+        if let Some(preparation) = preparation {
+            match preparation {
+                assembly_recipe::Preparation::ExactPcr { forward, reverse }
+                | assembly_recipe::Preparation::PcrCatalogDigest {
+                    forward, reverse, ..
+                } => {
+                    factor = factor
+                        .checked_add(forward.annealing.len())
+                        .and_then(|v| v.checked_add(reverse.annealing.len()))
+                        .ok_or(Error::TooLarge)?;
+                }
+                _ => {}
+            }
+            match preparation {
+                assembly_recipe::Preparation::CatalogDigest { selection, .. }
+                | assembly_recipe::Preparation::PcrCatalogDigest { selection, .. } => {
+                    let mut motif = 0usize;
+                    for enzyme in &selection.enzymes {
+                        motif = motif
+                            .checked_add(enzyme.enzyme.recognition.len())
+                            .ok_or(Error::TooLarge)?;
+                    }
+                    let margin = if matches!(
+                        preparation,
+                        assembly_recipe::Preparation::PcrCatalogDigest { .. }
+                    ) {
+                        400
+                    } else {
+                        0
+                    };
+                    work = work
+                        .checked_add(
+                            n.checked_add(margin)
+                                .and_then(|n| n.checked_mul(motif))
+                                .ok_or(Error::TooLarge)?,
+                        )
+                        .ok_or(Error::TooLarge)?;
+                }
+                assembly_recipe::Preparation::Digest { enzymes, .. } => {
+                    factor = factor
+                        .checked_add(enzymes.len().checked_mul(64).ok_or(Error::TooLarge)?)
+                        .ok_or(Error::TooLarge)?;
+                }
+                _ => {}
+            }
+        }
+        work = work
+            .checked_add(n.checked_mul(factor).ok_or(Error::TooLarge)?)
+            .ok_or(Error::TooLarge)?;
+    }
+    if let Method::Overlap { options, .. } = method {
+        if options.scan_repeated_overlaps {
+            work = work
+                .checked_add(options.max_comparisons)
+                .ok_or(Error::TooLarge)?;
+        }
+    }
+    Ok(work.max(1))
 }
 /// Count only. Source alternatives are never reaction substrates/products.
 pub fn matrix_size(design: &Design) -> Result<u128, Error> {
@@ -421,23 +551,18 @@ pub fn validate_matrix(matrix: &SelectedMatrix) -> Result<(), Error> {
         return Err(bad("select 1–256 named constructs"));
     }
     let mut ids = BTreeSet::new();
-    let mut combinations = BTreeSet::new();
     for construct in &matrix.constructs {
         construct_shape(&matrix.design, construct)?;
         if !identifier(&construct.id) || !ids.insert(&construct.id) || !label(&construct.name, 256)
         {
             return Err(bad("invalid/duplicate selected construct identity"));
         }
-        let combination = combination_key(&matrix.design, &construct.choices)?;
-        if !combinations.insert(combination) {
-            return Err(bad("the same combination was selected twice"));
-        }
     }
     count(matrix)
 }
 /// Workspace validation establishes actual event ownership, including historical
 /// inputs, rather than accepting matching DNA/revision assertions as membership.
-fn resolve_event<'a>(
+pub(crate) fn resolve_event<'a>(
     workspace: &'a Workspace,
     event: &EventBinding,
 ) -> Result<&'a Molecule, Error> {
@@ -451,13 +576,7 @@ fn resolve_event<'a>(
     }
     crate::read_checks::resolve(workspace, event)
 }
-pub fn resolve(
-    design: &Design,
-    construct: &SelectedConstruct,
-    workspace: &Workspace,
-) -> Result<Resolved, Error> {
-    validate_design(design)?;
-    construct_shape(design, construct)?;
+pub(crate) fn workspace_guard(workspace: &Workspace) -> Result<(), Error> {
     if workspace.documents.len() > crate::workspace::MAX_DOCUMENTS
         || workspace.revisions.len() > crate::workspace::MAX_REVISIONS
         || workspace.history.len() > crate::workspace::MAX_HISTORY_EVENTS
@@ -475,6 +594,25 @@ pub fn resolve(
         molecule.validate()?;
     }
     workspace.validate()?;
+    Ok(())
+}
+pub fn resolve(
+    design: &Design,
+    construct: &SelectedConstruct,
+    workspace: &Workspace,
+) -> Result<Resolved, Error> {
+    validate_design(design)?;
+    construct_shape(design, construct)?;
+    workspace_guard(workspace)?;
+    resolve_validated(design, construct, workspace)
+}
+pub(crate) fn resolve_validated(
+    design: &Design,
+    construct: &SelectedConstruct,
+    workspace: &Workspace,
+) -> Result<Resolved, Error> {
+    construct_shape(design, construct)?;
+    let (method, circular) = effective(design, construct);
     let choices = selected(design, &construct.choices)?;
     let mut originals = Vec::with_capacity(choices.len());
     for (_, choice) in &choices {
@@ -524,7 +662,7 @@ pub fn resolve(
     let request = assembly_intent::Request {
         name: construct.name.clone(),
         fragments,
-        circular: design.circular,
+        circular,
     };
     let native = ids
         .iter()
@@ -575,9 +713,10 @@ pub fn resolve(
         }
     };
     let mut rows = Vec::with_capacity(choices.len());
-    for ((_, choice), (id, role)) in choices.iter().zip(&identities) {
-        let preparation = choice
-            .preparation
+    for ((bin, choice), (id, role)) in choices.iter().zip(&identities) {
+        let preparation = preparation_override(construct, &bin.id)
+            .map(|o| &o.preparation)
+            .unwrap_or(&choice.preparation)
             .clone()
             .ok_or_else(|| bad("chosen alternative has no explicit preparation"))?;
         rows.push(assembly_recipe::FragmentSpec {
@@ -587,9 +726,14 @@ pub fn resolve(
             reverse: choice.reverse,
         });
     }
-    let recipe = match &design.method {
+    let recipe = match method {
         Method::Overlap { overlaps, options } => {
-            if choices.iter().any(|(_, choice)| choice.treatment.is_some()) {
+            if choices.iter().any(|(bin, choice)| {
+                preparation_override(construct, &bin.id)
+                    .map(|o| o.treatment)
+                    .unwrap_or(choice.treatment)
+                    .is_some()
+            }) {
                 return Err(bad(
                     "terminal treatments require an explicit ligation route",
                 ));
@@ -598,14 +742,14 @@ pub fn resolve(
                 name: construct.name.clone(),
                 fragments: rows,
                 overlaps: overlaps.clone(),
-                circular: design.circular,
+                circular,
                 options: options.clone(),
             };
             assembly_recipe::preflight(&inputs, &target, &recipe)?;
             Recipe::Overlap(recipe)
         }
         Method::Ligation { allow_nicked } | Method::GoldenGate { allow_nicked, .. } => {
-            if let Method::GoldenGate { enzyme, .. } = &design.method {
+            if let Method::GoldenGate { enzyme, .. } = method {
                 let profile = enzyme.profile();
                 for row in &rows {
                     let selection = match &row.preparation {
@@ -637,12 +781,14 @@ pub fn resolve(
                 fragments: rows
                     .into_iter()
                     .zip(&choices)
-                    .map(|(source, (_, choice))| ligation_recipe::Fragment {
+                    .map(|(source, (bin, choice))| ligation_recipe::Fragment {
                         source,
-                        treatment: choice.treatment,
+                        treatment: preparation_override(construct, &bin.id)
+                            .map(|o| o.treatment)
+                            .unwrap_or(choice.treatment),
                     })
                     .collect(),
-                circular: design.circular,
+                circular,
                 allow_nicked: *allow_nicked,
             };
             ligation_recipe::source_preflight(&native, &target, &recipe)?;
@@ -690,6 +836,16 @@ pub fn evaluate(
     workspace: &Workspace,
 ) -> Result<Evaluation, Error> {
     let resolved = resolve(design, construct, workspace)?;
+    evaluate_resolved(resolved)
+}
+pub(crate) fn evaluate_validated(
+    design: &Design,
+    construct: &SelectedConstruct,
+    workspace: &Workspace,
+) -> Result<Evaluation, Error> {
+    evaluate_resolved(resolve_validated(design, construct, workspace)?)
+}
+fn evaluate_resolved(resolved: Resolved) -> Result<Evaluation, Error> {
     let preview = match &resolved.recipe {
         Recipe::Overlap(recipe) => Preview::Overlap(assembly_recipe::preview(
             &resolved.inputs,

@@ -22,6 +22,29 @@ and review proposals are implemented, despite older gap tables. See
 [workflow decisions](BENCHLING_WORKFLOW_DECISIONS.md). This documentation-only
 checkpoint adds no runtime/build/browser checks.
 
+## Selected batch evaluation, historical capture and MCP
+
+Selected constructs now run sequentially in a private worker with progress,
+cancellation and row-local draft/reconstruction/evaluation outcomes. Per-row
+manual preparations, method, topology, treatment and independent junction intent
+are retained; bad editable rows do not hide valid ones. Historical native records
+retain exact source/target/plan/product identities and current-engine evidence
+without releasing products or restoring fresh authority on load.
+
+The web saves evidence through a guarded current/previous recovery transaction,
+with cancellable same-worker encoding and token-owned commit leases. The dock's
+editing controls lock during capture; cancelled old completions cannot unlock
+later writes. Saved matrices reopen read-only and replay explicitly. Six MCP tools
+provide bounded design paging, inspection, batch capture/list/open and row replay;
+the registry is142 tools. Worker57 appends private session begin/advance/capture
+while preserving existing tags and native schemas.
+[Detailed contracts, limits and remaining output work](COMBINATORIAL_BATCHES.md).
+
+Validation:19 focused core tests, two real MCP SDK groups and all98 native web
+tests passed, followed by the final WASM check. This includes the cancellation
+lease regression and all prior web fixtures. No browser checks or public preview
+refresh were run; port8082 retains the schema56 comparison/primer/digest snapshot.
+
 ## Alternative source bins and per-construct edits
 
 The existing assembly dock now captures immutable source alternatives, pages the

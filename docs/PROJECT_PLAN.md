@@ -122,8 +122,11 @@ concrete connections:
   interaction work and the alternative-source design layer below.
 - Genuine alternative source bins, selected construct rows, stable recipe identities
   and per-construct editable preparation/junction state now extend the same dock
-  ([details](COMBINATORIAL_SOURCE_DESIGN.md)). Continue batch evaluation/cancellation,
-  matrix-owned run/output provenance, bulk release, MCP and library topology editing.
+  ([details](COMBINATORIAL_SOURCE_DESIGN.md)). Selected batch evaluation/cancellation,
+  immutable historical evidence and six MCP operations are now connected
+  ([details](COMBINATORIAL_BATCHES.md)). Continue matrix-owned run/output provenance,
+  fresh bulk release, product inspection, reaction-pool composition and library
+  topology editing.
   Reaction-product enumeration alone does not complete combinatorial cloning.
   Inspectable fusion-end proposals and intentional
   domestication remain distinct planned work.

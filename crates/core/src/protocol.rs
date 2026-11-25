@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 56;
+pub const WORKER_SCHEMA_VERSION: u16 = 57;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 11;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -772,6 +772,18 @@ pub enum AnalysisJob {
         query: Molecule,
         translate: bool,
     },
+    BeginCombinatorialBatch {
+        workspace: crate::workspace::Workspace,
+        matrix: crate::combinatorial_batch::Request,
+    },
+    AdvanceCombinatorialBatch {
+        context: String,
+        index: usize,
+    },
+    CaptureCombinatorialBatch {
+        workspace: crate::workspace::Workspace,
+        current_context: String,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -901,6 +913,9 @@ pub enum AnalysisResult {
     ExportedPairwiseComparison(crate::pairwise_export::Export),
     SearchedPairwiseComparison(crate::pairwise_search::Matches),
     PreparedPairwiseContext(crate::pairwise_context::Context),
+    CombinatorialBatchStarted(crate::combinatorial_batch::Progress),
+    CombinatorialBatchAdvanced(crate::combinatorial_batch::Progress),
+    CombinatorialBatchCaptured(crate::combinatorial_batch::Commit),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1120,6 +1135,18 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
     {
         crate::pairwise_context::preflight(report, reference, query, *translate)?;
     }
+    match &r.job {
+        AnalysisJob::BeginCombinatorialBatch { workspace, matrix } => {
+            crate::combinatorial_batch::begin_revision(workspace, matrix)?;
+        }
+        AnalysisJob::CaptureCombinatorialBatch {
+            workspace,
+            current_context,
+        } => {
+            crate::combinatorial_batch::capture_revision(workspace, current_context)?;
+        }
+        _ => {}
+    }
     let maximum = if matches!(
         r.job,
         AnalysisJob::SaveWorkspace { .. }
@@ -1133,6 +1160,8 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::CommitReadReview { .. }
             | AnalysisJob::InstallDigestFragment { .. }
             | AnalysisJob::InstallCatalogDigestFragment { .. }
+            | AnalysisJob::BeginCombinatorialBatch { .. }
+            | AnalysisJob::CaptureCombinatorialBatch { .. }
     ) {
         MAX_WORKSPACE_MESSAGE_BYTES
     } else {
@@ -1156,6 +1185,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             (94, 39),
             (97, 42),
             (100, 43),
+            (122, 57),
         ],
     )?;
     preflight_codon_tag(bytes, &[42, 43])?;
@@ -1194,6 +1224,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_translation_reference_tag(bytes, &[114, 115])?;
     preflight_pinned_gel_tag(bytes, &[116])?;
     preflight_pairwise_export_tag(bytes, &[117, 118, 119])?;
+    preflight_combinatorial_batch_tag(bytes, &[120, 121, 122])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1256,6 +1287,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         AnalysisResult::ExportedPairwiseComparison(_) => 56,
         AnalysisResult::SearchedPairwiseComparison(_) => 56,
         AnalysisResult::PreparedPairwiseContext(_) => 56,
+        AnalysisResult::CombinatorialBatchStarted(_)
+        | AnalysisResult::CombinatorialBatchAdvanced(_)
+        | AnalysisResult::CombinatorialBatchCaptured(_) => 57,
         AnalysisResult::GoldenGateReaction(_) | AnalysisResult::GoldenGateReactionCandidate(_) => {
             49
         }
@@ -1418,6 +1452,19 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             if context.context_revision != response.revision {
                 return Err(Error::Format("Pairwise context response changed.".into()));
             }
+        }
+        AnalysisResult::CombinatorialBatchStarted(progress)
+        | AnalysisResult::CombinatorialBatchAdvanced(progress) => {
+            progress.validate()?;
+            if progress.context_revision != response.revision {
+                return Err(Error::Format(
+                    "Combinatorial batch response context changed.".into(),
+                ));
+            }
+        }
+        AnalysisResult::CombinatorialBatchCaptured(commit) => {
+            check_workspace_version(bytes, &commit.workspace)?;
+            commit.validate_binding(&response.revision)?;
         }
         AnalysisResult::ReferenceFragment(fragment) => {
             fragment.validate_binding(&response.revision)?;
@@ -1928,6 +1975,14 @@ fn preflight_pairwise_export_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error
     }
     Ok(())
 }
+fn preflight_combinatorial_batch_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 57)?;
+    }
+    Ok(())
+}
 fn preflight_translation_reference_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -2325,6 +2380,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             (106, 42),
             (107, 43),
             (108, 43),
+            (128, 57),
+            (130, 57),
         ],
     )?;
     preflight_codon_tag(bytes, &[44, 45])?;
@@ -2366,6 +2423,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_translation_reference_tag(bytes, &[122, 123])?;
     preflight_pinned_gel_tag(bytes, &[124])?;
     preflight_pairwise_export_tag(bytes, &[125, 126, 127])?;
+    preflight_combinatorial_batch_tag(bytes, &[128, 129, 130])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -2384,6 +2442,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         AnalysisJob::ExportPairwiseComparison { .. } => 56,
         AnalysisJob::SearchPairwiseComparison { .. } => 56,
         AnalysisJob::PreparePairwiseContext { .. } => 56,
+        AnalysisJob::BeginCombinatorialBatch { .. }
+        | AnalysisJob::AdvanceCombinatorialBatch { .. }
+        | AnalysisJob::CaptureCombinatorialBatch { .. } => 57,
         AnalysisJob::PredictGel { lanes, .. }
             if lanes.iter().any(|lane| {
                 matches!(
@@ -3061,6 +3122,13 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
                 ));
             }
             None
+        }
+        AnalysisJob::BeginCombinatorialBatch { .. }
+        | AnalysisJob::AdvanceCombinatorialBatch { .. }
+        | AnalysisJob::CaptureCombinatorialBatch { .. } => {
+            return Err(Error::Unsupported(
+                "combinatorial batches require a persistent private worker session".into(),
+            ));
         }
         AnalysisJob::PrepareVariants { .. }
         | AnalysisJob::VariantPage { .. }
@@ -4000,6 +4068,11 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         AnalysisJob::SaveAlignment { document } => {
             crate::alignment_formats::save_alignment(&document).map(AnalysisResult::AlignmentSaved)
         }
+        AnalysisJob::BeginCombinatorialBatch { .. }
+        | AnalysisJob::AdvanceCombinatorialBatch { .. }
+        | AnalysisJob::CaptureCombinatorialBatch { .. } => Err(Error::Unsupported(
+            "combinatorial batches require a persistent private worker session".into(),
+        )),
         AnalysisJob::PrepareTracks { .. } | AnalysisJob::CachedViewTracks { .. } => Err(
             Error::Unsupported("cached track jobs require an AnalysisSession".into()),
         ),
@@ -4219,6 +4292,7 @@ pub struct AnalysisSession {
     genomes: crate::genome_session::GenomeSession,
     read_alignments: crate::read_alignment_session::Session,
     variants: crate::variants_session::Session,
+    combinatorial: Option<crate::combinatorial_batch::Session>,
 }
 impl AnalysisSession {
     pub fn process_request(&mut self, bytes: &[u8]) -> Result<Vec<u8>, Error> {
@@ -4237,6 +4311,8 @@ impl AnalysisSession {
                 (106, 42),
                 (107, 43),
                 (108, 43),
+                (128, 57),
+                (130, 57),
             ],
         )?;
         // Route by a borrowed prefix so ordinary jobs are not fully decoded twice.
@@ -4244,9 +4320,10 @@ impl AnalysisSession {
         // private worker state; all other jobs use ordinary stateless dispatch.
         let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
             .map_err(|e| Error::Format(e.to_string()))?;
-        if !matches!(tag, 32 | 33 | 53..=66 | 77..=81 | 88..=93) {
+        if !matches!(tag, 32 | 33 | 53..=66 | 77..=81 | 88..=93 | 128..=130) {
             return process_request(bytes);
         }
+        preflight_combinatorial_batch_tag(bytes, &[128, 129, 130])?;
         if (53..=66).contains(&tag) {
             check_variant_version(bytes, 19)?;
         }
@@ -4258,6 +4335,48 @@ impl AnalysisSession {
         }
         let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
         let result = match r.job {
+            AnalysisJob::BeginCombinatorialBatch { workspace, matrix } => {
+                check_workspace_version(bytes, &workspace)?;
+                let pending = crate::combinatorial_batch::Session::begin(workspace, matrix)?;
+                let progress = pending.summary();
+                if progress.context_revision != r.revision {
+                    return Err(Error::Format(
+                        "Combinatorial batch source or matrix changed.".into(),
+                    ));
+                }
+                self.combinatorial = Some(pending);
+                AnalysisResult::CombinatorialBatchStarted(progress)
+            }
+            AnalysisJob::AdvanceCombinatorialBatch { context, index } => {
+                if context != r.revision {
+                    return Err(Error::Format(
+                        "Combinatorial batch advance context changed.".into(),
+                    ));
+                }
+                let session = self.combinatorial.as_mut().ok_or_else(|| {
+                    Error::Unsupported("No private combinatorial batch has been started.".into())
+                })?;
+                AnalysisResult::CombinatorialBatchAdvanced(session.advance(&context, index)?)
+            }
+            AnalysisJob::CaptureCombinatorialBatch {
+                workspace,
+                current_context,
+            } => {
+                check_workspace_version(bytes, &workspace)?;
+                if crate::combinatorial_batch::capture_revision(&workspace, &current_context)?
+                    != r.revision
+                {
+                    return Err(Error::Format(
+                        "Combinatorial batch capture workspace changed.".into(),
+                    ));
+                }
+                let session = self.combinatorial.as_ref().ok_or_else(|| {
+                    Error::Unsupported("No private combinatorial batch has been started.".into())
+                })?;
+                AnalysisResult::CombinatorialBatchCaptured(
+                    session.capture_to(&workspace, &current_context)?,
+                )
+            }
             job @ (AnalysisJob::PrepareVariants { .. }
             | AnalysisJob::VariantPage { .. }
             | AnalysisJob::CheckVariantReference { .. }
@@ -4308,13 +4427,19 @@ impl AnalysisSession {
             }
             _ => return process_request(bytes),
         };
-        encode(
+        let maximum = if matches!(result, AnalysisResult::CombinatorialBatchCaptured(_)) {
+            MAX_WORKSPACE_MESSAGE_BYTES
+        } else {
+            MAX_IMPORT_BYTES
+        };
+        encode_with_limit(
             b"CGR\0",
             &Response {
                 id: r.id,
                 revision: r.revision,
                 result,
             },
+            maximum,
         )
     }
 }

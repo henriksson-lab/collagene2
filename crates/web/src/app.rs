@@ -5478,6 +5478,7 @@ pub fn App() -> impl IntoView {
                                 </aside>
                             </div>
                             <Show when=move||assembly_visible.get()><section class="assembly-dock" aria-label="Assembly workspace"><div class="assembly-dock-bar"><span>"Assembly design"</span><button class="text-tool" on:click=move|_|assembly_visible.set(false)>"Hide assembly"</button></div>
+                                <fieldset aria-label="Assembly source and preparation controls" disabled=move||workspace_restoring.get() style="border:0;padding:0;margin:0;min-width:0">
                                 <crate::assembly_workspace::AssemblyWorkspace draft=assembly_draft epoch=workspace_epoch
                                     sources=Memo::new(move|_|documents.with(|docs|docs.iter().map(recombination_source_info).collect()))
                                     active_source=Memo::new(move|_|documents.with(|docs|recombination_source_info(&docs[active.get()])))
@@ -5491,6 +5492,12 @@ pub fn App() -> impl IntoView {
                                     on_navigate=navigate_assembly on_review=review_assembly on_finalize=finalize_assembly
                                     on_products=Callback::new(move|products:Vec<Molecule>|add_documents(documents,active,workspace_restoring,products))
                                     primer_sources=primer_sources list_primers=list_saved_primers resolve_primer=resolve_saved_primer/>
+                                </fieldset>
+                                <crate::assembly_batch_view::AssemblyBatchView draft=assembly_draft snapshot=contig_snapshot
+                                    validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|()))
+                                    on_restore=Callback::new(move|frame:collagene_core::workspace::Workspace|match restore_workspace_state(&frame){Ok(state)=>batch(||apply_restored.run(state)),Err(error)=>message.set(error)})
+                                    attachment_available=Callback::new(move|hash:String|attachments.with_untracked(|assets|assets.get(&hash).is_some_and(|asset|asset.kind==collagene_core::combinatorial_batch::KIND)))
+                                    db workspace_busy=workspace_restoring loaded save_generation epoch=workspace_epoch message/>
                             </section></Show>
                             <footer class="statusbar"><span>{move||save_status.get()}</span><Show when=move||!layout.status.get().is_empty()><span role="status">{move||layout.status.get()}</span></Show><span>{move||selection_status.get()}</span><span>{move||documents.with(|docs|format!("{} {}",docs.len(),if docs.len()==1{"document"}else{"documents"}))}</span></footer>
                             </div>

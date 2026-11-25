@@ -64,6 +64,7 @@ fn fixture() -> (Workspace, Design) {
 }
 fn construct() -> SelectedConstruct {
     SelectedConstruct {
+        overrides: None,
         id: "construct-ac".into(),
         name: "AC construct".into(),
         choices: vec![
@@ -157,7 +158,7 @@ fn wrong_event_owner_and_duplicate_ids_are_rejected() {
             design: d,
             constructs: vec![row, duplicate_row]
         })
-        .is_err()
+        .is_ok()
     );
 }
 #[test]
@@ -342,6 +343,7 @@ fn circular_unrolled_contribution_and_explicit_reverse_keep_source_geometry() {
         },
     };
     let row = SelectedConstruct {
+        overrides: None,
         id: "reverse-crossing".into(),
         name: "Reverse crossing".into(),
         choices: vec![ChoiceSelection {

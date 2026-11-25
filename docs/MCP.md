@@ -506,3 +506,31 @@ The response contains a new `workspace` reference, `receipt`, full commit JSON `
 Read binary artifacts in chunks, concatenate base64 and decode before saving. Downloading or explicitly importing that archive is separate from finalizing: this tool does not edit a browser workspace, hosted service or arbitrary filesystem path. It does not establish experimental material, laboratory success or inherited positive verification. Reopen/replay with the retained exact sources to reconstruct current evidence again; hiding prepared rows does not remove their replay history.
 
 Source-authored SDK coverage uses real chunked native upload, explicit source-event mapping, actual PCR/overlap preparation, saved oligos, renamed final reference, complete native reload and replay, unchanged original archive and identical retries. Negative cases cover wrong/stale event bindings, physically unsealed preparation and opaque order data with no new workspace publication. A focused private capacity fixture stages two artifacts with only one slot remaining and checks that no workspace/revision/artifact is partially installed. The optional stdio `--native-workspace` flow exercises finalization and replay against its explicit historical fixture; ordinary smoke still checks tool discovery. Execution evidence is recorded separately.
+
+## Type IIS primer proposals
+
+`design_golden_gate_primers {inputs, target, request}` accepts exact immutable
+source `BoundInput` records and an independently supplied target. Request fields
+are `name`, `enzyme` (`BsaI`, `BsmBI`, `BbsI`, `SapI`), concrete `clamp` and `spacer`,
+and `fragments: [{role, input_id, start, end, reverse, forward_length,
+reverse_length, right_overhang}]`. Coordinates are zero-based half-open original
+intervals; circular intervals may cross the origin by at most one turn. The right
+fusion is explicit downstream assembly-top DNA. Spacer and fusion lengths follow
+the actual enzyme geometry, including SapI's three-base fusion.
+
+The response is advisory (`verified:false`) with context revision, requests,
+original-source `PcrCatalogDigest` fragment preparations, bounded row previews and
+an immutable full JSON artifact. Each oligo separates clamp/motif/spacer/fusion
+from its annealing domain. Retained-top previews are limited to160 calls with
+explicit truncation; full sequence stays in the artifact. Sources and candidates
+are unchanged. Reports are bounded to32MiB and existing session limits apply.
+
+Wrap each returned fragment as `{source: fragment, treatment: null}` in an ordered
+`propose_ligation_assembly` recipe with the same original inputs and independent
+target. Existing-site catalog digest fragments may be retained alongside proposed
+PCR rows. That tool freshly reconstructs PCR→digest→optional repair/treatment and
+ligation using actual chemistry; normal verification and HTML/PDF/order outputs
+reuse the resulting plan. Changing the target changes the context token but never
+selects different oligo bases. No source is domesticated to remove internal sites,
+no external tool is invoked, and ordered consistency is not experimental yield or
+an exhaustive mixture claim. [Detailed profile](GOLDEN_GATE_PRIMER_DESIGN.md).

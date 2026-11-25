@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 120;
+pub const CURRENT_TOOL_COUNT: usize = 121;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -1002,6 +1002,13 @@ pub struct OverlapPrimerDesignQuery {
     pub target: DocumentRef,
     /// Explicit ordered template intervals, orientation and bounded heuristic controls.
     pub request: collagene_core::overlap_primer_design::Request,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GoldenGatePrimerDesignQuery {
+    pub inputs: Vec<BoundInput>,
+    pub target: DocumentRef,
+    pub request: collagene_core::golden_gate_primer_design::Request,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -4932,7 +4939,53 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Compile an explicit ordered overlap cloning recipe from immutable source document revisions and an independent target. Each fragment declares WholeLinear, an explicit DeclaredDuplex original-source terminal assumption, complete Digest or exact CatalogDigest selection with chosen fragment/optional repair, or ExactPcr with actual ordered oligos; orientations, homology lengths, topology and published-method advisory profile are explicit. Freshly reconstructs preparations and verifies the resulting typed plan. Atomically saves an immutable candidate and full preparation/junction/verification JSON; no guessed tails, automatic winner, source mutation or laboratory guarantee. Reuse verify_plan and HTML/PDF exports with its plan_revision."
+        description = "Propose Type IIS site-bearing primers from explicit original source intervals, orientations, domain lengths and right fusion ends. Supports actual BsaI/BsmBI/BbsI/SapI geometry, including three-base SapI ends. Clamps and cleavage spacers are explicit DNA; target DNA does not select primers. Returns original-source PCR followed by pinned catalog digestion preparations and inspectable oligo segments. Advisory proposals do not install a candidate or establish experimental success or finite-mixture uniqueness. Pass fragments to propose_ligation_assembly for fresh reconstruction against the same independent target."
+    )]
+    async fn design_golden_gate_primers(
+        &self,
+        Parameters(args): Parameters<GoldenGatePrimerDesignQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.inputs.is_empty() || args.inputs.len() > 128 {
+            return Err(bad(
+                "Type IIS primer design requires 1..128 original source bindings",
+            ));
+        }
+        let server = self.clone();
+        self.compute(move || {
+            let (inputs, target) = {
+                let store = server.store.lock().unwrap();
+                let target = store.document(&args.target)?;
+                let mut seen = BTreeSet::new();
+                let mut sources = Vec::with_capacity(args.inputs.len());
+                for bound in &args.inputs {
+                    if bound.id.trim().is_empty() || bound.id.len() > 128 || !seen.insert(bound.id.as_str()) { return Err(bad("empty, oversized or duplicate source ID")); }
+                    sources.push((bound.id.as_str(), store.document(&bound.document)?));
+                }
+                collagene_core::golden_gate_primer_design::source_preflight(&sources, target, &args.request).map_err(bad)?;
+                let inputs = sources.into_iter().map(|(id,m)|PlanInput{id:id.into(),revision:m.revision(),molecule:m.clone()}).collect::<Vec<_>>();
+                (inputs,target.clone())
+            };
+            let report = collagene_core::golden_gate_primer_design::design(&inputs,&target,&args.request).map_err(bad)?;
+            let expected = collagene_core::golden_gate_primer_design::preview_revision(&inputs,&target,&args.request).map_err(bad)?;
+            report.validate_binding(&expected).map_err(bad)?;
+            #[derive(Serialize)]
+            struct Evidence<'a> { inputs:&'a [BoundInput], target:&'a DocumentRef, report:&'a collagene_core::golden_gate_primer_design::Report }
+            let evidence = Evidence{inputs:&args.inputs,target:&args.target,report:&report};
+            let artifact = server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","golden-gate-primer-design.json")?;
+            output(json!({"state":"advisory","verified":false,"inputs":args.inputs,"target":args.target,
+                "context_revision":report.context_revision,"request":report.request,"fragments":report.fragments,
+                "rows":report.rows.iter().map(|row|json!({
+                    "role":row.role,"input_id":row.input_id,"input_revision":row.input_revision,
+                    "forward":row.forward,"reverse":row.reverse,"forward_tail":row.forward_tail,"reverse_tail":row.reverse_tail,
+                    "selection":row.selection,"fragment_index":row.fragment_index,
+                    "oriented_length":row.oriented_top.len(),"oriented_top_preview":row.oriented_top.chars().take(160).collect::<String>(),
+                    "oriented_top_truncated":row.oriented_top.len()>160,"left":row.left,"right":row.right,
+                })).collect::<Vec<_>>(),"warnings":report.warnings,"artifact_id":artifact,
+                "authority":"Explicit source-derived oligo proposals and preparation requests. Fresh ordered ligation verification against the independent target is separate; no claim of reaction yield or exhaustive mixture uniqueness."}))
+        }).await
+    }
+    #[tool(
+        description = "Compile an explicit ordered overlap cloning recipe from immutable source document revisions and an independent target. Each fragment declares WholeLinear, an explicit DeclaredDuplex original-source terminal assumption, complete Digest or exact CatalogDigest selection with chosen fragment/optional repair, or ExactPcr with actual ordered oligos, or PcrCatalogDigest chaining actual original-source PCR into a pinned catalog digest; orientations, homology lengths, topology and published-method advisory profile are explicit. Freshly reconstructs preparations and verifies the resulting typed plan. Atomically saves an immutable candidate and full preparation/junction/verification JSON; no guessed tails, automatic winner, source mutation or laboratory guarantee. Reuse verify_plan and HTML/PDF exports with its plan_revision."
     )]
     async fn propose_overlap_assembly(
         &self,

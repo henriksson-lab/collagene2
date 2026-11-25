@@ -159,3 +159,11 @@ mismatch PCR, with forward/reverse selection, saved reuse, anchored source-call
 comparison and explicit Apply. Exact draft/event checks invalidate old evidence.
 Native unfinished-draft persistence and sequence-centered mutation/junction
 transactions remain pending; this does not establish full workflow parity.
+
+The next follow-up connection is also implemented: Golden Gate now shares the
+persistent source slots, method review, actual product and finalizer. It supports
+existing pinned digests or explicit PCR→catalog digest proposals with source-bound
+segments and actual staggered end review. The ordered ligation verifier checks the
+full preparation graph; it does not enumerate a prepared reaction mixture. Internal
+site domestication and fusion optimization remain future work. See
+[Type IIS preparation](GOLDEN_GATE_PRIMER_DESIGN.md).

@@ -217,11 +217,20 @@ impl Draft {
                 &row.reverse_tail,
                 &row.interval_start,
                 &row.interval_end,
+                &row.right_fusion,
             ] {
                 if text.len() > 65536 {
                     return Err("Assembly option field exceeds64KiB".into());
                 }
             }
+        }
+        let gate = &self.methods.golden_gate;
+        if gate.clamp.len() > 12
+            || gate.spacer.len() > 2
+            || gate.forward_length.len() > 4
+            || gate.reverse_length.len() > 4
+        {
+            return Err("Type IIS primer settings exceed their field bounds".into());
         }
         for row in [&self.methods.vector, &self.methods.insert] {
             for text in [

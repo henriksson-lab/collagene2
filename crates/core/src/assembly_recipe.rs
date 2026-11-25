@@ -21,7 +21,7 @@ const MAX_INPUT_BASES: usize = 8 << 20;
 pub(crate) const MAX_ROLE_BASES: usize = 16 << 20;
 const MAX_PREPARATION_WORK: usize = 100_000_000;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
-dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>}}}
+dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>}}}
 dto! {pub struct FragmentSpec {pub role:String,pub input_id:String,pub preparation:Preparation,pub reverse:bool}}
 dto! {pub struct Recipe {pub name:String,pub fragments:Vec<FragmentSpec>,pub overlaps:Vec<usize>,pub circular:bool,pub options:ProfileOptions}}
 dto! {pub struct PreparedRow {pub row_index:usize,pub role:String,pub input_id:String,pub input_revision:String,pub preparation_step:Option<usize>,pub repair_step:Option<usize>,pub prepared_source:Source,pub reverse:bool}}
@@ -162,10 +162,12 @@ pub fn preparation_source_preflight(
     let mut role_bases = 0usize;
     let mut work = 0usize;
     let catalog = crate::analysis::starter_enzymes();
-    let pinned_catalog = if fragments
-        .iter()
-        .any(|f| matches!(f.preparation, Preparation::CatalogDigest { .. }))
-    {
+    let pinned_catalog = if fragments.iter().any(|f| {
+        matches!(
+            f.preparation,
+            Preparation::CatalogDigest { .. } | Preparation::PcrCatalogDigest { .. }
+        )
+    }) {
         Some(crate::catalog_digest::builtin_catalog()?)
     } else {
         None
@@ -206,6 +208,46 @@ pub fn preparation_source_preflight(
                     .len()
                     .checked_mul(forward.annealing.len() + reverse.annealing.len())
                     .and_then(|n| n.checked_mul(4))
+                    .ok_or(Error::TooLarge)?
+            }
+            Preparation::PcrCatalogDigest {
+                forward,
+                reverse,
+                selection,
+                fragment_index,
+                ..
+            } => {
+                primer(forward)?;
+                primer(reverse)?;
+                if *fragment_index > 100_000 {
+                    return Err(Error::TooLarge);
+                }
+                let enzymes =
+                    selection.resolved_enzymes(pinned_catalog.as_ref().ok_or(Error::TooLarge)?)?;
+                let width = enzymes.iter().try_fold(0usize, |sum, e| {
+                    sum.checked_add(e.recognition.len() * 2)
+                        .ok_or(Error::TooLarge)
+                })?;
+                let amplicon = m
+                    .sequence
+                    .len()
+                    .checked_add(forward.tail.len())
+                    .and_then(|n| n.checked_add(reverse.tail.len()))
+                    .ok_or(Error::TooLarge)?;
+                role_bases = role_bases
+                    .checked_add(forward.tail.len())
+                    .and_then(|n| n.checked_add(reverse.tail.len()))
+                    .filter(|n| *n <= MAX_ROLE_BASES)
+                    .ok_or(Error::TooLarge)?;
+                let pcr = m
+                    .sequence
+                    .len()
+                    .checked_mul(forward.annealing.len() + reverse.annealing.len())
+                    .and_then(|n| n.checked_mul(4))
+                    .ok_or(Error::TooLarge)?;
+                amplicon
+                    .checked_mul(width)
+                    .and_then(|n| n.checked_add(pcr))
                     .ok_or(Error::TooLarge)?
             }
             Preparation::CatalogDigest {
@@ -354,7 +396,10 @@ pub fn compile_preparations(
                 enzymes: enzymes.clone(),
                 fragment_index: *fragment_index,
             }),
-            Preparation::ExactPcr { forward, reverse } => Some(Operation::Pcr {
+            Preparation::ExactPcr { forward, reverse }
+            | Preparation::PcrCatalogDigest {
+                forward, reverse, ..
+            } => Some(Operation::Pcr {
                 template: input.clone(),
                 forward: forward.clone(),
                 reverse: reverse.clone(),
@@ -368,11 +413,29 @@ pub fn compile_preparations(
         } else {
             input
         };
+        if let Preparation::PcrCatalogDigest {
+            selection,
+            fragment_index,
+            ..
+        } = &row.preparation
+        {
+            let index = steps.len();
+            steps.push(Operation::CatalogDigest {
+                template: prepared_source,
+                selection: selection.clone(),
+                fragment_index: *fragment_index,
+            });
+            prepared_source = Source::Step(index);
+        }
         let repair_step = if let Preparation::Digest {
             repair: Some(method),
             ..
         }
         | Preparation::CatalogDigest {
+            repair: Some(method),
+            ..
+        }
+        | Preparation::PcrCatalogDigest {
             repair: Some(method),
             ..
         } = &row.preparation
@@ -515,10 +578,10 @@ impl Preview {
             || self.compiled.rows.len() > MAX_ROWS
             || self.prepared.len() > self.compiled.rows.len()
             || self.compiled.plan.inputs.len() > MAX_ROWS
-            || self.verification.products.len() > 2 * MAX_ROWS + 1
-            || self.verification.step_reports.len() > 2 * MAX_ROWS + 1
-            || self.verification.annotation_reports.len() > 2 * MAX_ROWS + 1
-            || self.compiled.plan.steps.len() > 2 * MAX_ROWS + 1
+            || self.verification.products.len() > 3 * MAX_ROWS + 1
+            || self.verification.step_reports.len() > 3 * MAX_ROWS + 1
+            || self.verification.annotation_reports.len() > 3 * MAX_ROWS + 1
+            || self.compiled.plan.steps.len() > 3 * MAX_ROWS + 1
             || self.compiled.assembly_step.checked_add(1) != Some(self.compiled.plan.steps.len())
         {
             return Err(bad("invalid preview shape"));
@@ -583,6 +646,16 @@ impl Preview {
             ) {
                 (Source::Input(id), None) if id == &row.input_id => {}
                 (Source::Step(i), Some(j)) if *i == j && j < self.compiled.assembly_step => {}
+                (Source::Step(i), Some(j))
+                    if row.repair_step.is_none()
+                        && j.checked_add(1) == Some(*i)
+                        && *i < self.compiled.assembly_step
+                        && matches!(
+                            self.compiled.plan.steps.get(j),
+                            Some(Operation::Pcr { .. })
+                        )
+                        && matches!(self.compiled.plan.steps.get(*i),Some(Operation::CatalogDigest{template:Source::Step(k),..}) if *k==j) =>
+                    {}
                 _ => return Err(bad("invalid prepared-source mapping")),
             }
         }

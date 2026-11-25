@@ -53,8 +53,15 @@ pub fn source_preflight(
         if f.source.role.len() > 128 || f.source.input_id.len() > 128 {
             return Err(Error::TooLarge);
         }
+        if let preparation::Preparation::PcrCatalogDigest { selection, .. } = &f.source.preparation
+        {
+            selection.validate()?;
+        }
         match &f.source.preparation {
-            preparation::Preparation::ExactPcr { forward, reverse } => {
+            preparation::Preparation::ExactPcr { forward, reverse }
+            | preparation::Preparation::PcrCatalogDigest {
+                forward, reverse, ..
+            } => {
                 for p in [forward, reverse] {
                     if p.name.len() > 256 || p.annealing.len() > 1000 || p.tail.len() > 1000 {
                         return Err(Error::TooLarge);
@@ -287,7 +294,7 @@ impl Preview {
         if !hex(&self.context_revision)
             || rows == 0
             || rows > preparation::MAX_ROWS
-            || steps > 3 * preparation::MAX_ROWS + 1
+            || steps > 4 * preparation::MAX_ROWS + 1
             || self.compiled.ligation_step.checked_add(1) != Some(steps)
             || self.compiled.plan.inputs.len() > preparation::MAX_ROWS
             || self.verification.products.len() > steps

@@ -28,6 +28,7 @@ pub enum Mode {
     Tailing,
     Overlap,
     Ligation,
+    GoldenGate,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Treatment {
@@ -111,6 +112,7 @@ pub enum OverlapPreparation {
     Digest,
     CatalogDigest,
     ExactPcr,
+    PcrCatalogDigest,
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OverlapInput {
@@ -133,6 +135,8 @@ pub struct OverlapInput {
     pub reverse_primer: String,
     pub forward_tail: String,
     pub reverse_tail: String,
+    #[serde(default)]
+    pub right_fusion: String,
 }
 impl Default for OverlapInput {
     fn default() -> Self {
@@ -155,6 +159,7 @@ impl Default for OverlapInput {
             reverse_primer: String::new(),
             forward_tail: String::new(),
             reverse_tail: String::new(),
+            right_fusion: String::new(),
         }
     }
 }
@@ -169,8 +174,13 @@ impl OverlapInput {
                 declared_terminus(self.left_terminus),
                 declared_terminus(self.right_terminus)
             ),
-            OverlapPreparation::CatalogDigest => format!(
-                "Pinned catalog digest: {}; fragment {}",
+            OverlapPreparation::CatalogDigest | OverlapPreparation::PcrCatalogDigest => format!(
+                "{}: {}; fragment {}",
+                if self.preparation == OverlapPreparation::PcrCatalogDigest {
+                    "Exact PCR followed by pinned catalog digest"
+                } else {
+                    "Pinned catalog digest"
+                },
                 self.catalog_selection
                     .as_ref()
                     .map(|s| s
@@ -227,6 +237,27 @@ pub struct MethodsState {
     pub scan_repeats: bool,
     pub comparisons: String,
     pub occurrences: String,
+    #[serde(default)]
+    pub golden_gate: GoldenGateForm,
+}
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GoldenGateForm {
+    pub enzyme: collagene_core::golden_gate::GoldenGateEnzyme,
+    pub clamp: String,
+    pub spacer: String,
+    pub forward_length: String,
+    pub reverse_length: String,
+}
+impl Default for GoldenGateForm {
+    fn default() -> Self {
+        Self {
+            enzyme: collagene_core::golden_gate::GoldenGateEnzyme::BsaI,
+            clamp: "ATGC".into(),
+            spacer: "A".into(),
+            forward_length: "20".into(),
+            reverse_length: "20".into(),
+        }
+    }
 }
 fn deserialize_method_rows<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
@@ -277,6 +308,7 @@ impl Default for MethodsState {
             scan_repeats: true,
             comparisons: "5000000".into(),
             occurrences: "1000".into(),
+            golden_gate: GoldenGateForm::default(),
         }
     }
 }
@@ -358,6 +390,13 @@ struct Suggestions {
     form: PlannerForm,
     context: Vec<crate::digest::SourceInfo>,
     target: String,
+    target_context: TargetContext,
+    epoch: u64,
+}
+struct GoldenGateSuggestions {
+    report: collagene_core::golden_gate_primer_design::Report,
+    config: MethodsState,
+    context: Vec<crate::digest::SourceInfo>,
     target_context: TargetContext,
     epoch: u64,
 }
@@ -510,6 +549,7 @@ pub fn CloningMethodsPanel(
     let evidence = RwSignal::new(None::<Arc<Evidence>>);
     let planner_form = RwSignal::new(PlannerForm::default());
     let suggestions = RwSignal::new(None::<Arc<Suggestions>>);
+    let gate_suggestions = RwSignal::new(None::<Arc<GoldenGateSuggestions>>);
 
     let active = StoredValue::new_local(None::<Rc<CachedWorker>>);
     let alive = Arc::new(AtomicBool::new(true));
@@ -534,12 +574,188 @@ pub fn CloningMethodsPanel(
         generation.update(|n| *n = n.wrapping_add(1));
         evidence.set(None);
         suggestions.set(None);
+        gate_suggestions.set(None);
         if let Some(w) = active.get_value() {
             w.close();
         }
         active.set_value(None);
         busy.set(false);
         status.set(String::new());
+    });
+    let gate_alive = alive.clone();
+    let suggest_gate = Callback::new(move |()| {
+        if busy.get_untracked() {
+            return;
+        }
+        let state = config.get_untracked();
+        if state.mode != Mode::GoldenGate {
+            return;
+        }
+        let (Some(originals), Some(context)) =
+            (sources.get_untracked(), source_context.get_untracked())
+        else {
+            status.set("Choose the original source documents.".into());
+            return;
+        };
+        let target_molecule = molecule.get_untracked();
+        let target_context = target_info.get_untracked();
+        let captured_epoch = epoch.get_untracked();
+        let (inputs, request) = match golden_gate_request(&state, originals, &target_molecule) {
+            Ok(value) => value,
+            Err(error) => {
+                status.set(error);
+                return;
+            }
+        };
+        let revisions = inputs
+            .iter()
+            .map(|p| p.revision.clone())
+            .collect::<Vec<_>>();
+        if revisions
+            != context
+                .iter()
+                .map(|s| s.binding.revision.clone())
+                .collect::<Vec<_>>()
+            || target_context.revision() != target_molecule.revision()
+        {
+            status.set("Source or target identity changed before primer planning.".into());
+            return;
+        }
+        let revision = match collagene_core::golden_gate_primer_design::preview_revision(
+            &inputs,
+            &target_molecule,
+            &request,
+        ) {
+            Ok(value) => value,
+            Err(error) => {
+                status.set(error.to_string());
+                return;
+            }
+        };
+        let worker = match CachedWorker::new() {
+            Ok(worker) => Rc::new(worker),
+            Err(error) => {
+                status.set(error);
+                return;
+            }
+        };
+        if let Some(old) = active.get_value() {
+            old.close();
+        }
+        active.set_value(Some(worker.clone()));
+        let token = generation.get_untracked().wrapping_add(1);
+        generation.set(token);
+        busy.set(true);
+        evidence.set(None);
+        suggestions.set(None);
+        gate_suggestions.set(None);
+        status.set(
+            "Proposing explicit Type IIS PCR tails and freshly checking their digested ends…"
+                .into(),
+        );
+        let alive = gate_alive.clone();
+        spawn_local(async move {
+            let result = ask(
+                &worker,
+                AnalysisJob::DesignGoldenGatePrimers {
+                    inputs,
+                    target: target_molecule,
+                    request,
+                },
+                revision.clone(),
+                token,
+            )
+            .await;
+            worker.close();
+            if !alive.load(Ordering::Relaxed)
+                || generation.get_untracked() != token
+                || config.get_untracked() != state
+                || source_context.get_untracked() != Some(context.clone())
+                || source_revisions.get_untracked() != Some(revisions.clone())
+                || target_info.get_untracked() != target_context
+                || target.get_untracked() != target_context.revision()
+                || epoch.get_untracked() != captured_epoch
+            {
+                return;
+            }
+            active.set_value(None);
+            busy.set(false);
+            match result {
+                Ok(AnalysisResult::GoldenGatePrimersDesigned(report)) => {
+                    match report.validate_binding(&revision) {
+                        Ok(()) if report.source_revisions == revisions => {
+                            gate_suggestions.set(Some(Arc::new(GoldenGateSuggestions {
+                                report,
+                                config: state,
+                                context,
+                                target_context,
+                                epoch: captured_epoch,
+                            })));
+                            status.set("Type IIS primer proposals ready. Review tails and actual digested ends, then explicitly apply.".into());
+                        }
+                        Ok(()) => status
+                            .set("Primer proposals belong to different original sources.".into()),
+                        Err(error) => status.set(error.to_string()),
+                    }
+                }
+                Ok(AnalysisResult::Error(error)) | Err(error) => status.set(error),
+                _ => status.set("Unexpected Golden Gate primer response.".into()),
+            }
+        });
+    });
+    let apply_gate = Callback::new(move |()| {
+        let Some(saved) = gate_suggestions.get_untracked() else {
+            return;
+        };
+        if config.get_untracked() != saved.config
+            || source_context.get_untracked() != Some(saved.context.clone())
+            || target_info.get_untracked() != saved.target_context
+            || epoch.get_untracked() != saved.epoch
+        {
+            status.set("Sources or settings changed; request fresh Type IIS primers.".into());
+            return;
+        }
+        let mut next = saved.config.clone();
+        for fragment in &saved.report.fragments {
+            let Some(index) = (0..next.rows.len()).find(|index| {
+                fragment.role == format!("fragment-{}", index + 1)
+                    && fragment.input_id == format!("source-{}", index + 1)
+            }) else {
+                status.set("Proposal has an unknown source role; nothing applied.".into());
+                return;
+            };
+            let collagene_core::assembly_recipe::Preparation::PcrCatalogDigest {
+                forward,
+                reverse,
+                selection,
+                fragment_index,
+                repair,
+            } = &fragment.preparation
+            else {
+                status.set("Proposal is not an explicit PCR/digest chain; nothing applied.".into());
+                return;
+            };
+            let row = &mut next.rows[index];
+            if row.preparation != OverlapPreparation::PcrCatalogDigest
+                || row.reverse != fragment.reverse
+            {
+                status.set("Preparation or orientation changed; nothing applied.".into());
+                return;
+            }
+            row.forward_name = forward.name.clone();
+            row.forward = forward.annealing.as_str().into();
+            row.forward_tail = forward.tail.clone();
+            row.reverse_name = reverse.name.clone();
+            row.reverse_primer = reverse.annealing.as_str().into();
+            row.reverse_tail = reverse.tail.clone();
+            row.catalog_selection = Some(selection.clone());
+            row.fragment = (fragment_index + 1).to_string();
+            row.repair = *repair;
+        }
+        config.set(next);
+        gate_suggestions.set(None);
+        evidence.set(None);
+        status.set("Proposed PCR/digest preparations applied explicitly. Existing-site rows were preserved. Compute method evidence to check actual junctions and the intended target.".into());
     });
     let suggestion_alive = alive.clone();
     let suggest = Callback::new(move |()| {
@@ -620,6 +836,7 @@ pub fn CloningMethodsPanel(
         busy.set(true);
         evidence.set(None);
         suggestions.set(None);
+        gate_suggestions.set(None);
         status.set("Suggesting deterministic annealing domains and homology tails from original source regions…".into());
         let alive = suggestion_alive.clone();
         spawn_local(async move {
@@ -728,6 +945,7 @@ pub fn CloningMethodsPanel(
             .join(",");
         config.set(updated);
         suggestions.set(None);
+        gate_suggestions.set(None);
         evidence.set(None);
         status.set("Suggested primers copied explicitly. Compute method evidence and verify the prepared assembly against the independent target.".into());
     });
@@ -786,7 +1004,7 @@ pub fn CloningMethodsPanel(
         spawn_local(async move {
             let revs = inputs.iter().map(Molecule::revision).collect::<Vec<_>>();
             let result = async {
-                if state.mode == Mode::Ligation {
+                if matches!(state.mode, Mode::Ligation | Mode::GoldenGate) {
                     let (bound_inputs, recipe) =
                         ligation_request(&state, inputs, &bound_target_molecule)?;
                     let revision = collagene_core::ligation_recipe::preview_revision(
@@ -960,7 +1178,7 @@ pub fn CloningMethodsPanel(
                 circular: state.circular,
                 allow_nicked: state.allow_nicked,
             });
-        } else if state.mode == Mode::Ligation {
+        } else if matches!(state.mode, Mode::Ligation | Mode::GoldenGate) {
             let (bound, recipe) = match ligation_request(&state, inputs, &current_target) {
                 Ok(v) => v,
                 Err(e) => {
@@ -1013,18 +1231,40 @@ pub fn CloningMethodsPanel(
         }));
     });
     view! {<div class="inspector-content cloning-methods-panel"><h2>"Cloning methods"</h2><p class="helper">"The active document is the independently chosen target. Method evidence never selects a target or establishes experimental success."</p>
-        <label>"Method workflow"<select aria-label="Cloning workflow" prop:value=move||match config.get().mode{Mode::Tailing=>"tailing",Mode::Overlap=>"overlap",Mode::Ligation=>"ligation"} on:change=move|e|config.update(|c|c.mode=match event_target_value(&e).as_str(){"overlap"=>Mode::Overlap,"ligation"=>Mode::Ligation,_=>Mode::Tailing})><option value="tailing" disabled=fixed_sources>"TA / GC tailing and ligation"</option><option value="overlap">"Gibson / HiFi / In-Fusion overlap"</option><option value="ligation">"Ordered multi-fragment ligation"</option></select></label>
+        <label>"Method workflow"<select aria-label="Cloning workflow" prop:value=move||match config.get().mode{Mode::Tailing=>"tailing",Mode::Overlap=>"overlap",Mode::Ligation=>"ligation",Mode::GoldenGate=>"golden_gate"} on:change=move|e|config.update(|c|c.mode=match event_target_value(&e).as_str(){"overlap"=>Mode::Overlap,"ligation"=>Mode::Ligation,"golden_gate"=>Mode::GoldenGate,_=>Mode::Tailing})><option value="tailing" disabled=fixed_sources>"TA / GC tailing and ligation"</option><option value="overlap">"Gibson / HiFi / In-Fusion overlap"</option><option value="ligation">"Ordered multi-fragment ligation"</option><option value="golden_gate">"Golden Gate — prepared ordered assembly"</option></select></label>
         <Show when=move||config.get().mode==Mode::Tailing><p class="helper">"Append one declared nucleotide to both actual 3′ ends of an established blunt duplex. This is an ideal endpoint operation; polymerase activity, mixtures and proprietary kit chemistry are not predicted. TA/GC products include two added junction bases."</p><div class="method-shortcuts"><button class="text-tool" on:click=move|_|config.update(|c|{c.vector.base=TailingBase::T;c.insert.base=TailingBase::A;})>"Use T/A pair"</button><button class="text-tool" on:click=move|_|config.update(|c|{c.vector.base=TailingBase::C;c.insert.base=TailingBase::G;})>"Use C/G pair"</button></div><TailFields vector=true config=config query_options=query_options primer_sources list_primers resolve_primer epoch/><TailFields vector=false config=config query_options=query_options primer_sources list_primers resolve_primer epoch/><label class="checkbox-label"><input type="checkbox" aria-label="Allow retained tailing ligation nicks" prop:checked=move||config.get().allow_nicked on:change=move|e|config.update(|c|c.allow_nicked=event_target_checked(&e))/>"Allow explicitly retained nicks"</label><p class="helper">"Exact PCR has 5′ OH termini. A sealed ligation may need an explicit phosphorylation step. Factory-vector chemistry and host nick repair are not inferred."</p></Show>
         <Show when=move||config.get().mode!=Mode::Tailing><Show when=move||config.get().mode==Mode::Overlap><label>"Overlap profile"<select aria-label="Overlap profile method" prop:value=move||format!("{:?}",config.get().method) on:change=move|e|config.update(|c|c.method=match event_target_value(&e).as_str(){"Gibson"=>OverlapMethod::Gibson,"InFusion"=>OverlapMethod::InFusion,_=>OverlapMethod::HiFi})><option value="Gibson">"Gibson"</option><option value="HiFi">"HiFi"</option><option value="InFusion">"In-Fusion"</option></select></label><p class="helper">"Fragments are listed in product order with explicit orientation. Homology geometry is checked exactly; published length guidance is advisory. No reaction completion or unique mixture product is established."</p></Show>
-            <Show when=move||config.get().mode==Mode::Ligation><p class="helper">"List fragments in intended ligation order. Preparation, end repair and terminal treatment are explicit source-bound operations. Whole linear DNA retains unknown terminal chemistry; its sequence alone does not imply cleaved or PCR ends. Unknown ends can withhold ligation even after phosphorylation."</p><label class="checkbox-label"><input type="checkbox" aria-label="Allow retained ordered ligation nicks" prop:checked=move||config.get().allow_nicked on:change=move|e|config.update(|c|c.allow_nicked=event_target_checked(&e))/>"Allow explicitly retained nicks"</label></Show>
+            <Show when=move||matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate)><p class="helper">"List fragments in intended ligation order. Preparation, end repair and terminal treatment are explicit source-bound operations. Whole linear DNA retains unknown terminal chemistry; its sequence alone does not imply cleaved or PCR ends. Unknown ends can withhold ligation even after phosphorylation."</p><label class="checkbox-label"><input type="checkbox" aria-label="Allow retained ordered ligation nicks" prop:checked=move||config.get().allow_nicked on:change=move|e|config.update(|c|c.allow_nicked=event_target_checked(&e))/>"Allow explicitly retained nicks"</label></Show>
             <h3>"1. Choose source fragments and regions"</h3>
             <For each=move||config.with(|c|(0..c.rows.len()).collect::<Vec<_>>()) key=|i|*i children=move|i|view!{<OverlapFields config index=i query_options primer_sources list_primers resolve_primer epoch selected_region fixed_sources/>}/>
-            <button class="button secondary full" disabled=move||{fixed_sources||config.with(|c|c.rows.len()>=12)} on:click=move|_|config.update(|c|c.rows.push(OverlapInput::default()))>{move||if config.get().mode==Mode::Ligation{"Add ligation fragment"}else{"Add overlap fragment"}}</button><p class="helper">"This panel supports up to 12 ordered fragments; the typed core has its separate documented work bounds."</p><Show when=move||config.get().mode==Mode::Overlap><label>"Overlap lengths in junction order (bp)"<input aria-label="Profile overlap lengths" prop:value=move||config.get().overlaps on:input=move|e|config.update(|c|c.overlaps=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label="Scan repeated overlap words" prop:checked=move||config.get().scan_repeats on:change=move|e|config.update(|c|c.scan_repeats=event_target_checked(&e))/>"Search supplied fragments for repeated homology words"</label><label>"Repeat comparison budget"<input type="number" min="1" aria-label="Overlap repeat budget" prop:value=move||config.get().comparisons on:input=move|e|config.update(|c|c.comparisons=event_target_value(&e))/></label><label>"Maximum reported homology occurrences"<input type="number" min="1" aria-label="Overlap occurrence limit" prop:value=move||config.get().occurrences on:input=move|e|config.update(|c|c.occurrences=event_target_value(&e))/></label></Show>
+            <button class="button secondary full" disabled=move||{fixed_sources||config.with(|c|c.rows.len()>=12)} on:click=move|_|config.update(|c|c.rows.push(OverlapInput::default()))>{move||if matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate){"Add ligation fragment"}else{"Add overlap fragment"}}</button><p class="helper">"This panel supports up to 12 ordered fragments; the typed core has its separate documented work bounds."</p><Show when=move||config.get().mode==Mode::Overlap><label>"Overlap lengths in junction order (bp)"<input aria-label="Profile overlap lengths" prop:value=move||config.get().overlaps on:input=move|e|config.update(|c|c.overlaps=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label="Scan repeated overlap words" prop:checked=move||config.get().scan_repeats on:change=move|e|config.update(|c|c.scan_repeats=event_target_checked(&e))/>"Search supplied fragments for repeated homology words"</label><label>"Repeat comparison budget"<input type="number" min="1" aria-label="Overlap repeat budget" prop:value=move||config.get().comparisons on:input=move|e|config.update(|c|c.comparisons=event_target_value(&e))/></label><label>"Maximum reported homology occurrences"<input type="number" min="1" aria-label="Overlap occurrence limit" prop:value=move||config.get().occurrences on:input=move|e|config.update(|c|c.occurrences=event_target_value(&e))/></label></Show>
         </Show>
+        <Show when=move||config.get().mode==Mode::GoldenGate><section class="golden-gate-primer-planner"><h3>"2. Prepare Type IIS fragments"</h3>
+            <p class="helper">"Use existing pinned digest fragments, or choose Exact PCR → pinned catalog digest for rows needing new sites. Proposals use each chosen original source region and explicit right fusion. They do not replace existing-site rows or choose a target. This ordered reconstruction does not enumerate every mixture outcome."</p>
+            <div class="primer-grid">
+                <label>"Type IIS enzyme"<select aria-label="Golden Gate preparation enzyme" prop:value=move||format!("{:?}",config.with(|c|c.golden_gate.enzyme)) on:change=move|e|config.update(|c|c.golden_gate.enzyme=match event_target_value(&e).as_str(){"BsmBI"=>collagene_core::golden_gate::GoldenGateEnzyme::BsmBI,"BbsI"=>collagene_core::golden_gate::GoldenGateEnzyme::BbsI,"SapI"=>collagene_core::golden_gate::GoldenGateEnzyme::SapI,_=>collagene_core::golden_gate::GoldenGateEnzyme::BsaI})><option value="BsaI">"BsaI — 4-base fusion"</option><option value="BsmBI">"BsmBI — 4-base fusion"</option><option value="BbsI">"BbsI — 4-base fusion"</option><option value="SapI">"SapI — 3-base fusion"</option></select></label>
+                <label>"Pre-recognition clamp"<input maxlength="12" aria-label="Golden Gate clamp" prop:value=move||config.with(|c|c.golden_gate.clamp.clone()) on:input=move|e|config.update(|c|c.golden_gate.clamp=event_target_value(&e))/></label>
+                <label>"Cleavage spacer"<input maxlength="2" aria-label="Golden Gate spacer" prop:value=move||config.with(|c|c.golden_gate.spacer.clone()) on:input=move|e|config.update(|c|c.golden_gate.spacer=event_target_value(&e))/></label>
+                <label>"Forward annealing length"<input type="number" min="1" max="200" aria-label="Golden Gate forward annealing length" prop:value=move||config.with(|c|c.golden_gate.forward_length.clone()) on:input=move|e|config.update(|c|c.golden_gate.forward_length=event_target_value(&e))/></label>
+                <label>"Reverse annealing length"<input type="number" min="1" max="200" aria-label="Golden Gate reverse annealing length" prop:value=move||config.with(|c|c.golden_gate.reverse_length.clone()) on:input=move|e|config.update(|c|c.golden_gate.reverse_length=event_target_value(&e))/></label>
+            </div>
+            <p class="helper">"The clamp and spacer are explicit synthesized DNA. BbsI needs a 2-base spacer; the other listed enzymes need 1. These settings do not establish reagent compatibility, primer thermodynamics or amplification success."</p>
+            <button class="button secondary full" disabled=move||busy.get() on:click=move|_|suggest_gate.run(())>"Suggest Type IIS PCR primers"</button>
+            {move||gate_suggestions.get().map(|saved|view!{<section class="golden-gate-primer-proposals"><h4>"Proposed PCR/digest chains — not applied"</h4>
+                {saved.report.rows.iter().map(|row|view!{<article><h4>{row.role.clone()}</h4>
+                    <pre>{format!("{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nTail: clamp [{}] · motif [{}] · spacer [{}] · fusion [{}]\n\n{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nTail: clamp [{}] · motif [{}] · spacer [{}] · fusion [{}]",row.forward.name,row.forward.tail,row.forward.annealing.as_str(),row.forward.annealing.as_str(),row.forward_tail.clamp,row.forward_tail.motif,row.forward_tail.spacer,row.forward_tail.fusion,row.reverse.name,row.reverse.tail,row.reverse.annealing.as_str(),row.reverse.annealing.as_str(),row.reverse_tail.clamp,row.reverse_tail.motif,row.reverse_tail.spacer,row.reverse_tail.fusion)}</pre>
+                    <p>{format!("Actual digested fragment {} · assembly-oriented top DNA: {}",row.fragment_index+1,short(&row.oriented_top))}</p><p>{format!("Left: {}",method_end(Some(&row.left)))}</p><p>{format!("Right: {}",method_end(Some(&row.right)))}</p>
+                </article>}).collect_view()}
+                {saved.report.warnings.iter().map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view()}
+                <p class="helper">"Review each own-5′→3′ tail segment and the actual cleaved strand ends. Applying copies these named primers, the exact catalog pin and PCR-product fragment choice; preparation evidence must then be recomputed."</p>
+                <button class="button primary full" disabled=move||busy.get() on:click=move|_|apply_gate.run(())>"Apply Type IIS primer proposals"</button>
+            </section>})}
+        </section></Show>
         <Show when=move||config.get().mode==Mode::Overlap><section class="overlap-primer-planner"><h3>"2. Suggest and review PCR primers"</h3><p class="helper">"Use the selected source regions and order to suggest one primer pair per fragment, including added homology tails. Your current primers stay unchanged until you explicitly apply the proposal. The independent target is never generated or selected by this step."</p><div class="primer-grid"><label>"Junction homology (bp)"<input type="number" min="1" aria-label="Suggested overlap homology bases" prop:value=move||planner_form.with(|f|f.overlap.clone()) on:input=move|e|planner_form.update(|f|f.overlap=event_target_value(&e))/></label><label>"Minimum annealing length"<input type="number" min="1" max="200" aria-label="Suggested primer minimum length" prop:value=move||planner_form.with(|f|f.minimum.clone()) on:input=move|e|planner_form.update(|f|f.minimum=event_target_value(&e))/></label><label>"Maximum annealing length"<input type="number" min="1" max="200" aria-label="Suggested primer maximum length" prop:value=move||planner_form.with(|f|f.maximum.clone()) on:input=move|e|planner_form.update(|f|f.maximum=event_target_value(&e))/></label><label>"Target annealing Tm (°C)"<input type="number" step="0.1" aria-label="Suggested primer target Tm" prop:value=move||planner_form.with(|f|f.tm.clone()) on:input=move|e|planner_form.update(|f|f.tm=event_target_value(&e))/></label></div><p class="helper">"Default filters: GC 20–80%, pair ΔTm ≤5°C, homopolymer run ≤5 and 3′ complementary run ≤3. Tm assumes 50 mM sodium and 500 nM total strands; these are calculations, not reagent or experimental performance predictions."</p><button class="button secondary full" disabled=move||busy.get() on:click=move|_|suggest.run(())>"Suggest PCR primers"</button>
         {move||suggestions.get().map(|proposal|{let saved=proposal.clone();view!{<div class="overlap-primer-suggestions"><h4>"Proposed primer pairs — not yet applied"</h4>{proposal.report.designs.iter().enumerate().map(|(i,design)|{let interval=proposal.report.request.fragments.get(i);view!{<article><h4>{format!("Fragment {} · {}",i+1,proposal.context.get(i).map(|s|s.name.as_str()).unwrap_or("source unavailable"))}</h4>{interval.map(|region|view!{<p>{format!("Source interval {}–{} (1-based inclusive, unrolled) · {}",region.start+1,region.end,if region.reverse{"reverse in assembly"}else{"forward in assembly"})}</p>})}{design.pairs.first().map(|pair|view!{<pre>{format!("{}\nOrdered 5′→3′: {}{}\nAnnealing 5′→3′: {}\n5′ tail: {}\n\n{}\nOrdered 5′→3′: {}{}\nAnnealing 5′→3′: {}\n5′ tail: {}",pair.forward.primer.name,pair.forward.primer.tail,pair.forward.primer.annealing.as_str(),pair.forward.primer.annealing.as_str(),pair.forward.primer.tail,pair.reverse.primer.name,pair.reverse.primer.tail,pair.reverse.primer.annealing.as_str(),pair.reverse.primer.annealing.as_str(),pair.reverse.primer.tail)}</pre><p>{format!("Annealing Tm: {} / {} · pair ΔTm {:.1}°C · proposed PCR length {} bp",pair.forward.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.reverse.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.tm_difference_c,pair.product_length)}</p>})}{design.warnings.iter().map(|w|view!{<p>{w.clone()}</p>}).collect_view()}</article>}}).collect_view()}{proposal.report.warnings.iter().map(|w|view!{<p>{w.clone()}</p>}).collect_view()}<p class="helper">"A deterministic proposal under these filters is not a unique or experimentally validated primer design. Applying changes the preparation to exact PCR; verify the resulting assembly next."</p><button class="button primary full" disabled=move||busy.get() on:click=move|_|apply_suggestions.run(())>"Apply suggested primers"</button><button class="button secondary full" on:click=move|_|{if config.get_untracked()!=saved.config||planner_form.get_untracked()!=saved.form||source_context.get_untracked()!=Some(saved.context.clone())||target_info.get_untracked()!=saved.target_context||target.get_untracked()!=saved.target||epoch.get_untracked()!=saved.epoch{status.set("Sources or settings changed; request fresh suggestions.".into());return;}match serde_json::to_vec_pretty(&serde_json::json!({"sources":saved.context,"target":saved.target_context,"report":saved.report})){Ok(bytes)=>if let Err(e)=download("overlap-primer-suggestions.json","application/json",&bytes){status.set(e)},Err(e)=>status.set(e.to_string())}}>"Download suggested primer evidence"</button></div>}})}
         </section></Show><Show when=move||config.get().mode!=Mode::Tailing><h3>"3. Verify the prepared assembly"</h3><p class="helper">"Review the applied preparation and orientation, then compute method evidence against your independent target. Suggested primers alone do not verify a cloning design."</p></Show>
-        <label class="checkbox-label"><input disabled=fixed_sources type="checkbox" aria-label="Method product circular" prop:checked=move||config.get().circular on:change=move|e|config.update(|c|c.circular=event_target_checked(&e))/>"Circular candidate product"</label><button class="button primary full" disabled=move||busy.get() on:click=move|_|compute.run(())>"Compute method evidence"</button><button class="text-tool" disabled=move||!busy.get() on:click=move|_|{generation.update(|n|*n=n.wrapping_add(1));if let Some(w)=active.get_value(){w.close();}active.set_value(None);busy.set(false);suggestions.set(None);status.set("Method analysis cancelled".into());}>"Cancel method analysis"</button><p class="method-status" role="status">{move||status.get()}</p>
+        <label class="checkbox-label"><input disabled=fixed_sources type="checkbox" aria-label="Method product circular" prop:checked=move||config.get().circular on:change=move|e|config.update(|c|c.circular=event_target_checked(&e))/>"Circular candidate product"</label><button class="button primary full" disabled=move||busy.get() on:click=move|_|compute.run(())>"Compute method evidence"</button><button class="text-tool" disabled=move||!busy.get() on:click=move|_|{generation.update(|n|*n=n.wrapping_add(1));if let Some(w)=active.get_value(){w.close();}active.set_value(None);busy.set(false);suggestions.set(None);
+        gate_suggestions.set(None);status.set("Method analysis cancelled".into());}>"Cancel method analysis"</button><p class="method-status" role="status">{move||status.get()}</p>
         {move||evidence.get().map(|proof|{let report=proof.clone();view!{<div class="method-evidence">
             {proof.ligation.as_ref().map(|p|(&p.compiled.plan,&p.verification)).or_else(||proof.overlap.as_ref().map(|p|(&p.compiled.plan,&p.verification))).map(|(plan,report)|{
                 let captured = StoredValue::new(proof.clone());
@@ -1103,34 +1343,37 @@ fn OverlapFields(
 ) -> impl IntoView {
     let row = move || config.with(|c| c.rows.get(index).cloned().unwrap_or_default());
     let region_status = RwSignal::new(String::new());
+    let catalog = StoredValue::new(collagene_core::catalog_digest::builtin_catalog().ok());
+
     view! {<fieldset class="overlap-source-row"><legend>{format!("Fragment {}",index+1)}</legend>
-        <label>"Original source"<select disabled=fixed_sources aria-label=move||format!("{} source {}",if config.get().mode==Mode::Ligation{"Ligation"}else{"Overlap"},index+1) prop:value=move||row().document.to_string() on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.document=event_target_value(&e).parse().unwrap_or(0)})>{move||query_options.get().into_iter().map(|(n,label)|view!{<option value=n.to_string()>{label}</option>}).collect_view()}</select></label>
-        <Show when=move||config.get().mode==Mode::Overlap><button class="button secondary" disabled=fixed_sources aria-label=format!("Set fragment {} from sequence selection",index+1) on:click=move|_|{match selected_region.run(()){Some((document,start,end)) if start<end&&start.checked_add(1).is_some()=>{config.update(|c|if let Some(row)=c.rows.get_mut(index){row.document=document;row.interval_start=(start+1).to_string();row.interval_end=end.to_string();});region_status.set("Selected source region copied. Review preparation and orientation; primers have not been changed.".into());},_=>region_status.set("Select one contiguous region in the sequence view first. Compound or origin-spanning feature selections need an explicit interval.".into())}} >"Set from sequence selection"</button><p class="helper" role="status">{move||region_status.get()}</p><label>"Primer design interval start (1-based inclusive)"<input disabled=fixed_sources type="number" min="1" aria-label=format!("Overlap interval start {}",index+1) prop:value=move||row().interval_start on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.interval_start=event_target_value(&e)})/></label><label>"Primer design interval end (1-based inclusive; blank = source end)"<input disabled=fixed_sources type="number" min="1" aria-label=format!("Overlap interval end {}",index+1) prop:value=move||row().interval_end on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.interval_end=event_target_value(&e)})/></label><p class="helper">"Intervals are used only when suggesting PCR primers. For a circular source, an end beyond its length describes one unrolled origin crossing. Existing whole-source, digest and manual PCR preparations are not silently sliced."</p></Show>
-        <label>"Prepare fragment"<select aria-label=move||format!("{} preparation {}",if config.get().mode==Mode::Ligation{"Ligation"}else{"Overlap"},index+1) prop:value=move||match row().preparation{OverlapPreparation::WholeLinear=>"whole",OverlapPreparation::DeclaredDuplex=>"declared",OverlapPreparation::Digest=>"digest",OverlapPreparation::CatalogDigest=>"catalog",OverlapPreparation::ExactPcr=>"pcr"} on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.preparation=match event_target_value(&e).as_str(){"declared"=>OverlapPreparation::DeclaredDuplex,"digest"=>OverlapPreparation::Digest,"catalog"=>OverlapPreparation::CatalogDigest,"pcr"=>OverlapPreparation::ExactPcr,_=>OverlapPreparation::WholeLinear}})><option value="whole">"Whole linear DNA"</option><option value="declared">"Declare intact linear duplex"</option><option value="digest">"Manual starter-enzyme digest"</option><option value="catalog">"Pinned catalog digest fragment"</option><option value="pcr">"Exact PCR product"</option></select></label>
+        <label>"Original source"<select disabled=fixed_sources aria-label=move||format!("{} source {}",if matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate){"Ligation"}else{"Overlap"},index+1) prop:value=move||row().document.to_string() on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.document=event_target_value(&e).parse().unwrap_or(0)})>{move||query_options.get().into_iter().map(|(n,label)|view!{<option value=n.to_string()>{label}</option>}).collect_view()}</select></label>
+        <Show when=move||matches!(config.get().mode,Mode::Overlap|Mode::GoldenGate)><button class="button secondary" disabled=fixed_sources aria-label=format!("Set fragment {} from sequence selection",index+1) on:click=move|_|{match selected_region.run(()){Some((document,start,end)) if start<end&&start.checked_add(1).is_some()=>{config.update(|c|if let Some(row)=c.rows.get_mut(index){row.document=document;row.interval_start=(start+1).to_string();row.interval_end=end.to_string();});region_status.set("Selected source region copied. Review preparation and orientation; primers have not been changed.".into());},_=>region_status.set("Select one contiguous region in the sequence view first. Compound or origin-spanning feature selections need an explicit interval.".into())}} >"Set from sequence selection"</button><p class="helper" role="status">{move||region_status.get()}</p><label>"Primer design interval start (1-based inclusive)"<input disabled=fixed_sources type="number" min="1" aria-label=format!("Overlap interval start {}",index+1) prop:value=move||row().interval_start on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.interval_start=event_target_value(&e)})/></label><label>"Primer design interval end (1-based inclusive; blank = source end)"<input disabled=fixed_sources type="number" min="1" aria-label=format!("Overlap interval end {}",index+1) prop:value=move||row().interval_end on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.interval_end=event_target_value(&e)})/></label><p class="helper">"Intervals declare intended regions for primer proposals. For a circular source, an end beyond its length describes one unrolled origin crossing. Existing whole-source, digest and manual PCR preparations are not silently sliced."</p></Show>
+        <Show when=move||config.get().mode==Mode::GoldenGate><label>"Right fusion end (assembly direction, 5′→3′)"<input maxlength="4" aria-label=format!("Golden Gate right fusion {}",index+1) prop:value=move||row().right_fusion on:input=move|e|config.update(|c|if let Some(row)=c.rows.get_mut(index){row.right_fusion=event_target_value(&e)})/></label><p class="helper">{move||format!("Enter {} concrete bases explicitly. The left fusion comes from this oriented source region; enter the next fragment’s first fusion bases explicitly for a matching junction. The right fusion is added design DNA. Existing-site compatibility is checked from its actual ends.",if config.with(|c|c.golden_gate.enzyme)==collagene_core::golden_gate::GoldenGateEnzyme::SapI{3}else{4})}</p></Show>
+        <label>"Prepare fragment"<select aria-label=move||format!("{} preparation {}",if matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate){"Ligation"}else{"Overlap"},index+1) prop:value=move||match row().preparation{OverlapPreparation::WholeLinear=>"whole",OverlapPreparation::DeclaredDuplex=>"declared",OverlapPreparation::Digest=>"digest",OverlapPreparation::CatalogDigest=>"catalog",OverlapPreparation::ExactPcr=>"pcr",OverlapPreparation::PcrCatalogDigest=>"pcr_catalog"} on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.preparation=match event_target_value(&e).as_str(){"declared"=>OverlapPreparation::DeclaredDuplex,"digest"=>OverlapPreparation::Digest,"catalog"=>OverlapPreparation::CatalogDigest,"pcr"=>OverlapPreparation::ExactPcr,"pcr_catalog"=>OverlapPreparation::PcrCatalogDigest,_=>OverlapPreparation::WholeLinear}})><option value="whole">"Whole linear DNA"</option><option value="declared">"Declare intact linear duplex"</option><option value="digest">"Manual starter-enzyme digest"</option><option value="catalog">"Pinned catalog digest fragment"</option><option value="pcr">"Exact PCR product"</option><option value="pcr_catalog">"Exact PCR → pinned catalog digest"</option></select></label>
         <Show when=move||row().preparation==OverlapPreparation::WholeLinear><p class="helper">"Use an already linear source. Circular DNA must first be prepared by restriction digest or exact PCR; its origin is not an assumed cut."</p></Show>
         <Show when=move||row().preparation==OverlapPreparation::DeclaredDuplex><p class="helper">"Operator assumption for an original, intact linear duplex: declare its two terminal groups explicitly. This does not measure chemistry, cut or repair DNA, change its reference sequence, or reuse producer metadata. Circular, single-stranded and imported physical/reference-only intermediate sources are rejected by the core."</p><DeclaredEndFields config index left=true/><DeclaredEndFields config index left=false/><p class="helper">"All groups initially remain unknown. Orientation is applied after this declaration; any ligation terminal treatment remains a separate explicit step."</p></Show>
-        <Show when=move||matches!(row().preparation,OverlapPreparation::Digest|OverlapPreparation::CatalogDigest)><Show when=move||row().preparation==OverlapPreparation::Digest>
-            <label>"Restriction enzymes (comma-separated)"<input aria-label=move||format!("{} digest enzymes {}",if config.get().mode==Mode::Ligation{"Ligation"}else{"Overlap"},index+1) prop:value=move||row().enzymes on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.enzymes=event_target_value(&e)})/></label>
-            <label>"Digest fragment number (1-based)"<input type="number" min="1" aria-label=move||format!("{} digest fragment {}",if config.get().mode==Mode::Ligation{"Ligation"}else{"Overlap"},index+1) prop:value=move||row().fragment on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.fragment=event_target_value(&e)})/></label>
-            </Show><Show when=move||row().preparation==OverlapPreparation::CatalogDigest>{move||row().catalog_selection.map(|selection|view!{<p>{format!("Selected fragment {} · {}",row().fragment,selection.enzymes.iter().map(|e|e.enzyme.name.as_str()).collect::<Vec<_>>().join(", "))}</p><details><summary>"Pinned catalog identity"</summary><p>{format!("Edition {} · content {}",selection.catalog_edition,selection.catalog_content_hash)}</p>{selection.enzymes.iter().map(|entry|view!{<p>{format!("{} · {} · {} · cuts {}/{}",entry.id,entry.enzyme.name,entry.enzyme.recognition,entry.enzyme.top_cut,entry.enzyme.bottom_cut)}</p>}).collect_view()}</details>})}<p class="helper">"This exact catalog selection and fragment index are retained. To choose a different catalog fragment, use Virtual digest and send it to this slot. No starter-enzyme name substitution is made. Saved pins describe a request; they do not restore current digest status or prove cleavage."</p></Show>
-            <label>"Optional explicit end repair"<select aria-label=move||format!("{} end repair {}",if config.get().mode==Mode::Ligation{"Ligation"}else{"Overlap"},index+1) prop:value=move||match row().repair{None=>"none",Some(EndRepairMethod::FillFivePrimeOverhangs)=>"fill",Some(EndRepairMethod::RemoveThreePrimeOverhangs)=>"remove",Some(EndRepairMethod::Blunt)=>"blunt"} on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.repair=match event_target_value(&e).as_str(){"fill"=>Some(EndRepairMethod::FillFivePrimeOverhangs),"remove"=>Some(EndRepairMethod::RemoveThreePrimeOverhangs),"blunt"=>Some(EndRepairMethod::Blunt),_=>None}})><option value="none">"None — retain cohesive ends"</option><option value="fill">"Fill 5′ overhangs"</option><option value="remove">"Remove 3′ overhangs"</option><option value="blunt">"Blunt ends"</option></select></label>
+        <Show when=move||matches!(row().preparation,OverlapPreparation::Digest|OverlapPreparation::CatalogDigest|OverlapPreparation::PcrCatalogDigest)><Show when=move||row().preparation==OverlapPreparation::Digest>
+            <label>"Restriction enzymes (comma-separated)"<input aria-label=move||format!("{} digest enzymes {}",if matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate){"Ligation"}else{"Overlap"},index+1) prop:value=move||row().enzymes on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.enzymes=event_target_value(&e)})/></label>
+            <label>"Digest fragment number (1-based)"<input type="number" min="1" aria-label=move||format!("{} digest fragment {}",if matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate){"Ligation"}else{"Overlap"},index+1) prop:value=move||row().fragment on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.fragment=event_target_value(&e)})/></label>
+            </Show><Show when=move||row().preparation==OverlapPreparation::PcrCatalogDigest><label>"Enzyme for PCR product digestion"<select aria-label=format!("PCR catalog enzyme {}",index+1) prop:value=move||row().catalog_selection.as_ref().and_then(|s|s.enzymes.first().map(|e|e.id.clone())).unwrap_or_default() on:change=move|e|{let id=event_target_value(&e);if let Some(result)=catalog.with_value(|catalog|catalog.as_ref().map(|c|collagene_core::catalog_digest::select(c,&[id]))){match result{Ok(selection)=>config.update(|c|if let Some(row)=c.rows.get_mut(index){row.catalog_selection=Some(selection);}),Err(error)=>region_status.set(error.to_string())}}}><option value="">"Choose a pinned catalog enzyme…"</option>{catalog.with_value(|catalog|catalog.as_ref().map(|c|c.edition().enzymes.iter().map(|e|view!{<option value=e.id.clone()>{e.name.clone()}</option>}).collect_view()))}</select></label><label>"Digest fragment of PCR product (1-based)"<input type="number" min="1" aria-label=format!("PCR catalog fragment {}",index+1) prop:value=move||row().fragment on:input=move|e|config.update(|c|if let Some(row)=c.rows.get_mut(index){row.fragment=event_target_value(&e)})/></label><p class="helper">"Digest coordinates refer to the newly reconstructed PCR product, not the original source. Applied Type IIS proposals pin this selection and fragment automatically; manual edits require fresh reconstruction."</p></Show><Show when=move||matches!(row().preparation,OverlapPreparation::CatalogDigest|OverlapPreparation::PcrCatalogDigest)>{move||row().catalog_selection.map(|selection|view!{<p>{format!("Selected fragment {} · {}",row().fragment,selection.enzymes.iter().map(|e|e.enzyme.name.as_str()).collect::<Vec<_>>().join(", "))}</p><details><summary>"Pinned catalog identity"</summary><p>{format!("Edition {} · content {}",selection.catalog_edition,selection.catalog_content_hash)}</p>{selection.enzymes.iter().map(|entry|view!{<p>{format!("{} · {} · {} · cuts {}/{}",entry.id,entry.enzyme.name,entry.enzyme.recognition,entry.enzyme.top_cut,entry.enzyme.bottom_cut)}</p>}).collect_view()}</details>})}<p class="helper">"The exact catalog selection and fragment index are retained without starter-enzyme name substitution. For an original-source fragment, choose it in Virtual digest. PCR-product fragments use the explicit PCR/digest settings here. Saved pins describe a request; they do not restore current digest status or prove cleavage."</p></Show>
+            <label>"Optional explicit end repair"<select aria-label=move||format!("{} end repair {}",if matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate){"Ligation"}else{"Overlap"},index+1) prop:value=move||match row().repair{None=>"none",Some(EndRepairMethod::FillFivePrimeOverhangs)=>"fill",Some(EndRepairMethod::RemoveThreePrimeOverhangs)=>"remove",Some(EndRepairMethod::Blunt)=>"blunt"} on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.repair=match event_target_value(&e).as_str(){"fill"=>Some(EndRepairMethod::FillFivePrimeOverhangs),"remove"=>Some(EndRepairMethod::RemoveThreePrimeOverhangs),"blunt"=>Some(EndRepairMethod::Blunt),_=>None}})><option value="none">"None — retain cohesive ends"</option><option value="fill">"Fill 5′ overhangs"</option><option value="remove">"Remove 3′ overhangs"</option><option value="blunt">"Blunt ends"</option></select></label>
             <p class="helper">"Fragments are reconstructed in core digest order using the stated complete-cleavage assumption. This is not evidence of enzyme activity, methylation permission or reagent compatibility."</p>
         </Show>
-        <Show when=move||row().preparation==OverlapPreparation::ExactPcr>
+        <Show when=move||matches!(row().preparation,OverlapPreparation::ExactPcr|OverlapPreparation::PcrCatalogDigest)>
             <crate::primer_picker::PrimerPicker label=format!("Fragment {} forward",index+1) sources=primer_sources list_primers resolve_primer epoch on_copy=Callback::new(move|primer:Primer|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.forward_name=primer.name;r.forward=primer.annealing.as_str().into();r.forward_tail=primer.tail;}))/>
-            <label>"Forward primer name"<input maxlength="256" aria-label=move||format!("{} forward primer name {}",if config.get().mode==Mode::Ligation{"Ligation"}else{"Overlap"},index+1) prop:value=move||row().forward_name on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.forward_name=event_target_value(&e)})/></label>
+            <label>"Forward primer name"<input maxlength="256" aria-label=move||format!("{} forward primer name {}",if matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate){"Ligation"}else{"Overlap"},index+1) prop:value=move||row().forward_name on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.forward_name=event_target_value(&e)})/></label>
             <crate::primer_picker::PrimerPicker label=format!("Fragment {} reverse",index+1) sources=primer_sources list_primers resolve_primer epoch on_copy=Callback::new(move|primer:Primer|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.reverse_name=primer.name;r.reverse_primer=primer.annealing.as_str().into();r.reverse_tail=primer.tail;}))/>
-            <label>"Reverse primer name"<input maxlength="256" aria-label=move||format!("{} reverse primer name {}",if config.get().mode==Mode::Ligation{"Ligation"}else{"Overlap"},index+1) prop:value=move||row().reverse_name on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.reverse_name=event_target_value(&e)})/></label>
+            <label>"Reverse primer name"<input maxlength="256" aria-label=move||format!("{} reverse primer name {}",if matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate){"Ligation"}else{"Overlap"},index+1) prop:value=move||row().reverse_name on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.reverse_name=event_target_value(&e)})/></label>
 
-            <label>"Forward annealing sequence 5′→3′"<input aria-label=move||format!("{} forward primer {}",if config.get().mode==Mode::Ligation{"Ligation"}else{"Overlap"},index+1) prop:value=move||row().forward on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.forward=event_target_value(&e)})/></label>
-            <label>"Forward primer 5′ extension"<input aria-label=move||format!("{} forward extension {}",if config.get().mode==Mode::Ligation{"Ligation"}else{"Overlap"},index+1) prop:value=move||row().forward_tail on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.forward_tail=event_target_value(&e)})/></label>
-            <label>"Reverse annealing sequence 5′→3′"<input aria-label=move||format!("{} reverse primer {}",if config.get().mode==Mode::Ligation{"Ligation"}else{"Overlap"},index+1) prop:value=move||row().reverse_primer on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.reverse_primer=event_target_value(&e)})/></label>
-            <label>"Reverse primer 5′ extension"<input aria-label=move||format!("{} reverse extension {}",if config.get().mode==Mode::Ligation{"Ligation"}else{"Overlap"},index+1) prop:value=move||row().reverse_tail on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.reverse_tail=event_target_value(&e)})/></label>
+            <label>"Forward annealing sequence 5′→3′"<input aria-label=move||format!("{} forward primer {}",if matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate){"Ligation"}else{"Overlap"},index+1) prop:value=move||row().forward on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.forward=event_target_value(&e)})/></label>
+            <label>"Forward primer 5′ extension"<input aria-label=move||format!("{} forward extension {}",if matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate){"Ligation"}else{"Overlap"},index+1) prop:value=move||row().forward_tail on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.forward_tail=event_target_value(&e)})/></label>
+            <label>"Reverse annealing sequence 5′→3′"<input aria-label=move||format!("{} reverse primer {}",if matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate){"Ligation"}else{"Overlap"},index+1) prop:value=move||row().reverse_primer on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.reverse_primer=event_target_value(&e)})/></label>
+            <label>"Reverse primer 5′ extension"<input aria-label=move||format!("{} reverse extension {}",if matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate){"Ligation"}else{"Overlap"},index+1) prop:value=move||row().reverse_tail on:input=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.reverse_tail=event_target_value(&e)})/></label>
             <details><summary>"Review current primer domains"</summary><pre>{move||{let r=row();format!("{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\n5′ tail: {}\n\n{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\n5′ tail: {}",r.forward_name,r.forward_tail,r.forward,r.forward,r.forward_tail,r.reverse_name,r.reverse_tail,r.reverse_primer,r.reverse_primer,r.reverse_tail)}}</pre></details>
             <p class="helper">"Enter annealing domains and added tails separately. Both oligos are written 5′→3′; no primer design or unique amplicon is assumed."</p>
         </Show>
         <label class="checkbox-label"><input disabled=fixed_sources type="checkbox" aria-label=format!("Reverse overlap source {}",index+1) prop:checked=move||row().reverse on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.reverse=event_target_checked(&e)})/>"Reverse complement prepared fragment"</label>
-        <Show when=move||config.get().mode==Mode::Ligation><label>"Explicit 5′ terminal treatment"<select aria-label=format!("Ligation terminal treatment {}",index+1) prop:value=move||match row().treatment{Treatment::Keep=>"none",Treatment::Phosphorylate=>"phosphorylate",Treatment::Dephosphorylate=>"dephosphorylate"} on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.treatment=match event_target_value(&e).as_str(){"phosphorylate"=>Treatment::Phosphorylate,"dephosphorylate"=>Treatment::Dephosphorylate,_=>Treatment::Keep}})><option value="none">"None — keep reconstructed chemistry"</option><option value="phosphorylate">"Add 5′ phosphorylation"</option><option value="dephosphorylate">"Add 5′ dephosphorylation"</option></select></label><p class="helper">"Treatment does not resolve unknown 3′ chemistry, repair ends or imply host nick repair."</p></Show>
+        <Show when=move||matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate)><label>"Explicit 5′ terminal treatment"<select aria-label=format!("Ligation terminal treatment {}",index+1) prop:value=move||match row().treatment{Treatment::Keep=>"none",Treatment::Phosphorylate=>"phosphorylate",Treatment::Dephosphorylate=>"dephosphorylate"} on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.treatment=match event_target_value(&e).as_str(){"phosphorylate"=>Treatment::Phosphorylate,"dephosphorylate"=>Treatment::Dephosphorylate,_=>Treatment::Keep}})><option value="none">"None — keep reconstructed chemistry"</option><option value="phosphorylate">"Add 5′ phosphorylation"</option><option value="dephosphorylate">"Add 5′ dephosphorylation"</option></select></label><p class="helper">"Treatment does not resolve unknown 3′ chemistry, repair ends or imply host nick repair."</p></Show>
         <p class="helper">{move||row().summary()}</p>
         <div class="method-row-actions"><button class="text-tool" disabled=move||fixed_sources||index==0 on:click=move|_|config.update(|c|{if index>0&&index<c.rows.len(){c.rows.swap(index,index-1);}})>"Move up"</button><button class="text-tool" disabled=move||fixed_sources||config.with(|c|index+1>=c.rows.len()) on:click=move|_|config.update(|c|{if index+1<c.rows.len(){c.rows.swap(index,index+1);}})>"Move down"</button><button class="text-tool" disabled=move||fixed_sources||config.with(|c|c.rows.len()<=1) on:click=move|_|config.update(|c|{if c.rows.len()>1&&index<c.rows.len(){c.rows.remove(index);}})>"Remove fragment"</button></div>
     </fieldset>}
@@ -1176,9 +1419,9 @@ fn prepared_rows(
                 left: row.left_terminus,
                 right: row.right_terminus,
             },
-            OverlapPreparation::CatalogDigest => {
+            OverlapPreparation::CatalogDigest | OverlapPreparation::PcrCatalogDigest => {
                 let selection = row.catalog_selection.as_ref().ok_or(
-                    "Choose a fragment in Virtual digest to pin an exact catalog selection.",
+                    "Pin a catalog selection using Virtual digest or the PCR-product enzyme selector; then choose its fragment.",
                 )?;
                 selection.validate().map_err(|e| e.to_string())?;
                 let fragment_index = row
@@ -1188,10 +1431,26 @@ fn prepared_rows(
                     .ok()
                     .and_then(|n| n.checked_sub(1))
                     .ok_or("Digest fragment numbers start at 1")?;
-                Preparation::CatalogDigest {
-                    selection: selection.clone(),
-                    fragment_index,
-                    repair: row.repair,
+                if row.preparation == OverlapPreparation::PcrCatalogDigest {
+                    Preparation::PcrCatalogDigest {
+                        forward: Primer::new(&row.forward_name, &row.forward, &row.forward_tail)
+                            .map_err(|e| e.to_string())?,
+                        reverse: Primer::new(
+                            &row.reverse_name,
+                            &row.reverse_primer,
+                            &row.reverse_tail,
+                        )
+                        .map_err(|e| e.to_string())?,
+                        selection: selection.clone(),
+                        fragment_index,
+                        repair: row.repair,
+                    }
+                } else {
+                    Preparation::CatalogDigest {
+                        selection: selection.clone(),
+                        fragment_index,
+                        repair: row.repair,
+                    }
                 }
             }
             OverlapPreparation::Digest => {
@@ -1277,8 +1536,34 @@ fn ligation_request(
 ) -> Result<(Vec<PlanInput>, collagene_core::ligation_recipe::Recipe), String> {
     use collagene_core::ligation_recipe::{Fragment, Recipe};
     let (ids, fragments) = prepared_rows(state, &inputs)?;
+    if state.mode == Mode::GoldenGate {
+        let geometry = state.golden_gate.enzyme.profile();
+        for fragment in &fragments {
+            let selection=match &fragment.preparation {
+                collagene_core::assembly_recipe::Preparation::CatalogDigest{selection,..} | collagene_core::assembly_recipe::Preparation::PcrCatalogDigest{selection,..}=>selection,
+                _=>return Err("Golden Gate rows require an existing pinned Type IIS digest fragment or an explicit PCR → catalog digest preparation. Use ordered ligation for other preparation chains.".into()),
+            };
+            if selection.enzymes.len() != 1
+                || !selection.enzymes.iter().all(|entry| {
+                    entry.enzyme.recognition == geometry.recognition
+                        && entry.enzyme.top_cut == geometry.top_cut
+                        && entry.enzyme.bottom_cut == geometry.bottom_cut
+                })
+            {
+                return Err("A row's pinned enzyme geometry differs from the chosen Type IIS enzyme. Choose the matching existing digest fragment or apply fresh PCR-site proposals.".into());
+            }
+        }
+    }
     let recipe = Recipe {
-        name: format!("Ordered ligation to {}", target.name),
+        name: format!(
+            "{} to {}",
+            if state.mode == Mode::GoldenGate {
+                "Ordered Golden Gate preparation/ligation"
+            } else {
+                "Ordered ligation"
+            },
+            target.name
+        ),
         fragments: fragments
             .into_iter()
             .zip(&state.rows)
@@ -1517,4 +1802,104 @@ fn primer_design_request(
         })
         .collect();
     Ok((bound, request))
+}
+
+fn golden_gate_request(
+    state: &MethodsState,
+    inputs: Vec<Molecule>,
+    target: &Molecule,
+) -> Result<
+    (
+        Vec<PlanInput>,
+        collagene_core::golden_gate_primer_design::Request,
+    ),
+    String,
+> {
+    use collagene_core::golden_gate_primer_design::{Fragment, Request};
+    if inputs.len() != state.rows.len() || inputs.is_empty() || inputs.len() > 12 {
+        return Err("Choose 1–12 ordered original sources.".into());
+    }
+    let form = &state.golden_gate;
+    if form.clamp.len() > 12
+        || form.spacer.len() > 2
+        || form.forward_length.len() > 4
+        || form.reverse_length.len() > 4
+    {
+        return Err("Type IIS primer settings exceed their field bounds.".into());
+    }
+    let forward_length = form
+        .forward_length
+        .parse()
+        .map_err(|_| "Enter a forward annealing length.")?;
+    let reverse_length = form
+        .reverse_length
+        .parse()
+        .map_err(|_| "Enter a reverse annealing length.")?;
+    let ids = (0..inputs.len())
+        .map(|i| format!("source-{}", i + 1))
+        .collect::<Vec<_>>();
+    let mut fragments = Vec::new();
+    for (i, row) in state.rows.iter().enumerate() {
+        if row.preparation != OverlapPreparation::PcrCatalogDigest {
+            continue;
+        }
+        if row.interval_start.len() > 20
+            || row.interval_end.len() > 20
+            || row.right_fusion.len() > 16
+        {
+            return Err("Primer source interval or fusion field exceeds its bound.".into());
+        }
+        let start = row
+            .interval_start
+            .trim()
+            .parse::<usize>()
+            .ok()
+            .and_then(|n| n.checked_sub(1))
+            .ok_or("Source interval starts at a 1-based position.")?;
+        let end = if row.interval_end.trim().is_empty() {
+            inputs[i].sequence.len()
+        } else {
+            row.interval_end
+                .trim()
+                .parse()
+                .map_err(|_| "Invalid source interval end.")?
+        };
+        fragments.push(Fragment {
+            role: format!("fragment-{}", i + 1),
+            input_id: ids[i].clone(),
+            start,
+            end,
+            reverse: row.reverse,
+            forward_length,
+            reverse_length,
+            right_overhang: row.right_fusion.clone(),
+        });
+    }
+    if fragments.is_empty() {
+        return Err("Choose Exact PCR → pinned catalog digest for at least one row before proposing primers. Existing-site rows remain unchanged.".into());
+    }
+    let request = Request {
+        name: format!("Type IIS primer preparation for {}", target.name),
+        fragments,
+        enzyme: form.enzyme,
+        clamp: form.clamp.clone(),
+        spacer: form.spacer.clone(),
+    };
+    let borrowed = ids
+        .iter()
+        .zip(&inputs)
+        .map(|(id, m)| (id.as_str(), m))
+        .collect::<Vec<_>>();
+    collagene_core::golden_gate_primer_design::source_preflight(&borrowed, target, &request)
+        .map_err(|e| e.to_string())?;
+    let inputs = ids
+        .into_iter()
+        .zip(inputs)
+        .map(|(id, molecule)| PlanInput {
+            revision: molecule.revision(),
+            id,
+            molecule,
+        })
+        .collect();
+    Ok((inputs, request))
 }

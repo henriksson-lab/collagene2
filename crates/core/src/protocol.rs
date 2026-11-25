@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 39;
+pub const WORKER_SCHEMA_VERSION: u16 = 40;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 11;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -663,6 +663,11 @@ pub enum AnalysisJob {
         inputs: Vec<crate::run_lineage::InputEventBinding>,
         options: crate::cloning_outputs::Options,
     },
+    DesignGoldenGatePrimers {
+        inputs: Vec<crate::verification::PlanInput>,
+        target: Molecule,
+        request: crate::golden_gate_primer_design::Request,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -767,6 +772,7 @@ pub enum AnalysisResult {
     PlanOligosExported(crate::plan_oligos::Exported),
     ProtocolHtml(String),
     CloningOutputsFinalized(crate::cloning_outputs::Commit),
+    GoldenGatePrimersDesigned(crate::golden_gate_primer_design::Report),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1012,6 +1018,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_assembly_intent_tag(bytes, &[90])?;
     preflight_cloning_output_tag(bytes, &[91, 92, 93])?;
     preflight_finalize_tag(bytes, &[94])?;
+    preflight_golden_gate_primer_tag(bytes, &[95])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1065,6 +1072,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         _ => decode_with_limit(b"CGR\0", bytes, maximum)?,
     };
     let required = match &response.result {
+        AnalysisResult::GoldenGatePrimersDesigned(_) => 40,
         AnalysisResult::CloningOutputsFinalized(_) => 39,
         AnalysisResult::DigestFragmentSelected(_)
         | AnalysisResult::PlanOligosExported(_)
@@ -1181,6 +1189,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
     }
     match &response.result {
+        AnalysisResult::GoldenGatePrimersDesigned(report) => {
+            report.validate_binding(&response.revision)?
+        }
         AnalysisResult::CloningOutputsFinalized(commit) => {
             check_workspace_version(bytes, &commit.workspace)?;
             commit.validate_binding(&response.revision)?;
@@ -1632,6 +1643,14 @@ fn preflight_topo_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     }
     Ok(())
 }
+fn preflight_golden_gate_primer_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 40)?;
+    }
+    Ok(())
+}
 fn preflight_finalize_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -1938,6 +1957,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_assembly_intent_tag(bytes, &[98])?;
     preflight_cloning_output_tag(bytes, &[99, 100, 101])?;
     preflight_finalize_tag(bytes, &[102])?;
+    preflight_golden_gate_primer_tag(bytes, &[103])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -1945,6 +1965,27 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::DesignGoldenGatePrimers { .. } => 40,
+        AnalysisJob::PreviewOverlapRecipe { recipe, .. }
+            if recipe.fragments.iter().any(|row| {
+                matches!(
+                    row.preparation,
+                    crate::assembly_recipe::Preparation::PcrCatalogDigest { .. }
+                )
+            }) =>
+        {
+            40
+        }
+        AnalysisJob::PreviewLigationRecipe { recipe, .. }
+            if recipe.fragments.iter().any(|row| {
+                matches!(
+                    row.source.preparation,
+                    crate::assembly_recipe::Preparation::PcrCatalogDigest { .. }
+                )
+            }) =>
+        {
+            40
+        }
         AnalysisJob::FinalizeCloningOutputs { .. } => 39,
         AnalysisJob::SelectDigestFragment { .. }
         | AnalysisJob::ExportPlanOligos { .. }
@@ -2246,6 +2287,20 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             if crate::assembly_intent::intent_revision(inputs, request)? != r.revision {
                 return Err(Error::Format(
                     "assembly intent source/region/options changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::DesignGoldenGatePrimers {
+            inputs,
+            target,
+            request,
+        } => {
+            if crate::golden_gate_primer_design::preview_revision(inputs, target, request)?
+                != r.revision
+            {
+                return Err(Error::Format(
+                    "Golden Gate primer sources/target/options changed".into(),
                 ));
             }
             None
@@ -2822,6 +2877,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         AnalysisJob::BuildAssemblyIntent { inputs, request } => {
             crate::assembly_intent::build(&inputs, &request).map(AnalysisResult::AssemblyIntent)
         }
+        AnalysisJob::DesignGoldenGatePrimers {
+            inputs,
+            target,
+            request,
+        } => crate::golden_gate_primer_design::design(&inputs, &target, &request)
+            .map(AnalysisResult::GoldenGatePrimersDesigned),
         AnalysisJob::DesignOverlapPrimers {
             inputs,
             target,

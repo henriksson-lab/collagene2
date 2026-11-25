@@ -601,3 +601,17 @@ and exact source-event invalidation. Ordinary primer evidence now retains its
 originating event for annotation/navigation. Persisting unfinished pair drafts,
 sequence-centered mutation/junction transactions, and Golden Gate PCR→digest
 preparation remain required. [Pair draft](PRIMER_PAIR_DRAFT.md).
+
+### Connected Golden Gate preparation checkpoint
+
+The persistent dock now exposes ordered Golden Gate preparation/ligation with
+mixed existing pinned Type IIS digests and original-source PCR→catalog digest
+rows. Source-bound primer proposals retain inspectable tail segmentation and
+require explicit Apply; actual reconstructed ends/product/junctions and the output
+chooser reuse the existing route. The shared preparation compiler and MCP expose
+the same operations. Reverse rows use actual opposite-strand geometry, SapI uses
+three-base ends, and circular source intervals remain explicit. Worker40/MCP121
+version transport; scientific operations remain science-14. Automatic fusion/end
+optimization, domestication, full prepared-pool alternative enumeration and bulk
+cloning remain required beyond this first connected single-design route.
+[Scientific scope](GOLDEN_GATE_PRIMER_DESIGN.md).

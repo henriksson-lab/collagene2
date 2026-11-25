@@ -1460,3 +1460,23 @@ check and format/diff checks. A parallel source review found no concrete routing
 blocker. The next public bundle combines this fix with closable working tabs.
 The native event path uses the documented browser clipboard-event interface;
 interactive acceptance remains deferred under the user's instruction.
+
+### Bound the large dialog view type
+
+One type-erasure boundary around the existing modal child limits the large
+concrete dialog type's propagation through the parent App view. All markup,
+callbacks, lazy mounting and scientific/source guards remain in the same place.
+The full existing web/worker build passes. Generated WASM name data drops by
+10,736,133 bytes; the shipped module changes by only9,359 bytes. No runtime speedup
+or isolated compile-time improvement is claimed from this single comparison.
+[Measurement and tradeoff](WASM_VIEW_TYPES.md). Public8082 remains on6d78c69; this
+internal refactor does not establish UI acceptance or complete the full goal.
+
+A source audit identifies the next ordinary-cloning gap: TA/GC tailing exists in
+the scientific/advanced route but does not yet use the persistent two-slot dock.
+Work should reuse explicit pinned preparations, separate declared junction intent,
+the full tailing/ligation plan and fresh verification/product/output routes.
+Neither simulated product DNA nor enzyme-name substitutions may replace the
+independent intended target or a retained catalog pin. Library tailing remains a
+separate typed-preparation extension. The unused ta_request compatibility wrapper
+is not evidence that the existing TOPO route is disconnected.

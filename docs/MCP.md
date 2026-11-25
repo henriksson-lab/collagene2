@@ -801,3 +801,19 @@ metadata; importing it cannot restore the graph as physical state.
 Selected material is not an isolation/mixture-winner claim. Internal modifications
 remain unknown, unsupported chemistry is not erased, and no independent-target
 acceptance follows from this tool. [Contract](TOPO_PROCESSED_PRODUCT.md).
+
+
+## Retained processed plans and historical graphs (163 tools)
+
+`propose_plan` accepts the appended ProcessedTopo declaration with original role
+bindings and literal processing request. `verify_plan` reconstructs it afresh,
+returns processed_step_count and a complete processed-graph artifact, including
+withheld paths. A successful material result can feed later native operations;
+an imported sequence/report cannot establish that state. Target DNA stays separate.
+
+`record_workspace_run` retains complete historical processed graphs atomically in
+an exact-event-bound sidecar. `inspect_workspace_run_evidence` accepts workspace
+and run_id, returns historical metadata plus an optional full JSON artifact, and
+never replays science or restores material authority. Older ordinary runs have no
+fabricated attachment. Use replay_workspace_run for current-engine evidence.
+[Formats, handoff, protocols and limits](TOPO_PROCESSED_PLAN.md).

@@ -212,8 +212,8 @@ fn selected_opcode18_requires_candidate12_and_worker59_without_rejecting_index_o
     let (w, d, row) = fixture();
     let compiled = design::compile(&d, &row, &w).unwrap();
     assert!(protocol::WORKER_SCHEMA_VERSION >= 59);
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 12);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 10);
+    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 13);
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 11);
     assert_eq!(
         postcard::to_allocvec(compiled.plan.steps.last().unwrap()).unwrap()[0],
         18
@@ -307,19 +307,34 @@ fn pool_method_cannot_hide_in_per_construct_overrides_under_worker57_or58() {
     }
 }
 #[test]
-fn science15_reports_cannot_claim_worker58() {
+fn current_and_historical_reports_keep_their_actual_layout_and_version_gates() {
     let (w, d, row) = fixture();
     let compiled = design::compile(&d, &row, &w).unwrap();
     let report = verification::verify(&compiled.plan, &compiled.resolved.target);
-    assert!(report.engine_version.ends_with("/science-15"));
+    assert_eq!(report.engine_version, verification::ENGINE_VERSION);
+    let old_report = (
+        report.plan_revision.clone(),
+        report.target_revision.clone(),
+        "0.1.0/science-15".to_owned(),
+        report.status.clone(),
+        report.findings.clone(),
+        report.assumptions.clone(),
+        report.products.clone(),
+        report.exhaustive_alternative_search,
+        report.step_reports.clone(),
+        report.annotation_reports.clone(),
+    );
+    let historical = (15u32, compiled.resolved.target.revision(), 4u32, old_report);
+    protocol::decode_response(&wire(b"CGR\0", 59, &historical)).unwrap();
+    assert!(protocol::decode_response(&wire(b"CGR\0", 58, &historical)).is_err());
     assert_eq!(report.status, Status::ConsistentUnderAssumptions);
     let response = Response {
         id: 15,
         revision: compiled.resolved.target.revision(),
         result: AnalysisResult::Verification(report),
     };
-    protocol::decode_response(&wire(b"CGR\0", 59, &response)).unwrap();
-    assert!(protocol::decode_response(&wire(b"CGR\0", 58, &response)).is_err());
+    protocol::decode_response(&wire(b"CGR\0", 65, &response)).unwrap();
+    assert!(protocol::decode_response(&wire(b"CGR\0", 64, &response)).is_err());
 }
 #[test]
 fn workspace_and_rekeyed_runrecord_cannot_downcast_selected_semantics_to_plan9() {
@@ -336,7 +351,7 @@ fn workspace_and_rekeyed_runrecord_cannot_downcast_selected_semantics_to_plan9()
     let manifest = release::load(&committed.workspace, &committed.manifest_hash).unwrap();
     let mut record =
         run_lineage::load_run(&committed.workspace, &manifest.rows[0].output.run.run_id).unwrap();
-    assert_eq!(record.plan_schema, 10);
+    assert_eq!(record.plan_schema, workspace::PLAN_SCHEMA_VERSION);
     record.plan_schema = 9;
     record.assessment.engine_version = "0.1.0/science-14".into();
     rekey(&mut record);

@@ -101,6 +101,19 @@ async fn immutable_run_record_list_replay_artifacts_and_explicit_event_bindings(
     let next = json!({"id":r["workspace"]["id"],"revision":r["workspace"]["revision"]});
     let listed = call(&c, "list_workspace_runs", next.clone()).await;
     assert_eq!(listed["run_count"], 1);
+    let historical = call(
+        &c,
+        "inspect_workspace_run_evidence",
+        json!({"workspace":next,"run_id":r["receipt"]["run_id"]}),
+    )
+    .await;
+    assert_eq!(historical["state"], "historical");
+    assert_eq!(historical["verified"], false);
+    assert_eq!(historical["processed_step_count"], 0);
+    assert!(
+        historical["artifact_id"].is_null(),
+        "ordinary run has no fabricated processed graph"
+    );
     let replay = call(
         &c,
         "replay_workspace_run",

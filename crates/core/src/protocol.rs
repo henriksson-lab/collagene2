@@ -6,8 +6,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 64;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 12;
+pub const WORKER_SCHEMA_VERSION: u16 = 65;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 13;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
@@ -858,6 +858,10 @@ pub enum AnalysisJob {
         inputs: Vec<crate::topo::Input>,
         request: crate::topo_processed_product::Request,
     },
+    LoadProcessedRunEvidence {
+        workspace: crate::workspace::Workspace,
+        run_id: String,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1011,6 +1015,7 @@ pub enum AnalysisResult {
     LigationCompetition(crate::ligation_fidelity::CompetitionReport),
     TopoNicksSealed(crate::topo_nick_sealing::Report),
     ProcessedTopoProduct(crate::topo_processed_product::Report),
+    HistoricalProcessedRunEvidence(crate::processed_run_evidence::Download),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1056,6 +1061,7 @@ impl From<LegacyVerificationReport> for crate::verification::VerificationReport 
             exhaustive_alternative_search: old.exhaustive_alternative_search,
             step_reports: Vec::new(),
             annotation_reports: Vec::new(),
+            processed_step_reports: Vec::new(),
         }
     }
 }
@@ -1101,6 +1107,7 @@ impl From<LegacyVerificationReportV24> for crate::verification::VerificationRepo
             exhaustive_alternative_search: old.exhaustive_alternative_search,
             step_reports: Vec::new(),
             annotation_reports: Vec::new(),
+            processed_step_reports: Vec::new(),
         }
     }
 }
@@ -1146,6 +1153,7 @@ impl From<LegacyVerificationReportV26> for crate::verification::VerificationRepo
             exhaustive_alternative_search: old.exhaustive_alternative_search,
             step_reports: old.step_reports,
             annotation_reports: Vec::new(),
+            processed_step_reports: Vec::new(),
         }
     }
 }
@@ -1319,6 +1327,7 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::LoadWorkspace { .. }
             | AnalysisJob::RecordCloningRun { .. }
             | AnalysisJob::ReplayCloningRun { .. }
+            | AnalysisJob::LoadProcessedRunEvidence { .. }
             | AnalysisJob::FinalizeCloningOutputs { .. }
             | AnalysisJob::CaptureReadCheck { .. }
             | AnalysisJob::ReplayReadCheck { .. }
@@ -1402,6 +1411,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_published_ligation_tag(bytes, &[135, 136, 137, 138])?;
     preflight_nick_sealing_tag(bytes, &[139])?;
     preflight_processed_topo_tag(bytes, &[140])?;
+    preflight_processed_run_tag(bytes, &[141])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1452,9 +1462,13 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
                 result: AnalysisResult::Verification(report.into()),
             }
         }
-        _ => decode_with_limit(b"CGR\0", bytes, maximum)?,
+        _ => match crate::protocol_legacy_v64::decode(bytes, maximum)? {
+            Some(old) => old,
+            None => decode_with_limit(b"CGR\0", bytes, maximum)?,
+        },
     };
     let required = match &response.result {
+        AnalysisResult::HistoricalProcessedRunEvidence(_) => 65,
         AnalysisResult::ProcessedTopoProduct(_) => 64,
         AnalysisResult::TopoNicksSealed(_) => 63,
         AnalysisResult::LigationProfiles(_)
@@ -1505,9 +1519,11 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         AnalysisResult::OverlapPrimersDesigned(_) => 35,
         AnalysisResult::AssemblyJunctionInspection(_) => 33,
         AnalysisResult::LigationRecipePreview(report) => {
+            check_variant_version(bytes, plan_worker_version(&report.compiled.plan))?;
             plan_worker_version(&report.compiled.plan).max(32)
         }
         AnalysisResult::OverlapRecipePreview(report) => {
+            check_variant_version(bytes, plan_worker_version(&report.compiled.plan))?;
             plan_worker_version(&report.compiled.plan).max(31)
         }
         AnalysisResult::VariantsPrepared(_)
@@ -1613,6 +1629,21 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
     }
     match &response.result {
+        AnalysisResult::HistoricalProcessedRunEvidence(value) => {
+            if value.run_id.len() != 64
+                || value.recorded_engine.len() > 128
+                || value.step_count > 64
+                || value
+                    .bytes
+                    .as_ref()
+                    .is_some_and(|b| b.len() > crate::processed_run_evidence::MAX_BYTES)
+                || value.bytes.is_none() != (value.step_count == 0)
+            {
+                return Err(Error::Format(
+                    "Invalid historical processed graph download".into(),
+                ));
+            }
+        }
         AnalysisResult::ProcessedTopoProduct(report) => {
             report.validate_binding(&response.revision)?
         }
@@ -1649,6 +1680,8 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             }
         }
         AnalysisResult::DomesticationPrepared(report) => {
+            check_verification_report_version(bytes, &report.verification)?;
+            check_variant_version(bytes, plan_worker_version(&report.preparation.plan))?;
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::GoldenGateFusions(report) => report.validate_binding(&response.revision)?,
@@ -1669,7 +1702,8 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::PreparedGoldenGatePool(report) => {
-            check_scientific_report_version(bytes, &report.preview.verification.engine_version)?;
+            check_verification_report_version(bytes, &report.preview.verification)?;
+            check_variant_version(bytes, plan_worker_version(&report.preview.compiled.plan))?;
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::PreparedGoldenGateCandidate(report) => {
@@ -1748,7 +1782,8 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             outputs.validate_binding(&response.revision)?;
         }
         AnalysisResult::GoldenGateReaction(report) => {
-            check_scientific_report_version(bytes, &report.verification.engine_version)?;
+            check_variant_version(bytes, plan_worker_version(&report.probe_plan))?;
+            check_verification_report_version(bytes, &report.verification)?;
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::GoldenGateReactionCandidate(report) => {
@@ -1788,7 +1823,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             report.validate_binding(&response.revision)?;
         }
         AnalysisResult::AssemblyJunctionInspection(report) => {
-            check_scientific_report_version(bytes, &report.verification.engine_version)?;
+            check_verification_report_version(bytes, &report.verification)?;
             if matches!(
                 report.method,
                 Some(crate::assembly_junctions::Method::GoldenGate { .. })
@@ -1798,11 +1833,11 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::LigationRecipePreview(report) => {
-            check_scientific_report_version(bytes, &report.verification.engine_version)?;
+            check_verification_report_version(bytes, &report.verification)?;
             report.validate_binding(&response.revision)?;
         }
         AnalysisResult::OverlapRecipePreview(report) => {
-            check_scientific_report_version(bytes, &report.verification.engine_version)?;
+            check_verification_report_version(bytes, &report.verification)?;
             report.validate()?;
             if report.context_revision != response.revision {
                 return Err(Error::Format(
@@ -1987,8 +2022,12 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         | AnalysisResult::GenomeIntervalRead(_) => {
             crate::genome_session::validate_result(&response.result, &response.revision)?
         }
+        AnalysisResult::InversePcr(report) => {
+            check_verification_report_version(bytes, &report.verification)?;
+            check_variant_version(bytes, plan_worker_version(&report.plan))?;
+        }
         AnalysisResult::Verification(report) => {
-            check_scientific_report_version(bytes, &report.engine_version)?;
+            check_verification_report_version(bytes, report)?;
         }
         AnalysisResult::ProtocolPdf(report) => {
             check_scientific_report_version(bytes, &report.engine_version)?;
@@ -2065,7 +2104,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
         AnalysisResult::RunReplay(report) => {
             check_scientific_report_version(bytes, &report.recorded_engine)?;
-            check_scientific_report_version(bytes, &report.current_report.engine_version)?;
+            check_verification_report_version(bytes, &report.current_report)?;
             report.validate()?;
             if report.source_workspace_fingerprint != response.revision {
                 return Err(Error::Format("run replay source workspace mismatch".into()));
@@ -2207,6 +2246,14 @@ fn preflight_domestication_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> 
         .map_err(|e| Error::Format(e.to_string()))?;
     if tags.contains(&tag) {
         check_variant_version(bytes, 61)?;
+    }
+    Ok(())
+}
+fn preflight_processed_run_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 65)?;
     }
     Ok(())
 }
@@ -2534,7 +2581,33 @@ fn preflight_crispr_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     }
     Ok(())
 }
+fn check_verification_report_version(
+    bytes: &[u8],
+    report: &crate::verification::VerificationReport,
+) -> Result<(), Error> {
+    check_scientific_report_version(bytes, &report.engine_version)?;
+    if !report.processed_step_reports.is_empty() {
+        check_variant_version(bytes, 65)?;
+        if report.processed_step_reports.len() > 64 {
+            return Err(Error::TooLarge);
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for step in &report.processed_step_reports {
+            if step.step_index >= 1000 || !seen.insert(step.step_index) {
+                return Err(Error::Format(
+                    "Invalid processed step evidence index".into(),
+                ));
+            }
+            step.evidence
+                .validate_binding(&step.evidence.context_revision)?;
+        }
+    }
+    Ok(())
+}
 fn check_scientific_report_version(bytes: &[u8], engine: &str) -> Result<(), Error> {
+    if engine.ends_with("/science-16") {
+        check_variant_version(bytes, 65)?;
+    }
     if engine.ends_with("/science-15") {
         check_variant_version(bytes, 59)?;
     }
@@ -2599,6 +2672,9 @@ fn check_workspace_version(
             check_variant_version(bytes, 12)?;
             let record = crate::run_lineage::load_run_record(&attachment.bytes)?;
             check_variant_version(bytes, plan_worker_version(&record.plan))?;
+            if record.plan_schema >= 11 {
+                check_variant_version(bytes, 65)?;
+            }
             if record.plan_schema >= 10 {
                 check_variant_version(bytes, 59)?;
             }
@@ -2706,6 +2782,7 @@ fn plan_worker_version(plan: &crate::verification::DesignPlan) -> u16 {
     plan.steps
         .iter()
         .map(|step| match step {
+            crate::verification::Operation::ProcessedTopo { .. } => 65,
             crate::verification::Operation::SelectedGoldenGate { .. } => 59,
             crate::verification::Operation::CatalogDigest { .. } => 37,
             crate::verification::Operation::DeclareSourceTermini { .. } => 34,
@@ -2749,6 +2826,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             (131, 58),
             (134, 58),
             (135, 58),
+            (149, 65),
         ],
     )?;
     preflight_codon_tag(bytes, &[44, 45])?;
@@ -2797,6 +2875,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_published_ligation_tag(bytes, &[143, 144, 145, 146])?;
     preflight_nick_sealing_tag(bytes, &[147])?;
     preflight_processed_topo_tag(bytes, &[148])?;
+    preflight_processed_run_tag(bytes, &[149])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -2804,6 +2883,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::LoadProcessedRunEvidence { .. } => 65,
         AnalysisJob::ProjectProcessedTopo { .. } => 64,
         AnalysisJob::SealTopoNicks { .. } => 63,
         AnalysisJob::ListLigationProfiles
@@ -3022,11 +3102,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     match &r.job {
         AnalysisJob::SelectGoldenGateReaction { report, .. } => {
-            check_scientific_report_version(bytes, &report.verification.engine_version)?;
+            check_verification_report_version(bytes, &report.verification)?;
             check_variant_version(bytes, plan_worker_version(&report.probe_plan))?;
         }
         AnalysisJob::SelectPreparedGoldenGateCandidate { report, .. } => {
-            check_scientific_report_version(bytes, &report.preview.verification.engine_version)?;
+            check_verification_report_version(bytes, &report.preview.verification)?;
+            check_variant_version(bytes, plan_worker_version(&report.preview.compiled.plan))?;
             check_variant_version(bytes, plan_worker_version(&report.preview.compiled.plan))?;
         }
         AnalysisJob::ImportAnnotations { format, .. }
@@ -3064,6 +3145,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     {
         check_workspace_version(bytes, workspace)?;
         check_variant_version(bytes, plan_worker_version(plan))?;
+    }
+    if let AnalysisJob::LoadProcessedRunEvidence { workspace, run_id } = &r.job {
+        if run_id.len() != 64 {
+            return Err(Error::Format("Invalid run identity".into()));
+        }
+        check_workspace_version(bytes, workspace)?;
     }
     if let AnalysisJob::ReplayCloningRun { workspace, .. } = &r.job {
         check_workspace_version(bytes, workspace)?;
@@ -4032,7 +4119,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::RecordCloningRun { workspace, .. }
-        | AnalysisJob::ReplayCloningRun { workspace, .. } => {
+        | AnalysisJob::ReplayCloningRun { workspace, .. }
+        | AnalysisJob::LoadProcessedRunEvidence { workspace, .. } => {
             if crate::run_lineage::workspace_fingerprint(workspace)? != r.revision {
                 return Err(Error::Format("run request source workspace changed".into()));
             }
@@ -4159,6 +4247,10 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let result = match r.job {
+        AnalysisJob::LoadProcessedRunEvidence { workspace, run_id } => {
+            crate::processed_run_evidence::download(&workspace, &run_id)
+                .map(AnalysisResult::HistoricalProcessedRunEvidence)
+        }
         AnalysisJob::ProjectProcessedTopo { inputs, request } => {
             crate::topo_processed_product::inspect(&inputs, &request)
                 .map(AnalysisResult::ProcessedTopoProduct)
@@ -4942,6 +5034,7 @@ impl AnalysisSession {
                 (131, 58),
                 (134, 58),
                 (135, 58),
+                (149, 65),
             ],
         )?;
         // Route by a borrowed prefix so ordinary jobs are not fully decoded twice.

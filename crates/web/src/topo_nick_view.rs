@@ -30,6 +30,13 @@ pub struct Frame {
     pub inspection_generation: u32,
     pub orientation: usize,
 }
+/// Declaration-only handoff. Reports and bridged material are deliberately not
+/// accepted as plan inputs or as proof of target agreement.
+pub struct OpenProcessed {
+    pub frame: Frame,
+    pub request: topo_processed_product::Request,
+    pub expected_revision: String,
+}
 pub struct Capture {
     pub inputs: Vec<topo::Input>,
     pub request: topo::Request,
@@ -108,6 +115,7 @@ fn report_view(report: Arc<topo_nick_sealing::Report>) -> impl IntoView {
 pub fn TopoNickView(
     frame: Memo<Option<Frame>>,
     capture: Callback<Frame, Result<Capture, String>>,
+    on_open: Callback<OpenProcessed, Result<(), String>>,
     locked: Memo<bool>,
 ) -> impl IntoView {
     let captured = RwSignal::new(None::<(Frame, Arc<Capture>)>);
@@ -339,7 +347,7 @@ pub fn TopoNickView(
         <p role="status">{move||status.get()}</p>
         {move||current().map(|e|report_view(e.report.clone()))}
         <button class="text-tool" disabled=move||current().is_none() on:click=move|_|export.run(())>"Download full nick treatment evidence JSON"</button>
-        <ProcessedTopoView evidence=evidence frame=frame treatment_form=form capture=capture locked=Memo::new(move |_|locked.get()||busy.get())/>
+        <ProcessedTopoView evidence=evidence frame=frame treatment_form=form capture=capture on_open=on_open locked=Memo::new(move |_|locked.get()||busy.get())/>
     </details> }
 }
 
@@ -366,6 +374,14 @@ struct ProcessedEvidence {
     parent: Arc<Evidence>,
     form: ContourForm,
     report: Arc<topo_processed_product::Report>,
+}
+fn can_open_processed(report: &topo_processed_product::Report) -> bool {
+    matches!(
+        report.projection.outcome,
+        physical::projection::Outcome::Proven(_)
+    ) && report.duplex.is_some()
+        && report.tracked.is_some()
+        && report.product.is_some()
 }
 fn contour_view(report: Arc<topo_processed_product::Report>) -> AnyView {
     use physical::projection::Outcome;
@@ -403,6 +419,7 @@ fn ProcessedTopoView(
     frame: Memo<Option<Frame>>,
     treatment_form: RwSignal<TreatmentForm>,
     capture: Callback<Frame, Result<Capture, String>>,
+    on_open: Callback<OpenProcessed, Result<(), String>>,
     locked: Memo<bool>,
 ) -> impl IntoView {
     let form = RwSignal::new(ContourForm::default());
@@ -597,6 +614,29 @@ fn ProcessedTopoView(
             form.get() == r.form && current_parent().is_some_and(|e| Arc::ptr_eq(&e, &r.parent))
         })
     };
+    let open_alive = alive.clone();
+    let open = Callback::new(move |()| {
+        if locked.get_untracked() || busy.get_untracked() {
+            return;
+        }
+        let Some(value) = current() else {
+            return;
+        };
+        if !can_open_processed(&value.report) {
+            return;
+        }
+        let declaration = OpenProcessed {
+            frame: value.parent.frame.clone(),
+            request: value.report.request.clone(),
+            expected_revision: value.report.context_revision.clone(),
+        };
+        // Success can replace the active panel and dispose these signals.
+        if let Err(error) = on_open.run(declaration) {
+            if open_alive.load(Ordering::Relaxed) {
+                status.set(error);
+            }
+        }
+    });
     let export = Callback::new(move |()| {
         let Some(value) = current() else {
             return;
@@ -630,6 +670,8 @@ fn ProcessedTopoView(
         <Show when=move||busy.get()><button class="text-tool" on:click=move|_|{cancel.run(());status.set("Contour reconstruction cancelled.".into());}>"Cancel contour reconstruction"</button></Show>
         <p role="status">{move||status.get()}</p>
         {move||current().map(|r|contour_view(r.report.clone()))}
+        <p class="helper">"Opening a candidate retains the original source events, explicit treatment and chosen contour. Verify it against the independently selected target before creating outputs."</p>
+        <button class="button secondary" disabled=move||locked.get()||busy.get()||!current().is_some_and(|v|can_open_processed(&v.report)) on:click=move|_|open.run(())>"Open processed candidate for verification"</button>
         <button class="text-tool" disabled=move||current().is_none() on:click=move|_|export.run(())>"Download full treated graph and contour evidence"</button>
     </section>}
 }

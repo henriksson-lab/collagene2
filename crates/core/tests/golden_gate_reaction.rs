@@ -280,7 +280,10 @@ fn key_bound_native_operation_reconstructs_the_selected_path_without_target_sele
             .iter()
             .any(|finding| finding.contains("1 uncut carryover"))
     );
-    assert!(fresh.engine_version.ends_with("/science-15"));
+    assert_eq!(
+        fresh.engine_version,
+        collagene_core::verification::ENGINE_VERSION
+    );
 
     // Matching the target cannot rescue a changed selection key, including when
     // an otherwise valid imported/deserialized plan supplies it.

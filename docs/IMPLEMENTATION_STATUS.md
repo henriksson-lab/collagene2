@@ -22,6 +22,51 @@ and review proposals are implemented, despite older gap tables. See
 [workflow decisions](BENCHLING_WORKFLOW_DECISIONS.md). This documentation-only
 checkpoint adds no runtime/build/browser checks.
 
+## Processed TOPO in retained plans and downstream operations
+
+The explicit processed-contour action now opens a declaration-only candidate
+using exact original source/target events. Fresh verification reconstructs its
+full typed graphs and supplies actual private duplex state to downstream digest
+operations. Unknown modifications, nicks, displaced material and other components
+remain explicit; imported sequence metadata cannot restore that state. Withheld
+contours retain typed evidence and return Incomplete. Original StepReport remains
+unchanged; dedicated processed evidence is separate.
+[Full contract](TOPO_PROCESSED_PLAN.md).
+
+Retained processed runs atomically add an immutable historical graph sidecar bound
+to exact run/plan/engine/source/target/product events. Historical inspection checks
+documentary bindings, not current chemical rules; old inner model labels stay
+inspectable. Fresh replay supplies current state. GUI worker download returns
+exact bytes with source/run guards; MCP163 exposes historical inspection and full
+processed verification artifacts. Readable HTML/PDF steps retain actual chemical
+declarations and source-coordinate selections, with complete graphs in matching
+JSON evidence. No raw graph transcript overwhelms the default PDF.
+
+Worker65/candidate13/plan11/science16 introduce the interfaces. All nine old
+report-bearing wire paths have explicit positional converters, including the
+shorter schema24–26 nested inverse-PCR/replay reports. Native version gates reject
+new semantics under old headers; actual old science15 layouts retain their old
+minimum versions. Current-writer assertions were updated without relaxing those
+historical gates.
+
+Validation passed:62 unique focused native checks (58 core,4 MCP SDK), application/
+worker WASM checking and a final complete Trunk build. Tests include actual sealed
+TA→EcoRI material/ends against frozen independent DNA, retained nicks/flaps,
+wrong targets, byte-exact historical download, native archive/replay, old-layout
+migration and related Golden Gate version/biology regressions. The preceding
+c288c98 and db8c125 checkpoints passed every configured native Windows/macOS/Linux
+and web CI job ([latest prior run](https://github.com/henriksson-lab/collagene2/actions/runs/45675283403)).
+
+Port8082 serves the new immutable worker65 snapshot:18 assets /125,813,134 bytes,
+retaining both previously served worker bundles. Exact process/root/socket and
+local asset identities were verified; no browser/HTTP checks ran. The server
+still exposes no host filesystem API. Local publication evidence is
+`/tmp/collagene2-processed-plan-public-evidence.json`.
+
+Accounted directional flap processing, upstream tracked-source chemistry,
+durable graph-only review without material output, broader cloning methods and
+remaining delivery/GUI acceptance stay active. The full goal is not complete.
+
 ## Fresh post-treatment contour and native duplex material
 
 Processed TOPO review now reconstructs original transfer and explicit ligase

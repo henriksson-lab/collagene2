@@ -204,6 +204,42 @@ async fn topo_sdk_retains_nicks_all_orientations_and_explicit_independent_target
             .len(),
         2
     );
+    let independent_target = import(
+        &c,
+        "Independent intended processed clone",
+        "AGGGGCATCCCTTCGAATGA",
+        true,
+    )
+    .await;
+    let plan_inputs = sources
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|source| json!({"id":source["role"],"document":source["document"]}))
+        .collect::<Vec<_>>();
+    let role_sources = sources
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|source| json!({"role":source["role"],"source":{"Input":source["role"]}}))
+        .collect::<Vec<_>>();
+    let proposed=call(&c,"propose_plan",json!({"name":"Source-bound processed TA clone","target":independent_target,"inputs":plan_inputs,"steps":[{"ProcessedTopo":{"sources":role_sources,"request":product_evidence["report"]["request"]}}]})).await;
+    assert_eq!(proposed["verified"], false);
+    let verified = call(
+        &c,
+        "verify_plan",
+        json!({"plan_revision":proposed["plan_revision"]}),
+    )
+    .await;
+    assert_eq!(verified["status"], "ConsistentUnderAssumptions");
+    let full_plan = evidence(&c, &verified["artifact_id"]).await;
+    assert_eq!(
+        full_plan["processed_step_reports"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
     let mut wrong = sealing.clone();
     wrong["nicks"][0]["five"]["index"] = json!(1);
     let retained = call(

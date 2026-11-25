@@ -159,6 +159,12 @@ pub enum Operation {
         directed_sequence_key: String,
         physical_sequence_key: String,
     },
+    /// Fresh declared original sources, transfer/sealing graph and selected paired
+    /// contour. Material requires a faithful bridge; no imported graph is input.
+    ProcessedTopo {
+        sources: Vec<TopoSource>,
+        request: crate::topo_processed_product::Request,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -194,6 +200,9 @@ pub struct VerificationReport {
     /// Conservative annotation correspondence, separate from physical graph evidence.
     #[serde(default)]
     pub annotation_reports: Vec<AnnotationStepReport>,
+    /// Full additive processed graph evidence, including withheld material.
+    #[serde(default)]
+    pub processed_step_reports: Vec<ProcessedTopoStepReport>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -213,7 +222,15 @@ pub struct AnnotationStepReport {
     pub evidence: crate::topo_annotations::AnnotationEvidence,
 }
 
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-15");
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ProcessedTopoStepReport {
+    pub step_index: usize,
+    pub evidence: crate::topo_processed_product::Report,
+}
+
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-16");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrDocument {
@@ -534,6 +551,50 @@ fn validate_topo_shape(
     Ok(())
 }
 
+/// Borrowed literal request bounds; actual source geometry is independently
+/// reconstructed only after source models and aggregate resource caps pass.
+fn validate_processed_topo_shape(
+    sources: &[TopoSource],
+    r: &crate::topo_processed_product::Request,
+) -> Result<(), Error> {
+    validate_topo_shape(sources, &r.treatment.preparation)?;
+    let original = &r.treatment.preparation;
+    crate::topo::physical::nick_sealing::request_preflight(
+        &r.treatment.sealing,
+        &original.engine_limits,
+    )
+    .map_err(|e| Error::Unsupported(e.to_string()))?;
+    let l = &r.options.limits;
+    let hash = &r.selection.sealing_context_revision;
+    if original
+        .transfers
+        .len()
+        .checked_add(r.treatment.sealing.nicks.len())
+        .is_none_or(|n| n > 16 || n > original.engine_limits.max_steps)
+        || hash.len() != 64
+        || !hash
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        || r.selection.component >= 64
+        || r.selection.reference_seed.strand >= 32
+        || r.selection.reference_seed.index >= 100_000
+        || l.max_pairs == 0
+        || l.max_pairs > 500_000
+        || l.max_work_cells == 0
+        || l.max_work_cells > 128_000_000
+        || l.max_work_bytes == 0
+        || l.max_work_bytes > 128 * 1024 * 1024
+        || l.max_mapping_segments == 0
+        || l.max_mapping_segments > 16384
+        || l.max_report_bytes == 0
+        || l.max_report_bytes > 32 * 1024 * 1024
+    {
+        return Err(Error::TooLarge);
+    }
+    evidence_bytes(r, 2 * 1024 * 1024)?;
+    Ok(())
+}
+
 /// Bind the exact ordered plan sources to explicit recipe roles. Display names
 /// and imported producer metadata cannot resolve a role or establish chemistry.
 pub fn topo_inputs(
@@ -727,6 +788,13 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
                 return Err(Error::Format("invalid TOPO source selection".into()));
             }
         }
+        if let Operation::ProcessedTopo { sources, request } = step {
+            count += 1;
+            if count > 64 {
+                return Err(Error::TooLarge);
+            }
+            validate_processed_topo_shape(sources, request)?;
+        }
         if let Operation::RecombineReference {
             sources,
             request,
@@ -790,9 +858,9 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
 pub(crate) fn operation_sources(op: &Operation) -> Vec<&Source> {
     match op {
         Operation::RecombineReference { sources, .. } => sources.iter().collect(),
-        Operation::Topo { sources, .. } | Operation::CheckedTopo { sources, .. } => {
-            sources.iter().map(|s| &s.source).collect()
-        }
+        Operation::Topo { sources, .. }
+        | Operation::CheckedTopo { sources, .. }
+        | Operation::ProcessedTopo { sources, .. } => sources.iter().map(|s| &s.source).collect(),
         Operation::Pcr { template, .. }
         | Operation::PcrWithMismatches { template, .. }
         | Operation::Digest { template, .. }
@@ -907,6 +975,7 @@ fn evaluate_captured(
                 Operation::RecombineReference { .. }
                     | Operation::Topo { .. }
                     | Operation::CheckedTopo { .. }
+                    | Operation::ProcessedTopo { .. }
                     | Operation::DeclareSourceTermini { .. }
                     | Operation::CatalogDigest { .. }
                     | Operation::SelectedGoldenGate { .. }
@@ -920,14 +989,15 @@ fn evaluate_captured(
     });
     if let Err(error) = preflight {
         return (VerificationReport { plan_revision: String::new(), target_revision: String::new(), engine_version: ENGINE_VERSION.into(), status: Status::Invalid,
-            findings: vec![error.to_string()], assumptions: vec!["Reference/TOPO request rejected before plan hashing; no current result binding established.".into()], products: vec![], exhaustive_alternative_search: false, step_reports: vec![], annotation_reports: vec![] }, Vec::new());
+            findings: vec![error.to_string()], assumptions: vec!["Reference/TOPO request rejected before plan hashing; no current result binding established.".into()], products: vec![], exhaustive_alternative_search: false, step_reports: vec![], annotation_reports: vec![], processed_step_reports: vec![] }, Vec::new());
     }
     let mut report = VerificationReport {
         plan_revision: plan_revision(plan), target_revision: target.revision(), engine_version: ENGINE_VERSION.into(),
-        status: Status::Invalid, findings: vec![], products: vec![], exhaustive_alternative_search: false, step_reports: vec![], annotation_reports: vec![],
+        status: Status::Invalid, findings: vec![], products: vec![], exhaustive_alternative_search: false, step_reports: vec![], annotation_reports: vec![], processed_step_reports: vec![],
         assumptions: vec!["Exact annealing/overlap model; no experimental outcome is guaranteed.".into(),
             "RecombineReference is a bounded full-site-profile reciprocal reference exchange. All components are computed before an explicit selection; neither its selected DNA nor target agreement establishes chemical strand state, biological repair, efficacy or a selected experimental winner. Reference-only ancestry cannot supply physical PCR or annealing material.".into(),
             "TOPO reconstructs explicitly declared strands, pairing and elementary transfers. Its full physical graph is retained; a selected proven paired contour supplies a restrictive reference view only. No implicit target acceptance policy, nick/flap repair, supplier-kit state or experimental success is asserted. Downstream physical graph consumption is not yet modeled.".into(),
+            "ProcessedTopo freshly composes original declared preparations, transfer and selected nick-sealing steps before proving a source-call-selected paired contour. A faithful bridge can feed private downstream physical operations under explicit projection options. Unknown modifications remain unknown; imported reports/sequence summaries cannot restore authority. Other components, unsealed nicks and unapplied branches remain evidence; component selection is not isolation or experimental success.".into(),
             "Exact-PCR operations consider exact non-overlapping binding sites within one template turn, including competing oligo orientations and single-oligo products. Intentional-mismatch PCR uses its separately recorded mismatch and 3′ policy; ambiguous and overlapping-domain products remain incomplete previews.".into(),
             "Golden Gate enumerates a bounded one-copy fragment pool under explicit options; recut paths, carryover and alternative source histories remain evidence, not a claim of exhaustive kinetic mixture uniqueness.".into(),
             "Legacy digest and Golden Gate cleavage remain explicit complete-cleavage assumptions. CheckedDigest evaluates the pinned positional modification profile only; reaction conditions, secondary structure and genome-wide specificity are not established.".into(),
@@ -948,6 +1018,7 @@ fn evaluate_captured(
         &mut report.findings,
         &mut report.step_reports,
         &mut report.annotation_reports,
+        &mut report.processed_step_reports,
         &mut physical,
         final_golden_gate,
     ) {
@@ -1774,6 +1845,7 @@ fn reconstruct(
     findings: &mut Vec<String>,
     step_reports: &mut Vec<StepReport>,
     annotation_reports: &mut Vec<AnnotationStepReport>,
+    processed_step_reports: &mut Vec<ProcessedTopoStepReport>,
     physical: &mut Vec<Option<TrackedDuplex>>,
     final_golden_gate: &mut Option<crate::golden_gate::GoldenGateReport>,
 ) -> Result<Vec<String>, Error> {
@@ -1820,6 +1892,7 @@ fn reconstruct(
                     | Operation::AnnealOligos { .. }
                     | Operation::Topo { .. }
                     | Operation::CheckedTopo { .. }
+                    | Operation::ProcessedTopo { .. }
             )
         {
             return Err(Error::Unsupported("Reference-only ancestry cannot establish a physical PCR/annealing/TOPO substrate. Its full originating graph must be consumed by an explicit supported physical operation; no materialization or graph repair is inferred.".into()));
@@ -1848,6 +1921,104 @@ fn reconstruct(
             |source: &Source| -> Result<Duplex, Error> { Ok(resolve_tracked(source)?.duplex) };
         let mut next_physical = None;
         let mut product = match step {
+            Operation::ProcessedTopo { sources, request } => {
+                // Converting a private tracked descendant to a plain sequence
+                // would erase known/unknown modification and graph ancestry.
+                if sources.iter().any(|s| matches!(s.source, Source::Step(_))) {
+                    return Err(Error::Unsupported("ProcessedTopo composition currently requires original source inputs. Tracked Step ancestry is not mapped through its declared preparation; use the existing private tracked state directly for downstream digest/repair instead of resetting chemical state.".into()));
+                }
+                let molecules = sources
+                    .iter()
+                    .map(|s| resolve(&s.source))
+                    .collect::<Result<Vec<_>, _>>()?;
+                for molecule in &molecules {
+                    if chemistry::has_unmapped_physical_evidence(molecule)
+                        || molecule.metadata.contains_key("tracked_modifications")
+                        || molecule
+                            .metadata
+                            .contains_key(crate::recombination::REFERENCE_ONLY_KEY)
+                        || molecule.metadata.keys().any(|key| key.starts_with("topo:"))
+                    {
+                        return Err(Error::Unsupported("ProcessedTopo requires original reference sources with explicit preparation declarations; imported physical/reference-only summaries cannot restore their lost graph or tracked modification state.".into()));
+                    }
+                }
+                let inputs = topo_inputs(sources, &molecules, &request.treatment.preparation)?;
+                let fresh = crate::topo_processed_product::inspect(&inputs, request)?;
+                let fresh_bytes =
+                    evidence_bytes(&fresh, crate::topo_processed_product::MAX_REPORT_BYTES)?;
+                step_evidence_bytes = step_evidence_bytes
+                    .checked_add(fresh_bytes)
+                    .filter(|n| *n <= 32 * 1024 * 1024)
+                    .ok_or(Error::TooLarge)?;
+                let selected_bases = fresh
+                    .product
+                    .as_ref()
+                    .map_or(0, |m| m.sequence.len())
+                    .checked_add(
+                        fresh
+                            .tracked
+                            .as_ref()
+                            .map_or(0, |t| t.top.len() + t.bottom.len()),
+                    )
+                    .ok_or(Error::TooLarge)?;
+                let tracked_bytes = fresh
+                    .tracked
+                    .as_ref()
+                    .map(|t| evidence_bytes(t, 32 * 1024 * 1024))
+                    .transpose()?
+                    .unwrap_or(0);
+                let selected_document_bytes = fresh
+                    .product
+                    .as_ref()
+                    .map(|m| evidence_bytes(m, 32 * 1024 * 1024))
+                    .transpose()?
+                    .unwrap_or(0);
+                if product_bases
+                    .checked_add(selected_bases)
+                    .is_none_or(|n| n > 32_000_000)
+                    || product_bytes
+                        .checked_add(step_evidence_bytes)
+                        .and_then(|n| n.checked_add(tracked_bytes))
+                        .and_then(|n| n.checked_add(selected_document_bytes))
+                        .is_none_or(|n| n > 64 * 1024 * 1024)
+                {
+                    return Err(Error::Unsupported("ProcessedTopo selected material plus full retained graph exceeds the plan material/evidence budget before duplicating its selected product.".into()));
+                }
+                let graph = &fresh.projection.sealing.product;
+                findings.push(format!("Step {} fresh ProcessedTopo retains {} components, {} original source calls, {} remaining graph nicks and {} unpaired calls. Explicit component selection is not physical isolation or a mixture winner; all other components and released activations remain typed evidence.",index+1,graph.components.len(),fresh.projection.sealing.source_bases,graph.nicks.len(),graph.unpaired.iter().map(|r|r.end-r.start).sum::<usize>()));
+                if !fresh
+                    .projection
+                    .sealing
+                    .parent
+                    .all_requested_transfers_applied
+                    || fresh
+                        .projection
+                        .sealing
+                        .steps
+                        .iter()
+                        .any(|s| s.outcome != crate::topo::physical::Outcome::Applied)
+                {
+                    findings.push(format!("Step {} retains an unapplied/unknown requested branch under its explicit projection options; target agreement cannot establish that operation occurred.",index+1));
+                }
+                findings.extend(fresh.bridge_notes.iter().cloned());
+                let actual = fresh.product.as_ref().cloned();
+                let tracked = fresh.tracked.as_ref().cloned();
+                processed_step_reports.push(ProcessedTopoStepReport {
+                    step_index: index,
+                    evidence: fresh,
+                });
+                let (Some(actual), Some(tracked)) = (actual, tracked) else {
+                    return Err(Error::Unsupported(format!(
+                        "Step {} ProcessedTopo material is withheld: no faithfully representable paired duplex. Full preparation, parent/sealed graphs, flaps, components and terminal evidence are retained; no target-derived reference product was substituted.",
+                        index + 1
+                    )));
+                };
+                product_bytes = product_bytes
+                    .checked_add(tracked_bytes)
+                    .ok_or(Error::TooLarge)?;
+                next_physical = Some(tracked);
+                actual
+            }
             Operation::Topo {
                 sources,
                 request,
@@ -2825,6 +2996,28 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
     };
     for (step_index, step) in plan.steps.iter().enumerate() {
         match step {
+            Operation::ProcessedTopo {sources,request} => {
+                body.push_str(&format!("<li>Fresh processed TOPO graph from original roles {}. Explicit ligase assumption: {}. Requested nick seals: {}. Select component {} using source call strand {}, index {} (zero-based), bound to <code>{}</code>. Require all requested transfers/seals applied: {}; require known terminal chemistry: {}. Only a faithfully representable paired contour becomes private duplex material; all other components and graph evidence are retained. Component choice is not isolation or a reaction winner; independent final-target verification remains separate.<ul>",sources.iter().map(|s|format!("{} = {}",e(&s.role),source(&s.source))).collect::<Vec<_>>().join(", "),e(&request.treatment.sealing.ligase_assumption),request.treatment.sealing.nicks.len(),request.selection.component,request.selection.reference_seed.strand,request.selection.reference_seed.index,e(&request.selection.sealing_context_revision),request.options.require_all_requested_transfers_applied,request.options.require_known_terminal_chemistry));
+                for material in &request.treatment.preparation.recipe.materials {
+                    match material {
+                        crate::topo::MaterialRecipe::Prepared{declaration_id,assumption,strands,pairing}=>{
+                            body.push_str(&format!("<li>Declared preparation {}: {}<ul>",e(declaration_id),e(assumption)));
+                            for strand in strands {
+                                body.push_str(&format!("<li>Prepared strand {}: declared 5′ {:?}, 3′ {}. Original source intervals (zero-based start; length; orientation): {}.</li>",e(&strand.id),strand.five_prime,e(&format!("{:?}",strand.three_prime)),strand.segments.iter().map(|segment|format!("{}: {}; {}; {}",e(&segment.source_role),segment.start,segment.length,if segment.reverse{"reverse"}else{"forward"})).collect::<Vec<_>>().join("; ")));
+                            }
+                            body.push_str(&format!("<li>{} explicitly declared antiparallel pairing spans; complete source-coordinate graph remains in matching JSON evidence.</li></ul></li>",pairing.len()));
+                        },
+                        crate::topo::MaterialRecipe::ExactPcr{material_id,template_role,forward,reverse,tail}=>body.push_str(&format!("<li>Actual exact PCR {} from role {}: ordered oligos 5′→3′ <code>{}</code> and <code>{}</code>; explicit tail {:?}.</li>",e(material_id),e(template_role),e(&forward.ordered_sequence()),e(&reverse.ordered_sequence()),tail)),
+                    }
+                }
+                for transfer in &request.treatment.preparation.transfers {
+                    body.push_str(&format!("<li>TOPO transfer: donor prepared strand {} to acceptor prepared strand {}, geometry {:?} (zero-based strand indexes).</li>",transfer.donor,transfer.acceptor,transfer.geometry));
+                }
+                for nick in &request.treatment.sealing.nicks {
+                    body.push_str(&format!("<li>Ligase nick: strand {} call {} (3′) to strand {} call {} (5′), zero-based original source coordinates. Actual exposed chemistry/template eligibility is checked during reconstruction.</li>",nick.three.strand,nick.three.index,nick.five.strand,nick.five.index));
+                }
+                body.push_str("</ul></li>");
+            },
             Operation::Topo { sources, request, selection } | Operation::CheckedTopo { sources, request, selection, .. } => {
                 body.push_str(&format!("<li>Source-backed TOPO elementary-transfer graph with explicit ordered roles: {}. Preparation/transfers/limits <code>{}</code>; selection <code>{}</code>. Full physical evidence is retained; a paired-contour reference view does not establish nick repair, flap removal, supplier state, target acceptance or experimental success.<ul>",sources.iter().map(|s|format!("{} = {}",e(&s.role),source(&s.source))).collect::<Vec<_>>().join(", "),e(&serde_json::to_string(request).unwrap_or_default()),e(&serde_json::to_string(selection).unwrap_or_default())));
                 if let Operation::CheckedTopo { policy, .. } = step {
@@ -2919,6 +3112,33 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
                 }
                 body.push_str("</ul></li>");
             }
+        }
+        body.push_str("</ul>");
+    }
+    if !report.processed_step_reports.is_empty() {
+        body.push_str("<h2>Processed TOPO physical step evidence</h2><ul>");
+        for step in &report.processed_step_reports {
+            let evidence = &step.evidence;
+            let sealing = &evidence.projection.sealing;
+            let graph = &sealing.product;
+            body.push_str(&format!("<li>Step {}: original graph {} nicks; processed graph {} nicks, {} components, {} source calls, {} released activations. Faithful duplex bridge available: {}. Full parent/child graphs, per-seal chemical outcomes and source maps remain in typed verification evidence.<ul>",step.step_index+1,sealing.parent.product.nicks.len(),graph.nicks.len(),graph.components.len(),sealing.source_bases,graph.released_activations.len(),evidence.tracked.is_some()));
+            for outcome in &sealing.steps {
+                body.push_str(&format!(
+                    "<li>Nick seal {}: {:?}; {}. Declared chemistry 3′ {}, 5′ {:?}.</li>",
+                    outcome.step + 1,
+                    outcome.outcome,
+                    e(&outcome.reason),
+                    e(&format!("{:?}", outcome.three_prime)),
+                    outcome.five_prime
+                ));
+            }
+            for note in &evidence.bridge_notes {
+                body.push_str(&format!("<li>{}</li>", e(note)));
+            }
+            if let Some(annotation) = &evidence.annotations {
+                body.push_str(&format!("<li>{} source-correspondence annotations retained; {} warnings. Annotation correspondence establishes neither inherited modifications nor biological validity.</li>",annotation.features.len(),annotation.warnings.len()));
+            }
+            body.push_str("</ul></li>");
         }
         body.push_str("</ul>");
     }

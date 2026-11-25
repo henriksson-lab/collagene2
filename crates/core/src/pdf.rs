@@ -240,6 +240,143 @@ fn topo_evidence_text(product: &crate::topo::Product) -> Result<String, Error> {
     writeln!(out,"\nReference preview present: {}. This summary cannot restore physical authority from saved/imported producer metadata or establish experimental target acceptance.",product.reference.is_some()).map_err(|_|Error::TooLarge)?;
     out.finish()
 }
+fn processed_topo_step_text(
+    sources: &[verification::TopoSource],
+    request: &crate::topo_processed_product::Request,
+    plan: &DesignPlan,
+    report: &verification::VerificationReport,
+) -> Result<String, Error> {
+    use io::Write as _;
+    let mut out = TopoText(Vec::new());
+    writeln!(out,"Processed TOPO: reconstruct the original preparation, actual strand transfers and explicitly selected nick sealing; prove the selected paired contour and bridge only faithfully representable chemical material. Imported graphs or reference metadata do not authorize this operation.").map_err(|_|Error::TooLarge)?;
+    for source in sources {
+        let revision = match &source.source {
+            Source::Input(id) => plan
+                .inputs
+                .iter()
+                .find(|i| i.id == *id)
+                .map(|i| i.revision.clone()),
+            Source::Step(i) => report.products.get(*i).map(Molecule::revision),
+        };
+        writeln!(
+            out,
+            "Source role {:?}: {}; revision {}",
+            source.role,
+            source_name(&source.source),
+            revision
+                .as_deref()
+                .unwrap_or("unavailable; upstream reconstruction is not established")
+        )
+        .map_err(|_| Error::TooLarge)?;
+    }
+    for (index, material) in request
+        .treatment
+        .preparation
+        .recipe
+        .materials
+        .iter()
+        .enumerate()
+    {
+        match material {
+            crate::topo::MaterialRecipe::Prepared {
+                declaration_id,
+                assumption,
+                strands,
+                pairing,
+            } => {
+                writeln!(out,"Prepared material {index} / {declaration_id}: {assumption}. Activation is an explicit hypothesis, not a measured property.").map_err(|_|Error::TooLarge)?;
+                for strand in strands {
+                    writeln!(
+                        out,
+                        "Prepared strand {}: 5prime {:?}; 3prime {:?}.",
+                        strand.id, strand.five_prime, strand.three_prime
+                    )
+                    .map_err(|_| Error::TooLarge)?;
+                    for interval in &strand.segments {
+                        writeln!(out,"Read source role {} from zero-based offset {} for {} bases; reverse complement: {}.",interval.source_role,interval.start,interval.length,interval.reverse).map_err(|_|Error::TooLarge)?;
+                    }
+                }
+                for span in pairing {
+                    writeln!(out,"Pair {} antiparallel bases: prepared strand {} offset {} and strand {} offset {}.",span.length,span.strand_a,span.start_a,span.strand_b,span.start_b).map_err(|_|Error::TooLarge)?;
+                }
+            }
+            crate::topo::MaterialRecipe::ExactPcr {
+                material_id,
+                template_role,
+                forward,
+                reverse,
+                tail,
+            } => {
+                writeln!(out,"Exact PCR material {index} / {material_id} from source role {template_role:?}: forward ordered oligo {} = {} (3prime annealing {}; explicit 5prime tail {}); reverse ordered oligo {} = {} (3prime annealing {}; explicit 5prime tail {}). Explicit subsequent 3prime tailing {tail:?}. Copied/synthesized calls do not inherit original modifications or establish empirical amplification.",forward.name,forward.ordered_sequence(),forward.annealing.as_str(),forward.tail,reverse.name,reverse.ordered_sequence(),reverse.annealing.as_str(),reverse.tail).map_err(|_|Error::TooLarge)?;
+            }
+        }
+    }
+    writeln!(out,"Explicit ligase assumption: {}. No end phosphorylation, flap removal, activation replacement, host repair or unselected nick sealing is inferred.",request.treatment.sealing.ligase_assumption).map_err(|_|Error::TooLarge)?;
+    writeln!(out, "Exact selected source-call nick pairs:").map_err(|_| Error::TooLarge)?;
+    for nick in &request.treatment.sealing.nicks {
+        writeln!(out,"Seal source strand {} call {} (3prime side) to source strand {} call {} (5prime side); source-call offsets are zero-based.",nick.three.strand,nick.three.index,nick.five.strand,nick.five.index).map_err(|_|Error::TooLarge)?;
+    }
+    writeln!(out,"\nSelected component {}; immutable source seed strand {}, zero-based call {}; sealing context {}. Require all requested steps: {}; require known terminal chemistry: {}.",request.selection.component,request.selection.reference_seed.strand,request.selection.reference_seed.index,request.selection.sealing_context_revision,request.options.require_all_requested_transfers_applied,request.options.require_known_terminal_chemistry).map_err(|_|Error::TooLarge)?;
+    for (index, transfer) in request.treatment.preparation.transfers.iter().enumerate() {
+        writeln!(out,"Transfer {}: donor prepared strand {} to acceptor prepared strand {}, with {:?} geometry.",index+1,transfer.donor,transfer.acceptor,transfer.geometry).map_err(|_|Error::TooLarge)?;
+    }
+    writeln!(out,"\nAll original and treated components, retained nicks, unpaired calls/flaps, displacement and residual activation remain evidence. A desired target cannot choose the physical contour or repair missing material. Faithful bridging does not establish kit conditions, kinetics, experimental selection, biological function or laboratory success. The independent target is compared by fresh plan verification; this is not the legacy CheckedTopo acceptance policy.").map_err(|_|Error::TooLarge)?;
+    out.finish()
+}
+fn processed_topo_evidence_text(
+    evidence: &crate::topo_processed_product::Report,
+) -> Result<String, Error> {
+    use io::Write as _;
+    let mut out = TopoText(Vec::new());
+    let treatment = &evidence.projection.sealing;
+    let original = &treatment.parent;
+    let treated = &treatment.product;
+    writeln!(out,"Fresh processed TOPO scientific evidence: adapter {} / {}; preparation {}. Original source calls {}; original {} components / {} nicks / {} unpaired runs; treated {} components / {} nicks / {} unpaired runs.",evidence.engine_version,evidence.context_revision,evidence.preparation_revision,original.source_bases,original.product.components.len(),original.product.nicks.len(),original.product.unpaired.len(),treated.components.len(),treated.nicks.len(),treated.unpaired.len()).map_err(|_|Error::TooLarge)?;
+    writeln!(out,"Original transfer work complete {}; all requested transfers applied {}; fully specified source DNA {}; original unsupported/unknown {}. All selected nicks sealed {}; sealing unsupported/unknown {}.",original.work_complete,original.all_requested_transfers_applied,original.fully_specified_dna,original.unsupported_or_unknown,treatment.all_requested_nicks_sealed,treatment.unsupported_or_unknown).map_err(|_|Error::TooLarge)?;
+    match &evidence.projection.outcome {
+        crate::topo::physical::projection::Outcome::Proven(view) => {
+            writeln!(out,"Proven treated contour {:?}: actual top {} / bottom {} bases; retained nicks {}; known terminal chemistry {}. Top and bottom are each stored 5prime-to-3prime; text is not an antiparallel column alignment.",view.topology,view.top.len(),view.bottom.len(),view.nicks.len(),view.fully_known_terminal_chemistry).map_err(|_|Error::TooLarge)?;
+        }
+        crate::topo::physical::projection::Outcome::Withheld(reason) => {
+            writeln!(
+                out,
+                "Treated contour withheld; no replacement duplex is fabricated:"
+            )
+            .map_err(|_| Error::TooLarge)?;
+            writeln!(out, "{reason:?}").map_err(|_| Error::TooLarge)?;
+        }
+    }
+    writeln!(out,"\nFaithful chemistry duplex present {}; tracked source-map bridge present {}; source-derived reference present {}. These fields are freshly reconstructed evidence, not imported physical authority or experimental confirmation.",evidence.duplex.is_some(),evidence.tracked.is_some(),evidence.product.is_some()).map_err(|_|Error::TooLarge)?;
+    if let Some(annotations) = &evidence.annotations {
+        for source in &annotations.sources {
+            writeln!(out,"Annotation source role {} / revision {}: {} projected; {} outside selected contour; {} retained unmapped originals; projection supported {}. Disrupted/PCR-derived annotations require review.",source.role,source.source_revision,source.projected,source.dropped,source.unmapped.len(),source.projection_supported).map_err(|_|Error::TooLarge)?;
+        }
+    }
+    for step in &treatment.steps {
+        writeln!(
+            out,
+            "Nick treatment {}: {:?}; {}. Actual 3prime {:?}, 5prime {:?}.",
+            step.step + 1,
+            step.outcome,
+            step.reason,
+            step.three_prime,
+            step.five_prime
+        )
+        .map_err(|_| Error::TooLarge)?;
+    }
+    for nick in &treated.nicks {
+        writeln!(out,"Remaining nick: source strand {} call {} ({:?}, 3prime) to strand {} call {} ({:?}, 5prime).",nick.three.strand,nick.three.index,nick.three_prime,nick.five.strand,nick.five.index,nick.five_prime).map_err(|_|Error::TooLarge)?;
+    }
+    for (index, component) in treated.components.iter().enumerate() {
+        writeln!(out,"Treated component {index}: {} paired calls, {} unpaired calls, {} chains; covalently closed {}.",component.paired_nucleotides,component.unpaired_nucleotides,component.chains.len(),component.covalently_closed).map_err(|_|Error::TooLarge)?;
+    }
+    for note in &evidence.bridge_notes {
+        writeln!(out, "Bridge limitation: {note}").map_err(|_| Error::TooLarge)?;
+    }
+    let content_hash = crate::assembly_recipe::hash(evidence)?;
+    writeln!(out,"Complete original and treated graphs, source-call mappings, displacement, activation and annotation details remain in the matching cloning-run JSON evidence. Processed evidence content hash: {content_hash}. Source/request context: {}. This PDF presents cloning instructions and scientific summaries; it is not a substitute for that full evidence.",evidence.context_revision).map_err(|_|Error::TooLarge)?;
+    out.finish()
+}
 fn status_text(status: Status) -> &'static str {
     match status {
         Status::Invalid => "DRAFT - INVALID: do not use as a validated protocol",
@@ -936,6 +1073,9 @@ pub(crate) fn export_protocol_pdf_checked(
                 selection,
                 policy,
             } => topo_step_text(sources, request, selection, Some(policy), plan, &report)?,
+            Operation::ProcessedTopo { sources, request } => {
+                processed_topo_step_text(sources, request, plan, &report)?
+            }
             Operation::RecombineReference {
                 sources,
                 request,
@@ -1161,6 +1301,17 @@ pub(crate) fn export_protocol_pdf_checked(
             .and_then(|entry| entry.topo.as_ref())
         {
             layout.paragraph_size(&topo_evidence_text(topo)?, 9.0, INK)?;
+        }
+        if let Some(processed) = report
+            .processed_step_reports
+            .iter()
+            .find(|entry| entry.step_index == index)
+        {
+            layout.paragraph_size(
+                &processed_topo_evidence_text(&processed.evidence)?,
+                9.0,
+                INK,
+            )?;
         }
         if let Some(annotations) = report
             .annotation_reports

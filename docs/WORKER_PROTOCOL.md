@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **64** and reads supported schemas 1–63. Candidate files write schema 12; workspace plan schema is 10; the verifier is science-15.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **65** and reads supported schemas 1–64. Candidate files write schema 13; workspace plan schema is 11; the verifier is science-16.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -834,3 +834,19 @@ graphs and conservative annotation/state evidence remain retained; imported resu
 validation cannot restore a fresh physical material. Existing old DTO/operation /
 plan/candidate/science layouts remain unchanged.
 [Contract](TOPO_PROCESSED_PRODUCT.md).
+
+
+## Processed cloning plans and historical graph download (schema65)
+
+Operation19 ProcessedTopo requires worker65/candidate13/plan11. Science16 reports
+append processed_step_reports without changing old StepReport. Explicit legacy
+<=64 decoders preserve all nine direct/nested VerificationReport paths; existing
+1–26 bare-report converters run first. Missing historical evidence is never
+invented. Nested plans and current science/evidence cannot be relabelled old.
+
+Job149 LoadProcessedRunEvidence returns141 HistoricalProcessedRunEvidence,
+containing exact historical JSON bytes and bounded run/engine/step metadata. Only
+its workspace-bearing request joins the128 MiB whitelist; the result retains the
+ordinary32 MiB cap with explicit export-workspace fallback at the boundary.
+Historical graphs cannot restore fresh material or verification authority.
+[Retained-plan contract](TOPO_PROCESSED_PLAN.md).

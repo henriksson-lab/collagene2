@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 162;
+pub const CURRENT_TOOL_COUNT: usize = 163;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -4373,6 +4373,22 @@ impl CollageneServer {
         }).await
     }
     #[tool(
+        description = "Read the immutable historical processed-TOPO graph attachment for a retained run. Checks exact run/plan/engine/source/target/product-event bindings but does not replay chemistry or restore physical authority. Older runs may have no historical graph; fresh replay is a separate tool."
+    )]
+    async fn inspect_workspace_run_evidence(
+        &self,
+        Parameters(args): Parameters<ReplayWorkspaceRun>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move||{
+            let workspace=server.restore_workspace(&args.workspace)?;
+            let record=collagene_core::run_lineage::load_run(&workspace,&args.run_id).map_err(bad)?;
+            let evidence=collagene_core::processed_run_evidence::load(&workspace,&args.run_id).map_err(bad)?;
+            let artifact=evidence.as_ref().map(|e|server.text_artifact(bounded_json_limit(e,32*1024*1024)?,"application/json","historical-processed-topo-graphs.json")).transpose()?;
+            output(json!({"state":"historical","verified":false,"run_id":record.run_id,"recorded_engine":record.assessment.engine_version,"processed_step_count":evidence.as_ref().map_or(0,|e|e.steps.len()),"artifact_id":artifact,"authority":"Stored historical graph evidence only. Fresh replay of exact original inputs is required for current material state or verification."}))
+        }).await
+    }
+    #[tool(
         description = "Reserve a session upload for exact native workspace bytes. Length 1..64 MiB, lower-case BLAKE3 required. At most four uploads; full expected length is charged to the shared 64 MiB session budget immediately. No filesystem or external programs."
     )]
     fn begin_workspace_upload(
@@ -6163,9 +6179,19 @@ impl CollageneServer {
             .cloned()
             .ok_or_else(|| bad("unknown plan revision"))?;
         let report = verification::verify(&saved.plan, &saved.target);
+        let processed_step_count = report.processed_step_reports.len();
+        let artifact = if processed_step_count > 0 {
+            Some(self.text_artifact(
+                bounded_json_limit(&report, 32 * 1024 * 1024)?,
+                "application/json",
+                "verified-plan-processed-graphs.json",
+            )?)
+        } else {
+            None
+        };
         let products:Vec<_>=report.products.iter().enumerate().map(|(i,m)|json!({"step":i,"revision":m.revision(),"length":m.sequence.len(),"topology":m.topology,"duplex":m.metadata.get("duplex_model").and_then(|s|serde_json::from_str::<Value>(s).ok()),"tracked_modifications":m.metadata.get("tracked_modifications").and_then(|s|serde_json::from_str::<Value>(s).ok())})).collect();
         output(
-            json!({"plan_revision":report.plan_revision,"target_revision":report.target_revision,"engine_version":report.engine_version,"status":report.status,"findings":report.findings,"assumptions":report.assumptions,"products":products,"exhaustive_alternative_search":report.exhaustive_alternative_search}),
+            json!({"plan_revision":report.plan_revision,"target_revision":report.target_revision,"engine_version":report.engine_version,"status":report.status,"findings":report.findings,"assumptions":report.assumptions,"products":products,"exhaustive_alternative_search":report.exhaustive_alternative_search,"processed_step_count":processed_step_count,"artifact_id":artifact}),
         )
     }
     #[tool(

@@ -13,6 +13,7 @@ use collagene_core::{
 use leptos::prelude::*;
 use std::{
     collections::BTreeMap,
+    rc::Rc,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -293,6 +294,8 @@ pub fn RunDetailsPanel(
     let pending = RwSignal::new(false);
     let replay = RwSignal::new(None::<run_lineage::ReplayReport>);
     let generation = RwSignal::new(0u64);
+    let evidence_worker = StoredValue::new_local(None::<Rc<worker::CachedWorker>>);
+    let evidence_pending = RwSignal::new(false);
     let product_page = RwSignal::new(0usize);
     let input_page = RwSignal::new(0usize);
     let open_event = Callback::new(move |(role, binding): (Role, EventBinding)| {
@@ -314,12 +317,23 @@ pub fn RunDetailsPanel(
     });
     let alive = Arc::new(AtomicBool::new(true));
     let cleanup = alive.clone();
-    on_cleanup(move || cleanup.store(false, Ordering::Relaxed));
+    on_cleanup(move || {
+        cleanup.store(false, Ordering::Relaxed);
+        if let Some(worker) = evidence_worker.get_value() {
+            worker.close();
+        }
+        evidence_worker.set_value(None);
+    });
     Effect::new(move || {
         let _ = epoch.get();
         generation.update(|g| *g = g.wrapping_add(1));
         replay.set(None);
         pending.set(false);
+        evidence_pending.set(false);
+        if let Some(worker) = evidence_worker.get_value() {
+            worker.close();
+        }
+        evidence_worker.set_value(None);
     });
     let replay_alive = alive.clone();
     let replay_run = move |_| {
@@ -426,6 +440,123 @@ pub fn RunDetailsPanel(
             status.set(error);
         }
     };
+    let historical_alive = alive.clone();
+    let download_history = Callback::new(move |()| {
+        if pending.get_untracked() || epoch.get_untracked() != opened_epoch {
+            return;
+        }
+        let frame = match snapshot.run(()) {
+            Ok(frame) => frame,
+            Err(e) => {
+                status.set(e);
+                return;
+            }
+        };
+        let fingerprint = match run_lineage::workspace_fingerprint(&frame) {
+            Ok(value) => value,
+            Err(e) => {
+                status.set(e.to_string());
+                return;
+            }
+        };
+        let requested_run = run_id.get_value();
+        let executor = match worker::CachedWorker::new() {
+            Ok(w) => Rc::new(w),
+            Err(e) => {
+                status.set(e);
+                return;
+            }
+        };
+        generation.update(|g| *g = g.wrapping_add(1));
+        let ticket = generation.get_untracked();
+        evidence_worker.set_value(Some(executor.clone()));
+        evidence_pending.set(true);
+        pending.set(true);
+        status.set("Loading recorded processed graph evidence. This does not replay or validate the cloning result.".into());
+        let alive = historical_alive.clone();
+        spawn_local(async move {
+            let reply = executor
+                .ask(Request {
+                    id: u32::MAX - 24,
+                    revision: fingerprint.clone(),
+                    job: AnalysisJob::LoadProcessedRunEvidence {
+                        workspace: frame,
+                        run_id: requested_run.clone(),
+                    },
+                })
+                .await;
+            executor.close();
+            if !alive.load(Ordering::Relaxed)
+                || generation.get_untracked() != ticket
+                || epoch.get_untracked() != opened_epoch
+            {
+                return;
+            }
+            pending.set(false);
+            evidence_pending.set(false);
+            evidence_worker.set_value(None);
+            let current = snapshot.run(()).and_then(|frame| {
+                run_lineage::workspace_fingerprint(&frame).map_err(|e| e.to_string())
+            });
+            if !current.is_ok_and(|value| value == fingerprint)
+                || run_id.get_value() != requested_run
+            {
+                status.set(
+                    "Workspace changed; reopen this run before downloading historical evidence."
+                        .into(),
+                );
+                return;
+            }
+            match reply {
+                Ok(reply) if reply.id == u32::MAX - 24 && reply.revision == fingerprint => {
+                    match reply.result {
+                        AnalysisResult::HistoricalProcessedRunEvidence(value) => {
+                            let identity = record.with_value(|record| {
+                                record.as_ref().is_ok_and(|record| {
+                                    value.run_id == record.run_id
+                                        && value.recorded_engine == record.assessment.engine_version
+                                })
+                            });
+                            if !identity || value.run_id != requested_run || value.step_count > 64 {
+                                status.set(
+                                    "Historical evidence has a different run identity.".into(),
+                                );
+                                return;
+                            }
+                            match value.bytes {
+                            Some(bytes)if bytes.len()<=32*1024*1024&&value.step_count>0=>{
+                                match download("recorded-processed-topo-evidence.json","application/json",&bytes){
+                                    Ok(())=>status.set("Recorded graph evidence downloaded. This historical assessment does not restore physical authority or establish laboratory success.".into()),
+                                    Err(e)=>status.set(e),
+                                }
+                            },
+                            None if value.step_count==0=>status.set("This run has no retained processed graph attachment. Older records are not reconstructed by this download action; use explicit replay for fresh session evidence.".into()),
+                            _=>status.set("Historical graph evidence exceeds its bound or has an inconsistent step count.".into()),
+                        }
+                        }
+                        AnalysisResult::Error(e) => status.set(e),
+                        _ => status.set("Unexpected historical graph response.".into()),
+                    }
+                }
+                Ok(_) => status
+                    .set("Historical graph response has a different workspace binding.".into()),
+                Err(e) => status.set(e),
+            }
+        });
+    });
+    let cancel_history = Callback::new(move |()| {
+        if !evidence_pending.get_untracked() {
+            return;
+        }
+        generation.update(|g| *g = g.wrapping_add(1));
+        if let Some(worker) = evidence_worker.get_value() {
+            worker.close();
+        }
+        evidence_worker.set_value(None);
+        evidence_pending.set(false);
+        pending.set(false);
+        status.set("Historical evidence download cancelled.".into());
+    });
     view! {
         <section class="run-details-panel">
             <p class="run-authority">"Recorded history · unverified on opening"</p>
@@ -464,6 +595,7 @@ pub fn RunDetailsPanel(
                                 collagene_core::verification::Operation::CheckedDigest{..}=>"Checked restriction digest",
                                 collagene_core::verification::Operation::CheckedTopo{..}=>"TOPO graph with explicit target acceptance",
                                 collagene_core::verification::Operation::Topo{..}=>"TOPO physical strand reconstruction",
+                                collagene_core::verification::Operation::ProcessedTopo{..}=>"Processed TOPO source reconstruction and faithful material bridge",
                                 collagene_core::verification::Operation::RecombineReference{..}=>"Reference-only BP/LR exchange",
                                 collagene_core::verification::Operation::TreatEnds{..}=>"Treat ends",
                                 collagene_core::verification::Operation::RepairEnds{..}=>"Repair ends",
@@ -486,6 +618,9 @@ pub fn RunDetailsPanel(
                     }.into_any()
                 }
             }}
+            <p class="helper">"Recorded processed graphs are historical evidence, separate from fresh replay. Downloading them restores no scientific or physical-material authority."</p>
+            <button class="button secondary" disabled=move||pending.get()||epoch.get()!=opened_epoch on:click=move|_|download_history.run(())>"Download recorded processed graph JSON"</button>
+            <Show when=move||evidence_pending.get()><button class="text-tool" on:click=move|_|cancel_history.run(())>"Cancel historical evidence download"</button></Show>
             <button class="button primary" disabled=move||pending.get() on:click=replay_run>"Replay cloning run"</button>
             <button class="button secondary" disabled=move||replay.get().is_none()||pending.get() on:click=export>"Download run replay JSON"</button>
             {move||replay.get().map(|report|view!{<div class="run-replay-result"><strong>{format!("Fresh replay: {:?}",report.current_report.status)}</strong><p>{format!("Engine matches recorded: {} · products match recorded: {} · status matches recorded: {}",report.engine_matches,report.products_match,report.status_matches)}</p>{report.current_report.findings.into_iter().map(|finding|view!{<p>{finding}</p>}).collect_view()}{report.current_report.products.iter().enumerate().take(25).filter_map(|(i,p)|crate::checked_cloning::modification_summary(p).map(|summary|view!{<details class="checked-modification-summary"><summary>{format!("Fresh step {} · positional modification evidence",i+1)}</summary><p>{summary}</p></details>})).collect_view()}</div>})}

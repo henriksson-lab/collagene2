@@ -1096,3 +1096,22 @@ stay available. The desktop review, worker64 and MCP162 use fresh reconstruction
 Typed-plan/run/protocol consumption of processed material, accounted directional
 flap processing, broader chemistry and all remaining delivery/acceptance work
 remain active. Imported sequence views still cannot restore physical authority.
+
+
+### Processed material in retained cloning plans
+
+ProcessedTopo now reconstructs original source declarations and supplies actual
+private tracked duplex material to downstream operations, while retaining full
+typed graphs on success or withholding. GUI opening is declaration-only with
+exact source/target events; Verify/stage/finalize retains existing atomic ancestry.
+HTML/PDF and MCP expose the same fresh steps and evidence. Retained processed runs
+atomically add historical graph attachments without restoring scientific authority.
+
+Worker65/candidate13/plan11/science16 introduce the new operation and typed evidence.
+Explicit converters preserve all nine old report-bearing wire paths; prior
+operation/StepReport/RunRecord/RunReceipt layouts stay intact.
+[Detailed contract and remaining scope](TOPO_PROCESSED_PLAN.md).
+
+Accounted directional flap processing, broader upstream tracked-material recipes,
+durable graph-only reviews and all remaining method/delivery/acceptance milestones
+remain in scope. No browser checks precede completion of the in-scope code.

@@ -123,6 +123,17 @@ pub fn save_candidate(candidate: &Candidate) -> Result<Vec<u8>, Error> {
 }
 pub fn load_candidate(bytes: &[u8]) -> Result<Candidate, Error> {
     let candidate: Candidate = protocol::decode(b"CGP\0", bytes)?;
+    if u16::from_le_bytes([bytes[4], bytes[5]]) < 13
+        && candidate
+            .plan
+            .steps
+            .iter()
+            .any(|step| matches!(step, crate::verification::Operation::ProcessedTopo { .. }))
+    {
+        return Err(Error::Unsupported(
+            "Processed TOPO material requires candidate schema 13".into(),
+        ));
+    }
     if u16::from_le_bytes([bytes[4], bytes[5]]) < 12
         && candidate.plan.steps.iter().any(|step| {
             matches!(

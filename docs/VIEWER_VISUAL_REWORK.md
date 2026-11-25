@@ -163,3 +163,33 @@ in metadata. At most24 glyphs are allocated. Diagrams scroll rather than shrink
 long end letters into unreadable text. Four native fixture groups cover all four
 nonpalindromic side/polarity cases, terminal groups, malformed input and bounded
 long-end display. Visual acceptance remains deferred to user review.
+
+## Retained documents and working tabs
+
+The explorer uses the retained document catalogue; the tab strip uses a separate
+ordered, unique set of open document IDs. Opening a retained document selects or
+appends its tab. Source navigation and newly created products open the requested
+working tab through the existing active-document routes. Preparation-history
+visibility affects the explorer only, not the identity or presence of open tabs.
+
+Closing a background tab keeps the current editor and focus. Closing the active
+tab selects its right neighbor, falling back to its left neighbor. Closing the
+last tab shows an empty view with file/URL import and access to Documents. It
+hides document mutation/export controls, clears transient selection and closes
+the assembly dock while keeping its draft and all retained documents/history.
+Map interaction pauses while no viewer is open. Reopening the same last document
+also reinstates its viewer before deferred range navigation applies.
+
+Close buttons are siblings of tab buttons, not nested buttons. Delete and middle
+click can close tabs; arrow/Home/End navigation remains available. Active closure
+focuses the resulting tab or empty view on the next frame, guarded against a
+changed tab list, selection or owner. Background closure does not steal focus.
+
+The archive's retained working-document index remains valid when no tab is open.
+Open/closed tabs are presentation state and are not yet serialized: a new session
+opens the recorded working document. Frame updates prune absent IDs and keep
+matching working source tabs when finalization adds a product. Tab closure deletes no document, source
+event, primer, preparation or history graph and changes no scientific/archive
+schema. The four pure-model fixture groups cover opening/order,
+background/active/last closure and reopening, reconciliation without catalogue
+mutation, and reset between workspaces. Browser acceptance remains deferred.

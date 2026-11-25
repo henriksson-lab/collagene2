@@ -83,15 +83,22 @@ fn show_tab(id: &str, focus: bool) {
     if focus {
         let _ = element.focus();
     }
-    if let Some(parent) = element.parent_element() {
-        let left = element.offset_left();
-        let right = left + element.offset_width();
-        let at = parent.scroll_left();
-        let width = parent.client_width();
+    // The button now lives inside a presentation shell. Scroll the actual
+    // tablist, using viewport-relative rectangles rather than offset parents.
+    if let Some(scroller) = element.closest(".document-tabs").ok().flatten() {
+        let rect = element
+            .parent_element()
+            .map(|shell| shell.get_bounding_client_rect())
+            .unwrap_or_else(|| element.get_bounding_client_rect());
+        let viewport = scroller.get_bounding_client_rect();
+        let at = f64::from(scroller.scroll_left());
+        let width = f64::from(scroller.client_width());
+        let left = rect.left() - viewport.left() - f64::from(scroller.client_left()) + at;
+        let right = left + rect.width();
         if left < at {
-            parent.set_scroll_left(left);
+            scroller.set_scroll_left(left.floor().max(0.) as i32);
         } else if right > at + width {
-            parent.set_scroll_left(right - width);
+            scroller.set_scroll_left((right - width).ceil().max(0.) as i32);
         }
     }
 }
@@ -193,11 +200,13 @@ pub fn DocumentTabs(
     active_document: Memo<String>,
     locked: Memo<bool>,
     on_activate: Callback<String>,
+    on_close: Callback<String>,
 ) -> impl IntoView {
     let indexed = index(documents);
     let alive = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
     let cleanup = alive.clone();
     on_cleanup(move || cleanup.store(false, std::sync::atomic::Ordering::Relaxed));
+    let closing_alive = alive.clone();
     Effect::new(move |_| {
         let id = active_document.get();
         let _ = documents.with(Vec::len);
@@ -213,17 +222,76 @@ pub fn DocumentTabs(
             let _ = window.request_animation_frame(frame.unchecked_ref());
         }
     });
+    let close_generation = RwSignal::new(0u32);
+    let close_tab = Callback::new(move |id: String| {
+        if locked.get_untracked()
+            || !documents.with_untracked(|items| items.iter().any(|item| item.id == id))
+        {
+            return;
+        }
+        let was_active = active_document.with_untracked(|active| active == &id);
+        on_close.run(id.clone());
+        // Closing a background tab must not move focus out of the current task.
+        if !was_active {
+            return;
+        }
+        let expected = active_document.get_untracked();
+        let expected_tabs = documents
+            .with_untracked(|items| items.iter().map(|item| item.id.clone()).collect::<Vec<_>>());
+        let ticket = close_generation.get_untracked().wrapping_add(1);
+        close_generation.set(ticket);
+        let alive = closing_alive.clone();
+        let frame = Closure::once_into_js(move || {
+            if !alive.load(std::sync::atomic::Ordering::Relaxed)
+                || locked.try_get_untracked() != Some(false)
+                || close_generation.try_get_untracked() != Some(ticket)
+                || active_document.try_get_untracked().as_deref() != Some(expected.as_str())
+                || documents.try_with_untracked(|items| {
+                    items
+                        .iter()
+                        .map(|item| item.id.as_str())
+                        .eq(expected_tabs.iter().map(String::as_str))
+                        && !items.iter().any(|item| item.id == id)
+                        && (expected.is_empty() || items.iter().any(|item| item.id == expected))
+                }) != Some(true)
+            {
+                return;
+            }
+            if expected.is_empty() {
+                if let Some(empty) = web_sys::window()
+                    .and_then(|window| window.document())
+                    .and_then(|document| document.get_element_by_id("no-open-documents"))
+                    .and_then(|element| element.dyn_into::<web_sys::HtmlElement>().ok())
+                {
+                    let _ = empty.focus();
+                }
+            } else {
+                show_tab(&expected, true);
+            }
+        });
+        if let Some(window) = web_sys::window() {
+            let _ = window.request_animation_frame(frame.unchecked_ref());
+        }
+    });
     view! {
         <div class="document-tabs" role="tablist" aria-label="Open sequence documents">
             <For each=move||documents.get() key=|item|item.id.clone() children=move|item:DocumentItem|{
                 let selected=item.id.clone();let aria=item.id.clone();let focus=item.id.clone();let target=item.id.clone();let key_id=item.id.clone();
+                let middle_id=item.id.clone();let close_id=item.id.clone();
                 let row_id=item.id.clone();let row=Memo::new(move|_|indexed.with(|items|items.get(&row_id).cloned()));
-                view!{<button class="document-tab" role="tab" aria-controls="active-sequence-document" id=tab_id(&item.id) data-document-id=item.id.clone() class:active=move||active_document.with(|id|id==&selected) aria-selected=move||active_document.with(|id|id==&aria).to_string() tabindex=move||active_document.with(|id|if id==&focus{0}else{-1}) title=move||row.with(|r|r.as_ref().map(item_title).unwrap_or_default()) disabled=move||locked.get() on:click=move|_|activate(target.clone(),active_document,locked,on_activate) on:keydown=move|e:web_sys::KeyboardEvent|{
-                    if locked.get_untracked()||e.alt_key()||e.ctrl_key()||e.meta_key(){return;}
-                    let key=e.key();if !matches!(key.as_str(),"ArrowLeft"|"ArrowRight"|"Home"|"End"){return;}e.prevent_default();
-                    let next=documents.with_untracked(|items|{if items.is_empty(){return None;}let at=items.iter().position(|d|d.id==key_id)?;let index=match key.as_str(){"Home"=>0,"End"=>items.len()-1,"ArrowLeft"=>(at+items.len()-1)%items.len(),_=>(at+1)%items.len()};Some(items[index].id.clone())});
-                    if let Some(id)=next{activate(id.clone(),active_document,locked,on_activate);show_tab(&id,true);}
-                }>{move||row.get().map(|d|icon(d.alphabet,d.topology))}<span>{move||row.with(|r|r.as_ref().map(|d|d.name.clone()).unwrap_or_default())}</span></button>}
+                view!{<div class="document-tab-shell" role="presentation" class:active=move||active_document.with(|id|id==&selected) on:pointerdown=move|event:web_sys::PointerEvent|{if event.button()==1&&!locked.get_untracked(){event.prevent_default();}} on:auxclick=move|event:web_sys::MouseEvent|{
+                    if event.button()==1&&!locked.get_untracked(){event.prevent_default();close_tab.run(middle_id.clone());}
+                }>
+                    <button class="document-tab" role="tab" aria-controls="active-sequence-document" id=tab_id(&item.id) data-document-id=item.id.clone() aria-selected=move||active_document.with(|id|id==&aria).to_string() tabindex=move||active_document.with(|id|if id==&focus{0}else{-1}) title=move||row.with(|r|r.as_ref().map(item_title).unwrap_or_default()) disabled=move||locked.get() on:click=move|_|activate(target.clone(),active_document,locked,on_activate) on:keydown=move|e:web_sys::KeyboardEvent|{
+                        if locked.get_untracked()||e.alt_key()||e.ctrl_key()||e.meta_key(){return;}
+                        let key=e.key();
+                        if key=="Delete"{e.prevent_default();close_tab.run(key_id.clone());return;}
+                        if !matches!(key.as_str(),"ArrowLeft"|"ArrowRight"|"Home"|"End"){return;}e.prevent_default();
+                        let next=documents.with_untracked(|items|{if items.is_empty(){return None;}let at=items.iter().position(|d|d.id==key_id)?;let index=match key.as_str(){"Home"=>0,"End"=>items.len()-1,"ArrowLeft"=>(at+items.len()-1)%items.len(),_=>(at+1)%items.len()};Some(items[index].id.clone())});
+                        if let Some(id)=next{activate(id.clone(),active_document,locked,on_activate);show_tab(&id,true);}
+                    }>{move||row.get().map(|d|icon(d.alphabet,d.topology))}<span>{move||row.with(|r|r.as_ref().map(|d|d.name.clone()).unwrap_or_default())}</span></button>
+                    <button class="document-tab-close" tabindex="-1" disabled=move||locked.get() aria-label=move||row.with(|r|format!("Close {} tab",r.as_ref().map(|item|item.name.as_str()).unwrap_or("document"))) title="Close tab · document remains in workspace" on:pointerdown=move|event:web_sys::PointerEvent|event.prevent_default() on:click=move|event|{event.stop_propagation();close_tab.run(close_id.clone());}>"×"</button>
+                </div>}
             }/>
         </div>
     }

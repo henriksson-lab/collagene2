@@ -946,6 +946,61 @@ pub fn App() -> impl IntoView {
     let fastq_encoding = RwSignal::new(None::<oligo_formats::QualityEncoding>);
     let stored_candidates = RwSignal::new(Vec::<transfer::Candidate>::new());
     let active = RwSignal::new(0usize);
+    // Working tabs are presentation state, separate from retained histories and
+    // the archive's last working document index (which must remain valid).
+    let open_tabs = RwSignal::new(crate::document_tabs_model::Tabs::default());
+    let tab_epoch = StoredValue::new(None::<u64>);
+    let tab_document = StoredValue::new(None::<String>);
+    let retained_document_ids = Memo::new(move |_| {
+        documents.with(|docs| docs.iter().map(|doc| doc.id.clone()).collect::<Vec<_>>())
+    });
+    let has_open_document = Memo::new(move |_| open_tabs.with(|tabs| tabs.active().is_some()));
+    Effect::new(move |_| {
+        let epoch = workspace_epoch.get();
+        let index = active.get();
+        let id = documents.with_untracked(|docs| docs.get(index).map(|doc| doc.id.clone()));
+        let current = open_tabs.get_untracked();
+        let mut next = current.clone();
+        if tab_epoch.get_value() != Some(epoch) {
+            // A finalized assembly also replaces the workspace frame. Keep
+            // working source tabs whose IDs remain in that frame; a different
+            // workspace naturally removes IDs it does not retain.
+            let retained = documents
+                .with_untracked(|docs| docs.iter().map(|doc| doc.id.clone()).collect::<Vec<_>>());
+            next.reconcile(&retained);
+            if next.ids().is_empty() {
+                next.reset(id.as_deref());
+            } else if let Some(id) = &id {
+                next.open(id);
+            }
+        } else if let Some(id) = &id {
+            next.open(id);
+        }
+        tab_epoch.set_value(Some(epoch));
+        tab_document.set_value(id);
+        if next != current {
+            open_tabs.set(next);
+        }
+    });
+    Effect::new(move |_| {
+        let retained = retained_document_ids.get();
+        let id = documents
+            .with_untracked(|docs| docs.get(active.get_untracked()).map(|doc| doc.id.clone()));
+        let current = open_tabs.get_untracked();
+        let mut next = current.clone();
+        next.reconcile(&retained);
+        // A replacement can change the active document ID without changing its
+        // array index. Ordinary revision edits do not reopen closed tabs.
+        if tab_document.get_value() != id {
+            if let Some(id) = &id {
+                next.open(id);
+            }
+            tab_document.set_value(id);
+        }
+        if next != current {
+            open_tabs.set(next);
+        }
+    });
     let molecule = Memo::new(move |_| {
         documents.with(|docs| docs[active.get().min(docs.len() - 1)].molecule.clone())
     });
@@ -1163,15 +1218,9 @@ pub fn App() -> impl IntoView {
             });
         },
     );
-    let explorer_documents = Memo::new(move |_| {
-        let show_all = show_prepared_history.get();
-        let hidden = hidden_products.get();
-        let current = active.get();
+    let document_items = Memo::new(move |_| {
         documents.with(|docs| {
             docs.iter()
-                .enumerate()
-                .filter(|(i, doc)| show_all || !hidden.contains(&doc.id) || *i == current)
-                .map(|(_, doc)| doc)
                 .map(|doc| {
                     let provider = doc.molecule.metadata.get("source:provider");
                     let accession = doc
@@ -1206,11 +1255,32 @@ pub fn App() -> impl IntoView {
                 .collect::<Vec<_>>()
         })
     });
-    let explorer_active = Memo::new(move |_| {
-        documents.with(|docs| {
-            docs.get(active.get())
-                .map(|doc| doc.id.clone())
-                .unwrap_or_default()
+    let explorer_active =
+        Memo::new(move |_| open_tabs.with(|tabs| tabs.active().unwrap_or_default().to_owned()));
+    let explorer_documents = Memo::new(move |_| {
+        let show_all = show_prepared_history.get();
+        let hidden = hidden_products.get();
+        let current = explorer_active.get();
+        document_items.with(|items| {
+            items
+                .iter()
+                .filter(|doc| show_all || !hidden.contains(&doc.id) || doc.id == current)
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+    });
+    let tab_items = Memo::new(move |_| {
+        let index = document_items.with(|items| {
+            items
+                .iter()
+                .map(|item| (item.id.clone(), item.clone()))
+                .collect::<std::collections::BTreeMap<_, _>>()
+        });
+        open_tabs.with(|tabs| {
+            tabs.ids()
+                .iter()
+                .filter_map(|id| index.get(id).cloned())
+                .collect::<Vec<_>>()
         })
     });
     let explorer_locked = Memo::new(move |_| workspace_restoring.get());
@@ -1221,10 +1291,43 @@ pub fn App() -> impl IntoView {
         if let Some(index) =
             documents.with_untracked(|docs| docs.iter().position(|doc| doc.id == id))
         {
-            if active.get_untracked() != index {
+            batch(|| {
+                open_tabs.update(|tabs| tabs.open(&id));
                 active.set(index);
-            }
+            });
         }
+    });
+    let close_document_tab = Callback::new(move |id: String| {
+        if workspace_restoring.get_untracked() {
+            return;
+        }
+        let current = open_tabs.get_untracked();
+        let mut next = current.clone();
+        next.close(&id);
+        if next == current {
+            return;
+        }
+        let changed_selection = next.active() != current.active();
+        let next_index = next.active().and_then(|id| {
+            documents.with_untracked(|docs| docs.iter().position(|doc| doc.id == id))
+        });
+        batch(|| {
+            open_tabs.set(next);
+            if changed_selection {
+                if let Some(index) = next_index {
+                    active.set(index);
+                } else {
+                    // Keep the retained archive document intact, but expose no
+                    // editor/source-capture controls until a tab is opened.
+                    selection.set(None);
+                    selected_feature.set(None);
+                    search_regions.set(None);
+                    panel.set("");
+                    assembly_visible.set(false);
+                    show_library.set(true);
+                }
+            }
+        });
     });
 
     let db = StoredValue::new_local(None::<web_sys::IdbDatabase>);
@@ -1915,6 +2018,12 @@ pub fn App() -> impl IntoView {
         }
     });
     Effect::new(move |_| {
+        if !has_open_document.get() {
+            if let Some(map) = renderer.get_value() {
+                map.pointer_cancel();
+            }
+            return;
+        }
         molecule.with(|current| {
             let selected = highlighted_spans.get();
             let selected_index = selected_feature.get();
@@ -4809,7 +4918,7 @@ pub fn App() -> impl IntoView {
                     selection.set(request.spans.first().copied());
                 });
             };
-            if active.get_untracked() == index {
+            if active.get_untracked() == index && has_open_document.get_untracked() {
                 apply(false);
             } else {
                 active.set(index);
@@ -5053,7 +5162,7 @@ pub fn App() -> impl IntoView {
                 });
             };
             documents.set(docs);
-            if active.get_untracked() == index {
+            if active.get_untracked() == index && has_open_document.get_untracked() {
                 apply(false);
             } else {
                 active.set(index);
@@ -5441,7 +5550,7 @@ pub fn App() -> impl IntoView {
                 search_regions.set(None);
             });
         };
-        if active.get_untracked() == index {
+        if active.get_untracked() == index && has_open_document.get_untracked() {
             apply(false);
         } else {
             active.set(index);
@@ -5481,8 +5590,9 @@ pub fn App() -> impl IntoView {
                         </nav>
                         <div class="explorer-frame" id="document-explorer-pane"><crate::document_explorer::DocumentExplorer documents=explorer_documents active_document=explorer_active locked=explorer_locked on_activate=explorer_activate on_open=Callback::new(move|()|if let Some(input)=file_input.get(){input.click();})/><Show when=move||!hidden_products.with(|ids|ids.is_empty())><label class="preparation-visibility"><input type="checkbox" prop:checked=move||show_prepared_history.get() on:change=move|e|show_prepared_history.set(event_target::<HtmlInputElement>(&e).checked())/>{move||format!("Show preparation history ({})",hidden_products.with(|ids|ids.len()))}</label></Show><crate::workspace_layout::PaneResize layout=layout pane=crate::workspace_layout::Pane::Documents/></div>
                         <main>
-                            <crate::document_explorer::DocumentTabs documents=explorer_documents active_document=explorer_active locked=explorer_locked on_activate=explorer_activate/>
-                            <div class="active-document" id="active-sequence-document" role="tabpanel" aria-label="Active sequence document" tabindex="0">
+                            <crate::document_explorer::DocumentTabs documents=tab_items active_document=explorer_active locked=explorer_locked on_activate=explorer_activate on_close=close_document_tab/>
+                            <Show when=move||!has_open_document.get()><section class="empty-document-view" id="no-open-documents" tabindex="-1" aria-label="No open documents"><h2>"No documents open"</h2><p>"Choose a sequence from Documents, or import a file. Closing a tab keeps its document and history in the workspace."</p><div class="empty-document-actions"><button class="button primary" disabled=move||workspace_restoring.get() on:click=move|_|if let Some(input)=file_input.get(){input.click();}>"Open sequence…"</button><button class="button secondary" disabled=move||workspace_restoring.get() on:click=move|_|{modal_error.set(String::new());modal.set("url");}>"Import from URL…"</button></div></section></Show>
+                            <div class="active-document" hidden=move||!has_open_document.get() id="active-sequence-document" role="tabpanel" aria-label="Active sequence document" tabindex="0">
                             <div class="document-header"><div><div class="eyebrow">"SEQUENCE"</div><h1>{move||molecule.get().name}</h1><div class="document-meta"><span>{move||format!("{} {}",molecule.get().sequence.len(),molecule.get().sequence.alphabet().short_unit())}</span><span>"·"</span><span>{move||format!("{} {}",if molecule.get().topology==Topology::Circular{"Circular"}else{"Linear"},match molecule.get().sequence.alphabet(){Alphabet::Dna=>"DNA",Alphabet::Rna=>"RNA",Alphabet::Protein=>"protein"})}</span><span>"·"</span><span>{move||molecule.get().sequence.gc_fraction().map(|v|format!("{:.1}% GC",v*100.)).unwrap_or_else(||"GC unavailable".into())}</span></div><Show when=move||molecule.get().metadata.contains_key("source:provider")><p class="source-provenance">{move||{let m=molecule.get();let mut parts=vec![format!("Source: {}",m.metadata.get("source:provider").map(String::as_str).unwrap_or("unknown")),m.metadata.get("source:accession_version").or_else(||m.metadata.get("source:identifier")).cloned().unwrap_or_else(||"record".into())];if let Some(id)=m.metadata.get("source:sequence_id"){parts.push(format!("sequence {id}"));}if let Some(category)=m.metadata.get("source:addgene_completeness"){parts.push(format!("{category} record (provider label)"));}parts.push(format!("retrieved {}",m.metadata.get("source:retrieved_at").map(String::as_str).unwrap_or("unknown")));parts.join(" · ")}}</p></Show></div>
                                 <div class="document-actions"><details class="document-file-menu"><summary class="button secondary">"File ▾"</summary><div class="document-file-menu-content"><button class="button secondary" on:click=save_file>"Save .cg2"</button><button class="button secondary" on:click=move|_|{let mol=molecule.get_untracked();match formats::export_with_report(&mol,formats::TextFormat::GenBank){Ok(report)=>if let Err(e)=download(&format!("{}.gb",mol.name),"text/plain",report.text.as_bytes()){message.set(e)}else{message.set(report.warnings.join(" "));},Err(e)=>message.set(e.to_string())}}>"Export GenBank"</button><hr/><div class="document-extra-file-actions"><button class="button secondary" on:click=move|_|{modal_error.set(String::new());modal.set("document");}>"Document settings"</button><button class="button secondary" on:click=move|_|{let mol=molecule.get_untracked();match formats::export_with_report(&mol,formats::TextFormat::Fasta){Ok(report)=>if let Err(error)=download(&format!("{}.fasta",mol.name),"text/plain",report.text.as_bytes()){message.set(error);}else{message.set(report.warnings.join(" "));},Err(e)=>message.set(e.to_string())}}>"FASTA"</button><button class="button secondary" on:click=move|_|match formats::export_with_report(&molecule.get_untracked(),formats::TextFormat::Embl){Ok(report)=>{if let Err(e)=download("sequence.embl","text/plain",report.text.as_bytes()){message.set(e);}else{message.set(report.warnings.join(" "));}},Err(e)=>message.set(e.to_string())}>"EMBL"</button><Show when=move||molecule.with(|m|m.original_genbank.is_some())><button class="button secondary" title="Download the exact original GenBank input, before edits" on:click=move|_|molecule.with_untracked(|m|{if let Some(raw)=&m.original_genbank{if let Err(e)=download("original-input.gb","text/plain",raw.as_bytes()){message.set(e);}}})>"Original GenBank input"</button></Show><Show when=move||molecule.get().metadata.contains_key(snapgene::ORIGINAL_BASE64_KEY)><button class="button secondary" on:click=move|_|match snapgene::original_snapgene_bytes(&molecule.get_untracked()){Ok(bytes)=>{if let Err(e)=download("original.dna","application/octet-stream",&bytes){message.set(e);}},Err(e)=>message.set(e.to_string())}>"Original .dna"</button></Show><Show when=move||molecule.get().metadata.contains_key("trace_original_base64")><button class="button secondary" on:click=move|_|match traces::original_trace_bytes(&molecule.get_untracked()){Ok(bytes)=>{let extension=if bytes.starts_with(b"ABIF"){"ab1"}else{"scf"};if let Err(e)=download(&format!("original.{extension}"),"application/octet-stream",&bytes){message.set(e);}},Err(e)=>message.set(e.to_string())}>"Original trace"</button></Show><Show when=move||molecule.with(|doc|doc.metadata.contains_key(collagene_core::legacy_formats::ORIGINAL_BASE64_KEY))><button class="button secondary" on:click=move|_|match collagene_core::legacy_formats::original_legacy_bytes(&molecule.get_untracked()){Ok(bytes)=>{let extension=if collagene_core::legacy_formats::is_collagene_xml(&bytes){"xml"}else{"xdna"};if let Err(error)=download(&format!("original-legacy.{extension}"),"application/octet-stream",&bytes){message.set(error);}},Err(error)=>message.set(error.to_string())}>"Original legacy file"</button></Show><button class="button secondary" on:click=move|_|{let current=molecule.get_untracked();let rendered=if let Some(sites)=restrictions.displayed.get_untracked(){svg::render_map_with_restriction_sites(&current,&current.revision(),&sites)}else{svg::render_map(&current)};match rendered{Ok(text)=>{if let Err(e)=download("sequence-map.svg","image/svg+xml",text.as_bytes()){message.set(e);}},Err(e)=>message.set(e.to_string())}}>"SVG map"</button></div></div></details></div>
                             </div>
@@ -5697,7 +5807,7 @@ pub fn App() -> impl IntoView {
                                             if deferred&&(selected_feature.get_untracked().is_some()||selection.get_untracked().is_some()||search_regions.get_untracked().is_some()){return;}
                                             batch(||{selected_feature.set(None);selection.set(if spans.len()==1{spans.first().copied()}else{None});search_regions.set(Some((revision,spans)));});
                                         };
-                                        if active.get_untracked()==index{apply(false);}else{
+                                        if active.get_untracked()==index&&has_open_document.get_untracked(){apply(false);}else{
                                             active.set(index);
                                             // App clears old selections when the active source changes.
                                             // Install this source-bound selection after those effects settle.
@@ -5776,11 +5886,11 @@ pub fn App() -> impl IntoView {
                         <Show when=move||modal.get()=="alignments"><crate::alignment_view::AlignmentPanel alignments=alignments pending=pending_alignment.get_untracked() epoch=workspace_epoch on_keep={let opened_epoch=workspace_epoch.get_untracked();Callback::new(move|item:crate::alignment_view::AlignmentRevision|{if opened_epoch!=workspace_epoch.get_untracked(){return Err("The workspace changed during alignment import. Open the alignment again.".into());}keep_alignment.run(item)})} on_extract={let opened_epoch=workspace_epoch.get_untracked();Callback::new(move|molecules:Vec<Molecule>|{if opened_epoch!=workspace_epoch.get_untracked(){return Err("The workspace changed during row extraction.".into());}add_documents(documents,active,workspace_restoring,molecules)})}/></Show>
                         <Show when=move||modal.get()=="oligos"><crate::oligo_import::OligoImport on_import=import_oligos existing=existing_oligo.get_untracked() initial_text=pending_oligo.get_untracked()/></Show>
                         <Show when=move||modal.get()=="fastq"><p>"Select the quality encoding supplied by the sequencing source. Phred+33 and Phred+64 overlap; it cannot be inferred from printable characters."</p><label>"Supplied FASTQ encoding"<select aria-label="Supplied FASTQ encoding" prop:value=move||match fastq_encoding.get(){None=>"",Some(oligo_formats::QualityEncoding::Phred33)=>"33",Some(oligo_formats::QualityEncoding::Phred64)=>"64"} on:change=move|e|fastq_encoding.set(match event_target_value(&e).as_str(){"33"=>Some(oligo_formats::QualityEncoding::Phred33),"64"=>Some(oligo_formats::QualityEncoding::Phred64),_=>None})><option value="">"Choose supplied encoding"</option><option value="33">"Phred+33"</option><option value="64">"Phred+64"</option></select></label><button class="button primary" disabled=move||fastq_encoding.get().is_none() on:click=move|_|{let(Some(bytes),Some(encoding))=(pending_fastq.get_untracked(),fastq_encoding.get_untracked())else{return;};match oligo_formats::import_fastq(&bytes,encoding){Ok(report)=>match add_documents(documents,active,workspace_restoring,report.molecules){Ok(())=>{message.set(report.warnings.join(" "));pending_fastq.set(None);modal.set("");panel.set("reads");},Err(e)=>modal_error.set(e)},Err(e)=>modal_error.set(e.to_string())}}>"Import FASTQ with selected encoding"</button></Show>
-                        <Show when=move||modal.get()=="variants"><p class="helper">"Declared file alleles and genotype columns are source evidence. Choose an actual DNA reference and a one-based alternative explicitly before checking or creating a design."</p><button class="button secondary" disabled=move||workspace_restoring.get() on:click=move|_|if let Err(error)=keep_variant_source.run(()){modal_error.set(error)}>"Keep original source in workspace"</button>{move||pending_variants.get().map(|(source,format,name)|view!{<crate::variants_view::VariantPanel source=source format=format name=name documents=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().filter(|(_,doc)|doc.molecule.sequence.alphabet()==Alphabet::Dna).map(|(index,doc)|(index,doc.molecule.name.clone(),format!("{}:{}:{}",workspace_epoch.get(),doc.id,doc.head_event()))).collect())) get_document=Callback::new(move|index:usize|documents.with_untracked(|docs|docs.get(index).and_then(|doc|collagene_core::model::bounds::model_preflight(&[&doc.molecule]).ok().map(|_|doc.molecule.clone())))) on_navigate=Callback::new(move|(index,parts):(usize,Vec<(usize,usize)>)|{if workspace_restoring.get_untracked(){return;}let Some((id,event,revision))=documents.with_untracked(|docs|docs.get(index).map(|doc|(doc.id.clone(),doc.head_event().to_string(),doc.molecule.revision())))else{return;};let epoch=workspace_epoch.get_untracked();let apply=move|deferred:bool|{if workspace_epoch.try_get_untracked()!=Some(epoch)||workspace_restoring.try_get_untracked().unwrap_or(true){return;}if !documents.with_untracked(|docs|docs.get(active.get_untracked()).is_some_and(|doc|doc.id==id&&doc.head_event()==event)){return;}if deferred&&(selection.get_untracked().is_some()||selected_feature.get_untracked().is_some()||search_regions.get_untracked().is_some()){return;}batch(||{selected_feature.set(None);selection.set(if parts.len()==1{parts.first().copied()}else{None});search_regions.set(Some((revision,parts)));});};modal.set("");if active.get_untracked()==index{apply(false);}else{active.set(index);let frame=wasm_bindgen::closure::Closure::once_into_js(move||apply(true));if let Some(window)=web_sys::window(){let _=window.request_animation_frame(frame.unchecked_ref());}}}) on_preview=open_variant_preview/>})}</Show><Show when=move||modal.get()=="read_alignments"><p class="helper">"Keep the original source in this workspace to reopen it later. Mapping claims remain unverified until checked against an explicitly selected DNA document."</p><button class="button secondary" disabled=move||workspace_restoring.get() on:click=move|_|if let Err(error)=keep_read_source.run(()){modal_error.set(error)}>"Keep original source in workspace"</button>{move||pending_read_alignment.get().map(|(source,format,name)|view!{
+                        <Show when=move||modal.get()=="variants"><p class="helper">"Declared file alleles and genotype columns are source evidence. Choose an actual DNA reference and a one-based alternative explicitly before checking or creating a design."</p><button class="button secondary" disabled=move||workspace_restoring.get() on:click=move|_|if let Err(error)=keep_variant_source.run(()){modal_error.set(error)}>"Keep original source in workspace"</button>{move||pending_variants.get().map(|(source,format,name)|view!{<crate::variants_view::VariantPanel source=source format=format name=name documents=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().filter(|(_,doc)|doc.molecule.sequence.alphabet()==Alphabet::Dna).map(|(index,doc)|(index,doc.molecule.name.clone(),format!("{}:{}:{}",workspace_epoch.get(),doc.id,doc.head_event()))).collect())) get_document=Callback::new(move|index:usize|documents.with_untracked(|docs|docs.get(index).and_then(|doc|collagene_core::model::bounds::model_preflight(&[&doc.molecule]).ok().map(|_|doc.molecule.clone())))) on_navigate=Callback::new(move|(index,parts):(usize,Vec<(usize,usize)>)|{if workspace_restoring.get_untracked(){return;}let Some((id,event,revision))=documents.with_untracked(|docs|docs.get(index).map(|doc|(doc.id.clone(),doc.head_event().to_string(),doc.molecule.revision())))else{return;};let epoch=workspace_epoch.get_untracked();let apply=move|deferred:bool|{if workspace_epoch.try_get_untracked()!=Some(epoch)||workspace_restoring.try_get_untracked().unwrap_or(true){return;}if !documents.with_untracked(|docs|docs.get(active.get_untracked()).is_some_and(|doc|doc.id==id&&doc.head_event()==event)){return;}if deferred&&(selection.get_untracked().is_some()||selected_feature.get_untracked().is_some()||search_regions.get_untracked().is_some()){return;}batch(||{selected_feature.set(None);selection.set(if parts.len()==1{parts.first().copied()}else{None});search_regions.set(Some((revision,parts)));});};modal.set("");if active.get_untracked()==index&&has_open_document.get_untracked(){apply(false);}else{active.set(index);let frame=wasm_bindgen::closure::Closure::once_into_js(move||apply(true));if let Some(window)=web_sys::window(){let _=window.request_animation_frame(frame.unchecked_ref());}}}) on_preview=open_variant_preview/>})}</Show><Show when=move||modal.get()=="read_alignments"><p class="helper">"Keep the original source in this workspace to reopen it later. Mapping claims remain unverified until checked against an explicitly selected DNA document."</p><button class="button secondary" disabled=move||workspace_restoring.get() on:click=move|_|if let Err(error)=keep_read_source.run(()){modal_error.set(error)}>"Keep original source in workspace"</button>{move||pending_read_alignment.get().map(|(source,format,name)|view!{
                             <crate::read_alignments_view::ReadAlignmentPanel source=source format=format name=name documents=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().filter(|(_,doc)|doc.molecule.sequence.alphabet()==Alphabet::Dna).map(|(index,doc)|(index,doc.molecule.name.clone(),format!("{}:{}:{}",workspace_epoch.get(),doc.id,doc.head_event()))).collect())) get_document=Callback::new(move|index:usize|documents.with_untracked(|docs|docs.get(index).and_then(|doc|collagene_core::model::bounds::model_preflight(&[&doc.molecule]).ok().map(|_|doc.molecule.clone())))) on_navigate=Callback::new(move|(index,parts):(usize,Vec<(usize,usize)>)|{if workspace_restoring.get_untracked(){return;}let Some((id,event,revision))=documents.with_untracked(|docs|docs.get(index).map(|doc|(doc.id.clone(),doc.head_event().to_string(),doc.molecule.revision())))else{return;};
                                 let epoch=workspace_epoch.get_untracked();
                                 let apply=move|deferred:bool|{if workspace_epoch.try_get_untracked()!=Some(epoch)||workspace_restoring.try_get_untracked().unwrap_or(true){return;}if !documents.with_untracked(|docs|docs.get(active.get_untracked()).is_some_and(|doc|doc.id==id&&doc.head_event()==event)){return;}if deferred&&(selection.get_untracked().is_some()||selected_feature.get_untracked().is_some()||search_regions.get_untracked().is_some()){return;}batch(||{selected_feature.set(None);selection.set(if parts.len()==1{parts.first().copied()}else{None});search_regions.set(Some((revision,parts)));});};
-                                modal.set("");if active.get_untracked()==index{apply(false);}else{active.set(index);let frame=wasm_bindgen::closure::Closure::once_into_js(move||apply(true));if let Some(window)=web_sys::window(){let _=window.request_animation_frame(frame.unchecked_ref());}}})/>
+                                modal.set("");if active.get_untracked()==index&&has_open_document.get_untracked(){apply(false);}else{active.set(index);let frame=wasm_bindgen::closure::Closure::once_into_js(move||apply(true));if let Some(window)=web_sys::window(){let _=window.request_animation_frame(frame.unchecked_ref());}}})/>
                         })}</Show><Show when=move||modal.get()=="import"><p>"Paste GenBank, EMBL, FASTA, or plain DNA. No project setup needed."</p><textarea aria-label="Sequence input" rows="12" prop:value=move||import_text.get() on:input=move|e|import_text.set(event_target_value(&e)) placeholder=">my_sequence\nACGT…"></textarea><button class="button primary" on:click=move|_|{let text=import_text.get_untracked();if text.starts_with("##fileformat=VCF"){if text.len()>16*1024*1024{modal_error.set("Variant source exceeds the 16 MiB browser profile.".into());return;}pending_variants.set(Some((std::sync::Arc::new(text.into_bytes()),collagene_core::variants_session::FileFormat::Vcf,"pasted.vcf".into())));modal_error.set(String::new());modal.set("variants");return;}if [b"@HD\t".as_slice(),b"@SQ\t".as_slice(),b"@RG\t".as_slice(),b"@PG\t".as_slice(),b"@CO\t".as_slice()].iter().any(|prefix|text.as_bytes().starts_with(prefix)){if text.len()>collagene_core::read_alignment_session::MAX_SOURCE_BYTES{modal_error.set("This browser read-alignment profile accepts sources up to 16 MiB.".into());return;}pending_read_alignment.set(Some((std::sync::Arc::new(text.into_bytes()),collagene_core::read_alignment_session::FileFormat::Sam,"pasted.sam".into())));modal_error.set(String::new());modal.set("read_alignments");return;}if text.as_bytes().first()==Some(&b'@'){pending_fastq.set(Some(std::sync::Arc::new(text.into_bytes())));fastq_encoding.set(None);modal.set("fastq");return;}match formats::import_text(&text){Ok(report)=>{if let Err(error)=add_documents(documents,active,workspace_restoring,report.molecules){modal_error.set(error);return;}message.set(report.warnings.join(" "));modal.set("");import_text.set(String::new());},Err(e)=>modal_error.set(e.to_string())}}>"Open sequence"</button></Show><Show when=move||modal.get()=="url"><crate::source_import::SourceImport on_import={let epoch=workspace_epoch.get_untracked();Callback::new(move |report:formats::ImportReport|{if epoch!=workspace_epoch.get_untracked(){return Err("The workspace changed during retrieval. Import the source again in this workspace.".into());}add_documents(documents,active,workspace_restoring,report.molecules)?;message.set(report.warnings.join(" "));modal.set("");Ok(())})}/></Show><Show when=move||modal.get()=="feature"><crate::editors::FeatureEditor molecule=molecule.get_untracked() index=feature_for_editor.get_untracked() selection=selection.get_untracked() initial_location=feature_initial_location.get_untracked() on_commit=Callback::new(move|(base,edited):(String,Molecule)|{commit_document(documents,active,workspace_restoring,&base,edited)?;modal.set("");Ok(())})/></Show><Show when=move||modal.get()=="document"><crate::editors::DocumentEditor molecule=molecule.get_untracked() selection=selection.get_untracked() on_commit=Callback::new(move|(base,edited):(String,Molecule)|{commit_document(documents,active,workspace_restoring,&base,edited)?;modal.set("");Ok(())})/></Show><Show when=move||modal.get()=="edit"><p>{move||selection.get().map(|(a,b)|if a==b{format!("Insert at boundary {a}. Affected annotations will be marked for review.")}else{format!("Replace {} {}–{}; clear the field to delete. Affected annotations will be marked for review.",molecule.with(|m|m.sequence.alphabet().selected_symbols()),a+1,b)}).unwrap_or_else(||format!("Select {} in the sequence view first.",molecule.with(|m|m.sequence.alphabet().selected_symbols())))}</p><textarea aria-label="Replacement sequence" rows="6" prop:value=move||edit_text.get() on:input=move|e|edit_text.set(event_target_value(&e))></textarea><button class="button primary" disabled=move||selection.get().is_none() on:click=move|_|if let Some((a,b))=selection.get_untracked(){match molecule.get_untracked().replace(a,b,&edit_text.get_untracked()){Ok(edited)=>{let base=molecule.get_untracked().revision();if let Err(error)=commit_document(documents,active,workspace_restoring,&base,edited){modal_error.set(error);return;}selection.set(None);plan_report.set(None);last_plan.set(None);last_plan_target.set(None);modal.set("");},Err(e)=>modal_error.set(e.to_string())}}>"Apply edit"</button></Show></section></div></Show>
                 </div>
             }

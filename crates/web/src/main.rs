@@ -87,6 +87,8 @@ mod digest_product;
 #[cfg(target_arch = "wasm32")]
 mod document_explorer;
 #[cfg(any(target_arch = "wasm32", test))]
+mod document_tabs_model;
+#[cfg(any(target_arch = "wasm32", test))]
 mod domestication_form;
 #[cfg(any(target_arch = "wasm32", test))]
 mod domestication_review;

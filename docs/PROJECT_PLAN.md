@@ -1420,3 +1420,26 @@ filesystem access. [Publication procedure](PREVIEW_PUBLICATION.md).
 The accumulated draft lifecycle, primer tables and physical-end diagrams are
 being bundled together for the next public8082 snapshot. Interactive/visual
 acceptance and the full remaining original plan remain outstanding.
+
+### Working document tabs separate from retained workspace contents
+
+The explorer and working tabs now have separate view state. The explorer retains
+its search/sort/history-visibility catalogue; tabs contain only explicitly opened
+or navigated document IDs in working order. X, Delete and middle-click close a
+view without deleting its document or source events. Active closure selects a
+neighbor, and last closure shows a usable empty view rather than a hidden last
+sequence with editing controls. Opening from the explorer or navigation restores
+the corresponding tab, including the same-index last-closed case.
+
+Finalized products open alongside surviving working source tabs. Workspace-frame
+changes prune missing IDs, and a new session opens the recorded working document;
+open-tab state is not yet part of the archive schema. The scientific catalogue,
+exact source bindings, retained history, layouts and current assembly declarations
+remain independent of closing a tab. Four pure-model fixture groups pass; visual
+acceptance, persistent view-state expansion and the full original scope remain
+outstanding.
+
+The integrated WASM compiler check and format/diff checks pass. No browser or HTTP
+checks were run. Public8082 still serves the preceding compiled cloning-review
+snapshot, including draft switching, primer tables and physical-end diagrams;
+closable tabs will be included in the next bundled preview.

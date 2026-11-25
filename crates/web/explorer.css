@@ -27,10 +27,13 @@
 .explorer-open{flex:none;text-align:left;border:0;border-top:1px solid #e3e8ee;background:transparent;color:#3c718e;font-size:12px;padding:10px 12px;white-space:normal}
 .explorer-open:hover{background:#edf2f7}
 .document-tabs{display:flex;position:relative;align-items:stretch;min-width:0;flex:none;height:40px;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;background:#f1f4f7;border-bottom:1px solid #d8e0e8;overscroll-behavior-x:contain}
-.document-tab{position:relative;display:flex;align-items:center;gap:7px;flex:0 0 auto;min-width:100px;max-width:230px;height:36px;padding:0 15px;border:0;border-right:1px solid #dce2e8;border-top:2px solid transparent;border-bottom:1px solid transparent;border-radius:0;background:transparent;color:#65778b;font-size:12px;text-align:left;white-space:nowrap}
+.document-tab-shell{position:relative;display:flex;align-items:center;flex:0 0 auto;min-width:115px;max-width:250px;height:36px;border-right:1px solid #dce2e8;border-top:2px solid transparent;border-bottom:1px solid transparent;background:transparent;color:#65778b}
+.document-tab{display:flex;align-items:center;gap:7px;flex:1 1 auto;min-width:0;max-width:220px;height:33px;padding:0 8px 0 13px;border:0;border-radius:0;background:transparent;color:inherit;font-size:12px;font-weight:inherit;text-align:left;white-space:nowrap}
 .document-tab>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.document-tab:hover{background:#e8eef4;color:#35526d}.document-tab.active{border-top-color:#26799d;background:white;color:#224f70;font-weight:600;border-bottom-color:white}
-.document-tab.active .explorer-document-icon{color:#26799d}
-.document-tab:focus-visible,.document-explorer button:focus-visible{outline:2px solid #4481b0;outline-offset:-3px}
+.document-tab-shell:hover{background:#e8eef4;color:#35526d}.document-tab-shell.active{border-top-color:#26799d;background:white;color:#224f70;font-weight:600;border-bottom-color:white}
+.document-tab-shell.active .explorer-document-icon{color:#26799d}
+.document-tab-close{display:flex;align-items:center;justify-content:center;flex:none;width:23px;height:23px;padding:0;margin:0 4px 0 0;border:0;border-radius:3px;background:transparent;color:#718397;font-size:17px;line-height:1}
+.document-tab-close:hover{background:#dce5ee;color:#294f6a}.document-tab-shell.active .document-tab-close:hover{background:#e4edf4}.document-tab-close:disabled{opacity:.45}
+.document-tab:focus-visible,.document-tab-close:focus-visible,.document-explorer button:focus-visible{outline:2px solid #4481b0;outline-offset:-3px}
 
 .document-tabs::-webkit-scrollbar{height:4px}.document-tabs::-webkit-scrollbar-thumb{background:#c5d0db;border-radius:3px}.document-tabs::-webkit-scrollbar-track{background:transparent}

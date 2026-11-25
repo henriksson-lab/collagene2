@@ -108,3 +108,32 @@ navigation from map-only mode reveals the sequence. Actual map omission/lane
 statistics link users to the complete retained annotation browser. All drawing is
 over the existing actual reconstructed reference; this presentation adds no
 scientific verdict or new transformation.
+
+## Working drafts and primer proposal review
+
+The Draft menu can start a new assembly or switch to the previous working draft.
+Each action first shows the current draft name and number of captured fragments;
+confirmation rejects a changed draft, changed previous draft, changed workspace
+epoch or a busy workspace. Replacement cancels current intended-review work,
+drops method-review owners and their workers, clears junction undo and positive
+review state, then installs only the editable declaration. A restored draft must
+review intent and reconstruct evidence again. Finalized constructs and recorded
+plans are unaffected.
+
+The previous declaration is held at application scope so hiding/reopening the dock
+does not lose it. This is deliberately one temporary previous draft, not a saved
+design collection: workspace replacement/updates and session termination clear it.
+Only the current working draft is serialized by the existing workspace format.
+The UI states this limit; users retain permanent designs through existing saved
+workspaces, recorded plans and finalized outputs. Persistent multiple editable
+drafts remain separate delivery work.
+
+Overlap and Golden Gate primer proposals now use compact accessible tables.
+Fragment navigation uses the same exact-snapshot guards as the proposal and opens
+the active preparation editor without applying anything. Per-row disclosures
+retain both full ordered own-5′→3′ oligos, their separate annealing/tail domains,
+and Type IIS tail segments where applicable. Existing calculated Tm/ΔTm/product
+length or actual cleaved ends remain visible in the summary; no new numerical
+metric is inferred. Warnings stay outside collapsed details. A row with no pair
+says so, and an over-bound report shows an explicit error rather than a partial
+primer list. Existing explicit Apply and evidence download behavior is retained.

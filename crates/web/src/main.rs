@@ -20,6 +20,8 @@ mod assembly_archive_view;
 mod assembly_batch_projection;
 #[cfg(target_arch = "wasm32")]
 mod assembly_batch_view;
+#[cfg(target_arch = "wasm32")]
+mod assembly_draft_actions;
 #[cfg(any(target_arch = "wasm32", test))]
 mod assembly_draft_model;
 #[cfg(target_arch = "wasm32")]

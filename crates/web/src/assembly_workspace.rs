@@ -232,6 +232,7 @@ fn preparation_overview(methods: &MethodsState, index: usize) -> String {
 #[component]
 pub fn AssemblyWorkspace(
     draft: RwSignal<Draft>,
+    previous_draft: RwSignal<Option<Arc<Draft>>>,
     epoch: RwSignal<u64>,
     snapshot: Callback<(), Result<collagene_core::workspace::Workspace, String>>,
     workspace_busy: RwSignal<bool>,
@@ -594,7 +595,23 @@ pub fn AssemblyWorkspace(
         frozen.set(None);
         status.set("Intended-construct review cancelled.".into());
     };
-    view! {<section class="assembly-workspace"><header class="assembly-workspace-header"><h2>"Design assembly"</h2><p class="helper">"Choose a fragment, then select its source in the sequence viewer above."</p></header>
+    let replace_draft = Callback::new(move |next: Draft| {
+        generation.update(|g| *g = g.wrapping_add(1));
+        if let Some(w) = worker.get_value() {
+            w.close();
+        }
+        worker.set_value(None);
+        batch(|| {
+            busy.set(false);
+            frozen.set(None);
+            undo_junction.set(None);
+            strategy_chosen.set(next.slots.iter().any(|s| s.captured.is_some()));
+            methods.set(next.methods.clone());
+            draft.set(next);
+            status.set(String::new());
+        });
+    });
+    view! {<section class="assembly-workspace"><header class="assembly-workspace-header"><h2>"Design assembly"</h2><p class="helper">"Choose a fragment, then select its source in the sequence viewer above."</p><crate::assembly_draft_actions::AssemblyDraftActions draft previous=previous_draft epoch locked=Memo::new(move |_| workspace_busy.get()||busy.get()) on_replace=replace_draft/></header>
         <Show when=move||!strategy_chosen.get()>
             <crate::assembly_strategy_view::AssemblyStrategyPicker initial=draft.with_untracked(|d|d.methods.mode) on_start=Callback::new(move|mode|{
                 draft.update(|d|{

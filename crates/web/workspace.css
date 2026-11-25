@@ -477,3 +477,33 @@
  .product-reference-panes[data-view=map]>.assembly-product-map { grid-row:1; }
  .product-export-menu>.assembly-outputs { right:auto; left:0; }
 }
+
+.assembly-draft-menu { margin-left:auto; position:relative; font-size:12px; }
+.assembly-draft-menu>summary { cursor:pointer; color:#426486; padding:5px 8px; }
+.assembly-draft-menu-content { position:absolute; z-index:15; right:0; top:100%; width:340px; max-width:70vw; padding:12px; border:1px solid #d4dee9; border-radius:4px; background:#fff; box-shadow:0 6px 20px #273b5320; }
+.assembly-draft-menu-content>.text-tool { display:block; width:100%; text-align:left; }
+.assembly-draft-confirm { border-top:1px solid #dce3eb; padding-top:4px; margin-top:8px; }
+.assembly-draft-confirm p { font-size:12px; overflow-wrap:anywhere; }
+.assembly-draft-action-status { font-size:11px; color:#526b87; }
+.assembly-draft-action-status:empty { display:none; }
+
+.compact-primer-review { margin:10px 0; }
+.primer-review-table-wrap { max-width:100%; overflow-x:auto; border:1px solid #dce3eb; border-radius:4px; }
+.primer-review-table { border-collapse:collapse; table-layout:fixed; width:100%; min-width:620px; font-size:12px; }
+.primer-review-table caption { padding:7px 10px; text-align:left; font-size:11px; color:#66778a; background:#f8fafc; }
+.primer-review-table th,.primer-review-table td { padding:8px 10px; text-align:left; vertical-align:top; border-bottom:1px solid #e2e8ef; overflow-wrap:anywhere; }
+.primer-review-table thead { background:#f1f5fa; font-size:11px; }
+.primer-review-table th:first-child { width:26%; }
+.primer-review-table th:last-child { width:38%; }
+.primer-review-table small { display:block; color:#66778a; font-size:11px; margin-top:4px; font-weight:400; }
+.primer-review-table .primer-review-fragment { text-align:left; padding:0; font-weight:600; color:#3b6290; }
+.primer-review-details>summary { cursor:pointer; color:#426486; font-size:11px; }
+.primer-review-domains { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr)); gap:10px; margin-top:10px; }
+.primer-review-oligo { min-width:0; padding:8px; background:#f7f9fc; border-radius:3px; }
+.primer-review-oligo strong { font-size:11px; }
+.primer-review-oligo dl,.primer-domain-segments { margin:6px 0 0; }
+.primer-review-oligo dt,.primer-domain-segments dt { font-size:10px; color:#66778a; margin-top:6px; }
+.primer-review-oligo dd,.primer-domain-segments dd { margin:3px 0 0; overflow-wrap:anywhere; font-size:11px; }
+.primer-review-oligo code { white-space:pre-wrap; overflow-wrap:anywhere; font-size:11px; }
+.primer-review-warning { padding:5px 8px; margin:5px 0; border-left:3px solid #b27c34; background:#fff9ed; font-size:11px; }
+.primer-review-warning-row>td { padding-top:0; }

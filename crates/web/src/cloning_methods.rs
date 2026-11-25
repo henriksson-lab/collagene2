@@ -168,6 +168,23 @@ async fn ask(
         result => Ok(result),
     }
 }
+/// Full own-5′→3′ domains are deliberately inside an explicit review disclosure.
+fn proposed_oligo(direction: &'static str, primer: &Primer) -> impl IntoView + use<> {
+    let name = format!("{} · {}", direction, primer.name);
+    let ordered = format!("{}{}", primer.tail, primer.annealing.as_str());
+    let annealing = primer.annealing.as_str().to_owned();
+    let tail = if primer.tail.is_empty() {
+        "None".to_owned()
+    } else {
+        primer.tail.clone()
+    };
+    view! {<section class="primer-review-oligo"><strong>{name}</strong><dl>
+        <dt>"Ordered oligo · 5′→3′"</dt><dd><code>{ordered}</code></dd>
+        <dt>"Annealing domain · 5′→3′"</dt><dd><code>{annealing}</code></dd>
+        <dt>"Added 5′ tail · 5′→3′"</dt><dd><code>{tail}</code></dd>
+    </dl></section>}
+}
+
 #[component]
 pub fn CloningMethodsPanel(
     molecule: Memo<Molecule>,
@@ -1104,15 +1121,40 @@ pub fn CloningMethodsPanel(
             <p class="helper">"The clamp and spacer are explicit synthesized DNA. BbsI needs a 2-base spacer; the other listed enzymes need 1. These settings do not establish reagent compatibility, primer thermodynamics or amplification success."</p>
             </details>
             <button class="button secondary full" disabled=move||busy.get() on:click=move|_|suggest_gate.run(())>"Suggest Type IIS PCR primers"</button>
-            {move||gate_suggestions.get().map(|saved|view!{<section class="golden-gate-primer-proposals"><h4>"Proposed PCR/digest chains — not applied"</h4>
-                {saved.report.rows.iter().map(|row|view!{<article><h4>{row.role.clone()}</h4>
-                    <pre>{format!("{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nTail: clamp [{}] · motif [{}] · spacer [{}] · fusion [{}]\n\n{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nTail: clamp [{}] · motif [{}] · spacer [{}] · fusion [{}]",row.forward.name,row.forward.tail,row.forward.annealing.as_str(),row.forward.annealing.as_str(),row.forward_tail.clamp,row.forward_tail.motif,row.forward_tail.spacer,row.forward_tail.fusion,row.reverse.name,row.reverse.tail,row.reverse.annealing.as_str(),row.reverse.annealing.as_str(),row.reverse_tail.clamp,row.reverse_tail.motif,row.reverse_tail.spacer,row.reverse_tail.fusion)}</pre>
-                    <p>{format!("Actual digested fragment {} · assembly-oriented top DNA: {}",row.fragment_index+1,short(&row.oriented_top))}</p><p>{format!("Left: {}",method_end(Some(&row.left)))}</p><p>{format!("Right: {}",method_end(Some(&row.right)))}</p>
-                </article>}).collect_view()}
-                {saved.report.warnings.iter().map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view()}
-                <p class="helper">"Review each own-5′→3′ tail segment and the actual cleaved strand ends. Applying copies these named primers, the exact catalog pin and PCR-product fragment choice; preparation evidence must then be recomputed."</p>
-                <button class="button primary full" disabled=move||busy.get() on:click=move|_|apply_gate.run(())>"Apply Type IIS primer proposals"</button>
-            </section>})}
+            {move||gate_suggestions.get().map(|saved|{
+                let guarded=StoredValue::new(saved.clone());
+                let edit=Callback::new(move|index:usize|guarded.with_value(|saved|{
+                    if config.get_untracked()!=saved.config
+                        ||source_context.get_untracked()!=Some(saved.context.clone())
+                        ||target_info.get_untracked()!=saved.target_context||epoch.get_untracked()!=saved.epoch {
+                        status.set("Sources or settings changed; request fresh Type IIS primers.".into());return;
+                    }
+                    focus_row.run(index);
+                }));
+                let roles=saved.config.role_ids(saved.config.rows.len()).unwrap_or_default();
+                let bounded=saved.report.rows.len()<=12;
+                let row_saved=saved.clone();
+                view!{<section class="golden-gate-primer-proposals compact-primer-review"><h4>"Proposed PCR/digest chains — not applied"</h4>
+                    <Show when=move||bounded fallback=||view!{<p role="alert">"Proposal exceeds the supported 12 preparation rows. No partial primer list is shown."</p>}>
+                        <div class="primer-review-table-wrap"><table class="primer-review-table"><caption>"Type IIS primer proposals · expand a row to inspect complete oligos"</caption><thead><tr><th scope="col">"Fragment"</th><th scope="col">"Oligos"</th><th scope="col">"Actual digested ends"</th><th scope="col">"Review"</th></tr></thead><tbody>
+                        {row_saved.report.rows.iter().map(|row|{
+                            let index=roles.iter().position(|role|role.role==row.role&&role.input_id==row.input_id);
+                            let source=index.and_then(|i|row_saved.context.get(i)).map(|source|source.name.clone()).unwrap_or_else(||row.role.clone());
+                            view!{<tr><th scope="row"><button class="text-tool primer-review-fragment" disabled=index.is_none() on:click=move|_|if let Some(index)=index{edit.run(index)}>{format!("{} · {}",index.map(|i|format!("Fragment {}",i+1)).unwrap_or_else(||row.role.clone()),source)}</button><small>{format!("Digest fragment {}",row.fragment_index+1)}</small></th>
+                                <td><span>{format!("F {} nt · R {} nt",row.forward.tail.len()+row.forward.annealing.len(),row.reverse.tail.len()+row.reverse.annealing.len())}</span><small>{format!("Annealing {} / {} nt",row.forward.annealing.len(),row.reverse.annealing.len())}</small></td>
+                                <td><small>{format!("Left: {}",method_end(Some(&row.left)))}</small><small>{format!("Right: {}",method_end(Some(&row.right)))}</small></td>
+                                <td><details class="primer-review-details"><summary>{format!("Inspect primers · {}",row.role)}</summary><div class="primer-review-domains">{proposed_oligo("Forward",&row.forward)}{proposed_oligo("Reverse",&row.reverse)}</div>
+                                    <dl class="primer-domain-segments"><dt>"Forward tail · own 5′→3′"</dt><dd>{format!("clamp [{}] · motif [{}] · spacer [{}] · fusion [{}]",row.forward_tail.clamp,row.forward_tail.motif,row.forward_tail.spacer,row.forward_tail.fusion)}</dd><dt>"Reverse tail · own 5′→3′"</dt><dd>{format!("clamp [{}] · motif [{}] · spacer [{}] · fusion [{}]",row.reverse_tail.clamp,row.reverse_tail.motif,row.reverse_tail.spacer,row.reverse_tail.fusion)}</dd></dl>
+                                    <p>{format!("Assembly-oriented top DNA: {}",short(&row.oriented_top))}</p>
+                                </details></td></tr>}
+                        }).collect_view()}
+                        </tbody></table></div>
+                    </Show>
+                    {saved.report.warnings.iter().map(|warning|view!{<p class="primer-review-warning">{warning.clone()}</p>}).collect_view()}
+                    <p class="helper">"Inspect complete oligos and cleaved ends before applying. Applying copies these named primers, the exact catalog pin and PCR-product fragment choice; preparation evidence must then be recomputed."</p>
+                    <button class="button primary full" disabled=move||busy.get() on:click=move|_|apply_gate.run(())>"Apply Type IIS primer proposals"</button>
+                </section>}
+            })}
         </section></Show>
         {move||{let snapshot=reaction_context.get()?;
             let captured=StoredValue::new(snapshot.clone());
@@ -1121,7 +1163,40 @@ pub fn CloningMethodsPanel(
             Some(view!{<PreparedPool proof=snapshot config guard=reaction_guard capture=reaction_capture epoch on_candidate on_finalize on_edit=edit on_source=view_source/>})
         }}
         <Show when=move||config.get().mode==Mode::Overlap&&!disable_plain_primer_design><section class="overlap-primer-planner"><h3>"2. Suggest and review PCR primers"</h3><p class="helper">"Use the selected source regions and order to suggest one primer pair per fragment, including added homology tails. Your current primers stay unchanged until you explicitly apply the proposal. The independent target is never generated or selected by this step."</p><details class="assembly-primer-settings"><summary>"Overlap primer design settings"</summary><div class="primer-grid"><label>"Junction homology (bp)"<input type="number" min="1" aria-label="Suggested overlap homology bases" prop:value=move||planner_form.with(|f|f.overlap.clone()) on:input=move|e|planner_form.update(|f|f.overlap=event_target_value(&e))/></label><label>"Minimum annealing length"<input type="number" min="1" max="200" aria-label="Suggested primer minimum length" prop:value=move||planner_form.with(|f|f.minimum.clone()) on:input=move|e|planner_form.update(|f|f.minimum=event_target_value(&e))/></label><label>"Maximum annealing length"<input type="number" min="1" max="200" aria-label="Suggested primer maximum length" prop:value=move||planner_form.with(|f|f.maximum.clone()) on:input=move|e|planner_form.update(|f|f.maximum=event_target_value(&e))/></label><label>"Target annealing Tm (°C)"<input type="number" step="0.1" aria-label="Suggested primer target Tm" prop:value=move||planner_form.with(|f|f.tm.clone()) on:input=move|e|planner_form.update(|f|f.tm=event_target_value(&e))/></label></div><p class="helper">"Default filters: GC 20–80%, pair ΔTm ≤5°C, homopolymer run ≤5 and 3′ complementary run ≤3. Tm assumes 50 mM sodium and 500 nM total strands; these are calculations, not reagent or experimental performance predictions."</p></details><button class="button secondary full" disabled=move||busy.get() on:click=move|_|suggest.run(())>"Suggest PCR primers"</button>
-        {move||suggestions.get().map(|proposal|{let saved=proposal.clone();view!{<div class="overlap-primer-suggestions"><h4>"Proposed primer pairs — not yet applied"</h4>{proposal.report.designs.iter().enumerate().map(|(i,design)|{let interval=proposal.report.request.fragments.get(i);view!{<article><h4>{format!("Fragment {} · {}",i+1,proposal.context.get(i).map(|s|s.name.as_str()).unwrap_or("source unavailable"))}</h4>{interval.map(|region|view!{<p>{format!("Source interval {}–{} (1-based inclusive, unrolled) · {}",region.start+1,region.end,if region.reverse{"reverse in assembly"}else{"forward in assembly"})}</p>})}{design.pairs.first().map(|pair|view!{<pre>{format!("{}\nOrdered 5′→3′: {}{}\nAnnealing 5′→3′: {}\n5′ tail: {}\n\n{}\nOrdered 5′→3′: {}{}\nAnnealing 5′→3′: {}\n5′ tail: {}",pair.forward.primer.name,pair.forward.primer.tail,pair.forward.primer.annealing.as_str(),pair.forward.primer.annealing.as_str(),pair.forward.primer.tail,pair.reverse.primer.name,pair.reverse.primer.tail,pair.reverse.primer.annealing.as_str(),pair.reverse.primer.annealing.as_str(),pair.reverse.primer.tail)}</pre><p>{format!("Annealing Tm: {} / {} · pair ΔTm {:.1}°C · proposed PCR length {} bp",pair.forward.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.reverse.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.tm_difference_c,pair.product_length)}</p>})}{design.warnings.iter().map(|w|view!{<p>{w.clone()}</p>}).collect_view()}</article>}}).collect_view()}{proposal.report.warnings.iter().map(|w|view!{<p>{w.clone()}</p>}).collect_view()}<p class="helper">"A deterministic proposal under these filters is not a unique or experimentally validated primer design. Applying changes the preparation to exact PCR; verify the resulting assembly next."</p><button class="button primary full" disabled=move||busy.get() on:click=move|_|apply_suggestions.run(())>"Apply suggested primers"</button><button class="button secondary full" on:click=move|_|{if config.get_untracked()!=saved.config||planner_form.get_untracked()!=saved.form||source_context.get_untracked()!=Some(saved.context.clone())||target_info.get_untracked()!=saved.target_context||target.get_untracked()!=saved.target||epoch.get_untracked()!=saved.epoch{status.set("Sources or settings changed; request fresh suggestions.".into());return;}match serde_json::to_vec_pretty(&serde_json::json!({"sources":saved.context,"target":saved.target_context,"report":saved.report})){Ok(bytes)=>if let Err(e)=download("overlap-primer-suggestions.json","application/json",&bytes){status.set(e)},Err(e)=>status.set(e.to_string())}}>"Download suggested primer evidence"</button></div>}})}
+        {move||suggestions.get().map(|proposal|{
+            let saved=proposal.clone();
+            let guarded=StoredValue::new(proposal.clone());
+            let edit=Callback::new(move|index:usize|guarded.with_value(|saved|{
+                if config.get_untracked()!=saved.config||planner_form.get_untracked()!=saved.form
+                    ||source_context.get_untracked()!=Some(saved.context.clone())
+                    ||target_info.get_untracked()!=saved.target_context||target.get_untracked()!=saved.target
+                    ||epoch.get_untracked()!=saved.epoch {
+                    status.set("Sources or settings changed; request fresh suggestions.".into());return;
+                }
+                focus_row.run(index);
+            }));
+            let bounded=proposal.report.designs.len()<=12;
+            let row_proposal=proposal.clone();
+            view!{<div class="overlap-primer-suggestions compact-primer-review"><h4>"Proposed primer pairs — not yet applied"</h4>
+                <Show when=move||bounded fallback=||view!{<p role="alert">"Proposal exceeds the supported 12 preparation rows. No partial primer list is shown."</p>}>
+                    <div class="primer-review-table-wrap"><table class="primer-review-table"><caption>"Overlap primer proposals · expand a row to inspect complete oligos"</caption><thead><tr><th scope="col">"Fragment"</th><th scope="col">"Annealing Tm"</th><th scope="col">"PCR product"</th><th scope="col">"Review"</th></tr></thead><tbody>
+                    {row_proposal.report.designs.iter().enumerate().map(|(i,design)|{
+                        let interval=row_proposal.report.request.fragments.get(i);
+                        let name=row_proposal.context.get(i).map(|source|source.name.as_str()).unwrap_or("source unavailable");
+                        view!{<tr><th scope="row"><button class="text-tool primer-review-fragment" on:click=move|_|edit.run(i)>{format!("Fragment {} · {}",i+1,name)}</button>{interval.map(|region|view!{<small>{format!("{}–{} · {}",region.start+1,region.end,if region.reverse{"reverse"}else{"forward"})}</small>})}</th>
+                            <td>{design.pairs.first().map(|pair|view!{<span>{format!("{} / {}",pair.forward.analysis.tm.as_ref().map(|tm|format!("{:.1}°C",tm.tm_c)).unwrap_or_else(||"unavailable".into()),pair.reverse.analysis.tm.as_ref().map(|tm|format!("{:.1}°C",tm.tm_c)).unwrap_or_else(||"unavailable".into()))}</span><small>{format!("Pair ΔTm {:.1}°C",pair.tm_difference_c)}</small>})}</td>
+                            <td>{design.pairs.first().map(|pair|view!{<span>{format!("{} bp",pair.product_length)}</span><small>{format!("F {} nt · R {} nt",pair.forward.primer.tail.len()+pair.forward.primer.annealing.len(),pair.reverse.primer.tail.len()+pair.reverse.primer.annealing.len())}</small>})}</td>
+                            <td>{design.pairs.is_empty().then(||view!{<span>"No proposed primer pair"</span>})}{design.pairs.first().map(|pair|view!{<details class="primer-review-details"><summary>{format!("Inspect primers · fragment {}",i+1)}</summary><div class="primer-review-domains">{proposed_oligo("Forward",&pair.forward.primer)}{proposed_oligo("Reverse",&pair.reverse.primer)}</div>{interval.map(|region|view!{<p>{format!("Source interval {}–{} (1-based inclusive, unrolled) · {} in assembly",region.start+1,region.end,if region.reverse{"reverse"}else{"forward"})}</p>})}</details>})}</td>
+                        </tr>{(!design.warnings.is_empty()).then(||view!{<tr class="primer-review-warning-row"><td colspan="4">{design.warnings.iter().map(|warning|view!{<p class="primer-review-warning">{format!("Fragment {}: {}",i+1,warning)}</p>}).collect_view()}</td></tr>})}
+                    }}).collect_view()}
+                    </tbody></table></div>
+                </Show>
+                {proposal.report.warnings.iter().map(|warning|view!{<p class="primer-review-warning">{warning.clone()}</p>}).collect_view()}
+                <p class="helper">"A deterministic proposal under these filters is not a unique or experimentally validated primer design. Applying changes the preparation to exact PCR; verify the resulting assembly next."</p>
+                <button class="button primary full" disabled=move||busy.get() on:click=move|_|apply_suggestions.run(())>"Apply suggested primers"</button>
+                <button class="button secondary full" on:click=move|_|{if config.get_untracked()!=saved.config||planner_form.get_untracked()!=saved.form||source_context.get_untracked()!=Some(saved.context.clone())||target_info.get_untracked()!=saved.target_context||target.get_untracked()!=saved.target||epoch.get_untracked()!=saved.epoch{status.set("Sources or settings changed; request fresh suggestions.".into());return;}match serde_json::to_vec_pretty(&serde_json::json!({"sources":saved.context,"target":saved.target_context,"report":saved.report})){Ok(bytes)=>if let Err(e)=download("overlap-primer-suggestions.json","application/json",&bytes){status.set(e)},Err(e)=>status.set(e.to_string())}}>"Download suggested primer evidence"</button>
+            </div>}
+        })}
         </section></Show><Show when=move||config.get().mode!=Mode::Tailing><h3>"3. Verify the prepared assembly"</h3><p class="helper">"Review the applied preparation and orientation, then compute method evidence against your independent target. Suggested primers alone do not verify a cloning design."</p></Show>
         <label class="checkbox-label"><input disabled=fixed_sources type="checkbox" aria-label="Method product circular" prop:checked=move||config.get().circular on:change=move|e|config.update(|c|c.circular=event_target_checked(&e))/>"Circular candidate product"</label><button class="button primary full" disabled=move||busy.get() on:click=move|_|compute.run(())>"Compute method evidence"</button><button class="text-tool" disabled=move||!busy.get() on:click=move|_|{generation.update(|n|*n=n.wrapping_add(1));if let Some(w)=active.get_value(){w.close();}active.set_value(None);busy.set(false);suggestions.set(None);
         gate_suggestions.set(None);status.set("Method analysis cancelled".into());}>"Cancel method analysis"</button><p class="method-status" role="status">{move||status.get()}</p>

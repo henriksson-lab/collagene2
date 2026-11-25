@@ -905,6 +905,12 @@ pub fn App() -> impl IntoView {
     let pending_alignment = RwSignal::new(None::<crate::alignment_view::PendingAlignment>);
     let method_config = RwSignal::new(crate::cloning_methods::MethodsState::default());
     let assembly_draft = RwSignal::new(crate::assembly_workspace::Draft::default());
+    let previous_assembly_draft =
+        RwSignal::new(None::<std::sync::Arc<crate::assembly_workspace::Draft>>);
+    Effect::new(move |_| {
+        let _ = workspace_epoch.get();
+        previous_assembly_draft.set(None);
+    });
     let assembly_visible = RwSignal::new(false);
     let pending_finalize = RwSignal::new(None::<std::sync::Arc<PendingFinalize>>);
     let pending_release = RwSignal::new(None::<String>);
@@ -5704,7 +5710,7 @@ pub fn App() -> impl IntoView {
                             </div>
                             <Show when=move||assembly_visible.get()><section class="assembly-dock" aria-label="Assembly workspace"><div class="assembly-dock-bar"><span>"Assembly design"</span><button class="text-tool" on:click=move|_|assembly_visible.set(false)>"Hide assembly"</button></div>
                                 <fieldset aria-label="Assembly source and preparation controls" disabled=move||workspace_restoring.get() style="border:0;padding:0;margin:0;min-width:0">
-                                <crate::assembly_workspace::AssemblyWorkspace draft=assembly_draft epoch=workspace_epoch snapshot=contig_snapshot workspace_busy=workspace_restoring
+                                <crate::assembly_workspace::AssemblyWorkspace draft=assembly_draft previous_draft=previous_assembly_draft epoch=workspace_epoch snapshot=contig_snapshot workspace_busy=workspace_restoring
                                     sources=Memo::new(move|_|documents.with(|docs|docs.iter().map(recombination_source_info).collect()))
                                     active_source=Memo::new(move|_|documents.with(|docs|recombination_source_info(&docs[active.get()])))
                                     selected_region=Callback::new(move|():()|{if inspected_feature.get_untracked().is_some_and(|f|f.location.spans().len()>1){return None;}selection.get_untracked().filter(|(a,b)|a<b)})

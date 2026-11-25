@@ -1364,3 +1364,26 @@ unchanged. Publication validates static references, integrity hashes, exact
 stylesheet bytes and preservation of old versioned workers. No browser or HTTP
 smoke checks were run; user visual acceptance and the full remaining scope are
 still outstanding.
+
+### Working draft replacement and compact primer review
+
+The dock now provides reviewed New assembly and Switch to previous draft actions.
+They replace only editable declarations, cancel stale review work and require
+fresh intended/method evidence; finalized products and recorded plans remain.
+One previous draft is retained temporarily at app scope across dock hiding, but
+is cleared by workspace replacement/updates or session end and is not serialized.
+The current working draft continues to use the existing workspace archive. This
+unblocks repeated ordinary designs without claiming a persistent multi-draft
+collection or closing that remaining delivery requirement.
+
+Overlap and Type IIS primer proposals use compact fragment tables with guarded
+preparation navigation, actual existing metrics/ends, visible warnings and
+expandable complete oligo/annealing/tail domains. Applying proposals and exporting
+evidence retain their existing guards. GUI acceptance and the full remaining
+scientific, desktop and product-delivery scope remain outstanding.
+
+This increment passes the integrated WASM compiler check and format/diff checks.
+It changes presentation and editable-draft lifecycle only; scientific worker and
+archive schemas remain unchanged. No browser or HTTP checks were run. Public8082
+continues to serve the preceding0a229ad assembly build pending the next bundled
+preview update.

@@ -96,9 +96,10 @@ concrete connections:
   continuous in the existing assembly dock. Preserve explicit Apply and selective
   regeneration rather than silently replacing intentional primers/edits.
 - Applied pair comparisons and selected exact/mismatch PCR geometries now feed
-  synchronized source overlays ([details](PCR_OVERLAYS.md)). Continue domain/tail
-  boundary editing and local failure recovery using the existing primer model
-  and native checks.
+  synchronized source overlays ([details](PCR_OVERLAYS.md)). Explicit domain/tail
+  boundary preview/accept and circular anchor migration are now implemented
+  ([details](PRIMER_DOMAIN_EDITS.md)); continue local binding-failure recovery and
+  the remaining ordinary cloning interactions.
 - Annotation list/bulk operations and exact-event display preferences are now
   implemented ([details](ANNOTATION_MANAGEMENT.md)). Exact selected translation,
   source-linked protein outputs, review-required CDS proposals and full ORF

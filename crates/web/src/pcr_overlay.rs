@@ -606,15 +606,16 @@ pub fn captured(
             anchor.end,
             &anchor.reference,
         )?;
-        if &anchor.source != source || anchor.end > m.sequence.len() {
+        if &anchor.source != source {
             return Err("Captured selection belongs to a different source event.".into());
         }
-        let reference = &m.sequence.as_str()[anchor.start..anchor.end];
-        let oriented = if anchor.reverse {
-            rc(reference)?
-        } else {
-            reference.into()
-        };
+        let oriented = crate::primer_pair_model::anchor_reference(
+            m,
+            source,
+            anchor.start,
+            anchor.end,
+            anchor.reverse,
+        )?;
         if oriented != anchor.reference || p.annealing.len() != anchor.reference.len() {
             return Err("Captured source calls or annealing length changed; select the intended domain again.".into());
         }
@@ -914,5 +915,54 @@ mod tests {
             MAX_SPANS + 1
         ];
         assert!(!overlay.validate_for_length(16));
+    }
+
+    #[test]
+    fn captured_wrapped_domains_split_at_origin_and_map_reverse_mismatches_modularly() {
+        let (m, b) = fixture("ACGTAAGC", Topology::Circular);
+        let seed = SelectionSeed::capture(&m, &b, 6, 11).unwrap();
+        let mut draft = PairDraft {
+            forward: seed.oligo("forward", false, "TT").unwrap(),
+            reverse: seed.oligo("reverse", true, "GG").unwrap(),
+        };
+        draft.forward.annealing = "GTACG".into();
+        draft.reverse.annealing = "CATGC".into();
+        let (f, r) = draft.primers().unwrap();
+        let overlay = captured(&m, &b, 2, &draft, &f, &r).unwrap().unwrap();
+        assert_eq!(overlay.kind, Kind::CapturedSelection);
+        assert!(
+            overlay
+                .spans
+                .iter()
+                .all(|span| span.role != Role::Amplified)
+        );
+        assert_eq!(
+            overlay
+                .spans
+                .iter()
+                .filter(|span| span.role == Role::Forward)
+                .map(|span| (span.start, span.end, span.reverse))
+                .collect::<Vec<_>>(),
+            vec![(6, 8, false), (0, 3, false)]
+        );
+        assert_eq!(
+            overlay
+                .spans
+                .iter()
+                .filter(|span| span.role == Role::Reverse)
+                .map(|span| (span.start, span.end, span.reverse))
+                .collect::<Vec<_>>(),
+            vec![(6, 8, true), (0, 3, true)]
+        );
+        assert_eq!(
+            overlay
+                .spans
+                .iter()
+                .filter(|span| span.role == Role::Mismatch)
+                .map(|span| (span.start, span.reverse))
+                .collect::<Vec<_>>(),
+            vec![(7, false), (1, true)]
+        );
+        assert!(overlay.validate_for_length(8));
     }
 }

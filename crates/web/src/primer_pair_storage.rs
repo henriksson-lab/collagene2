@@ -1,9 +1,10 @@
 //! Unfinished editable text, never a saved binding or a positive PCR result.
-use crate::primer_pair_model::{PairDraft, selected_guard};
-use collagene_core::{Alphabet, Molecule, Sequence, run_lineage::EventBinding};
+use crate::primer_pair_model::{PairDraft, anchor_reference, selected_guard};
+use collagene_core::{Molecule, run_lineage::EventBinding};
 use serde::{Deserialize, Serialize};
 
-pub const ATTACHMENT_KIND: &str = "primer-pair-draft-v1";
+pub const LEGACY_ATTACHMENT_KIND: &str = "primer-pair-draft-v1";
+pub const ATTACHMENT_KIND: &str = "primer-pair-draft-v2";
 const MAX_BYTES: usize = 64 * 1024;
 
 #[derive(Serialize, Deserialize)]
@@ -36,7 +37,7 @@ fn guard(draft: &PairDraft) -> Result<(), String> {
 pub fn encode(draft: &PairDraft) -> Result<Vec<u8>, String> {
     guard(draft)?;
     let bytes = serde_json::to_vec(&Saved {
-        version: 1,
+        version: 2,
         draft: draft.clone(),
     })
     .map_err(|e| e.to_string())?;
@@ -56,35 +57,17 @@ pub fn decode(
         return Err("Primer pair draft exceeds64KiB.".into());
     }
     let saved: Saved = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
-    if saved.version != 1 {
+    if !matches!(saved.version, 1 | 2) {
         return Err("Unsupported primer pair draft version.".into());
     }
     guard(&saved.draft)?;
     for oligo in [&saved.draft.forward, &saved.draft.reverse] {
         let Some(a) = &oligo.anchor else { continue };
         let source = resolve(&a.source)?;
-        collagene_core::model::bounds::model_preflight(&[&source]).map_err(|e| e.to_string())?;
-        source.validate().map_err(|e| e.to_string())?;
-        if source.sequence.alphabet() != Alphabet::Dna
-            || source.revision() != a.source.revision
-            || a.end > source.sequence.len()
-        {
-            return Err("Primer selection anchor differs from its retained source event.".into());
+        if saved.version == 1 && a.end > source.sequence.len() {
+            return Err("Version 1 primer anchors cannot wrap the circular origin.".into());
         }
-        let original = source
-            .sequence
-            .as_str()
-            .get(a.start..a.end)
-            .ok_or("Primer selection anchor has invalid source coordinates.")?;
-        let expected = if a.reverse {
-            Sequence::dna(original)
-                .and_then(|s| s.reverse_complement())
-                .map_err(|e| e.to_string())?
-                .as_str()
-                .to_owned()
-        } else {
-            original.to_owned()
-        };
+        let expected = anchor_reference(&source, &a.source, a.start, a.end, a.reverse)?;
         if a.reference != expected {
             return Err(
                 "Primer selection anchor bases differ from the actual retained event.".into(),
@@ -208,7 +191,7 @@ mod tests {
         let bytes = encode(&draft).unwrap();
         let resolve = |_: &EventBinding| Ok(molecule.clone());
         let mut value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        value["version"] = 2.into();
+        value["version"] = 3.into();
         assert!(decode(&serde_json::to_vec(&value).unwrap(), resolve).is_err());
         value["version"] = 1.into();
         value["draft"]["forward"]["anchor"]["reference"] = "TTTTT".into();
@@ -230,5 +213,64 @@ mod tests {
         );
         draft.reverse.annealing = "A".repeat(1601);
         assert!(encode(&draft).is_err());
+    }
+
+    #[test]
+    fn version_one_nonwrapping_data_reads_explicitly_and_writer_upgrades_to_two() {
+        let source =
+            Molecule::dna("legacy circular source", "ACGTAAGC", Topology::Circular).unwrap();
+        let doc = DocumentHistory::new("legacy", source.clone()).unwrap();
+        let mut draft = PairDraft::default();
+        draft.forward = SelectionSeed::capture(&source, &binding(&doc), 1, 6)
+            .unwrap()
+            .oligo("legacy domain", false, "")
+            .unwrap();
+        let mut json: serde_json::Value = serde_json::from_slice(&encode(&draft).unwrap()).unwrap();
+        assert_eq!(json["version"], 2);
+        json["version"] = 1.into();
+        let restored = decode(&serde_json::to_vec(&json).unwrap(), |_| Ok(source.clone())).unwrap();
+        assert_eq!(restored, draft);
+        let upgraded: serde_json::Value =
+            serde_json::from_slice(&encode(&restored).unwrap()).unwrap();
+        assert_eq!(upgraded["version"], 2);
+        assert_eq!(LEGACY_ATTACHMENT_KIND, "primer-pair-draft-v1");
+        assert_eq!(ATTACHMENT_KIND, "primer-pair-draft-v2");
+    }
+
+    #[test]
+    fn wrapped_version_two_anchor_reopens_exact_historical_event_but_v1_rejects_it() {
+        let source = Molecule::dna("original circle", "ACGTAAGC", Topology::Circular).unwrap();
+        let mut doc = DocumentHistory::new("circle", source.clone()).unwrap();
+        let exact = binding(&doc);
+        let mut draft = PairDraft::default();
+        draft.reverse = SelectionSeed::capture(&source, &exact, 6, 11)
+            .unwrap()
+            .oligo("wrapped reverse", true, "GG")
+            .unwrap();
+        draft.reverse.annealing = "incomplete ?".into();
+        let bytes = encode(&draft).unwrap();
+        doc.commit(
+            Molecule::dna("later circle", "TTTTTTTT", Topology::Circular).unwrap(),
+            "head changed",
+        )
+        .unwrap();
+        let restored = decode(&bytes, |binding| {
+            doc.revision_molecule(&binding.event_id)
+                .map_err(|e| e.to_string())
+        })
+        .unwrap();
+        assert_eq!(restored, draft);
+        assert_eq!(restored.reverse.anchor.as_ref().unwrap().reference, "CGTGC");
+        assert!(restored.reverse.primer().is_err());
+        assert!(decode(&bytes, |_| Ok(doc.molecule.clone())).is_err());
+        let mut legacy: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        legacy["version"] = 1.into();
+        assert!(
+            decode(
+                &serde_json::to_vec(&legacy).unwrap(),
+                |_| Ok(source.clone())
+            )
+            .is_err()
+        );
     }
 }

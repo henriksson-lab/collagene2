@@ -101,6 +101,7 @@ pub fn MutagenesisPanel(
     pair_draft: RwSignal<crate::primer_pair_model::PairDraft>,
     pair_selection: Callback<(), Result<crate::primer_pair_model::SelectionSeed, String>>,
     anchor_available: Callback<EventBinding, bool>,
+    resolve_source: Callback<EventBinding, Result<Molecule, String>>,
     primer_sources: Memo<Vec<crate::digest::SourceInfo>>,
     list_primers: Callback<EventBinding, Result<collagene_core::primer_reuse::List, String>>,
     resolve_primer: Callback<
@@ -745,7 +746,7 @@ pub fn MutagenesisPanel(
             </article>}})}
         </section>
         <h3>"PCR with declared mismatches"</h3><p class="helper">"Enter actual ordered oligo domains 5′→3′, including intended substitutions. Binding mismatches are conditional rules, not predicted polymerase success."</p>
-        <crate::primer_pair_editor::PrimerPairEditor draft=pair_draft selection=pair_selection anchor_available=anchor_available primer_sources=primer_sources list_primers=list_primers resolve_primer=resolve_primer epoch=epoch on_apply=apply_pair apply_label="Apply pair to mismatch PCR".to_string()/>
+        <crate::primer_pair_editor::PrimerPairEditor draft=pair_draft selection=pair_selection anchor_available=anchor_available resolve_source primer_sources=primer_sources list_primers=list_primers resolve_primer=resolve_primer epoch=epoch on_apply=apply_pair apply_label="Apply pair to mismatch PCR".to_string()/>
         <p class="helper" role="status">{move || applied_pair.get().map(|pair| format!("Applied: {} / {}. Draft edits require Apply again.",pair.primers.0.name,pair.primers.1.name)).unwrap_or_else(|| "No applied primer pair. Edit or reuse primers, then Apply before simulation.".into())}</p>
         <div class="mutation-grid"><label>"Allowed disjoint mismatches"<input aria-label="Mutagenesis allowed mismatches" type="number" min="0" prop:value=move||mismatches.get() on:input=move|e|mismatches.set(event_target_value(&e))/></label><label>"Required exact 3′ bases"<input aria-label="Mutagenesis exact 3prime bases" type="number" min="0" prop:value=move||exact.get() on:input=move|e|exact.set(event_target_value(&e))/></label></div><button class="button primary full" disabled=move||busy.get()||intent_busy.get()||source.get().is_none()||applied_pair.get().is_none() on:click=simulate>"Simulate mismatch PCR"</button>
         {move||pcr.get().map(|bound|{

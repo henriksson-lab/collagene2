@@ -92,7 +92,7 @@ mod run_event_model;
 mod run_event_view;
 #[cfg(target_arch = "wasm32")]
 mod search_view;
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(target_arch = "wasm32", test))]
 mod selection_toolbar;
 #[cfg(target_arch = "wasm32")]
 mod sequence_view;
@@ -147,6 +147,10 @@ mod pcr_overlay;
 mod pcr_overlay_draw;
 #[cfg(target_arch = "wasm32")]
 mod pcr_source_view;
+#[cfg(any(target_arch = "wasm32", test))]
+mod primer_domain_edit;
+#[cfg(target_arch = "wasm32")]
+mod primer_domain_edit_view;
 #[cfg(target_arch = "wasm32")]
 mod primer_orders;
 #[cfg(target_arch = "wasm32")]

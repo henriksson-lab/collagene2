@@ -1,6 +1,7 @@
 //! Contextual actions over the existing reference selection. No edits or source
 //! copies happen here; the app owns annotation/primer dialogs and history.
-use collagene_core::{Alphabet, Location, Molecule};
+use collagene_core::{Alphabet, Location, Molecule, Topology};
+#[cfg(target_arch = "wasm32")]
 use leptos::prelude::*;
 
 const MAX_PARTS: usize = 4096;
@@ -31,6 +32,7 @@ struct LocationFlags {
     compound: bool,
     unresolved: bool,
     fuzzy: bool,
+    ordered: bool,
 }
 fn location_flags(location: &Location) -> Option<LocationFlags> {
     let mut stack = vec![(location, 0usize)];
@@ -46,6 +48,7 @@ fn location_flags(location: &Location) -> Option<LocationFlags> {
             Location::Complement(inner) => stack.push((inner, depth + 1)),
             Location::Join(parts) | Location::Order(parts) => {
                 flags.compound = true;
+                flags.ordered |= matches!(location, Location::Order(_));
                 if parts.len() > MAX_LOCATION_NODES.saturating_sub(nodes + stack.len()) {
                     return None;
                 }
@@ -55,6 +58,52 @@ fn location_flags(location: &Location) -> Option<LocationFlags> {
         }
     }
     Some(flags)
+}
+
+/// Only one exact source-forward interval, or its two ordered circular-origin
+/// pieces, can seed an oligo. Return a normalized start and unrolled end.
+fn primer_geometry(
+    molecule: &Molecule,
+    range: Option<(usize, usize)>,
+    feature: Option<usize>,
+    parts: &[(usize, usize)],
+) -> Option<(usize, usize)> {
+    if molecule.sequence.alphabet() != Alphabet::Dna || parts.len() > 2 {
+        return None;
+    }
+    let n = molecule.sequence.len();
+    let flags = if let Some(index) = feature {
+        location_flags(&molecule.features.get(index)?.location)?
+    } else {
+        LocationFlags::default()
+    };
+    if flags.fuzzy || flags.unresolved || flags.ordered {
+        return None;
+    }
+    let (start, end) = match parts {
+        [] if feature.is_none() => range?,
+        [one] if !flags.compound && range == Some(*one) => *one,
+        [(start, first_end), (second_start, end)]
+            if molecule.topology == Topology::Circular
+                && *start > 0
+                && *start < n
+                && *first_end == n
+                && *second_start == 0
+                && *end > 0
+                && *end <= *start
+                && range
+                    .is_none_or(|current| current == parts[0] || current == (*start, n + *end)) =>
+        {
+            (*start, n + *end)
+        }
+        _ => return None,
+    };
+    (start < n
+        && start < end
+        && end - start <= n
+        && end - start <= collagene_core::primers::MAX_OLIGO
+        && (molecule.topology == Topology::Circular || end <= n))
+        .then_some((start, end))
 }
 fn summarize(
     molecule: &Molecule,
@@ -211,9 +260,7 @@ fn summarize(
         // The parent preserves the exact selected feature Location, or every
         // known part as a Join. A first-part-only annotation is never implied.
         annotate: !flags.unresolved,
-        primer: contiguous
-            && molecule.sequence.alphabet() == Alphabet::Dna
-            && size <= collagene_core::primers::MAX_OLIGO,
+        primer: primer_geometry(molecule, range, feature, parts).is_some(),
         edit: contiguous,
     })
 }
@@ -225,11 +272,8 @@ pub fn primer_range(
     feature: Option<usize>,
     parts: &[(usize, usize)],
 ) -> Result<(usize, usize), String> {
-    if summarize(molecule, range, feature, parts).is_some_and(|s| s.primer) {
-        range.ok_or_else(|| "Select one exact contiguous DNA range.".into())
-    } else {
-        Err("Select one exact contiguous DNA range within the primer length limit; compound, fuzzy and unresolved annotations cannot seed a primer.".into())
-    }
+    primer_geometry(molecule, range, feature, parts).ok_or_else(||
+        "Select one exact contiguous DNA domain of at most 200 bases and one circular turn; gaps, repeated parts, fuzzy, ordered and unresolved locations cannot seed a primer.".into())
 }
 
 /// A mutation intent may use a caret or a range longer than an oligo domain.
@@ -248,6 +292,7 @@ pub fn mutation_range(
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 #[component]
 pub fn SelectionToolbar(
     molecule: Memo<Molecule>,
@@ -284,5 +329,81 @@ pub fn SelectionToolbar(
                 </div>
             </div>
         </Show>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn circular_origin_pieces_seed_one_domain_without_enabling_direct_base_edit() {
+        let molecule = Molecule::dna("circle", "ACGTACGTAA", Topology::Circular).unwrap();
+        let parts = [(8, 10), (0, 3)];
+        assert_eq!(
+            primer_range(&molecule, None, None, &parts).unwrap(),
+            (8, 13)
+        );
+        let summary = summarize(&molecule, None, None, &parts).unwrap();
+        assert!(summary.primer && !summary.edit);
+        assert!(mutation_range(&molecule, None, None, &parts).is_err());
+        assert!(mutation_range(&molecule, Some((8, 10)), None, &parts).is_err());
+        assert_eq!(
+            primer_range(&molecule, Some((8, 10)), None, &parts).unwrap(),
+            (8, 13)
+        );
+        assert_eq!(
+            primer_range(&molecule, None, None, &[(3, 10), (0, 3)]).unwrap(),
+            (3, 13)
+        );
+    }
+    #[test]
+    fn linear_gaps_multiturn_unknown_and_fuzzy_locations_remain_ineligible() {
+        let mut molecule = Molecule::dna("circle", "ACGTACGTAA", Topology::Circular).unwrap();
+        for parts in [
+            vec![(8, 9), (0, 3)],
+            vec![(8, 10), (1, 3)],
+            vec![(2, 10), (0, 3)],
+            vec![(8, 10), (0, 3), (8, 10)],
+            vec![(0, 3), (8, 10)],
+        ] {
+            assert!(primer_range(&molecule, None, None, &parts).is_err());
+        }
+        let parts = [(8, 10), (0, 3)];
+        for location in [
+            Location::Order(vec![Location::range(8, 10), Location::range(0, 3)]),
+            Location::Join(vec![
+                Location::Range {
+                    start: 8,
+                    end: 10,
+                    before: true,
+                    after: false,
+                },
+                Location::range(0, 3),
+            ]),
+            Location::Join(vec![
+                Location::range(8, 10),
+                Location::Unresolved("remote".into()),
+                Location::range(0, 3),
+            ]),
+        ] {
+            molecule.features = vec![collagene_core::Feature {
+                kind: "misc_feature".into(),
+                location,
+                qualifiers: vec![],
+                needs_review: false,
+            }];
+            assert!(primer_range(&molecule, Some((8, 10)), Some(0), &parts).is_err());
+        }
+        molecule.features.clear();
+        molecule.topology = Topology::Linear;
+        assert!(primer_range(&molecule, None, None, &parts).is_err());
+        assert_eq!(
+            primer_range(&molecule, Some((1, 4)), None, &[(1, 4)]).unwrap(),
+            (1, 4)
+        );
+        assert_eq!(
+            mutation_range(&molecule, Some((1, 4)), None, &[(1, 4)]).unwrap(),
+            (1, 4)
+        );
     }
 }

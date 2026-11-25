@@ -1,7 +1,7 @@
 //! Editable sequence reuse only. Anchors describe an explicit selected reference,
 //! never physical oligo identity, current binding, or successful amplification.
 use collagene_core::{
-    Alphabet, Molecule, Sequence,
+    Alphabet, Molecule, Sequence, Topology,
     analysis::{Primer, base_mask},
     primers::MAX_OLIGO,
     run_lineage::EventBinding,
@@ -15,7 +15,9 @@ pub const MAX_RAW_BASE_BYTES: usize = MAX_OLIGO * 8;
 #[serde(deny_unknown_fields)]
 pub struct SelectionAnchor {
     pub source: EventBinding,
+    /// Source-forward normalized start, strictly less than source length.
     pub start: usize,
+    /// Unrolled exclusive boundary; may exceed source length on a circle.
     pub end: usize,
     pub reverse: bool,
     /// Original selected DNA in this oligo's 5′→3′ orientation, excluding tail.
@@ -26,7 +28,7 @@ pub struct SelectionSeed {
     pub source: EventBinding,
     pub start: usize,
     pub end: usize,
-    /// Original source-forward selected DNA, without wrapping or repeated calls.
+    /// Original source-forward selected DNA; end may pass a circular origin once.
     pub reference: String,
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,6 +103,47 @@ pub(crate) fn selected_guard(
     }
     Ok(())
 }
+
+/// Retain actual selected DNA in oligo 5′→3′ orientation, without a binding scan.
+/// Start is normalized within the source; end is an unrolled boundary. The
+/// nonempty domain is at most one circular turn and at most 200 bases. The host
+/// resolves exact event membership; this verifies its shape and actual revision.
+pub fn anchor_reference(
+    molecule: &Molecule,
+    source: &EventBinding,
+    start: usize,
+    end: usize,
+    reverse: bool,
+) -> Result<String, String> {
+    binding_guard(source)?;
+    let n = molecule.sequence.len();
+    if start >= n
+        || end <= start
+        || end - start > n
+        || end - start > MAX_OLIGO
+        || molecule.sequence.alphabet() != Alphabet::Dna
+        || molecule.topology == Topology::Linear && end > n
+    {
+        return Err("Choose one nonempty DNA domain of at most 200 bases and one circular turn, with its start inside the source.".into());
+    }
+    collagene_core::model::bounds::model_preflight(&[molecule]).map_err(|e| e.to_string())?;
+    molecule.validate().map_err(|e| e.to_string())?;
+    if molecule.revision() != source.revision {
+        return Err("The selected source changed; resolve its exact retained event again.".into());
+    }
+    let calls = molecule.sequence.as_str().as_bytes();
+    let selected: String = (0..end - start)
+        .map(|i| calls[(start + i) % n] as char)
+        .collect();
+    if reverse {
+        Sequence::dna(&selected)
+            .and_then(|sequence| sequence.reverse_complement())
+            .map(|sequence| sequence.as_str().to_owned())
+            .map_err(|e| e.to_string())
+    } else {
+        Ok(selected)
+    }
+}
 impl SelectionSeed {
     /// The host supplies the actual selected event binding. This checks its shape
     /// and actual molecular revision; only the workspace can verify event ancestry.
@@ -110,25 +153,7 @@ impl SelectionSeed {
         start: usize,
         end: usize,
     ) -> Result<Self, String> {
-        binding_guard(source)?;
-        if start >= end
-            || end > molecule.sequence.len()
-            || end - start > MAX_OLIGO
-            || molecule.sequence.alphabet() != Alphabet::Dna
-        {
-            return Err("Choose one nonempty, contiguous DNA region of at most 200 bases.".into());
-        }
-        collagene_core::model::bounds::model_preflight(&[molecule]).map_err(|e| e.to_string())?;
-        molecule.validate().map_err(|e| e.to_string())?;
-        if molecule.revision() != source.revision {
-            return Err("The selected source changed; select its current event again.".into());
-        }
-        let reference = molecule
-            .sequence
-            .as_str()
-            .get(start..end)
-            .ok_or("Selection coordinates are unresolved.")?
-            .to_owned();
+        let reference = anchor_reference(molecule, source, start, end, false)?;
         Ok(Self {
             source: source.clone(),
             start,
@@ -252,7 +277,10 @@ mod tests {
     use super::*;
     use collagene_core::{Topology, workspace::Workspace};
     fn source(dna: &str) -> (Molecule, EventBinding) {
-        let m = Molecule::dna("source", dna, Topology::Linear).unwrap();
+        source_topology(dna, Topology::Linear)
+    }
+    fn source_topology(dna: &str, topology: Topology) -> (Molecule, EventBinding) {
+        let m = Molecule::dna("source", dna, topology).unwrap();
         let w = Workspace::from_documents("primer draft", vec![m.clone()], 0).unwrap();
         let d = &w.documents[0];
         (
@@ -344,5 +372,41 @@ mod tests {
         assert!(pair.primers().is_ok());
         pair.forward.annealing = "A".repeat(MAX_RAW_BASE_BYTES + 1);
         assert!(pair.primers().is_err());
+    }
+
+    #[test]
+    fn circular_anchor_uses_normalized_start_unrolled_end_and_oriented_calls() {
+        let (m, b) = source_topology("ACGTAAGC", Topology::Circular);
+        let seed = SelectionSeed::capture(&m, &b, 6, 11).unwrap();
+        assert_eq!(seed.reference, "GCACG");
+        let f = seed.oligo("forward", false, "TT").unwrap();
+        let r = seed.oligo("reverse", true, "GG").unwrap();
+        assert_eq!(f.primer().unwrap().ordered_sequence(), "TTGCACG");
+        assert_eq!(r.primer().unwrap().ordered_sequence(), "GGCGTGC");
+        let anchor = r.anchor.unwrap();
+        assert_eq!((anchor.start, anchor.end, anchor.reverse), (6, 11, true));
+        assert_eq!(anchor_reference(&m, &b, 6, 11, true).unwrap(), "CGTGC");
+        assert_eq!(anchor_reference(&m, &b, 3, 11, false).unwrap(), "TAAGCACG");
+    }
+
+    #[test]
+    fn one_turn_and_oligo_limits_reject_unnormalized_or_multiturn_coordinates() {
+        let (m, b) = source_topology("ACGTAAGC", Topology::Circular);
+        for (start, end) in [(8, 9), (6, 6), (7, 16), (usize::MAX - 1, usize::MAX)] {
+            assert!(anchor_reference(&m, &b, start, end, false).is_err());
+        }
+        let (linear, lb) = source("ACGTAAGC");
+        assert!(anchor_reference(&linear, &lb, 6, 11, false).is_err());
+        let (large, large_binding) = source_topology(&"A".repeat(201), Topology::Circular);
+        assert_eq!(
+            anchor_reference(&large, &large_binding, 200, 400, false)
+                .unwrap()
+                .len(),
+            200
+        );
+        assert!(anchor_reference(&large, &large_binding, 200, 401, false).is_err());
+        let mut stale = b;
+        stale.revision = "0".repeat(64);
+        assert!(anchor_reference(&m, &stale, 6, 11, true).is_err());
     }
 }

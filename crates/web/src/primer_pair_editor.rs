@@ -5,7 +5,7 @@ use crate::{
     primer_pair_model::{OligoDraft, PairDraft, SelectionSeed},
     primer_picker::{PrimerPicker, ResolveRequest},
 };
-use collagene_core::{analysis::Primer, primer_reuse, run_lineage::EventBinding};
+use collagene_core::{Molecule, analysis::Primer, primer_reuse, run_lineage::EventBinding};
 use leptos::prelude::*;
 
 fn slot(pair: &PairDraft, reverse_slot: bool) -> &OligoDraft {
@@ -40,6 +40,7 @@ pub fn PrimerPairEditor(
     draft: RwSignal<PairDraft>,
     selection: Callback<(), Result<SelectionSeed, String>>,
     anchor_available: Callback<EventBinding, bool>,
+    resolve_source: Callback<EventBinding, Result<Molecule, String>>,
     primer_sources: Memo<Vec<SourceInfo>>,
     list_primers: Callback<EventBinding, Result<primer_reuse::List, String>>,
     resolve_primer: Callback<ResolveRequest, Result<primer_reuse::Resolved, String>>,
@@ -64,13 +65,13 @@ pub fn PrimerPairEditor(
         <style>".primer-pair-editor .primer-pair-slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px}.primer-pair-editor fieldset{min-width:0;border:1px solid #dce3e8;padding:10px;border-radius:5px}.primer-pair-editor label{display:block;margin:8px 0}.primer-pair-editor input,.primer-pair-editor textarea{box-sizing:border-box;width:100%}.primer-pair-editor pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.6 monospace;max-height:240px;overflow:auto}.primer-pair-editor .primer-selection-actions{display:flex;flex-wrap:wrap;gap:6px}.primer-pair-editor .primer-mismatch{background:#ffe0df;color:#8b1712}.primer-pair-editor .primer-ambiguous{background:#fff0bf;color:#6a4700}.primer-pair-editor .primer-domain-calls{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.7 monospace}.primer-pair-editor details{overflow-wrap:anywhere}.primer-pair-editor .primer-anchor-warning{color:#8b4d24}"</style>
         <p class="helper">"This editable pair is saved with your workspace. Choose a selection or a saved primer explicitly, or enter the sequences. Every oligo is written 5′→3′; the 5′ tail is separate from the annealing domain. Selection direction is independent of which primer slot you are editing."</p>
         <div class="primer-pair-slots">
-            <PrimerSlotEditor draft reverse_slot=false selection anchor_available primer_sources list_primers resolve_primer epoch/>
-            <PrimerSlotEditor draft reverse_slot=true selection anchor_available primer_sources list_primers resolve_primer epoch/>
+            <PrimerSlotEditor draft reverse_slot=false selection anchor_available resolve_source primer_sources list_primers resolve_primer epoch/>
+            <PrimerSlotEditor draft reverse_slot=true selection anchor_available resolve_source primer_sources list_primers resolve_primer epoch/>
         </div>
         <p class="helper">"A selection comparison is not a binding-site search, an annealing-temperature calculation or proof of PCR. Manually edited mismatches remain explicit design inputs; changed domain lengths leave the captured comparison unresolved."</p>
         <button class="button primary" on:click=apply>{apply_label}</button>
         <p role="status">{move||status.get()}</p>
-    </section>}
+    </section>}.into_any()
 }
 
 #[component]
@@ -79,6 +80,7 @@ fn PrimerSlotEditor(
     reverse_slot: bool,
     selection: Callback<(), Result<SelectionSeed, String>>,
     anchor_available: Callback<EventBinding, bool>,
+    resolve_source: Callback<EventBinding, Result<Molecule, String>>,
     primer_sources: Memo<Vec<SourceInfo>>,
     list_primers: Callback<EventBinding, Result<primer_reuse::List, String>>,
     resolve_primer: Callback<ResolveRequest, Result<primer_reuse::Resolved, String>>,
@@ -136,19 +138,20 @@ fn PrimerSlotEditor(
         <PrimerPicker label=format!("{label} pair editor") sources=primer_sources list_primers resolve_primer epoch on_copy/>
         <pre>{move||oligo.with(|o|format!("Ordered oligo, 5′→3′: {}{}\nAnnealing domain: {}\n5′ tail: {}",o.tail,o.annealing,o.annealing,if o.tail.is_empty(){"(none)"}else{&o.tail}))}</pre>
         {move||oligo.with(|o|o.anchor.clone()).map(|anchor|view!{<section class="primer-anchor-comparison">
-            <p>{format!("Captured selection {}–{} (1-based inclusive) · {}",anchor.start.saturating_add(1),anchor.end,if anchor.reverse{"reverse complement"}else{"forward"})}</p>
-            <Show when=move||!available.get()><p class="primer-anchor-warning">"This source event is historical or unavailable. Your edits and captured reference are retained; this is not evidence against the current source."</p></Show>
+            <p>{format!("Captured selection {}–{} (1-based inclusive; end may continue past circular origin) · {}",anchor.start.saturating_add(1),anchor.end,if anchor.reverse{"reverse complement"}else{"forward"})}</p>
+            <Show when=move||!available.get()><p class="primer-anchor-warning">"The captured source event is unavailable. Your edits and captured reference are retained; this is not evidence against another source."</p></Show>
             <details><summary>"Source details"</summary><p>{format!("Document {} · event {} · revision {}",anchor.source.document_id,anchor.source.event_id,anchor.source.revision)}</p></details>
-            {move||match comparison.get(){
+            {move||{match comparison.get(){
                 Ok(Some(value)) => view!{<div><pre>{format!("Captured reference, own 5′→3′: {}\nEdited annealing domain, own 5′→3′: {}",value.reference,value.domain)}</pre>
                     <div class="primer-domain-calls" aria-label=format!("{label} primer compared bases")>{value.domain.chars().enumerate().map(|(index,call)|{let mismatch=value.mismatches.contains(&index);let ambiguous=value.ambiguous.contains(&index);view!{<span class:primer-mismatch=mismatch class:primer-ambiguous=ambiguous title=format!("Annealing call {}{}",index+1,if mismatch{" · mismatch"}else if ambiguous{" · ambiguous comparison"}else{" · exact call"})>{call.to_string()}</span>}}).collect_view()}</div>
                     <p>{format!("Mismatches at annealing calls: {}. Ambiguous comparisons at calls: {}. Positions are 1-based within this oligo's annealing domain and exclude its tail.",positions(&value.mismatches),positions(&value.ambiguous))}</p>
                 </div>}.into_any(),
                 Ok(None) => view!{<p class="helper">"No captured selection comparison."</p>}.into_any(),
                 Err(error) => view!{<p class="primer-anchor-warning">{format!("Selection comparison unresolved: {error}")}</p>}.into_any(),
-            }}
+            }}}
             <button class="text-tool" on:click=move|_|draft.update(|pair|slot_mut(pair,reverse_slot).anchor=None)>"Detach selection comparison"</button>
         </section>})}
+        <crate::primer_domain_edit_view::PrimerDomainEditView draft reverse_slot resolve_source epoch/>
         <p role="status">{move||status.get()}</p>
-    </fieldset>}
+    </fieldset>}.into_any()
 }

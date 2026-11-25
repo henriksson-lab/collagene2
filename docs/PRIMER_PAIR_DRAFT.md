@@ -2,7 +2,7 @@
 
 `web::primer_pair_model` is a pure Rust view model shared by manual and mutation-PCR editors. It does not run a binding search or mutate a sequence. A pair defaults to named Forward and Reverse slots; each slot retains its editable name, annealing domain, 5′ tail and optional selection anchor.
 
-`SelectionSeed::capture` takes the actual molecule, an explicit native document/event/revision binding, and one zero-based half-open, nonempty contiguous DNA interval of at most 200 bases. It checks bounded model content before hashing and requires the actual molecular revision to match. The host remains responsible for establishing that the supplied event belongs to that document; an event-shaped string alone is not authority. Circular wrap, multipart and caret selections are not silently flattened.
+`SelectionSeed::capture` takes the actual molecule, an explicit native document/event/revision binding, and one zero-based half-open, nonempty contiguous DNA interval of at most 200 bases. It checks bounded model content before hashing and requires the actual molecular revision to match. The host remains responsible for establishing that the supplied event belongs to that document; an event-shaped string alone is not authority. Circular origins use a normalized start and unrolled end, bounded to one source turn; genuine multipart gaps and carets are not flattened.
 
 `seed.oligo(name, reverse, tail)` copies the selected reference bases or their reverse complement into a 5′→3′ oligo. The anchor retains the same original source coordinates, explicit direction and original selected DNA in oligo orientation. Introduced tails are separate fields. Reverse means reverse complement, not reversed letters. Neither selection nor a saved primer proves current binding or a physical oligo stock.
 
@@ -10,7 +10,7 @@
 
 `comparison` compares only an explicit retained anchor with an equal-length edited domain. Offsets are zero-based in that oligo's 5′→3′ annealing domain, excluding the tail. Disjoint IUPAC sets are mismatches; compatible sets with any ambiguous call are uncertain comparisons, including N against N. Equal concrete calls are exact. A length change returns an unresolved-placement error; it never guesses a realignment or moves source coordinates. A manual or saved oligo without an anchor returns no comparison.
 
-Changing sources or options must invalidate prior scientific results in the containing controller. Draft editing and comparison alone do not generate a PCR product, infer synthesis, or modify a candidate plan. Four inline native fixtures cover independently specified forward/reverse IUPAC examples, literal mismatch offsets, stale/malformed bindings and bounded input/order conversion.
+Changing sources or options must invalidate prior scientific results in the containing controller. Draft editing and comparison alone do not generate a PCR product, infer synthesis, or modify a candidate plan. Focused native fixtures cover independently specified forward/reverse IUPAC examples, literal mismatch offsets, stale/malformed bindings and bounded input/order conversion.
 
 ## Connected controls
 
@@ -19,7 +19,7 @@ Switching panels or source documents retains editable fields. Browser autosave a
 native workspace export retain unfinished text and exact selection anchors; loading
 a workspace restores its own pair, or the default empty pair when no draft exists.
 The selection toolbar offers forward and reverse-complement creation; it and the
-editor use the same exact contiguous-selection eligibility rules. Existing source
+editor use the same exact contiguous-selection eligibility rules, including two ordered origin pieces on a circle. Existing source
 annotations and ordered assembly primer tables remain independently saved data.
 
 Either slot can copy a forward or reverse selected domain while preserving its name
@@ -37,7 +37,7 @@ applied pair and prior mutation evidence. Standalone primer evidence also retain
 its exact originating event for navigation and annotation; identical DNA in another
 document or historical event does not authorize applying that evidence there.
 
-Four focused native model cases and the final web/worker WASM compiler check pass.
+Focused native model cases and the WASM compiler check pass.
 Full GUI behavior remains subject to the
 user-deferred browser acceptance review. No new scientific engine, protocol tag,
 archive version, external runtime program or positive experimental claim is added.
@@ -45,13 +45,13 @@ archive version, external runtime program or positive experimental claim is adde
 
 ## Unfinished text and reload
 
-The opaque native attachment `primer-pair-draft-v1` contains a bounded, versioned
+The opaque native attachment `primer-pair-draft-v2` contains a bounded, versioned
 JSON envelope (64KiB maximum). Names, domains and tails are saved as editable text,
 including incomplete/invalid input, spacing and case. Restoring text does not parse
 it into a usable primer, normalize away edits or revive prior PCR/mutagenesis
 results. Normal primer validation and explicit Apply remain required.
 
-Only one active pair attachment is accepted. Unsupported versions, malformed fields,
+The reader accepts legacy version1/kind `primer-pair-draft-v1` and version2 explicitly; only version2 permits wrapped anchors. Autosave replaces either known kind with version2. Only one active known pair attachment is accepted. Unsupported versions, malformed fields,
 oversized text and non-JSON attachments fail restoration before workspace
 replacement. Each selection anchor is checked against its exact retained historical
 document/event/revision and actual oriented source bases, even when that source's
@@ -60,3 +60,11 @@ Intentional mismatches in the edited domain are preserved independently of the
 original selected reference. An absent attachment restores the default pair; resetting
 to that default removes the prior active attachment. Attachment storage leaves the
 native archive and worker/science versions unchanged. No filesystem access is added.
+
+## Explicit endpoint and tail-boundary changes
+
+The shared editor now adds source-bound preview/accept operations that preserve
+literal calls and distinguish template context from synthetic tails. Circular
+selection/storage/overlays use the same geometry. Applying the edited pair remains
+a separate action; no previous binding or PCR success is restored.
+[Full semantics](PRIMER_DOMAIN_EDITS.md).

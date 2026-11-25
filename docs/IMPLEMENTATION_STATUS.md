@@ -14,6 +14,21 @@ is postponed until the rest of the software is implemented. Existing modules are
 retained; no more alignment/index features or integration are scheduled now.
 Browser checks remain deferred and compiler checks run alongside coding.
 
+## Primer endpoint and tail-boundary previews
+
+The shared pair editor now previews and explicitly accepts endpoint or tail-boundary
+changes against an exact retained source event. Literal edits survive coordinate
+overlap; new reference context, removed calls and ambiguity remain visible.
+Tail repartition preserves the complete ordered oligo. Circular-origin domains
+retain normalized/unrolled geometry through capture, storage and overlays, while
+wrapped direct base/mutation editing stays disabled. Source/pair/epoch/control
+guards plus fresh reconstruction protect acceptance; applying the pair and running
+PCR remain separate. Pair attachment version2 reads/migrates legacy version1 data.
+[Editing and migration semantics](PRIMER_DOMAIN_EDITS.md).
+
+Validation: all 80 native web tests and the WASM compile passed. No browser checks
+or preview publication were run at this checkpoint.
+
 ## Named digest setups and predicted gels
 
 Digest setups now retain exact source events, full catalog pins/options and

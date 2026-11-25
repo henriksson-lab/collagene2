@@ -37,6 +37,16 @@ uncertainty. Foreign-source inspection preserves the independent target.
 endpoint/tail-boundary editing and local recovery remain follow-up work. Browser
 acceptance has not been run.
 
+## Endpoint-editing implementation follow-up
+
+The existing shared editor now previews endpoint and tail-boundary changes, preserves
+literal edits/ordered DNA according to the operation, captures fresh exact-event
+comparison geometry and requires explicit acceptance before pair Apply. Circular
+anchors have a versioned migration path. [Implementation](PRIMER_DOMAIN_EDITS.md).
+The second recommendation below is now implemented as explicit coordinate/boundary
+controls; pointer-drag manipulation remains an optional interaction refinement.
+Local failure recovery and output-presentation recommendations remain follow-ups.
+
 ## Actionable priorities
 
 The following are our recommendations from the comparison, not claims about undocumented Benchling internals.

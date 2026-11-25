@@ -1,10 +1,10 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **38** and reads supported schemas 1–37. Candidate files write schema 11; workspace plan schema is 9; the verifier is science-14.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **39** and reads supported schemas 1–38. Candidate files write schema 11; workspace plan schema is 9; the verifier is science-14.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
-Ordinary payloads are limited to **32 MiB** during bounded serialization and before deserialization. Only native workspace save/load variants (schema 6+), the explicitly whitelisted cloning-run variants (schema 12+), digest installation (schema 20+), and catalog digest installation (schema 21+) can use the separate **128 MiB** message cap. A borrowed prefix probe checks those exact tags and bounded revision text before allowing a large payload; ordinary scientific jobs retain 32 MiB. The checksum provides corruption detection, not authorization.
+Ordinary payloads are limited to **32 MiB** during bounded serialization and before deserialization. Only native workspace save/load variants (schema 6+), the explicitly whitelisted cloning-run variants (schema 12+), digest installation (schema 20+), catalog digest installation (schema 21+), and cloning output finalization (schema 39+) can use the separate **128 MiB** message cap. A borrowed prefix probe checks those exact tags and bounded revision text before allowing a large payload; ordinary scientific jobs retain 32 MiB. The checksum provides corruption detection, not authorization.
 
 ## Stable job tags
 
@@ -114,6 +114,7 @@ Postcard enum indexes are append-only. Existing tags and supported historical la
 | 99 | SelectDigestFragment | 38 |
 | 100 | ExportPlanOligos | 38 |
 | 101 | ExportProtocolHtml | 38 |
+| 102 | FinalizeCloningOutputs | 39 |
 
 Result tags 0–29 retain their selectors (verification gains explicit versioned step evidence in schema 25) (`Search`, `Restriction`, `Error`, `Pcr`, `Verification`, `DuplexDigest`, `Translation`, `CdsTranslation`, `Orfs`, `Alignment`, `PcrDocuments`, `PrimerEvidence`, `PrimerDesign`, `ProtocolPdf`, `GoldenGate`, `MismatchPcr`, `InversePcr`, `Gel`, `DiagnosticDigest`, `MismatchPcrPreview`, `WorkspaceSaved`, `WorkspaceLoaded`, `TraceValidation`, `FeatureLibraryScan`, `AnnotatedDocument`, `AnnotationImport`, `AnnotationExport`, `RepairPreview`, `AnnealPreview`, `PhysicalPreviewDocument`). Schema 9 appends `ViewTracks` at tag 30, `DocumentSearch` at tag 31 and `TracksPrepared` at tag 32. New response variants cannot be decoded under older version labels.
 
@@ -452,3 +453,15 @@ existing PDF exporter, with fresh scientific reconstruction in the worker. Its
 response is escaped HTML text under the ordinary message cap. New request/result
 tags refuse pre-38 headers before payload decoding. These additions do not change
 candidate11, plan9 or science-14 operation layouts.
+
+## Atomic cloning outputs (schema 39)
+
+`FinalizeCloningOutputs` (job 102/result 94) carries a complete workspace, exact
+source/target event bindings, a plan and explicit output options. It reconstructs
+the run independently, preserves every preparation event, optionally saves a
+complete primer collection, and records presentation-only hidden document IDs.
+Its context revision includes the workspace, bindings and options. Receipts validate
+that revision and the returned workspace relationships before UI installation.
+These exact workspace-bearing tags have the bounded 128 MiB limit and reject
+pre-39 headers before payload decoding; ordinary jobs retain 32 MiB.
+Candidate 11, plan 9 and science-14 are unchanged. See [outputs](CLONING_OUTPUTS.md).

@@ -100,3 +100,11 @@ relabeled. Existing historical operation layouts remain readable. Shared draft
 rows can retain the optional catalog selection and original top/bottom source
 intervals; these are declared preparation inputs and geometry receipts, not
 restored verification or physical intermediates.
+
+## Finalized cloning outputs
+
+`cloning-output-visibility-v1` records presentation-only hidden preparation document
+IDs. All run documents, exact source events and causal parents remain in the
+archive and available for replay. Optional saved primers use `oligo-table-v1`.
+Finalization does not change archive version 1 and does not restore historical
+verification authority. See [output contract](CLONING_OUTPUTS.md).

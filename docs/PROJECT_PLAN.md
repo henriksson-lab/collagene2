@@ -163,16 +163,15 @@ The first dedicated assembly dock now pins exact source events, captures selecte
 regions or circular complements into named slots, builds an expected reference
 independently of reaction simulation, and connects existing preparation/primer
 controls to that fixed target. Draft declarations survive document switching and
-native workspace/autosave restore; fresh evidence is recomputed. Direct cut-pair
-selection, integrated actual-product/junction editing and the output chooser remain
-required. [Interaction state](CLONING_INTERACTION_DESIGN.md).
+native workspace/autosave restore; fresh evidence is recomputed. Integrated actual-product/junction editing remains required; direct cut-pair
+selection and atomic output choices are now connected. [Interaction state](CLONING_INTERACTION_DESIGN.md).
 
 Fresh catalog digest fragments can now populate the active assembly slot with
 original-source event, full enzyme identity/geometry pin and explicit preparation.
 Reversed sticky fragments use the actual bottom-strand source interval for intended
 top DNA. Fresh overlap/ligation evidence also has an actual-product sequence/map
-view with local selection and optional fresh junction inspection. Direct cut-pair
-selection, integrated primer/junction editing and output choices remain required.
+view with local selection and optional fresh junction inspection. Integrated primer/junction editing remains required. Direct cut selection and
+atomic output choices are now implemented.
 [Catalog preparation](CATALOG_DIGEST_PREPARATION.md) · [Actual product review](ASSEMBLY_PRODUCT_REVIEW.md).
 
 Direct restriction-boundary choices now connect the sequence/map viewer to fresh
@@ -574,3 +573,22 @@ The desktop viewer/GenBank/virtual-digest MVP remains the foundation. The curren
 Open product decisions for implementation are the supported browser/device baseline, minimum supported Windows/macOS/Linux versions, initial hosted-versus-local project model, availability of representative legacy files, and database redistribution sources. Until those are resolved, favor portable scientific crates, local browser editing, optional hosted services and explicit dataset provenance.
 
 The independent [two-site recombination crate](../crates/recombination/README.md) and [application workflow](RECOMBINATION_UI.md) are an initial F15 increment: explicit BP/LR reference exchanges, versioned full-site contexts, reciprocal products, source annotation projection, typed plans/history, binary workers, MCP and HTML/PDF exports. Fresh reconstruction checks the selected component against the independent target; reference-only chemical incompleteness remains sticky. Completing F15 still requires the remaining physical chemistry, broader Gateway profiles/reactions and method coverage above. These reference designs do not substitute for that scope.
+
+### Reviewed assembly output checkpoint
+
+The dock finalizes a named construct, optional complete primer collection and
+optional preparation visibility. Full reconstruction/history is retained, edited
+outputs survive repeated creation, and intended-reference/candidate/output changes
+publish together after durable storage. Worker 39 / MCP 120 expose the same core
+operation. Integrated primer/junction editing, Golden Gate PCR preparation and
+remaining cloning workflows remain active priorities. See [outputs](CLONING_OUTPUTS.md).
+
+### Next connected cloning workflows
+
+The follow-up [interaction audits](CLONING_INTERACTION_DESIGN.md#follow-up-workflow-audits-25-november-2026)
+prioritize a shared directional primer-pair editor, source-bound mutation handoff,
+and Golden Gate preparations that actually emit PCR followed by Type IIS digestion
+and assembly. Reuse the persistent dock, fresh product/junction views and output
+chooser. Preserve explicit oligo application and independent intended DNA. Supporting
+trace verification should attach to exact construct events; this does not reopen
+BAM/index, ELN or inventory work.

@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 38;
+pub const WORKER_SCHEMA_VERSION: u16 = 39;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 11;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -656,6 +656,13 @@ pub enum AnalysisJob {
         plan: crate::verification::DesignPlan,
         target: Molecule,
     },
+    FinalizeCloningOutputs {
+        workspace: crate::workspace::Workspace,
+        plan: crate::verification::DesignPlan,
+        target: crate::run_lineage::EventBinding,
+        inputs: Vec<crate::run_lineage::InputEventBinding>,
+        options: crate::cloning_outputs::Options,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -759,6 +766,7 @@ pub enum AnalysisResult {
     DigestFragmentSelected(crate::digest_cut_selection::Report),
     PlanOligosExported(crate::plan_oligos::Exported),
     ProtocolHtml(String),
+    CloningOutputsFinalized(crate::cloning_outputs::Commit),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -958,6 +966,7 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::LoadWorkspace { .. }
             | AnalysisJob::RecordCloningRun { .. }
             | AnalysisJob::ReplayCloningRun { .. }
+            | AnalysisJob::FinalizeCloningOutputs { .. }
             | AnalysisJob::InstallDigestFragment { .. }
             | AnalysisJob::InstallCatalogDigestFragment { .. }
     ) {
@@ -973,7 +982,15 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     let maximum = worker_limit(
         b"CGR\0",
         bytes,
-        &[(20, 6), (21, 6), (40, 12), (41, 12), (62, 20), (65, 21)],
+        &[
+            (20, 6),
+            (21, 6),
+            (40, 12),
+            (41, 12),
+            (62, 20),
+            (65, 21),
+            (94, 39),
+        ],
     )?;
     preflight_codon_tag(bytes, &[42, 43])?;
     preflight_dotplot_tag(bytes, &[44])?;
@@ -994,6 +1011,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_overlap_primer_design_tag(bytes, &[89])?;
     preflight_assembly_intent_tag(bytes, &[90])?;
     preflight_cloning_output_tag(bytes, &[91, 92, 93])?;
+    preflight_finalize_tag(bytes, &[94])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1047,6 +1065,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         _ => decode_with_limit(b"CGR\0", bytes, maximum)?,
     };
     let required = match &response.result {
+        AnalysisResult::CloningOutputsFinalized(_) => 39,
         AnalysisResult::DigestFragmentSelected(_)
         | AnalysisResult::PlanOligosExported(_)
         | AnalysisResult::ProtocolHtml(_) => 38,
@@ -1162,6 +1181,10 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
     }
     match &response.result {
+        AnalysisResult::CloningOutputsFinalized(commit) => {
+            check_workspace_version(bytes, &commit.workspace)?;
+            commit.validate_binding(&response.revision)?;
+        }
         AnalysisResult::DigestFragmentSelected(report) => {
             report.validate_binding(&response.revision)?
         }
@@ -1609,6 +1632,14 @@ fn preflight_topo_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     }
     Ok(())
 }
+fn preflight_finalize_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 39)?;
+    }
+    Ok(())
+}
 fn preflight_cloning_output_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -1874,7 +1905,15 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     let maximum = worker_limit(
         b"CGQ\0",
         bytes,
-        &[(19, 6), (20, 6), (42, 12), (43, 12), (69, 20), (72, 21)],
+        &[
+            (19, 6),
+            (20, 6),
+            (42, 12),
+            (43, 12),
+            (69, 20),
+            (72, 21),
+            (102, 39),
+        ],
     )?;
     preflight_codon_tag(bytes, &[44, 45])?;
     preflight_dotplot_tag(bytes, &[46])?;
@@ -1898,6 +1937,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_overlap_primer_design_tag(bytes, &[97])?;
     preflight_assembly_intent_tag(bytes, &[98])?;
     preflight_cloning_output_tag(bytes, &[99, 100, 101])?;
+    preflight_finalize_tag(bytes, &[102])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -1905,6 +1945,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::FinalizeCloningOutputs { .. } => 39,
         AnalysisJob::SelectDigestFragment { .. }
         | AnalysisJob::ExportPlanOligos { .. }
         | AnalysisJob::ExportProtocolHtml { .. } => 38,
@@ -2082,6 +2123,13 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     if let AnalysisJob::ReplayCloningRun { workspace, .. } = &r.job {
         check_workspace_version(bytes, workspace)?;
     }
+    if let AnalysisJob::FinalizeCloningOutputs {
+        workspace, plan, ..
+    } = &r.job
+    {
+        check_workspace_version(bytes, workspace)?;
+        check_variant_version(bytes, plan_worker_version(plan))?;
+    }
     if let AnalysisJob::Verify { plan, .. }
     | AnalysisJob::ExportProtocolPdf { plan, .. }
     | AnalysisJob::ExportProtocolHtml { plan, .. }
@@ -2136,6 +2184,27 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let mol = match &r.job {
+        AnalysisJob::FinalizeCloningOutputs {
+            workspace,
+            plan,
+            target,
+            inputs,
+            options,
+        } => {
+            if crate::cloning_outputs::finalize_revision(
+                workspace,
+                plan,
+                target.clone(),
+                inputs.clone(),
+                options,
+            )? != r.revision
+            {
+                return Err(Error::Format(
+                    "Cloning output source/options context changed".into(),
+                ));
+            }
+            None
+        }
         AnalysisJob::SelectDigestFragment {
             selection,
             source_role,
@@ -2712,6 +2781,14 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let result = match r.job {
+        AnalysisJob::FinalizeCloningOutputs {
+            workspace,
+            plan,
+            target,
+            inputs,
+            options,
+        } => crate::cloning_outputs::finalize(&workspace, &plan, target, inputs, &options)
+            .map(AnalysisResult::CloningOutputsFinalized),
         AnalysisJob::SelectDigestFragment {
             selection,
             source_role,
@@ -3236,6 +3313,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             | AnalysisResult::WorkspaceLoaded(_)
             | AnalysisResult::RunCommit(_)
             | AnalysisResult::RunReplay(_)
+            | AnalysisResult::CloningOutputsFinalized(_)
             | AnalysisResult::DigestInstalled(_)
             | AnalysisResult::CatalogDigestInstalled(_)
     ) {
@@ -3268,7 +3346,15 @@ impl AnalysisSession {
         let maximum = worker_limit(
             b"CGQ\0",
             bytes,
-            &[(19, 6), (20, 6), (42, 12), (43, 12), (69, 20), (72, 21)],
+            &[
+                (19, 6),
+                (20, 6),
+                (42, 12),
+                (43, 12),
+                (69, 20),
+                (72, 21),
+                (102, 39),
+            ],
         )?;
         // Route by a borrowed prefix so ordinary jobs are not fully decoded twice.
         // Stable append-only track, genome and read-alignment variants retain

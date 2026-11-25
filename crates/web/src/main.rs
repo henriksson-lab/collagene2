@@ -7,6 +7,8 @@ mod annotation_layout;
 #[cfg(target_arch = "wasm32")]
 mod app;
 #[cfg(target_arch = "wasm32")]
+mod assembly_finalize;
+#[cfg(target_arch = "wasm32")]
 mod assembly_outputs;
 #[cfg(target_arch = "wasm32")]
 mod assembly_product_view;

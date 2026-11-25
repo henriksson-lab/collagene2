@@ -126,4 +126,5 @@ pub mod assembly_intent;
 
 pub mod digest_cut_selection;
 
+pub mod cloning_outputs;
 pub mod plan_oligos;

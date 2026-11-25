@@ -82,8 +82,10 @@ This is the first connected workflow, not full Benchling interaction parity.
 Direct cut choices now connect sequence/map restriction labels to the digest
 boundary picker and a freshly reconstructed assembly fragment. The reviewed
 product also exports declared primer CSV/TSV and HTML/PDF steps from its plan.
-Remaining work includes integrated product/primer/junction editing and an
-optional-primer/fragment output chooser. Keep these connections
+The output chooser now commits a named construct and optional primer collection
+with presentation-only preparation visibility, retaining all replayable events.
+Its intended reference and candidate stay private until the durable output commit.
+Remaining work includes integrated product/primer/junction editing. Keep these connections
 central rather than adding more standalone parameter panels. Browser checks remain
 deferred until implementation is complete, as instructed; no GUI acceptance claim
 is made from source or compiler checks alone.
@@ -133,3 +135,20 @@ Do not build another parallel set of unconnected parameter panels.
   source-region selection, editable binding/homology domains, junction edits and
   source history. This older article supplies historical interaction examples;
   current guides above are the primary reference.
+
+## Follow-up workflow audits (25 November 2026)
+
+Parallel checks of official Benchling documentation and current repository source
+identified these next connections, rather than additional standalone tools:
+
+- [Primer and mutation interactions](BENCHLING_PRIMER_WORKFLOW_GAPS.md): an explicit
+  directional pair draft shared by selection, saved oligos and mismatch-PCR;
+  applying changes invalidates prior reconstruction and order evidence.
+- [Golden Gate preparation](BENCHLING_GOLDEN_GATE_WORKFLOW_GAPS.md): use existing
+  real sites or propose PCR-added sites, then reconstruct PCR → pinned Type IIS
+  digestion → selected fragments → assembly through the shared recipe layer.
+- [Clone verification](BENCHLING_CLONE_VERIFICATION_GAPS.md): connect imported trace
+  evidence to an exact product/reference and retain original calls and revisions.
+
+Each audit separates documented behavior, historical examples and our adaptations.
+Public source research does not replace the deferred runtime GUI acceptance review.

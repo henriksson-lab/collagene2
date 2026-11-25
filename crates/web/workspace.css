@@ -259,3 +259,8 @@
 .assembly-output-actions { display:flex; gap:6px; flex-wrap:wrap; }
 .digest-cut-selection { border:1px solid #ccded7; border-radius:5px; background:#f2f7f4; padding:10px; margin:10px 0; font-size:12px; }
 .digest-cut-selection .digest-actions { display:flex; gap:5px; flex-wrap:wrap; }
+.workspace-contents { display:contents; }
+.explorer-frame { display:flex; flex-direction:column; }
+.explorer-frame>.document-explorer { flex:1; min-height:0; height:auto; }
+.preparation-visibility { display:flex; align-items:center; gap:6px; flex:none; border-top:1px solid #dce5e0; padding:8px 10px; background:#f5f8f6; font-size:11px; color:#637d72; }
+.assembly-finalize-options { display:grid; gap:10px; }

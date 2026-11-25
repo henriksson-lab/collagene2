@@ -211,6 +211,9 @@ pub fn AssemblyProductView(
     report: VerificationReport,
     epoch: RwSignal<u64>,
     on_products: Callback<Vec<Molecule>, Result<(), String>>,
+    #[prop(optional_no_strip)] on_finalize: Option<
+        Callback<collagene_core::transfer::Candidate, Result<(), String>>,
+    >,
 ) -> impl IntoView {
     let snapshot = StoredValue::new(Arc::new(Snapshot::new(plan, target, report)));
     let captured_epoch = epoch.get_untracked();
@@ -255,6 +258,7 @@ pub fn AssemblyProductView(
             <p class="helper">"This view shows actual reconstructed reference DNA, separately from intended DNA. It does not establish experimental success, exhaustive product uniqueness or newly prepared material."</p>
         </header>
         <crate::assembly_outputs::AssemblyOutputs capture identity epoch/>
+        {on_finalize.map(|finalize|view!{<button class="button primary" disabled=move||!available||!current.get() on:click=move|_|{let result=capture.run(()).and_then(|(plan,_)|finalize.run(collagene_core::transfer::Candidate::new(plan)));if let Err(error)=result{status.set(error);}}>"Create assembly outputs"</button>})}
         <p class="assembly-product-status" role="status">{move||if !current.get(){"Workspace context changed. This snapshot is historical; reconstruct again before opening or inspecting it.".to_string()}else{status.get()}}</p>
         {snapshot.with_value(|s|s.error.clone()).map(|error|view!{<p class="assembly-product-status" role="alert">{error}</p>})}
         {snapshot.with_value(|s|if s.product_revision.is_some(){s.report.products.last().map(|product|{

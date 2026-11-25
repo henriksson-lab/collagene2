@@ -482,6 +482,7 @@ pub fn AssemblyWorkspace(
     get_source: Callback<EventBinding, Result<Molecule, String>>,
     on_navigate: Callback<SelectionNavigation>,
     on_review: Callback<ReviewRequest, Result<(), String>>,
+    on_finalize: Callback<ReviewRequest, Result<(), String>>,
     on_products: Callback<Vec<Molecule>, Result<(), String>>,
     primer_sources: Memo<Vec<SourceInfo>>,
     list_primers: Callback<EventBinding, Result<primer_reuse::List, String>>,
@@ -702,7 +703,7 @@ pub fn AssemblyWorkspace(
         <button class="button secondary" disabled=move||draft.with(|d|d.slots.len()>=12) on:click=move|_|draft.update(|d|{if d.slots.len()<12{d.slots.push(Slot::empty(&format!("Fragment {}",d.slots.len()+1)));d.methods.rows.push(OverlapInput{preparation:OverlapPreparation::ExactPcr,..Default::default()});d.active_slot=d.slots.len()-1;d.sync_rows();}})>"Add fragment slot"</button>
         <section class="assembly-set-fragment"><p>{move||format!("Active viewer source: {} · set {}",active_source.get().name,draft.with(|d|d.slots.get(d.active_slot).map(|s|s.label.as_str()).unwrap_or("selected slot").to_owned()))}</p><button class="button primary" on:click=move|_|pin.run(1)>"Set from sequence selection"</button><button class="button secondary" on:click=move|_|pin.run(0)>"Use whole source"</button><button class="button secondary" on:click=move|_|pin.run(2)>"Keep outside selection"</button><p class="helper">"Keep outside selection retains the complementary path on circular DNA, including an origin crossing. This sets intended source coordinates; it does not digest, amplify or prove a physical fragment."</p></section>
         <button class="button primary" disabled=move||busy.get() on:click=move|_|review_intent.run(())>"Review intended construct"</button><button class="text-tool" disabled=move||!busy.get() on:click=cancel>"Cancel intended construct"</button><p class="assembly-workspace-status" role="status">{move||status.get()}</p>
-        {move||frozen.get().map(|bound|view!{<FrozenWorkspace bound draft methods epoch on_navigate on_review on_products primer_sources list_primers resolve_primer/>})}
+        {move||frozen.get().map(|bound|view!{<FrozenWorkspace bound draft methods epoch on_navigate on_review on_finalize on_products primer_sources list_primers resolve_primer/>})}
     </section>}
 }
 
@@ -740,6 +741,7 @@ fn FrozenWorkspace(
     epoch: RwSignal<u64>,
     on_navigate: Callback<SelectionNavigation>,
     on_review: Callback<ReviewRequest, Result<(), String>>,
+    on_finalize: Callback<ReviewRequest, Result<(), String>>,
     on_products: Callback<Vec<Molecule>, Result<(), String>>,
     primer_sources: Memo<Vec<SourceInfo>>,
     list_primers: Callback<EventBinding, Result<primer_reuse::List, String>>,
@@ -776,7 +778,7 @@ fn FrozenWorkspace(
     let source_info = Callback::new(move |i: usize| {
         bound.with_value(|f| f.sources.get(i).map(|c| c.source.clone()))
     });
-    let review = Callback::new(move |candidate: Candidate| {
+    let prepare_review = Callback::new(move |candidate: Candidate| {
         let outcome = bound.with_value(|f| {
             if epoch.get_untracked() != f.epoch
                 || draft.with_untracked(Draft::identity) != f.identity
@@ -795,13 +797,24 @@ fn FrozenWorkspace(
                         .into(),
                 );
             }
-            on_review.run(ReviewRequest {
+            Ok(ReviewRequest {
                 candidate,
                 sources: f.sources.iter().map(|c| c.source.binding.clone()).collect(),
                 intent: f.intent.clone(),
             })
         });
-        match outcome{Ok(())=>status.set("Candidate opened for fresh verification against the intended reference. No experimental success is established.".into()),Err(error)=>status.set(error)}
+        outcome
+    });
+    let review = Callback::new(move |candidate: Candidate| {
+        let result = prepare_review
+            .run(candidate)
+            .and_then(|request| on_review.run(request));
+        match result { Ok(()) => status.set("Candidate opened for fresh verification against the intended reference. No experimental success is established.".into()), Err(error) => status.set(error) }
+    });
+    let finalize = Callback::new(move |candidate: Candidate| {
+        prepare_review
+            .run(candidate)
+            .and_then(|request| on_finalize.run(request))
     });
     let navigate = Callback::new(move |i: usize| {
         if let Some(nav) = bound.with_value(|f| {
@@ -822,7 +835,7 @@ fn FrozenWorkspace(
         {bound.with_value(|f|{let count=f.intent.fragments.len().saturating_sub(1)+usize::from(f.intent.target.topology==Topology::Circular);if count==0{return view!{<p>"One linear fragment has no internal junction."</p>}.into_any();}view!{<div class="assembly-intended-junction">{move||bound.with_value(|f|{let i=junction.get().min(count-1);let next=(i+1)%f.sources.len();let boundary=f.intent.fragments[i].output_end;view!{<h4>{format!("Intended junction {} · {} → {}{}",i+1,f.identity.slots[i].0,f.identity.slots[next].0,if i+1==f.sources.len(){" · circle closure"}else{""})}</h4><pre>{intended_window(&f.intent.target,boundary)}</pre><p class="helper">{format!("| marks intended product boundary {} (zero-based). These letters are not a digest/ligation/homology validation.",if boundary==f.intent.target.sequence.len()&&f.intent.target.topology==Topology::Circular{0}else{boundary})}</p><button class="text-tool" on:click=move|_|navigate.run(i)>"View upstream source"</button><button class="text-tool" on:click=move|_|navigate.run(next)>"View downstream source"</button>}})}<div class="method-row-actions"><button class="text-tool" disabled=move||junction.get()==0 on:click=move|_|junction.update(|i|*i=i.saturating_sub(1))>"Previous intended junction"</button><button class="text-tool" disabled=move||{junction.get()+1>=count} on:click=move|_|junction.update(|i|*i=(*i+1).min(count-1))>"Next intended junction"</button></div></div>}.into_any()})}
         {bound.with_value(|f|f.intent.warnings.iter().map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view())}
         <h3>"3. Prepare fragments and verify the method"</h3><p class="helper">"PCR rows begin with no primer sequences. Suggest and explicitly apply primers, or choose another declared preparation. The pinned original sources remain the inputs; the intended reference is never used as physical source material."</p>
-        <CloningMethodsPanel molecule=target query_options get_query source_info target_info selected_region=Callback::new(|()|None) config=methods epoch on_candidate=review on_products primer_sources list_primers resolve_primer fixed_sources=true/>
+        <CloningMethodsPanel molecule=target query_options get_query source_info target_info selected_region=Callback::new(|()|None) config=methods epoch on_candidate=review on_finalize=Some(finalize) on_products primer_sources list_primers resolve_primer fixed_sources=true/>
         <p role="status">{move||status.get()}</p>
     </section>}
 }

@@ -86,23 +86,51 @@ pub fn stage(
             "The candidate does not target the independently declared source regions.".into(),
         );
     }
-    if docs.len() >= 1000 {
-        return Err("The workspace document limit has been reached.".into());
-    }
-    let prefix = format!("assembly-intent-{}", &fresh.context_revision[..16]);
-    let id = (1..=1001)
-        .map(|n| format!("{prefix}-{n}"))
-        .find(|id| !docs.iter().any(|d| d.id == *id))
-        .ok_or("No assembly document identity is available.")?;
-    let derived=DocumentHistory::derive_from_events(&parents,id,fresh.target,
-        "Declared assembly design intent from pinned source regions; expected reference only, preparation and experimental outcome unverified").map_err(|e|e.to_string())?;
-    let target = EventBinding {
-        document_id: derived.id.clone(),
-        event_id: derived.head_event().into(),
-        revision: derived.head_revision().into(),
-    };
+    let expected_target_revision = fresh.target.revision();
+    let expected_parents = sources
+        .iter()
+        .map(|s| s.event_id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    let existing = docs.iter().find(|doc| {
+        doc.head_revision() == expected_target_revision
+            && doc
+                .summaries()
+                .iter()
+                .find(|event| event.current)
+                .is_some_and(|event| {
+                    event
+                        .parents
+                        .iter()
+                        .map(String::as_str)
+                        .collect::<std::collections::BTreeSet<_>>()
+                        == expected_parents
+                })
+    });
     let mut staged = frame.clone();
-    derived.contribute(&mut staged).map_err(|e| e.to_string())?;
+    let target = if let Some(existing) = existing {
+        EventBinding {
+            document_id: existing.id.clone(),
+            event_id: existing.head_event().into(),
+            revision: existing.head_revision().into(),
+        }
+    } else {
+        if docs.len() >= 1000 {
+            return Err("The workspace document limit has been reached.".into());
+        }
+        let prefix = format!("assembly-intent-{}", &fresh.context_revision[..16]);
+        let id = (1..=1001)
+            .map(|n| format!("{prefix}-{n}"))
+            .find(|id| !docs.iter().any(|d| d.id == *id))
+            .ok_or("No assembly document identity is available.")?;
+        let derived=DocumentHistory::derive_from_events(&parents,id,fresh.target,"Declared assembly design intent from pinned source regions; expected reference only, preparation and experimental outcome unverified").map_err(|e|e.to_string())?;
+        let target = EventBinding {
+            document_id: derived.id.clone(),
+            event_id: derived.head_event().into(),
+            revision: derived.head_revision().into(),
+        };
+        derived.contribute(&mut staged).map_err(|e| e.to_string())?;
+        target
+    };
     staged.active_document = target.document_id.clone();
     if !staged
         .candidates
@@ -242,6 +270,37 @@ mod tests {
         let staged = stage(&frame, &intent, &bindings, &candidate).unwrap();
         assert_eq!(staged.workspace.documents[0].head, advanced);
         assert_eq!(staged.sources[0].event.event_id, bindings[0].event_id);
+    }
+    #[test]
+    fn repeated_review_reuses_target_only_for_the_same_source_events() {
+        let (frame, intent, bindings, candidate) = fixture();
+        let first = stage(&frame, &intent, &bindings, &candidate).unwrap();
+        let second = stage(&first.workspace, &intent, &bindings, &candidate).unwrap();
+        assert_eq!(first.target, second.target);
+        assert_eq!(second.workspace.documents.len(), 2);
+        let mut aliased = second.workspace;
+        let original = DocumentHistory::restore_all(&aliased).unwrap()[0]
+            .molecule
+            .clone();
+        let alias = DocumentHistory::new("distinct-source", original).unwrap();
+        let source = EventBinding {
+            document_id: alias.id.clone(),
+            event_id: alias.head_event().into(),
+            revision: alias.head_revision().into(),
+        };
+        alias.contribute(&mut aliased).unwrap();
+        let distinct = stage(&aliased, &intent, &[source.clone()], &candidate).unwrap();
+        assert_ne!(first.target, distinct.target);
+        assert_eq!(
+            distinct
+                .workspace
+                .history
+                .iter()
+                .find(|event| event.id == distinct.target.event_id)
+                .unwrap()
+                .parents,
+            vec![source.event_id]
+        );
     }
     #[test]
     fn stale_binding_or_forged_intended_dna_never_changes_workspace() {

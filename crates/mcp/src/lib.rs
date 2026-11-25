@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 119;
+pub const CURRENT_TOOL_COUNT: usize = 120;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -842,6 +842,18 @@ pub struct RecordWorkspaceRun {
     pub input_bindings: Vec<collagene_core::run_lineage::InputEventBinding>,
     #[serde(default)]
     pub allow_incomplete: bool,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FinalizeCloningOutputs {
+    pub workspace: WorkspaceRef,
+    pub plan_revision: String,
+    /// Exact independent target event, never selected by DNA equality.
+    pub target_binding: collagene_core::run_lineage::EventBinding,
+    /// Exact original event binding for each plan-local input ID.
+    pub input_bindings: Vec<collagene_core::run_lineage::InputEventBinding>,
+    #[serde(default)]
+    pub options: collagene_core::cloning_outputs::Options,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1957,6 +1969,22 @@ impl CollageneServer {
         workspace: workspace::Workspace,
         run_artifact: Option<(String, Value)>,
     ) -> Result<CallToolResult, ErrorData> {
+        self.commit_workspace_outputs(workspace, run_artifact, None)
+    }
+    // Stage every workspace/revision, run receipt and optional native output
+    // before reserving capacity or publishing any session entry.
+    fn commit_workspace_outputs(
+        &self,
+        workspace: workspace::Workspace,
+        run_artifact: Option<(String, Value)>,
+        native_artifact: Option<Vec<u8>>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let finalized = native_artifact.is_some();
+        let receipt_filename = if finalized {
+            "cloning-outputs.json"
+        } else {
+            "cloning-run.json"
+        };
         let mut pending_alignments = BTreeMap::new();
         for attachment in workspace
             .attachments
@@ -1976,16 +2004,56 @@ impl CollageneServer {
         let artifact_id = run_artifact
             .as_ref()
             .map(|(text, _)| blake3::hash(text.as_bytes()).to_hex().to_string());
-        let artifact_bytes = match (&run_artifact, &artifact_id) {
-            (Some((text, _)), Some(id)) if !store.artifacts.contains_key(id) => {
-                if store.artifacts.len() >= MAX_ITEMS {
-                    return Err(bad("at most 128 artifacts"));
+        let native_id = native_artifact
+            .as_ref()
+            .map(|bytes| blake3::hash(bytes).to_hex().to_string());
+        let mut added_artifacts = 0usize;
+        let mut artifact_bytes = 0usize;
+        if let Some((text, _)) = &run_artifact {
+            let key = artifact_id
+                .as_ref()
+                .ok_or_else(|| bad("missing staged receipt ID"))?;
+            if let Some(existing) = store.artifacts.get(key) {
+                if !matches!(existing.data, ArtifactData::Text(_))
+                    || existing.mime_type != "application/json"
+                    || existing.filename != receipt_filename
+                {
+                    return Err(bad(
+                        "receipt artifact already has another representation; no workspace outputs published",
+                    ));
                 }
-                text.len()
+            } else {
+                added_artifacts += 1;
+                artifact_bytes = text.len();
             }
-            _ => 0,
-        };
-        if store.workspaces.contains_key(&id) && run_artifact.is_none() {
+        }
+        if let Some(bytes) = &native_artifact {
+            let key = native_id
+                .as_ref()
+                .ok_or_else(|| bad("missing staged native archive ID"))?;
+            if let Some(existing) = store.artifacts.get(key) {
+                if !matches!(existing.data, ArtifactData::Binary(_))
+                    || existing.mime_type != "application/octet-stream"
+                    || existing.filename != "workspace.cg2workspace"
+                {
+                    return Err(bad(
+                        "native workspace artifact already has another representation; no outputs published",
+                    ));
+                }
+            } else {
+                added_artifacts += 1;
+                artifact_bytes = artifact_bytes
+                    .checked_add(bytes.len())
+                    .ok_or_else(|| bad("artifact accounting overflow"))?;
+            }
+        }
+        if store.artifacts.len().saturating_add(added_artifacts) > MAX_ITEMS {
+            return Err(bad(
+                "final workspace artifacts exceed item capacity; no outputs published",
+            ));
+        }
+        if store.workspaces.contains_key(&id) && run_artifact.is_none() && native_artifact.is_none()
+        {
             return output(
                 json!({"workspace":result,"deduplicated":true,"persistence":"session only"}),
             );
@@ -2052,12 +2120,32 @@ impl CollageneServer {
                     data: ArtifactData::Text(text),
                     mime_type: "application/json",
                     encoding: "utf-8",
-                    filename: "cloning-run.json",
+                    filename: receipt_filename,
                 });
             response["receipt"] = receipt;
             response["artifact_id"] = json!(artifact_id);
             response["authority"] =
                 json!("historical run data; replay recomputes current evidence");
+        }
+        if let Some(bytes) = native_artifact {
+            let native_id = native_id.ok_or_else(|| bad("missing native artifact ID"))?;
+            let length = bytes.len();
+            store
+                .artifacts
+                .entry(native_id.clone())
+                .or_insert(Artifact {
+                    data: ArtifactData::Binary(bytes),
+                    mime_type: "application/octet-stream",
+                    encoding: "base64",
+                    filename: "workspace.cg2workspace",
+                });
+            response["native_artifact_id"] = json!(native_id);
+            response["native_bytes"] = json!(length);
+            response["encoding"] = json!("base64");
+            response["filename"] = json!("workspace.cg2workspace");
+            response["authority"] = json!(
+                "Finalized declared-model outputs in a new immutable session workspace only. All native preparation history is retained; presentation visibility and saved order data do not establish experimental material or inherited verification authority. Replay reconstructs again."
+            );
         }
         output(response)
     }
@@ -3802,6 +3890,70 @@ impl CollageneServer {
         }).await
     }
     #[tool(
+        description = "Finalize a saved cloning plan against explicit exact historical input/independent-target events in an immutable uploaded native workspace. Freshly reconstructs and retains ALL native step history; options control final construct name, prepared-output presentation, faithful saved oligo attachment and explicit incomplete acceptance. Atomically returns a NEW session workspace, native archive artifact and full receipt JSON; original workspace and sources are unchanged. Hiding preparations never deletes evidence. No browser/hosted writes, guessed DNA event mapping, experimental-material claim or imported verification authority."
+    )]
+    async fn finalize_cloning_outputs(
+        &self,
+        Parameters(args): Parameters<FinalizeCloningOutputs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.input_bindings.len() > 128 {
+            return Err(bad("at most128 explicit original input event bindings"));
+        }
+        args.options.validate().map_err(bad)?;
+        let binding_bounded = |binding: &collagene_core::run_lineage::EventBinding| {
+            binding.document_id.len() <= 128
+                && binding.event_id.len() <= 128
+                && binding.revision.len() == 64
+        };
+        if !binding_bounded(&args.target_binding)
+            || args
+                .input_bindings
+                .iter()
+                .any(|binding| binding.input_id.len() > 128 || !binding_bounded(&binding.event))
+        {
+            return Err(bad("oversized explicit event binding"));
+        }
+        let server = self.clone();
+        self.compute(move || {
+            let value = server.restore_workspace(&args.workspace)?;
+            let plan = {
+                let store = server.store.lock().unwrap();
+                let saved = store
+                    .plans
+                    .get(&args.plan_revision)
+                    .ok_or_else(|| bad("unknown saved plan revision"))?;
+                if saved.target.revision() != args.target_binding.revision {
+                    return Err(bad(
+                        "chosen target event differs from the saved independent target",
+                    ));
+                }
+                saved.plan.clone()
+            };
+            let expected = collagene_core::cloning_outputs::finalize_revision(
+                &value,
+                &plan,
+                args.target_binding.clone(),
+                args.input_bindings.clone(),
+                &args.options,
+            )
+            .map_err(bad)?;
+            let commit = collagene_core::cloning_outputs::finalize(
+                &value,
+                &plan,
+                args.target_binding,
+                args.input_bindings,
+                &args.options,
+            )
+            .map_err(bad)?;
+            commit.validate_binding(&expected).map_err(bad)?;
+            let text = bounded_json_limit(&commit, 32 * 1024 * 1024)?;
+            let receipt = serde_json::to_value(&commit.receipt).map_err(bad)?;
+            let native = workspace::save_workspace(&commit.workspace).map_err(bad)?;
+            server.commit_workspace_outputs(commit.workspace, Some((text, receipt)), Some(native))
+        })
+        .await
+    }
+    #[tool(
         description = "Reconstruct an exact session plan against explicit historical target/input event bindings and retain all products in a NEW immutable session workspace. Does not alter the original, browser workspace or any file. Incomplete evidence requires explicit allow_incomplete; failed reconstructions never record products. Returns a full JSON artifact and new workspace reference."
     )]
     async fn record_workspace_run(
@@ -5217,3 +5369,45 @@ mod unit_tools;
 
 mod catalog_tools;
 mod recombination_tools;
+
+#[cfg(test)]
+mod finalized_workspace_atomic_capacity {
+    use super::*;
+    #[test]
+    fn both_finalization_artifacts_are_reserved_before_any_workspace_publication() {
+        let server = CollageneServer::default();
+        {
+            let mut store = server.store.lock().unwrap();
+            for index in 0..MAX_ITEMS - 1 {
+                store.artifacts.insert(
+                    format!("reserved-{index}"),
+                    Artifact {
+                        data: ArtifactData::Text(String::new()),
+                        mime_type: "text/plain",
+                        encoding: "utf-8",
+                        filename: "reserved.txt",
+                    },
+                );
+            }
+        }
+        let source = Molecule::dna("source", "ACGT", collagene_core::Topology::Linear).unwrap();
+        let workspace =
+            workspace::Workspace::from_documents("Atomic fixture", vec![source], 0).unwrap();
+        let native = workspace::save_workspace(&workspace).unwrap();
+        let native_id = blake3::hash(&native).to_hex().to_string();
+        let text = "{\"fixture\":\"receipt\"}".to_string();
+        let report_id = blake3::hash(text.as_bytes()).to_hex().to_string();
+        assert!(
+            server
+                .commit_workspace_outputs(workspace, Some((text, json!({}))), Some(native))
+                .is_err()
+        );
+        let store = server.store.lock().unwrap();
+        assert_eq!(store.artifacts.len(), MAX_ITEMS - 1);
+        assert!(store.workspaces.is_empty());
+        assert!(store.documents.is_empty());
+        assert_eq!(store.used, 0);
+        assert!(!store.artifacts.contains_key(&native_id));
+        assert!(!store.artifacts.contains_key(&report_id));
+    }
+}

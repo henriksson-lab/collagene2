@@ -5676,7 +5676,7 @@ impl CollageneServer {
         )
     }
     #[tool(
-        description = "Freshly inspect DNA junctions of an exact saved ordered overlap/ligation candidate and its stored independent target. Explicit bounded flanks, genetic code, six-frame choices and CDS inspection options. Reports actual product boundary/homology/orientation/circular-origin windows, boundary-crossing codons, conditional source-CDS evidence and physical ends/nicks where supported. Full target verification and unsupported final-method diagnostics remain visible. Immutable JSON evidence only: no source edits, candidate promotion, inferred fusion function or experimental guarantee."
+        description = "Freshly inspect DNA junctions of an exact saved overlap, ordered ligation or selected Golden Gate candidate and its stored independent target. Golden Gate boundaries and source mappings come from its actual selected digest path, captured in the same verifier pass; recipe order and target DNA never determine them. Explicit bounded flanks, genetic code, six-frame choices and CDS inspection options. Reports actual product boundary/homology/orientation/circular-origin windows, boundary-crossing codons, conditional source-CDS evidence and physical ends/nicks where supported. Full target verification and unsupported final-method diagnostics remain visible. Immutable JSON evidence only: no source edits, candidate promotion, inferred fusion function or experimental guarantee."
     )]
     async fn inspect_assembly_junctions(
         &self,
@@ -5686,13 +5686,13 @@ impl CollageneServer {
         self.compute(move || {
             // Borrow actual saved source/target snapshots. No source or plan copy
             // precedes the core's bounded native-model preflight.
-            let report={let store=server.store.lock().unwrap();
+            let (plan,target,expected)={let store=server.store.lock().unwrap();
                 let saved=store.plans.get(&args.plan_revision).ok_or_else(||bad("unknown plan revision"))?;
                 collagene_core::assembly_junctions::source_preflight(&saved.plan,&saved.target).map_err(bad)?;
                 let expected=collagene_core::assembly_junctions::inspection_revision(&saved.plan,&saved.target,&args.options).map_err(bad)?;
-                let report=collagene_core::assembly_junctions::inspect_plan(&saved.plan,&saved.target,&args.options).map_err(bad)?;
-                report.validate_binding(&expected).map_err(bad)?;
-                report};
+                (saved.plan.clone(),saved.target.clone(),expected)};
+            let report=collagene_core::assembly_junctions::inspect_plan(&plan,&target,&args.options).map_err(bad)?;
+            report.validate_binding(&expected).map_err(bad)?;
             let artifact=server.text_artifact(bounded_json_limit(&report,32*1024*1024)?,"application/json","assembly-junctions.json")?;
             let junctions=report.junctions.iter().take(10).map(|junction|json!({
                 "index":junction.index,"upstream":junction.upstream,"downstream":junction.downstream,

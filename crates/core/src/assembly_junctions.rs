@@ -57,7 +57,8 @@ impl Options {
     }
 }
 dto! {#[derive(PartialEq,Eq)] pub struct Range {pub start:usize,pub end:usize}}
-dto! {pub enum Method {Ligate,Overlap,ProfiledOverlap}}
+dto! {pub struct GoldenGatePart {pub path_index:usize,pub pool_fragment:usize,pub template_index:usize,pub template:Source,pub template_revision:String,pub template_length:usize,pub fragment_index:usize,pub top_start:usize,pub bottom_start:i64,pub reverse:bool,pub top_length:usize,pub bottom_length:usize,pub output_start:usize,pub output_end:usize,pub left_end:Option<End>,pub right_end:Option<End>}}
+dto! {pub enum Method {Ligate,Overlap,ProfiledOverlap,GoldenGate{candidate_index:usize,path:Vec<GoldenGatePart>,enumeration_complete:bool,states_examined:usize,truncation_reasons:Vec<String>}}}
 dto! {pub struct Window {pub parts:Vec<Range>,pub dna:String,pub boundary_offset:usize,pub left_bases:usize,pub right_bases:usize,pub clipped:bool}}
 dto! {pub struct Codon {pub dna:String,pub amino_acid:char,/// Offset in the selected frame's oriented WINDOW, not the full product.
 pub window_start:usize}}
@@ -175,10 +176,128 @@ fn geometry(
     verification: &VerificationReport,
     trace: &[Option<Duplex>],
     product: &Molecule,
+    golden_gate: Option<&crate::golden_gate::GoldenGateReport>,
 ) -> Result<(Method, Vec<Geometry>), Error> {
     let n = product.sequence.len();
     let last = plan.steps.last().ok_or_else(|| bad("empty plan"))?;
     match last {
+        Operation::GoldenGate {
+            templates,
+            options,
+            candidate_index,
+        } => {
+            let pool = golden_gate
+                .ok_or_else(|| bad("final Golden Gate has no fresh captured enumeration"))?;
+            if pool.options != *options || pool.model != crate::golden_gate::MODEL {
+                return Err(bad(
+                    "fresh Golden Gate scope differs from the final operation",
+                ));
+            }
+            let selected = pool
+                .candidates
+                .get(*candidate_index)
+                .ok_or_else(|| bad("selected fresh Golden Gate path unavailable"))?;
+            let final_state = trace
+                .last()
+                .and_then(Option::as_ref)
+                .ok_or_else(|| bad("final Golden Gate has no actual physical state"))?;
+            if selected.duplex != *final_state
+                || selected.duplex.top != product.sequence
+                || selected.duplex.topology != product.topology
+                || selected.path.is_empty()
+                || selected.path.len() > 32
+                || final_state
+                    .nicks
+                    .len()
+                    .checked_mul(selected.path.len())
+                    .is_none_or(|n| n > 100_000)
+            {
+                return Err(bad(
+                    "selected path, final duplex or physical output budget differs from actual product",
+                ));
+            }
+            let mut path = Vec::with_capacity(selected.path.len());
+            let mut offset = 0usize;
+            for (index, choice) in selected.path.iter().enumerate() {
+                let fragment = pool
+                    .fragments
+                    .get(choice.fragment)
+                    .ok_or_else(|| bad("selected path fragment unavailable"))?;
+                let source = templates
+                    .get(fragment.source_index)
+                    .ok_or_else(|| bad("selected path template unavailable"))?;
+                let original = resolve(plan, &verification.products, source)?;
+                if original.revision() != fragment.source_revision {
+                    return Err(bad("actual digest template revision changed"));
+                }
+                let oriented = if choice.reverse {
+                    fragment.duplex.reverse()?
+                } else {
+                    fragment.duplex.clone()
+                };
+                let end = offset
+                    .checked_add(oriented.top.len())
+                    .filter(|e| *e <= n)
+                    .ok_or(Error::TooLarge)?;
+                if product.sequence.as_str().get(offset..end) != Some(oriented.top.as_str()) {
+                    return Err(bad(
+                        "selected oriented path bases differ from actual final product",
+                    ));
+                }
+                let (left, right) = oriented.ends()?;
+                path.push(GoldenGatePart {
+                    path_index: index,
+                    pool_fragment: choice.fragment,
+                    template_index: fragment.source_index,
+                    template: source.clone(),
+                    template_revision: fragment.source_revision.clone(),
+                    template_length: original.sequence.len(),
+                    fragment_index: fragment.fragment_index,
+                    top_start: fragment.top_start,
+                    bottom_start: fragment.bottom_start,
+                    reverse: choice.reverse,
+                    top_length: oriented.top.len(),
+                    bottom_length: oriented.bottom.len(),
+                    output_start: offset,
+                    output_end: end,
+                    left_end: Some(left),
+                    right_end: Some(right),
+                });
+                offset = end;
+            }
+            if offset != n {
+                return Err(bad("selected path does not cover the whole actual product"));
+            }
+            let mut out = Vec::new();
+            for (i, part) in path.iter().enumerate() {
+                if i + 1 < path.len() || options.circular {
+                    let next = (i + 1) % path.len();
+                    out.push(Geometry {
+                        index: i,
+                        upstream: i,
+                        downstream: next,
+                        boundary: if next == 0 { 0 } else { part.output_end },
+                        closing: next == 0,
+                        homology: vec![],
+                        physical: Some(JunctionPhysical {
+                            upstream_end: part.right_end.clone(),
+                            downstream_end: path[next].left_end.clone(),
+                            product_nicks: final_state.nicks.clone(),
+                        }),
+                    });
+                }
+            }
+            Ok((
+                Method::GoldenGate {
+                    candidate_index: *candidate_index,
+                    path,
+                    enumeration_complete: pool.enumeration_complete,
+                    states_examined: pool.states_examined,
+                    truncation_reasons: pool.truncation_reasons.clone(),
+                },
+                out,
+            ))
+        }
         Operation::Ligate {
             fragments,
             circular,
@@ -288,7 +407,7 @@ fn geometry(
             Method::ProfiledOverlap,
         ),
         _ => Err(bad(
-            "final operation is not ordered Ligate, Overlap or ProfiledOverlap; fresh verification remains available",
+            "final operation is not supported by this junction adapter; fresh verification remains available",
         )),
     }
 }
@@ -628,7 +747,8 @@ pub fn inspect_plan(
     options: &Options,
 ) -> Result<Report, Error> {
     let context_revision = inspection_revision(plan, target, options)?;
-    let (verification, trace) = verification::verify_with_physical(plan, target);
+    let (verification, trace, golden_gate) =
+        verification::verify_with_golden_gate_trace(plan, target);
     let mut report=Report{engine_version:ENGINE_VERSION.into(),context_revision,plan_revision:assembly_recipe::hash(plan)?,target_revision:assembly_recipe::hash(target)?,options:options.clone(),verification,product_revision:None,product_length:None,product_topology:None,method:None,junctions:vec![],complete:false,omitted_junctions:0,warnings:vec!["Junction DNA is the expected reconstructed product, not measured material. Window-relative translations do not establish a CDS reading frame, fusion function or experimental success.".into(),"Frames0/1/2 skip calls at the beginning of each explicitly oriented WINDOW; they are not product-origin frames. CDS windows, when available, instead use explicit feature-directed coding geometry and the existing genetic-code engine.".into()]};
     if report.verification.products.len() != plan.steps.len() {
         report.warnings.push("Final operation did not reconstruct a product. Earlier preparation products are retained in verification evidence but are never presented as final junction DNA.".into());
@@ -645,7 +765,13 @@ pub fn inspect_plan(
     report.product_revision = Some(product_revision.clone());
     report.product_length = Some(product.sequence.len());
     report.product_topology = Some(product.topology);
-    let (method, geometry) = match geometry(plan, &report.verification, &trace, product) {
+    let (method, geometry) = match geometry(
+        plan,
+        &report.verification,
+        &trace,
+        product,
+        golden_gate.as_ref(),
+    ) {
         Ok(v) => v,
         Err(error) => {
             report.warnings.push(error.to_string());
@@ -829,6 +955,102 @@ impl Report {
                 || Some(product.topology) != self.product_topology
             {
                 return Err(bad("final product receipt changed"));
+            }
+        }
+        if let Some(Method::GoldenGate {
+            candidate_index: _,
+            path,
+            enumeration_complete: _,
+            states_examined,
+            truncation_reasons,
+        }) = &self.method
+        {
+            if path.is_empty()
+                || path.len() > 32
+                || *states_examined > 1_000_001
+                || truncation_reasons.len() > 64
+                || truncation_reasons.iter().any(|s| s.len() > 8192)
+            {
+                return Err(bad("invalid finite Golden Gate path scope"));
+            }
+            let product = self
+                .verification
+                .products
+                .last()
+                .ok_or_else(|| bad("missing actual Golden Gate product"))?;
+            let mut end = 0usize;
+            let mut used = BTreeSet::new();
+            for (i, part) in path.iter().enumerate() {
+                if part.path_index != i
+                    || part.pool_fragment >= 128
+                    || !used.insert(part.pool_fragment)
+                    || part.template_index >= 32
+                    || !hex(&part.template_revision)
+                    || part.template_length == 0
+                    || part.template_length > 8 << 20
+                    || part.fragment_index >= 128
+                    || part.top_start >= part.template_length
+                    || part.bottom_start.unsigned_abs() > 32 << 20
+                    || part.output_start != end
+                    || part.output_end <= end
+                    || part.output_end > product.sequence.len()
+                    || part.top_length != part.output_end - part.output_start
+                    || part.bottom_length > 16 << 20
+                    || part.left_end.is_none()
+                    || part.right_end.is_none()
+                {
+                    return Err(bad("Golden Gate path mapping changed"));
+                }
+                match &part.template {
+                    Source::Input(id)
+                        if !id.is_empty()
+                            && id.len() <= 128
+                            && !id.chars().any(char::is_control) => {}
+                    Source::Step(step)
+                        if *step < self.verification.products.len().saturating_sub(1) => {}
+                    _ => {
+                        return Err(bad(
+                            "Golden Gate path refers beyond actual preparation prefix",
+                        ));
+                    }
+                }
+                if let Source::Step(step) = &part.template {
+                    let source = &self.verification.products[*step];
+                    if source.revision() != part.template_revision
+                        || source.sequence.len() != part.template_length
+                    {
+                        return Err(bad("Golden Gate prepared template binding changed"));
+                    }
+                }
+                end = part.output_end;
+            }
+            let total = path.len() - 1 + usize::from(product.topology == Topology::Circular);
+            if end != product.sequence.len()
+                || self.junctions.len() + self.omitted_junctions != total
+            {
+                return Err(bad("Golden Gate path/junction coverage changed"));
+            }
+            for (i, j) in self.junctions.iter().enumerate() {
+                let next = (i + 1) % path.len();
+                if j.upstream != i
+                    || j.downstream != next
+                    || j.closing != (next == 0)
+                    || j.boundary != if next == 0 { 0 } else { path[i].output_end }
+                    || !j.homology.is_empty()
+                {
+                    return Err(bad(
+                        "Golden Gate junction differs from selected path positions",
+                    ));
+                }
+                let physical = j
+                    .physical
+                    .as_ref()
+                    .ok_or_else(|| bad("Golden Gate junction lacks actual ends"))?;
+                if physical.upstream_end != path[i].right_end
+                    || physical.downstream_end != path[next].left_end
+                {
+                    return Err(bad("Golden Gate junction ends differ from selected parts"));
+                }
             }
         }
         let mut cds_count = 0usize;

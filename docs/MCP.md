@@ -698,3 +698,21 @@ with the recorded search options/index. Its `artifact_id` and
 `verify_plan` remain available by the new plan revision. Selection and reported
 target correspondence do not grant a positive cloning verdict. See
 [MCP contracts](PREPARED_GOLDEN_GATE_MCP.md).
+
+
+## Golden Gate path junction inspection
+
+The existing `inspect_assembly_junctions {plan_revision,options}` tool now handles
+selected GoldenGate plans. Its `method.GoldenGate` data identifies the exact
+native candidate and selected digest path, including original Input/Step revisions,
+raw source cuts, actual orientation and output spans. Boundaries, physical ends,
+flank windows and local codons come from that selected product, not target DNA or
+recipe order. The full JSON artifact retains all parts and all reported windows;
+existing compact-response truncation flags still apply.
+
+Target mismatch does not hide actual reconstructed windows; failed final assembly
+does not substitute a preparation. Finite-pool enumeration status remains separate
+from geometry/window completeness. Inspection does not promote a candidate or
+claim a functional fusion. Large Golden Gate reconstruction runs outside the
+session store lock after borrowed source/target preflight. Tool count stays134;
+worker48 protects the new nested method representation.

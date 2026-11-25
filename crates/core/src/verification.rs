@@ -819,9 +819,35 @@ pub(crate) fn verify_with_physical(
     )
 }
 
+/// Capture the actual final Golden Gate enumeration from the same native pass.
+/// Serialized reports cannot provide this private reconstruction receipt.
+pub(crate) fn verify_with_golden_gate_trace(
+    plan: &DesignPlan,
+    target: &Molecule,
+) -> (
+    VerificationReport,
+    Vec<Option<Duplex>>,
+    Option<crate::golden_gate::GoldenGateReport>,
+) {
+    let mut captured = None;
+    let (report, physical) = evaluate_captured(plan, target, &mut captured);
+    (
+        report,
+        physical.into_iter().map(|s| s.map(|t| t.duplex)).collect(),
+        captured,
+    )
+}
+
 fn evaluate(
     plan: &DesignPlan,
     target: &Molecule,
+) -> (VerificationReport, Vec<Option<TrackedDuplex>>) {
+    evaluate_captured(plan, target, &mut None)
+}
+fn evaluate_captured(
+    plan: &DesignPlan,
+    target: &Molecule,
+    final_golden_gate: &mut Option<crate::golden_gate::GoldenGateReport>,
 ) -> (VerificationReport, Vec<Option<TrackedDuplex>>) {
     // New embedded profile snapshots are bounded before hashing their public native DTOs.
     let preflight = validate_reference_steps(plan).and_then(|()| {
@@ -872,6 +898,7 @@ fn evaluate(
         &mut report.step_reports,
         &mut report.annotation_reports,
         &mut physical,
+        final_golden_gate,
     ) {
         Ok(incomplete) => {
             let product = report.products.last().expect("nonempty reconstructed plan");
@@ -1697,6 +1724,7 @@ fn reconstruct(
     step_reports: &mut Vec<StepReport>,
     annotation_reports: &mut Vec<AnnotationStepReport>,
     physical: &mut Vec<Option<TrackedDuplex>>,
+    final_golden_gate: &mut Option<crate::golden_gate::GoldenGateReport>,
 ) -> Result<Vec<String>, Error> {
     target.validate()?;
     if plan.target_revision != target.revision() {
@@ -2088,6 +2116,9 @@ fn reconstruct(
                     return Err(Error::Format("Golden Gate positional propagation disagrees with independently selected duplex geometry".into()));
                 }
                 next_physical = Some(tracked);
+                if index + 1 == plan.steps.len() {
+                    *final_golden_gate = Some(report);
+                }
                 product
             }
             Operation::Overlap {

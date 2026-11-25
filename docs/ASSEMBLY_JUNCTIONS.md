@@ -6,8 +6,8 @@ It never accepts an imported report or product metadata as chemical authority.
 The original plan and independent target remain distinct bindings. The returned
 context hash covers the complete original plan, actual target and options.
 
-Initial supported final operations are ordered `Ligate`, `Overlap` and
-`ProfiledOverlap`. Other final operations return their fresh verification and,
+Supported final operations are ordered `Ligate`, `Overlap`, `ProfiledOverlap`
+and selected `GoldenGate`. Other final operations return their fresh verification and,
 when available, exact final product receipt, with junction inspection explicitly
 incomplete. A final product exists only if every plan step reconstructed; the
 last successful preparation is never substituted for a failed final assembly.
@@ -100,3 +100,35 @@ and context checks without rerunning verification or translation. A decoded
 report grants no authority to edit a document, recover chemistry or promote a
 candidate. Existing workspace and plan schemas remain unchanged; only the new
 worker analysis envelope carries this report.
+
+
+## Selected Golden Gate paths
+
+The verifier privately retains the final Golden Gate enumeration from the same
+fresh pass that creates its actual product. Junction inspection consumes that
+receipt without rerunning pool search or taking boundaries from the target,
+recipe order or serialized physical summaries. The selected duplex must equal the
+final physical trace and product; each actual oriented fragment must cover its
+recorded output span. Boundaries sum those top lengths, with circle closure at0.
+
+`Method::GoldenGate` is appended after the original three method variants. It
+contains the actual candidate index, selected path, finite enumeration completeness,
+state count and truncation reasons. Each part records pool/fragment/template
+indices, the exact Input/Step source revision, source top and bottom cut boundaries,
+actual orientation/strand lengths, output span and physical ends. Source cuts
+refer to the original prepared template; reversed top DNA comes from its real
+opposite strand. These positions are not guessed by reverse-complementing a
+selected top-reference slice. Junction upstream/downstream numbers identify
+selected path positions, independently of recipe-row order.
+
+The existing local DNA/frame/CDS calculation uses the actual selected product.
+Target-only CDS annotations do not become product evidence. Wrong targets retain
+Invalid status while actual windows remain inspectable. Capped finite search
+retains its incomplete status separately from the selected path's window coverage.
+A failed final operation still exposes no final windows, even when preparations
+were successfully reconstructed. Metadata validation checks bounded path coverage,
+source-step receipts, actual output spans and junction/end correspondence; it does
+not authenticate arbitrary imported reports or restore their chemical authority.
+
+Worker48 protects the new nested method selector. Existing request/result tags,
+old method layouts, candidate11, plan9, science14 and native archive1 stay unchanged.

@@ -3,7 +3,7 @@
 use crate::{app::download, worker::CachedWorker};
 use collagene_core::{
     Molecule,
-    assembly_junctions::{self, Frame, Options, Report},
+    assembly_junctions::{self, Frame, Method, Options, Report},
     protocol::{AnalysisJob, AnalysisResult, Request},
     verification::DesignPlan,
 };
@@ -222,9 +222,9 @@ pub fn AssemblyJunctionsPanel(
         <label>"Maximum junctions (1–128)"<input type="number" min="1" max="128" aria-label="Maximum assembly junctions" prop:value=move||form.with(|f|f.junctions.clone()) on:input=move|e|form.update(|f|f.junctions=event_target_value(&e))/></label>
         <label class="checkbox-label"><input type="checkbox" aria-label="Review CDS annotations at junctions" prop:checked=move||form.with(|f|f.cds) on:change=move|e|form.update(|f|f.cds=event_target_checked(&e))/>"Review available CDS annotations"</label>
         <button class="button secondary full" disabled=move||busy.get()||identity.with(|i|i.0.is_empty()||i.1.is_empty()) on:click=move|_|inspect.run(())>"Inspect assembly junctions"</button><button class="text-tool" disabled=move||!busy.get() on:click=cancel>"Cancel junction inspection"</button><p class="assembly-junction-status" role="status">{move||status.get()}</p>
-        {move||evidence.get().map(|shown|{let saved=shown.clone();let count=shown.report.junctions.len();let pages=count.max(1).div_ceil(8);let current=page.get().min(pages-1);view!{<div class="assembly-junction-report"><p>{format!("Inspection complete within model: {} · {} junctions retained · {} omitted by limits",shown.report.complete,count,shown.report.omitted_junctions)}</p><p>{format!("Product reference: {}",shown.report.product_revision.as_deref().unwrap_or("unavailable"))}</p><p>{format!("Independent-target assessment: {}",match shown.report.verification.status{collagene_core::verification::Status::Invalid=>"inconsistent",collagene_core::verification::Status::Incomplete=>"incomplete",collagene_core::verification::Status::ConsistentUnderAssumptions=>"consistent under stated assumptions"})}</p><details><summary>"Source and calculation details"</summary><p class="helper">{format!("Plan {} · target {} · engine {}",shown.report.plan_revision,shown.report.target_revision,shown.report.engine_version)}</p></details><details><summary>"Findings and limitations"</summary>{shown.report.warnings.iter().chain(&shown.report.verification.findings).map(|w|view!{<p>{w.clone()}</p>}).collect_view()}</details>{shown.report.junctions.iter().skip(current*8).take(8).map(|junction|{
+        {move||evidence.get().map(|shown|{let saved=shown.clone();let path=golden_gate_path(&shown.report);let is_golden=matches!(shown.report.method,Some(Method::GoldenGate{..}));let count=shown.report.junctions.len();let pages=count.max(1).div_ceil(8);let current=page.get().min(pages-1);view!{<div class="assembly-junction-report"><h4>{method_label(shown.report.method.as_ref())}</h4>{path}<p>{format!("Inspection complete within model: {} · {} junctions retained · {} omitted by limits",shown.report.complete,count,shown.report.omitted_junctions)}</p><p>{format!("Product reference: {}",shown.report.product_revision.as_deref().unwrap_or("unavailable"))}</p><p>{format!("Independent-target assessment: {}",match shown.report.verification.status{collagene_core::verification::Status::Invalid=>"inconsistent",collagene_core::verification::Status::Incomplete=>"incomplete",collagene_core::verification::Status::ConsistentUnderAssumptions=>"consistent under stated assumptions"})}</p><details><summary>"Source and calculation details"</summary><p class="helper">{format!("Plan {} · target {} · engine {}",shown.report.plan_revision,shown.report.target_revision,shown.report.engine_version)}</p></details><details><summary>"Findings and limitations"</summary>{shown.report.warnings.iter().chain(&shown.report.verification.findings).map(|w|view!{<p>{w.clone()}</p>}).collect_view()}</details>{shown.report.junctions.iter().skip(current*8).take(8).map(|junction|{
             let dna=junction.window.dna.clone();let boundary=junction.window.boundary_offset;let marked=dna.split_at_checked(boundary).map(|(left,right)|format!("{left}|{right}")).unwrap_or_else(||dna.clone());
-            view!{<article class="assembly-junction"><h4>{format!("Junction {} · fragment {} → {}{}",junction.index+1,junction.upstream+1,junction.downstream+1,if junction.closing{" · circle closure"}else{""})}</h4><p>{format!("Product boundary {} (zero-based, between bases)",junction.boundary)}</p><p>{format!("DNA window product ranges: {}",junction.window.parts.iter().map(|r|format!("[{}, {})",r.start,r.end)).collect::<Vec<_>>().join(", "))}</p><p class="helper">{format!("Zero-based half-open product coordinates; {} left / {} right bases; window clipped: {}",junction.window.left_bases,junction.window.right_bases,junction.window.clipped)}</p><pre>{format!("Window 5′→3′: {marked}\n| marks the junction at window offset {boundary}")}</pre><p>{format!("Homology product ranges: {}",if junction.homology.is_empty(){"none".into()}else{junction.homology.iter().map(|r|format!("[{}, {})",r.start,r.end)).collect::<Vec<_>>().join(", ")})}</p>
+            view!{<article class="assembly-junction"><h4>{format!("Junction {} · {} {} → {}{}",junction.index+1,if is_golden{"selected path part"}else{"fragment"},junction.upstream+1,junction.downstream+1,if junction.closing{" · circle closure"}else{""})}</h4><p>{format!("Product boundary {} (zero-based, between bases)",junction.boundary)}</p><p>{format!("DNA window product ranges: {}",junction.window.parts.iter().map(|r|format!("[{}, {})",r.start,r.end)).collect::<Vec<_>>().join(", "))}</p><p class="helper">{format!("Zero-based half-open product coordinates; {} left / {} right bases; window clipped: {}",junction.window.left_bases,junction.window.right_bases,junction.window.clipped)}</p><pre>{format!("Window 5′→3′: {marked}\n| marks the junction at window offset {boundary}")}</pre><p>{format!("Homology product ranges: {}",if junction.homology.is_empty(){"none".into()}else{junction.homology.iter().map(|r|format!("[{}, {})",r.start,r.end)).collect::<Vec<_>>().join(", ")})}</p>
                 {junction.frames.iter().map(|frame|view!{<details><summary>{format!("{} frame {} · {} amino acids",if frame.spec.reverse{"Reverse-complement window"}else{"Forward window"},frame.spec.frame+1,frame.translation.protein.len())}</summary><pre>{frame.translation.protein.clone()}</pre><p>{format!("Junction in oriented window: offset {} · {} trailing bases · {} unresolved codons · {} possible stop codons",frame.boundary_offset,frame.translation.trailing_bases,frame.translation.unresolved_codons,frame.translation.possible_stop_codons)}</p>{frame.crossing_codon.as_ref().map(|codon|view!{<p>{format!("Boundary-crossing codon {} → {} at oriented-window offset {}",codon.dna,codon.amino_acid,codon.window_start)}</p>})}{frame.translation.warnings.iter().map(|w|view!{<p>{w.clone()}</p>}).collect_view()}</details>}).collect_view()}
                 {junction.cds.iter().map(|cds|view!{<details><summary>{format!("CDS annotation {}: {}{}",cds.feature_index+1,cds.label,if cds.needs_review{" · review required"}else{""})}</summary><p>{format!("Annotation spans boundary: {}",cds.spans_boundary)}</p>{cds.warning.as_ref().map(|w|view!{<p>{w.clone()}</p>})}{cds.translation.as_ref().map(|translation|view!{<pre>{format!("Coding DNA: {}\nPeptide: {}",translation.dna,translation.protein)}</pre><p>{format!("CDS codon_start {} · coding offset {} · first codon {} · {} codons · {} · code {} ({}) · complete under translation model: {}",translation.codon_start,translation.junction_coding_offset,translation.first_codon,translation.codon_count,if translation.reverse{"reverse strand"}else{"forward strand"},translation.genetic_code,translation.code_name,translation.complete_under_model)}</p>})}<p class="helper">"A local codon window and annotation correspondence are not evidence of a functional fusion or expression."</p></details>}).collect_view()}<p class="helper">{format!("Additional CDS annotations omitted: {}",junction.cds_omitted)}</p>
             </article>}
@@ -233,4 +233,39 @@ pub fn AssemblyJunctionsPanel(
             match serde_json::to_vec_pretty(&saved.report){Ok(bytes)=>if let Err(error)=download("assembly-junction-review.json","application/json",&bytes){status.set(error)},Err(error)=>status.set(error.to_string())}
         }>"Download junction evidence JSON"</button></div>}})}
     </details>}
+}
+
+fn method_label(method: Option<&Method>) -> &'static str {
+    match method {
+        Some(Method::Ligate) => "Ordered ligation junctions",
+        Some(Method::Overlap) => "Overlap junctions",
+        Some(Method::ProfiledOverlap) => "Profiled overlap junctions",
+        Some(Method::GoldenGate { .. }) => "Selected Golden Gate path junctions",
+        None => "Junction method unavailable",
+    }
+}
+fn golden_gate_path(report: &Report) -> AnyView {
+    let Some(Method::GoldenGate {
+        candidate_index,
+        path,
+        enumeration_complete,
+        states_examined,
+        truncation_reasons,
+    }) = &report.method
+    else {
+        return view! {<></>}.into_any();
+    };
+    view!{<details class="assembly-golden-path"><summary>{format!("Actual selected path · candidate {} · {} parts",candidate_index+1,path.len())}</summary>
+        <p>{format!("Finite pool enumeration complete: {} · {} states examined",enumeration_complete,states_examined)}</p>
+        {truncation_reasons.iter().map(|reason|view!{<p>{reason.clone()}</p>}).collect_view()}
+        <p class="helper">"Path positions describe the actual selected product, independently of recipe order. Source cuts below are zero-based original template top/bottom boundaries. A reversed part contributes its actual opposite strand; it is not inferred by reversing a reference slice. Pool completeness, junction-window completeness and target agreement are separate results."</p>
+        <div class="path-rows">{path.iter().map(|part|{
+            let source=match &part.template {collagene_core::verification::Source::Input(id)=>format!("Input {id}"),collagene_core::verification::Source::Step(index)=>format!("Preparation step {}",index+1)};
+            view!{<article><h4>{format!("Path part {} · {}",part.path_index+1,if part.reverse{"reversed actual duplex"}else{"forward actual duplex"})}</h4>
+                <p>{format!("{} · template {} · digest fragment {} · pool fragment {}",source,part.template_index+1,part.fragment_index+1,part.pool_fragment+1)}</p>
+                <p>{format!("Original template cuts: top {} / bottom {} · template top length {}",part.top_start,part.bottom_start,part.template_length)}</p>
+                <p>{format!("Product span [{}, {}) · oriented strand lengths top {} / bottom {}",part.output_start,part.output_end,part.top_length,part.bottom_length)}</p>
+            </article>}
+        }).collect_view()}</div>
+    </details>}.into_any()
 }

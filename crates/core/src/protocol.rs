@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 47;
+pub const WORKER_SCHEMA_VERSION: u16 = 48;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 11;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -1321,6 +1321,12 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
         AnalysisResult::AssemblyJunctionInspection(report) => {
             check_scientific_report_version(bytes, &report.verification.engine_version)?;
+            if matches!(
+                report.method,
+                Some(crate::assembly_junctions::Method::GoldenGate { .. })
+            ) {
+                check_variant_version(bytes, 48)?;
+            }
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::LigationRecipePreview(report) => {

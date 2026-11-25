@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **47** and reads supported schemas 1–46. Candidate files write schema 11; workspace plan schema is 9; the verifier is science-14.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **48** and reads supported schemas 1–47. Candidate files write schema 11; workspace plan schema is 9; the verifier is science-14.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -611,3 +611,16 @@ DNA. The standard verifier must freshly reconstruct that plan. Request/result
 bindings include the derived plan, selector and parent context; both directions
 require schema47 before payload decoding. Ordinary32MiB limits apply throughout.
 Candidate11, plan9, science14 and archive1 remain unchanged.
+
+
+## Selected Golden Gate junction windows (schema 48)
+
+Existing `InspectAssemblyJunctions` job96/result88 now supports final GoldenGate
+operations using a private enumeration receipt captured in the same fresh verifier
+pass. The appended nested method selector3 is `GoldenGate`, with actual path/source
+mapping and finite-search metadata. Earlier method selectors0–2 and their payloads
+are unchanged. Response decoding rejects this new method under pre48 headers.
+The existing request payload remains valid at its original version: it already
+carried GoldenGate plans, previously reported as unsupported junction geometry.
+No new top-level job/result, operation or large-message exception is introduced.
+Ordinary32MiB caps and candidate11/plan9/science14/archive1 remain unchanged.

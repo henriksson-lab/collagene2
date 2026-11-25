@@ -762,3 +762,18 @@ GoldenGate plan. The junction-window adapter currently covers ordered ligation
 and overlap final steps; adding the selected GoldenGate path's exact junction
 windows remains required. Its current unsupported-method result must not be
 presented as complete junction inspection.
+
+
+### Actual selected Golden Gate junction windows
+
+The shared junction inspector now uses the actual selected Golden Gate digest
+path captured in the same native verifier pass. It reports true raw source cuts,
+reverse-strand contributions, output spans, adjacent ends, circular closure and
+actual local DNA/frame/CDS windows. Path positions are distinct from recipe rows.
+The existing product review and MCP junction tool expose those records without a
+second pool search, target-derived boundaries or recovered metadata authority.
+Wrong targets and capped searches retain their original assessments; failed final
+assembly supplies no windows. Worker48 adds only a nested method selector.
+This closes the previously recorded selected-path junction adapter gap; broader
+one-pot reaction, optimization/domestication, bulk cloning and remaining delivery
+gates stay active. [Inspection contract](ASSEMBLY_JUNCTIONS.md).

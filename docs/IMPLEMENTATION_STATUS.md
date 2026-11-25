@@ -669,3 +669,29 @@ The web WASM compiler check also passed. Both checks used the existing shared
 cache while documentation work continued. No browser check or preview rebuild
 ran; port8082 retains the last published immutable snapshot. Further one-pot
 reaction coverage and selected-path junction windows remain active work.
+
+
+## Actual Golden Gate path junctions
+
+The existing junction inspector now supports the actual final GoldenGate path.
+A private same-pass verifier receipt supplies the selected fragments, true source
+cuts, actual opposite-strand orientation and final physical state. The inspector
+checks product coverage and reuses existing DNA-window, frame and CDS calculations.
+The UI labels selected path parts explicitly and offers a source/output mapping
+view; MCP includes the same typed path and retains full evidence. Search caps and
+overall target status remain distinct from junction-window coverage.
+
+Worker48 appends nested method3 while preserving job96/result88, all old method
+layouts and candidate11/plan9/science14/archive1. No scientific operation or second
+search pass is added.
+
+The native batch passed 23 cases: four new scientific/protocol fixtures and one
+real SDK group (forward, actual reverse-bottom and wrong-target cases), plus 18
+existing junction/worker/Golden Gate regression cases. Independent literals check
+cuts 11/15, product spans, circle closure, boundary-crossing codons, capped-search
+status, target-only annotation exclusion and failed-final-product withholding.
+
+The background web WASM compiler check passed as well. No browser check, full
+preview build or publication ran; port8082 retains the prior immutable snapshot.
+Whole-reaction Golden Gate preparation/cycling and the remaining cloning product
+requirements remain active.

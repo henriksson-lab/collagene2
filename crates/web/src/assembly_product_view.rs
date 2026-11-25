@@ -211,6 +211,7 @@ pub fn AssemblyProductView(
     report: VerificationReport,
     epoch: RwSignal<u64>,
     on_products: Callback<Vec<Molecule>, Result<(), String>>,
+    #[prop(optional_no_strip)] guard: Option<Callback<(), Result<(), String>>>,
     #[prop(optional_no_strip)] on_finalize: Option<
         Callback<collagene_core::transfer::Candidate, Result<(), String>>,
     >,
@@ -229,11 +230,27 @@ pub fn AssemblyProductView(
         }
     });
     let capture = Callback::new(move |()| {
-        snapshot.with_value(|s|{
-        if !current.get_untracked()||s.error.is_some(){return Err("The source context or reconstruction receipt changed; reconstruct the plan again.".into());}
-        collagene_core::assembly_junctions::source_preflight(&s.plan,&s.target).map_err(|e|e.to_string())?;
-        Ok((s.plan.clone(),s.target.clone()))
-    })
+        if let Some(guard) = guard {
+            guard.run(())?;
+        }
+        snapshot.with_value(|s| {
+            if !current.get_untracked() {
+                return Err("The source context changed; reconstruct the plan again.".into());
+            }
+            collagene_core::assembly_junctions::source_preflight(&s.plan, &s.target)
+                .map_err(|e| e.to_string())?;
+            if s.report.engine_version != verification::ENGINE_VERSION
+                || s.report.plan_revision != verification::plan_revision(&s.plan)
+                || s.report.target_revision != s.target.revision()
+                || s.plan.target_revision != s.report.target_revision
+            {
+                return Err("The reconstruction receipt differs from this plan or target.".into());
+            }
+            // Valid failed-final receipts can still export diagnostic protocols and
+            // inspect the failed step. Opening/finalization requires an actual final
+            // product separately; a successful preparation never stands in for it.
+            Ok((s.plan.clone(), s.target.clone()))
+        })
     });
     let open = move |_| {
         if !current.get_untracked() {
@@ -243,12 +260,14 @@ pub fn AssemblyProductView(
             );
             return;
         }
-        let result = snapshot.with_value(|s| {
-            if s.product_revision.is_none() || s.error.is_some() {
-                return Err("No bound final product is available.".into());
-            }
-            let final_product = s.report.products.last().ok_or("No final product")?;
-            on_products.run(vec![final_product.clone()])
+        let result = capture.run(()).and_then(|_| {
+            snapshot.with_value(|s| {
+                if s.product_revision.is_none() || s.error.is_some() {
+                    return Err("No bound final product is available.".into());
+                }
+                let final_product = s.report.products.last().ok_or("No final product")?;
+                on_products.run(vec![final_product.clone()])
+            })
         });
         match result{Ok(())=>status.set("Reconstructed reference opened. The original sources and intended target remain separate.".into()),Err(error)=>status.set(error)}
     };

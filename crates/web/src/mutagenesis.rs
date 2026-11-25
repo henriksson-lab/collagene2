@@ -6,7 +6,7 @@ use collagene_core::{
     mutagenesis::{InversePcrDesign, InversePcrOptions, PcrOptions, PcrReport},
     primers::BindingOptions,
     protocol::{AnalysisJob, AnalysisResult, Request, Response},
-    run_lineage::EventBinding,
+    run_lineage::{EventBinding, InputEventBinding},
     transfer::Candidate,
 };
 use leptos::prelude::*;
@@ -35,6 +35,23 @@ pub struct MutationSelection {
 pub struct IntentOpen {
     pub source: EventBinding,
     pub report: collagene_core::mutation_intent::Report,
+}
+#[derive(Clone)]
+pub struct CandidateOpen {
+    pub candidate: Candidate,
+    pub sources: Vec<InputEventBinding>,
+    pub target: EventBinding,
+    pub epoch: u64,
+}
+type InverseForm = (String, String, String, String, String, String);
+struct BoundInverse {
+    report: InversePcrDesign,
+    source: EventBinding,
+    target: EventBinding,
+    epoch: u64,
+    generation: u32,
+    form: InverseForm,
+    draft: crate::primer_pair_model::PairDraft,
 }
 struct IntendedEdit {
     report: collagene_core::mutation_intent::Report,
@@ -77,7 +94,7 @@ pub fn MutagenesisPanel(
     molecule: Memo<Molecule>,
     query_options: Memo<Vec<(usize, String)>>,
     get_query: Callback<usize, Option<Molecule>>,
-    on_candidate: Callback<Candidate>,
+    on_candidate: Callback<CandidateOpen>,
     on_products: Callback<Vec<Molecule>, Result<(), String>>,
     pair_draft: RwSignal<crate::primer_pair_model::PairDraft>,
     pair_selection: Callback<(), Result<crate::primer_pair_model::SelectionSeed, String>>,
@@ -127,7 +144,17 @@ pub fn MutagenesisPanel(
     let r_length = RwSignal::new("20".to_string());
     let split = RwSignal::new("0".to_string());
     let pcr = RwSignal::new(None::<Arc<PcrEvidence>>);
-    let inverse = RwSignal::new(None::<Arc<InversePcrDesign>>);
+    let inverse = RwSignal::new(None::<Arc<BoundInverse>>);
+    let inverse_form = Callback::new(move |()| {
+        (
+            edit_start.get_untracked(),
+            edit_end.get_untracked(),
+            inserted.get_untracked(),
+            f_length.get_untracked(),
+            r_length.get_untracked(),
+            split.get_untracked(),
+        )
+    });
     let status = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
     let generation = RwSignal::new(0u32);
@@ -389,7 +416,7 @@ pub fn MutagenesisPanel(
                 return;
             };
             if binding.revision != expected_source.revision()
-                || !anchor_available.run(binding)
+                || !anchor_available.run(binding.clone())
                 || !anchor_available.run(target_binding.get_untracked())
             {
                 status.set(
@@ -406,18 +433,23 @@ pub fn MutagenesisPanel(
             let captured_target = target_binding.get_untracked();
             let captured_epoch = epoch.get_untracked();
             let captured_draft = pair_draft.get_untracked();
+            let captured_form = inverse_form.run(());
             let alive = alive.clone();
             spawn_local(async move {
-                let response = worker::analyze(Request {
-                    id: token,
-                    revision: revision.clone(),
-                    job,
-                })
+                let response = worker::analyze_cancellable(
+                    Request {
+                        id: token,
+                        revision: revision.clone(),
+                        job,
+                    },
+                    alive.clone(),
+                )
                 .await;
                 if !alive.load(Ordering::Relaxed)
                     || generation.get_untracked() != token
                     || epoch.get_untracked() != captured_epoch
                     || pair_draft.get_untracked() != captured_draft
+                    || inverse_form.run(()) != captured_form
                     || source_binding.get_untracked() != captured_source
                     || target_binding.get_untracked() != captured_target
                 {
@@ -448,7 +480,32 @@ pub fn MutagenesisPanel(
                         }
                         AnalysisResult::InversePcr(report) => {
                             status.set(format!("Independent inverse-PCR plan check: {:?}. Review the bound steps and target before use.",report.verification.status));
-                            inverse.set(Some(Arc::new(report)));
+                            let Some(source) = captured_source else {
+                                status.set(
+                                    "The original inverse-PCR source event is missing.".into(),
+                                );
+                                return;
+                            };
+                            if report.source_revision != source.revision
+                                || report.target_revision != captured_target.revision
+                                || report.plan.target_revision != captured_target.revision
+                                || report.plan.inputs.len() != 1
+                                || report.plan.inputs[0].revision != source.revision
+                            {
+                                status.set(
+                                    "Inverse-PCR source or intended-target binding changed.".into(),
+                                );
+                                return;
+                            }
+                            inverse.set(Some(Arc::new(BoundInverse {
+                                report,
+                                source,
+                                target: captured_target,
+                                epoch: captured_epoch,
+                                generation: token,
+                                form: captured_form,
+                                draft: captured_draft,
+                            })));
                         }
                         AnalysisResult::Error(error) => status.set(error),
                         _ => status.set("Unexpected mutation worker result".into()),
@@ -530,6 +587,57 @@ pub fn MutagenesisPanel(
             Err(e) => status.set(e),
         }
     };
+    let review_inverse = Callback::new(move |bound: Arc<BoundInverse>| {
+        if epoch.get_untracked() != bound.epoch
+            || generation.get_untracked() != bound.generation
+            || inverse_form.run(()) != bound.form
+            || pair_draft.get_untracked() != bound.draft
+            || source_binding.get_untracked().as_ref() != Some(&bound.source)
+            || target_binding.get_untracked() != bound.target
+            || !anchor_available.run(bound.source.clone())
+            || !anchor_available.run(bound.target.clone())
+            || source
+                .get_untracked()
+                .is_none_or(|source| source.revision() != bound.source.revision)
+            || molecule.get_untracked().revision() != bound.target.revision
+            || !inverse.with_untracked(|current| {
+                current
+                    .as_ref()
+                    .is_some_and(|current| Arc::ptr_eq(current, &bound))
+            })
+        {
+            status.set(
+                "The inverse-PCR draft, source or intended target changed; design it again.".into(),
+            );
+            return;
+        }
+        let candidate = Candidate::new(bound.report.plan.clone());
+        if let Err(error) = candidate.validate() {
+            status.set(error.to_string());
+            return;
+        }
+        if candidate.plan.inputs.len() != 1
+            || candidate.plan.inputs[0].revision != bound.source.revision
+            || candidate.plan.inputs[0].molecule.revision() != bound.source.revision
+            || candidate.plan.target_revision != bound.target.revision
+        {
+            status.set(
+                "The inverse-PCR candidate differs from its original source or intended target."
+                    .into(),
+            );
+            return;
+        }
+        let input_id = candidate.plan.inputs[0].id.clone();
+        on_candidate.run(CandidateOpen {
+            candidate,
+            sources: vec![InputEventBinding {
+                input_id,
+                event: bound.source.clone(),
+            }],
+            target: bound.target.clone(),
+            epoch: bound.epoch,
+        });
+    });
     view! {
         <style>".mutation-panel .mutation-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.mutation-panel pre{white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.6 monospace;background:#f3f6f3;padding:9px;max-height:250px;overflow:auto}.mutation-panel .mutation-product{padding:10px 0;border-bottom:1px solid #e2e9e2;font-size:12px;line-height:1.6}.mutation-panel .mutation-status{font-size:12px;line-height:1.6;overflow-wrap:anywhere}.mutation-panel ul{padding-left:18px}.mutation-panel details{margin:10px 0}"</style>
         <div class="inspector-content mutation-panel"><h2>"Mutagenesis"</h2><label>"Source template"<select aria-label="Mutagenesis template" prop:value=move||template_index.get().to_string() on:change=move|e|template_index.set(event_target_value(&e).parse().unwrap_or(0))>{move||query_options.get().into_iter().map(|(i,name)|view!{<option value=i.to_string()>{name}</option>}).collect_view()}</select></label><p class="mutation-status" role="status">{move||status.get()}</p>
@@ -559,7 +667,7 @@ pub fn MutagenesisPanel(
         {move||pcr.get().map(|bound|{let report=&bound.report;let download=bound.clone();view!{<section class="mutation-pcr-result"><h3>{format!("{} conditional PCR products",report.products.len())}</h3><p class="helper">{format!("Search complete: {} · complete model: {} · unsupported geometries {} · conflicting overlaps {}",report.search_complete,report.enumeration_complete,report.unsupported_geometries,report.conflicting_overlaps)}</p><ul>{report.warnings.iter().chain(bound.findings.iter()).cloned().map(|w|view!{<li>{w}</li>}).collect_view()}</ul>{report.products.iter().take(50).enumerate().map(|(index,p)|{let action=bound.clone();view!{<article class="mutation-product"><strong>{format!("Product {} · {} bp · {} primer substitutions",index+1,p.sequence.len(),p.substitutions.len())}</strong><p>{format!("Source starts F {} / R {} · domains overlap: {} · concrete: {}",p.forward_start+1,p.reverse_start+1,p.overlapping_domains,p.certain)}</p><pre>{p.sequence.as_str().chars().take(160).collect::<String>()}</pre><button class="button secondary" on:click=move|_|match preview_document(&action,index).and_then(|m|on_products.run(vec![m])){Ok(())=>status.set("Reference preview opened with source annotation mapping. Changed or uncertain features require review.".into()),Err(e)=>status.set(e)}>"Open product reference preview"</button></article>}}).collect_view()}<p class="helper">"First 50 geometries shown. Previews retain source annotation mappings and binding evidence; changed or uncertain features require review. They assert neither target verification nor physical chemistry. JSON retains all returned products and limits."</p><button class="button secondary full" on:click=move|_|match serde_json::to_vec_pretty(&download.report){Ok(bytes)=>if let Err(e)=crate::app::download("mismatch-pcr.json","application/json",&bytes){status.set(e)},Err(e)=>status.set(e.to_string())}>"Download mismatch PCR evidence"</button></section>}})}
         <h3>"3. Design inverse-PCR preparation"</h3><p class="helper">{move||format!("Active document is the independently specified intended circular target: {}. Choose the original circular source above.",molecule.get().name)}</p>
         <div class="mutation-grid">{[("Forward annealing length","Mutation forward length",f_length),("Reverse annealing length","Mutation reverse length",r_length),("Inserted bases on reverse tail","Mutation tail split",split)].into_iter().map(|(label,aria,value)|view!{<label>{label}<input aria-label=aria type="number" prop:value=move||value.get() on:input=move|e|value.set(event_target_value(&e))/></label>}).collect_view()}</div><button class="button primary full" disabled=move||busy.get()||intent_busy.get()||source.get().is_none() on:click=design>"Design inverse-PCR candidate"</button>
-        {move||inverse.get().map(|report|{let candidate=Candidate::new(report.plan.clone());let download=report.clone();view!{<section class="inverse-pcr-result"><h3>{format!("Inverse-PCR check: {:?}",report.verification.status)}</h3><pre>{format!("F  {}\nR  {}",report.forward.ordered_sequence(),report.reverse.ordered_sequence())}</pre><p class="helper">{format!("Retained template {} bp · intended target {}…",report.retained_template_length,report.target_revision.chars().take(12).collect::<String>())}</p><ol><li>"Exact back-to-back PCR with explicit tails"</li><li>"Explicit terminal phosphorylation"</li><li>"Sealed blunt circular ligation"</li></ol><ul>{report.verification.findings.iter().chain(report.warnings.iter()).cloned().map(|w|view!{<li>{w}</li>}).collect_view()}</ul><button class="button primary full" on:click=move|_|on_candidate.run(candidate.clone())>"Review inverse-PCR candidate"</button><button class="button secondary full" on:click=move|_|match serde_json::to_vec_pretty(download.as_ref()){Ok(bytes)=>if let Err(e)=crate::app::download("inverse-pcr-design.json","application/json",&bytes){status.set(e)},Err(e)=>status.set(e.to_string())}>"Download inverse-PCR evidence"</button></section>}})}
+        {move||inverse.get().map(|bound|{let report=&bound.report;let action=bound.clone();let download=bound.clone();view!{<section class="inverse-pcr-result"><h3>{format!("Inverse-PCR check: {:?}",report.verification.status)}</h3><pre>{format!("F  {}\nR  {}",report.forward.ordered_sequence(),report.reverse.ordered_sequence())}</pre><p class="helper">{format!("Retained template {} bp · intended target {}…",report.retained_template_length,report.target_revision.chars().take(12).collect::<String>())}</p><ol><li>"Exact back-to-back PCR with explicit tails"</li><li>"Explicit terminal phosphorylation"</li><li>"Sealed blunt circular ligation"</li></ol><ul>{report.verification.findings.iter().chain(report.warnings.iter()).cloned().map(|w|view!{<li>{w}</li>}).collect_view()}</ul><button class="button primary full" on:click=move|_|review_inverse.run(action.clone())>"Review inverse-PCR candidate"</button><button class="button secondary full" on:click=move|_|match serde_json::to_vec_pretty(&download.report){Ok(bytes)=>if let Err(e)=crate::app::download("inverse-pcr-design.json","application/json",&bytes){status.set(e)},Err(e)=>status.set(e.to_string())}>"Download inverse-PCR evidence"</button></section>}})}
         </div>
     }
 }

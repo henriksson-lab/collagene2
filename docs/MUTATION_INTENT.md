@@ -30,3 +30,18 @@ Six core edit groups, two binary protocol groups, two real MCP SDK groups and tw
 native history-staging cases passed. Existing native web unit cases, the full
 122-tool stdio smoke and final web/worker WASM compiler check also passed. Browser
 checks remain deferred, so these checks do not establish GUI acceptance.
+
+## Inverse-PCR review and outputs
+
+The inverse-PCR candidate handoff now preserves the exact original source and
+independent target events, rather than dropping source preferences. It synchronously
+checks the retained result, form, generation and epoch before opening the general
+plan panel. Fresh verification leads to the shared actual-product viewer, order
+CSV/TSV, HTML/PDF and construct/primer/prepared-reference output chooser. Explicit
+historical source events are retained without rewinding current heads. The active
+target must still match its exact reviewed event. See [output finalization](CLONING_OUTPUTS.md).
+
+An intended edit remains reference-only; this connection does not promote it to
+prepared material or use simulated DNA as its own expected target. Existing
+inverse-PCR PCR/treatment/ligation assumptions and finalizer assessment policy
+remain explicit.

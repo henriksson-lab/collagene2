@@ -16,6 +16,22 @@ Browser checks remain deferred and compiler checks run alongside coding.
 
 ## Explicit ordinary PCR outputs
 
+Follow-up: inverse-PCR now forwards the original source event, independent target
+event and epoch into candidate review. The main plan panel reuses the existing
+actual-product view and finalizer, including named constructs, optional primers
+and prepared-reference visibility, CSV/TSV and HTML/PDF. Target-event receipts
+guard later actions; explicit historical source events remain usable after head
+advancement without substituting matching DNA in another document. Failed-final
+plans retain diagnostic protocol export, without opening a preceding preparation
+as a final product. Existing-target staging creates no synthetic assembly intent.
+
+Forty-five native cases passed: six existing cloning-output cases, two end-to-end
+inverse-PCR output fixtures, and 37 native web cases including four new exact-event
+staging cases. No new scientific engine, runtime dependency, worker schema or MCP
+tool is introduced by this connection. The web application and analysis worker
+passed the final WASM compiler check; no browser checks were run.
+[Output contract](CLONING_OUTPUTS.md).
+
 Ordinary exact-PCR no longer opens every returned product immediately. The review
 pages every geometry and selected DNA, shows actual oligo roles, retains names and
 tails, and requires a choice when several geometries exist. Users choose a named
@@ -32,7 +48,7 @@ covering selected alternatives, annotations, stale inputs, complete named orders
 optional outputs, IUPAC/long tails and old-schema binary rejection, alongside
 existing PCR-document and oligo-format regression cases. The web application and
 analysis worker also passed the WASM compiler check. Browser acceptance remains
-deferred. Inverse-PCR event handoff/shared output review and the wider product
+deferred. Mismatch-PCR/standalone primer output connections and the wider product
 goal remain unfinished. [Output contract](PCR_OUTPUTS.md).
 
 ## Coherent assembly junction edits

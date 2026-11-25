@@ -140,6 +140,14 @@ pub fn AssemblyOutputs(
             busy.set(false);
             let outcome = (|| -> Result<String, String> {
                 let response = result?;
+                // Recheck host-owned source/target event guards after the worker,
+                // including switches between equal-content documents.
+                let (current_plan, current_target) = capture.run(())?;
+                if verification::plan_revision(&current_plan) != bound.0
+                    || current_target.revision() != bound.1
+                {
+                    return Err("The reviewed plan or target changed during export.".into());
+                }
                 if response.id != token || response.revision != revision {
                     return Err("Export response does not match the reviewed design.".into());
                 }

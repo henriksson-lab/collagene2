@@ -60,9 +60,10 @@ and new binary gates. Browser acceptance remains deferred until the full in-scop
 implementation is complete.
 
 This closes the ordinary-PCR automatic-all-products handoff identified in the
-[Benchling review](BENCHLING_PCR_OUTPUT_REVIEW.md). Inverse-PCR still needs exact
-source-event preferences forwarded into candidate review and connection to the
-existing construct/primer/prepared-output chooser. Mismatch-PCR and standalone
+[Benchling review](BENCHLING_PCR_OUTPUT_REVIEW.md). Inverse-PCR now forwards exact
+source/target events into general candidate review and reuses the actual-product,
+construct/primer/prepared-output chooser and order exports described in
+[cloning outputs](CLONING_OUTPUTS.md). Mismatch-PCR and standalone
 primer-analysis output actions should reuse these contracts where appropriate.
 No expected target is synthesized from a PCR result merely to enter an assembly
 finalizer.

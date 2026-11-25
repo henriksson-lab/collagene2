@@ -591,8 +591,11 @@ collection creation are separate choices, with CSV/TSV for the literal named pai
 Fresh worker reconstruction checks the original preview revision before the host
 atomically installs outputs bound to the exact template event and unchanged draft.
 This is reference construction, without an invented independent target or physical
-verification claim. Worker50 appends only this output job/result. Inverse-PCR's
-source-event handoff and shared output/order review remain next connected work.
+verification claim. Worker50 appends only this output job/result. Inverse-PCR now
+also preserves source/target events through review and uses the existing actual
+product viewer, shared output chooser and order/protocol exports. Its finalizer
+reconstructs from exact original events without creating another expected reference.
+Mismatch-PCR and standalone primer-analysis output actions remain follow-ups.
 [Selected PCR outputs](PCR_OUTPUTS.md).
 
 The latest source-aware workflow reviews supersede older gap lists where those
@@ -611,10 +614,10 @@ binding geometries, named oligos, original source events and separate intended-t
 checking: a simulator-derived PCR preview is not an independently verified design.
 Reuse the existing output and oligo-export machinery where its contracts fit;
 do not invent an intended reference merely to satisfy an assembly-only finalizer.
-Inverse-PCR already reaches general candidate review, verification and protocol
-export, but its handoff currently clears source-event preferences and does not
-reach the assembly output chooser. Preserve those exact bindings and reuse output
-review rather than duplicating its existing candidate tools. Existing editor selection, keyboard
+Inverse-PCR now reaches general candidate review with exact source-event
+preferences, fresh verification, actual-product inspection and the shared output
+chooser/order exports. Keep those bindings through later workflow refinements
+rather than duplicating its existing candidate tools. Existing editor selection, keyboard
 edits, enzyme cut-count filters, saved read checks and human review decisions
 must not be rebuilt from stale gap descriptions.
 

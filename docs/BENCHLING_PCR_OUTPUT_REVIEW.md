@@ -6,8 +6,11 @@ Subsequent implementation: ordinary exact-PCR now retains all returned geometrie
 for explicit selection, naming, optional product/oligo output and CSV/TSV. Fresh
 worker reconstruction and exact original-event guards precede atomic staging.
 The observations below record the pre-change audit; the ordinary-PCR handoff is
-no longer wholly absent. [Current contract](PCR_OUTPUTS.md). Inverse-PCR and the
-other follow-ups remain active.
+no longer wholly absent. [Current contract](PCR_OUTPUTS.md). Inverse-PCR now also
+preserves exact source/target events through candidate review and reaches the
+shared actual-product/output/order route; [current output contract](CLONING_OUTPUTS.md).
+The comparison below records the original audit, rather than an unchanged backlog.
+Mismatch-PCR and standalone primer-analysis follow-ups remain active.
 
 ## Documented Benchling behavior
 

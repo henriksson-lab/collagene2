@@ -43,6 +43,69 @@ pub struct Staged {
     pub target: EventBinding,
     pub sources: Vec<InputEventBinding>,
 }
+/// Stage an existing independently specified target and explicitly pinned inputs.
+/// No target is constructed, source head rewound or scientific check restored.
+/// Historical source events are valid only when supplied with their exact IDs;
+/// equal content in another document is never used as a replacement.
+pub fn stage_existing(
+    frame: &Workspace,
+    candidate: &Candidate,
+    target: &EventBinding,
+    sources: &[InputEventBinding],
+) -> Result<Staged, String> {
+    frame.validate().map_err(|e| e.to_string())?;
+    candidate.validate().map_err(|e| e.to_string())?;
+    if sources.len() != candidate.plan.inputs.len() || sources.len() > 128 {
+        return Err("Pinned input count differs from the candidate output profile.".into());
+    }
+    let docs = DocumentHistory::restore_all(frame).map_err(|e| e.to_string())?;
+    let intended = docs
+        .iter()
+        .find(|doc| doc.id == frame.active_document)
+        .ok_or("No active independent target document is retained.")?;
+    if intended.id != target.document_id
+        || intended.head_event() != target.event_id
+        || intended.head_revision() != target.revision
+        || target.revision != candidate.plan.target_revision
+    {
+        return Err(
+            "The exact active intended-target event changed; review the plan again.".into(),
+        );
+    }
+    for (input, pinned) in candidate.plan.inputs.iter().zip(sources) {
+        if input.id != pinned.input_id {
+            return Err("Ordered pinned input identities differ from the candidate.".into());
+        }
+        let source = docs
+            .iter()
+            .find(|doc| doc.id == pinned.event.document_id)
+            .ok_or("A pinned source document is unavailable.")?;
+        let exact = source
+            .revision_molecule(&pinned.event.event_id)
+            .map_err(|e| e.to_string())?;
+        if exact.revision() != pinned.event.revision
+            || pinned.event.revision != input.revision
+            || exact != input.molecule
+        {
+            return Err("An exact source event differs from its candidate input.".into());
+        }
+    }
+    let mut staged = frame.clone();
+    if !staged
+        .candidates
+        .iter()
+        .any(|existing| existing.plan_revision == candidate.plan_revision)
+    {
+        staged.candidates.push(candidate.clone());
+    }
+    staged.active_candidate = Some(candidate.plan_revision.clone());
+    staged.validate().map_err(|e| e.to_string())?;
+    Ok(Staged {
+        workspace: staged,
+        target: target.clone(),
+        sources: sources.to_vec(),
+    })
+}
 pub fn retained_inputs(
     docs: &[DocumentHistory],
     sources: &[InputEventBinding],
@@ -376,6 +439,155 @@ mod tests {
             }],
         });
         (frame, intent, vec![binding], candidate)
+    }
+    fn existing_fixture() -> (Workspace, EventBinding, Vec<InputEventBinding>, Candidate) {
+        let (frame, intent, bindings, candidate) = fixture();
+        let staged = stage(&frame, &intent, &bindings, &candidate).unwrap();
+        let mut frame = staged.workspace;
+        frame.candidates.clear();
+        frame.active_candidate = None;
+        (frame, staged.target, staged.sources, candidate)
+    }
+    #[test]
+    fn existing_target_outputs_stage_only_the_candidate_without_inventing_intent() {
+        let (frame, target, sources, candidate) = existing_fixture();
+        let before = serde_json::to_value(&frame).unwrap();
+        let staged = stage_existing(&frame, &candidate, &target, &sources).unwrap();
+        assert_eq!(staged.target, target);
+        assert_eq!(
+            serde_json::to_value(&staged.sources).unwrap(),
+            serde_json::to_value(&sources).unwrap()
+        );
+        assert_eq!(staged.workspace.documents.len(), 2);
+        assert_eq!(staged.workspace.active_document, frame.active_document);
+        assert_eq!(
+            staged.workspace.active_candidate.as_ref(),
+            Some(&candidate.plan_revision)
+        );
+        assert_eq!(staged.workspace.candidates.len(), 1);
+        assert!(staged.workspace.attachments.is_empty());
+        let again = stage_existing(&staged.workspace, &candidate, &target, &sources).unwrap();
+        assert_eq!(
+            serde_json::to_value(&again.workspace).unwrap(),
+            serde_json::to_value(&staged.workspace).unwrap()
+        );
+        let mut without_candidate = staged.workspace;
+        without_candidate.candidates.clear();
+        without_candidate.active_candidate = None;
+        assert_eq!(serde_json::to_value(&without_candidate).unwrap(), before);
+        assert_eq!(serde_json::to_value(&frame).unwrap(), before);
+    }
+    #[test]
+    fn existing_target_outputs_use_original_source_events_without_rewinding_heads() {
+        let (mut frame, target, sources, candidate) = existing_fixture();
+        let mut docs = DocumentHistory::restore_all(&frame).unwrap();
+        let source = docs
+            .iter_mut()
+            .find(|doc| doc.id == sources[0].event.document_id)
+            .unwrap();
+        source
+            .commit(
+                source.molecule.replace(0, 1, "T").unwrap(),
+                "Changed original after inverse-PCR design",
+            )
+            .unwrap();
+        let advanced = source.head_event().to_owned();
+        frame.documents.clear();
+        frame.history.clear();
+        frame.revisions.clear();
+        for doc in &docs {
+            doc.contribute(&mut frame).unwrap();
+        }
+        let staged = stage_existing(&frame, &candidate, &target, &sources).unwrap();
+        assert_eq!(staged.sources[0].event, sources[0].event);
+        assert_eq!(
+            staged
+                .workspace
+                .documents
+                .iter()
+                .find(|doc| doc.id == sources[0].event.document_id)
+                .unwrap()
+                .head_event
+                .as_deref(),
+            Some(advanced.as_str())
+        );
+        assert_eq!(
+            staged.workspace.revisions[&sources[0].event.revision]
+                .sequence
+                .as_str(),
+            "ACGTACGT"
+        );
+    }
+    #[test]
+    fn existing_target_outputs_reject_alias_substitution_and_same_dna_new_target_events() {
+        let (mut frame, target, sources, candidate) = existing_fixture();
+        let alias = DocumentHistory::new(
+            "equal-source-alias",
+            candidate.plan.inputs[0].molecule.clone(),
+        )
+        .unwrap();
+        alias.contribute(&mut frame).unwrap();
+        let before = serde_json::to_value(&frame).unwrap();
+        let mut swapped = sources.clone();
+        // Equal content in this other document cannot supply the original event.
+        swapped[0].event.document_id = alias.id;
+        assert!(stage_existing(&frame, &candidate, &target, &swapped).is_err());
+        assert_eq!(serde_json::to_value(&frame).unwrap(), before);
+        let mut docs = DocumentHistory::restore_all(&frame).unwrap();
+        let intended = docs
+            .iter_mut()
+            .find(|doc| doc.id == target.document_id)
+            .unwrap();
+        let original = intended.molecule.clone();
+        intended
+            .commit(
+                original.replace(0, 1, "T").unwrap(),
+                "Temporary target edit",
+            )
+            .unwrap();
+        intended
+            .commit(original, "Reverted DNA in a distinct target event")
+            .unwrap();
+        assert_eq!(intended.head_revision(), target.revision);
+        let next = EventBinding {
+            document_id: intended.id.clone(),
+            event_id: intended.head_event().into(),
+            revision: intended.head_revision().into(),
+        };
+        assert_ne!(next.event_id, target.event_id);
+        frame.documents.clear();
+        frame.history.clear();
+        frame.revisions.clear();
+        for doc in &docs {
+            doc.contribute(&mut frame).unwrap();
+        }
+        let before = serde_json::to_value(&frame).unwrap();
+        assert!(stage_existing(&frame, &candidate, &target, &sources).is_err());
+        assert_eq!(serde_json::to_value(&frame).unwrap(), before);
+        assert!(stage_existing(&frame, &candidate, &next, &sources).is_ok());
+    }
+    #[test]
+    fn existing_target_outputs_require_ordered_unique_input_ids_and_the_active_target() {
+        let (mut frame, target, mut sources, candidate) = existing_fixture();
+        let mut plan = candidate.plan;
+        let mut second = plan.inputs[0].clone();
+        second.id = "second-source-role".into();
+        plan.inputs.push(second);
+        sources.push(InputEventBinding {
+            input_id: "second-source-role".into(),
+            event: sources[0].event.clone(),
+        });
+        let candidate = Candidate::new(plan);
+        assert!(stage_existing(&frame, &candidate, &target, &sources).is_ok());
+        let mut incorrect = sources.clone();
+        incorrect.swap(0, 1);
+        assert!(stage_existing(&frame, &candidate, &target, &incorrect).is_err());
+        incorrect = sources.clone();
+        incorrect[1].input_id = incorrect[0].input_id.clone();
+        assert!(stage_existing(&frame, &candidate, &target, &incorrect).is_err());
+        assert!(stage_existing(&frame, &candidate, &target, &sources[..1]).is_err());
+        frame.active_document = sources[0].event.document_id.clone();
+        assert!(stage_existing(&frame, &candidate, &target, &sources).is_err());
     }
     #[test]
     fn target_and_candidate_install_atomically_without_a_positive_check() {

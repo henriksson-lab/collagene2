@@ -61,14 +61,16 @@ fn workspace_guard(w: &Workspace) -> Result<(), Error> {
         return Err(Error::TooLarge);
     }
     for m in w.revisions.values() {
-        crate::model::bounds::model_preflight(&[m])?;
+        // Unrelated documents retain native annotation limits. The actual
+        // requested plan and target receive scientific guards below.
+        m.validate()?;
     }
     for c in &w.candidates {
-        if c.plan.inputs.len() > 128 || c.plan.steps.len() > 1000 {
+        if c.plan.inputs.len() > 1000 || c.plan.steps.len() > 1000 {
             return Err(Error::TooLarge);
         }
         for i in &c.plan.inputs {
-            crate::model::bounds::model_preflight(&[&i.molecule])?;
+            i.molecule.validate()?;
         }
     }
     w.validate()
@@ -471,7 +473,7 @@ impl Commit {
     }
 }
 
-fn ancestry(w: &Workspace, event: &str, ancestor: &str) -> bool {
+pub(crate) fn ancestry(w: &Workspace, event: &str, ancestor: &str) -> bool {
     let by_id: std::collections::BTreeMap<_, _> =
         w.history.iter().map(|e| (e.id.as_str(), e)).collect();
     let mut seen = BTreeSet::new();
@@ -495,7 +497,7 @@ fn ancestry(w: &Workspace, event: &str, ancestor: &str) -> bool {
     false
 }
 
-fn same_reference(a: &Molecule, b: &Molecule) -> bool {
+pub(crate) fn same_reference(a: &Molecule, b: &Molecule) -> bool {
     a.sequence == b.sequence
         && a.topology == b.topology
         && a.features == b.features

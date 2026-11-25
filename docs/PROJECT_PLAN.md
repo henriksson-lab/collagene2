@@ -929,3 +929,28 @@ MCP136 expose this composition without new physical operations. Complete-cleavag
 one-copy bounds remain explicit; partial/kinetic cycling, repeated-copy mixtures,
 fusion optimization, domestication and bulk cloning still require work. Broader
 unfinished reaction-form persistence also remains required. [Reaction scope](GOLDEN_GATE_REACTION.md).
+
+
+### Fresh atomic combinatorial outputs
+
+Selected saved batch declarations now feed a fresh private finalizer, actual
+staged product/target review and an all-or-nothing named-output publication.
+Immutable manifests retain exact per-construct source, independent target, run,
+product and primer links. Saved positive statuses never authorize release.
+Selected GenBank/FASTA/primer CSV/TSV and HTML/PDF outputs form a bounded ZIP
+with loss/provenance review; protocol requests use current native verification.
+Worker58 and four additional MCP tools expose the same contracts. Full reaction
+batch composition, library topology editing and remaining delivery work stay
+active. [Detailed contract](COMBINATORIAL_RELEASE.md).
+
+
+### Continued parallel workflow checks
+
+Further official-source reviews clarify bin-local preparation, topology versus
+method changes, contribution versus display orientation, construct diagnostics,
+review/finalization, output history and selected sequence/primer exports.
+[Evidence and adaptation decisions](BENCHLING_WORKFLOW_DECISIONS.md#further-setup-review-preparation-topology-and-recovery)
+separate documented interactions from our independent scientific and transaction
+contracts. Matrix status filtering and easier construct-to-construct review remain
+useful refinements. Public inverse-PCR and detailed BP/LR recovery evidence remains
+incomplete; do not invent matching behavior or replace existing scientific models.

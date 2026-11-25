@@ -49,6 +49,7 @@ pub fn AssemblyBatchView(
     loaded: RwSignal<bool>,
     save_generation: RwSignal<u64>,
     message: RwSignal<String>,
+    on_release: Callback<String>,
 ) -> impl IntoView {
     let key = Memo::new(move |_| {
         draft.with(|value| assembly_batch_projection::project(value).map(|p| p.revision))
@@ -487,7 +488,7 @@ pub fn AssemblyBatchView(
         <button class="button secondary" disabled=move||!finished.get()||scope.get().is_none()||workspace_busy.get() on:click=capture>"Save batch evidence"</button>
         <p class="helper" role="status">{move||status.get()}</p>
         <button class="text-tool" disabled=move||workspace_busy.get() on:click=load_history>"Load saved batch records"</button>
-        <BatchHistory history open_record replay/>
+        <BatchHistory history open_record replay on_release busy=workspace_busy/>
         {move||historical_record.get().map(|record|view!{<button class="button secondary" on:click=move|_|match serde_json::to_vec(record.as_ref()){Ok(bytes)=>if let Err(error)=crate::app::download("combinatorial-batch.json","application/json",&bytes){status.set(error)},Err(error)=>status.set(error.to_string())}>"Download historical batch evidence JSON"</button>})}
     </details>}.into_any()
 }
@@ -535,13 +536,15 @@ fn BatchHistory(
     history: RwSignal<Vec<batch::Summary>>,
     open_record: Callback<String>,
     replay: Callback<String>,
+    on_release: Callback<String>,
+    busy: RwSignal<bool>,
 ) -> impl IntoView {
     let page = RwSignal::new(0usize);
     view!{<section>{move||history.with(|all|{
         let pages=all.len().div_ceil(10).max(1);let current=page.get().min(pages-1);
         let rows=all.iter().skip(current*10).take(10).map(|summary|{
-            let open=summary.attachment_hash.clone();let rerun=open.clone();
-            view!{<article><p>{format!("{} · {} rows · {} evaluated · {} errors · recorded {}",summary.design_name,summary.total_rows,summary.evaluated_rows,summary.error_rows,summary.recorded_engine)}</p><button class="text-tool" on:click=move|_|open_record.run(open.clone())>"Open historical batch"</button><button class="text-tool" on:click=move|_|replay.run(rerun.clone())>"Replay pinned matrix"</button></article>}
+            let open=summary.attachment_hash.clone();let rerun=open.clone();let release=open.clone();
+            view!{<article><p>{format!("{} · {} rows · {} evaluated · {} errors · recorded {}",summary.design_name,summary.total_rows,summary.evaluated_rows,summary.error_rows,summary.recorded_engine)}</p><button class="text-tool" on:click=move|_|open_record.run(open.clone())>"Open historical batch"</button><button class="text-tool" on:click=move|_|replay.run(rerun.clone())>"Replay pinned matrix"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|on_release.run(release.clone())>"Choose bulk outputs"</button></article>}
         }).collect_view();
         view!{<div>{rows}<p>{format!("Saved batch page {} of {pages}",current+1)}</p><button class="text-tool" disabled=current==0 on:click=move|_|page.set(current.saturating_sub(1))>"Previous saved batches"</button><button class="text-tool" disabled={current+1>=pages} on:click=move|_|page.set(current+1)>"Next saved batches"</button></div>}
     })}</section>}.into_any()

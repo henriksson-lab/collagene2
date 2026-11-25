@@ -105,11 +105,12 @@ operations bring the current registry to142 tools.
 
 ## Remaining delivery work
 
-Batch product release remains a separate fresh-reconstruction transaction using
-the existing run/output finalizer. Matrix-owned per-construct run/output records,
-bulk sequence/primer/HTML/PDF release, fuller per-row product inspection, batch
-reaction-pool composition and library topology editing remain in scope. A batch
-record is not permission to release imported products or claim a verified library.
+Batch product release now uses a separate fresh-reconstruction transaction and
+the existing run/output finalizer. Per-construct output manifests, actual staged
+product/target inspection and bulk sequence/primer/HTML/PDF ZIP exports are
+implemented; see [contracts](COMBINATORIAL_RELEASE.md). Batch reaction-pool
+composition and library topology editing remain in scope. A batch record is not
+permission to release imported products or claim a verified library.
 Browser/visual/performance acceptance stays deferred until all in-scope code is
 implemented.
 

@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 142;
+pub const CURRENT_TOOL_COUNT: usize = 146;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -2437,6 +2437,42 @@ impl ServerHandler for CollageneServer {
 
 #[tool_router]
 impl CollageneServer {
+    #[tool(
+        description = "Freshly reconstruct every explicitly selected saved combinatorial row against its independent target and atomically release named native constructs, retained preparation/run events and optional oligo collections in a NEW immutable workspace. Per-row output options are explicit. A late failure discards the entire private prefix and publishes no workspace/artifact. Returns full historical release manifest plus native archive; imported reports never authorize release, and experimental success is not asserted."
+    )]
+    async fn release_combinatorial_outputs(
+        &self,
+        Parameters(args): Parameters<combinatorial_tools::ReleaseQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.combinatorial_release(args).await
+    }
+    #[tool(
+        description = "Export a saved native combinatorial release as a bounded ZIP of selected GenBank/FASTA, declared-primer CSV/TSV and HTML/PDF protocols. Optional construct IDs select a subset. Stable ordinal/hash entry paths never use names as paths. Protocol files require fresh independent-declaration and native-product checks; sequence/primer-only exchange remains clearly historical. All requested files or an explicit failure, with complete format losses and exact source/run/output events in manifest.json. No subprocess, arbitrary filesystem path or experimental-success claim."
+    )]
+    async fn export_combinatorial_outputs(
+        &self,
+        Parameters(args): Parameters<combinatorial_tools::ExportQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.combinatorial_archive(args).await
+    }
+    #[tool(
+        description = "List retained native combinatorial release manifests with bounded paging. The records identify actual native output events and historical lineage; listing does not recompute science or restore current authority."
+    )]
+    async fn list_combinatorial_releases(
+        &self,
+        Parameters(args): Parameters<combinatorial_tools::ListQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.combinatorial_release_list(args).await
+    }
+    #[tool(
+        description = "Open one native combinatorial release manifest as historical JSON, including exact input/target/output events, per-row options and retained run identities. Leaves heads unchanged and never treats imported manifest status as fresh scientific authority."
+    )]
+    async fn open_combinatorial_release(
+        &self,
+        Parameters(args): Parameters<combinatorial_tools::ReleaseRef>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.combinatorial_release_open(args).await
+    }
     #[tool(
         description = "Page a declared alternative-source matrix in an imported native workspace, with exact retained source-event ownership and original interval checks. Uses stable bin/choice identities and bounded lazy enumeration (at most64 rows), not reaction-product enumeration. Does not test preparation, junctions, independent target agreement or experimental success."
     )]

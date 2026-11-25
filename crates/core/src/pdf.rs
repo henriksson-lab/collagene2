@@ -866,7 +866,17 @@ fn color(hex: &str) -> [f32; 3] {
 /// conspicuously marked drafts, including successfully reconstructed intermediates.
 pub fn export_protocol_pdf(plan: &DesignPlan, target: &Molecule) -> Result<PdfReport, Error> {
     preflight(plan, target)?;
-    let report = verification::verify(plan, target);
+    let checked = verification::checked_protocol(plan, target);
+    export_protocol_pdf_checked(&checked)
+}
+/// Only a fresh in-process native reconstruction can supply this shared renderer.
+pub(crate) fn export_protocol_pdf_checked(
+    checked: &verification::CheckedProtocol<'_>,
+) -> Result<PdfReport, Error> {
+    let plan = checked.plan();
+    let target = checked.target();
+    preflight(plan, target)?;
+    let report = checked.report();
     let mut layout = Layout::new(report.status)?;
     layout.paragraph_size(&plan.name, 21.0, GREEN)?;
     layout.paragraph("Computed sequence/chemistry checks. Reaction conditions, quantities and experimental outcome require laboratory review.")?;
@@ -1212,8 +1222,8 @@ pub fn export_protocol_pdf(plan: &DesignPlan, target: &Molecule) -> Result<PdfRe
         pages,
         warnings,
         status: report.status,
-        plan_revision: report.plan_revision,
-        target_revision: report.target_revision,
-        engine_version: report.engine_version,
+        plan_revision: report.plan_revision.clone(),
+        target_revision: report.target_revision.clone(),
+        engine_version: report.engine_version.clone(),
     })
 }

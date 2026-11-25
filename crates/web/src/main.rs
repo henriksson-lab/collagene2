@@ -14,6 +14,8 @@ mod app;
 mod assembly_alternatives;
 #[cfg(target_arch = "wasm32")]
 mod assembly_alternatives_view;
+#[cfg(target_arch = "wasm32")]
+mod assembly_archive_view;
 #[cfg(any(target_arch = "wasm32", test))]
 mod assembly_batch_projection;
 #[cfg(target_arch = "wasm32")]
@@ -26,6 +28,8 @@ mod assembly_finalize;
 mod assembly_outputs;
 #[cfg(target_arch = "wasm32")]
 mod assembly_product_view;
+#[cfg(target_arch = "wasm32")]
+mod assembly_release_view;
 #[cfg(any(target_arch = "wasm32", test))]
 mod assembly_review;
 #[cfg(any(target_arch = "wasm32", test))]

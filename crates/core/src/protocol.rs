@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 57;
+pub const WORKER_SCHEMA_VERSION: u16 = 58;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 11;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -784,6 +784,27 @@ pub enum AnalysisJob {
         workspace: crate::workspace::Workspace,
         current_context: String,
     },
+    BeginCombinatorialRelease {
+        workspace: crate::workspace::Workspace,
+        request: crate::combinatorial_release::Request,
+    },
+    AdvanceCombinatorialRelease {
+        context: String,
+        index: usize,
+    },
+    InspectCombinatorialRelease {
+        context: String,
+        index: usize,
+    },
+    FinishCombinatorialRelease {
+        workspace: crate::workspace::Workspace,
+        current_context: String,
+    },
+    ExportCombinatorialOutputs {
+        workspace: crate::workspace::Workspace,
+        manifest_hash: String,
+        options: crate::combinatorial_export::Options,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -916,6 +937,11 @@ pub enum AnalysisResult {
     CombinatorialBatchStarted(crate::combinatorial_batch::Progress),
     CombinatorialBatchAdvanced(crate::combinatorial_batch::Progress),
     CombinatorialBatchCaptured(crate::combinatorial_batch::Commit),
+    CombinatorialReleaseStarted(crate::combinatorial_release::Progress),
+    CombinatorialReleaseAdvanced(crate::combinatorial_release::Progress),
+    CombinatorialReleaseInspected(crate::combinatorial_release::Inspection),
+    CombinatorialReleaseFinished(crate::combinatorial_release::Commit),
+    CombinatorialOutputsArchive(crate::combinatorial_export::Archive),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1145,6 +1171,16 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         } => {
             crate::combinatorial_batch::capture_revision(workspace, current_context)?;
         }
+        AnalysisJob::BeginCombinatorialRelease { workspace, request } => {
+            crate::combinatorial_release::preflight(workspace, request)?;
+        }
+        AnalysisJob::ExportCombinatorialOutputs {
+            workspace,
+            manifest_hash,
+            options,
+        } => {
+            crate::combinatorial_export::preflight(workspace, manifest_hash, options)?;
+        }
         _ => {}
     }
     let maximum = if matches!(
@@ -1162,6 +1198,9 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::InstallCatalogDigestFragment { .. }
             | AnalysisJob::BeginCombinatorialBatch { .. }
             | AnalysisJob::CaptureCombinatorialBatch { .. }
+            | AnalysisJob::BeginCombinatorialRelease { .. }
+            | AnalysisJob::FinishCombinatorialRelease { .. }
+            | AnalysisJob::ExportCombinatorialOutputs { .. }
     ) {
         MAX_WORKSPACE_MESSAGE_BYTES
     } else {
@@ -1186,6 +1225,8 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             (97, 42),
             (100, 43),
             (122, 57),
+            (126, 58),
+            (127, 58),
         ],
     )?;
     preflight_codon_tag(bytes, &[42, 43])?;
@@ -1225,6 +1266,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_pinned_gel_tag(bytes, &[116])?;
     preflight_pairwise_export_tag(bytes, &[117, 118, 119])?;
     preflight_combinatorial_batch_tag(bytes, &[120, 121, 122])?;
+    preflight_combinatorial_release_tag(bytes, &[123, 124, 125, 126, 127])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1290,6 +1332,11 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         AnalysisResult::CombinatorialBatchStarted(_)
         | AnalysisResult::CombinatorialBatchAdvanced(_)
         | AnalysisResult::CombinatorialBatchCaptured(_) => 57,
+        AnalysisResult::CombinatorialReleaseStarted(_)
+        | AnalysisResult::CombinatorialReleaseAdvanced(_)
+        | AnalysisResult::CombinatorialReleaseInspected(_)
+        | AnalysisResult::CombinatorialReleaseFinished(_)
+        | AnalysisResult::CombinatorialOutputsArchive(_) => 58,
         AnalysisResult::GoldenGateReaction(_) | AnalysisResult::GoldenGateReactionCandidate(_) => {
             49
         }
@@ -1465,6 +1512,35 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         AnalysisResult::CombinatorialBatchCaptured(commit) => {
             check_workspace_version(bytes, &commit.workspace)?;
             commit.validate_binding(&response.revision)?;
+        }
+        AnalysisResult::CombinatorialReleaseStarted(progress)
+        | AnalysisResult::CombinatorialReleaseAdvanced(progress) => {
+            progress.validate()?;
+            if progress.context_revision != response.revision {
+                return Err(Error::Format(
+                    "Combinatorial release response context changed.".into(),
+                ));
+            }
+        }
+        AnalysisResult::CombinatorialReleaseInspected(inspection) => {
+            inspection.validate()?;
+            if inspection.context_revision != response.revision {
+                return Err(Error::Format(
+                    "Combinatorial inspection response context changed.".into(),
+                ));
+            }
+        }
+        AnalysisResult::CombinatorialReleaseFinished(commit) => {
+            check_workspace_version(bytes, &commit.workspace)?;
+            commit.validate_binding(&response.revision, &commit.source_workspace_fingerprint)?;
+        }
+        AnalysisResult::CombinatorialOutputsArchive(archive) => {
+            archive.validate()?;
+            if archive.context_revision != response.revision {
+                return Err(Error::Format(
+                    "Combinatorial archive response context changed.".into(),
+                ));
+            }
         }
         AnalysisResult::ReferenceFragment(fragment) => {
             fragment.validate_binding(&response.revision)?;
@@ -1983,6 +2059,14 @@ fn preflight_combinatorial_batch_tag(bytes: &[u8], tags: &[u32]) -> Result<(), E
     }
     Ok(())
 }
+fn preflight_combinatorial_release_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 58)?;
+    }
+    Ok(())
+}
 fn preflight_translation_reference_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -2382,6 +2466,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             (108, 43),
             (128, 57),
             (130, 57),
+            (131, 58),
+            (134, 58),
+            (135, 58),
         ],
     )?;
     preflight_codon_tag(bytes, &[44, 45])?;
@@ -2424,6 +2511,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_pinned_gel_tag(bytes, &[124])?;
     preflight_pairwise_export_tag(bytes, &[125, 126, 127])?;
     preflight_combinatorial_batch_tag(bytes, &[128, 129, 130])?;
+    preflight_combinatorial_release_tag(bytes, &[131, 132, 133, 134, 135])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -2445,6 +2533,11 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         AnalysisJob::BeginCombinatorialBatch { .. }
         | AnalysisJob::AdvanceCombinatorialBatch { .. }
         | AnalysisJob::CaptureCombinatorialBatch { .. } => 57,
+        AnalysisJob::BeginCombinatorialRelease { .. }
+        | AnalysisJob::AdvanceCombinatorialRelease { .. }
+        | AnalysisJob::InspectCombinatorialRelease { .. }
+        | AnalysisJob::FinishCombinatorialRelease { .. }
+        | AnalysisJob::ExportCombinatorialOutputs { .. } => 58,
         AnalysisJob::PredictGel { lanes, .. }
             if lanes.iter().any(|lane| {
                 matches!(
@@ -3129,6 +3222,26 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             return Err(Error::Unsupported(
                 "combinatorial batches require a persistent private worker session".into(),
             ));
+        }
+        AnalysisJob::BeginCombinatorialRelease { .. }
+        | AnalysisJob::AdvanceCombinatorialRelease { .. }
+        | AnalysisJob::InspectCombinatorialRelease { .. }
+        | AnalysisJob::FinishCombinatorialRelease { .. } => {
+            return Err(Error::Unsupported(
+                "combinatorial release requires a persistent private worker session".into(),
+            ));
+        }
+        AnalysisJob::ExportCombinatorialOutputs {
+            workspace,
+            manifest_hash,
+            options,
+        } => {
+            if crate::combinatorial_export::revision(workspace, manifest_hash, options)?
+                != r.revision
+            {
+                return Err(Error::Format("Combinatorial export inputs changed.".into()));
+            }
+            None
         }
         AnalysisJob::PrepareVariants { .. }
         | AnalysisJob::VariantPage { .. }
@@ -4073,6 +4186,18 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         | AnalysisJob::CaptureCombinatorialBatch { .. } => Err(Error::Unsupported(
             "combinatorial batches require a persistent private worker session".into(),
         )),
+        AnalysisJob::BeginCombinatorialRelease { .. }
+        | AnalysisJob::AdvanceCombinatorialRelease { .. }
+        | AnalysisJob::InspectCombinatorialRelease { .. }
+        | AnalysisJob::FinishCombinatorialRelease { .. } => Err(Error::Unsupported(
+            "combinatorial release requires a persistent private worker session".into(),
+        )),
+        AnalysisJob::ExportCombinatorialOutputs {
+            workspace,
+            manifest_hash,
+            options,
+        } => crate::combinatorial_export::export(&workspace, &manifest_hash, &options)
+            .map(AnalysisResult::CombinatorialOutputsArchive),
         AnalysisJob::PrepareTracks { .. } | AnalysisJob::CachedViewTracks { .. } => Err(
             Error::Unsupported("cached track jobs require an AnalysisSession".into()),
         ),
@@ -4268,6 +4393,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             | AnalysisResult::ReadReviewCommitted(_)
             | AnalysisResult::DigestInstalled(_)
             | AnalysisResult::CatalogDigestInstalled(_)
+            | AnalysisResult::CombinatorialOutputsArchive(_)
     ) {
         MAX_WORKSPACE_MESSAGE_BYTES
     } else {
@@ -4293,6 +4419,7 @@ pub struct AnalysisSession {
     read_alignments: crate::read_alignment_session::Session,
     variants: crate::variants_session::Session,
     combinatorial: Option<crate::combinatorial_batch::Session>,
+    release: Option<crate::combinatorial_release::ReleaseSession>,
 }
 impl AnalysisSession {
     pub fn process_request(&mut self, bytes: &[u8]) -> Result<Vec<u8>, Error> {
@@ -4313,6 +4440,9 @@ impl AnalysisSession {
                 (108, 43),
                 (128, 57),
                 (130, 57),
+                (131, 58),
+                (134, 58),
+                (135, 58),
             ],
         )?;
         // Route by a borrowed prefix so ordinary jobs are not fully decoded twice.
@@ -4320,10 +4450,11 @@ impl AnalysisSession {
         // private worker state; all other jobs use ordinary stateless dispatch.
         let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
             .map_err(|e| Error::Format(e.to_string()))?;
-        if !matches!(tag, 32 | 33 | 53..=66 | 77..=81 | 88..=93 | 128..=130) {
+        if !matches!(tag, 32 | 33 | 53..=66 | 77..=81 | 88..=93 | 128..=134) {
             return process_request(bytes);
         }
         preflight_combinatorial_batch_tag(bytes, &[128, 129, 130])?;
+        preflight_combinatorial_release_tag(bytes, &[131, 132, 133, 134])?;
         if (53..=66).contains(&tag) {
             check_variant_version(bytes, 19)?;
         }
@@ -4335,6 +4466,84 @@ impl AnalysisSession {
         }
         let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
         let result = match r.job {
+            AnalysisJob::BeginCombinatorialRelease { workspace, request } => {
+                check_workspace_version(bytes, &workspace)?;
+                let pending =
+                    crate::combinatorial_release::ReleaseSession::begin(workspace, request)?;
+                let progress = pending.summary();
+                if progress.context_revision != r.revision {
+                    return Err(Error::Format(
+                        "Combinatorial release source or options changed.".into(),
+                    ));
+                }
+                self.release = Some(pending);
+                AnalysisResult::CombinatorialReleaseStarted(progress)
+            }
+            AnalysisJob::AdvanceCombinatorialRelease { context, index } => {
+                if context != r.revision {
+                    return Err(Error::Format(
+                        "Combinatorial release advance context changed.".into(),
+                    ));
+                }
+                let session = self.release.as_mut().ok_or_else(|| {
+                    Error::Unsupported("No private combinatorial release has been started.".into())
+                })?;
+                let progress = match session.advance(&context, index) {
+                    Ok(progress) => progress,
+                    Err(error) => {
+                        // A failed reconstruction poisons the complete stage.
+                        // A rejected out-of-order request has not executed a row.
+                        if session.summary().failed.is_some() {
+                            self.release = None;
+                        }
+                        return Err(error);
+                    }
+                };
+                if progress.failed.is_some() {
+                    self.release = None;
+                }
+                AnalysisResult::CombinatorialReleaseAdvanced(progress)
+            }
+            AnalysisJob::InspectCombinatorialRelease { context, index } => {
+                if context != r.revision {
+                    return Err(Error::Format(
+                        "Combinatorial release inspection context changed.".into(),
+                    ));
+                }
+                let session = self.release.as_ref().ok_or_else(|| {
+                    Error::Unsupported("No private combinatorial release has been started.".into())
+                })?;
+                if session.summary().context_revision != context {
+                    return Err(Error::Format(
+                        "Combinatorial release inspection session changed.".into(),
+                    ));
+                }
+                AnalysisResult::CombinatorialReleaseInspected(session.inspect(index)?)
+            }
+            AnalysisJob::FinishCombinatorialRelease {
+                workspace,
+                current_context,
+            } => {
+                check_workspace_version(bytes, &workspace)?;
+                if current_context != r.revision
+                    || self
+                        .release
+                        .as_ref()
+                        .is_none_or(|session| session.summary().context_revision != current_context)
+                {
+                    return Err(Error::Format(
+                        "Combinatorial release finish context changed.".into(),
+                    ));
+                }
+                // Consuming the private stage makes every failed finish atomic:
+                // no decoded prefix or subsequent retry can publish its products.
+                let session = self.release.take().ok_or_else(|| {
+                    Error::Unsupported("No private combinatorial release has been started.".into())
+                })?;
+                AnalysisResult::CombinatorialReleaseFinished(
+                    session.finish_to(&workspace, &current_context)?,
+                )
+            }
             AnalysisJob::BeginCombinatorialBatch { workspace, matrix } => {
                 check_workspace_version(bytes, &workspace)?;
                 let pending = crate::combinatorial_batch::Session::begin(workspace, matrix)?;
@@ -4427,7 +4636,11 @@ impl AnalysisSession {
             }
             _ => return process_request(bytes),
         };
-        let maximum = if matches!(result, AnalysisResult::CombinatorialBatchCaptured(_)) {
+        let maximum = if matches!(
+            result,
+            AnalysisResult::CombinatorialBatchCaptured(_)
+                | AnalysisResult::CombinatorialReleaseFinished(_)
+        ) {
             MAX_WORKSPACE_MESSAGE_BYTES
         } else {
             MAX_IMPORT_BYTES

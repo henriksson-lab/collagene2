@@ -133,6 +133,8 @@ pub mod overlap_primer_design;
 pub mod assembly_intent;
 pub mod combinatorial_batch;
 pub mod combinatorial_design;
+pub mod combinatorial_export;
+pub mod combinatorial_release;
 
 pub mod digest_cut_selection;
 

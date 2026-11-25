@@ -2684,9 +2684,45 @@ pub(crate) fn protocol_oligo_sequence<'a>(
     Some(molecule.sequence.as_str())
 }
 
+/// Fresh in-process protocol context. It cannot be deserialized or constructed
+/// from an imported report; immutable borrows keep plan/target paired with this
+/// exact native reconstruction while several output formats are rendered.
+pub(crate) struct CheckedProtocol<'a> {
+    plan: &'a DesignPlan,
+    target: &'a Molecule,
+    report: VerificationReport,
+}
+impl<'a> CheckedProtocol<'a> {
+    pub(crate) fn plan(&self) -> &'a DesignPlan {
+        self.plan
+    }
+    pub(crate) fn target(&self) -> &'a Molecule {
+        self.target
+    }
+    pub(crate) fn report(&self) -> &VerificationReport {
+        &self.report
+    }
+}
+pub(crate) fn checked_protocol<'a>(
+    plan: &'a DesignPlan,
+    target: &'a Molecule,
+) -> CheckedProtocol<'a> {
+    // Native verify owns the source/operation guards and independently rebuilds
+    // the product. Invalid inputs produce fresh draft findings, never authority.
+    CheckedProtocol {
+        plan,
+        target,
+        report: verify(plan, target),
+    }
+}
 /// Rechecks the plan at export time; the caller cannot attach an unrelated report.
 pub fn export_protocol_html(plan: &DesignPlan, target: &Molecule) -> String {
-    let report = verify(plan, target);
+    export_protocol_html_checked(&checked_protocol(plan, target))
+}
+pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> String {
+    let plan = checked.plan();
+    let target = checked.target();
+    let report = checked.report();
     let e = escape_html;
     let mut body = format!(
         "<h1>{}</h1><p><strong>{:?}</strong> · computed sequence checks; laboratory conditions require review.</p><p>Target: {} · {} bases · {:?}</p><h2>Starting materials</h2><ul>",

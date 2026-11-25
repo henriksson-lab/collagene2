@@ -22,6 +22,28 @@ and review proposals are implemented, despite older gap tables. See
 [workflow decisions](BENCHLING_WORKFLOW_DECISIONS.md). This documentation-only
 checkpoint adds no runtime/build/browser checks.
 
+## Fresh atomic construct outputs and bulk ZIP export
+
+Saved batch declarations now support selected per-row named outputs through a
+fresh private native finalizer. Actual staged product/target review precedes an
+explicit all-or-nothing workspace publication. Any failed row discards the stage;
+historical positive statuses never authorize output creation. Immutable manifests
+retain exact source, target, run, product, named construct and primer links.
+
+The web uses guarded cancellable same-worker persistence and owned commit leases.
+Read-only export supports selected GenBank/FASTA/primer CSV/TSV and HTML/PDF files
+in a bounded ZIP, with complete paged loss/provenance review before download.
+Sequence-only exchange remains historical; protocol options freshly check current
+independent declarations and share one native report between HTML/PDF. Worker58
+adds private release/inspection and archive jobs. Four MCP additions bring the
+registry to146 operations. [Contracts and remaining scope](COMBINATORIAL_RELEASE.md).
+
+Validation passed:54 focused core tests, four real MCP SDK fixture groups, all98
+native web tests and the final WASM check for both application and worker. The
+protocol checks distinguish a rejected out-of-order request from an actual failed
+reconstruction: the former preserves an untouched stage, the latter discards it.
+No browser checks or public preview refresh were run; port8082 retains schema56.
+
 ## Selected batch evaluation, historical capture and MCP
 
 Selected constructs now run sequentially in a private worker with progress,

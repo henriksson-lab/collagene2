@@ -2,6 +2,7 @@
 //! All computation runs outside the immutable session store lock.
 use super::*;
 use collagene_core::{combinatorial_batch as batch, combinatorial_design as design};
+use collagene_core::{combinatorial_export as archive, combinatorial_release as release};
 
 fn page_size() -> usize {
     20
@@ -50,6 +51,26 @@ pub struct ReplayQuery {
     pub workspace: WorkspaceRef,
     pub attachment_hash: String,
     pub row_index: usize,
+}
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReleaseQuery {
+    pub workspace: WorkspaceRef,
+    pub request: release::Request,
+}
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ExportQuery {
+    pub workspace: WorkspaceRef,
+    pub manifest_hash: String,
+    #[serde(default)]
+    pub options: archive::Options,
+}
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReleaseRef {
+    pub workspace: WorkspaceRef,
+    pub manifest_hash: String,
 }
 
 fn hash(value: &str) -> Result<(), ErrorData> {
@@ -123,6 +144,78 @@ fn row_summary(row: &batch::RowEvidence) -> Value {
     json!({"index":row.index,"construct_id":row.construct_id,"name":row.name,"state":row.state,"status":row.status,"error":error,"error_abbreviated":row.error.as_ref().is_some_and(|error|error.chars().count()>512),"combination_id":row.combination_id,"declaration_revision":row.declaration_revision,"input_count":row.input_bindings.len(),"target_binding":row.target_binding,"plan_revision":row.plan_revision,"target_revision":row.target_revision,"final_product_revision":row.final_product_revision,"completed_steps":row.completed_steps,"planned_steps":row.planned_steps,"preparation_complete":row.preparation_complete})
 }
 impl CollageneServer {
+    pub(super) async fn combinatorial_release(
+        &self,
+        args: ReleaseQuery,
+    ) -> Result<CallToolResult, ErrorData> {
+        args.request.validate().map_err(bad)?;
+        let server = self.clone();
+        self.compute(move||{
+            let frame=server.restore_workspace(&args.workspace)?;
+            let fingerprint=collagene_core::run_lineage::workspace_fingerprint(&frame).map_err(bad)?;
+            let context=release::revision(&frame,&args.request).map_err(bad)?;
+            let mut session=release::ReleaseSession::begin(frame,args.request).map_err(bad)?;
+            let mut progress=session.summary();
+            if progress.context_revision!=context{return Err(bad("private release differs from its exact native workspace request"));}
+            for index in 0..progress.total_rows{
+                if progress.next_index!=index||progress.failed.is_some(){return Err(bad("private release cannot skip or retain a failed prefix"));}
+                progress=session.advance(&context,index).map_err(bad)?;
+            }
+            if !progress.finished||progress.failed.is_some(){return Err(bad("no outputs were released because the private release did not complete"));}
+            let commit=session.into_commit(&context).map_err(bad)?;
+            commit.validate_binding(&context,&fingerprint).map_err(bad)?;
+            let manifest=release::load(&commit.workspace,&commit.manifest_hash).map_err(bad)?;
+            let text=bounded_json_limit(&manifest,release::MAX_MANIFEST_BYTES)?;
+            let receipt=json!({"manifest_hash":commit.manifest_hash,"context_revision":commit.context_revision,"source_workspace_fingerprint":commit.source_workspace_fingerprint,"batch_hash":manifest.batch_hash,"recorded_engine":manifest.engine_version,"released_rows":manifest.rows,"state":"historical-output-lineage","verified":false});
+            let native=workspace::save_workspace(&commit.workspace).map_err(bad)?;
+            let committed=server.commit_workspace_outputs_named(commit.workspace,Some((text,receipt)),Some(native),"combinatorial-release.json","Freshly reconstructed selected rows released atomically into a new immutable native workspace. Manifest/run assertions are historical on reopening; experimental success is not asserted.")?;
+            let mut value=committed.structured_content.ok_or_else(||bad("missing immutable release response"))?;
+            value["authority"]=json!("Every selected row was reconstructed against its independent target before atomic native output release. Reopening the manifest retains historical lineage, not current scientific authority or experimental success.");
+            output(value)
+        }).await
+    }
+    pub(super) async fn combinatorial_archive(
+        &self,
+        args: ExportQuery,
+    ) -> Result<CallToolResult, ErrorData> {
+        hash(&args.manifest_hash)?;
+        args.options.validate().map_err(bad)?;
+        let server = self.clone();
+        self.compute(move||{
+            let frame=server.restore_workspace(&args.workspace)?;
+            let generated=archive::export(&frame,&args.manifest_hash,&args.options).map_err(bad)?;
+            let mut response=json!({"workspace":args.workspace,"manifest_hash":generated.manifest_hash,"context_revision":generated.context_revision,"blake3":generated.blake3,"bytes":generated.bytes.len(),"files":generated.files,"warnings":generated.warnings,"mime_type":generated.mime,"filename":"combinatorial-outputs.zip","verified":false,"state":"portable-output-exchange"});
+            let artifact=server.binary_artifact(generated.bytes,"application/zip","combinatorial-outputs.zip")?;
+            response["artifact_id"]=json!(artifact);response["encoding"]=json!("base64");output(response)
+        }).await
+    }
+    pub(super) async fn combinatorial_release_list(
+        &self,
+        args: ListQuery,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.limit == 0 || args.limit > 64 {
+            return Err(bad("release pages contain1..64 records"));
+        }
+        let server = self.clone();
+        self.compute(move||{
+            let frame=server.restore_workspace(&args.workspace)?;let all=release::list(&frame).map_err(bad)?;
+            if args.offset>all.len(){return Err(bad("release page starts beyond the retained list"));}
+            let total=all.len();let rows=all.into_iter().skip(args.offset).take(args.limit).collect::<Vec<_>>();
+            output(json!({"workspace":args.workspace,"releases":rows,"total":total,"offset":args.offset,"next_offset":(args.offset+args.limit).min(total),"state":"historical","verified":false}))
+        }).await
+    }
+    pub(super) async fn combinatorial_release_open(
+        &self,
+        args: ReleaseRef,
+    ) -> Result<CallToolResult, ErrorData> {
+        hash(&args.manifest_hash)?;
+        let server = self.clone();
+        self.compute(move||{
+            let frame=server.restore_workspace(&args.workspace)?;let manifest=release::load(&frame,&args.manifest_hash).map_err(bad)?;
+            let artifact=server.text_artifact(bounded_json_limit(&manifest,release::MAX_MANIFEST_BYTES)?,"application/json","combinatorial-release.json")?;
+            output(json!({"workspace":args.workspace,"manifest_hash":args.manifest_hash,"context_revision":manifest.context_revision,"batch_hash":manifest.batch_hash,"source_workspace_fingerprint":manifest.source_workspace_fingerprint,"recorded_engine":manifest.engine_version,"rows":manifest.rows,"artifact_id":artifact,"state":"historical-output-lineage","verified":false,"authority":"Exact retained native output events and source lineage only. Opening does not restore fresh scientific authority."}))
+        }).await
+    }
     pub(super) async fn combinatorial_evaluate(
         &self,
         args: BatchQuery,

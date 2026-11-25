@@ -1,10 +1,10 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **57** and reads supported schemas 1–56. Candidate files write schema 11; workspace plan schema is 9; the verifier is science-14.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **58** and reads supported schemas 1–57. Candidate files write schema 11; workspace plan schema is 9; the verifier is science-14.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
-Ordinary payloads are limited to **32 MiB** during bounded serialization and before deserialization. Only native workspace save/load variants (schema 6+), the explicitly whitelisted cloning-run variants (schema 12+), digest installation (schema 20+), catalog digest installation (schema 21+), cloning output finalization (schema 39+), construct read capture/replay (schema 42+), read review (schema 43+) and selected-batch begin/capture (schema57+) can use the separate **128 MiB** message cap. A borrowed prefix probe checks those exact tags and bounded revision text before allowing a large payload; ordinary scientific jobs retain 32 MiB. The checksum provides corruption detection, not authorization.
+Ordinary payloads are limited to **32 MiB** during bounded serialization and before deserialization. Only native workspace save/load variants (schema 6+), the explicitly whitelisted cloning-run variants (schema 12+), digest installation (schema 20+), catalog digest installation (schema 21+), cloning output finalization (schema 39+), construct read capture/replay (schema 42+), read review (schema 43+) selected-batch begin/capture (schema57+), and atomic release/archive workspace cases (schema58+) can use the separate **128 MiB** message cap. A borrowed prefix probe checks those exact tags and bounded revision text before allowing a large payload; ordinary scientific jobs retain 32 MiB. The checksum provides corruption detection, not authorization.
 
 ## Stable job tags
 
@@ -143,6 +143,11 @@ Postcard enum indexes are append-only. Existing tags and supported historical la
 | 128 | BeginCombinatorialBatch | 57 |
 | 129 | AdvanceCombinatorialBatch | 57 |
 | 130 | CaptureCombinatorialBatch | 57 |
+| 131 | BeginCombinatorialRelease | 58 |
+| 132 | AdvanceCombinatorialRelease | 58 |
+| 133 | InspectCombinatorialRelease | 58 |
+| 134 | FinishCombinatorialRelease | 58 |
+| 135 | ExportCombinatorialOutputs | 58 |
 
 Result tags 0–29 retain their selectors (verification gains explicit versioned step evidence in schema 25) (`Search`, `Restriction`, `Error`, `Pcr`, `Verification`, `DuplexDigest`, `Translation`, `CdsTranslation`, `Orfs`, `Alignment`, `PcrDocuments`, `PrimerEvidence`, `PrimerDesign`, `ProtocolPdf`, `GoldenGate`, `MismatchPcr`, `InversePcr`, `Gel`, `DiagnosticDigest`, `MismatchPcrPreview`, `WorkspaceSaved`, `WorkspaceLoaded`, `TraceValidation`, `FeatureLibraryScan`, `AnnotatedDocument`, `AnnotationImport`, `AnnotationExport`, `RepairPreview`, `AnnealPreview`, `PhysicalPreviewDocument`). Schema 9 appends `ViewTracks` at tag 30, `DocumentSearch` at tag 31 and `TracksPrepared` at tag 32. New response variants cannot be decoded under older version labels.
 
@@ -755,3 +760,21 @@ the host separately checks exact events, request/epoch/generation and current fo
 These are views of an existing comparison, not new alignment or verification
 authority. Existing job/result layouts and native/candidate/plan/science versions
 are unchanged.
+
+
+## Atomic combinatorial release and archives (schema58)
+
+Begin131 owns a private workspace and selected historical declarations. Advance132
+reconstructs/finalizes one row; Inspect133 exposes actual staged product and target
+molecules; Finish134 returns all outputs only after every row succeeds. Any failed
+row poisons the session. Responses123–126 carry started/advanced/inspected/finished
+DTOs; serialized progress or manifests cannot restore a private session.
+
+Export135/Archive127 uses exact released native events, an explicit format/subset
+request and a bounded ZIP. HTML/PDF requests perform fresh current-engine checks;
+sequence/primer-only exchange remains labelled historical. Begin/Finish/Export
+workspace requests and Finish/Archive responses have explicit128 MiB envelope
+allowances. Advance/inspection/progress retain32 MiB. Pre58 labels reject new
+variable-length selectors before payload decoding. Existing candidate11, plan9,
+science14 and native archive1 remain unchanged.
+[Release and archive contracts](COMBINATORIAL_RELEASE.md).

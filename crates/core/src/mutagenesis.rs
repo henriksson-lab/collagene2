@@ -373,6 +373,22 @@ pub struct InversePcrDesign {
     pub verification: VerificationReport,
     pub warnings: Vec<String>,
 }
+/// Pure inverse-PCR plan and actual oligos, before any molecular verification.
+/// The target is supplied independently and never copied from a PCR product.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct InversePcrPreparation {
+    pub source_revision: String,
+    pub target_revision: String,
+    pub options: InversePcrOptions,
+    pub forward: Primer,
+    pub reverse: Primer,
+    pub forward_location: Location,
+    pub reverse_location: Location,
+    pub retained_template_length: usize,
+    pub plan: DesignPlan,
+    pub warnings: Vec<String>,
+}
 fn region(start: usize, count: usize, n: usize, reverse: bool) -> Location {
     let first = count.min(n - start);
     let mut parts = vec![Location::range(start, start + first)];
@@ -409,11 +425,11 @@ impl io::Write for SizeLimit {
 /// from the PCR result; the ordinary verifier independently reconstructs all exact-PCR alternatives.
 /// This is a reference design under declared reaction assumptions, not an implementation of a
 /// proprietary kit's enzyme mixture, template removal or experimental success criteria.
-pub fn design_inverse_pcr(
+pub fn compile_inverse_pcr(
     source: &Molecule,
     target: &Molecule,
     options: &InversePcrOptions,
-) -> Result<InversePcrDesign, Error> {
+) -> Result<InversePcrPreparation, Error> {
     checked_source(source)?;
     target.validate()?;
     if source.topology != Topology::Circular
@@ -507,13 +523,38 @@ pub fn design_inverse_pcr(
             },
         ],
     };
-    let verification = verification::verify(&plan, target);
     let mut normalized_options = options.clone();
     normalized_options.inserted = inserted;
-    let report=InversePcrDesign {source_revision:source.revision(),target_revision:target.revision(),options:normalized_options,forward,reverse,forward_location,reverse_location,retained_template_length:retained,plan,verification,
+    let report=InversePcrPreparation {source_revision:source.revision(),target_revision:target.revision(),options:normalized_options,forward,reverse,forward_location,reverse_location,retained_template_length:retained,plan,
         warnings:vec!["Tail-encoded back-to-back inverse-PCR design: the replaced reference interval is omitted and the declared insertion is supplied by primer tails. No altered reference bases are smuggled in as a claimed PCR product.".into(),
             "The returned plan explicitly phosphorylates ideal PCR termini before sealed blunt circular ligation. This does not model a commercial reagent mixture, template digestion/removal, transformation, repair or empirical success.".into(),
             "Inspect verification and all exact-PCR alternatives. A matching target is conditional sequence/chemistry consistency, not experimental confirmation.".into()] };
+    serde_json::to_writer(&mut SizeLimit(0), &report).map_err(|_| Error::TooLarge)?;
+    Ok(report)
+}
+
+/// Compile the original-source plan and run the existing verifier once.
+/// This retains the existing public result layout and inverse-PCR semantics.
+pub fn design_inverse_pcr(
+    source: &Molecule,
+    target: &Molecule,
+    options: &InversePcrOptions,
+) -> Result<InversePcrDesign, Error> {
+    let prepared = compile_inverse_pcr(source, target, options)?;
+    let verification = verification::verify(&prepared.plan, target);
+    let report = InversePcrDesign {
+        source_revision: prepared.source_revision,
+        target_revision: prepared.target_revision,
+        options: prepared.options,
+        forward: prepared.forward,
+        reverse: prepared.reverse,
+        forward_location: prepared.forward_location,
+        reverse_location: prepared.reverse_location,
+        retained_template_length: prepared.retained_template_length,
+        plan: prepared.plan,
+        verification,
+        warnings: prepared.warnings,
+    };
     serde_json::to_writer(&mut SizeLimit(0), &report).map_err(|_| Error::TooLarge)?;
     Ok(report)
 }

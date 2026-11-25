@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io::Write};
 
 pub const CODON_ENGINE_VERSION: &str = "codon-design-1";
+pub const CONSTRAINED_ENGINE_VERSION: &str = "codon-constrained-1";
 pub const MAX_RESIDUES: usize = 10_000;
 const MAX_FRONTIER_BYTES: usize = 16 * 1024 * 1024;
 const MAX_SOURCE_BYTES: usize = 4 * 1024 * 1024;
@@ -117,6 +118,46 @@ pub struct DesignReport {
     pub limits: Vec<String>,
     pub warnings: Vec<String>,
 }
+
+macro_rules! constrained_dto {($($t:tt)*)=>{#[derive(Debug,Clone,PartialEq,Eq,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
+constrained_dto! {pub struct CodingRange {pub start:usize,pub end:usize}}
+constrained_dto! {pub struct CodonDomain {pub position:usize,pub codons:Vec<String>}}
+constrained_dto! {pub struct ScopedMotif {pub motif:String,pub ranges:Vec<CodingRange>}}
+constrained_dto! {pub enum ConstrainedObjective {MinChangedBasesThenPreference}}
+constrained_dto! {pub struct ConstrainedPolicy {
+    pub schema_version:u16,pub allowed_codons:Vec<CodonDomain>,pub protected:Vec<CodingRange>,
+    pub scoped_forbidden:Vec<ScopedMotif>,pub objective:ConstrainedObjective,
+}}
+impl Default for ConstrainedPolicy {
+    fn default() -> Self {
+        Self {
+            schema_version: 1,
+            allowed_codons: vec![],
+            protected: vec![],
+            scoped_forbidden: vec![],
+            objective: ConstrainedObjective::MinChangedBasesThenPreference,
+        }
+    }
+}
+constrained_dto! {pub struct ConstrainedCheckReport {
+    pub engine_version:String,pub context_revision:String,pub policy_revision:String,pub base:CheckReport,
+    pub changed_bases:Option<usize>,pub domain_violations:Vec<usize>,pub protected_violations:Vec<usize>,
+    /// Hit starts relative to coding base zero; negative starts cross the left fixed context.
+    pub scoped_violations:Vec<i64>,pub complete:bool,pub satisfies:Option<bool>,pub work_used:u64,pub warnings:Vec<String>,
+}}
+constrained_dto! {#[doc="Search evidence for the positional policy; not a legacy unconstrained-optimality report."] pub struct ConstrainedOutcome {
+    pub source_revision:String,pub options_revision:String,pub target_protein:String,pub options:DesignOptions,
+    pub candidate:Option<Molecule>,pub score:Option<u64>,pub status:DesignStatus,pub search_complete:bool,
+    pub work_used:u64,pub pruned_states:usize,pub limits:Vec<String>,pub warnings:Vec<String>,
+}}
+constrained_dto! {pub struct ConstrainedDesignReport {
+    pub engine_version:String,pub context_revision:String,pub policy_revision:String,pub policy:ConstrainedPolicy,
+    pub design:ConstrainedOutcome,pub check:Option<ConstrainedCheckReport>,pub changed_bases:Option<usize>,
+    /// Actual search plus independent checker work, including a failed checker
+    /// whose candidate/evidence must be withheld. Source/shape preflight is separate.
+    pub total_work_used:u64,
+    pub minimum_changes_proven:bool,pub objective_optimality_proven:bool,
+}}
 fn bad(s: &str) -> Error {
     Error::Unsupported(format!("codon design: {s}"))
 }
@@ -688,6 +729,7 @@ struct Node {
 struct State {
     tail: Vec<u8>,
     score: u64,
+    changed: usize,
     gc: usize,
     node: u32,
     lex_rank: usize,
@@ -695,15 +737,24 @@ struct State {
     codon: [u8; 3],
 }
 fn order(a: &State, b: &State) -> std::cmp::Ordering {
-    b.score
-        .cmp(&a.score)
-        .then(a.parent_rank.cmp(&b.parent_rank))
-        .then(a.codon.cmp(&b.codon))
+    a.changed.cmp(&b.changed).then(
+        b.score
+            .cmp(&a.score)
+            .then(a.parent_rank.cmp(&b.parent_rank))
+            .then(a.codon.cmp(&b.codon)),
+    )
 }
 fn ranking_work(n: usize) -> u64 {
     (n as u64).saturating_mul(usize::BITS.saturating_sub(n.leading_zeros()).max(1) as u64)
 }
 pub fn design(source: &Molecule, o: &DesignOptions) -> Result<DesignReport, Error> {
+    Ok(design_internal(source, o, None)?.0)
+}
+fn design_internal(
+    source: &Molecule,
+    o: &DesignOptions,
+    policy: Option<&ConstrainedPolicy>,
+) -> Result<(DesignReport, Option<ConstrainedCheckReport>, u64), Error> {
     o.validate()?;
     let protein = target(source, o)?;
     let mut r = DesignReport {
@@ -729,6 +780,21 @@ pub fn design(source: &Molecule, o: &DesignOptions) -> Result<DesignReport, Erro
         used: 0,
         limit: o.max_work,
     };
+    let runtime = if let Some(policy) = policy {
+        match ConstrainedRuntime::new(source, policy, &mut work) {
+            Ok(value) => Some(value),
+            Err(()) => {
+                r.search_complete = false;
+                r.limits
+                    .push("Work budget exhausted while preparing positional constraints.".into());
+                let spent = work.used;
+                r.work_used = spent;
+                return Ok((r, None, spent));
+            }
+        }
+    } else {
+        None
+    };
     let lookback = o
         .max_homopolymer
         .max(
@@ -738,6 +804,13 @@ pub fn design(source: &Molecule, o: &DesignOptions) -> Result<DesignReport, Erro
                 .unwrap_or(0),
         )
         .max(o.window_gc.as_ref().map_or(0, |w| w.window - 1));
+    let lookback = lookback.max(runtime.as_ref().map_or(0, |r| {
+        r.patterns
+            .iter()
+            .map(|p| p.mask.len().saturating_sub(1))
+            .max()
+            .unwrap_or(0)
+    }));
     const MAX_NODES: usize = 1_000_000;
     let mut arena = Vec::<Node>::with_capacity((o.beam_width * protein.len()).min(MAX_NODES));
     let left = o.left_context.as_bytes();
@@ -745,6 +818,7 @@ pub fn design(source: &Molecule, o: &DesignOptions) -> Result<DesignReport, Erro
     let mut states = vec![State {
         tail,
         score: 0,
+        changed: 0,
         gc: 0,
         node: u32::MAX,
         lex_rank: 0,
@@ -777,16 +851,33 @@ pub fn design(source: &Molecule, o: &DesignOptions) -> Result<DesignReport, Erro
             states.truncate(capacity);
             r.search_complete = false;
         }
+        if let Some(runtime) = &runtime {
+            let charge = 64 * (3 + 3 * runtime.domains[i].map_or(0, |d| d.codons.len())) as u64;
+            if work.take(charge).is_err() {
+                r.search_complete = false;
+                r.limits
+                    .push("Work budget exhausted while filtering positional codon domains.".into());
+                states.clear();
+                break;
+            }
+        }
         let choices = all
             .iter()
-            .filter(|(c, a)| *a == aa && weight(o, c) > 0)
+            .filter(|(c, a)| {
+                *a == aa
+                    && weight(o, c) > 0
+                    && runtime.as_ref().is_none_or(|r| r.allowed(source, i, c))
+            })
             .collect::<Vec<_>>();
         let mut next = Vec::with_capacity((states.len() * choices.len()).min(capacity * 6));
         let mut exhausted = false;
         'states: for s in &states {
             for (c, _) in &choices {
                 if work
-                    .take(3 + 2 * (s.tail.len() as u64).div_ceil(64))
+                    .take(
+                        3 + u64::from(runtime.is_some()) * 3
+                            + 2 * (s.tail.len() as u64).div_ceil(64),
+                    )
                     .is_err()
                 {
                     exhausted = true;
@@ -805,12 +896,36 @@ pub fn design(source: &Molecule, o: &DesignOptions) -> Result<DesignReport, Erro
                 tail.extend_from_slice(c.as_bytes());
                 match append_ok(b"", &tail, b"", s.tail.len(), o, &ps, &mut work) {
                     Ok(true) => {
+                        if let Some(runtime) = &runtime {
+                            match scoped_append(
+                                &tail,
+                                new_len as i64 - tail.len() as i64,
+                                s.tail.len(),
+                                &runtime.patterns,
+                                &mut work,
+                            ) {
+                                Ok(true) => {}
+                                Ok(false) => continue,
+                                Err(()) => {
+                                    exhausted = true;
+                                    break 'states;
+                                }
+                            }
+                        }
                         if tail.len() > lookback {
                             tail.drain(..tail.len() - lookback);
                         }
                         next.push(State {
                             tail,
                             score: s.score + u64::from(weight(o, c)),
+                            changed: s.changed
+                                + runtime.as_ref().map_or(0, |_| {
+                                    source.sequence.as_str().as_bytes()[i * 3..i * 3 + 3]
+                                        .iter()
+                                        .zip(c.bytes())
+                                        .filter(|(a, b)| **a != *b)
+                                        .count()
+                                }),
                             gc: count,
                             node: s.node,
                             lex_rank: 0,
@@ -889,6 +1004,30 @@ pub fn design(source: &Molecule, o: &DesignOptions) -> Result<DesignReport, Erro
                 &mut work,
             ) {
                 Ok(true) => {
+                    let scoped = if let Some(runtime) = &runtime {
+                        let full = [s.tail.as_slice(), o.right_context.as_bytes()].concat();
+                        scoped_append(
+                            &full,
+                            (protein.len() * 3) as i64 - s.tail.len() as i64,
+                            s.tail.len(),
+                            &runtime.patterns,
+                            &mut work,
+                        )
+                    } else {
+                        Ok(true)
+                    };
+                    match scoped {
+                        Ok(false) => continue,
+                        Err(()) => {
+                            r.search_complete = false;
+                            r.limits.push(
+                                "Work budget exhausted while checking scoped right-context motifs."
+                                    .into(),
+                            );
+                            break;
+                        }
+                        Ok(true) => {}
+                    }
                     if within(s.gc, protein.len() * 3, o.gc) {
                         valid.push(s)
                     }
@@ -905,6 +1044,8 @@ pub fn design(source: &Molecule, o: &DesignOptions) -> Result<DesignReport, Erro
         }
     }
     valid.sort_unstable_by(order);
+    let mut constrained_check = None;
+    let mut independent_work_used = 0u64;
     if let Some(s) = valid.first() {
         if work.take((protein.len() * 3) as u64).is_err() {
             r.search_complete = false;
@@ -945,8 +1086,30 @@ pub fn design(source: &Molecule, o: &DesignOptions) -> Result<DesignReport, Erro
                 "codon_design:options".into(),
                 serde_json::to_string(o).map_err(|_| Error::TooLarge)?,
             );
-            let verified = check(source, &m, o)?;
-            if verified.complete && verified.satisfies == Some(true) {
+            if let Some(policy) = policy {
+                m.metadata.insert(
+                    "codon_constrained:engine".into(),
+                    CONSTRAINED_ENGINE_VERSION.into(),
+                );
+                m.metadata.insert(
+                    "codon_constrained:policy_revision".into(),
+                    constrained_policy_revision(policy)?,
+                );
+            }
+            let (verified, accepted) = if let Some(policy) = policy {
+                let checked = check_constrained(source, &m, o, policy)?;
+                independent_work_used = checked.work_used;
+                let accepted = checked.complete && checked.satisfies == Some(true);
+                let base = checked.base.clone();
+                constrained_check = Some(checked);
+                (base, accepted)
+            } else {
+                let checked = check(source, &m, o)?;
+                independent_work_used = checked.work_used;
+                let accepted = checked.complete && checked.satisfies == Some(true);
+                (checked, accepted)
+            };
+            if accepted {
                 r.status = DesignStatus::CandidateFound;
                 r.score = Some(s.score);
                 r.candidate = Some(m);
@@ -962,7 +1125,11 @@ pub fn design(source: &Molecule, o: &DesignOptions) -> Result<DesignReport, Erro
         r.status = DesignStatus::Unsatisfiable;
     }
     r.work_used = work.used;
-    Ok(r)
+    let total_work_used = work
+        .used
+        .checked_add(independent_work_used)
+        .ok_or(Error::TooLarge)?;
+    Ok((r, constrained_check, total_work_used))
 }
 
 fn digest(s: &str) -> bool {
@@ -1097,6 +1264,570 @@ impl DesignReport {
         }
         if let (Some(m), Some(c)) = (&self.candidate, &self.candidate_check) {
             c.validate_for(source, m, o)?;
+        }
+        Ok(())
+    }
+}
+
+const MAX_POLICY_BYTES: usize = 4 << 20;
+const MAX_POLICY_RANGES: usize = 10_000;
+impl ConstrainedPolicy {
+    pub fn validate(&self) -> Result<(), Error> {
+        if self.schema_version != 1
+            || self.allowed_codons.len() > MAX_RESIDUES
+            || self.protected.len() > MAX_POLICY_RANGES
+            || self.scoped_forbidden.len() > 64
+        {
+            return Err(bad("invalid constrained policy version/dimensions"));
+        }
+        let valid_range = |r: &CodingRange| r.start < r.end && r.end <= MAX_RESIDUES * 3;
+        if self.protected.iter().any(|r| !valid_range(r)) {
+            return Err(bad("protected coding ranges must be nonempty and bounded"));
+        }
+        let mut positions = BTreeSet::new();
+        for domain in &self.allowed_codons {
+            if domain.position >= MAX_RESIDUES
+                || domain.codons.len() > 64
+                || !positions.insert(domain.position)
+                || domain.codons.iter().any(|c| c.len() != 3 || !concrete(c))
+                || domain.codons.iter().collect::<BTreeSet<_>>().len() != domain.codons.len()
+            {
+                return Err(bad("invalid/duplicate per-position codon domain"));
+            }
+        }
+        let mut ranges = self.protected.len();
+        for scoped in &self.scoped_forbidden {
+            ranges = ranges
+                .checked_add(scoped.ranges.len())
+                .filter(|n| *n <= MAX_POLICY_RANGES)
+                .ok_or(Error::TooLarge)?;
+            if scoped.motif.is_empty()
+                || scoped.motif.len() > 128
+                || !scoped
+                    .motif
+                    .bytes()
+                    .all(|b| b"ACGTRYSWKMBDHVN".contains(&b))
+                || scoped.ranges.is_empty()
+                || scoped.ranges.iter().any(|r| !valid_range(r))
+            {
+                return Err(bad(
+                    "scoped motifs require uppercase IUPAC and explicit coding overlap ranges",
+                ));
+            }
+        }
+        bounded_json(self, MAX_POLICY_BYTES)
+    }
+}
+pub fn constrained_policy_revision(policy: &ConstrainedPolicy) -> Result<String, Error> {
+    policy.validate()?;
+    Ok(blake3::hash(
+        &serde_json::to_vec(&(CONSTRAINED_ENGINE_VERSION, policy)).map_err(|_| Error::TooLarge)?,
+    )
+    .to_hex()
+    .to_string())
+}
+/// Positional constraints operate on complete concrete linear coding DNA, using
+/// ordinary code assignments. Feature phase, initiation and exceptions must be
+/// mapped or explicitly protected by the adapter before invoking this profile.
+pub fn constrained_source_preflight(
+    source: &Molecule,
+    o: &DesignOptions,
+    policy: &ConstrainedPolicy,
+) -> Result<(), Error> {
+    o.validate()?;
+    policy.validate()?;
+    if source.sequence.alphabet() != Alphabet::Dna || source.topology != Topology::Linear {
+        return Err(bad(
+            "positional/minimum-edit design needs original concrete linear coding DNA",
+        ));
+    }
+    let required = target(source, o)?;
+    let n = source.sequence.len();
+    if policy
+        .protected
+        .iter()
+        .chain(policy.scoped_forbidden.iter().flat_map(|s| s.ranges.iter()))
+        .any(|r| r.end > n)
+    {
+        return Err(bad("coding policy range exceeds its original source"));
+    }
+    let table = codons(o.genetic_code)?;
+    for domain in &policy.allowed_codons {
+        if domain.position >= required.len() {
+            return Err(bad("codon domain position exceeds original coding source"));
+        }
+        let aa = required.as_bytes()[domain.position];
+        if domain.codons.iter().any(|c| {
+            !table
+                .iter()
+                .any(|(codon, residue)| codon == c && *residue == aa)
+        }) {
+            return Err(bad(
+                "per-position domains must contain only synonymous codons in the declared code",
+            ));
+        }
+    }
+    Ok(())
+}
+pub fn constrained_source_revision(
+    source: &Molecule,
+    o: &DesignOptions,
+    policy: &ConstrainedPolicy,
+) -> Result<String, Error> {
+    constrained_source_preflight(source, o, policy)?;
+    Ok(blake3::hash(
+        &serde_json::to_vec(&(
+            CONSTRAINED_ENGINE_VERSION,
+            source.revision(),
+            options_revision(o)?,
+            constrained_policy_revision(policy)?,
+        ))
+        .map_err(|_| Error::TooLarge)?,
+    )
+    .to_hex()
+    .to_string())
+}
+struct ScopedPattern<'a> {
+    mask: Vec<u8>,
+    ranges: &'a [CodingRange],
+}
+fn scoped_patterns(policy: &ConstrainedPolicy) -> Vec<ScopedPattern<'_>> {
+    let mut result = Vec::new();
+    for rule in &policy.scoped_forbidden {
+        let reverse = Sequence::dna(&rule.motif)
+            .expect("validated motif")
+            .reverse_complement()
+            .expect("DNA");
+        result.push(ScopedPattern {
+            mask: rule.motif.bytes().map(base_mask).collect(),
+            ranges: &rule.ranges,
+        });
+        if reverse.as_str() != rule.motif {
+            result.push(ScopedPattern {
+                mask: reverse.as_str().bytes().map(base_mask).collect(),
+                ranges: &rule.ranges,
+            });
+        }
+    }
+    result
+}
+struct ConstrainedRuntime<'a> {
+    domains: Vec<Option<&'a CodonDomain>>,
+    protected: Vec<bool>,
+    patterns: Vec<ScopedPattern<'a>>,
+}
+impl<'a> ConstrainedRuntime<'a> {
+    fn new(source: &Molecule, policy: &'a ConstrainedPolicy, work: &mut Work) -> Result<Self, ()> {
+        let n = source.sequence.len();
+        let mask_bases = policy
+            .scoped_forbidden
+            .iter()
+            .map(|s| s.motif.len() * 2 + s.ranges.len())
+            .sum::<usize>();
+        work.take((n + policy.protected.len() + policy.allowed_codons.len() + mask_bases) as u64)?;
+        let mut domains = vec![None; n / 3];
+        for d in &policy.allowed_codons {
+            domains[d.position] = Some(d);
+        }
+        let mut changes = vec![0i32; n + 1];
+        for r in &policy.protected {
+            changes[r.start] += 1;
+            changes[r.end] -= 1;
+        }
+        let mut active = 0;
+        let protected = changes[..n]
+            .iter()
+            .map(|v| {
+                active += *v;
+                active > 0
+            })
+            .collect();
+        Ok(Self {
+            domains,
+            protected,
+            patterns: scoped_patterns(policy),
+        })
+    }
+    fn allowed(&self, source: &Molecule, position: usize, codon: &str) -> bool {
+        if self.domains[position].is_some_and(|d| !d.codons.iter().any(|c| c == codon)) {
+            return false;
+        }
+        let original = source.sequence.as_str().as_bytes();
+        codon
+            .bytes()
+            .enumerate()
+            .all(|(j, b)| !self.protected[position * 3 + j] || original[position * 3 + j] == b)
+    }
+}
+fn overlaps(ranges: &[CodingRange], start: i64, end: i64) -> bool {
+    ranges
+        .iter()
+        .any(|r| start < (r.end as i64) && end > (r.start as i64))
+}
+/// Incremental scoped motif search. `coding_offset` may be negative when the
+/// bounded suffix still contains left-context bases; right-context spans likewise
+/// retain true coding coordinates instead of resetting at the flank boundary.
+fn scoped_append(
+    tail: &[u8],
+    coding_offset: i64,
+    start: usize,
+    patterns: &[ScopedPattern<'_>],
+    work: &mut Work,
+) -> Result<bool, ()> {
+    for end in start..tail.len() {
+        for pattern in patterns {
+            work.take(1 + pattern.ranges.len() as u64)?;
+            if pattern.mask.len() > end + 1 {
+                continue;
+            }
+            let first = end + 1 - pattern.mask.len();
+            if !overlaps(
+                pattern.ranges,
+                coding_offset + first as i64,
+                coding_offset + end as i64 + 1,
+            ) {
+                continue;
+            }
+            let mut hit = true;
+            for (b, mask) in tail[first..=end].iter().zip(&pattern.mask) {
+                work.take(1)?;
+                if base_mask(*b) & mask == 0 {
+                    hit = false;
+                    break;
+                }
+            }
+            if hit {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+/// Independent full sequence/lock/domain/motif checker. It does not call the
+/// search's positional filter or incremental scoped predicate.
+pub fn check_constrained(
+    source: &Molecule,
+    candidate: &Molecule,
+    o: &DesignOptions,
+    policy: &ConstrainedPolicy,
+) -> Result<ConstrainedCheckReport, Error> {
+    let context_revision = constrained_source_revision(source, o, policy)?;
+    let base = check(source, candidate, o)?;
+    let mut work = Work {
+        used: base.work_used,
+        limit: o.max_work,
+    };
+    let mut domain_violations = Vec::new();
+    let mut protected_violations = Vec::new();
+    let mut scoped_violations = Vec::new();
+    let mut changed_bases = None;
+    let mut violated = false;
+    let scan = if base.complete {
+        (|| -> Result<(), ()> {
+            let original = source.sequence.as_str().as_bytes();
+            let dna = candidate.sequence.as_str().as_bytes();
+            work.take((original.len() + policy.protected.len()) as u64)?;
+            // Independent union construction: scan differences once, preserving all
+            // overlapping protected ranges without quadratic base/range comparisons.
+            let mut boundaries = vec![0i32; original.len() + 1];
+            for range in &policy.protected {
+                boundaries[range.start] += 1;
+                boundaries[range.end] -= 1;
+            }
+            let mut active = 0i32;
+            let mut difference = 0usize;
+            for (i, original_base) in original.iter().enumerate() {
+                active += boundaries[i];
+                if dna.get(i) != Some(original_base) {
+                    difference += 1;
+                    if active > 0 {
+                        violated = true;
+                        if protected_violations.len() < 256 {
+                            protected_violations.push(i);
+                        }
+                    }
+                }
+            }
+            if dna.len() == original.len() {
+                changed_bases = Some(difference);
+            } else {
+                violated = true;
+            }
+            for domain in &policy.allowed_codons {
+                work.take(3 + domain.codons.len() as u64 * 3)?;
+                let actual = dna.get(domain.position * 3..domain.position * 3 + 3);
+                if !domain.codons.iter().any(|c| Some(c.as_bytes()) == actual) {
+                    violated = true;
+                    if domain_violations.len() < 256 {
+                        domain_violations.push(domain.position);
+                    }
+                }
+            }
+            let full = [o.left_context.as_bytes(), dna, o.right_context.as_bytes()].concat();
+            // A separate complete traversal, including windows crossing either fixed
+            // flank. Context-only matches do not overlap a declared coding range.
+            for rule in &policy.scoped_forbidden {
+                let reverse = Sequence::dna(&rule.motif)
+                    .expect("validated motif")
+                    .reverse_complement()
+                    .expect("DNA");
+                for (orientation, motif) in [rule.motif.as_str(), reverse.as_str()]
+                    .into_iter()
+                    .enumerate()
+                {
+                    if orientation == 1 && reverse.as_str() == rule.motif {
+                        continue;
+                    }
+                    let mask = motif.bytes().map(base_mask).collect::<Vec<_>>();
+                    for (start, window) in full.windows(mask.len()).enumerate() {
+                        work.take(1 + rule.ranges.len() as u64)?;
+                        let coding_start = start as i64 - o.left_context.len() as i64;
+                        if !rule.ranges.iter().any(|r| {
+                            coding_start < r.end as i64
+                                && coding_start + mask.len() as i64 > r.start as i64
+                        }) {
+                            continue;
+                        }
+                        let mut hit = true;
+                        for (b, allowed) in window.iter().zip(&mask) {
+                            work.take(1)?;
+                            if base_mask(*b) & allowed == 0 {
+                                hit = false;
+                                break;
+                            }
+                        }
+                        if hit {
+                            violated = true;
+                            if scoped_violations.len() < 256 {
+                                scoped_violations.push(coding_start);
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(())
+        })()
+    } else {
+        Err(())
+    };
+    let complete = base.complete && scan.is_ok();
+    let satisfies = complete.then_some(base.satisfies == Some(true) && !violated);
+    let mut warnings=vec!["Positional constraints preserve ordinary internal-codon translation only; actual CDS initiation, phase, exceptions and overlapping features require their source-bound adapter checks.".into()];
+    if !complete {
+        changed_bases = None;
+        warnings.push("Combined generic/positional checker work budget exhausted; no complete satisfaction or edit-distance claim is available.".into());
+    }
+    if [
+        domain_violations.len(),
+        protected_violations.len(),
+        scoped_violations.len(),
+    ]
+    .contains(&256)
+    {
+        warnings.push("At most 256 details per positional violation category are retained.".into());
+    }
+    let report = ConstrainedCheckReport {
+        engine_version: CONSTRAINED_ENGINE_VERSION.into(),
+        context_revision,
+        policy_revision: constrained_policy_revision(policy)?,
+        base,
+        changed_bases,
+        domain_violations,
+        protected_violations,
+        scoped_violations,
+        complete,
+        satisfies,
+        work_used: work.used,
+        warnings,
+    };
+    report.validate()?;
+    Ok(report)
+}
+pub fn design_constrained(
+    source: &Molecule,
+    o: &DesignOptions,
+    policy: &ConstrainedPolicy,
+) -> Result<ConstrainedDesignReport, Error> {
+    let context_revision = constrained_source_revision(source, o, policy)?;
+    let (base, mut checked, total_work_used) = design_internal(source, o, Some(policy))?;
+    if base.candidate.is_none() {
+        checked = None;
+    }
+    let changed_bases = checked.as_ref().and_then(|c| c.changed_bases);
+    let proven = base.candidate.is_some() && base.search_complete;
+    let outcome = ConstrainedOutcome {
+        source_revision: base.source_revision,
+        options_revision: base.options_revision,
+        target_protein: base.target_protein,
+        options: base.options,
+        candidate: base.candidate,
+        score: base.score,
+        status: base.status,
+        search_complete: base.search_complete,
+        work_used: base.work_used,
+        pruned_states: base.pruned_states,
+        limits: base.limits,
+        warnings: base.warnings,
+    };
+    let report = ConstrainedDesignReport {
+        engine_version: CONSTRAINED_ENGINE_VERSION.into(),
+        context_revision: context_revision.clone(),
+        policy_revision: constrained_policy_revision(policy)?,
+        policy: policy.clone(),
+        design: outcome,
+        check: checked,
+        changed_bases,
+        total_work_used,
+        minimum_changes_proven: proven,
+        objective_optimality_proven: proven,
+    };
+    report.validate_binding(&context_revision)?;
+    Ok(report)
+}
+impl ConstrainedCheckReport {
+    pub fn validate(&self) -> Result<(), Error> {
+        self.base.validate()?;
+        if self.engine_version != CONSTRAINED_ENGINE_VERSION
+            || !digest(&self.context_revision)
+            || !digest(&self.policy_revision)
+            || self.work_used > 100_000_000
+            || self.work_used < self.base.work_used
+            || self.complete && !self.base.complete
+            || self.satisfies.is_some() != self.complete
+            || self
+                .changed_bases
+                .is_some_and(|n| n > self.base.coding_length)
+            || self.domain_violations.len() > 256
+            || self.protected_violations.len() > 256
+            || self.scoped_violations.len() > 256
+            || self.domain_violations.iter().any(|n| *n >= MAX_RESIDUES)
+            || self
+                .protected_violations
+                .iter()
+                .any(|n| *n >= MAX_RESIDUES * 3)
+            || self
+                .scoped_violations
+                .iter()
+                .any(|n| *n < -2048 || *n > (MAX_RESIDUES * 3 + 2048) as i64)
+            || self.warnings.len() > 16
+            || self.warnings.iter().any(|s| s.len() > 4096)
+            || self.satisfies == Some(true)
+                && (self.base.satisfies != Some(true)
+                    || self.changed_bases.is_none()
+                    || !self.domain_violations.is_empty()
+                    || !self.protected_violations.is_empty()
+                    || !self.scoped_violations.is_empty())
+        {
+            return Err(bad("invalid constrained checker report"));
+        }
+        bounded_json(self, 8 << 20)
+    }
+    pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
+        self.validate()?;
+        if self.context_revision != expected {
+            return Err(bad(
+                "constrained check source/options/policy context changed",
+            ));
+        }
+        Ok(())
+    }
+    /// Borrowed source/candidate/policy binding only, not a fresh positional scan.
+    pub fn validate_bindings_for(
+        &self,
+        source: &Molecule,
+        candidate: &Molecule,
+        o: &DesignOptions,
+        policy: &ConstrainedPolicy,
+    ) -> Result<(), Error> {
+        self.validate_binding(&constrained_source_revision(source, o, policy)?)?;
+        if self.policy_revision != constrained_policy_revision(policy)? {
+            return Err(bad("constrained checker policy changed"));
+        }
+        self.base.validate_bindings_for(source, candidate, o)
+    }
+}
+impl ConstrainedDesignReport {
+    pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
+        self.policy.validate()?;
+        self.design.options.validate()?;
+        let d = &self.design;
+        if self.engine_version != CONSTRAINED_ENGINE_VERSION
+            || self.context_revision != expected
+            || !digest(expected)
+            || self.policy_revision != constrained_policy_revision(&self.policy)?
+            || !digest(&d.source_revision)
+            || d.options_revision != options_revision(&d.options)?
+            || d.target_protein.len() > MAX_RESIDUES
+            || d.work_used > d.options.max_work
+            || self.total_work_used < d.work_used
+            || self.total_work_used > d.work_used.saturating_add(d.options.max_work)
+            || d.candidate.is_none() && d.search_complete && self.total_work_used != d.work_used
+            || d.limits.len() > 10
+            || d.warnings.len() > 64
+            || self.minimum_changes_proven != (d.candidate.is_some() && d.search_complete)
+            || self.objective_optimality_proven != self.minimum_changes_proven
+            || matches!(d.status, DesignStatus::CandidateFound) != d.candidate.is_some()
+            || matches!(d.status, DesignStatus::Unsatisfiable) && !d.search_complete
+            || matches!(d.status, DesignStatus::SearchIncomplete) && d.search_complete
+        {
+            return Err(bad("invalid constrained design outcome"));
+        }
+        let context = blake3::hash(
+            &serde_json::to_vec(&(
+                CONSTRAINED_ENGINE_VERSION,
+                &d.source_revision,
+                &d.options_revision,
+                &self.policy_revision,
+            ))
+            .map_err(|_| Error::TooLarge)?,
+        )
+        .to_hex()
+        .to_string();
+        if context != expected {
+            return Err(bad("constrained source/options/policy binding changed"));
+        }
+        match (&d.candidate, &self.check, d.score, self.changed_bases) {
+            (Some(m), Some(c), Some(score), Some(changed)) => {
+                source_bounds(m)?;
+                c.validate_binding(expected)?;
+                if c.policy_revision != self.policy_revision
+                    || c.base.source_revision != d.source_revision
+                    || c.base.candidate_revision != m.revision()
+                    || c.base.options_revision != d.options_revision
+                    || c.base.target_protein != d.target_protein
+                    || c.base.score != score
+                    || c.changed_bases != Some(changed)
+                    || self.total_work_used != d.work_used.saturating_add(c.work_used)
+                    || !c.complete
+                    || c.satisfies != Some(true)
+                {
+                    return Err(bad("constrained candidate/check identity changed"));
+                }
+            }
+            (None, None, None, None) => {}
+            _ => return Err(bad("incomplete constrained candidate/check outcome")),
+        }
+        bounded_json(self, 16 << 20)
+    }
+    /// Does not restore search optimality or scientific authority from imported data.
+    pub fn validate_bindings_for_source(
+        &self,
+        source: &Molecule,
+        o: &DesignOptions,
+        policy: &ConstrainedPolicy,
+    ) -> Result<(), Error> {
+        self.validate_binding(&constrained_source_revision(source, o, policy)?)?;
+        if self.policy != *policy
+            || self.design.options != *o
+            || self.design.source_revision != source.revision()
+            || self.design.target_protein != target(source, o)?
+        {
+            return Err(bad(
+                "constrained design actual source/options/policy changed",
+            ));
+        }
+        if let (Some(candidate), Some(check)) = (&self.design.candidate, &self.check) {
+            check.validate_bindings_for(source, candidate, o, policy)?;
         }
         Ok(())
     }

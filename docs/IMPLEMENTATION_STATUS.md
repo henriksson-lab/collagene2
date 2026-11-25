@@ -22,6 +22,47 @@ and review proposals are implemented, despite older gap tables. See
 [workflow decisions](BENCHLING_WORKFLOW_DECISIONS.md). This documentation-only
 checkpoint adds no runtime/build/browser checks.
 
+## Source/CDS domestication and explicit physical preparation
+
+**Remove internal sites** now connects source inspection, retained/protected sites,
+selected coding features, a synonymous proposal, independent full-source checking,
+reference review and explicit original-template inverse-PCR preparation. The
+sequence-selection action opens the same workflow. The shared constrained codon
+search supports positional domains, protected bases and scoped motifs while
+preserving the old codon API. Exact search/checker work is charged across genes;
+unused successful reservations are refunded.
+
+The checker preserves feature coordinates and qualifiers, phase/strand/code and
+initiation/stop semantics, rescans both strands and circular origins, and blocks
+unsupported uncertain coverage. Real primers must introduce every declared
+substitution. Opening reference intent and opening a physical candidate retain
+exact original event ancestry through separate guarded actions; neither restores
+positive reaction verification. Existing fresh plan review, actual products,
+oligo sheets and HTML/PDF exports use the same preparation.
+[Contracts and remaining work](DOMESTICATION.md).
+
+Validation passed:187 unique focused native checks (core59, web126, MCP SDK2),
+the WASM compiler check, and a final full Trunk application/worker build after the
+aggregate-budget fix. The last build includes worker61/MCP156 with unchanged
+candidate12/plan10/science15. Source/feature/catalog/candidate drift, phase/reverse/
+compound/origin cases, uncertain CDSs, two-gene budget reuse, annotation retention,
+physical primer limits, exact event aliases and protocol/oligo export are covered.
+No browser/HTTP interaction check ran; GUI/performance acceptance stays deferred.
+
+Port8082 now serves the new immutable snapshot:15 assets /99,419,439 bytes, with
+the previously active worker retained for open tabs. The server still has no host
+filesystem API. Local asset identity and the exact listening process were checked.
+Earlier preview descriptions below are historical checkpoints.
+
+Previous commit4d21bd5 passed all native Windows/macOS/Linux CI jobs. Its web job
+failed at formatting before WASM checking; this checkpoint fixes that formatting
+and passes `cargo fmt --all -- --check`. New-commit CI remains separate from these
+local results.
+
+Joint overlapping-frame optimization, broader method/translation profiles,
+multi-round and other physical preparations, curated empirical profiles/ranking,
+remaining cloning work and portable desktop delivery stay active.
+
 ## Signed Golden Gate fusion placement and supplied-count scoring
 
 The junction editor now exposes signed placement windows, explicit candidate

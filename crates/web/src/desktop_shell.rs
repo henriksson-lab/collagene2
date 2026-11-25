@@ -60,6 +60,11 @@ const TOOLS: &[Tool] = &[
         target: Target::Panel("mutagenesis"),
     },
     Tool {
+        label: "Remove internal sites",
+        group: "Cloning",
+        target: Target::Panel("domestication"),
+    },
+    Tool {
         label: "Plan",
         group: "Cloning",
         target: Target::Panel("plan"),

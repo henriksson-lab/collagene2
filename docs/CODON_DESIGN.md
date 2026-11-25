@@ -37,4 +37,34 @@ Each report binds source revision, options revision, engine and required protein
 
 `validate` checks bounded report structure. `validate_bindings_for_source` and `validate_bindings_for` additionally check exact source/options/candidate bindings without a full constraint scan, for responsive UI result handling. `validate_for_source` and `validate_for` recompute the independent checker and are useful for native transport/audit boundaries. None of these binding checks authenticates a remote producer's search-exhaustiveness or global-optimality claim; those claims require a fresh trusted search. The browser runs design and an explicit fresh checker in workers, and invalidates results when source/options change.
 
-The new analysis has its own engine version. It adds no physical `Operation`, changes no cloning verifier semantics, and does not change candidate-plan or archive-plan schemas. Advanced host-frequency datasets, CAI-style objectives, codon-pair/RNA models, protected nucleotide ranges, repeat/structure/supplier-specific constraints and embedded synthesis-order integrations remain further F26 work; this profile does not claim them.
+The original analysis has its own engine version. It adds no physical `Operation`, changes no cloning verifier semantics, and does not change candidate-plan or archive-plan schemas. Advanced host-frequency datasets, CAI-style objectives, codon-pair/RNA models, repeat/structure/supplier-specific constraints and embedded synthesis-order integrations remain further F26 work.
+
+## Positional constraints and minimum changes
+
+The separate versioned `ConstrainedPolicy` API reuses the same bounded search and
+independent checker while preserving the original serialized options and reports.
+It accepts per-position synonymous codon domains, protected coding-base ranges
+and scoped forbidden motifs on both strands. Scoped recognition includes fixed
+flanks and either coding boundary; it does not turn the whole motif list into a
+global deletion rule. This permits preserving a wanted occurrence elsewhere in
+the same CDS.
+
+Its objective minimizes changed original nucleotides, then maximizes declared
+codon preference, then chooses a deterministic lexical tie. Locks and domains
+filter extensions inside the search. Independent checking recalculates positional
+violations, edit distance, translation and generic constraints from full DNA.
+Pruning and exhausted work still withhold global-minimum or impossibility claims.
+
+`ConstrainedDesignReport` contains its own `ConstrainedOutcome`, rather than a
+legacy `DesignReport` incorrectly claiming unconstrained weight optimality.
+`total_work_used` includes both search and checker work, even when a failed checker
+withholds its candidate and receipt. Composite callers can reserve a per-pass
+ceiling, charge actual completed work and refund unused allowance; a successful
+small first gene must not consume an entire multi-gene design budget.
+
+This API retains ordinary internal-codon semantics. The
+[source/CDS domestication adapter](DOMESTICATION.md) separately maps real feature
+phase, strand, genetic code and initiation/stop policy, independently checks every
+affected feature and builds the explicit physical preparation. Positional search
+alone does not establish a synonymous change in a differently framed overlapping
+gene, material stock or experimental success.

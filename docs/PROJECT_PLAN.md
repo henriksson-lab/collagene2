@@ -1024,3 +1024,23 @@ Broader biological optimization constraints, curated/licensed empirical data and
 ranking, internal-site domestication with physical mutagenic preparation, richer
 cycling mixtures, unfinished cloning methods and delivery/acceptance remain part
 of the active full plan.
+
+### Source/CDS domestication checkpoint
+
+Internal-site design now composes positional constrained codon search with exact
+source, feature and catalog pins. Protected bases and wanted recognition sites
+remain distinct from scoped unwanted sites. The independent checker rescans full
+physical DNA and affected CDSs, preserving original phase/code/initiation/stop
+semantics and annotation coordinates. Uncertain CDS coverage cannot silently
+escape protection. Conservative per-feature search does not claim joint optimality.
+
+An explicit original-template inverse-PCR route encodes every selected change
+through actual bounded primers, phosphorylation and ligation against a target
+frozen beforehand. Reference-only opening and physical-plan opening stay separate,
+with exact event ancestry and the existing verification/output/protocol route.
+Worker61/MCP156 append these interfaces without changing candidate12/plan10/science15.
+[Contracts, limits and remaining scope](DOMESTICATION.md).
+
+Joint overlapping-frame search, broader translation/preparation profiles,
+multi-round or other physical routes, curated empirical profiles and all remaining
+cloning/delivery/acceptance milestones stay active.

@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 60;
+pub const WORKER_SCHEMA_VERSION: u16 = 61;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 12;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -818,6 +818,23 @@ pub enum AnalysisJob {
         dataset: crate::ligation_fidelity::Dataset,
         ends: Vec<String>,
     },
+    InspectDomestication {
+        source: Molecule,
+        request: crate::domestication::Request,
+    },
+    ProposeDomestication {
+        source: Molecule,
+        request: crate::domestication::Request,
+    },
+    CheckDomestication {
+        source: Molecule,
+        request: crate::domestication::Request,
+        selection: crate::domestication::Selection,
+    },
+    PrepareDomestication {
+        input: crate::verification::PlanInput,
+        request: crate::domestication_preparation::Request,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -958,6 +975,13 @@ pub enum AnalysisResult {
     GoldenGateFusions(crate::golden_gate_fusion_design::Report),
     GoldenGateFusionMaterialized(crate::golden_gate_fusion_design::Materialized),
     LigationFidelity(crate::ligation_fidelity::Report),
+    DomesticationInspected(crate::domestication::Inspection),
+    DomesticationProposed(crate::domestication::Proposal),
+    DomesticationChecked {
+        report: crate::domestication::CheckReport,
+        target: Molecule,
+    },
+    DomesticationPrepared(crate::domestication_preparation::Prepared),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1178,6 +1202,16 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         crate::pairwise_context::preflight(report, reference, query, *translate)?;
     }
     match &r.job {
+        AnalysisJob::InspectDomestication { source, request }
+        | AnalysisJob::ProposeDomestication { source, request }
+        | AnalysisJob::CheckDomestication {
+            source, request, ..
+        } => {
+            crate::domestication::preflight(source, request)?;
+        }
+        AnalysisJob::PrepareDomestication { input, request } => {
+            crate::domestication_preparation::preflight(input, request)?;
+        }
         AnalysisJob::SearchGoldenGateFusions { inputs, request }
         | AnalysisJob::MaterializeGoldenGateFusions {
             inputs, request, ..
@@ -1299,6 +1333,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_combinatorial_batch_tag(bytes, &[120, 121, 122])?;
     preflight_combinatorial_release_tag(bytes, &[123, 124, 125, 126, 127])?;
     preflight_fusion_design_tag(bytes, &[128, 129, 130])?;
+    preflight_domestication_tag(bytes, &[131, 132, 133, 134])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1352,6 +1387,10 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         _ => decode_with_limit(b"CGR\0", bytes, maximum)?,
     };
     let required = match &response.result {
+        AnalysisResult::DomesticationInspected(_)
+        | AnalysisResult::DomesticationProposed(_)
+        | AnalysisResult::DomesticationChecked { .. }
+        | AnalysisResult::DomesticationPrepared(_) => 61,
         AnalysisResult::GoldenGateFusions(_)
         | AnalysisResult::GoldenGateFusionMaterialized(_)
         | AnalysisResult::LigationFidelity(_) => 60,
@@ -1500,6 +1539,22 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
     }
     match &response.result {
+        AnalysisResult::DomesticationInspected(report) => {
+            report.validate_binding(&response.revision)?
+        }
+        AnalysisResult::DomesticationProposed(report) => {
+            report.validate_binding(&response.revision)?
+        }
+        AnalysisResult::DomesticationChecked { report, target } => {
+            report.validate_binding(&response.revision)?;
+            target.validate()?;
+            if report.target_revision != target.revision() {
+                return Err(Error::Format("Domestication reference changed".into()));
+            }
+        }
+        AnalysisResult::DomesticationPrepared(report) => {
+            report.validate_binding(&response.revision)?
+        }
         AnalysisResult::GoldenGateFusions(report) => report.validate_binding(&response.revision)?,
         AnalysisResult::GoldenGateFusionMaterialized(report) => {
             report.validate_binding(&response.revision)?
@@ -2048,6 +2103,14 @@ fn preflight_fusion_design_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> 
         .map_err(|e| Error::Format(e.to_string()))?;
     if tags.contains(&tag) {
         check_variant_version(bytes, 60)?;
+    }
+    Ok(())
+}
+fn preflight_domestication_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 61)?;
     }
     Ok(())
 }
@@ -2610,6 +2673,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_combinatorial_batch_tag(bytes, &[128, 129, 130])?;
     preflight_combinatorial_release_tag(bytes, &[131, 132, 133, 134, 135])?;
     preflight_fusion_design_tag(bytes, &[136, 137, 138])?;
+    preflight_domestication_tag(bytes, &[139, 140, 141, 142])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -2617,6 +2681,10 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::InspectDomestication { .. }
+        | AnalysisJob::ProposeDomestication { .. }
+        | AnalysisJob::CheckDomestication { .. }
+        | AnalysisJob::PrepareDomestication { .. } => 61,
         AnalysisJob::SearchGoldenGateFusions { .. }
         | AnalysisJob::MaterializeGoldenGateFusions { .. }
         | AnalysisJob::ScoreLigationFidelity { .. } => 60,
@@ -3192,6 +3260,42 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             if crate::golden_gate_reaction::selection_revision(report, selection)? != r.revision {
                 return Err(Error::Format(
                     "Golden Gate reaction selection changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::InspectDomestication { source, request } => {
+            if crate::domestication::inspect_revision(source, request)? != r.revision {
+                return Err(Error::Format(
+                    "Domestication inspection context changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::ProposeDomestication { source, request } => {
+            if crate::domestication::propose_revision(source, request)? != r.revision {
+                return Err(Error::Format(
+                    "Domestication proposal context changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::CheckDomestication {
+            source,
+            request,
+            selection,
+        } => {
+            if crate::domestication::check_revision(source, request, selection)? != r.revision {
+                return Err(Error::Format(
+                    "Domestication substitution context changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::PrepareDomestication { input, request } => {
+            if crate::domestication_preparation::revision(input, request)? != r.revision {
+                return Err(Error::Format(
+                    "Domestication preparation context changed".into(),
                 ));
             }
             None
@@ -3865,6 +3969,28 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let result = match r.job {
+        AnalysisJob::InspectDomestication { source, request } => {
+            crate::domestication::inspect(&source, &request)
+                .map(AnalysisResult::DomesticationInspected)
+        }
+        AnalysisJob::ProposeDomestication { source, request } => {
+            crate::domestication::propose(&source, &request)
+                .map(AnalysisResult::DomesticationProposed)
+        }
+        AnalysisJob::CheckDomestication {
+            source,
+            request,
+            selection,
+        } => crate::domestication::check(&source, &request, &selection).map(|checked| {
+            AnalysisResult::DomesticationChecked {
+                report: checked.report().clone(),
+                target: checked.target().clone(),
+            }
+        }),
+        AnalysisJob::PrepareDomestication { input, request } => {
+            crate::domestication_preparation::materialize(&input, &request)
+                .map(AnalysisResult::DomesticationPrepared)
+        }
         AnalysisJob::SearchGoldenGateFusions { inputs, request } => {
             crate::golden_gate_fusion_design::inspect(&inputs, &request)
                 .map(AnalysisResult::GoldenGateFusions)

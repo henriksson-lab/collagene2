@@ -5107,6 +5107,63 @@ pub fn App() -> impl IntoView {
             Ok(())
         },
     );
+    let open_domestication = Callback::new(
+        move |opened: crate::domestication_review::Open| -> Result<(), String> {
+            if workspace_restoring.get_untracked()
+                || opened.epoch != workspace_epoch.get_untracked()
+            {
+                return Err(
+                    "The domestication workspace changed; inspect the current source again.".into(),
+                );
+            }
+            if !documents.with_untracked(|docs| {
+                docs.get(active.get_untracked())
+                    .is_some_and(|doc| current_event_binding(doc) == opened.source)
+            }) {
+                return Err("The exact original source event changed.".into());
+            }
+            let staged = crate::domestication_review::stage(&contig_snapshot.run(())?, &opened)?;
+            restore_workspace_state(&staged.workspace)?;
+            let restored =
+                OpenDocument::restore_all(&staged.workspace).map_err(|e| e.to_string())?;
+            let index = restored
+                .iter()
+                .position(|doc| doc.id == staged.target.document_id)
+                .ok_or("The independently checked target was not retained.")?;
+            let preference = staged.candidate.as_ref().map(|value| {
+                (
+                    value.plan_revision.clone(),
+                    opened.epoch,
+                    staged.target,
+                    staged.inputs,
+                )
+            });
+            batch(|| {
+                documents.set(restored);
+                active.set(index);
+                attachments.set(staged.workspace.attachments);
+                stored_candidates.set(staged.workspace.candidates);
+                candidate_events.set(None);
+                candidate.set(staged.candidate);
+                candidate_events.set(preference);
+                selection.set(None);
+                selected_feature.set(None);
+                search_regions.set(None);
+                plan_report.set(None);
+                last_plan.set(None);
+                last_plan_target.set(None);
+                last_plan_events.set(None);
+                plan_generation.update(|g| *g = g.wrapping_add(1));
+                if opened.prepared.is_some() {
+                    panel.set("plan");
+                    message.set("Opened the original-source mutagenic preparation and independently checked intended reference. Verify the plan, inspect actual products, then choose outputs.".into());
+                } else {
+                    message.set("Opened checked substitution intent with unchanged annotation coordinates and exact source ancestry. This reference is not prepared DNA.".into());
+                }
+            });
+            Ok(())
+        },
+    );
     let contig_restore = Callback::new(move |frame: collagene_core::workspace::Workspace| {
         match restore_workspace_state(&frame) {
             Ok(state) => batch(|| apply_restored.run(state)),
@@ -5373,6 +5430,7 @@ pub fn App() -> impl IntoView {
                                     if let Some(location)=location{feature_for_editor.set(None);feature_initial_location.set(Some(location));modal_error.set(String::new());modal.set("feature");}
                                 })
                                 on_mutation=Callback::new(move|()|match mutation_selection.run(()){Ok(seed)=>{mutation_seed.set(Some(seed));panel.set("mutagenesis");},Err(error)=>message.set(error)})
+                                on_domestication=Callback::new(move|()|panel.set("domestication"))
                                 on_primer=Callback::new(move|reverse:bool|{match pair_selection.run(()).and_then(|selection|selection.oligo(if reverse{"Reverse"}else{"Forward"},reverse,"")){Ok(oligo)=>{match oligo.primer(){Ok(primer)=>{pair_draft.update(|draft|if reverse{draft.reverse=oligo}else{draft.forward=oligo});primer_seed.set(Some(primer));panel.set("primers");},Err(error)=>message.set(error)}},Err(error)=>message.set(error)}})
                                 on_edit=Callback::new(move|()|{if let Some((a,b))=selection.get_untracked(){edit_text.set(molecule.with_untracked(|m|m.sequence.as_str().get(a..b).unwrap_or_default().to_owned()));modal_error.set(String::new());modal.set("edit");}})
                                 on_clear=Callback::new(move|()|batch(||{selection.set(None);selected_feature.set(None);search_regions.set(None);restrictions.selected.set(None);}))
@@ -5427,6 +5485,13 @@ pub fn App() -> impl IntoView {
                                     candidate_events.set(None);candidate.set(Some(value));candidate_events.set(Some(preferred));plan_report.set(None);last_plan.set(None);last_plan_target.set(None);last_plan_events.set(None);plan_generation.update(|g|*g=g.wrapping_add(1));panel.set("plan");message.set("Method candidate opened with exact source-event bindings for independent target verification. No experimental success or mixture uniqueness is established.".into());
                                 }) on_products=Callback::new(move|products:Vec<Molecule>|add_documents(documents,active,workspace_restoring,products))/></Show>
                                     <Show when=move||panel.get()=="ends"><crate::end_repair::EndRepairPanel molecule=molecule query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,doc)|(i,doc.molecule.name.clone())).collect())) get_query=Callback::new(move|index:usize|documents.with(|docs|docs.get(index).map(|doc|doc.molecule.clone()))) on_candidate=Callback::new(move|value:transfer::Candidate|{if workspace_restoring.get_untracked(){return;}candidate_events.set(None);candidate.set(Some(value));plan_report.set(None);last_plan.set(None);last_plan_target.set(None);plan_generation.update(|generation|*generation=generation.wrapping_add(1));panel.set("plan");message.set("Physical candidate opened for review. Verify it against the independently selected active target; alternatives and chemistry remain explicit.".into());}) on_products=Callback::new(move|products:Vec<Molecule>|add_documents(documents,active,workspace_restoring,products))/></Show>
+                                    <Show when=move||panel.get()=="domestication"><crate::domestication_view::DomesticationView source=Memo::new(move|_|documents.with(|docs|recombination_source_info(&docs[active.get()]))) molecule selected_feature epoch=workspace_epoch on_open=open_domestication on_navigate=Callback::new(move|(start,end):(usize,usize)|->Result<(),String>{
+                                        let n=molecule.with_untracked(|m|m.sequence.len());
+                                        if workspace_restoring.get_untracked()||start>=n||end<=start||end-start>n{return Err("The selected source range is no longer available.".into());}
+                                        let spans=if end>n{vec![(start,n),(0,end-n)]}else{vec![(start,end)]};
+                                        batch(||{selected_feature.set(None);selection.set(if spans.len()==1{spans.first().copied()}else{None});search_regions.set(Some((molecule.with_untracked(Molecule::revision),spans)));});
+                                        Ok(())
+                                    })/></Show>
                                     <Show when=move||panel.get()=="mutagenesis"><crate::mutagenesis::MutagenesisPanel resolve_source=resolve_retained_source on_overlay=Some(publish_pcr_overlay) on_navigate=Some(navigate_pcr_overlay) molecule=molecule mutation_selection mutation_seed on_intent=open_mutation_intent pair_draft pair_selection anchor_available=primer_anchor_available primer_sources list_primers=list_saved_primers resolve_primer=resolve_saved_primer epoch=workspace_epoch source_info=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(recombination_source_info))) target_binding=primer_context query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone()))) on_candidate=Callback::new(move|opened:crate::mutagenesis::CandidateOpen|{
                                         let result=(||->Result<_,String>{
                                             if workspace_restoring.get_untracked() || opened.epoch!=workspace_epoch.get_untracked(){return Err("The mutation workspace changed; review the current design again.".into());}

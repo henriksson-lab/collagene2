@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 152;
+pub const CURRENT_TOOL_COUNT: usize = 156;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -5402,17 +5402,68 @@ impl CollageneServer {
                 "target_revision":report.intent.target.revision(),"recipe":report.recipe,"ordered_oligos":ordered,"design_count":ordered.len(),"retained_rows":report.retained_rows,"warnings":report.warnings,"artifact_id":artifact}))
         }).await
     }
-    #[tool(description = "Search bounded signed Golden Gate fusion-placement windows while retaining the original independently declared intended DNA and fixed manual preparations. Mathematical palindrome/end-distance constraints are not ligation fidelity or PCR feasibility. Returns complete candidate evidence as an artifact; explicitly select and materialize a candidate before fresh recipe verification.")]
-    async fn search_golden_gate_fusions(&self, Parameters(args): Parameters<fusion_design_tools::SearchQuery>) -> Result<CallToolResult, ErrorData> {
+    #[tool(
+        description = "Search bounded signed Golden Gate fusion-placement windows while retaining the original independently declared intended DNA and fixed manual preparations. Mathematical palindrome/end-distance constraints are not ligation fidelity or PCR feasibility. Returns complete candidate evidence as an artifact; explicitly select and materialize a candidate before fresh recipe verification."
+    )]
+    async fn search_golden_gate_fusions(
+        &self,
+        Parameters(args): Parameters<fusion_design_tools::SearchQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
         self.fusion_search(args).await
     }
-    #[tool(description = "Freshly materialize an explicitly selected source-bound Golden Gate fusion placement using original-template PCR and pinned Type IIS digests. Retains original intended DNA, records primer-added prefixes/suffixes, and preserves fixed preparations. Advisory only: verify the full returned ligation recipe against the original independent target before publication.")]
-    async fn materialize_golden_gate_fusions(&self, Parameters(args): Parameters<fusion_design_tools::MaterializeQuery>) -> Result<CallToolResult, ErrorData> {
+    #[tool(
+        description = "Freshly materialize an explicitly selected source-bound Golden Gate fusion placement using original-template PCR and pinned Type IIS digests. Retains original intended DNA, records primer-added prefixes/suffixes, and preserves fixed preparations. Advisory only: verify the full returned ligation recipe against the original independent target before publication."
+    )]
+    async fn materialize_golden_gate_fusions(
+        &self,
+        Parameters(args): Parameters<fusion_design_tools::MaterializeQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
         self.fusion_materialize(args).await
     }
-    #[tool(description = "Estimate conditional ligation fidelity from an explicitly supplied, provenance-bound directed count matrix and selected fusion ends. Reports conditions and missing-data uncertainty; does not infer empirical data from exact complementarity or claim experimental yield. No external optimizer or runtime software is called.")]
-    async fn score_ligation_fidelity(&self, Parameters(args): Parameters<fusion_design_tools::FidelityQuery>) -> Result<CallToolResult, ErrorData> {
+    #[tool(
+        description = "Estimate conditional ligation fidelity from an explicitly supplied, provenance-bound directed count matrix and selected fusion ends. Reports conditions and missing-data uncertainty; does not infer empirical data from exact complementarity or claim experimental yield. No external optimizer or runtime software is called."
+    )]
+    async fn score_ligation_fidelity(
+        &self,
+        Parameters(args): Parameters<fusion_design_tools::FidelityQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
         self.fidelity_score(args).await
+    }
+    #[tool(
+        description = "Inspect source-bound restriction sites, explicit retained/protected ranges and coding-feature constraints for internal-site domestication. Uses exact catalog/feature/source pins and reports unsupported geometry or translation semantics rather than assuming a silent change. Reference inspection only; no physical stock is made."
+    )]
+    async fn inspect_domestication(
+        &self,
+        Parameters(args): Parameters<domestication_tools::DesignQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.domestication_inspect(args).await
+    }
+    #[tool(
+        description = "Propose bounded synonymous source-coordinate substitutions that remove scoped unwanted restriction sites while preserving declared sites, protected bases and affected supported coding features. Positional minimum-edit constraints are inside the shared native search. Pruning remains explicit; a candidate is reference intent, not prepared DNA."
+    )]
+    async fn propose_domestication(
+        &self,
+        Parameters(args): Parameters<domestication_tools::DesignQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.domestication_propose(args).await
+    }
+    #[tool(
+        description = "Independently check explicit source-bound domestication substitutions, preserving original annotation coordinates and qualifiers and rescanning affected proteins and the entire DNA for scoped unwanted/new sites. Retains the independently declared target and evidence atomically. This check confers no physical-preparation or experimental authority."
+    )]
+    async fn check_domestication(
+        &self,
+        Parameters(args): Parameters<domestication_tools::CheckQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.domestication_check(args).await
+    }
+    #[tool(
+        description = "Materialize an explicitly checked domestication candidate with an explicit original-source inverse-PCR route, actual bounded oligos, phosphorylation and circular ligation. Every intended substitution must be introduced by the real preparation. Atomically retains the independent target, candidate plan and evidence for fresh verify_plan and HTML/PDF/oligo export. Unsupported distant or ambiguous routes are refused, never replaced by invented recoded stock."
+    )]
+    async fn prepare_domestication(
+        &self,
+        Parameters(args): Parameters<domestication_tools::PrepareQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.domestication_prepare(args).await
     }
     #[tool(
         description = "Build an unverified intended reference by explicitly replacing, inserting or deleting a single source interval. Uses only immutable source DNA and the requested edit, independently of any PCR or cloning simulator. Supports linear DNA and at most one circular turn with explicit origin shift. Atomically retains the intended target and full source-bound JSON. Does not mutate the source or claim physical material, successful cloning or observed DNA; design and verify inverse-PCR or another preparation separately against this frozen reference."
@@ -6213,9 +6264,10 @@ mod genome_store;
 mod unit_tools;
 
 mod assembly_library_history_tools;
-mod fusion_design_tools;
 mod catalog_tools;
 mod combinatorial_tools;
+mod domestication_tools;
+mod fusion_design_tools;
 mod recombination_tools;
 
 #[cfg(test)]

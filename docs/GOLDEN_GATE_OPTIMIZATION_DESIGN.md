@@ -5,6 +5,13 @@ design decisions for unfinished work, not implementation or application acceptan
 Retain the existing source-bound primers, selective junction proposals, reaction
 discovery, explicit candidate keys, fresh verification and recovery machinery.
 
+Implementation follow-up: [signed fusion placement](GOLDEN_GATE_FUSION_DESIGN.md)
+now composes actual original-template preparations, and
+[source-bound domestication](DOMESTICATION.md) adds positional synonymous search,
+full-source/CDS checking and explicit inverse-PCR preparation. The missing-adapter
+discussion below records the original design assessment; broader optimization,
+joint coding constraints, curated data and physical routes remain in scope.
+
 ## Actual missing adapters
 
 The existing `golden_gate_primer_design` and `golden_gate_junction_edit` modules
@@ -74,3 +81,22 @@ own restrictions. Reimplement published algorithms independently; preserve any
 data attribution and avoid relabelling third-party data as MIT.
 [Protocol statement](https://currentprotocols.onlinelibrary.wiley.com/doi/10.1002/cpz1.882),
 [NEB tool terms](https://www.neb.com/en-us/research/nebeta-tools).
+
+### Supplement inspection follow-up
+
+The five original Pryor2020 supplementary XLSX files were inspected separately,
+without adding a dataset to the repository. They contain complete integer
+ligation-frequency matrices with explicit zeros. Row labels use reverse-complement
+ordering relative to lexical columns; import must read the actual labels rather
+than treat the visual diagonal as same-label self-ligation. Matrices are symmetric
+after mapping by their labels. Raw directional-read preprocessing is not specified
+in the files, so preserve published-frequency semantics instead of claiming
+independent directional observations.
+
+Their cycling conditions differ from the older static profile described above,
+and formulation identity must remain explicit. A bounded independently written
+ZIP/XML importer can use the existing Rust dependencies. Publisher-level CC-BY
+evidence supports a separately attributed data package; it does not relabel the
+data MIT or authorize copying an optimizer implementation.
+[Paper, methods and supplementary inventory](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0238592),
+[publisher licensing policy](https://journals.plos.org/plosone/s/licenses-and-copyright).

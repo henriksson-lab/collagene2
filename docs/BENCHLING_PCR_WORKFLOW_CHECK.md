@@ -34,7 +34,8 @@ comparisons and actual selected exact/mismatch PCR products feed transient map a
 sequence overlays, with full source navigation and explicit added tails and
 uncertainty. Foreign-source inspection preserves the independent target.
 [Details](PCR_OVERLAYS.md). The first recommendation below remains research history;
-endpoint/tail-boundary editing and local recovery remain follow-up work. Browser
+endpoint/tail-boundary editing is closed by the next checkpoint and local recovery
+remains follow-up work. Browser
 acceptance has not been run.
 
 ## Endpoint-editing implementation follow-up
@@ -46,6 +47,9 @@ anchors have a versioned migration path. [Implementation](PRIMER_DOMAIN_EDITS.md
 The second recommendation below is now implemented as explicit coordinate/boundary
 controls; pointer-drag manipulation remains an optional interaction refinement.
 Local failure recovery and output-presentation recommendations remain follow-ups.
+The [parallel follow-up decisions](BENCHLING_WORKFLOW_DECISIONS.md) refine recovery
+into literal-preserving reference capture, selected-hit handoff and full binding-list
+paging. Recommendations1/2 below are retained as completed research history.
 
 ## Actionable priorities
 

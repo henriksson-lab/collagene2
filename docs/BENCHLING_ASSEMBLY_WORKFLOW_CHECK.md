@@ -40,7 +40,10 @@ bins or the remaining interaction recommendations.
 
 **P0 — Keep the ordinary route visually continuous.** The recommended interaction is method → backbone/insert capture → preparation → junction/product review → named outputs. This is our adaptation of the documented pattern. Present the active slot, its source/direction and preparation status together; let an error take the user to the existing source/preparation control. Treat discoverability as a later focused user-review question, not a demonstrated runtime defect. The existing diagnostics table, junction controls and actual-product viewer should supply the information.
 
-**P0 — Finish persistence of editable reaction choices.** `Draft` already retains `MethodsState` and explicit junction edits. However, `PreparedPool` constructs a component-local `PoolForm` containing reaction mode, substrate choices, topology and enumeration bounds; these fields are outside that serialized draft. Preserve these editable choices across draft save/reopen and navigation. Reopened scientific evidence must still be recomputed from exact inputs; persisting settings must not restore a fresh success state. This is a concrete remaining connection, not a request to rebuild draft persistence generally.
+**Closed — Persistence of editable reaction choices.** Reaction mode, substrate
+choices, topology and enumeration bounds are now retained in the serialized draft
+and follow row reordering/removal. Reopened scientific evidence still requires
+explicit recomputation. [Implementation](GOLDEN_GATE_POOL_SETTINGS.md).
 
 **P0 — Preserve deliberate manual work.** Our explicit preview/Apply and selected-row regeneration should remain the policy when a primer or junction changes. Explain which retained preparation becomes incompatible and which rows would be replaced. Benchling's documented replacement warning is useful interaction evidence; automatic replacement is not required for compatibility. The relevant algorithms already exist here.
 

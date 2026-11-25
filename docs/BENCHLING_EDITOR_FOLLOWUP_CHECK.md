@@ -31,8 +31,8 @@ These are code observations, not claims of tested appearance or performance.
 Annotation list/batch type, strand and color controls are now implemented, together
 with native-workspace display preferences and synchronized map/sequence hiding.
 [Implementation, scientific semantics and limits](ANNOTATION_MANAGEMENT.md).
-The annotation recommendations below remain research history; the source-linked
-translation/CDS and digest/comparison connections remain outstanding.
+The annotation recommendations below remain research history; translation and
+digest follow-ups are closed by the subsequent checkpoints below.
 
 ## Translation implementation follow-up
 
@@ -41,7 +41,7 @@ and full compound ORF navigation are now connected. Protein origins retain exact
 source events and reopen historical versions read-only. Full protein/ORF paging
 replaces the earlier preview truncation. [Policies and implementation](TRANSLATION_REFERENCE.md).
 The translation recommendation below remains research history; named digest/gel
-and comparison presentation remain outstanding.
+is closed by the subsequent checkpoint. Comparison presentation remains outstanding.
 
 ## Named-digest implementation follow-up
 
@@ -52,6 +52,11 @@ current document indices. [Implementation and limits](NAMED_DIGESTS.md).
 Comparison context/export and compact provenance presentation remain follow-ups.
 
 ## Remaining actionable connections
+
+Items1–3 below are completed research history, as recorded above. Items4/5 remain
+presentation follow-ups. [Current parallel-review decisions](BENCHLING_WORKFLOW_DECISIONS.md)
+also distinguish implemented read-check/revision workflows from old missing-feature
+claims.
 
 The following are recommendations inferred by comparing those documented interactions with source. They are not statements about Benchling internals.
 

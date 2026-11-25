@@ -14,6 +14,14 @@ is postponed until the rest of the software is implemented. Existing modules are
 retained; no more alignment/index features or integration are scheduled now.
 Browser checks remain deferred and compiler checks run alongside coding.
 
+Three parallel follow-up reviews of official Benchling documentation confirm the
+existing core workflow and narrow the remaining UI connections: literal-preserving
+primer comparison/selected-hit handoff, local recovery, computed pairwise
+search/context/exports and genuine combinatorial source bins. Existing read checks
+and review proposals are implemented, despite older gap tables. See
+[workflow decisions](BENCHLING_WORKFLOW_DECISIONS.md). This documentation-only
+checkpoint adds no runtime/build/browser checks.
+
 ## Primer endpoint and tail-boundary previews
 
 The shared pair editor now previews and explicitly accepts endpoint or tail-boundary

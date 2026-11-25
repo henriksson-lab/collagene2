@@ -82,6 +82,13 @@ Use documented interaction patterns as references while keeping our document/wor
 organization simple. These are static source/documentation comparisons; usability
 acceptance remains deferred, and undocumented Benchling behavior is not a requirement.
 
+Three further parallel reviews consolidate the remaining decisions in
+[workflow follow-up](BENCHLING_WORKFLOW_DECISIONS.md): distinguish creating a primer
+from attaching/comparing an existing oligo, keep failure recovery local, complete
+computed-comparison context/exports, and add genuine source-alternative bins after
+the ordinary route. Saved read checks and explicit discrepancy review are already
+implemented; old gap tables must not reopen them.
+
 Recent implementation closes annotated reference transfer, saved paginated pairwise
 comparisons, exact historical-event navigation, selection-relative restriction
 filtering and persistent named enzyme choices. Older review tables describing those
@@ -99,7 +106,9 @@ concrete connections:
   synchronized source overlays ([details](PCR_OVERLAYS.md)). Explicit domain/tail
   boundary preview/accept and circular anchor migration are now implemented
   ([details](PRIMER_DOMAIN_EDITS.md)); continue local binding-failure recovery and
-  the remaining ordinary cloning interactions.
+  the remaining ordinary cloning interactions. Separate literal-preserving reference
+  capture from domain replacement; connect selected binding hits to pair slots and
+  page all returned single-oligo placements instead of requiring JSON inspection.
 - Annotation list/bulk operations and exact-event display preferences are now
   implemented ([details](ANNOTATION_MANAGEMENT.md)). Exact selected translation,
   source-linked protein outputs, review-required CDS proposals and full ORF

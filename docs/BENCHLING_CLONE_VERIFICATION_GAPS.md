@@ -1,5 +1,15 @@
 # Clone verification and history: Benchling workflow gaps
 
+**Superseded implementation status:** this research table predates exact-event
+reference/read binding, original-call navigation, complete discrepancy paging,
+construct-owned saved checks and explicit reviewed-reference proposals. These now
+exist: [read checks](READ_CHECKS.md), [review decisions](READ_REVIEW.md), and
+[current follow-up decisions](BENCHLING_WORKFLOW_DECISIONS.md). The document toolbar
+already offers **Check sequencing reads**. Keep the table below as research history,
+not an instruction to implement those connections again. Computed comparison
+search/context/exports and an optional direct product-view action remain distinct
+follow-ups; browser acceptance remains deferred.
+
 Research date: 2026-11-25. This follow-up checks the earlier
 [BENCHLING_VERIFICATION_HISTORY.md](BENCHLING_VERIFICATION_HISTORY.md) against
 public official Benchling documentation and current repository source. It is a

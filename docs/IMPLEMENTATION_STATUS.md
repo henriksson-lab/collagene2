@@ -14,6 +14,24 @@ is postponed until the rest of the software is implemented. Existing modules are
 retained; no more alignment/index features or integration are scheduled now.
 Browser checks remain deferred and compiler checks run alongside coding.
 
+## Named digest setups and predicted gels
+
+Digest setups now retain exact source events, full catalog pins/options and
+historical inspection evidence in native workspaces. Current/saved setup actions
+send typed recipes to predicted gels without enzyme retyping. Historical review
+never restores fresh evidence; explicit settings reuse and source forks retain
+strict identity and require a new inspection. Gel lanes freshly resolve/inspect
+their retained source, preserve existing limits and withhold incomplete products.
+Multiple lanes survive inspector navigation, while workspace restoration clears
+old source selections. Pinned JSON retains exact submitted recipes and lane data.
+[Semantics, compatibility and limits](NAMED_DIGESTS.md).
+
+Validation passed: 35 focused core tests, 65 native web tests, two real MCP gel
+tool tests and the web WASM compile. Coverage includes unrelated 10,000-feature
+documents, retained historical events, nonstarter/staggered digestion, legacy
+compatibility and binary limits. No browser checks or preview refresh were run
+for this checkpoint.
+
 ## Synchronized PCR source overlays
 
 Applied captured domains and explicitly selected exact/mismatch PCR products now

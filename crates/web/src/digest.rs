@@ -4,6 +4,7 @@ use collagene_core::{
     Alphabet, Molecule, Topology, analysis,
     catalog_digest::{self, CatalogSelection, catalog},
     chemistry::{End, Polarity},
+    digest_setups::{Recipe as SavedRecipe, Record as SavedDigest, Summary as SavedSummary},
     formats,
     protocol::{AnalysisJob, AnalysisResult, Request},
     restriction_history,
@@ -162,6 +163,19 @@ pub fn DigestPanel(
     boundary_pick: RwSignal<Option<BoundaryPick>>,
     initial_enzymes: Vec<String>,
     on_methylation: Callback<()>,
+    saved: Memo<Vec<SavedSummary>>,
+    on_save: Callback<
+        (
+            String,
+            catalog_digest::CatalogRestrictionInspection,
+            SourceInfo,
+        ),
+        Result<(), String>,
+    >,
+    on_load: Callback<String, Result<SavedDigest, String>>,
+    on_delete: Callback<String, Result<(), String>>,
+    on_gel: Callback<(String, SavedRecipe), Result<(), String>>,
+    on_fork: Callback<EventBinding, Result<SourceInfo, String>>,
 ) -> impl IntoView {
     let catalog = StoredValue::new(
         catalog_digest::builtin_catalog()
@@ -192,6 +206,11 @@ pub fn DigestPanel(
         initial_enzymes
     });
     let filter = RwSignal::new(String::new());
+    let pinned_selection = RwSignal::new(None::<CatalogSelection>);
+    let setup_name = RwSignal::new(String::new());
+    let historical = RwSignal::new(None::<Arc<SavedDigest>>);
+    let historical_hash = RwSignal::new(None::<String>);
+    let saved_page = RwSignal::new(0usize);
     let comparisons = RwSignal::new("50000000".to_string());
     let max_sites = RwSignal::new("10000".to_string());
     let max_fragments = RwSignal::new("10000".to_string());
@@ -206,7 +225,20 @@ pub fn DigestPanel(
                 .map(|e| e.id.clone())
                 .collect::<Vec<_>>()
         });
-        let selection = catalog_digest::select(&catalog, &ids).map_err(|e| e.to_string())?;
+        let selection = if let Some(pin) = pinned_selection.get() {
+            pin.validate_for(&catalog).map_err(|e| e.to_string())?;
+            let pinned_names = pin
+                .enzymes
+                .iter()
+                .map(|e| e.enzyme.name.clone())
+                .collect::<Vec<_>>();
+            if pinned_names != names {
+                return Err("Loaded enzyme choices changed; explicitly reselect enzymes.".into());
+            }
+            pin
+        } else {
+            catalog_digest::select(&catalog, &ids).map_err(|e| e.to_string())?
+        };
         Ok(Inputs {
             names,
             selection,
@@ -1009,6 +1041,130 @@ pub fn DigestPanel(
             });
         })
     };
+    let save_setup = Callback::new(move |()| {
+        let Some(data) = bound.get_untracked() else {
+            status.set("Run a fresh digest before saving its setup and evidence.".into());
+            return;
+        };
+        if busy.get_untracked() || !current.run(data.clone()) {
+            status.set("Digest source/options changed. Recompute before saving.".into());
+            return;
+        }
+        let report = catalog_digest::CatalogRestrictionInspection {
+            engine_version: data.catalog_engine_version.clone(),
+            selection: data.inputs.selection.clone(),
+            batch_revision: data.catalog_revision.clone(),
+            inspection: data.report.as_ref().clone(),
+        };
+        status.set(match on_save.run((setup_name.get_untracked(), report, data.source.clone())) {
+            Ok(()) => "Saved the named digest recipe and historical evidence. Reopening does not restore a current result.".into(), Err(error) => error,
+        });
+    });
+    let add_current_to_gel = Callback::new(move |()| {
+        let result = (|| -> Result<(), String> {
+            let data = bound
+                .get_untracked()
+                .ok_or("Run a fresh digest before sending its exact recipe to gel.")?;
+            if busy.get_untracked()
+                || !current.run(data.clone())
+                || epoch.get_untracked() != data.epoch
+            {
+                return Err(
+                    "Digest source/options changed. Recompute before sending the recipe to gel."
+                        .into(),
+                );
+            }
+            let entered = setup_name.get_untracked();
+            let name = if entered.is_empty() {
+                "Current digest".to_string()
+            } else {
+                if entered.trim().is_empty()
+                    || entered.trim() != entered
+                    || entered.len() > 256
+                    || entered.chars().any(char::is_control)
+                {
+                    return Err("Use a trimmed digest name of 1–256 bytes without control characters, or leave it blank for Current digest.".into());
+                }
+                entered
+            };
+            let recipe = SavedRecipe {
+                source: data.source.binding.clone(),
+                selection: data.inputs.selection.clone(),
+                options: data.report.options.clone(),
+                cleavage_mode: collagene_core::digest_setups::CleavageMode::AssumedCompleteMethylationUnassessed,
+            };
+            on_gel.run((name, recipe))
+        })();
+        status.set(match result { Ok(()) => "Added the exact current digest recipe to predicted gel. Prediction reconstructs it freshly and withholds unresolved products; cached fragment lengths are not reused.".into(), Err(error) => error });
+    });
+    let apply_saved_settings = Callback::new(
+        move |(record, expected_source): (Arc<SavedDigest>, EventBinding)| -> Result<(), String> {
+            if busy.get_untracked() {
+                return Err("Wait for or cancel the current digest first.".into());
+            }
+            if source.get_untracked().binding != expected_source {
+                return Err(
+                    "The active source event changed; saved settings were not applied.".into(),
+                );
+            }
+            let catalog = catalog.get_value()?;
+            record
+                .recipe
+                .selection
+                .validate_for(&catalog)
+                .map_err(|e| e.to_string())?;
+            let options = &record.recipe.options;
+            batch(|| {
+                names.set(
+                    record
+                        .recipe
+                        .selection
+                        .enzymes
+                        .iter()
+                        .map(|e| e.enzyme.name.clone())
+                        .collect(),
+                );
+                pinned_selection.set(Some(record.recipe.selection.clone()));
+                comparisons.set(options.max_comparisons.to_string());
+                max_sites.set(options.max_sites.to_string());
+                max_fragments.set(options.max_fragments.to_string());
+                report_bytes.set(options.max_report_bytes.to_string());
+                setup_name.set(record.name.clone());
+            });
+            Ok(())
+        },
+    );
+    let use_saved_settings = Callback::new(move |record: Arc<SavedDigest>| {
+        let result = if source.get_untracked().binding != record.recipe.source {
+            Err("These settings belong to a different source event. Use the explicit fork action to continue from that saved version.".into())
+        } else {
+            apply_saved_settings.run((record.clone(), record.recipe.source.clone()))
+        };
+        status.set(match result { Ok(()) => "Loaded the exact saved catalog pin and limits. Run virtual digest explicitly to create fresh evidence.".into(), Err(error) => error });
+    });
+    let fork_saved_source = Callback::new(move |record: Arc<SavedDigest>| -> Result<(), String> {
+        if busy.get_untracked() {
+            return Err("Cancel the current digest before forking a saved source.".into());
+        }
+        let fork = on_fork.run(record.recipe.source.clone())?;
+        let result = (|| -> Result<(), String> {
+            if fork.binding == record.recipe.source {
+                return Err("The fork callback did not create a new source event.".into());
+            }
+            if fork.binding.revision != record.recipe.source.revision {
+                return Err(
+                    "The new fork does not contain the exact saved source revision.".into(),
+                );
+            }
+            if source.get_untracked().binding != fork.binding {
+                return Err("The new fork is not the exact active source event.".into());
+            }
+            apply_saved_settings.run((record, fork.binding))
+        })();
+        result.map_err(|error| {
+            format!("The source fork exists, but saved settings were not applied: {error}")
+        })
+    });
     let export_report = move |_| {
         let Some(data) = bound.get_untracked() else {
             return;
@@ -1049,8 +1205,27 @@ pub fn DigestPanel(
     };
     view! {
             <section class="inspector-content digest-panel"><h2>"Virtual digest"</h2><p class="helper">"Choose enzymes to inspect recognition sites and predicted fragments. Products assume complete cleavage; methylation, reaction conditions and laboratory success are not assessed."</p>
+            <details class="saved-digest-setups"><summary>"Named digest setups"</summary>
+                <p class="helper">"Save the exact source event, ordered catalog geometry, cleavage assumption, limits and historical evidence together. Reopening a saved setup does not move document heads or restore a current result."</p>
+                <label>"Digest name"<input aria-label="Saved digest setup name" maxlength="256" placeholder="Name this digest" prop:value=move||setup_name.get() on:input=move|e|{setup_name.set(event_target_value(&e));}/></label>
+                <button class="button secondary full" disabled=move||{busy.get()||bound.with(Option::is_none)} on:click=move|_|{save_setup.run(());}>"Save fresh digest setup and evidence"</button>
+                <button class="button secondary full" disabled=move||{busy.get()||bound.with(Option::is_none)} on:click=move|_|{add_current_to_gel.run(());}>"Add current digest to predicted gel"</button>
+                <p class="helper">"A saved setup is optional for gel prediction. The exact current recipe is reconstructed again; incomplete or undetermined products cannot supply trusted band lengths."</p>
+                {move||{
+                    let entries=saved.get();let count=entries.len();let pages=count.div_ceil(100).max(1);let page=saved_page.get().min(pages-1);
+                    let rows=entries.into_iter().skip(page*100).take(100).map(|entry|{
+                        let load_hash=entry.attachment_hash.clone();let delete_hash=entry.attachment_hash.clone();
+                        view!{<article class="saved-digest-entry"><strong>{entry.name}</strong><p class="helper">{format!("{} · {} · saved scan {} · products {}",entry.source_name,entry.catalog_edition,if entry.scan_complete{"complete"}else{"incomplete"},if entry.products_determined{"determined"}else{"undetermined"})}</p><div class="digest-actions">
+                            <button class="text-tool" on:click=move|_|{match on_load.run(load_hash.clone()){Ok(record)=>{historical.set(Some(Arc::new(record)));historical_hash.set(Some(load_hash.clone()));},Err(error)=>status.set(error)}}>"Open saved digest"</button>
+                            <button class="text-tool" on:click=move|_|{match on_delete.run(delete_hash.clone()){Ok(())=>{if historical_hash.get_untracked().as_ref()==Some(&delete_hash){historical.set(None);historical_hash.set(None);}status.set("Deleted saved digest setup.".into());},Err(error)=>status.set(error)}}>"Delete"</button>
+                        </div></article>}
+                    }).collect_view();
+                    view!{<div>{rows}<p class="helper">{format!("{} saved digests · page {} of {}",count,page+1,pages)}</p><div class="digest-actions"><button class="text-tool" disabled={page==0} on:click=move|_|{saved_page.set(page.saturating_sub(1));}>"Previous saved digests"</button><button class="text-tool" disabled={page+1>=pages} on:click=move|_|{saved_page.set((page+1).min(pages-1));}>"Next saved digests"</button></div></div>}
+                }}
+                {move||historical.get().map(|record|view!{<SavedDigestView record on_settings=use_saved_settings on_gel on_fork=fork_saved_source/>})}
+            </details>
             <label>"Find an enzyme"<input aria-label="Find digest enzyme" prop:value=move||filter.get() on:input=move|e|filter.set(event_target_value(&e)) placeholder="Name or recognition sequence"/></label>
-            <div class="digest-enzyme-picker">{move||{let needle=filter.get().trim().to_ascii_lowercase();enzyme_choices.get_value().into_iter().filter(|e|e.name.to_ascii_lowercase().contains(&needle)||e.geometry.recognition.to_ascii_lowercase().contains(&needle)).map(|enzyme|{let name=enzyme.name.clone();let change=enzyme.name.clone();view!{<label class="checkbox-label digest-enzyme-choice"><input type="checkbox" data-enzyme=enzyme.name.clone() data-catalog-id=enzyme.id.clone() aria-label=format!("Digest enzyme {}",enzyme.name) prop:checked=move||names.with(|names|names.contains(&name)) on:change=move|e|{let checked=event_target_checked(&e);names.update(|names|{names.retain(|n|n!=&change);if checked{names.push(change.clone());}});}/><span><strong>{enzyme.name}</strong><small>{enzyme.geometry.recognition}</small></span></label>}}).collect_view()}}</div>
+            <div class="digest-enzyme-picker">{move||{let needle=filter.get().trim().to_ascii_lowercase();enzyme_choices.get_value().into_iter().filter(|e|e.name.to_ascii_lowercase().contains(&needle)||e.geometry.recognition.to_ascii_lowercase().contains(&needle)).map(|enzyme|{let name=enzyme.name.clone();let change=enzyme.name.clone();view!{<label class="checkbox-label digest-enzyme-choice"><input type="checkbox" data-enzyme=enzyme.name.clone() data-catalog-id=enzyme.id.clone() aria-label=format!("Digest enzyme {}",enzyme.name) prop:checked=move||names.with(|names|names.contains(&name)) on:change=move|e|{let checked=event_target_checked(&e);pinned_selection.set(None);names.update(|names|{names.retain(|n|n!=&change);if checked{names.push(change.clone());}});}/><span><strong>{enzyme.name}</strong><small>{enzyme.geometry.recognition}</small></span></label>}}).collect_view()}}</div>
             <p class="helper">{move||format!("Selected: {}",names.get().join(", "))}</p>
             <details class="digest-catalog" data-catalog-edition=move||catalog.with_value(|c|c.as_ref().map(|c|c.edition().edition.clone()).unwrap_or_default()) data-catalog-hash=move||catalog.with_value(|c|c.as_ref().map(|c|c.content_hash().to_string()).unwrap_or_default())><summary>"Catalog and formulation evidence"</summary><p class="helper">{move||catalog.with_value(|c|match c {Ok(c)=>format!("{} enzyme identities · edition {} · content hash {}",c.edition().enzymes.len(),c.edition().edition,c.content_hash()),Err(e)=>format!("Catalog unavailable: {e}")})}</p><p class="helper">"Recognition and strand-cut geometry determine the virtual digest. Same-cut enzymes remain distinct identities; vendor formulations and their documentary conditions are reviewed separately and never change or validate predicted cleavage."</p>{move||catalog.with_value(|c|c.as_ref().ok().map(|c|catalog_evidence(c,&names.get())))}</details><div class="digest-actions"><button class="button primary" disabled=move||busy.get()||names.with(Vec::is_empty)||source.get().alphabet!=Alphabet::Dna on:click=run>"Run virtual digest"</button><button class="button secondary" disabled=move||!busy.get() on:click=move|_|{stop.run(());status.set("Digest request cancelled; no pending result or product was accepted.".into());}>"Cancel digest"</button></div>
             <p class="digest-status helper" role="status">{move||status.get()}</p>
@@ -1061,7 +1236,77 @@ pub fn DigestPanel(
             <h3>"Reference-strand fragment lengths"</h3><p class="fragment-sizes">{data.report.ref_top_lengths.as_ref().map(|lengths|lengths.iter().take(100).map(|n|format!("{n} nt")).collect::<Vec<_>>().join(" · ")).unwrap_or_else(||"Not determined from this recognition evidence.".into())}</p><p class="helper">"First 100 lengths shown, following the reference/top strand and sorted by size. The JSON evidence retains every determined length. Physical summaries below use ascending reference cut order; staggered ends can give different top and bottom lengths."</p>
             <h3>{format!("{fragments} virtual fragment(s)")}</h3>{data.report.fragments.iter().skip(fragment_page.get()*25).take(25).map(|fragment|{let index=fragment.index;let circular=fragment.duplex.topology==Topology::Circular;let ends=fragment.duplex.ends.as_ref().map(|(a,b)|format!("Left: {} · right: {}",end_label(a),end_label(b))).unwrap_or_else(||"Uncut circular substrate: no free ends".into());view!{<article class="digest-fragment"><h4>{format!("Fragment {} · {}",index+1,if fragment.duplex.topology==Topology::Circular{"circular"}else{"linear"})}</h4><p>{format!("{} nt top / {} nt bottom · original reference start {}",fragment.duplex.top_length,fragment.duplex.bottom_length,fragment.top_start+1)}</p><p>{ends}</p><div class="digest-actions"><button class="button secondary" disabled=move||busy.get() on:click=move|_|navigate_fragment.run(index)>"View fragment in source"</button><button class="button primary" disabled=move||busy.get()||circular on:click=move|_|use_in_assembly.run(index)>"Use in active assembly slot"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|open.run(index)>"Open fragment"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|export_product.run(index)>{move||if product_busy.get()==Some(index){"Reconstructing…"}else{"Export fragment GenBank"}}</button></div></article>}}).collect_view()}<div class="digest-actions"><button class="button secondary" disabled=move||fragment_page.get()==0 on:click=move|_|fragment_page.update(|p|*p=p.saturating_sub(1))>"Previous digest fragments"</button><button class="button secondary" disabled={move||(fragment_page.get()+1)*25>=fragments} on:click=move|_|fragment_page.update(|p|*p+=1)>"Next digest fragments"</button></div><button class="button secondary full" on:click=export_report>"Download digest evidence"</button><p class="helper">"Opening reconstructs the fragment again and retains its exact source event in the workspace. GenBank comments preserve descriptive, unverified producer/end information; native workspace files retain full source history."</p></div>}})}
             </section>
-        }
+        }.into_any()
+}
+
+#[component]
+fn SavedDigestView(
+    record: Arc<SavedDigest>,
+    on_settings: Callback<Arc<SavedDigest>>,
+    on_gel: Callback<(String, SavedRecipe), Result<(), String>>,
+    on_fork: Callback<Arc<SavedDigest>, Result<(), String>>,
+) -> impl IntoView {
+    let bound = StoredValue::new(record);
+    let site_page = RwSignal::new(0usize);
+    let fragment_page = RwSignal::new(0usize);
+    let status = RwSignal::new(String::new());
+    let catalog_status = bound.with_value(|record| {
+        catalog_digest::builtin_catalog()
+            .map_err(|e| e.to_string())
+            .and_then(|catalog| {
+                record
+                    .recipe
+                    .selection
+                    .validate_for(&catalog)
+                    .map_err(|e| e.to_string())
+            })
+            .err()
+    });
+    view! {
+        <section class="saved-digest-review">
+            <h3>{bound.with_value(|r|format!("{} · saved historical digest",r.name))}</h3>
+            <p class="helper">"Historical inspection evidence only. This view does not establish current freshness, measured cleavage or a verified cloning product. Source heads and current digest results are unchanged."</p>
+            <details><summary>"Exact source, catalog and options"</summary>
+                <p>{bound.with_value(|r|format!("Document {} · event {} · revision {}",r.recipe.source.document_id,r.recipe.source.event_id,r.recipe.source.revision))}</p>
+                <p>{bound.with_value(|r|format!("Catalog {} · content {} · saved engine {} · batch {}",r.recipe.selection.catalog_edition,r.recipe.selection.catalog_content_hash,r.report.engine_version,r.report.batch_revision))}</p>
+                <p>{bound.with_value(|r|format!("Assumed complete cleavage; methylation and reaction conditions unassessed. Limits: {} comparisons · {} sites · {} fragments · {} report bytes.",r.recipe.options.max_comparisons,r.recipe.options.max_sites,r.recipe.options.max_fragments,r.recipe.options.max_report_bytes))}</p>
+                <ul>{bound.with_value(|r|r.recipe.selection.enzymes.iter().map(|enzyme|view!{<li>{format!("{} [{}] · {} · top cut {} · bottom cut {}",enzyme.enzyme.name,enzyme.id,enzyme.enzyme.recognition,enzyme.enzyme.top_cut,enzyme.enzyme.bottom_cut)}</li>}).collect_view())}</ul>
+            </details>
+            {catalog_status.map(|error|view!{<p class="digest-warning">{format!("The saved catalog pin cannot currently be replayed: {error}. Historical evidence remains inspectable; no enzyme substitution is made.")}</p>})}
+            <p class="helper">{bound.with_value(|r|format!("Saved recognition scan: {} · saved product set: {} · {} sites · {} fragments.",if r.report.inspection.scan_complete{"complete"}else{"incomplete"},if r.report.inspection.products_determined{"determined under its stated model"}else{"undetermined"},r.report.inspection.sites.len(),r.report.inspection.fragments.len()))}</p>
+            {bound.with_value(|r|r.report.inspection.limits.iter().map(|limit|view!{<p class="digest-warning">{format!("Saved limit reached: {}",limit_label(*limit))}</p>}).collect_view())}
+            {bound.with_value(|r|r.report.inspection.diagnostics.iter().map(|diagnostic|view!{<p class="digest-warning">{diagnostic.clone()}</p>}).collect_view())}
+            <div class="digest-actions">
+                <button class="button secondary" on:click=move|_|{on_settings.run(bound.get_value());}>"Use settings on exact current source"</button>
+                <button class="button secondary" on:click=move|_|{let record=bound.get_value();status.set(match on_fork.run(record){Ok(())=>"Opened the exact source fork and loaded the saved catalog pin and limits. Run virtual digest explicitly; the saved historical result is unchanged.".into(),Err(error)=>error});}>"Fork saved source and load exact settings"</button>
+                <button class="button secondary" on:click=move|_|{let record=bound.get_value();status.set(match on_gel.run((record.name.clone(),record.recipe.clone())){Ok(())=>"Added the exact recipe to predicted gel. Prediction must freshly reconstruct this source and catalog geometry; cached fragments are not lane authority.".into(),Err(error)=>error});}>"Add recipe to predicted gel"</button>
+            </div>
+            <p class="helper">"Use settings requires the same exact active source event. The explicit fork action can copy that saved version and apply its exact catalog pin and limits to the new fork; a fresh digest run is still required. Historical gel lanes retain their saved source version."</p>
+            <details><summary>"Saved recognition-site evidence"</summary>
+                {move||{
+                    let count=bound.with_value(|r|r.report.inspection.sites.len());let pages=count.div_ceil(100).max(1);let page=site_page.get().min(pages-1);
+                    let sites=bound.with_value(|r|r.report.inspection.sites.iter().skip(page*100).take(100).map(|site|view!{<article><strong>{site.enzyme.clone()}</strong><p>{format!("{} · {} · top boundary {} · bottom boundary {}",span_label(site),if site.certain{"certain recognition"}else{"possible recognition"},cut_label(site.top_cut,site.top_boundary),cut_label(site.bottom_cut,site.bottom_boundary))}</p>{site.diagnostics.iter().map(|diagnostic|view!{<p class="digest-warning">{site_diagnostic(*diagnostic)}</p>}).collect_view()}</article>}).collect_view());
+                    view!{<div>{sites}<p class="helper">{format!("{} saved sites · page {} of {}",count,page+1,pages)}</p><div class="digest-actions"><button class="text-tool" disabled={page==0} on:click=move|_|{site_page.set(page.saturating_sub(1));}>"Previous saved sites"</button><button class="text-tool" disabled={page+1>=pages} on:click=move|_|{site_page.set((page+1).min(pages-1));}>"Next saved sites"</button></div></div>}
+                }}
+            </details>
+            <details><summary>"Saved fragment evidence"</summary>
+                {move||{
+                    let count=bound.with_value(|r|r.report.inspection.fragments.len());let pages=count.div_ceil(25).max(1);let page=fragment_page.get().min(pages-1);
+                    let fragments=bound.with_value(|r|r.report.inspection.fragments.iter().skip(page*25).take(25).map(|fragment|{
+                        let ends=fragment.duplex.ends.as_ref().map(|(a,b)|format!("Left: {} · right: {}",end_label(a),end_label(b))).unwrap_or_else(||"No free ends on circular substrate".into());
+                        view!{<article><strong>{format!("Saved fragment {} · {:?}",fragment.index+1,fragment.duplex.topology)}</strong><p>{format!("{} nt top / {} nt bottom · original reference start {}",fragment.duplex.top_length,fragment.duplex.bottom_length,fragment.top_start+1)}</p><p>{ends}</p></article>}
+                    }).collect_view());
+                    view!{<div>{fragments}<p class="helper">{format!("{} saved fragments · page {} of {}",count,page+1,pages)}</p><div class="digest-actions"><button class="text-tool" disabled={page==0} on:click=move|_|{fragment_page.set(page.saturating_sub(1));}>"Previous saved fragments"</button><button class="text-tool" disabled={page+1>=pages} on:click=move|_|{fragment_page.set((page+1).min(pages-1));}>"Next saved fragments"</button></div></div>}
+                }}
+            </details>
+            <button class="text-tool" on:click=move|_|{
+                let mut bytes=Json(Vec::new());
+                let result=bound.with_value(|record|serde_json::to_writer_pretty(&mut bytes,record.as_ref()).map_err(|e|e.to_string())).and_then(|()|download("saved-digest.json","application/json",&bytes.0));
+                if let Err(error)=result{status.set(error);}
+            }>"Download historical digest recipe and evidence"</button>
+            <p class="helper" role="status">{move||status.get()}</p>
+        </section>
+    }.into_any()
 }
 
 /// A retained recipe is descriptive evidence; it cannot restore a current digest.

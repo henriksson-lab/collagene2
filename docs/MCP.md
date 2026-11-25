@@ -729,3 +729,19 @@ an exact artifact/context/index/key selection to an atomically stored unverified
 native plan and binary candidate; fresh `verify_plan` remains mandatory. Both
 operations preserve independent targets and explicit material choices. See
 [reaction MCP contract](GOLDEN_GATE_REACTION_MCP.md).
+
+## Named digest lanes in predicted gels
+
+`predict_gel` supports catalog-pinned lanes via
+`preparation: {"CatalogDigest":{"recipe":...}}`. Such a lane also requires
+`workspace: {"id":...,"revision":...}` naming an imported native workspace.
+The complete recipe includes the retained source event, catalog edition/hash/IDs
+and geometry, inspection limits and explicit complete-cleavage/methylation-unassessed
+mode. The source is resolved historically without moving heads and must equal the
+lane's immutable document. The tool rejects missing or stale workspace proofs,
+wrong event owners/revisions and metadata/content aliases, then freshly inspects
+source DNA. The exported analysis JSON retains all declared lane recipes/references.
+Legacy uncut, starter-digest and PCR lanes retain their existing inputs.
+
+Saved setup capture/reopen in the browser remains historical until explicitly
+recomputed. See [named digest semantics](NAMED_DIGESTS.md).

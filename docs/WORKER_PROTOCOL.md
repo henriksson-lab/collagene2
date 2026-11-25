@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **54** and reads supported schemas 1–53. Candidate files write schema 11; workspace plan schema is 9; the verifier is science-14.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **55** and reads supported schemas 1–54. Candidate files write schema 11; workspace plan schema is 9; the verifier is science-14.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -136,6 +136,7 @@ Postcard enum indexes are append-only. Existing tags and supported historical la
 | 121 | PasteReferenceFragment | 53 |
 | 122 | TranslateReference | 54 |
 | 123 | PrepareTranslatedReference | 54 |
+| 124 | PredictPinnedGel | 55 |
 
 Result tags 0–29 retain their selectors (verification gains explicit versioned step evidence in schema 25) (`Search`, `Restriction`, `Error`, `Pcr`, `Verification`, `DuplexDigest`, `Translation`, `CdsTranslation`, `Orfs`, `Alignment`, `PcrDocuments`, `PrimerEvidence`, `PrimerDesign`, `ProtocolPdf`, `GoldenGate`, `MismatchPcr`, `InversePcr`, `Gel`, `DiagnosticDigest`, `MismatchPcrPreview`, `WorkspaceSaved`, `WorkspaceLoaded`, `TraceValidation`, `FeatureLibraryScan`, `AnnotatedDocument`, `AnnotationImport`, `AnnotationExport`, `RepairPreview`, `AnnealPreview`, `PhysicalPreviewDocument`). Schema 9 appends `ViewTracks` at tag 30, `DocumentSearch` at tag 31 and `TracksPrepared` at tag 32. New response variants cannot be decoded under older version labels.
 
@@ -713,3 +714,19 @@ draft, and must explicitly apply outputs/annotation proposals. Imported protein
 letters or a serialized report do not authorize source changes. No physical
 operation, candidate version, genetic-code expansion or alignment executable is
 introduced; candidate11, plan9, science14 and native archive1 remain unchanged.
+
+## Catalog-pinned predicted gels (schema 55)
+
+Job124 `PredictPinnedGel { molecule, lanes, calibration }` returns116 `PinnedGel`.
+Pinned lanes carry an exact source event and full catalog selection/inspection
+options, then freshly inspect actual source calls. Existing `PredictGel`/`Gel`
+layouts remain readable; appending `Preparation::CatalogDigest` does not alter
+fragment or report fields. An old `PredictGel` operation cannot transport a pinned
+recipe, and pre55 prefixes cannot relabel the new job/result. Ordinary 32 MiB
+message caps apply; no workspace-size allowance is added.
+
+The host resolves historical source ownership from its retained workspace without
+moving document heads. Native prediction validates actual molecular revision and
+catalog geometry, requires complete/determined cleavage, and retains unplaced
+circular conformations and explicit lane errors. Saved reports are documentary
+evidence, never substitutes for fresh source reconstruction.

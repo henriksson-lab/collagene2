@@ -102,15 +102,18 @@ concrete connections:
 - Annotation list/bulk operations and exact-event display preferences are now
   implemented ([details](ANNOTATION_MANAGEMENT.md)). Exact selected translation,
   source-linked protein outputs, review-required CDS proposals and full ORF
-  selection are now connected ([details](TRANSLATION_REFERENCE.md)). Continue with
-  retained diagnostic digest and comparison presentation.
+  selection are now connected ([details](TRANSLATION_REFERENCE.md)). Named digest
+  setup/history and a pinned-source gel route are now implemented
+  ([details](NAMED_DIGESTS.md)); continue comparison presentation and remaining
+  ordinary cloning interaction work.
 - After ordinary designs, implement genuine alternative source bins and per-combination
   output identity over the shared compiler. Reaction-product enumeration alone does
   not complete combinatorial cloning. Inspectable fusion-end proposals and intentional
   domestication remain distinct planned work.
 
-The next named-digest/gel connection must retain complete catalog geometry/options
-and exact source events. Current gel digest lanes resolve starter-enzyme names and
+The named-digest/gel connection now retains complete catalog geometry/options
+and exact source events ([implementation](NAMED_DIGESTS.md)). The preimplementation
+constraints below remain the design contract: Current gel digest lanes resolve starter-enzyme names and
 current document indices; adapting saved setups through those names would silently
 lose identity. Add a pinned-catalog lane that freshly inspects the retained event,
 uses fragments only when the scan is complete/products determined, and explicitly

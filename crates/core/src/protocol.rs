@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 54;
+pub const WORKER_SCHEMA_VERSION: u16 = 55;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 11;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -749,6 +749,11 @@ pub enum AnalysisJob {
         request: crate::translation_reference::Request,
         name: String,
     },
+    PredictPinnedGel {
+        molecule: Molecule,
+        lanes: Vec<crate::gel::LaneInput>,
+        calibration: crate::gel::Calibration,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -874,6 +879,7 @@ pub enum AnalysisResult {
     ReferencePaste(crate::reference_transfer::Report),
     TranslatedReference(crate::translation_reference::Report),
     TranslatedOutputs(crate::translation_reference::Outputs),
+    PinnedGel(crate::gel::GelReport),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1139,6 +1145,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_pairwise_review_tag(bytes, &[111])?;
     preflight_reference_transfer_tag(bytes, &[112, 113])?;
     preflight_translation_reference_tag(bytes, &[114, 115])?;
+    preflight_pinned_gel_tag(bytes, &[116])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1197,6 +1204,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         AnalysisResult::ReviewedComparison(_) => 52,
         AnalysisResult::ReferenceFragment(_) | AnalysisResult::ReferencePaste(_) => 53,
         AnalysisResult::TranslatedReference(_) | AnalysisResult::TranslatedOutputs(_) => 54,
+        AnalysisResult::PinnedGel(_) => 55,
         AnalysisResult::GoldenGateReaction(_) | AnalysisResult::GoldenGateReactionCandidate(_) => {
             49
         }
@@ -1845,6 +1853,14 @@ fn preflight_topo_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     }
     Ok(())
 }
+fn preflight_pinned_gel_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 55)?;
+    }
+    Ok(())
+}
 fn preflight_translation_reference_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -2281,6 +2297,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_pairwise_review_tag(bytes, &[119])?;
     preflight_reference_transfer_tag(bytes, &[120, 121])?;
     preflight_translation_reference_tag(bytes, &[122, 123])?;
+    preflight_pinned_gel_tag(bytes, &[124])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -2295,6 +2312,17 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         AnalysisJob::PasteReferenceFragment { .. } => 53,
         AnalysisJob::TranslateReference { .. } => 54,
         AnalysisJob::PrepareTranslatedReference { .. } => 54,
+        AnalysisJob::PredictPinnedGel { .. } => 55,
+        AnalysisJob::PredictGel { lanes, .. }
+            if lanes.iter().any(|lane| {
+                matches!(
+                    lane.preparation,
+                    crate::gel::Preparation::CatalogDigest { .. }
+                )
+            }) =>
+        {
+            55
+        }
         AnalysisJob::InspectGoldenGateReaction { .. }
         | AnalysisJob::SelectGoldenGateReaction { .. } => 49,
         AnalysisJob::BuildEditedAssemblyIntent { .. }
@@ -2575,6 +2603,18 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             }
         }
     }
+    if let AnalysisJob::PredictGel { lanes, .. } = &r.job {
+        if lanes.iter().any(|lane| {
+            matches!(
+                lane.preparation,
+                crate::gel::Preparation::CatalogDigest { .. }
+            )
+        }) {
+            return Err(Error::Format(
+                "Catalog-pinned lanes require the pinned-gel worker operation.".into(),
+            ));
+        }
+    }
     let mol = match &r.job {
         AnalysisJob::FinalizeCloningOutputs {
             workspace,
@@ -2702,6 +2742,35 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
                 ));
             }
             None
+        }
+        AnalysisJob::PredictPinnedGel {
+            molecule,
+            lanes,
+            calibration,
+        } => {
+            if lanes.is_empty() || lanes.len() > 32 {
+                return Err(Error::TooLarge);
+            }
+            calibration.validate()?;
+            molecule.validate()?;
+            let catalog = crate::catalog_digest::builtin_catalog()?;
+            let mut bases = 0usize;
+            for lane in lanes {
+                lane.molecule.validate()?;
+                bases = bases
+                    .checked_add(lane.molecule.sequence.len())
+                    .filter(|n| *n <= MAX_IMPORT_BYTES)
+                    .ok_or(Error::TooLarge)?;
+                if let crate::gel::Preparation::CatalogDigest { recipe } = &lane.preparation {
+                    crate::model::bounds::model_preflight(&[&lane.molecule])?;
+                    recipe.validate()?;
+                    recipe.selection.validate_for(&catalog)?;
+                    if lane.molecule.revision() != recipe.source.revision {
+                        return Err(Error::Format("Pinned gel source revision changed.".into()));
+                    }
+                }
+            }
+            Some(molecule)
         }
         AnalysisJob::TranslateReference { request } => {
             if crate::translation_reference::inspect_revision(request)? != r.revision {
@@ -3881,6 +3950,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         AnalysisJob::PredictGel {
             lanes, calibration, ..
         } => crate::gel::predict_gel(&lanes, &calibration).map(AnalysisResult::Gel),
+        AnalysisJob::PredictPinnedGel {
+            lanes, calibration, ..
+        } => crate::gel::predict_gel(&lanes, &calibration).map(AnalysisResult::PinnedGel),
         AnalysisJob::DiagnosticDigests {
             candidates,
             options,

@@ -43,6 +43,14 @@ replaces the earlier preview truncation. [Policies and implementation](TRANSLATI
 The translation recommendation below remains research history; named digest/gel
 and comparison presentation remain outstanding.
 
+## Named-digest implementation follow-up
+
+Named exact-event digest setups, historical review, explicit source forks and a
+fresh pinned-catalog predicted-gel route are now implemented. This closes the
+connecting-workflow gap below without adapting through starter-enzyme names or
+current document indices. [Implementation and limits](NAMED_DIGESTS.md).
+Comparison context/export and compact provenance presentation remain follow-ups.
+
 ## Remaining actionable connections
 
 The following are recommendations inferred by comparing those documented interactions with source. They are not statements about Benchling internals.

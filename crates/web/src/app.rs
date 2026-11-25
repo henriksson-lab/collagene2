@@ -149,6 +149,13 @@ fn restore_workspace_state(
 ) -> Result<RestoredWorkspace, String> {
     crate::annotation_visibility::validate_workspace(frame)?;
     let documents = OpenDocument::restore_all(frame).map_err(|e| e.to_string())?;
+    if frame
+        .attachments
+        .values()
+        .any(|asset| asset.kind == collagene_core::digest_setups::KIND)
+    {
+        collagene_core::digest_setups::list(frame).map_err(|e| e.to_string())?;
+    }
     if documents
         .iter()
         .map(|d| document_bytes(&d.molecule))
@@ -787,6 +794,7 @@ pub fn App() -> impl IntoView {
     let pending_assembly = RwSignal::new(None::<crate::contigs::ArchiveRequest>);
     let pending_donor = RwSignal::new(None::<crate::crispr::DonorRequest>);
     let pending_digest = RwSignal::new(None::<crate::digest_product::DigestOpenRequest>);
+    let gel_digest_seeds = RwSignal::new(Vec::<crate::gel::DigestLaneSeed>::new());
     let inspected_assembly = RwSignal::new(String::new());
     let selected_run = RwSignal::new(String::new());
     let internal_clipboard =
@@ -4362,25 +4370,140 @@ pub fn App() -> impl IntoView {
         message.set("Deleted saved enzyme set.".into());
         Ok(())
     });
-    let resolve_comparison_source = Callback::new(
+    let resolve_retained_source = Callback::new(
         move |event: collagene_core::run_lineage::EventBinding| -> Result<Molecule, String> {
             documents.with_untracked(|docs| {
                 let doc = docs
                     .iter()
                     .find(|doc| doc.id == event.document_id)
-                    .ok_or("The comparison source document is unavailable.")?;
+                    .ok_or("The retained source document is unavailable.")?;
                 let molecule = doc
                     .revision_molecule(&event.event_id)
                     .map_err(|e| e.to_string())?;
                 if molecule.revision() != event.revision {
                     return Err(
-                        "The exact comparison source event differs from its saved revision.".into(),
+                        "The exact retained source event differs from its saved revision.".into(),
                     );
                 }
                 Ok(molecule)
             })
         },
     );
+    let saved_digests = Memo::new(move |_| {
+        let assets = attachments.get();
+        if !assets
+            .values()
+            .any(|asset| asset.kind == collagene_core::digest_setups::KIND)
+        {
+            return Vec::new();
+        }
+        let frame = workspace_snapshot(
+            &documents.get(),
+            active.get_untracked(),
+            candidate.get_untracked().as_ref(),
+            &stored_candidates.get_untracked(),
+            &assets,
+            &workspace_name.get_untracked(),
+        );
+        match frame.and_then(|frame| {
+            collagene_core::digest_setups::list(&frame).map_err(|e| e.to_string())
+        }) {
+            Ok(mut setups) => {
+                setups.sort_by(|a, b| {
+                    a.name
+                        .cmp(&b.name)
+                        .then(a.attachment_hash.cmp(&b.attachment_hash))
+                });
+                setups
+            }
+            Err(error) => {
+                message.set(format!("Saved digest setups need attention: {error}"));
+                Vec::new()
+            }
+        }
+    });
+    let save_digest_setup = Callback::new(
+        move |(name, report, source): (
+            String,
+            collagene_core::catalog_digest::CatalogRestrictionInspection,
+            crate::digest::SourceInfo,
+        )|
+              -> Result<(), String> {
+            if workspace_restoring.get_untracked() {
+                return Err("Wait for the workspace update to finish.".into());
+            }
+            if documents.with_untracked(|docs| current_event_binding(&docs[active.get_untracked()]))
+                != source.binding
+            {
+                return Err(
+                    "The active digest source event changed; inspect again before saving.".into(),
+                );
+            }
+            let catalog =
+                collagene_core::catalog_digest::builtin_catalog().map_err(|e| e.to_string())?;
+            let (staged, _) = collagene_core::digest_setups::capture(
+                &catalog,
+                &contig_snapshot.run(())?,
+                &source.binding,
+                &name,
+                &report,
+            )
+            .map_err(|e| e.to_string())?;
+            staged.validate().map_err(|e| e.to_string())?;
+            attachments.set(staged.attachments);
+            message.set(
+                "Named digest setup retained with its exact source event and historical evidence."
+                    .into(),
+            );
+            Ok(())
+        },
+    );
+    let load_digest_setup = Callback::new(
+        move |hash: String| -> Result<collagene_core::digest_setups::Record, String> {
+            if workspace_restoring.get_untracked() {
+                return Err("Wait for the workspace update to finish.".into());
+            }
+            collagene_core::digest_setups::load(&contig_snapshot.run(())?, &hash)
+                .map_err(|e| e.to_string())
+        },
+    );
+    let delete_digest_setup = Callback::new(move |hash: String| -> Result<(), String> {
+        if workspace_restoring.get_untracked() {
+            return Err("Wait for the workspace update to finish.".into());
+        }
+        let staged = collagene_core::digest_setups::delete(&contig_snapshot.run(())?, &hash)
+            .map_err(|e| e.to_string())?;
+        attachments.set(staged.attachments);
+        Ok(())
+    });
+    let queue_digest_gel = Callback::new(move |(name,recipe):(String,collagene_core::digest_setups::Recipe)| ->Result<(),String> {
+        if workspace_restoring.get_untracked(){return Err("Wait for the workspace update to finish.".into());}
+        recipe.validate().map_err(|e|e.to_string())?;
+        resolve_retained_source.run(recipe.source.clone())?;
+        if gel_digest_seeds.with_untracked(Vec::len)>=32{return Err("The pending gel queue reached its 32-lane limit.".into());}
+        gel_digest_seeds.update(|seeds|seeds.push(crate::gel::DigestLaneSeed{name,recipe,epoch:workspace_epoch.get_untracked()}));
+        panel.set("gel");Ok(())
+    });
+    let fork_digest_source = Callback::new(move |source:collagene_core::run_lineage::EventBinding| ->Result<crate::digest::SourceInfo,String> {
+        if workspace_restoring.get_untracked(){return Err("Wait for the workspace update to finish.".into());}
+        let mut docs=documents.get_untracked();
+        let original=docs.iter().find(|doc|doc.id==source.document_id).ok_or("The retained digest source is unavailable.")?;
+        let molecule=original.revision_molecule(&source.event_id).map_err(|e|e.to_string())?;
+        if molecule.revision()!=source.revision{return Err("The saved digest source revision differs from its retained event.".into());}
+        let prefix=format!("digest-source-{}",&source.revision[..16]);let mut suffix=1usize;
+        let id=loop{let id=format!("{prefix}-{suffix}");if !docs.iter().any(|doc|doc.id==id){break id;}suffix+=1;};
+        let fork=original.fork_event(&source.event_id,id).map_err(|e|e.to_string())?;
+        let info=recombination_source_info(&fork);let index=docs.len();docs.push(fork);
+        if docs.len()>1000||docs.iter().map(|doc|document_bytes(&doc.molecule)).sum::<usize>()>MAX_WORKSPACE_BYTES {
+            return Err("The source fork exceeds this workspace's document or size limit.".into());
+        }
+        let frame=workspace_snapshot(&docs,index,candidate.get_untracked().as_ref(),&stored_candidates.get_untracked(),
+            &attachments.get_untracked(),&workspace_name.get_untracked())?;
+        frame.validate().map_err(|e|e.to_string())?;
+        batch(||{documents.set(docs);active.set(index);selection.set(None);selected_feature.set(None);search_regions.set(None);});
+        message.set("Opened an editable copy of the exact digest source; original source heads and saved evidence are unchanged.".into());
+        Ok(info)
+    });
     let saved_comparisons = Memo::new(move |_| {
         let frame = workspace_snapshot(
             &documents.get(),
@@ -4440,7 +4563,7 @@ pub fn App() -> impl IntoView {
                     let index = docs
                         .iter()
                         .position(|doc| doc.id == request.event.document_id)
-                        .ok_or("The comparison source document is unavailable.")?;
+                        .ok_or("The retained source document is unavailable.")?;
                     let doc = &docs[index];
                     let molecule = doc
                         .revision_molecule(&request.event.event_id)
@@ -5156,7 +5279,7 @@ pub fn App() -> impl IntoView {
                                     <crate::read_review_history::ReadReviewHistory reference=read_check_reference snapshot=contig_snapshot epoch=workspace_epoch on_open=reopen_read_review on_reference=navigate_check_reference/>
                                     <crate::trace_validation::TraceValidationPanel molecule=read_check_molecule reference_info=read_check_source source_info=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(recombination_source_info))) epoch=workspace_epoch on_read=navigate_read_call on_record=record_read_check on_reference=navigate_check_reference query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone()))) selection=selection selected_feature=selected_feature on_consensus=Callback::new(move|doc:Molecule|add_documents(documents,active,workspace_restoring,vec![doc]))/></div></Show>
                                     <Show when=move||panel.get()=="features"><div class="inspector-content"><h2>"Annotations"<span class="count">{move||molecule.get().features.len()}</span></h2><p class="helper">"Select an annotation to inspect all of its parts and biological sequence."</p><crate::annotation_table::AnnotationTable molecule context=restriction_identity locked=Memo::new(move|_|workspace_restoring.get()) selected_feature hidden=annotation_hidden on_visibility=set_annotation_visibility on_apply=apply_annotation_batch on_inspect=Callback::new(move|index:usize|{molecule.with_untracked(|m|{if let Some(feature)=m.features.get(index){batch(||{selected_feature.set(Some(index));selection.set(feature.location.spans().first().map(|(a,b,_)|(*a,*b)));search_regions.set(None);});}});}) on_edit=Callback::new(move|index:Option<usize>|{feature_for_editor.set(index);feature_initial_location.set(None);modal.set("feature");})/>{move||inspected_feature.get().map(|f|{let location=editing::location_text(&f.location).unwrap_or_else(|_|"unresolved".into());let size=f.location.spans().iter().try_fold(0usize,|n,(a,b,_)|n.checked_add(b-a)).unwrap_or(usize::MAX);let exact=if size<=10_000 {f.location.extract(&molecule.get().sequence).unwrap_or_else(|e|e.to_string())}else{"Sequence exceeds this inspector's 10,000-symbol display limit; use a region/sequence export.".into()};view!{<div class="annotation-details"><h3>{f.label().to_string()}</h3><button class="text-tool" on:click=move|_|panel.set("library")>"Use selected annotation in library"</button><p>{location}</p><pre class="annotation-sequence">{exact}</pre><p class="helper">"Compound selections highlight every span. Choose contiguous bases to edit the underlying sequence."</p><button class="button secondary" on:click=move|_|{feature_for_editor.set(selected_feature.get_untracked());modal.set("feature");}>"Edit annotation"</button><button class="text-tool" on:click=move|_|if let Some(i)=selected_feature.get_untracked(){let current=molecule.get_untracked();match editing::delete_feature(&current,i){Ok(edited)=>if let Err(e)=commit_document(documents,active,workspace_restoring,&current.revision(),edited){message.set(e);},Err(e)=>message.set(e.to_string())}}>"Delete annotation"</button><details><summary>"Annotation qualifiers"</summary><dl>{f.qualifiers.into_iter().take(200).map(|(key,value)|view!{<dt>{key}</dt><dd>{value.unwrap_or_else(||"flag".into())}</dd>}).collect_view()}</dl></details></div>}})}</div></Show>
-                                    <Show when=move||panel.get()=="enzymes"><crate::digest::DigestPanel source=Memo::new(move|_|documents.with(|docs|{let d=&docs[active.get()];crate::digest::SourceInfo{binding:collagene_core::run_lineage::EventBinding{document_id:d.id.clone(),event_id:d.head_event().to_string(),revision:molecule_revision.get()},name:d.molecule.name.clone(),length:d.molecule.sequence.len(),alphabet:d.molecule.sequence.alphabet(),topology:d.molecule.topology}})) get_molecule=Callback::new(move|()|molecule.get_untracked()) epoch=workspace_epoch on_navigate=navigate_digest on_open=open_digest on_assembly=use_digest_in_assembly boundary_pick=digest_boundary_pick initial_enzymes=restrictions.names.get_untracked() on_methylation=Callback::new(move|()|panel.set("methylation"))/></Show>
+                                    <Show when=move||panel.get()=="enzymes"><crate::digest::DigestPanel saved=saved_digests on_save=save_digest_setup on_load=load_digest_setup on_delete=delete_digest_setup on_gel=queue_digest_gel on_fork=fork_digest_source source=Memo::new(move|_|documents.with(|docs|{let d=&docs[active.get()];crate::digest::SourceInfo{binding:collagene_core::run_lineage::EventBinding{document_id:d.id.clone(),event_id:d.head_event().to_string(),revision:molecule_revision.get()},name:d.molecule.name.clone(),length:d.molecule.sequence.len(),alphabet:d.molecule.sequence.alphabet(),topology:d.molecule.topology}})) get_molecule=Callback::new(move|()|molecule.get_untracked()) epoch=workspace_epoch on_navigate=navigate_digest on_open=open_digest on_assembly=use_digest_in_assembly boundary_pick=digest_boundary_pick initial_enzymes=restrictions.names.get_untracked() on_methylation=Callback::new(move|()|panel.set("methylation"))/></Show>
                                     <Show when=move||panel.get()=="pcr"><div class="inspector-content"><h2>"Simulate PCR"</h2><p class="helper">"Enter both primers 5′→3′. Annealing must match exactly; tails are introduced into the product."</p><crate::primer_picker::PrimerPicker label="Forward".to_string() sources=primer_sources list_primers=list_saved_primers resolve_primer=resolve_saved_primer epoch=workspace_epoch on_copy=Callback::new(move|primer:Primer|batch(||{pcr_forward_name.set(primer.name);pcr_forward.set(primer.annealing.as_str().into());pcr_forward_tail.set(primer.tail);pcr_generation.update(|g|*g=g.wrapping_add(1));}))/>
     <crate::primer_picker::PrimerPicker label="Reverse".to_string() sources=primer_sources list_primers=list_saved_primers resolve_primer=resolve_saved_primer epoch=workspace_epoch on_copy=Callback::new(move|primer:Primer|batch(||{pcr_reverse_name.set(primer.name);pcr_reverse.set(primer.annealing.as_str().into());pcr_reverse_tail.set(primer.tail);pcr_generation.update(|g|*g=g.wrapping_add(1));}))/>
     <label>"Forward name"<input maxlength="256" prop:value=move||pcr_forward_name.get() on:input=move|e|pcr_forward_name.set(event_target_value(&e))/></label>
@@ -5165,7 +5288,7 @@ pub fn App() -> impl IntoView {
         <RestrictionFields side="First" enzymes=first_enzymes fragment=first_fragment treatment=first_treatment repair=first_repair reverse=first_reverse/><Show when=move||restriction_policy.get()=="checked"><p class="checked-source-binding">{move||documents.with(|docs|docs.get(first_input.get()).map(|d|format!("First source: document {} · event {}",d.id,d.head_event())).unwrap_or_else(||"Choose a first source".into()))}</p><crate::checked_cloning::SourceAssumptions side="First" signals=first_modifications/></Show>
         <Show when=move||second_restriction.get()&&restriction_final.get()=="ligate"><RestrictionFields side="Second" enzymes=second_enzymes fragment=second_fragment treatment=second_treatment repair=second_repair reverse=second_reverse/><Show when=move||restriction_policy.get()=="checked"><p class="checked-source-binding">{move||documents.with(|docs|docs.get(second_input.get()).map(|d|format!("Second source: document {} · event {}",d.id,d.head_event())).unwrap_or_else(||"Choose a second source".into()))}</p><crate::checked_cloning::SourceAssumptions side="Second" signals=second_modifications/></Show></Show><Show when=move||restriction_final.get()=="ligate"><label class="checkbox-label"><input type="checkbox" aria-label="Allow restriction ligation nicks" prop:checked=move||allow_nicked.get() on:change=move|e|allow_nicked.set(event_target::<HtmlInputElement>(&e).checked())/>"Allow explicitly reported nicks"</label></Show><p class="helper">"Fragment numbers follow ascending reference-strand cut order, not size. Intact circles cannot ligate. The active document remains the independent target; declared source state is not measured modification evidence."</p></div></Show><Show when=move||plan_method.get()=="overlap"><label>"Junction overlap (bp)"<input type="number" min="1" prop:value=move||overlap.get() on:input=move|e|overlap.set(event_target_value(&e))/></label><Show when=move||molecule.get().topology==Topology::Circular><label>"Circular closure overlap (bp)"<input type="number" min="1" prop:value=move||closure_overlap.get() on:input=move|e|closure_overlap.set(event_target_value(&e))/></label></Show></Show><button class="button primary full" on:click=do_plan>"Reconstruct and verify"</button></Show>{move||plan_report.with(|report|report.as_ref().map(|report|view!{<div class="verification-result"><strong>{format!("{:?}",report.status)}</strong>{report.findings.iter().cloned().map(|f|view!{<p>{f}</p>}).collect_view()}{report.annotation_reports.iter().map(|step|view!{<details class="annotation-evidence"><summary>{format!("Step {} · source annotation correspondence",step.step_index+1)}</summary><p class="helper">"Mapped coordinates follow the actual selected top-reference calls. Review PCR-derived and disrupted annotations. Original unmapped features remain evidence in the reconstruction JSON, not invented product coordinates."</p>{step.evidence.sources.iter().map(|source|view!{<p>{format!("{} · {} projected · {} outside contour · {} unmapped originals · projection supported {}",source.role,source.projected,source.dropped,source.unmapped.len(),source.projection_supported)}</p>}).collect_view()}</details>}).collect_view()}{report.step_reports.iter().filter_map(|step|step.topo.as_ref().map(|topo|{let outcome=match &topo.projection.outcome{collagene_core::topo::physical::projection::Outcome::Proven(contour)=>format!("Paired contour proven; {} nicks retained. No repair is inferred.",contour.nicks.len()),collagene_core::topo::physical::projection::Outcome::Withheld(_)=>"No unique paired contour; physical graph retained and reference withheld.".into()};view!{<details class="physical-evidence"><summary>{format!("Step {} · TOPO physical graph",step.step_index+1)}</summary><p>{outcome}</p><p>{format!("{} physical components · batch {}",topo.projection.physical.product.components.len(),topo.batch_revision)}</p><p class="helper">"Download the reconstruction report for the full physical graph, original source maps and projection evidence. Saved evidence needs fresh replay before use."</p></details>}})).collect_view()}{report.products.iter().enumerate().filter_map(|(i,p)|p.metadata.get("duplex_model").and_then(|s|serde_json::from_str::<chemistry::DuplexSummary>(s).ok()).map(|summary|view!{<details class="physical-evidence"><summary>{format!("Step {} · {}",i+1,p.name)}</summary><pre>{summary.describe()}</pre></details>})).collect_view()}{report.products.iter().enumerate().filter_map(|(i,p)|crate::checked_cloning::modification_summary(p).map(|summary|view!{<details class="checked-modification-summary"><summary>{format!("Step {} · positional modification evidence",i+1)}</summary><p>{summary}</p></details>})).collect_view()}<details><summary>"Assumptions and limits"</summary><ul>{report.assumptions.iter().cloned().map(|a|view!{<li>{a}</li>}).collect_view()}</ul></details><p class="helper">"Alternative assemblies and experimental feasibility are not exhaustively checked."</p></div>}))}<Show when=move||reviewed_product_current.get()>{move||last_plan.get().zip(plan_report.get()).map(|((plan,target),report)|view!{<crate::assembly_product_view::AssemblyProductView plan target report epoch=workspace_epoch guard=Some(reviewed_product_guard) on_products=Callback::new(move|products:Vec<Molecule>|{reviewed_product_guard.run(())?;add_documents(documents,active,workspace_restoring,products)}) on_finalize=Some(finalize_reviewed_candidate)/>})}</Show><button class="button secondary full" disabled=move||plan_report.with(Option::is_none) on:click=move|_|{let result=plan_report.with_untracked(|report|report.as_ref().map(crate::checked_cloning::export_report));if let Some(Err(error))=result{message.set(error);}}>"Download reconstruction report"</button><button class="button secondary full" disabled=move||candidate.get().is_none()&&last_plan.get().is_none() on:click=move|_|{let value=candidate.get_untracked().or_else(||last_plan.get_untracked().map(|(plan,_)|transfer::Candidate::new(plan)));if let Some(value)=value {match transfer::save_candidate(&value){Ok(bytes)=>{if let Err(e)=download("candidate.cg2plan","application/octet-stream",&bytes){message.set(e);}},Err(e)=>message.set(e.to_string())}}}>"Save candidate"</button><button class="button secondary full" disabled=move||last_plan.get().is_none() on:click=move|_|{modal_error.set(String::new());modal.set("record_run");}>"Keep reconstructed products"</button></div></Show>
                                     <Show when=move||panel.get()=="primers"><crate::primers::PrimerPanel on_collection=Callback::new(move|table:oligo_formats::OligoTable|import_oligos.run((table,Vec::new()))) molecule=molecule selection=selection selected_feature=selected_feature seed=primer_seed source_binding=primer_context pair_draft pair_selection anchor_available=primer_anchor_available primer_sources list_primers=list_saved_primers resolve_primer=resolve_saved_primer epoch=workspace_epoch on_use=Callback::new(move|(forward,reverse):(Primer,Primer)|{pcr_forward_name.set(forward.name);pcr_reverse_name.set(reverse.name);pcr_forward.set(forward.annealing.as_str().into());pcr_forward_tail.set(forward.tail);pcr_reverse.set(reverse.annealing.as_str().into());pcr_reverse_tail.set(reverse.tail);panel.set("pcr");message.set("Candidate primers loaded. Compute PCR products to inspect alternative binding geometries.".into());}) on_annotate=Callback::new(move|(binding,feature):(collagene_core::run_lineage::EventBinding,Feature)|{if primer_context.get_untracked()!=binding{return Err("The document event changed; rerun primer analysis before annotating it.".into());}let current=molecule.get_untracked();let edited=editing::set_feature(&current,None,feature).map_err(|e|e.to_string())?;commit_document(documents,active,workspace_restoring,&binding.revision,edited)})/></Show>
-                                    <Show when=move||panel.get()=="gel"><crate::gel::GelPanel molecule=molecule query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone())))/></Show>
+                                    <div style:display=move||{if panel.get()=="gel"{"contents"}else{"none"}}><crate::gel::GelPanel seeds=gel_digest_seeds epoch=workspace_epoch resolve_event=resolve_retained_source molecule=molecule query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone())))/></div>
                                     <Show when=move||panel.get()=="methods"><crate::cloning_methods::CloningMethodsPanel molecule=molecule selected_region=Callback::new(move|():()|{if inspected_feature.get_untracked().is_some_and(|f|f.location.spans().len()>1){return None;}selection.get_untracked().filter(|(a,b)|a<b).map(|(a,b)|(active.get_untracked(),a,b))}) target_info=Memo::new(move|_|crate::cloning_methods::TargetContext::Document(documents.with(|docs|recombination_source_info(&docs[active.get()])))) source_info=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(recombination_source_info))) primer_sources=primer_sources list_primers=list_saved_primers resolve_primer=resolve_saved_primer query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone()))) config=method_config epoch=workspace_epoch on_candidate=Callback::new(move|value:transfer::Candidate|{
                                     if workspace_restoring.get_untracked(){return;}
                                     let state=method_config.get_untracked();
@@ -5296,7 +5419,7 @@ pub fn App() -> impl IntoView {
                                             if let Some(window)=web_sys::window(){let _=window.request_animation_frame(frame.unchecked_ref());}
                                         }
                                         if query{panel.set("features");}
-                                    })/></Show><Show when=move||panel.get()=="compare"><crate::compare::ComparePanel molecule=molecule query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone()))) active_source=Memo::new(move|_|documents.with(|docs|recombination_source_info(&docs[active.get()]))) source_info=Callback::new(move|index:usize|documents.with(|docs|docs.get(index).map(recombination_source_info))) resolve=resolve_comparison_source epoch=workspace_epoch saved=saved_comparisons on_save=save_comparison on_reopen=reopen_comparison on_navigate=navigate_comparison/></Show>
+                                    })/></Show><Show when=move||panel.get()=="compare"><crate::compare::ComparePanel molecule=molecule query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone()))) active_source=Memo::new(move|_|documents.with(|docs|recombination_source_info(&docs[active.get()]))) source_info=Callback::new(move|index:usize|documents.with(|docs|docs.get(index).map(recombination_source_info))) resolve=resolve_retained_source epoch=workspace_epoch saved=saved_comparisons on_save=save_comparison on_reopen=reopen_comparison on_navigate=navigate_comparison/></Show>
                                 </aside>
                             </div>
                             <Show when=move||assembly_visible.get()><section class="assembly-dock" aria-label="Assembly workspace"><div class="assembly-dock-bar"><span>"Assembly design"</span><button class="text-tool" on:click=move|_|assembly_visible.set(false)>"Hide assembly"</button></div>

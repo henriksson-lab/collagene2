@@ -645,13 +645,16 @@ pub struct InversePcrQuery {
     pub target: DocumentRef,
     pub options: collagene_core::mutagenesis::InversePcrOptions,
 }
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BoundGelLane {
     pub label: String,
     pub document: DocumentRef,
     pub preparation: collagene_core::gel::Preparation,
     pub mass_ng: Option<f64>,
+    /// Required for CatalogDigest: native retained owner/event/revision proof.
+    #[serde(default)]
+    pub workspace: Option<WorkspaceRef>,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -4498,7 +4501,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Predict a reference gel from revision-bound uncut, complete-digest or PCR lanes under an explicit log-size ladder/calibration and resolution. Circular conformation/out-of-range/unsupported bands remain unpositioned, co-migration and mass assumptions explicit. Returns bounded lane summaries plus full JSON and vector SVG artifacts. No observed-gel comparison or OpenGel integration."
+        description = "Predict a reference gel from revision-bound uncut, complete-digest or PCR lanes under an explicit ladder/calibration. CatalogDigest lanes require a native workspace reference proving the recipe's exact retained document/event/revision and a matching session document; historical sources need not be current heads. Native inspection is recomputed. Circular/unsupported profiles remain unpositioned. JSON retains declared lane recipes and references; SVG remains a prediction. No observed-gel/OpenGel integration."
     )]
     async fn predict_gel(
         &self,
@@ -4506,14 +4509,75 @@ impl CollageneServer {
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
         self.compute(move||{
-            let lanes={let store=server.store.lock().unwrap();args.lanes.iter().map(|l|Ok(collagene_core::gel::LaneInput{label:l.label.clone(),molecule:store.document(&l.document)?.clone(),preparation:l.preparation.clone(),mass_ng:l.mass_ng})).collect::<Result<Vec<_>,ErrorData>>()?};
+            if args.lanes.is_empty() || args.lanes.len() > 32 {
+                return Err(bad("gel needs 1–32 source lanes"));
+            }
+            args.calibration.validate().map_err(bad)?;
+            for lane in &args.lanes {
+                if lane.label.len() > 256 || lane.label.chars().any(char::is_control)
+                    || lane.mass_ng.is_some_and(|mass| !mass.is_finite() || mass <= 0. || mass > 1e9)
+                {
+                    return Err(bad("invalid gel lane label or loaded mass"));
+                }
+                if let collagene_core::gel::Preparation::CatalogDigest { recipe } = &lane.preparation {
+                    recipe.validate().map_err(bad)?;
+                    let reference = lane.workspace.as_ref().ok_or_else(|| bad(
+                        "CatalogDigest requires a native workspace reference proving its exact retained source event"
+                    ))?;
+                    if reference.id.len() != 64 || reference.revision.len() != 64 {
+                        return Err(bad("invalid pinned gel workspace reference"));
+                    }
+                }
+            }
+            // Resolve immutable session documents together, then release this
+            // lock before restore_workspace acquires the same store mutex.
+            let lanes = {
+                let store = server.store.lock().unwrap();
+                args.lanes.iter().map(|lane| Ok(collagene_core::gel::LaneInput {
+                    label: lane.label.clone(),
+                    molecule: store.document(&lane.document)?.clone(),
+                    preparation: lane.preparation.clone(),
+                    mass_ng: lane.mass_ng,
+                })).collect::<Result<Vec<_>, ErrorData>>()?
+            };
+            let mut groups = std::collections::BTreeMap::<String, (WorkspaceRef, Vec<usize>)>::new();
+            for (index, lane) in args.lanes.iter().enumerate() {
+                if !matches!(&lane.preparation, collagene_core::gel::Preparation::CatalogDigest { .. }) { continue; }
+                let reference = lane.workspace.as_ref().ok_or_else(|| bad("pinned gel workspace reference is unavailable"))?;
+                if reference.id != reference.revision { return Err(bad("stale workspace revision")); }
+                groups.entry(reference.id.clone()).or_insert_with(|| (reference.clone(), Vec::new())).1.push(index);
+            }
+            // Restore each distinct workspace once, then drop it before loading
+            // another: shared large histories are never cloned once per lane.
+            for (_, (reference, indices)) in groups {
+                let frame = server.restore_workspace(&reference)?;
+                for index in indices {
+                    let lane = &lanes[index];
+                    let collagene_core::gel::Preparation::CatalogDigest { recipe } = &lane.preparation else { continue; };
+                    let source = &recipe.source;
+                    if !frame.documents.iter().any(|document| document.id == source.document_id) {
+                        return Err(bad("pinned gel source owner is not retained in this workspace"));
+                    }
+                    let event = frame.history.iter().find(|event| event.id == source.event_id)
+                        .ok_or_else(|| bad("the exact pinned gel source event is not retained"))?;
+                    if event.document_id != source.document_id || event.revision != source.revision {
+                        return Err(bad("pinned gel source owner/event/revision mismatch"));
+                    }
+                    let original = frame.revisions.get(&source.revision)
+                        .ok_or_else(|| bad("pinned gel historical molecule is not retained"))?;
+                    if original != &lane.molecule || lane.molecule.revision() != source.revision {
+                        return Err(bad("session lane document differs from the exact historical pinned gel source"));
+                    }
+                }
+            }
             let report=collagene_core::gel::predict_gel(&lanes,&args.calibration).map_err(bad)?;
             let svg=collagene_core::gel::render_svg(&report).map_err(bad)?;
             let svg_artifact=server.text_artifact(svg,"image/svg+xml","predicted-gel.svg")?;
-            let artifact=server.analysis_artifact(&json!({"documents":args.lanes.iter().map(|l|&l.document).collect::<Vec<_>>(),"engine_version":verification::ENGINE_VERSION,"gel":report}))?;
+            let artifact=server.analysis_artifact(&json!({"documents":args.lanes.iter().map(|l|&l.document).collect::<Vec<_>>(),"lanes":args.lanes,"engine_version":verification::ENGINE_VERSION,"gel":report}))?;
             output(json!({"model":report.model,"lane_count":report.lanes.len(),"lanes":report.lanes.iter().map(|l|json!({"label":l.label,"source_revision":l.source_revision,"fragment_count":l.fragments.len(),"resolved_band_count":l.bands.len(),"unpositioned_fragment_count":l.unpositioned_fragments.len(),"complete_under_model":l.complete_under_model,"error":l.error,"warnings":l.warnings})).collect::<Vec<_>>(),"artifact_id":artifact,"svg_artifact_id":svg_artifact}))
         }).await
     }
+
     #[tool(
         description = "Rank bounded single/double restriction digests that distinguish immutable candidate plasmids under an explicit gel calibration/resolution. Reports distinguished, co-migrating and unknown pairs separately, with evaluated/work bounds and exhaustive-search flag. Unsupported profiles do not become negative specificity evidence. Full JSON evidence artifact included."
     )]

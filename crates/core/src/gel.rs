@@ -114,8 +114,17 @@ impl Calibration {
 #[serde(deny_unknown_fields)]
 pub enum Preparation {
     Uncut,
-    Digest { enzymes: Vec<String> },
-    Pcr { forward: Primer, reverse: Primer },
+    Digest {
+        enzymes: Vec<String>,
+    },
+    Pcr {
+        forward: Primer,
+        reverse: Primer,
+    },
+    /// Full exact-event/catalog recipe. Saved reports never supply fresh bands.
+    CatalogDigest {
+        recipe: crate::digest_setups::Recipe,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -250,6 +259,7 @@ fn lane(
             Preparation::Uncut => "Uncut reference",
             Preparation::Digest { .. } => "Complete restriction digest",
             Preparation::Pcr { .. } => "Possible exact-PCR products",
+            Preparation::CatalogDigest { .. } => "Catalog-pinned complete restriction digest",
         }
         .into(),
         fragments: vec![],
@@ -298,6 +308,52 @@ fn lane(
                 report.warnings.push("These are possible exact-PCR products, not predicted yields or a claim that every alternative accumulates. Primer roles do not exclude competing orientations or single-oligo products.".into());
                 if lengths.len() != 1 && mass_ng.is_some() {
                     report.warnings.push("Loaded mass cannot be allocated across PCR alternatives; band masses remain unknown.".into());
+                }
+            }
+            Preparation::CatalogDigest { recipe } => {
+                recipe.validate()?;
+                if recipe.source.revision != report.source_revision {
+                    return Err(error(
+                        "Pinned digest source revision differs from the actual lane molecule; resolve its exact retained source event.",
+                    ));
+                }
+                let catalog = crate::catalog_digest::builtin_catalog()?;
+                recipe.selection.validate_for(&catalog)?;
+                let fresh = crate::catalog_digest::inspect(
+                    &catalog,
+                    &recipe.selection,
+                    &crate::restriction_history::source_role(&recipe.source)?,
+                    molecule,
+                    &recipe.options,
+                )?;
+                report.warnings.push("Assumes complete ideal cleavage; methylation remains unassessed. Supplier conditions, partial digestion, star activity and experimental cleavage are not evaluated.".into());
+                report
+                    .warnings
+                    .extend(fresh.inspection.diagnostics.iter().cloned());
+                if !fresh.inspection.scan_complete || !fresh.inspection.products_determined {
+                    return Err(error(
+                        "Catalog digest products are withheld: the selected inspection limits or unresolved recognition/strand/physical evidence do not establish a complete fragment set.",
+                    ));
+                }
+                if fresh.inspection.fragments.len() > MAX_FRAGMENTS {
+                    return Err(error(
+                        "Catalog digest exceeds the gel limit of 1024 fragments; no fragments are omitted and the selected inspection limits were not changed.",
+                    ));
+                }
+                report.preparation = format!(
+                    "Catalog digest: {} · edition {}",
+                    recipe
+                        .selection
+                        .enzymes
+                        .iter()
+                        .map(|choice| choice.enzyme.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" + "),
+                    recipe.selection.catalog_edition
+                );
+                for fragment in fresh.inspection.fragments {
+                    let duplex = fragment.duplex;
+                    lengths.push((duplex.top_length, duplex.bottom_length, duplex.topology));
                 }
             }
         }
@@ -393,6 +449,10 @@ pub fn predict_gel(inputs: &[LaneInput], calibration: &Calibration) -> Result<Ge
         return Err(error("gel needs 1–32 source lanes"));
     }
     for input in inputs {
+        if let Preparation::CatalogDigest { recipe } = &input.preparation {
+            crate::model::bounds::model_preflight(&[&input.molecule])?;
+            recipe.validate()?;
+        }
         input.molecule.validate()?;
     }
     bound_to(inputs, crate::formats::MAX_IMPORT_BYTES)?;

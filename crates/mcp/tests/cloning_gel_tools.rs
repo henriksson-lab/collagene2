@@ -531,3 +531,158 @@ async fn gel_json_svg_and_diagnostic_digests_preserve_unknowns_mass_and_source_b
     }
     s.finish().await;
 }
+
+#[tokio::test]
+async fn pinned_gel_requires_exact_workspace_ownership_and_replays_historical_sources() {
+    use collagene_core::{
+        catalog_digest::{self, InspectionOptions},
+        digest_setups::{CleavageMode, Recipe},
+        history::DocumentHistory,
+        run_lineage::EventBinding,
+        workspace::{self, Workspace},
+    };
+    let s = Session::new().await;
+    let source = dna("historical AluI source", "TTTAGCTAAA", Topology::Linear);
+    // Both owners deliberately share the same molecular revision. Sequence/hash
+    // equality therefore cannot substitute for exact event ownership.
+    let mut frame = Workspace::from_documents(
+        "retained gel design",
+        vec![source.clone(), source.clone()],
+        0,
+    )
+    .unwrap();
+    let old = &frame.documents[0];
+    let binding = EventBinding {
+        document_id: old.id.clone(),
+        event_id: old.head_event.clone().unwrap(),
+        revision: old.head.clone(),
+    };
+    let other = &frame.documents[1];
+    let other_owner = other.id.clone();
+    let other_event = other.head_event.clone().unwrap();
+    let later = dna("later edited source", "TTTACCTAAA", Topology::Linear);
+    let mut histories = DocumentHistory::restore_all(&frame).unwrap();
+    histories[0]
+        .commit(later.clone(), "Later source edit")
+        .unwrap();
+    frame.documents.clear();
+    frame.history.clear();
+    for history in histories {
+        history.contribute(&mut frame).unwrap();
+    }
+    frame.validate().unwrap();
+    assert_ne!(frame.documents[0].head, binding.revision);
+    let bytes = workspace::save_workspace(&frame).unwrap();
+    let imported = s
+        .call(
+            "import_workspace_archive",
+            json!({"data_base64":STANDARD.encode(bytes)}),
+        )
+        .await;
+    let workspace_ref =
+        json!({"id":imported["workspace"]["id"],"revision":imported["workspace"]["revision"]});
+    let mut alias = source.clone();
+    alias.name = "same DNA with invented provenance".into();
+    alias
+        .metadata
+        .insert("source_event".into(), binding.event_id.clone());
+    alias
+        .metadata
+        .insert("source_document".into(), binding.document_id.clone());
+    // Explicit immutable DocumentRefs remain separate from native owner/event IDs.
+    s.import(vec![source.clone(), later.clone(), alias.clone()])
+        .await;
+    let recipe = Recipe {
+        source: binding.clone(),
+        selection: catalog_digest::select(
+            &catalog_digest::builtin_catalog().unwrap(),
+            &["alui".into()],
+        )
+        .unwrap(),
+        options: InspectionOptions::default(),
+        cleavage_mode: CleavageMode::AssumedCompleteMethylationUnassessed,
+    };
+    let lane = json!({"label":"Historical AluI digest","document":reference(&source),"workspace":workspace_ref,"preparation":Preparation::CatalogDigest {recipe:recipe.clone()},"mass_ng":100.});
+    let query = json!({"lanes":[lane],"calibration":calibration()});
+    let response = s.call("predict_gel", query.clone()).await;
+    assert_eq!(response["lane_count"], 1);
+    assert_eq!(response["lanes"][0]["fragment_count"], 2);
+    assert_eq!(response["lanes"][0]["complete_under_model"], true);
+    let artifact = s.artifact(&response).await;
+    assert_eq!(artifact["lanes"], query["lanes"]);
+    assert_eq!(artifact["documents"], json!([reference(&source)]));
+    let fragments = artifact["gel"]["lanes"][0]["fragments"].as_array().unwrap();
+    assert_eq!(
+        fragments
+            .iter()
+            .map(|f| (
+                f["top_nt"].as_u64().unwrap(),
+                f["bottom_nt"].as_u64().unwrap()
+            ))
+            .collect::<Vec<_>>(),
+        vec![(5, 5), (5, 5)]
+    );
+    assert_eq!(
+        fragments
+            .iter()
+            .map(|f| f["amount_ng"].as_f64().unwrap())
+            .sum::<f64>(),
+        100.
+    );
+    let mut missing = query.clone();
+    missing["lanes"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("workspace");
+    s.reject("predict_gel", missing).await;
+    let mut wrong_workspace_revision = query.clone();
+    wrong_workspace_revision["lanes"][0]["workspace"]["revision"] = json!("0".repeat(64));
+    s.reject("predict_gel", wrong_workspace_revision).await;
+    let mut wrong_owner = query.clone();
+    wrong_owner["lanes"][0]["preparation"]["CatalogDigest"]["recipe"]["source"]["document_id"] =
+        json!(other_owner);
+    s.reject("predict_gel", wrong_owner).await;
+    let mut wrong_event = query.clone();
+    wrong_event["lanes"][0]["preparation"]["CatalogDigest"]["recipe"]["source"]["event_id"] =
+        json!(other_event);
+    s.reject("predict_gel", wrong_event).await;
+    let mut missing_event = query.clone();
+    missing_event["lanes"][0]["preparation"]["CatalogDigest"]["recipe"]["source"]["event_id"] =
+        json!(format!("event-{}", "a".repeat(64)));
+    s.reject("predict_gel", missing_event).await;
+    let mut wrong_revision = query.clone();
+    wrong_revision["lanes"][0]["preparation"]["CatalogDigest"]["recipe"]["source"]["revision"] =
+        json!(later.revision());
+    s.reject("predict_gel", wrong_revision).await;
+    for substituted in [&later, &alias] {
+        let mut wrong_document = query.clone();
+        wrong_document["lanes"][0]["document"] = reference(substituted);
+        s.reject("predict_gel", wrong_document).await;
+    }
+    let unrelated =
+        Workspace::from_documents("unrelated native workspace", vec![alias.clone()], 0).unwrap();
+    let imported = s
+        .call(
+            "import_workspace_archive",
+            json!({"data_base64":STANDARD.encode(workspace::save_workspace(&unrelated).unwrap())}),
+        )
+        .await;
+    let mut wrong_workspace = query.clone();
+    wrong_workspace["lanes"][0]["workspace"] =
+        json!({"id":imported["workspace"]["id"],"revision":imported["workspace"]["revision"]});
+    s.reject("predict_gel", wrong_workspace).await;
+    let mut too_many = query.clone();
+    too_many["lanes"] = json!(vec![query["lanes"][0].clone(); 33]);
+    s.reject("predict_gel", too_many).await;
+    // Valid ownership for the second document is acceptable even though the
+    // molecular hash is shared: only a mismatched owner/event pair is rejected.
+    let second = &frame.documents[1];
+    let mut independently_owned = query.clone();
+    independently_owned["lanes"][0]["preparation"]["CatalogDigest"]["recipe"]["source"] =
+        json!({"document_id":second.id,"event_id":second.head_event,"revision":second.head});
+    assert_eq!(
+        s.call("predict_gel", independently_owned).await["lanes"][0]["fragment_count"],
+        2
+    );
+    s.finish().await;
+}

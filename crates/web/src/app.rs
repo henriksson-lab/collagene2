@@ -791,6 +791,7 @@ pub fn App() -> impl IntoView {
     let pending_digest = RwSignal::new(None::<crate::digest_product::DigestOpenRequest>);
     let inspected_assembly = RwSignal::new(String::new());
     let selected_run = RwSignal::new(String::new());
+    let pending_run_event = RwSignal::new(None::<std::sync::Arc<crate::run_event_model::Snapshot>>);
     let run_page = RwSignal::new(0usize);
     let oligo_tables = RwSignal::new(Vec::<
         std::sync::Arc<collagene_core::oligo_formats::OligoTable>,
@@ -1355,6 +1356,7 @@ pub fn App() -> impl IntoView {
         pending_read_alignment.set(None);
         pending_variants.set(None);
         pending_finalize.set(None);
+        pending_run_event.set(None);
         read_reference.set(None);
         pending_read_check.set(None);
         reviewed_check.set(None);
@@ -3626,6 +3628,92 @@ pub fn App() -> impl IntoView {
             })
         })
     });
+    let open_run_event = Callback::new(
+        move |request: crate::run_event_model::Request| -> Result<(), String> {
+            if workspace_restoring.get_untracked()
+                || request.epoch != workspace_epoch.get_untracked()
+            {
+                return Err("The workspace changed; reopen the cloning run.".into());
+            }
+            let frame = contig_snapshot.run(())?;
+            let resolved = crate::run_event_model::resolve(&frame, &request)?;
+            pending_run_event.set(Some(std::sync::Arc::new(resolved)));
+            modal_error.set(String::new());
+            modal.set("run_event");
+            Ok(())
+        },
+    );
+    let fork_run_event = Callback::new(
+        move |request: crate::run_event_model::Request| -> Result<(), String> {
+            if workspace_restoring.get_untracked()
+                || request.epoch != workspace_epoch.get_untracked()
+            {
+                return Err("The workspace changed; reopen the cloning run version.".into());
+            }
+            if !pending_run_event.with_untracked(|pending| {
+                pending
+                    .as_ref()
+                    .is_some_and(|snapshot| snapshot.request == request)
+            }) {
+                return Err(
+                    "The displayed run version changed; open it again before forking.".into(),
+                );
+            }
+            let frame = contig_snapshot.run(())?;
+            let prefix = format!(
+                "run-version-{}",
+                request
+                    .binding
+                    .revision
+                    .chars()
+                    .take(16)
+                    .collect::<String>()
+            );
+            let id = (1..=1001)
+                .map(|suffix| format!("{prefix}-{suffix}"))
+                .find(|id| !frame.documents.iter().any(|doc| doc.id == *id))
+                .ok_or("No document identity is available for this copy.")?;
+            let staged = crate::run_event_model::fork(&frame, &request, &id)?;
+            let state = restore_workspace_state(&staged)?;
+            if state.documents.len() > 1000
+                || state
+                    .documents
+                    .iter()
+                    .map(|doc| document_bytes(&doc.molecule))
+                    .sum::<usize>()
+                    > MAX_WORKSPACE_BYTES
+            {
+                return Err(
+                    "This version copy exceeds the workspace document budget; nothing changed."
+                        .into(),
+                );
+            }
+            batch(|| {
+                documents.set(state.documents);
+                active.set(state.active);
+                selected_feature.set(None);
+                selection.set(None);
+                plan_report.set(None);
+                last_plan.set(None);
+                last_plan_target.set(None);
+                last_plan_events.set(None);
+                pending_run_event.set(None);
+                modal.set("");
+                panel.set("history");
+                message.set("Opened an editable copy of the exact recorded version. Original document heads and recorded assessments are preserved.".into());
+            });
+            Ok(())
+        },
+    );
+    let back_to_run = Callback::new(move |run_id: String| {
+        if workspace_restoring.get_untracked() {
+            return;
+        }
+        selected_run.set(run_id);
+        pending_run_event.set(None);
+        modal_error.set(String::new());
+        modal.set("run_details");
+    });
     let record_read_check = Callback::new(
         move |request: crate::trace_validation::RecordRequest| -> Result<(), String> {
             if workspace_restoring.get_untracked()
@@ -4354,7 +4442,7 @@ pub fn App() -> impl IntoView {
                         </main>
                     </div>
                     </div>
-                    <Show when=move||modal.get()!=""><div class="modal-backdrop"><section class="modal" class:alignment-modal=move||modal.get()=="alignments" class:read-review-modal=move||modal.get()=="read_review" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><div class="modal-heading"><h2 id="dialog-title">{move||if modal.get()=="variants"{"Variant source"}else if modal.get()=="read_alignments"{"Read alignments"}else if modal.get()=="digest_product"{"Open virtual digest fragment"}else if modal.get()=="crispr_product"{"Open checked sequence design"}else if modal.get()=="contig_archive"{"Record read assembly"}else if modal.get()=="saved_contig"{"Saved read assembly"}else if modal.get()=="read_review"{"Review sequencing differences"}else if modal.get()=="read_review_commit"{"Save read-review decisions"}else if modal.get()=="read_check_capture"{"Save sequencing check"}else if modal.get()=="assembly_finalize"{"Create assembly outputs"}else if modal.get()=="record_run"{"Keep reconstructed products"}else if modal.get()=="run_details"{"Recorded reconstruction"}else if modal.get()=="alignments"{"Alignments"}else if modal.get()=="workspace"{"Workspace"}else if modal.get()=="oligos"{"Oligo table"}else if modal.get()=="fastq"{"Import FASTQ reads"}else if modal.get()=="import"{"Open a sequence"}else if modal.get()=="url"{"Import from a sequence source"}else if modal.get()=="feature"{"Edit annotation"}else if modal.get()=="document"{"Document settings"}else if molecule.with(|m|m.sequence.alphabet()==Alphabet::Protein){"Edit selected residues"}else{"Edit selected bases"}}</h2><button class="icon-button" aria-label="Close dialog" disabled=move||workspace_restoring.get() on:click=move|_|{if !workspace_restoring.get_untracked(){modal.set("");pending_finalize.set(None);pending_read_check.set(None);pending_read_review.set(None);reviewed_check.set(None);review_seed.set(None);}}>"×"</button></div><Show when=move||!modal_error.get().is_empty()><p class="dialog-error" role="alert">{move||modal_error.get()}</p></Show><Show when=move||modal.get()=="digest_product">{move||pending_digest.get_untracked().map(|request|view!{<crate::digest_product::DigestOpenPanel request=request snapshot=contig_snapshot validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=contig_restore db=db busy=workspace_restoring loaded=loaded save_generation=save_generation epoch=workspace_epoch message=message/>})}</Show><Show when=move||modal.get()=="crispr_product">{move||pending_donor.get_untracked().map(|request|view!{<crate::crispr::DonorOpenPanel request=request snapshot=contig_snapshot validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=contig_restore db=db busy=workspace_restoring loaded=loaded save_generation=save_generation epoch=workspace_epoch message=message/>})}</Show><Show when=move||modal.get()=="contig_archive">{move||pending_assembly.get_untracked().map(|request|view!{<crate::contigs::ContigArchivePanel request=request snapshot=contig_snapshot validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=contig_restore db=db busy=workspace_restoring loaded=loaded save_generation=save_generation epoch=workspace_epoch message=message/>})}</Show><Show when=move||modal.get()=="saved_contig"><crate::contigs::SavedAssemblyPanel attachment_hash=inspected_assembly.get_untracked() snapshot=contig_snapshot epoch=workspace_epoch on_record=record_assembly on_navigate=navigate_read_call/></Show><Show when=move||modal.get()=="record_run">{move||last_plan.get_untracked().map(|(plan,_)|view!{<crate::run_capture::RunCapturePanel plan=plan preferred_bindings=last_plan_events.get_untracked().filter(|(revision,_)|last_plan.get_untracked().is_some_and(|(p,_)|verification::plan_revision(&p)==*revision)).map(|(_,bindings)|bindings).unwrap_or_default() snapshot=Callback::new(move|()|documents.with_untracked(|docs|stored_candidates.with_untracked(|plans|attachments.with_untracked(|assets|candidate.with_untracked(|current|workspace_snapshot(docs,active.get_untracked(),current.as_ref(),plans,assets,&workspace_name.get_untracked())))))) validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=Callback::new(move|frame:collagene_core::workspace::Workspace|match restore_workspace_state(&frame){Ok(state)=>batch(||apply_restored.run(state)),Err(e)=>message.set(e)}) db=db busy=workspace_restoring loaded=loaded save_generation=save_generation epoch=workspace_epoch message=message/>})}</Show><Show when=move||modal.get()=="run_details"><crate::run_capture::RunDetailsPanel snapshot=Callback::new(move|()|documents.with_untracked(|docs|stored_candidates.with_untracked(|plans|attachments.with_untracked(|assets|candidate.with_untracked(|current|workspace_snapshot(docs,active.get_untracked(),current.as_ref(),plans,assets,&workspace_name.get_untracked())))))) run_id=selected_run.get_untracked() epoch=workspace_epoch on_open_product=Callback::new(move|id:String|{if workspace_restoring.get_untracked(){return;}if let Some(index)=documents.with_untracked(|docs|docs.iter().position(|d|d.id==id)){active.set(index);panel.set("history");modal.set("");}})/></Show><Show when=move||modal.get()=="workspace"><crate::workspace_view::WorkspacePanel snapshot=Callback::new(move|()|documents.with_untracked(|docs|stored_candidates.with_untracked(|plans|attachments.with_untracked(|assets|candidate.with_untracked(|current|workspace_snapshot(docs,active.get_untracked(),current.as_ref(),plans,assets,&workspace_name.get_untracked())))))) validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=Callback::new(move|frame:collagene_core::workspace::Workspace|match restore_workspace_state(&frame){Ok(state)=>batch(||apply_restored.run(state)),Err(e)=>message.set(e)}) db=db busy=workspace_restoring loaded=loaded save_generation=save_generation message=message/></Show>
+                    <Show when=move||modal.get()!=""><div class="modal-backdrop"><section class="modal" class:alignment-modal=move||modal.get()=="alignments" class:read-review-modal=move||modal.get()=="read_review"||modal.get()=="run_event" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><div class="modal-heading"><h2 id="dialog-title">{move||if modal.get()=="variants"{"Variant source"}else if modal.get()=="read_alignments"{"Read alignments"}else if modal.get()=="digest_product"{"Open virtual digest fragment"}else if modal.get()=="crispr_product"{"Open checked sequence design"}else if modal.get()=="contig_archive"{"Record read assembly"}else if modal.get()=="saved_contig"{"Saved read assembly"}else if modal.get()=="read_review"{"Review sequencing differences"}else if modal.get()=="read_review_commit"{"Save read-review decisions"}else if modal.get()=="read_check_capture"{"Save sequencing check"}else if modal.get()=="assembly_finalize"{"Create assembly outputs"}else if modal.get()=="record_run"{"Keep reconstructed products"}else if modal.get()=="run_details"{"Recorded reconstruction"}else if modal.get()=="run_event"{"Recorded sequence version"}else if modal.get()=="alignments"{"Alignments"}else if modal.get()=="workspace"{"Workspace"}else if modal.get()=="oligos"{"Oligo table"}else if modal.get()=="fastq"{"Import FASTQ reads"}else if modal.get()=="import"{"Open a sequence"}else if modal.get()=="url"{"Import from a sequence source"}else if modal.get()=="feature"{"Edit annotation"}else if modal.get()=="document"{"Document settings"}else if molecule.with(|m|m.sequence.alphabet()==Alphabet::Protein){"Edit selected residues"}else{"Edit selected bases"}}</h2><button class="icon-button" aria-label="Close dialog" disabled=move||workspace_restoring.get() on:click=move|_|{if !workspace_restoring.get_untracked(){modal.set("");pending_finalize.set(None);pending_run_event.set(None);pending_read_check.set(None);pending_read_review.set(None);reviewed_check.set(None);review_seed.set(None);}}>"×"</button></div><Show when=move||!modal_error.get().is_empty()><p class="dialog-error" role="alert">{move||modal_error.get()}</p></Show><Show when=move||modal.get()=="digest_product">{move||pending_digest.get_untracked().map(|request|view!{<crate::digest_product::DigestOpenPanel request=request snapshot=contig_snapshot validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=contig_restore db=db busy=workspace_restoring loaded=loaded save_generation=save_generation epoch=workspace_epoch message=message/>})}</Show><Show when=move||modal.get()=="crispr_product">{move||pending_donor.get_untracked().map(|request|view!{<crate::crispr::DonorOpenPanel request=request snapshot=contig_snapshot validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=contig_restore db=db busy=workspace_restoring loaded=loaded save_generation=save_generation epoch=workspace_epoch message=message/>})}</Show><Show when=move||modal.get()=="contig_archive">{move||pending_assembly.get_untracked().map(|request|view!{<crate::contigs::ContigArchivePanel request=request snapshot=contig_snapshot validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=contig_restore db=db busy=workspace_restoring loaded=loaded save_generation=save_generation epoch=workspace_epoch message=message/>})}</Show><Show when=move||modal.get()=="saved_contig"><crate::contigs::SavedAssemblyPanel attachment_hash=inspected_assembly.get_untracked() snapshot=contig_snapshot epoch=workspace_epoch on_record=record_assembly on_navigate=navigate_read_call/></Show><Show when=move||modal.get()=="record_run">{move||last_plan.get_untracked().map(|(plan,_)|view!{<crate::run_capture::RunCapturePanel plan=plan preferred_bindings=last_plan_events.get_untracked().filter(|(revision,_)|last_plan.get_untracked().is_some_and(|(p,_)|verification::plan_revision(&p)==*revision)).map(|(_,bindings)|bindings).unwrap_or_default() snapshot=Callback::new(move|()|documents.with_untracked(|docs|stored_candidates.with_untracked(|plans|attachments.with_untracked(|assets|candidate.with_untracked(|current|workspace_snapshot(docs,active.get_untracked(),current.as_ref(),plans,assets,&workspace_name.get_untracked())))))) validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=Callback::new(move|frame:collagene_core::workspace::Workspace|match restore_workspace_state(&frame){Ok(state)=>batch(||apply_restored.run(state)),Err(e)=>message.set(e)}) db=db busy=workspace_restoring loaded=loaded save_generation=save_generation epoch=workspace_epoch message=message/>})}</Show><Show when=move||modal.get()=="run_event">{move||pending_run_event.get().map(|snapshot|view!{<crate::run_event_view::RunEventPanel snapshot epoch=workspace_epoch on_fork=fork_run_event on_back=back_to_run/>})}</Show><Show when=move||modal.get()=="run_details"><crate::run_capture::RunDetailsPanel snapshot=Callback::new(move|()|documents.with_untracked(|docs|stored_candidates.with_untracked(|plans|attachments.with_untracked(|assets|candidate.with_untracked(|current|workspace_snapshot(docs,active.get_untracked(),current.as_ref(),plans,assets,&workspace_name.get_untracked())))))) run_id=selected_run.get_untracked() epoch=workspace_epoch on_open_event=open_run_event/></Show><Show when=move||modal.get()=="workspace"><crate::workspace_view::WorkspacePanel snapshot=Callback::new(move|()|documents.with_untracked(|docs|stored_candidates.with_untracked(|plans|attachments.with_untracked(|assets|candidate.with_untracked(|current|workspace_snapshot(docs,active.get_untracked(),current.as_ref(),plans,assets,&workspace_name.get_untracked())))))) validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=Callback::new(move|frame:collagene_core::workspace::Workspace|match restore_workspace_state(&frame){Ok(state)=>batch(||apply_restored.run(state)),Err(e)=>message.set(e)}) db=db busy=workspace_restoring loaded=loaded save_generation=save_generation message=message/></Show>
                         <Show when=move||modal.get()=="read_review">{move||reviewed_check.get().map(|hash|view!{<crate::read_review_view::ReadReviewPanel attachment_hash=hash reference=read_check_reference snapshot=contig_snapshot epoch=workspace_epoch on_commit=save_read_review on_read=navigate_read_call on_reference=navigate_check_reference event_available=primer_anchor_available attachment_available=read_check_attachment_available initial_request=review_seed.get_untracked()/>})}</Show>
                         <Show when=move||modal.get()=="read_review_commit">{move||pending_read_review.get().map(|pending|view!{<crate::read_review_capture::ReadReviewCapturePanel request=pending.request snapshot=read_review_snapshot validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=restore_read_review db busy=workspace_restoring loaded save_generation epoch=workspace_epoch message/>})}</Show>
                         <Show when=move||modal.get()=="read_check_capture">{move||pending_read_check.get().map(|request|view!{<crate::read_checks_view::ReadCheckCapturePanel request snapshot=read_check_snapshot validate=Callback::new(move|frame:collagene_core::workspace::Workspace|restore_workspace_state(&frame).map(|_|())) on_restore=restore_read_check db busy=workspace_restoring loaded save_generation epoch=workspace_epoch message/>})}</Show>

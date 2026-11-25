@@ -6,6 +6,42 @@ Each input role binds to a document ID, history event ID, and molecular revision
 
 The target is the active document's exact head event and must match the candidate's target revision. It is a comparison binding, not automatically a causal parent. Product history parents come from the operation's declared source references. Source heads, undo/redo navigation and active target remain unchanged. Opening an individual product document is a separate user action.
 
+## Inspect exact retained versions
+
+Run details offers **Open target version**, **Open source version** and **Open
+product version**. Each action carries the run ID, recorded role, exact
+document/event/revision binding and opening workspace epoch. The host resolves
+that role against the retained run again; equal DNA in another event or document
+is not a substitute. Target/input/product role membership is checked separately
+from content equality, including explicit input IDs and product step indexes.
+
+The version opens in a read-only sequence/map viewer with coordinate selection
+and annotation navigation. It reuses the existing virtual reference canvas rather
+than constructing a fake design plan or running a new scientific assessment.
+Opening or returning to the run changes no document head, active sequence,
+history edge, Undo/Redo stack or recorded status. The head notice describes the
+state when this frozen snapshot opened; exact IDs remain available in Details.
+
+**Fork editable copy** is a separate explicit action. The host checks the live
+epoch and displayed request, freshly resolves run membership, then uses the
+existing `DocumentHistory::fork_event`. The new document records the exact selected
+event as its parent; all original heads, assets and candidates remain retained.
+Workspace/document budgets are checked before publishing the new document. Other
+unfinished primer/assembly drafts are preserved. Forking copies no current
+verification authority and does not promote imported physical descriptors to
+fresh reconstruction evidence.
+
+`web::run_event_model` contains the native-testable resolver/fork operation.
+Borrowed model/count/byte preflight precedes hashing and run parsing; the snapshot
+clones only the selected bounded molecule. The controller accepts supported plan
+input IDs, including spaces/Unicode, without imposing document-ID syntax on them.
+Native fixtures use real recorded PCR runs, later edit/revert events with equal
+DNA, role/alias mismatches, missing records and fork parent/rollback checks.
+Browser acceptance remains deferred; the existing browser scripts below were not
+run for this connection.
+
+## Recording and replay authority
+
 Recording locks workspace editing and advances the autosave generation before awaiting a worker. Before committing, the browser checks the complete workspace fingerprint, the workspace epoch, dialog lifetime, the worker response identity, and the new workspace's UI restoration validity. It encodes both workspaces, checks the original snapshot again, then replaces IndexedDB current and recovery slots in one transaction. Reconstruction, stale-state, validation or transaction errors leave the original workspace installed. The recovery slot contains the pre-recording workspace.
 
 The run details interface opens with **Recorded history · unverified on opening**. Historical status and engine strings are never current verification authority, including after archive import and browser reload. **Replay cloning run** checks the retained exact source events and reconstructs the plan using the current worker. The resulting evidence belongs to this session and is discarded when the workspace epoch changes. Responses after dialog unmount or source snapshot changes are ignored. **Download run replay JSON** checks the snapshot again and uses a streaming 8 MiB JSON limit. Replay reports compare the current engine, product identities and status with the recorded assessment. Source-event integrity and deterministic reconstruction do not establish physical reagent provenance.

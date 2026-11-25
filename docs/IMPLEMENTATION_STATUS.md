@@ -14,6 +14,29 @@ is postponed until the rest of the software is implemented. Existing modules are
 retained; no more alignment/index features or integration are scheduled now.
 Browser checks remain deferred and compiler checks run alongside coding.
 
+## Exact versions from saved cloning runs
+
+Saved runs now offer exact target/source/product-version navigation. The host
+re-resolves the requested run role and document/event/revision binding, then opens
+a frozen read-only sequence/map view using the shared reference canvas. Opening
+and returning to the run do not rewind heads, create documents or restore a
+positive assessment. The current-head notice is explicitly the state at opening.
+
+Fork editable copy is separate: the host rechecks epoch, displayed request and run
+membership, calls the existing exact-event fork operation and validates capacity
+before publishing only the new document/active selection. Original heads, recorded
+assessments, candidate data and unfinished primer/assembly drafts are preserved.
+Document-ID syntax is not imposed on otherwise valid Unicode/spaced plan input IDs.
+
+Forty native web cases passed, including three new real recorded-run fixture
+groups for all roles, later edit/revert events with equal DNA, alias/missing-event
+rejection and explicit fork ancestry/rollback. The final web/analysis-worker WASM
+check passed. Worker51, candidate11, plan9, science-14, archive1 and MCP136 remain
+unchanged. No browser checks or full preview rebuild ran for this connection;
+port8082 retains the last successful primer/mismatch snapshot below. Ordinary
+pairwise evidence/navigation, integrated trace review, remaining cloning/editor
+work and portable delivery remain active. [Run UI contract](RUN_LINEAGE_UI.md).
+
 ## Primer-led reference outputs
 
 Mismatch-PCR now retains the submitted named pair and exact source/viewed-reference

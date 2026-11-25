@@ -286,7 +286,7 @@ pub fn AssemblyProductView(
                 <p>{format!("Final step {} · {} bases · {:?} · {} annotations",s.plan.steps.len(),product.sequence.len(),product.topology,product.features.len())}</p>
                 {(s.report.status==Status::Invalid).then(||view!{<p class="assembly-product-status" role="alert">"The plan/independent target was not accepted. The actual final reconstructed DNA is shown for diagnosis; it must not be mistaken for the intended target."</p>})}
                 {(s.report.status==Status::Incomplete).then(||view!{<p class="helper">"Reconstruction is incomplete under the declared model. This reference view does not resolve its missing evidence or assumptions."</p>})}
-                <ProductCanvas product=product identity=product_identity current=current on_message=Callback::new(move|text|status.set(text))/>
+                <ReferenceCanvas product=product identity=product_identity current=current on_message=Callback::new(move|text|status.set(text))/>
                 <button class="button secondary" disabled=move||!current.get() on:click=open>"Open reconstructed product reference"</button>
             </div>}
         })}else{None})}
@@ -349,7 +349,7 @@ enum Mode {
     Split,
 }
 #[component]
-fn ProductCanvas(
+pub(crate) fn ReferenceCanvas(
     product: Molecule,
     identity: String,
     current: Memo<bool>,
@@ -486,9 +486,7 @@ fn ProductCanvas(
                 .parse::<usize>()
                 .map_err(|_| "End must be a one-based inclusive coordinate")?;
             if a >= b || b > source.with_value(|source| source.sequence.len()) {
-                return Err(
-                    "Choose a nonempty interval within the actual reconstructed product.".into(),
-                );
+                return Err("Choose a nonempty interval within the displayed reference.".into());
             }
             Ok((a, b))
         })();
@@ -509,17 +507,17 @@ fn ProductCanvas(
         );
     let restriction_visible = RwSignal::new(false);
     view! {<div class="assembly-product-stage">
-        <div class="assembly-product-controls" role="group" aria-label="Reconstructed product view">
+        <div class="assembly-product-controls" role="group" aria-label="Read-only reference view">
             <button class="text-tool" aria-pressed=move||(mode.get()==Mode::Sequence).to_string() on:click=move|_|mode.set(Mode::Sequence)>"Sequence"</button>
             <button class="text-tool" aria-pressed=move||(mode.get()==Mode::Map).to_string() on:click=move|_|mode.set(Mode::Map)>"Map"</button>
             <button class="text-tool" aria-pressed=move||(mode.get()==Mode::Split).to_string() on:click=move|_|mode.set(Mode::Split)>"Split"</button>
-            <label>"Actual product start"<input type="number" min="1" aria-label="Reconstructed product start" prop:value=move||start.get() on:input=move|event|start.set(event_target_value(&event))/></label>
-            <label>"End (inclusive)"<input type="number" min="1" aria-label="Reconstructed product end" prop:value=move||end.get() on:input=move|event|end.set(event_target_value(&event))/></label>
-            <button class="text-tool" on:click=navigate>"Show actual interval"</button>
+            <label>"Reference start"<input type="number" min="1" aria-label="Reference start" prop:value=move||start.get() on:input=move|event|start.set(event_target_value(&event))/></label>
+            <label>"End (inclusive)"<input type="number" min="1" aria-label="Reference end" prop:value=move||end.get() on:input=move|event|end.set(event_target_value(&event))/></label>
+            <button class="text-tool" on:click=navigate>"Show interval"</button>
             <button class="text-tool" on:click=move|_|{selected_feature.set(None);regions.set(None);selection.set(None);}>"Clear highlight"</button>
-            <button class="text-tool" on:click=move|_|features_open.update(|value|*value=!*value)>"Browse product annotations"</button>
+            <button class="text-tool" on:click=move|_|features_open.update(|value|*value=!*value)>"Browse annotations"</button>
         </div>
-        <p class="helper">"Read-only reconstructed snapshot. Select bases or use map, coordinates and annotations to navigate; open a separate reference document to edit. Coordinates refer to actual final DNA, even when the intended target differs."</p>
+        <p class="helper">"Read-only reference snapshot. Select bases or use the map, coordinates and annotations to navigate. Coordinates describe this displayed version; editing requires a separate document copy."</p>
         <div class="assembly-product-map" hidden=move||mode.get()==Mode::Sequence>
             <div class="map-controls"><button class="text-tool" on:click=move|_|if let Some(map)=renderer.get_value(){map.zoom(1./1.15);}>"Zoom out"</button><button class="text-tool" on:click=move|_|if let Some(map)=renderer.get_value(){map.reset();}>"Fit map"</button><button class="text-tool" on:click=move|_|if let Some(map)=renderer.get_value(){map.zoom(1.15);}>"Zoom in"</button>
                 <button class="text-tool" aria-pressed=move||map_select.get().to_string() on:click=move|_|{map_select.set(true);if let Some(map)=renderer.get_value(){map.set_selection_mode(true);}}>"Select map range"</button>
@@ -527,7 +525,7 @@ fn ProductCanvas(
             </div>
             <p role="status">{move||map_error.get()}</p>
             <div class="map-stage" style="height:400px;min-height:260px;position:relative">
-                <canvas node_ref=canvas aria-label="Actual reconstructed product map; drag to rotate or select, click annotations to inspect" style="width:100%;height:100%;display:block"
+                <canvas node_ref=canvas aria-label="Read-only reference map; drag to rotate or select, click annotations to inspect" style="width:100%;height:100%;display:block"
                     on:pointerdown=move|event:web_sys::PointerEvent|{if !current.get_untracked()||event.button()!=0{return;}if let Some(canvas)=canvas.get(){let _=canvas.set_pointer_capture(event.pointer_id());}if let Some(map)=renderer.get_value(){map.pointer_down(event.client_x()as f64,event.client_y()as f64);}}
                     on:pointermove=move|event:web_sys::PointerEvent|if current.get_untracked(){if let Some(map)=renderer.get_value(){map.pointer_move(event.client_x()as f64,event.client_y()as f64);}}
                     on:pointerup=move|event:web_sys::PointerEvent|{if let Some(map)=renderer.get_value(){if current.get_untracked(){if let Some(hit)=map.pointer_up(event.client_x()as f64,event.client_y()as f64){if let Some(feature)=hit.feature_index{show_feature.run(feature);}else{selected_feature.set(None);selection.set(if hit.spans.len()==1{Some(hit.span)}else{None});regions.set(Some((revision.get_value(),hit.spans)));}}}else{map.pointer_cancel();}}if let Some(canvas)=canvas.get(){let _=canvas.release_pointer_capture(event.pointer_id());}}
@@ -541,18 +539,18 @@ fn ProductCanvas(
         <div class="assembly-product-sequence" hidden=move||mode.get()==Mode::Map>
             <SequenceView molecule=molecule selection=selection selected_feature=selected_feature highlighted_spans=highlighted search_regions=regions
                 on_show_features=Callback::new(move|()|features_open.set(true)) identity=view_identity locked=locked read_only=true shared_restrictions=false
-                on_edit=Callback::new(|_|Err("This reconstructed snapshot is read-only; open a separate reference document to edit.".into()))
+                on_edit=Callback::new(|_|Err("This reference snapshot is read-only; fork or open a separate document copy to edit.".into()))
                 on_history=Callback::new(|_|Err("Source history is unchanged by this read-only review.".into())) on_message=on_message
                 restriction_sites=no_restrictions restriction_visible=restriction_visible
                 on_show_restrictions=Callback::new(move|()|on_message.run("Restriction choices belong to the source/assembly preparation; this snapshot does not run an independent restriction scan.".into()))/>
         </div>
-        <Show when=move||features_open.get()><section class="assembly-product-features" aria-label="Reconstructed product annotations">
-            <h3>"Actual product annotations"</h3>
+        <Show when=move||features_open.get()><section class="assembly-product-features" aria-label="Reference annotations">
+            <h3>"Reference annotations"</h3>
             <p>{source.with_value(|source|format!("{} annotations retained; projected or uncertain features may require review.",source.features.len()))}</p>
             <button class="text-tool" disabled=move||feature_page.get()==0 on:click=move|_|feature_page.update(|page|*page=page.saturating_sub(1))>"Previous annotations"</button>
             <button class="text-tool" disabled=move||source.with_value(|source|(feature_page.get()+1)*50>=source.features.len()) on:click=move|_|feature_page.update(|page|*page+=1)>"Next annotations"</button>
             <ul>{move||source.with_value(|source|source.features.iter().enumerate().skip(feature_page.get()*50).take(50).map(|(index,feature)|view!{<li><button class="text-tool" aria-pressed=move||(selected_feature.get()==Some(index)).to_string() on:click=move|_|show_feature.run(index)>{format!("{} · {}{}",clip(feature.label(),160),clip(&feature.kind,48),if feature.needs_review{" · review required"}else{""})}</button></li>}).collect_view())}</ul>
-            {move||selected_feature.get().and_then(|index|source.with_value(|source|source.features.get(index).map(|feature|view!{<article class="annotation-details"><h4>{clip(feature.label(),256)}</h4><p>{format!("Original product feature index {} · {} · review {}",index,clip(&feature.kind,80),feature.needs_review)}</p><dl>{feature.qualifiers.iter().take(30).map(|(key,value)|view!{<dt>{clip(key,80)}</dt><dd>{value.as_deref().map(|value|clip(value,512)).unwrap_or_else(||"present".into())}</dd>}).collect_view()}</dl><p class="helper">"Bounded qualifier preview; the opened native reference retains complete annotations and source evidence. Partial/fuzzy/ordered drawing bounds do not establish a complete feature sequence; unresolved locations are not placed."</p></article>})))}
+            {move||selected_feature.get().and_then(|index|source.with_value(|source|source.features.get(index).map(|feature|view!{<article class="annotation-details"><h4>{clip(feature.label(),256)}</h4><p>{format!("Reference feature index {} · {} · review {}",index,clip(&feature.kind,80),feature.needs_review)}</p><dl>{feature.qualifiers.iter().take(30).map(|(key,value)|view!{<dt>{clip(key,80)}</dt><dd>{value.as_deref().map(|value|clip(value,512)).unwrap_or_else(||"present".into())}</dd>}).collect_view()}</dl><p class="helper">"Bounded qualifier preview; the opened native reference retains complete annotations and source evidence. Partial/fuzzy/ordered drawing bounds do not establish a complete feature sequence; unresolved locations are not placed."</p></article>})))}
         </section></Show>
-    </div>}
+    </div>}.into_any()
 }

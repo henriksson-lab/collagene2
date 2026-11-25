@@ -1,6 +1,7 @@
 //! Explicit event bindings for retained, replayable cloning products.
 use crate::{
     app::{download, encode_workspace},
+    run_event_model::{Request as EventRequest, Role},
     storage, worker,
 };
 use collagene_core::{
@@ -280,8 +281,9 @@ pub fn RunDetailsPanel(
     snapshot: Callback<(), Result<Workspace, String>>,
     run_id: String,
     epoch: RwSignal<u64>,
-    on_open_product: Callback<String>,
+    on_open_event: Callback<EventRequest, Result<(), String>>,
 ) -> impl IntoView {
+    let opened_epoch = epoch.get_untracked();
     let frame = snapshot.run(());
     let record =
         frame.and_then(|frame| run_lineage::load_run(&frame, &run_id).map_err(|e| e.to_string()));
@@ -293,6 +295,23 @@ pub fn RunDetailsPanel(
     let generation = RwSignal::new(0u64);
     let product_page = RwSignal::new(0usize);
     let input_page = RwSignal::new(0usize);
+    let open_event = Callback::new(move |(role, binding): (Role, EventBinding)| {
+        if epoch.get_untracked() != opened_epoch {
+            status.set("The workspace changed; reopen this cloning run before viewing its retained versions.".into());
+            return;
+        }
+        // Bind navigation to the stored role/event, never a matching current head.
+        // The host resolves membership and retained source content again before
+        // opening its read-only view; navigation does not replay this assessment.
+        if let Err(error) = on_open_event.run(EventRequest {
+            run_id: run_id.get_value(),
+            binding,
+            epoch: opened_epoch,
+            role,
+        }) {
+            status.set(error);
+        }
+    });
     let alive = Arc::new(AtomicBool::new(true));
     let cleanup = alive.clone();
     on_cleanup(move || cleanup.store(false, Ordering::Relaxed));
@@ -415,16 +434,25 @@ pub fn RunDetailsPanel(
                 Err(error)=>view!{<p role="alert">{error}</p>}.into_any(),
                 Ok(record)=>{
                     let count=record.products.len();let input_count=record.inputs.len();
+                    let target=record.target.clone();
                     view!{<h3>{record.plan.name.clone()}</h3>
                         <p>{format!("Run {} · recorded {:?} · engine {}",record.run_id,record.assessment.status,record.assessment.engine_version)}</p>
                         <p class="run-target-binding">{format!("Independent target: document {} · event {} · revision {}",record.target.document_id,record.target.event_id,record.target.revision)}</p>
+                        <button class="button secondary" disabled=move||epoch.get()!=opened_epoch on:click=move|_|open_event.run((Role::Target,target.clone()))>"Open target version"</button>
                         <h4>"Source bindings"</h4>
-                        <div class="run-retained-inputs">{record.inputs.into_iter().skip(input_page.get()*25).take(25).map(|input|view!{<p>{format!("{}: document {} · event {} · revision {}",input.input_id,input.event.document_id,input.event.event_id,input.event.revision)}</p>}).collect_view()}</div>
+                        <div class="run-retained-inputs">{record.inputs.into_iter().skip(input_page.get()*25).take(25).map(|input|{
+                            let binding=input.event.clone();
+                            let input_id=input.input_id.clone();
+                            view!{<div class="run-retained-input"><p>{format!("{}: document {} · event {} · revision {}",input.input_id,input.event.document_id,input.event.event_id,input.event.revision)}</p>
+                                <button class="button secondary" disabled=move||epoch.get()!=opened_epoch on:click=move|_|open_event.run((Role::Input{input_id:input_id.clone()},binding.clone()))>"Open source version"</button>
+                            </div>}
+                        }).collect_view()}</div>
                         <button class="button secondary" disabled=move||input_page.get()==0 on:click=move|_|input_page.update(|p|*p=p.saturating_sub(1))>"Previous retained inputs"</button>
                         <button class="button secondary" disabled=move||{(input_page.get()+1)*25>=input_count} on:click=move|_|input_page.update(|p|*p+=1)>"Next retained inputs"</button>
                         <h4>"Reconstructed product steps"</h4>
                         <div class="run-products">{record.products.into_iter().skip(product_page.get()*25).take(25).map(|product|{
-                            let document=product.document_id.clone();
+                            let binding=EventBinding{document_id:product.document_id.clone(),event_id:product.event_id.clone(),revision:product.revision.clone()};
+                            let step_index=product.step_index;
                             let operation_details=record.plan.steps.get(product.step_index).map(crate::app::describe_step).unwrap_or_default();
                             let operation=record.plan.steps.get(product.step_index).map(|op|match op{
                                 collagene_core::verification::Operation::CatalogDigest{..}=>"Catalog-pinned digest",
@@ -449,7 +477,7 @@ pub fn RunDetailsPanel(
                                 <strong>{format!("Step {} · {operation}",product.step_index+1)}</strong>
                                 <details><summary>"Operation parameters and source references"</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">{operation_details}</pre></details>
                                 <p>{format!("Document {} · event {} · revision {}",product.document_id,product.event_id,product.revision)}</p>
-                                <button class="button secondary" on:click=move|_|on_open_product.run(document.clone())>"Open product document"</button>
+                                <button class="button secondary" disabled=move||epoch.get()!=opened_epoch on:click=move|_|open_event.run((Role::Product{step_index},binding.clone()))>"Open product version"</button>
                             </div>}
                         }).collect_view()}</div>
                         <button class="button secondary" disabled=move||product_page.get()==0 on:click=move|_|product_page.update(|p|*p=p.saturating_sub(1))>"Previous product steps"</button>

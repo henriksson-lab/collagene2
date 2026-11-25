@@ -599,8 +599,13 @@ Mismatch-PCR now has paged geometry/substitution review, fresh selected-referenc
 and optional oligo output, while standalone analyzed primers and ranked pairs can
 export CSV/TSV or retain collections. Worker51 appends the mismatch output request
 and result; no new chemistry operation or independent-target claim is introduced.
-The next connected history work is exact source/target-event navigation from saved
-cloning runs, reusing retained events without rewinding document heads.
+Saved cloning runs now open exact target/source/product events in a shared
+read-only reference viewer. Explicit forking retains the selected parent event
+without rewinding original heads or replacing unfinished drafts. Role membership,
+event identity and host epoch are checked separately from DNA equality. The next
+supporting review connections are complete ordinary pairwise comparison evidence
+and integrated reference/read/trace navigation, alongside the remaining core
+cloning/editor work. [Run UI contract](RUN_LINEAGE_UI.md).
 [Selected PCR outputs](PCR_OUTPUTS.md).
 
 The latest source-aware workflow reviews supersede older gap lists where those

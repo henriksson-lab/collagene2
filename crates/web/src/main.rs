@@ -78,6 +78,10 @@ mod restriction_map;
 mod restriction_view;
 #[cfg(target_arch = "wasm32")]
 mod run_capture;
+#[cfg(any(target_arch = "wasm32", test))]
+mod run_event_model;
+#[cfg(target_arch = "wasm32")]
+mod run_event_view;
 #[cfg(target_arch = "wasm32")]
 mod search_view;
 #[cfg(target_arch = "wasm32")]

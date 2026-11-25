@@ -13,6 +13,13 @@ review. ELN, inventory, organizational functions, OpenGel and further BAM/BAI
 work remain excluded or deferred. Benchling's external alignment engines are
 interaction references only; they are not proposed runtime dependencies.
 
+Subsequent implementation: saved runs now expose exact target/source/product
+version actions. A shared read-only reference viewer opens the retained event;
+explicit forking rechecks membership and preserves original document heads.
+The remaining-source-navigation assessment below records the original audit and
+is superseded for that connection by the [current run UI contract](RUN_LINEAGE_UI.md).
+Pairwise comparison and integrated trace-review recommendations remain active.
+
 ## What the public documentation establishes
 
 **Construct-owned review.** Benchling recommends attaching AB1 reads to the

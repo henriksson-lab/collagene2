@@ -14,6 +14,35 @@ is postponed until the rest of the software is implemented. Existing modules are
 retained; no more alignment/index features or integration are scheduled now.
 Browser checks remain deferred and compiler checks run alongside coding.
 
+## Parallel workflow review follow-up
+
+Three further official-document/source reviews cover
+[assembly](BENCHLING_ASSEMBLY_WORKFLOW_CHECK.md),
+[PCR/primers](BENCHLING_PCR_WORKFLOW_CHECK.md) and
+[editor/supporting work](BENCHLING_EDITOR_FOLLOWUP_CHECK.md).
+They distinguish implemented capabilities from actual remaining gaps, and documented
+Benchling interaction from recommendations. The plan now prioritizes reaction-setting
+persistence, connected source/preparation/junction review, synchronized primer/product
+overlays, annotation operations and genuine combinatorial source bins within the
+existing cloning-first queue. No local browser checks were performed.
+
+## Restriction selection and named sets
+
+The shared restriction scan now supports pinned inside/outside/crossing filters
+using either recognition bases or both strand-cut boundaries. Sequence, map and
+picker use the same scoped evidence. Site navigation preserves the pinned region;
+source changes invalidate it. Possible recognition, incomplete scans and unavailable
+cut geometry cannot become exact zero/one-site claims after filtering.
+
+Named enzyme sets persist in native workspaces with ordered choices, stable catalog
+IDs and pinned geometry. Missing/changed definitions prevent loading; harmless
+catalog changes remain visible. Saving/deleting sets changes attachments only.
+[Semantics and persistence](RESTRICTION_SELECTION.md).
+
+Validation: 20 focused native region/preset fixtures and 43 native web tests passed;
+the web WASM compile passed in the shared cache. No browser checks or preview
+publication were performed for this checkpoint.
+
 ## Annotated reference transfer
 
 The editor's internal reference clipboard copies exact selected regions or

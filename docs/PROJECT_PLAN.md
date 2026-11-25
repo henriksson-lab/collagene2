@@ -72,6 +72,43 @@ execution priority, not the full goal's completion criteria. Browser checks stay
 deferred until all in-scope implementation is complete, and compiler checks run
 in the background while coding continues.
 
+## Workflow review follow-up — 25 November 2026
+
+The user's requested parallel checks of official Benchling workflows are recorded
+in [assembly](BENCHLING_ASSEMBLY_WORKFLOW_CHECK.md),
+[PCR/primers](BENCHLING_PCR_WORKFLOW_CHECK.md) and
+[editor/supporting workflows](BENCHLING_EDITOR_FOLLOWUP_CHECK.md).
+Use documented interaction patterns as references while keeping our document/workspace
+organization simple. These are static source/documentation comparisons; usability
+acceptance remains deferred, and undocumented Benchling behavior is not a requirement.
+
+Recent implementation closes annotated reference transfer, saved paginated pairwise
+comparisons, exact historical-event navigation, selection-relative restriction
+filtering and persistent named enzyme choices. Older review tables describing those
+as absent are historical. Continue the existing cloning-first queue through these
+concrete connections:
+
+- Preserve editable Golden Gate reaction pool/substrate/topology/search settings in
+  assembly drafts; reopen settings without restoring stale successful evidence.
+- Keep ordinary source capture, preparation, junction/product review and named outputs
+  continuous in the existing assembly dock. Preserve explicit Apply and selective
+  regeneration rather than silently replacing intentional primers/edits.
+- Connect the applied primer pair, selected binding placements and PCR geometry to
+  synchronized source overlays. Improve domain/tail boundary editing and local failure
+  recovery using the existing primer model and native checks.
+- Complete annotation list/bulk operations and direct source-linked translation/CDS
+  workflows; then improve retained diagnostic digest and comparison presentation.
+- After ordinary designs, implement genuine alternative source bins and per-combination
+  output identity over the shared compiler. Reaction-product enumeration alone does
+  not complete combinatorial cloning. Inspectable fusion-end proposals and intentional
+  domestication remain distinct planned work.
+
+No new wizard, parser, primer engine or export engine is implied by these findings.
+Broader kinetic/mixture modeling mentioned in research is not an added delivery gate.
+Keep the current scientific contracts, independent target checking, source-event
+identity, uncertainty and explicit resource limits. ELN, inventory and organizational
+workflow remain excluded; deferred tools and browser checks stay deferred.
+
 ## Scope constraints
 
 Collagene 2 is licensed under [MIT](../LICENSE). Implement its application, UI, cloning algorithms and verification engine independently. Do not fork, copy, translate or borrow application/scientific code from the surveyed cloning projects, or treat their output as an authoritative correctness oracle.

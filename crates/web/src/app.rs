@@ -950,10 +950,32 @@ pub fn App() -> impl IntoView {
             format!("{}:{}:{}", workspace_epoch.get(), doc.id, doc.head_event())
         })
     });
+    let restriction_selection = Memo::new(move |_| {
+        molecule.with(|m| {
+            if let Some(index) = selected_feature.get() {
+                return m.features.get(index).and_then(|feature| {
+                    collagene_core::restriction_selection::footprint(
+                        &feature.location,
+                        m.sequence.len(),
+                    )
+                    .ok()
+                });
+            }
+            if let Some((revision, spans)) = search_regions.get() {
+                if revision == molecule_revision.get() && !spans.is_empty() {
+                    return Some(spans);
+                }
+            }
+            selection.get().and_then(|(start, end)| {
+                (start < end && end <= m.sequence.len()).then_some(vec![(start, end)])
+            })
+        })
+    });
     let restrictions = crate::restriction_view::use_restrictions(
         molecule,
         restriction_identity,
         Memo::new(move |_| workspace_restoring.get()),
+        restriction_selection,
     );
     let navigate_restriction = Callback::new(
         move |site: collagene_core::restriction_inspection::InspectionSite| {
@@ -3831,6 +3853,49 @@ pub fn App() -> impl IntoView {
             })
         })
     });
+    let saved_enzyme_sets = Memo::new(move |_| {
+        let frame = workspace_snapshot(
+            &documents.get(),
+            active.get_untracked(),
+            candidate.get_untracked().as_ref(),
+            &stored_candidates.get_untracked(),
+            &attachments.get(),
+            &workspace_name.get_untracked(),
+        );
+        match frame
+            .and_then(|frame| collagene_core::enzyme_sets::list(&frame).map_err(|e| e.to_string()))
+        {
+            Ok(sets) => sets,
+            Err(error) => {
+                message.set(format!("Saved enzyme sets need attention: {error}"));
+                Vec::new()
+            }
+        }
+    });
+    let save_enzyme_set = Callback::new(
+        move |set: collagene_core::enzyme_sets::Set| -> Result<(), String> {
+            if workspace_restoring.get_untracked() {
+                return Err("Wait for the workspace update to finish.".into());
+            }
+            let (staged, _) = collagene_core::enzyme_sets::store(&contig_snapshot.run(())?, &set)
+                .map_err(|e| e.to_string())?;
+            staged.validate().map_err(|e| e.to_string())?;
+            attachments.set(staged.attachments);
+            message.set(format!("Saved enzyme set: {}", set.name));
+            Ok(())
+        },
+    );
+    let delete_enzyme_set = Callback::new(move |hash: String| -> Result<(), String> {
+        if workspace_restoring.get_untracked() {
+            return Err("Wait for the workspace update to finish.".into());
+        }
+        let staged = collagene_core::enzyme_sets::delete(&contig_snapshot.run(())?, &hash)
+            .map_err(|e| e.to_string())?;
+        staged.validate().map_err(|e| e.to_string())?;
+        attachments.set(staged.attachments);
+        message.set("Deleted saved enzyme set.".into());
+        Ok(())
+    });
     let resolve_comparison_source = Callback::new(
         move |event: collagene_core::run_lineage::EventBinding| -> Result<Molecule, String> {
             documents.with_untracked(|docs| {
@@ -4616,7 +4681,7 @@ pub fn App() -> impl IntoView {
                                     <div class="legend"><Show when=move||restrictions.visible.get()><span><i style="background:#8b5ca4"></i>"RE recognition"</span><span><i style="background:#2563a6"></i>"Top cut"</span><span><i style="background:#b45c19"></i>"Bottom cut"</span></Show><span><i style="background:#2b8775"></i>"Coding sequence"</span><span><i style="background:#d6933b"></i>"Promoter"</span><span><i style="background:#666bb3"></i>"Origin"</span></div>
                                 </section>
                                 <aside class="inspector"><crate::desktop_shell::InspectorNavigation panel=panel on_assemble=Callback::new(move|()|assembly_visible.set(true)) on_auxiliary=Callback::new(move|action|{use crate::desktop_shell::AuxiliaryAction;modal_error.set(String::new());match action{AuxiliaryAction::ImportUrl=>modal.set("url"),AuxiliaryAction::Alignments=>{pending_alignment.set(None);modal.set("alignments");},AuxiliaryAction::Oligos=>{existing_oligo.set(None);pending_oligo.set(None);modal.set("oligos");}}})/>
-                                    <Show when=move||panel.get()=="restriction"><crate::restriction_view::RestrictionPanel state=restrictions on_navigate=navigate_restriction/></Show>
+                                    <Show when=move||panel.get()=="restriction"><crate::restriction_view::RestrictionPanel state=restrictions on_navigate=navigate_restriction saved=saved_enzyme_sets on_save=save_enzyme_set on_delete=delete_enzyme_set/></Show>
                                     <Show when=move||panel.get()=="library"><div class="inspector-content"><crate::feature_tools::FeatureLibraryPanel molecule=molecule selected_feature=selected_feature libraries=libraries on_keep=keep_library on_commit=commit_annotations selection=selection/></div></Show>
                                     <Show when=move||panel.get()=="annotation_files"><div class="inspector-content"><crate::feature_tools::AnnotationFilesPanel molecule=molecule source=annotation_source format=annotation_format on_commit=commit_annotations selection=selection selected_feature=selected_feature/></div></Show>
                                     <Show when=move||panel.get()=="history"><div class="inspector-content"><crate::variant_source_library::VariantSourceLibrary entries=Memo::new(move|_|attachments.with(|assets|assets.iter().filter_map(|(hash,asset)|collagene_core::variants_archive::inspect(asset).ok().map(|info|(hash.clone(),info))).collect())) locked=Memo::new(move|_|workspace_restoring.get()) on_open=Callback::new(move|hash:String|{if workspace_restoring.get_untracked(){return;}let value=attachments.with_untracked(|assets|assets.get(&hash).and_then(|asset|collagene_core::variants_archive::inspect(asset).ok().map(|info|(std::sync::Arc::new(asset.bytes.clone()),info.format,info.name))));if let Some(value)=value{pending_variants.set(Some(value));modal_error.set(String::new());modal.set("variants");}}) on_remove=Callback::new(move|hash:String|{if !workspace_restoring.get_untracked(){attachments.update(|assets|{if assets.get(&hash).is_some_and(|asset|collagene_core::variants_archive::inspect(asset).is_ok()){assets.remove(&hash);}});}})/><crate::read_source_library::ReadSourceLibrary entries=Memo::new(move|_|attachments.with(|assets|assets.iter().filter_map(|(hash,asset)|collagene_core::read_alignment_archive::inspect(asset).ok().map(|info|(hash.clone(),info))).collect())) locked=Memo::new(move|_|workspace_restoring.get()) on_open=Callback::new(move|hash:String|{if workspace_restoring.get_untracked(){return;}let source=attachments.with_untracked(|assets|assets.get(&hash).and_then(|asset|collagene_core::read_alignment_archive::inspect(asset).ok().map(|info|(std::sync::Arc::new(asset.bytes.clone()),match info.format{collagene_core::read_alignment_store::Format::Sam=>collagene_core::read_alignment_session::FileFormat::Sam,collagene_core::read_alignment_store::Format::Bam=>collagene_core::read_alignment_session::FileFormat::Bam},info.name))));if let Some(source)=source{pending_read_alignment.set(Some(source));modal_error.set(String::new());modal.set("read_alignments");}}) on_remove=Callback::new(move|hash:String|{if !workspace_restoring.get_untracked(){attachments.update(|assets|{if assets.get(&hash).is_some_and(|a|collagene_core::read_alignment_archive::inspect(a).is_ok()){assets.remove(&hash);}});}})/><crate::history_view::HistoryPanel molecule=molecule events=Memo::new_owning(move|_|(documents.with(|docs|docs[active.get()].summaries()),true)) current_event=Memo::new(move|_|documents.with(|docs|docs[active.get()].head_event().to_string())) navigation=Memo::new(move|_|documents.with(|docs|docs[active.get()].navigation_event_ids())) external_events=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().filter(|(i,_)|*i!=active.get()).flat_map(|(_,doc)|{let label=format!("[{}] {}",doc.id,doc.molecule.name.chars().take(100).collect::<String>());doc.summaries().into_iter().map(move|e|(e.event_id,label.clone(),e.revision))}).collect())) on_restore_revision=restore_revision on_fork_revision=fork_revision candidates=Memo::new(move|_|{let current=candidate.get().map(|c|c.plan_revision);stored_candidates.with(|values|values.iter().map(|c|(c.plan_revision.clone(),c.plan.name.clone(),c.plan.target_revision.clone(),current.as_ref()==Some(&c.plan_revision))).collect())}) on_open_candidate=Callback::new(move|revision:String|{if workspace_restoring.get_untracked(){return;}if let Some(value)=stored_candidates.with_untracked(|values|values.iter().find(|c|c.plan_revision==revision).cloned()){candidate_events.set(None);candidate.set(Some(value));plan_report.set(None);last_plan.set(None);last_plan_target.set(None);plan_generation.update(|g|*g=g.wrapping_add(1));panel.set("plan");}}) on_remove_candidate=Callback::new(move|revision:String|{if workspace_restoring.get_untracked(){return;}batch(||{if candidate.with_untracked(|c|c.as_ref().is_some_and(|c|c.plan_revision==revision)){candidate_events.set(None);candidate.set(None);plan_report.set(None);last_plan.set(None);last_plan_target.set(None);plan_generation.update(|g|*g=g.wrapping_add(1));}stored_candidates.update(|values|values.retain(|c|c.plan_revision!=revision));});}) collections=Memo::new(move|_|oligo_tables.with(|tables|tables.iter().enumerate().map(|(i,t)|(i,format!("Oligo collection {}",t.source_blake3.chars().take(12).collect::<String>()),t.records.len())).collect())) on_open_oligos=Callback::new(move|index:usize|{if let Some(table)=oligo_tables.with_untracked(|tables|tables.get(index).cloned()){existing_oligo.set(Some(table.as_ref().clone()));pending_oligo.set(None);modal_error.set(String::new());modal.set("oligos");}})/><Show when=move||!recorded_runs.with(|runs|runs.is_empty())><section class="recorded-runs"><h3>"Recorded reconstructions"</h3><p class="helper">"Saved computational history. Each record needs a fresh replay before its verification can be used."</p>{move||recorded_runs.with(|runs|runs.iter().skip(run_page.get()*20).take(20).map(|run|{let id=run.run_id.clone();view!{<article class="run-product"><strong>{run.plan_name.clone()}</strong><p class="helper">{format!("{} products · recorded {:?} · {} · unverified",run.products.len(),run.recorded_status,run.recorded_engine)}</p><button class="button secondary" on:click=move|_|{selected_run.set(id.clone());modal_error.set(String::new());modal.set("run_details");}>"View cloning run"</button></article>}}).collect_view())}<div class="pagination"><button class="button secondary" disabled=move||run_page.get()==0 on:click=move|_|run_page.update(|p|*p=p.saturating_sub(1))>"Previous records"</button><button class="button secondary" disabled=move||{(run_page.get()+1)*20>=recorded_runs.with(|r|r.len())} on:click=move|_|run_page.update(|p|*p+=1)>"Next records"</button></div></section></Show><Show when=move||!saved_assemblies.with(|rows|rows.is_empty())><section class="saved-assemblies"><h3>"Saved read assemblies"</h3><p class="helper">"Historical evidence only; replay exact retained reads before using a consensus."</p>{move||saved_assemblies.with(|rows|rows.iter().skip(assembly_page.get()*20).take(20).map(|row|{let hash=row.attachment_hash.clone();view!{<article><p>{format!("{} reads · {} contigs · recorded complete {} · {}",row.read_count,row.contig_count,row.recorded_complete,row.engine_version)}</p><button class="button secondary" on:click=move|_|{inspected_assembly.set(hash.clone());modal_error.set(String::new());modal.set("saved_contig");}>"View saved read assembly"</button></article>}}).collect_view())}<button class="button secondary" disabled=move||assembly_page.get()==0 on:click=move|_|assembly_page.update(|p|*p=p.saturating_sub(1))>"Previous saved assemblies"</button><button class="button secondary" disabled=move||{(assembly_page.get()+1)*20>=saved_assemblies.with(Vec::len)} on:click=move|_|assembly_page.update(|p|*p+=1)>"Next saved assemblies"</button></section></Show></div></Show>

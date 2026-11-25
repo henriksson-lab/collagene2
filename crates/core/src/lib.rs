@@ -9,6 +9,7 @@ pub mod model;
 pub mod protocol;
 pub mod recombination;
 pub mod restriction_inspection;
+pub mod restriction_selection;
 pub mod transfer;
 pub mod verification;
 
@@ -156,3 +157,5 @@ pub mod golden_gate_reaction;
 pub mod pairwise_history;
 
 pub mod reference_transfer;
+
+pub mod enzyme_sets;

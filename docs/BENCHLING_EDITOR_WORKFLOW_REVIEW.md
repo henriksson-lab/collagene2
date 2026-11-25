@@ -29,8 +29,19 @@ These are implementation observations, not claims that appearance, performance o
 | Circular overview | `app.rs` wires select-range versus rotate modes, zoom, annotation and restriction hit navigation into the map. `restriction_map.rs` draws recognition spans and separate strand-cut evidence, including circular coordinates. Visual rotation is separate from document reindexing. |
 | Restriction count filters | `restriction_view.rs` shares a source-bound scan between map, sequence and enzyme picker. Filters include 0, 1, 2, 3+ and uncertain/incomplete sites; incomplete or ambiguous scans do not establish an exact count. Its name/recognition search and count filter affect both picker and displayed overlay. |
 | Physical fragment selection | `digest.rs` supports fresh digest fragment navigation, paired restriction-boundary picking and assignment of a reconstructed fragment to assembly. `assembly_workspace.rs` supports keeping the outside of a circular selection. These are stronger existing connections than the older research document's inspector-only assessment. |
-| Clipboard | `clipboard.rs` handles Copy, reverse-complement Copy, Cut, replacement Paste and insertion Paste, with revision/selection guards across asynchronous browser permissions. It transfers text; paste calls the source's replacement operation. It does not carry source feature objects into the destination. Clipboard API access requires HTTPS or localhost; the existing edit dialogs remain a text-entry route on the HTTP preview. |
+| Clipboard | `clipboard.rs` handles Copy, reverse-complement Copy, Cut, replacement Paste and insertion Paste, with revision/selection guards across asynchronous browser permissions. It transfers text; paste calls the source's replacement operation. An additional internal annotated-reference clipboard now projects source features into the destination with an explicit preview; plain text remains text. Clipboard API access requires HTTPS or localhost; the existing edit dialogs remain a text-entry route on the HTTP preview. |
 | Annotation/document editing | `editors.rs` edits individual feature kind, exact/compound location and qualifiers and marks changed locations for review. Document controls cover topology, reverse complement and origin changes. `feature_tools.rs` supplies user-owned feature libraries and reviewable automatic annotation proposals. |
+
+## Implementation follow-up, 25 November 2026
+
+The first three recommendations below have now been implemented. Annotated internal
+reference transfer retains source-event ancestry and previews annotation projection
+([details](REFERENCE_TRANSFER.md)). Selection-relative restriction discovery pins
+exact range unions and separates recognition from strand-cut geometry; named enzyme
+sets retain catalog identity and refuse changed definitions
+([details](RESTRICTION_SELECTION.md)). These recommendations remain as research
+history, not the current missing-feature queue. Annotation list operations and
+editor-to-design continuity remain candidates for follow-up.
 
 ## Prioritized remaining connections
 

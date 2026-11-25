@@ -99,7 +99,7 @@ async fn discovery_explicit_keys_batch_release_and_portable_protocol_keep_one_pa
     });
     let c = ().serve(b).await.unwrap();
     let tools = c.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 147);
+    assert_eq!(tools.len(), collagene_mcp::CURRENT_TOOL_COUNT);
     let tool = tools
         .iter()
         .find(|tool| tool.name == "inspect_combinatorial_pool")

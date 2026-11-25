@@ -659,7 +659,7 @@ pub fn validate_matrix(matrix: &SelectedMatrix) -> Result<(), Error> {
 }
 /// Workspace validation establishes actual event ownership, including historical
 /// inputs, rather than accepting matching DNA/revision assertions as membership.
-pub(crate) fn resolve_event<'a>(
+pub fn resolve_event<'a>(
     workspace: &'a Workspace,
     event: &EventBinding,
 ) -> Result<&'a Molecule, Error> {

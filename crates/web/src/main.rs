@@ -25,6 +25,16 @@ mod assembly_draft_model;
 #[cfg(target_arch = "wasm32")]
 mod assembly_finalize;
 #[cfg(target_arch = "wasm32")]
+mod assembly_library_add_view;
+#[cfg(any(target_arch = "wasm32", test))]
+mod assembly_library_commit;
+#[cfg(target_arch = "wasm32")]
+mod assembly_library_history_view;
+#[cfg(any(target_arch = "wasm32", test))]
+mod assembly_library_topology;
+#[cfg(target_arch = "wasm32")]
+mod assembly_library_view;
+#[cfg(target_arch = "wasm32")]
 mod assembly_outputs;
 #[cfg(target_arch = "wasm32")]
 mod assembly_pool_view;

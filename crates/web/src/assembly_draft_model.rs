@@ -454,10 +454,19 @@ impl Draft {
     }
 }
 
+#[cfg(test)]
 pub fn encode(draft: &Draft) -> Result<Vec<u8>, String> {
     let stored = crate::assembly_alternatives::for_storage(draft)?;
+    encode_raw(&stored)
+}
+/// Encode current editable state without promoting working fields into saved rows.
+pub fn encode_raw(draft: &Draft) -> Result<Vec<u8>, String> {
+    if draft.version != 3 {
+        return Err("Raw assembly persistence requires draft version 3.".into());
+    }
+    draft.validate()?;
     let mut writer = Bounded { bytes: Vec::new() };
-    serde_json::to_writer(&mut writer, &stored).map_err(|e| e.to_string())?;
+    serde_json::to_writer(&mut writer, draft).map_err(|e| e.to_string())?;
     Ok(writer.bytes)
 }
 pub fn decode(bytes: &[u8]) -> Result<Draft, String> {

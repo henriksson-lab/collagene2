@@ -32,7 +32,8 @@ preparation is blocked until each changed source is explicitly captured. A pendi
 source cannot inherit the old choice's identity. Removal refuses choices referenced
 by retained constructs. The bin structure is fixed when enabling alternatives in
 this initial connection; ordinary slot addition/reordering/removal is disabled
-while the library is attached. Further library topology editing remains follow-up.
+while the library is attached. Reviewed bin insertion/removal/reordering and raw recovery are now implemented
+([details](ASSEMBLY_LIBRARY_EDITS.md)).
 
 ## Identity and scientific reconstruction
 
@@ -93,8 +94,8 @@ are now implemented ([details](COMBINATORIAL_BATCHES.md)). Matrix-owned per-cons
 run/output records, bulk sequence and oligo/protocol release and staged product
 inspection are implemented ([outputs](COMBINATORIAL_RELEASE.md)). Finite reaction
 composition now has explicit per-construct discovery and key-bound selection
-([reaction matrix](COMBINATORIAL_POOLS.md)). Library topology editing and final
-acceptance remain in scope; extend the typed design layer and existing compilers. Fusion-end ranking and domestication
+([reaction matrix](COMBINATORIAL_POOLS.md)). Library topology editing now has reviewed transactions and recovery
+([details](ASSEMBLY_LIBRARY_EDITS.md)). Final acceptance remains in scope; extend the typed design layer and existing compilers. Fusion-end ranking and domestication
 remain distinct planned capabilities.
 
 Browser/visual/performance acceptance remains deferred until all in-scope code is

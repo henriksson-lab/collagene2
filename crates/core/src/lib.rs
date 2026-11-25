@@ -150,6 +150,7 @@ pub mod read_checks;
 pub mod read_review;
 
 pub mod assembly_junction_edit;
+pub mod assembly_library_history;
 
 pub mod selective_junction_edit;
 

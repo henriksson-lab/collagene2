@@ -22,6 +22,27 @@ and review proposals are implemented, despite older gap tables. See
 [workflow decisions](BENCHLING_WORKFLOW_DECISIONS.md). This documentation-only
 checkpoint adds no runtime/build/browser checks.
 
+## Reviewed library bin editing and exact recovery
+
+The construct library now supports explicit add/remove/reorder proposals with
+per-construct primer, junction, preparation and candidate impacts. Changes preserve
+stable source identities and raw manual settings. Recovery is staged with the new
+active draft and installed in one guarded current/previous transaction; cancellation
+uses the existing worker and owned commit-lease pattern.
+
+Exact raw snapshots preserve unsaved working fields separately from saved row
+settings. Restoration is another reviewed edit with source-event attestation and
+monotonic allocation across current, recovered and retained history. Source DNA
+heads and unrelated workspace data remain unchanged. History is readable as data
+through two MCP additions (149 tools), without restoring scientific authority.
+[Contracts, limits and remaining work](ASSEMBLY_LIBRARY_EDITS.md).
+
+Validation passed:135 focused native checks (recovery7, workspace12, web114,
+MCP SDK2), followed by the final application/worker WASM check. Add-bin selection
+uses active working settings, and root-owned restoration callbacks survive a dock
+closing after commit. Browser checks remain deferred. Port8082 retains the checked
+reaction-matrix snapshot774db29; this checkpoint was not republished there.
+
 ## Whole-reaction construct matrices and exact candidate identity
 
 Source-matrix constructs can now discover finite Golden Gate pools from prepared

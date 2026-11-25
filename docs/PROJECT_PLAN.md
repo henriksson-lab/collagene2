@@ -972,3 +972,18 @@ Library topology editing, further method coverage, optimization/domestication an
 remaining delivery/acceptance work stay active. This closes the finite reaction
 composition gap, without claiming kinetic cycling, experimental yield or real
 mixture exhaustiveness.
+
+
+### Reviewed library bin editing and recovery checkpoint
+
+Library insertion/removal/reordering now uses explicit before/after proposals,
+per-construct impact review and one durable recovery/replacement transaction.
+Source IDs, manual preparations and literal settings survive; changed adjacency
+invalidates relevant junction/overlap/candidate intent. Raw snapshots retain unsaved
+work, and restoration is a new reviewed edit with full event attestation and a
+monotonic allocation highwater. MCP149 provides read-only recovery data access.
+[Detailed contract](ASSEMBLY_LIBRARY_EDITS.md).
+
+Broader cloning methods, optimization/domestication, recovery retention management
+and remaining delivery/acceptance work stay active. Current library restoration
+requires the same design identity and never restores scientific verification.

@@ -110,7 +110,8 @@ Batch product release now uses a separate fresh-reconstruction transaction and
 the existing run/output finalizer. Per-construct output manifests, actual staged
 product/target inspection and bulk sequence/primer/HTML/PDF ZIP exports are
 implemented; see [contracts](COMBINATORIAL_RELEASE.md). The finite reaction-pool
-composition route is implemented. Library topology editing and broader method/model coverage remain in scope. A batch record is not
+composition route is implemented. Reviewed library topology editing and recovery are implemented
+([details](ASSEMBLY_LIBRARY_EDITS.md)); broader method/model coverage remains in scope. A batch record is not
 permission to release imported products or claim a verified library.
 Browser/visual/performance acceptance stays deferred until all in-scope code is
 implemented.

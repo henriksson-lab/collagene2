@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 147;
+pub const CURRENT_TOOL_COUNT: usize = 149;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -2490,6 +2490,24 @@ impl CollageneServer {
         Parameters(args): Parameters<combinatorial_tools::InspectQuery>,
     ) -> Result<CallToolResult, ErrorData> {
         self.combinatorial_inspect(args).await
+    }
+    #[tool(
+        description = "List immutable assembly-library edit recovery records in an imported native workspace, with bounded paging and stable historical hashes/allocation counters. Declared source pins are retained native event references, not complete host-draft attestation or scientific evidence. Does not apply recovery, rewind identities or change source heads."
+    )]
+    async fn list_assembly_library_history(
+        &self,
+        Parameters(args): Parameters<assembly_library_history_tools::ListQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.assembly_library_history_list(args).await
+    }
+    #[tool(
+        description = "Open an exact immutable assembly-library recovery hash. Returns complete metadata JSON and the exact raw before-draft JSON in separate artifacts, preserving unsaved text without integer-array expansion. Historical recovery only: no apply/restore action, allocation rewind, complete host-draft validation or scientific authority is granted."
+    )]
+    async fn open_assembly_library_history(
+        &self,
+        Parameters(args): Parameters<assembly_library_history_tools::OpenQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.assembly_library_history_open(args).await
     }
     #[tool(
         description = "Discover the finite native Golden Gate reaction pool for one source-bound combinatorial construct, including whole sources, complete PCR amplicons, discarded fragments, carryover and explicit preparation substrates. Returns exact source/target event bindings and source_revision, candidate indices and both sequence keys; complete native report is retained in the JSON artifact. Missing selection is allowed and never defaults to candidate zero. Independent target correspondence is advisory, never a selection rule. Explicit selection followed by fresh batch evaluation and release is required; imported reports confer no authority."
@@ -6182,6 +6200,7 @@ mod genome_store;
 
 mod unit_tools;
 
+mod assembly_library_history_tools;
 mod catalog_tools;
 mod combinatorial_tools;
 mod recombination_tools;

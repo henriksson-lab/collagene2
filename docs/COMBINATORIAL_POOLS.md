@@ -78,8 +78,9 @@ stoichiometry, methylation clearance or experimental yield. Whole amplicons use
 the supported exact-PCR preparation; incompatible/mismatched preparation requests
 remain explicit errors. Retained-nick pool products and silently discarded
 terminal treatments are rejected. Further method coverage, optimization and
-domestication, library topology editing and final application acceptance remain
-in scope.
+domestication, recovery retention management and final application acceptance
+remain in scope. Reviewed library editing/recovery is now implemented
+([details](ASSEMBLY_LIBRARY_EDITS.md)).
 
 
 ## Validation

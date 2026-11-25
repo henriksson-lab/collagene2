@@ -1,7 +1,7 @@
 //! Persistent declared assembly slots. Frozen intent/scientific evidence is
 //! component-private and is never restored from a serialized draft.
 pub use crate::assembly_draft_model::{
-    CapturedSource, DigestGeometry, Draft, Slot, decode_version, encode,
+    CapturedSource, DigestGeometry, Draft, Slot, decode_version,
 };
 use crate::assembly_draft_model::{digest_interval, hex, token};
 use crate::{

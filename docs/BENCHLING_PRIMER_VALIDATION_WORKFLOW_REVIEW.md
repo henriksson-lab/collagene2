@@ -1,0 +1,56 @@
+# Primer editing, mutation intent and read validation: workflow review
+
+Reviewed 2026-11-25 from official public Benchling documentation and current repository source. No Collagene browser checks, tests or compiler runs were performed. Source implementations mentioned below may be newer than the published GUI; this is not runtime acceptance or a parity claim.
+
+This note updates connections rather than repeating the earlier [primer/mutagenesis research](BENCHLING_PRIMERS_MUTAGENESIS.md), [primer workflow gaps](BENCHLING_PRIMER_WORKFLOW_GAPS.md), [clone verification gaps](BENCHLING_CLONE_VERIFICATION_GAPS.md) and [verification/history research](BENCHLING_VERIFICATION_HISTORY.md). Assembly-region selection and Golden Gate site-bearing tails are covered separately in [the Golden Gate review](BENCHLING_GOLDEN_GATE_WORKFLOW_GAPS.md).
+
+## Official interaction evidence
+
+**Primer creation and reuse — current guide, updated October 2, 2025.** Select template bases, choose forward/reverse and open the primer editor. A pair can acquire its other domain through another sequence selection. The editor distinguishes overhang bases, offers restriction-site insertion and named save actions, and exposes calculation settings and structure review. Existing primers are found through a binding search, selected and attached; the wizard returns candidate primers for explicit selection and saving. The guide states that the wizard uses Primer3. These are documented interactions, not justification for calling our own structure screens equivalent to its ΔG calculations. [Use primers](https://help.benchling.com/hc/en-us/articles/39072057302541-Use-primers).
+
+**PCR product creation — instructions updated October 20, 2022.** Link two primers on the source map, select that pair in the primer panel, choose Create PCR Product, review output options and save the new sequence. Pair selection is therefore a visible design object leading to a separate product action. The page does not specify the exact mismatch, multiple-binding-site or physical-end models. [Run PCR in silico](https://help.benchling.com/hc/en-us/articles/9684267245325-Run-PCR-in-silico).
+
+**Primer-covered mutation — historical evidence, not a current dedicated wizard specification.** The December 2014 Golden Gate article documents editing primer-covered map bases, corresponding primer updates, marked parent mismatches and undoable versions. It also connects primer export and finalization to later sequence alignment. It does not establish a current inverse-PCR procedure, terminal chemistry or support for every mutation architecture. [Golden Gate Assembly Wizard](https://www.benchling.com/blog/golden-gate-assembly-wizard). The earlier research note records the separately inspected historical screenshot; no new frame-level observation is claimed here.
+
+**Read checking — current alignment guide, updated July 21, 2026.** Start from a sequence or global alignment creation, add reads and explicitly choose template-based comparison or consensus generation. Benchling recommends attaching AB1 reads to the sequenced plasmid. Saved alignments reopen from participating sequences. Review includes mismatch arrows and trace/quality visibility. Trimming is visible, and realignment updates changed inputs or trim settings. Circular alignment display can rotate/reindex without altering stored sequence. Its documented MAFFT implementation is outside our current scope; the interaction can be implemented using our existing native algorithms. [How to create alignments](https://help.benchling.com/hc/en-us/articles/39922093033869-How-to-create-alignments).
+
+**Unknown insert discovery is a separate intention.** The older sequencing teaching module builds a consensus from reads, identifies an insert and constructs a separate plasmid reference. It warns that consensus orientation can differ. This is distinct from checking an already declared construct against observed reads. [DNA Sequencing](https://help.benchling.com/hc/en-us/articles/9684245367821-DNA-Sequencing).
+
+## Connections now present in our source
+
+Several gaps in the earlier notes have since been addressed. They should not be reopened as requests for duplicate components.
+
+| User step | Current implementation | Remaining distinction |
+|---|---|---|
+| Select DNA and edit a primer pair | `primer_pair_editor.rs` supports independent forward/reverse selection into either slot, named domains/tails, saved-primer reuse and explicit Apply. `primer_pair_model.rs` retains anchored source comparisons. | A captured selection comparison is not a binding search. Changed domain lengths deliberately become unresolved instead of silently moving the anchor. |
+| Check the chosen oligo | `primers.rs` provides source-bound binding results, declared Tm conditions, structure-run screens and ranked pairs; kept primers transfer into the shared draft. | Structure-run screens are not full folding/ΔG predictions, and finding a binding site on one template is not genome-wide specificity. |
+| Declare a mutation before choosing preparation | `mutagenesis.rs` accepts a selection/caret, preserves the chosen source, previews literal edit intent and explicitly opens an independent target. `mutation_intent.rs` constructs that reference without using the preparation simulator. | The inverse-PCR architecture remains explicit PCR, terminal treatment and circular ligation, with fresh verification against the separate target. It is not merely a typed replacement of target bases. |
+| Preserve earlier manual oligos | The selective junction editor proposes PCR only for checked rows, retains other preparation DTOs and requires Apply. Undo refuses to overwrite later draft changes. | This intentionally differs from historical automatic oligo rewriting. The user reviews which preparations will change. |
+| Check the actual construct | App wiring exposes Check sequencing reads and pins a reference independently of the currently viewed read. `trace_validation.rs` binds exact document events, options and epochs. | Switching to a chromatogram does not select a new comparison target. Coverage, confidence, ambiguity and discrepancies are separate evidence. |
+| Inspect and retain evidence | Validation pages expose every reported site, insertion and read column; navigation targets exact original read calls. `read_checks_view.rs` reopens saved checks and explicitly replays them. | Stored evidence remains historical until replay; identical DNA in another document does not identify its event. |
+| Interpret an observation | `read_review_view.rs` offers explicit retain/unresolved/eligible-observation decisions, preview and parent-owned commit. Defaults provide factual choice provenance without forcing prose for every call. | Decisions retain the exact expected observed allele/insertion. A revised reference is human interpretation, not a new measurement or confirmed genotype. |
+
+## Priority interaction gaps
+
+These are implementation recommendations from the source comparison, not claims about undocumented Benchling internals.
+
+1. **Put evidence on one synchronized comparison surface.** Current call navigation connects the discrepancy tables to the original chromatogram, but the native trace viewer does not itself render a reference-aligned multi-read strip. Add a bounded shared cursor showing reference base/caret, oriented read calls, raw peaks/quality and all supporting/conflicting reads. Preserve original call/sample coordinates underneath the display. This is the most useful remaining verification connection; another parser or consensus algorithm would not substitute for it.
+2. **Keep the discrepancy queue stable while viewing a read.** Add focused previous/next evidence actions that retain the pinned construct and current review decision. Differentiate substitutions, eligible deletions, insertion carets, low confidence, conflicting calls and uncovered spans. Existing full paging is the access foundation; a discrepancy cursor should not introduce a new first-N cutoff or silently skip difficult states.
+3. **Make primer domain boundaries editable on the sequence.** The shared editor currently uses explicit text and selection actions. A future inline endpoint/domain-boundary interaction should preview the new annealing anchor and tail before applying, preserve intentional mismatches and show named oligo changes together. Reuse the same draft and model rather than building a separate mutation-only editor. Resizing must not reinterpret an unscored mismatch as a matched template call.
+4. **Finish the selected-pair-to-outputs route consistently.** General assembly output creation already separates construct, primer collection and prepared references. Ordinary primer and inverse-PCR results should reach that same selected-output/order-table review with preserved names and original source events, rather than requiring users to reconstruct an order sheet from JSON. Existing oligo exchange and output builders should supply this route.
+5. **Show recovery choices beside failures.** Distinguish no primer pair satisfying filters, multiple/unproven binding placements, invalid preparation and independent-target mismatch. Offer explicit parameter or region edits and rerun; do not relax criteria automatically. For read checks, offer revisiting trims/support policy without treating recalculated caller-score thresholds as calibrated laboratory confidence.
+
+## Compact target interaction
+
+For primer-led cloning: select source → choose/reuse and edit named pair → inspect binding/conditions → Apply pair → reconstruct preparation → review actual product and independent-target assessment → choose outputs.
+
+For an intended mutation: select range/caret → declare literal edit → review/open intended reference → choose original source and preparation → review proposed oligos → fresh target check. A direct sequence edit alone never proves that the preparation implements it.
+
+For Sanger checking: open construct → select/import reads for that pinned reference → compute → inspect a discrepancy with its original traces → retain/unresolved/nominate observed evidence → preview a separate revised reference if desired → save/reopen evidence → explicitly replay against the relevant version. Reference-free reconstruction remains a separate route.
+
+## Uncertainties and scope
+
+- Official sources reviewed here do not establish a current dedicated site-directed inverse-PCR wizard or exact kit, phosphorylation, methylation-clearance or host-repair semantics. We should not invent Benchling-specific behavior from general cloning descriptions.
+- Documentation establishes trace visibility and editable alignments, but not an immutable event-bound allele-decision transaction equivalent to ours. Exact source receipts and fresh replay are our design requirements, not a claimed Benchling omission.
+- Public screenshots and GIFs identify interface states; they do not establish latency, keyboard focus, accessibility or behavior for every ambiguous/circular case. Those remain separate desktop acceptance work when authorized.
+- Primer3 ports, new multiple-alignment engines, external scientific executables, inventory and ELN organization are unnecessary for these interaction improvements and remain outside this review.

@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 130;
+pub const CURRENT_TOOL_COUNT: usize = 131;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -1015,6 +1015,12 @@ pub struct EditedAssemblyIntentQuery {
 pub struct EditedAssemblyPrimersQuery {
     pub inputs: Vec<BoundInput>,
     pub request: collagene_core::assembly_junction_edit::Request,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SelectiveAssemblyPrimersQuery {
+    pub inputs: Vec<BoundInput>,
+    pub request: collagene_core::selective_junction_edit::Request,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -5109,6 +5115,37 @@ impl CollageneServer {
             let ordered=report.recipe.fragments.iter().map(|f|match &f.preparation{collagene_core::assembly_recipe::Preparation::ExactPcr{forward,reverse}=>Ok(json!({"role":f.role,"input_id":f.input_id,"reverse_fragment":f.reverse,"forward":forward,"reverse":reverse,"forward_ordered":forward.ordered_sequence(),"reverse_ordered":reverse.ordered_sequence()})),_=>Err(bad("edited primer proposal lost its exact original-source PCR"))}).collect::<Result<Vec<_>,_>>()?;
             output(json!({"state":"advisory","verified":false,"context_revision":report.context_revision,"intent_context_revision":report.intent.context_revision,
                 "target_revision":report.intent.target.revision(),"recipe":report.recipe,"ordered_oligos":ordered,"design_count":report.designs.len(),"warnings":report.warnings,"artifact_id":artifact}))
+        }).await
+    }
+    #[tool(
+        description = "Propose original-source PCR primers for explicitly selected rows of a junction-edited overlap assembly, preserving all retained preparation DTOs exactly, including manual primers and pinned digests. Retained preparations may be incompatible: fresh full-recipe verification is required. Uses the declared trimmed source cores and literal inserted DNA to form the independent intended reference before designing primers. Added primer tails include the requested junction DNA plus next-core homology; full oligo metrics and existing filters are recomputed. Returns an advisory explicit-PCR recipe, no automatic application or verified cloning result. Reconstruct that recipe against the independently built edited target using propose_overlap_assembly."
+    )]
+    async fn design_selective_assembly_primers(
+        &self,
+        Parameters(args): Parameters<SelectiveAssemblyPrimersQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.inputs.is_empty() || args.inputs.len() > 32 {
+            return Err(bad("choose1..32 actual original source bindings"));
+        }
+        let server = self.clone();
+        self.compute(move||{
+            let inputs={let store=server.store.lock().unwrap();let mut seen=BTreeSet::new();let mut sources=Vec::with_capacity(args.inputs.len());
+                for input in &args.inputs{if input.id.trim().is_empty()||input.id.len()>128||!seen.insert(input.id.as_str()){return Err(bad("invalid or duplicate original source ID"));}sources.push((input.id.as_str(),store.document(&input.document)?));}
+                collagene_core::selective_junction_edit::preflight(&sources,&args.request).map_err(bad)?;
+                sources.into_iter().map(|(id,m)|PlanInput{id:id.into(),revision:m.revision(),molecule:m.clone()}).collect::<Vec<_>>()};
+            let report=collagene_core::selective_junction_edit::design(&inputs,&args.request).map_err(bad)?;
+            let expected=collagene_core::selective_junction_edit::design_revision(&inputs,&args.request).map_err(bad)?;report.validate_binding(&expected).map_err(bad)?;
+            let evidence=json!({"inputs":args.inputs,"report":report});
+            let artifact=server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","selective-assembly-primers.json")?;
+            let ordered=report.recipe.fragments.iter().zip(&report.request.rows).filter_map(|(f,row)|match row {
+                collagene_core::selective_junction_edit::Row::Retain(_) => None,
+                collagene_core::selective_junction_edit::Row::DesignPcr{..} => Some(match &f.preparation {
+                    collagene_core::assembly_recipe::Preparation::ExactPcr{forward,reverse}=>Ok(json!({"role":f.role,"input_id":f.input_id,"reverse_fragment":f.reverse,"forward":forward,"reverse":reverse,"forward_ordered":forward.ordered_sequence(),"reverse_ordered":reverse.ordered_sequence()})),
+                    _=>Err(bad("selected primer proposal lost its exact original-source PCR"))
+                })
+            }).collect::<Result<Vec<_>,_>>()?;
+            output(json!({"state":"advisory","verified":false,"context_revision":report.context_revision,"intent_context_revision":report.intent.context_revision,
+                "target_revision":report.intent.target.revision(),"recipe":report.recipe,"ordered_oligos":ordered,"design_count":ordered.len(),"retained_rows":report.retained_rows,"warnings":report.warnings,"artifact_id":artifact}))
         }).await
     }
     #[tool(

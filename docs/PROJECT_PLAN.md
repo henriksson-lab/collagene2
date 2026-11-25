@@ -664,3 +664,31 @@ source parents when staged with a candidate. Worker44/MCP130 expose the same mod
 This first transaction route regenerates all rows as PCR-overlap preparations;
 selective edits preserving unaffected manual/mixed preparations and Golden Gate
 junction editing remain required. [Core scope](ASSEMBLY_JUNCTION_EDIT.md).
+
+
+### Selective preparation and workflow review checkpoint
+
+Junction proposals now preserve every unselected preparation exactly, including
+manual oligo names/domains/tails and catalog digest pins/repair. Users choose
+which original-source PCR rows to regenerate; each junction retains its explicit
+overlap length. Preview and Apply bind the same independent source/edit target,
+recipe and retained-row list. Retained incompatible preparations require correction
+and fresh complete-recipe verification; preserving a row does not certify it.
+Worker45/MCP131 expose this advisory path. Golden Gate junction editing and broader
+connected workflow polish remain pending. See [selective design](SELECTIVE_JUNCTION_EDIT.md).
+
+Public Benchling workflow reviews guide interaction priorities without copying
+implementation: [assembly](BENCHLING_ASSEMBLY_WORKFLOW_REVIEW.md) and
+[primers/mutagenesis/read validation](BENCHLING_PRIMER_VALIDATION_WORKFLOW_REVIEW.md).
+Prioritize an ordinary backbone/insert route, contextual row/junction diagnostics,
+preserved user choices, and continuity through product review, creation and exports.
+Documentation cannot establish undocumented gestures or scientific correctness.
+No Collagene browser checks are authorized before in-scope implementation is complete.
+
+The next interaction pass should reuse the existing assembly dock, shared primer
+pair draft, actual-product view and output chooser. Localize invalid preparation
+and junction feedback before adding more disconnected tool panels. Sequence
+validation then needs a shared reference/read/trace cursor and persistent
+previous/next discrepancy navigation. Inline primer-domain boundary edits should
+feed the same explicit proposal/Apply transaction. These are workflow refinements
+using current native engines; they do not reopen Primer3, MSA, inventory or mobile.

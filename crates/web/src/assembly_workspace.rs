@@ -13,6 +13,7 @@ use collagene_core::{
     Alphabet, Molecule, Topology, assembly_intent, assembly_junction_edit, primer_reuse,
     protocol::{AnalysisJob, AnalysisResult, Request},
     run_lineage::EventBinding,
+    selective_junction_edit,
     transfer::Candidate,
     verification::PlanInput,
 };
@@ -826,11 +827,18 @@ pub fn AssemblyWorkspace(
                 {
                     return Err("Proposed source order or orientation changed.".into());
                 }
+                match proposal.report.request.rows.get(i) {
+                    Some(selective_junction_edit::Row::Retain(_)) => {
+                        continue;
+                    }
+                    Some(selective_junction_edit::Row::DesignPcr { .. }) => {}
+                    None => return Err("Proposed row preservation choices are incomplete.".into()),
+                }
                 let collagene_core::assembly_recipe::Preparation::ExactPcr { forward, reverse } =
                     &fragment.preparation
                 else {
                     return Err(
-                        "Junction edit proposal must prepare every original source by exact PCR."
+                        "A selected replacement row must use its explicit proposed PCR primers."
                             .into(),
                     );
                 };
@@ -871,7 +879,7 @@ pub fn AssemblyWorkspace(
                 sources: proposal.sources.clone(),
                 target_revision,
             })));
-            status.set("Junction edits and all proposed PCR primers applied together. Compute fresh method evidence against the revised intended reference.".into());
+            status.set("Junction edits and selected PCR primers applied together; other preparations were preserved. Compute fresh method evidence against the revised intended reference.".into());
             Ok(())
         },
     );
@@ -1195,6 +1203,47 @@ pub fn set_digest_fragment(
     Ok(())
 }
 
+fn default_regeneration(draft: &Draft, proposed: &[assembly_junction_edit::Edit]) -> Vec<bool> {
+    let n = draft.slots.len();
+    if n == 0 || n > 12 {
+        return Vec::new();
+    }
+    let mut selected = (0..n)
+        .map(|i| {
+            draft.methods.rows.get(i).is_some_and(|row| {
+                matches!(
+                    row.preparation,
+                    OverlapPreparation::ExactPcr | OverlapPreparation::PcrCatalogDigest
+                ) && (row.forward.trim().is_empty() || row.reverse_primer.trim().is_empty())
+            })
+        })
+        .collect::<Vec<_>>();
+    let junctions = draft
+        .junction_edits
+        .iter()
+        .chain(proposed)
+        .map(|edit| edit.junction)
+        .collect::<std::collections::BTreeSet<_>>();
+    for junction in junctions {
+        if junction >= n {
+            continue;
+        }
+        let old = draft
+            .junction_edits
+            .iter()
+            .find(|edit| edit.junction == junction);
+        let new = proposed.iter().find(|edit| edit.junction == junction);
+        if old != new {
+            selected[junction] = true;
+            if old.is_some_and(|edit| edit.remove_right > 0)
+                || new.is_some_and(|edit| edit.remove_right > 0)
+            {
+                selected[(junction + 1) % n] = true;
+            }
+        }
+    }
+    selected
+}
 #[derive(Clone, PartialEq, Eq)]
 struct JunctionSettings {
     overlap: String,
@@ -1214,9 +1263,10 @@ impl Default for JunctionSettings {
 }
 struct JunctionProposal {
     before: Draft,
-    report: assembly_junction_edit::Report,
+    report: selective_junction_edit::Report,
     sources: Vec<Arc<CapturedSource>>,
     settings: JunctionSettings,
+    regenerate: Vec<bool>,
     epoch: u64,
 }
 #[component]
@@ -1230,7 +1280,15 @@ fn JunctionEditor(
     let remove_left = RwSignal::new("0".to_string());
     let remove_right = RwSignal::new("0".to_string());
     let inserted = RwSignal::new(String::new());
-    let settings = RwSignal::new(JunctionSettings::default());
+    let settings = RwSignal::new(JunctionSettings {
+        overlap: draft.with_untracked(|d| d.methods.overlaps.clone()),
+        ..Default::default()
+    });
+    let regenerate = RwSignal::new(default_regeneration(
+        &draft.get_untracked(),
+        &proposed.get_untracked(),
+    ));
+    let manual_regeneration = RwSignal::new(false);
     let result = RwSignal::new(None::<Arc<JunctionProposal>>);
     let status = RwSignal::new(String::new());
     let pending = RwSignal::new(false);
@@ -1260,14 +1318,30 @@ fn JunctionEditor(
                 .unwrap_or_else(|| "0".into()),
         );
         inserted.set(first.map(|e| e.inserted.clone()).unwrap_or_default());
+        regenerate.set(default_regeneration(&draft.get_untracked(), &edits));
+        manual_regeneration.set(false);
+        settings.update(|settings| {
+            settings.overlap = draft.with_untracked(|d| d.methods.overlaps.clone())
+        });
         proposed.set(edits);
         junction.set(0);
+    });
+    Effect::new(move |_| {
+        let before = draft.get();
+        let edits = proposed.get();
+        if !manual_regeneration.get() {
+            let defaults = default_regeneration(&before, &edits);
+            if regenerate.get_untracked() != defaults {
+                regenerate.set(defaults);
+            }
+        }
     });
     Effect::new(move |_| {
         let _ = (
             draft.get(),
             proposed.get(),
             settings.get(),
+            regenerate.get(),
             epoch.get(),
             remove_left.get(),
             remove_right.get(),
@@ -1355,31 +1429,68 @@ fn JunctionEditor(
         let before = draft.get_untracked();
         let edits = proposed.get_untracked();
         let form = settings.get_untracked();
+        let selected_rows = regenerate.get_untracked();
         let captured_epoch = epoch.get_untracked();
         let prepared = (|| -> Result<_, String> {
             if before.methods.mode != Mode::Overlap {
                 return Err("Junction editing currently prepares overlap-PCR assemblies. Choose overlap mode first.".into());
             }
-            if edits.is_empty() {
+            if edits.is_empty() && before.junction_edits.is_empty() {
                 return Err("Set at least one proposed junction edit first.".into());
             }
-            if [&form.overlap, &form.minimum, &form.maximum, &form.tm]
-                .iter()
-                .any(|s| s.len() > 32)
+            if form.overlap.len() > 256
+                || [&form.minimum, &form.maximum, &form.tm]
+                    .iter()
+                    .any(|s| s.len() > 32)
             {
                 return Err("Primer settings exceed their field bounds.".into());
             }
             let mut candidate = before.clone();
             candidate.junction_edits = edits.clone();
             let (inputs, base, sources) = inputs_request(&candidate)?;
-            let (_, profile_options) = before.methods.profile()?;
-            let request = assembly_junction_edit::Request {
+            let profile_options = before.methods.profile_options()?;
+            if selected_rows.len() != before.slots.len() {
+                return Err("Select a preparation choice for every slot.".into());
+            }
+            let mut retained = before.methods.clone();
+            for (i, selected) in selected_rows.iter().enumerate() {
+                if *selected {
+                    retained.rows[i] = OverlapInput {
+                        document: i,
+                        reverse: before.slots[i].reverse,
+                        ..Default::default()
+                    };
+                }
+            }
+            let (_, fragments) = crate::cloning_methods::prepared_rows(&retained, inputs.len())?;
+            let rows = fragments
+                .into_iter()
+                .enumerate()
+                .map(|(i, fragment)| {
+                    if selected_rows[i] {
+                        selective_junction_edit::Row::DesignPcr {
+                            role: fragment.role,
+                            input_id: fragment.input_id,
+                            reverse: fragment.reverse,
+                        }
+                    } else {
+                        selective_junction_edit::Row::Retain(fragment)
+                    }
+                })
+                .collect();
+            let request = selective_junction_edit::Request {
                 base,
                 edits,
-                overlap: form
+                rows,
+                overlaps: form
                     .overlap
-                    .parse()
-                    .map_err(|_| "Enter a homology length.")?,
+                    .split(',')
+                    .map(|part| {
+                        part.trim()
+                            .parse::<usize>()
+                            .map_err(|_| "Enter one comma-separated homology length per junction.")
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
                 primer_options: collagene_core::primers::DesignOptions {
                     min_length: form
                         .minimum
@@ -1398,7 +1509,7 @@ fn JunctionEditor(
                 },
                 profile_options,
             };
-            let revision = assembly_junction_edit::design_revision(&inputs, &request)
+            let revision = selective_junction_edit::design_revision(&inputs, &request)
                 .map_err(|e| e.to_string())?;
             let w = Rc::new(CachedWorker::new()?);
             Ok((inputs, request, sources, revision, w))
@@ -1428,7 +1539,7 @@ fn JunctionEditor(
                 .ask(Request {
                     id: token,
                     revision: revision.clone(),
-                    job: AnalysisJob::DesignEditedAssemblyPrimers {
+                    job: AnalysisJob::DesignSelectiveAssemblyPrimers {
                         inputs,
                         request: request.clone(),
                     },
@@ -1441,6 +1552,7 @@ fn JunctionEditor(
                 || draft.get_untracked() != before
                 || settings.get_untracked() != form
                 || proposed.get_untracked() != request.edits
+                || regenerate.get_untracked() != selected_rows
             {
                 return;
             }
@@ -1452,7 +1564,7 @@ fn JunctionEditor(
                     return Err("Junction proposal response identity changed.".into());
                 }
                 let report = match response.result {
-                    AnalysisResult::EditedAssemblyPrimers(report) => report,
+                    AnalysisResult::SelectiveAssemblyPrimers(report) => report,
                     AnalysisResult::Error(error) => return Err(error),
                     _ => return Err("Unexpected junction primer proposal result.".into()),
                 };
@@ -1464,13 +1576,14 @@ fn JunctionEditor(
                     report,
                     sources,
                     settings: form,
+                    regenerate: selected_rows,
                     epoch: captured_epoch,
                 }))
             })();
             match outcome {
                 Ok(proposal) => {
                     result.set(Some(proposal));
-                    status.set("Proposal ready. Applying replaces every preparation row with these exact original-source PCR primers; existing oligos remain unchanged until you Apply.".into());
+                    status.set("Proposal ready. Only checked rows will receive new original-source PCR primers; retained preparations and oligos stay unchanged.".into());
                 }
                 Err(error) => status.set(error),
             }
@@ -1485,6 +1598,7 @@ fn JunctionEditor(
                 || proof.epoch != epoch.get_untracked()
                 || proof.settings != settings.get_untracked()
                 || proof.report.request.edits != proposed.get_untracked()
+                || proof.regenerate != regenerate.get_untracked()
             {
                 return Err(
                     "Sources, proposed edits or primer settings changed. Preview again.".into(),
@@ -1497,13 +1611,16 @@ fn JunctionEditor(
         }
     };
     view! {<details class="assembly-junction-editor"><summary>"Edit a junction and redesign its PCR preparation"</summary>
-        <p class="helper">"Trim bases from the upstream core's assembly-facing end and/or the downstream core's beginning, then insert literal DNA between them. Original source regions stay pinned. Preview proposes PCR for every fragment; Apply explicitly replaces all existing preparation primers. This does not establish cloning success."</p>
+        <p class="helper">"Trim bases from the upstream core's assembly-facing end and/or the downstream core's beginning, then insert literal DNA between them. Original source regions stay pinned. Choose which rows receive newly designed PCR primers. Apply replaces only those checked rows; retained manual primers and digest preparations stay unchanged. This does not establish cloning success."</p>
         <label>"Junction"<select aria-label="Assembly junction to edit" prop:value=move||junction.get().to_string() on:change=move|e|if let Ok(index)=event_target_value(&e).parse(){load_edit.run(index)}>{move||draft.with(|d|{let count=d.slots.len().saturating_sub(1)+usize::from(d.circular);(0..count).map(|i|view!{<option value=i.to_string()>{format!("{} → {}{}",d.slots[i].label,d.slots[(i+1)%d.slots.len()].label,if i+1==d.slots.len(){" (circle closure)"}else{""})}</option>}).collect_view()})}</select></label>
         <div class="primer-grid"><label>"Remove upstream bases"<input type="number" min="0" aria-label="Junction upstream trim" prop:value=move||remove_left.get() on:input=move|e|remove_left.set(event_target_value(&e))/></label><label>"Remove downstream bases"<input type="number" min="0" aria-label="Junction downstream trim" prop:value=move||remove_right.get() on:input=move|e|remove_right.set(event_target_value(&e))/></label></div>
         <label>"Insert literal DNA at this junction"<textarea maxlength="200" aria-label="Junction inserted DNA" prop:value=move||inserted.get() on:input=move|e|inserted.set(event_target_value(&e))></textarea></label>
         <button class="button secondary" on:click=set_edit>"Set proposed junction edit"</button>
-        {move||proposed.get().into_iter().map(|edit|{let index=edit.junction;view!{<p>{format!("Junction {}: remove {} upstream / {} downstream; insert {}",index+1,edit.remove_left,edit.remove_right,if edit.inserted.is_empty(){"(none)"}else{&edit.inserted})}<button class="text-tool" on:click=move|_|proposed.update(|items|items.retain(|e|e.junction!=index))>"Remove proposed edit"</button></p>}}).collect_view()}
-        <div class="primer-grid"><label>"Homology length"<input type="number" min="1" aria-label="Edited junction homology" prop:value=move||settings.with(|s|s.overlap.clone()) on:input=move|e|settings.update(|s|s.overlap=event_target_value(&e))/></label><label>"Minimum annealing length"<input type="number" min="1" max="200" aria-label="Edited junction primer minimum" prop:value=move||settings.with(|s|s.minimum.clone()) on:input=move|e|settings.update(|s|s.minimum=event_target_value(&e))/></label><label>"Maximum annealing length"<input type="number" min="1" max="200" aria-label="Edited junction primer maximum" prop:value=move||settings.with(|s|s.maximum.clone()) on:input=move|e|settings.update(|s|s.maximum=event_target_value(&e))/></label><label>"Target annealing Tm (°C)"<input type="number" aria-label="Edited junction primer target Tm" prop:value=move||settings.with(|s|s.tm.clone()) on:input=move|e|settings.update(|s|s.tm=event_target_value(&e))/></label></div>
+        {move||proposed.get().into_iter().map(|edit|{let index=edit.junction;view!{<p>{format!("Junction {}: remove {} upstream / {} downstream; insert {}",index+1,edit.remove_left,edit.remove_right,if edit.inserted.is_empty(){"(none)"}else{&edit.inserted})}<button class="text-tool" on:click=move|_|{proposed.update(|items|items.retain(|e|e.junction!=index));if junction.get_untracked()==index{remove_left.set("0".into());remove_right.set("0".into());inserted.set(String::new());}}>"Remove proposed edit"</button></p>}}).collect_view()}
+        <h4>"Preparation choices"</h4><p class="helper">"Recommended boxes start with changed upstream fragments, downstream trims and unconfigured PCR rows. After you change a box, later edit changes do not override that choice. Retaining an incompatible preparation can prevent reconstruction; it is never silently replaced."</p>
+        {move||draft.with(|d|d.slots.iter().enumerate().map(|(i,slot)|view!{<label class="checkbox-label"><input type="checkbox" aria-label=format!("Regenerate PCR primers for slot {}",i+1) prop:checked=move||regenerate.with(|rows|rows.get(i).copied().unwrap_or(false)) on:change=move|e|{manual_regeneration.set(true);regenerate.update(|rows|if let Some(row)=rows.get_mut(i){*row=event_target_checked(&e)});}/>{format!("{} — regenerate PCR primers",slot.label)}</label><p class="helper">{move||draft.with(|current|current.methods.rows.get(i).map(|row|format!("{}: {}",if regenerate.with(|rows|rows.get(i).copied().unwrap_or(false)){"Replace after explicit Apply"}else{"Retain exact current preparation"},row.summary())).unwrap_or_default())}</p>}).collect_view())}
+        <p class="helper">{move||draft.with(|d|format!("Enter {} explicit homology lengths in junction order, including circle closure when present. Existing values are preserved; no uniform length is inferred.",d.slots.len().saturating_sub(1)+usize::from(d.circular)))}</p>
+        <div class="primer-grid"><label>"Per-junction homology lengths (comma-separated)"<input aria-label="Edited junction homology" prop:value=move||settings.with(|s|s.overlap.clone()) on:input=move|e|settings.update(|s|s.overlap=event_target_value(&e))/></label><label>"Minimum annealing length"<input type="number" min="1" max="200" aria-label="Edited junction primer minimum" prop:value=move||settings.with(|s|s.minimum.clone()) on:input=move|e|settings.update(|s|s.minimum=event_target_value(&e))/></label><label>"Maximum annealing length"<input type="number" min="1" max="200" aria-label="Edited junction primer maximum" prop:value=move||settings.with(|s|s.maximum.clone()) on:input=move|e|settings.update(|s|s.maximum=event_target_value(&e))/></label><label>"Target annealing Tm (°C)"<input type="number" aria-label="Edited junction primer target Tm" prop:value=move||settings.with(|s|s.tm.clone()) on:input=move|e|settings.update(|s|s.tm=event_target_value(&e))/></label></div>
         <p class="helper">"The selected Gibson/HiFi/In-Fusion profile is retained. Primer metrics are model calculations, not reagent conditions or demonstrated binding. Concrete source and inserted DNA are required for these primer proposals; ambiguous calls are not silently resolved."</p>
         <Show when=move||unstaged.get()><p class="helper">"Set the proposed junction edit before previewing, so the changed trim and inserted bases are included."</p></Show>
         <button class="button primary" disabled=move||pending.get()||unstaged.get()||draft.with(|d|d.methods.mode!=Mode::Overlap) on:click=move|_|preview.run(())>"Preview edited construct and PCR primers"</button>
@@ -1511,9 +1628,11 @@ fn JunctionEditor(
         <p role="status">{move||status.get()}</p>
         {move||result.get().map(|proof|view!{<section class="assembly-junction-proposal"><h3>"Edited construct and proposed PCR preparation"</h3><p>{format!("{} · {} bases",proof.report.intent.target.name,proof.report.intent.target.sequence.len())}</p><pre>{let dna=proof.report.intent.target.sequence.as_str();format!("{}{}",dna.chars().take(240).collect::<String>(),if dna.len()>240{"… (bounded preview)"}else{""})}</pre>
             {proof.report.intent.fragments.iter().enumerate().map(|(i,fragment)|view!{<p>{format!("{}: original core {}–{} → adjusted core {}–{}{}; output span {}–{} includes any outgoing synthetic insert",proof.before.slots[i].label,proof.before.slots[i].start+1,proof.before.slots[i].end,fragment.start+1,fragment.end,if fragment.reverse{" reverse"}else{" forward"},fragment.output_start+1,fragment.output_end)}</p>}).collect_view()}
-            {proof.report.designs.iter().enumerate().map(|(i,design)|view!{<article><h4>{format!("Fragment {} PCR primers",i+1)}</h4>{design.pairs.first().map(|pair|view!{<pre>{format!("{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nAdded 5′ tail: {}\n\n{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nAdded 5′ tail: {}",pair.forward.primer.name,pair.forward.primer.tail,pair.forward.primer.annealing.as_str(),pair.forward.primer.annealing.as_str(),pair.forward.primer.tail,pair.reverse.primer.name,pair.reverse.primer.tail,pair.reverse.primer.annealing.as_str(),pair.reverse.primer.annealing.as_str(),pair.reverse.primer.tail)}</pre><p>{format!("Annealing Tm {} / {} · pair ΔTm {:.1}°C",pair.forward.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.reverse.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.tm_difference_c)}</p>})}{design.warnings.iter().map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view()}</article>}).collect_view()}
+            <p>{format!("Retained preparations: {} · regenerated PCR rows: {}",proof.report.retained_rows.len(),proof.report.designs.iter().filter(|design|design.is_some()).count())}</p>
+            {proof.report.retained_rows.iter().filter_map(|&i|proof.before.methods.rows.get(i).map(|row|(i,row))).map(|(i,row)|view!{<p class="helper">{format!("Retained {}: {}",proof.before.slots[i].label,row.summary())}</p>}).collect_view()}
+            {proof.report.designs.iter().enumerate().filter_map(|(i,design)|design.as_ref().map(|design|(i,design))).map(|(i,design)|view!{<article><h4>{format!("Fragment {} PCR primers",i+1)}</h4>{design.pairs.first().map(|pair|view!{<pre>{format!("{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nAdded 5′ tail: {}\n\n{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nAdded 5′ tail: {}",pair.forward.primer.name,pair.forward.primer.tail,pair.forward.primer.annealing.as_str(),pair.forward.primer.annealing.as_str(),pair.forward.primer.tail,pair.reverse.primer.name,pair.reverse.primer.tail,pair.reverse.primer.annealing.as_str(),pair.reverse.primer.annealing.as_str(),pair.reverse.primer.tail)}</pre><p>{format!("Annealing Tm {} / {} · pair ΔTm {:.1}°C",pair.forward.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.reverse.analysis.tm.as_ref().map(|t|format!("{:.1}°C",t.tm_c)).unwrap_or_else(||"unavailable".into()),pair.tm_difference_c)}</p>})}{design.warnings.iter().map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view()}</article>}).collect_view()}
             {proof.report.warnings.iter().chain(proof.report.intent.warnings.iter()).map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view()}
-            <button class="button primary" on:click=apply>"Apply junction edits and replace all PCR primers"</button>
+            <button class="button primary" on:click=apply>"Apply junction edits and selected PCR primers"</button>
         </section>})}
     </details>}
 }

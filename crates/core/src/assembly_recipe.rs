@@ -127,6 +127,23 @@ pub fn preparation_source_preflight(
     name: &str,
     fragments: &[FragmentSpec],
 ) -> Result<(), Error> {
+    preparation_preflight_inner(inputs, Some(target), name, fragments)
+}
+/// Source/preparation-only guard for callers that independently reserve their
+/// real intended target before constructing it. No dummy sequence is required.
+pub(crate) fn preparation_rows_preflight(
+    inputs: &[(&str, &Molecule)],
+    name: &str,
+    fragments: &[FragmentSpec],
+) -> Result<(), Error> {
+    preparation_preflight_inner(inputs, None, name, fragments)
+}
+fn preparation_preflight_inner(
+    inputs: &[(&str, &Molecule)],
+    target: Option<&Molecule>,
+    name: &str,
+    fragments: &[FragmentSpec],
+) -> Result<(), Error> {
     if inputs.is_empty()
         || inputs.len() > MAX_ROWS
         || fragments.is_empty()
@@ -136,14 +153,18 @@ pub fn preparation_source_preflight(
     }
     token(name, 1024)?;
     let mut models = inputs.iter().map(|(_, m)| *m).collect::<Vec<_>>();
-    models.push(target);
-    crate::model::bounds::model_preflight(&models)?;
-    if target.sequence.alphabet() != Alphabet::Dna {
-        return Err(bad("independent target must be DNA"));
+    if let Some(target) = target {
+        models.push(target);
     }
-    target.validate()?;
+    crate::model::bounds::model_preflight(&models)?;
+    if let Some(target) = target {
+        if target.sequence.alphabet() != Alphabet::Dna {
+            return Err(bad("independent target must be DNA"));
+        }
+        target.validate()?;
+    }
     let mut lookup = BTreeMap::new();
-    let mut bases = target.sequence.len();
+    let mut bases = target.map_or(0, |m| m.sequence.len());
     for &(id, m) in inputs {
         token(id, 128)?;
         if lookup.insert(id, m).is_some() {

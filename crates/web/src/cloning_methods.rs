@@ -164,7 +164,7 @@ impl Default for OverlapInput {
     }
 }
 impl OverlapInput {
-    fn summary(&self) -> String {
+    pub(crate) fn summary(&self) -> String {
         let preparation = match self.preparation {
             OverlapPreparation::WholeLinear => {
                 "Whole linear source (circular DNA requires preparation)".into()
@@ -333,6 +333,9 @@ impl MethodsState {
                     .map_err(|_| "Supply comma-separated overlap lengths".to_string())
             })
             .collect::<Result<Vec<_>, _>>()?;
+        Ok((overlaps, self.profile_options()?))
+    }
+    pub(crate) fn profile_options(&self) -> Result<ProfileOptions, String> {
         let options = ProfileOptions {
             method: self.method,
             scan_repeated_overlaps: self.scan_repeats,
@@ -346,7 +349,7 @@ impl MethodsState {
                 .map_err(|_| "Invalid occurrence limit")?,
         };
         options.validate().map_err(|e| e.to_string())?;
-        Ok((overlaps, options))
+        Ok(options)
     }
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1380,9 +1383,9 @@ fn OverlapFields(
     </fieldset>}
 }
 
-fn prepared_rows(
+pub(crate) fn prepared_rows(
     state: &MethodsState,
-    inputs: &[Molecule],
+    input_count: usize,
 ) -> Result<
     (
         Vec<String>,
@@ -1391,13 +1394,13 @@ fn prepared_rows(
     String,
 > {
     use collagene_core::assembly_recipe::{FragmentSpec, Preparation};
-    if inputs.len() != state.rows.len() || inputs.is_empty() || inputs.len() > 12 {
+    if input_count != state.rows.len() || input_count == 0 || input_count > 12 {
         return Err("Choose 1–12 ordered original sources".into());
     }
-    let ids = (0..inputs.len())
+    let ids = (0..input_count)
         .map(|i| format!("source-{}", i + 1))
         .collect::<Vec<_>>();
-    let mut fragments = Vec::with_capacity(inputs.len());
+    let mut fragments = Vec::with_capacity(input_count);
     for (i, row) in state.rows.iter().enumerate() {
         if row.fragment.len() > 20 || row.forward_name.len() > 256 || row.reverse_name.len() > 256 {
             return Err("Preparation names or fragment number exceed their field bounds".into());
@@ -1503,7 +1506,7 @@ fn overlap_request(
 ) -> Result<(Vec<PlanInput>, collagene_core::assembly_recipe::Recipe), String> {
     use collagene_core::assembly_recipe::Recipe;
     let (overlaps, options) = state.profile()?;
-    let (ids, fragments) = prepared_rows(state, &inputs)?;
+    let (ids, fragments) = prepared_rows(state, inputs.len())?;
     let recipe = Recipe {
         name: format!("Profiled overlap assembly to {}", target.name),
         fragments,
@@ -1536,7 +1539,7 @@ fn ligation_request(
     target: &Molecule,
 ) -> Result<(Vec<PlanInput>, collagene_core::ligation_recipe::Recipe), String> {
     use collagene_core::ligation_recipe::{Fragment, Recipe};
-    let (ids, fragments) = prepared_rows(state, &inputs)?;
+    let (ids, fragments) = prepared_rows(state, inputs.len())?;
     if state.mode == Mode::GoldenGate {
         let geometry = state.golden_gate.enzyme.profile();
         for fragment in &fragments {

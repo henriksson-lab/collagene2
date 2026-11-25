@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current registry has 96 tools. Reference recombination adds explicit profile discovery, source inspection, independent target checking and fresh selected-component reconstruction. The optional `plan_sources` bridge binds a returned selection to typed plan sources without requiring a client to reproduce internal hash recipes. [Recombination tool contracts](RECOMBINATION_MCP.md).
+The current registry has 131 tools. Reference recombination adds explicit profile discovery, source inspection, independent target checking and fresh selected-component reconstruction. The optional `plan_sources` bridge binds a returned selection to typed plan sources without requiring a client to reproduce internal hash recipes. [Recombination tool contracts](RECOMBINATION_MCP.md).
 
 Build and configure:
 
@@ -633,3 +633,17 @@ Limits are32 rows/edits,100 normalized bases per insert,4096 inserted bases over
 existing200-base ordered oligos, bounded source/annotation/design work and32MiB
 artifacts. Invalid trims, stale inputs, ambiguous concrete proposals and failed
 filters do not mutate originals or promote candidates. [Model](ASSEMBLY_JUNCTION_EDIT.md).
+
+
+## Selective junction primer proposals
+
+`design_selective_assembly_primers {inputs,request}` is an advisory source-bound
+planner. Ordered rows explicitly retain a complete preparation or request new PCR
+primers; the report records aligned optional designs and retained row indices.
+Only newly proposed oligos appear in `ordered_oligos`. Full immutable JSON evidence
+retains both source bindings and the entire report. Existing manual primers,
+catalog pins, fragment choices and repairs are not silently replaced. The target
+revision agrees with separately built `build_edited_assembly_intent` for the same
+sources/base/edits. Fresh `propose_overlap_assembly` against that independent target
+must still check all preparations and actual products. See
+[selective SDK contract](SELECTIVE_JUNCTION_MCP.md).

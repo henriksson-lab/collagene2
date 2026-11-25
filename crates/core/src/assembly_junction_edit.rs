@@ -29,7 +29,10 @@ fn hex(s: &str) -> bool {
         && s.bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
-fn inserts(base: &assembly_intent::Request, edits: &[Edit]) -> Result<Vec<String>, Error> {
+pub(crate) fn inserts(
+    base: &assembly_intent::Request,
+    edits: &[Edit],
+) -> Result<Vec<String>, Error> {
     let n = base.fragments.len();
     if n == 0
         || n > MAX_ROWS
@@ -74,7 +77,7 @@ fn inserts(base: &assembly_intent::Request, edits: &[Edit]) -> Result<Vec<String
     }
     Ok(result)
 }
-fn adjustment(
+pub(crate) fn adjustment(
     base: &assembly_intent::Request,
     edits: &[Edit],
     lengths: &[usize],
@@ -428,7 +431,7 @@ pub fn design_revision(inputs: &[PlanInput], r: &Request) -> Result<String, Erro
     )?;
     assembly_recipe::hash(&(ENGINE_VERSION, "design", pins(inputs)?, r))
 }
-fn prefix(m: &Molecule, f: &Fragment, h: usize) -> Result<String, Error> {
+pub(crate) fn prefix(m: &Molecule, f: &Fragment, h: usize) -> Result<String, Error> {
     let n = m.sequence.len();
     let start = if f.reverse { f.end - h } else { f.start };
     let mut bases = String::with_capacity(h);
@@ -634,7 +637,7 @@ impl Intent {
         Ok(())
     }
 }
-fn location_guard(l: &Location) -> Result<(), Error> {
+pub(crate) fn location_guard(l: &Location) -> Result<(), Error> {
     let mut stack = vec![(l, 0usize)];
     let mut count = 0usize;
     while let Some((l, depth)) = stack.pop() {

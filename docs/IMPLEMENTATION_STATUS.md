@@ -547,3 +547,20 @@ Remaining work preserves the full plan:
 Aligned FASTA, CLUSTAL and Stockholm exchange is independently implemented in the core with strict bounded JSON retention, exact original bytes, row/column mappings, metadata and explicit export losses. The web now imports explicit-alphabet collections, displays a two-axis virtualized column/gap viewer with readable mapped coordinates, reviews export loss, opens selected ungapped rows and retains collections through full workspace exchange. Schema-10 workers and MCP expose the same typed exchange; recognized alignment attachments validate before archive/storage installation. [Alignment exchange](ALIGNMENT_FORMATS.md).
 
 Primer3, multiple alignment engines/ports and OpenGel retain their deferrals. ELN/inventory/freezers/sample/barcode/stock management, laboratory automation/scheduling and organizational reporting remain outside scope.
+
+
+## Selective junction preparation and public workflow research
+
+The junction editor supports selected PCR regeneration while retaining unaffected
+manual PCR and catalog digest preparations exactly. Variable overlaps, explicit
+Apply and protected Undo remain source-bound; retained choices can still fail the
+fresh complete-recipe verifier. Worker45/MCP131 provide the same advisory contract.
+Official Benchling assembly and primer/mutation/validation workflow reviews are
+recorded in the project plan. They guide interaction work, do not establish GUI
+acceptance, and introduce no new browser-test gate. Further Golden Gate junction
+editing, draft persistence and remaining cloning/bulk workflows remain active.
+
+Validation for this checkpoint: eight focused native tests passed (five independent
+core fixtures, one append-only worker/binding fixture and two real MCP SDK groups).
+The WASM web target passed `cargo check`. Checks ran in the existing shared cache
+while implementation/research continued. No browser checks or preview refresh ran.

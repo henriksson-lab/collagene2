@@ -183,3 +183,11 @@ historical until explicit current-engine replay. This connects sequencing eviden
 to the construct without replacing source calls or inferring an edited reference.
 Human discrepancy decisions and derived revisions remain pending.
 [Read-check contract](READ_CHECKS.md).
+
+Explicit sequencing review now builds on saved checks: fresh replay precedes
+eligible allele selection, read-only edit preview and durable decisions/optional
+reference creation. Changed references have exact original source parents and need
+a new check; original calls, qualities and heads stay intact. Historical decisions
+reopen as choices with fresh replay still required. Optional notes default to
+factual nominated-evidence provenance, avoiding mandatory per-base free text.
+Unselected sites remain unreviewed. [Read review](READ_REVIEW.md).

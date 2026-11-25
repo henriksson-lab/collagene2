@@ -579,3 +579,30 @@ Saved evidence is bounded to17MiB and128 records per workspace; existing native
 workspace/session budgets remain. Replay artifacts use the bounded32MiB scientific
 JSON cap. No external aligner or basecaller is invoked.
 [Native read checks](READ_CHECKS.md).
+
+## Explicit read review decisions
+
+`preview_read_review {workspace,request}` and `commit_read_review {workspace,request}`
+accept `{attachment_hash,name,decisions:[{key,choice,reason}]}`. Keys are
+`Site {position}` (zero-based reference base) or `Insertion {index}` in the fresh
+report. Choices are `RetainReference`, `Unresolved`, `UseBase {read_index,call_index,
+base}`, `DeleteBase {read_index}`, or `UseInsertion {read_index,boundary,sequence}`.
+The nominated call index is `ReadColumn.call_index` in the bound source event;
+original stored-call/sample mappings remain in the report. Every changed allele,
+location and eligible observation must match fresh replay exactly. No physical
+read, confidence value or source reference is rewritten.
+
+Preview returns a bounded proposal summary and full immutable JSON artifact, with
+no document installation. Commit freshly reconstructs and atomically returns a new
+immutable workspace, historical receipt, full review JSON and native archive.
+Explicit retain/unresolved-only requests produce no target; changed references
+retain all original source events as computational parents and remain restricted
+proposals requiring a new check. Conflicting observations and unreviewed positions
+are never relabelled as a consensus or experimental confirmation.
+
+`list_read_reviews {workspace}` returns historical decision/change counts, original
+reference bindings and optional derived-reference bindings. Reopening or importing
+these records does not restore current verification. Limits are256 decisions,
+1024-byte reasons,100,000 replacement bases and128 native review records under the
+existing model/workspace/session budgets. Both output artifacts and workspace slots
+are reserved before publication. [Read review scope](READ_REVIEW.md).

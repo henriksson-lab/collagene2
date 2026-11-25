@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 125;
+pub const CURRENT_TOOL_COUNT: usize = 128;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -1002,6 +1002,12 @@ pub struct OverlapPrimerDesignQuery {
     pub target: DocumentRef,
     /// Explicit ordered template intervals, orientation and bounded heuristic controls.
     pub request: collagene_core::overlap_primer_design::Request,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReadReviewQuery {
+    pub workspace: WorkspaceRef,
+    pub request: collagene_core::read_review::Request,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -4062,6 +4068,59 @@ impl CollageneServer {
                 "eligible_coverage":checked.report.eligible_coverage,"reference_coverage_fraction":checked.report.reference_coverage_fraction,
                 "artifact_id":artifact,"verified":false,"authority":"Fresh computational evidence under recorded rules; not experimental sample confirmation."}))
         }).await
+    }
+    #[tool(
+        description = "Preview explicit decisions on a saved construct read check after fresh replay. Nominated bases, calls, deletion evidence and insertion read/boundary/sequence must match current eligible evidence exactly; index-only or unsupported edits are refused. Retain/unresolved decisions do not edit DNA. Original reads/reference remain unchanged; any revised reference is a proposal requiring a new read check, not measured sequence or experimental confirmation."
+    )]
+    async fn preview_read_review(
+        &self,
+        Parameters(args): Parameters<ReadReviewQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move||{
+            let frame=server.restore_workspace(&args.workspace)?;
+            let preview=collagene_core::read_review::preview(&frame,&args.request).map_err(bad)?;
+            let expected=collagene_core::read_review::preview_revision(&frame,&args.request).map_err(bad)?;
+            preview.validate_binding(&expected).map_err(bad)?;
+            let artifact=server.text_artifact(bounded_json_limit(&preview,32*1024*1024)?,"application/json","read-review-preview.json")?;
+            let target=preview.target.as_ref().map(|m|json!({"name":m.name,"length":m.sequence.len(),"topology":m.topology,"revision":m.revision()}));
+            output(json!({"state":"proposal","verified":false,"preview":{"context_revision":preview.context_revision,"request":preview.request,
+                "reference":preview.reference,"reads":preview.reads,"target":target,"edits":preview.edits,"warnings":preview.warnings},"artifact_id":artifact}))
+        }).await
+    }
+    #[tool(
+        description = "Freshly replay a saved read check, validate explicit review decisions and atomically retain the decisions and optional derived reference in a NEW immutable native workspace. Exact original reference/read events become computational parents. Source heads and raw calls remain unchanged. Human choices never establish a measurement or current positive read verdict; a derived reference requires a new independent read check. Retain/unresolved-only requests save decisions without creating a reference."
+    )]
+    async fn commit_read_review(
+        &self,
+        Parameters(args): Parameters<ReadReviewQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move||{
+            let frame=server.restore_workspace(&args.workspace)?;
+            let expected=collagene_core::read_review::commit_revision(&frame,&args.request).map_err(bad)?;
+            let commit=collagene_core::read_review::commit(&frame,&args.request).map_err(bad)?;
+            commit.validate_binding(&expected).map_err(bad)?;
+            let saved=collagene_core::read_review::load(&commit.workspace,&commit.attachment_hash).map_err(bad)?;
+            let text=bounded_json_limit(&saved,32*1024*1024)?;
+            let receipt=json!({"attachment_hash":commit.attachment_hash,"context_revision":commit.context_revision,"target":commit.target,"state":"historical","verified":false});
+            let native=workspace::save_workspace(&commit.workspace).map_err(bad)?;
+            server.commit_workspace_outputs_named(commit.workspace,Some((text,receipt)),Some(native),"read-review.json",
+                "Recorded caller decisions and optional proposed reference only. Unselected differences remain unreviewed; source calls are unchanged and the revised reference requires a new read check.")
+        }).await
+    }
+    #[tool(
+        description = "List immutable saved decisions on construct read checks and their optional derived-reference events. Historical review records do not restore current validation, experimental confirmation or an approved whole-construct sequence."
+    )]
+    async fn list_read_reviews(
+        &self,
+        Parameters(args): Parameters<ListReadChecks>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let frame = self.restore_workspace(&args.workspace)?;
+        let reviews = collagene_core::read_review::list(&frame).map_err(bad)?;
+        output(
+            json!({"workspace":args.workspace,"reviews":reviews,"state":"historical","verified":false}),
+        )
     }
     #[tool(
         description = "Reconstruct an exact session plan against explicit historical target/input event bindings and retain all products in a NEW immutable session workspace. Does not alter the original, browser workspace or any file. Incomplete evidence requires explicit allow_incomplete; failed reconstructions never record products. Returns a full JSON artifact and new workspace reference."

@@ -45,7 +45,7 @@ fn binding_guard(b: &EventBinding) -> Result<(), Error> {
     }
     Ok(())
 }
-fn resolve<'a>(w: &'a Workspace, b: &EventBinding) -> Result<&'a Molecule, Error> {
+pub(crate) fn resolve<'a>(w: &'a Workspace, b: &EventBinding) -> Result<&'a Molecule, Error> {
     binding_guard(b)?;
     let event = w
         .history
@@ -59,7 +59,7 @@ fn resolve<'a>(w: &'a Workspace, b: &EventBinding) -> Result<&'a Molecule, Error
         .get(&b.revision)
         .ok_or_else(|| bad("missing retained revision"))
 }
-fn workspace_guard(w: &Workspace) -> Result<(), Error> {
+pub(crate) fn workspace_guard(w: &Workspace) -> Result<(), Error> {
     if w.documents.len() > workspace::MAX_DOCUMENTS
         || w.revisions.len() > workspace::MAX_REVISIONS
         || w.history.len() > workspace::MAX_HISTORY_EVENTS
@@ -182,7 +182,7 @@ fn texts(values: &[String]) -> Result<(), Error> {
 fn fraction(v: f64) -> bool {
     v.is_finite() && (0.0..=1.0).contains(&v)
 }
-fn report_guard(
+pub(crate) fn report_guard(
     report: &TraceValidationReport,
     reference: &EventBinding,
     reads: &[EventBinding],
@@ -439,7 +439,7 @@ fn report_guard(
     Ok(())
 }
 impl SavedCheck {
-    fn validate(&self) -> Result<(), Error> {
+    pub(crate) fn validate(&self) -> Result<(), Error> {
         if self.schema_version != 1 || !hex(&self.context_revision) {
             return Err(bad("invalid saved check schema"));
         }

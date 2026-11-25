@@ -128,3 +128,15 @@ raw trace bytes and qualities are unchanged; repeated identical capture deduplic
 while different equal-DNA events remain distinct. Limits are128 checks and17MiB per
 saved check under the existing workspace budgets. Archive1 is unchanged.
 [Detailed saved-check behavior](READ_CHECKS.md).
+
+## Read review decisions
+
+`read-review-v1` JSON attachments retain explicit decisions/reasons, their saved
+source check, exact reference/read events, one full fresh report/options, edits and
+optional derived-reference event. Loading is historical and never restores a
+current scientific verdict. Unselected differences remain unreviewed. Derived
+references retain every original reference/read event as computational parents and
+require a new read check. Source heads/raw calls remain unchanged, including when a
+previous proposed output was subsequently edited. Limits are128 records and32MiB
+per attachment under existing workspace budgets; archive1 is unchanged.
+[Decision contract](READ_REVIEW.md).

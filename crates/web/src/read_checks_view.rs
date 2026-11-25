@@ -250,6 +250,7 @@ pub fn SavedReadChecksPanel(
     on_reference: Callback<crate::trace_validation::ReferenceNavigation, Result<(), String>>,
     event_available: Callback<EventBinding, bool>,
     attachment_available: Callback<String, bool>,
+    on_review: Callback<String, Result<(), String>>,
 ) -> impl IntoView {
     let action_guard = Callback::new(move |r: Arc<Review>| -> Result<(), String> {
         if r.epoch != epoch.get_untracked()
@@ -455,6 +456,7 @@ pub fn SavedReadChecksPanel(
     <button disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous checks"</button><button disabled={move||(page.get()+1)*20>=listed.with(Vec::len)} on:click=move|_|page.update(|p|*p+=1)>"Next checks"</button>
     {move||current().map(|r|{let target=r.reference.clone();let report=r.report.clone();let context=r.clone();view!{<section class="read-check-review"><h3>{if r.fresh{"Fresh replay"}else{"Historical evidence"}}</h3><p>{format!("{:?} · eligible coverage {}/{} · source engine {}",report.status,report.eligible_coverage,report.consensus.len(),report.engine_version)}</p><p class="helper">"Uncovered bases, conflicts, low-quality calls and unresolved placements remain separate evidence. Native caller scores are not independently calibrated probabilities."</p><button class="button secondary" on:click=move|_|{let result=action_guard.run(context.clone()).and_then(|()|on_reference.run(crate::trace_validation::ReferenceNavigation{reference:target.clone(),selection:None,epoch:context.epoch}));if let Err(e)=result{status.set(e)}}>"Open exact reference event"</button><ul>{report.warnings.iter().take(32).map(|w|view!{<li>{w.clone()}</li>}).collect_view()}</ul></section>}})}
     <button class="button primary" disabled=move||pending.get()||current().is_none() on:click=replay>"Replay saved read check"</button><button class="button secondary" disabled=move||!pending.get() on:click=move|_|cancel.run(())>"Cancel replay"</button><button class="button secondary" disabled=move||current().is_none() on:click=move|_|download.run(())>"Download read-check evidence"</button>
+    <button class="button primary" disabled=move||pending.get()||current().is_none() on:click=move|_|{if let Some(record)=current(){if let Err(error)=action_guard.run(record.clone()).and_then(|()|on_review.run(record.hash.clone())){status.set(error)}}}>"Review differences and propose a revision"</button>
     <h3>"Discrepancies and unresolved sites"</h3><p class="helper">"25 sites per page; exact supporting call columns are paged below. Supported matches remain available in the full report."</p>
     {move||current().map(|r|r.report.sites.iter().filter(|s|s.state!=SiteState::SupportedMatch).skip(site_page.get()*25).take(25).map(|s|{
         let context=r.clone();let position=s.position;let ref_binding=r.reference.clone();let ref_epoch=r.epoch;let reference_context=r.clone();

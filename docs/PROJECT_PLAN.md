@@ -639,3 +639,15 @@ workspace recovery; MCP record/list/replay share the same core. Worker42/MCP125
 version transport. Explicit per-discrepancy review decisions and evidence-parented
 derived-reference proposals remain required; this does not reopen BAM/index work,
 MSA engines or ELN/inventory scope. [Read checks](READ_CHECKS.md).
+
+### Sequencing review and derived-reference checkpoint
+
+Saved checks now support explicit keep/unresolved/observed-allele decisions after
+fresh replay, bounded edit preview, durable record-only or derived-reference commit,
+and historical decision reopening. Expected alleles/calls/boundaries prevent silent
+index reinterpretation. Original reference/read heads remain intact; proposed new
+references retain all exact source events and require fresh read checking. Optional
+notes receive factual provenance defaults. Worker43/MCP128 expose the same path;
+science-14 and native archive1 remain unchanged. Integrated assembly junction/oligo
+edit transactions, unfinished-draft persistence and the remaining cloning/bulk
+workflows stay in the active queue. [Decision scope](READ_REVIEW.md).

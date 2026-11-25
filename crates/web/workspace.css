@@ -264,3 +264,5 @@
 .explorer-frame>.document-explorer { flex:1; min-height:0; height:auto; }
 .preparation-visibility { display:flex; align-items:center; gap:6px; flex:none; border-top:1px solid #dce5e0; padding:8px 10px; background:#f5f8f6; font-size:11px; color:#637d72; }
 .assembly-finalize-options { display:grid; gap:10px; }
+
+.modal.read-review-modal{width:min(1100px,96vw);max-height:92vh;overflow:auto}

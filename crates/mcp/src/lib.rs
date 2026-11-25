@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 134;
+pub const CURRENT_TOOL_COUNT: usize = 136;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -1088,6 +1088,21 @@ pub struct PreparedGoldenGatePoolQuery {
 pub struct PreparedGoldenGateSelectionQuery {
     pub artifact_id: String,
     pub selection: collagene_core::prepared_golden_gate::Selection,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GoldenGateReactionQuery {
+    pub inputs: Vec<BoundInput>,
+    pub target: DocumentRef,
+    pub request: collagene_core::golden_gate_reaction::Request,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GoldenGateReactionEvidence {
+    kind: String,
+    inputs: Vec<BoundInput>,
+    target: DocumentRef,
+    report: collagene_core::golden_gate_reaction::Report,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -5580,6 +5595,112 @@ impl CollageneServer {
             };
             let selected=collagene_core::prepared_golden_gate::select(&evidence.report,&args.selection).map_err(bad)?;
             let expected=collagene_core::prepared_golden_gate::selection_revision(&evidence.report,&args.selection).map_err(bad)?;
+            selected.validate_binding(&expected).map_err(bad)?;
+            let revision=verification::plan_revision(&selected.plan);
+            let bytes=transfer::save_candidate(&transfer::Candidate::new(selected.plan.clone())).map_err(bad)?;
+            let artifact_id=blake3::hash(&bytes).to_hex().to_string();
+            let plan_bytes=bounded_json(&selected.plan)?.len().checked_add(bounded_json(&target)?.len()).ok_or_else(||bad("selected candidate storage overflow"))?;
+            let response=output(json!({"state":"candidate","verified":false,"plan_revision":revision,"context_revision":selected.context_revision,"parent_context":selected.parent_context,
+                "target":evidence.target,"inputs":evidence.inputs,"selection":selected.selection,"warnings":selected.warnings,
+                "candidate_artifact_id":artifact_id,"artifact_id":artifact_id,"filename":"candidate.cg2plan","encoding":"base64","mime_type":"application/octet-stream","bytes":bytes.len()}))?;
+            let mut store=server.store.lock().unwrap();
+            let new_plan=!store.plans.contains_key(&revision);
+            let new_artifact=!store.artifacts.contains_key(&artifact_id);
+            if let Some(old)=store.artifacts.get(&artifact_id) {
+                if !matches!(old.data,ArtifactData::Binary(_)) || old.filename!="candidate.cg2plan" || old.mime_type!="application/octet-stream" { return Err(bad("candidate bytes already have another artifact representation")); }
+            }
+            if new_plan&&store.plans.len()>=MAX_ITEMS || new_artifact&&store.artifacts.len()>=MAX_ITEMS {return Err(bad("candidate/artifact item limit; no pool selection created"));}
+            let total=(if new_plan {plan_bytes}else{0}).checked_add(if new_artifact {bytes.len()}else{0}).ok_or_else(||bad("selected candidate storage overflow"))?;
+            store.reserve(total)?;
+            if new_plan {store.plans.insert(revision,StoredPlan{plan:selected.plan,target});}
+            if new_artifact {store.artifacts.insert(artifact_id,Artifact{data:ArtifactData::Binary(bytes),mime_type:"application/octet-stream",encoding:"base64",filename:"candidate.cg2plan"});}
+            Ok(response)
+        }).await
+    }
+    #[tool(
+        description = "Inspect an explicitly declared Golden Gate reaction from whole original circular/linear DNA, complete PCR amplicons or selected preparations. Complete digestion includes all fragments of every declared substrate and reports uncut circular carryover separately. Actual preparation strands and enumeration come from one native pass; metadata cannot supply physical state. Retains recuttable products, backgrounds and search limits. Index0 probe diagnostics do not nominate a candidate or establish kinetics, repeated-copy stoichiometry, methylation clearance or experimental yield."
+    )]
+    async fn inspect_golden_gate_reaction(
+        &self,
+        Parameters(args): Parameters<GoldenGateReactionQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.inputs.is_empty() || args.inputs.len() > 32 {
+            return Err(bad("choose1..32 original pool source bindings"));
+        }
+        let server = self.clone();
+        self.compute(move || {
+            let (inputs,target) = {
+                let store = server.store.lock().unwrap();
+                let target = store.document(&args.target)?;
+                let mut seen = BTreeSet::new();
+                let mut sources = Vec::with_capacity(args.inputs.len());
+                for input in &args.inputs {
+                    if input.id.trim().is_empty() || input.id.len()>128 || !seen.insert(input.id.as_str()) { return Err(bad("invalid or duplicate pool source ID")); }
+                    sources.push((input.id.as_str(),store.document(&input.document)?));
+                }
+                collagene_core::golden_gate_reaction::preflight(&sources,target,&args.request).map_err(bad)?;
+                (sources.into_iter().map(|(id,m)|PlanInput{id:id.into(),revision:m.revision(),molecule:m.clone()}).collect::<Vec<_>>(),target.clone())
+            };
+            let report = collagene_core::golden_gate_reaction::inspect(&inputs,&target,&args.request).map_err(bad)?;
+            let expected = collagene_core::golden_gate_reaction::inspect_revision(&inputs,&target,&args.request).map_err(bad)?;
+            report.validate_binding(&expected).map_err(bad)?;
+            let candidates = report.assessments.iter().map(|a| {
+                let c=report.pool.as_ref().and_then(|pool|pool.candidates.get(a.candidate_index)).ok_or_else(||bad("pool assessment has no bound candidate"))?;
+                Ok(json!({"candidate_index":a.candidate_index,"directed_sequence_key":a.directed_sequence_key,"physical_sequence_key":a.physical_sequence_key,
+                    "target_matches":a.target_matches,"source_roles":a.source_roles,"length":c.duplex.top.len(),"topology":c.duplex.topology,
+                    "restriction_site_free":c.restriction_site_free,"recut_sites":c.recut_sites.len()}))
+            }).collect::<Result<Vec<_>,ErrorData>>()?;
+            #[derive(Serialize)]
+            struct Evidence<'a> {kind:&'static str,inputs:&'a [BoundInput],target:&'a DocumentRef,report:&'a collagene_core::golden_gate_reaction::Report}
+            let text = bounded_json_limit(&Evidence {kind:"golden-gate-reaction-v1",inputs:&args.inputs,target:&args.target,report:&report},32*1024*1024)?;
+            let artifact = server.text_artifact(text,"application/json","golden-gate-reaction.json")?;
+            output(json!({"state":"advisory","verified":false,"context_revision":report.context_revision,
+                "probe_plan_revision":report.verification.plan_revision,"target_revision":report.verification.target_revision,
+                "inputs":args.inputs,"target":args.target,"preparation_complete":(report.verification.products.len()+1>=report.probe_plan.steps.len()),"pool_available":report.pool.is_some(),
+                "probe_verification":{"status":report.verification.status,"engine_version":report.verification.engine_version,
+                    "findings":report.verification.findings.iter().take(100).collect::<Vec<_>>(),"findings_truncated":report.verification.findings.len()>100,
+                    "assumptions":report.verification.assumptions.iter().take(100).collect::<Vec<_>>(),"assumptions_truncated":report.verification.assumptions.len()>100},
+                "enumeration_complete":report.pool.as_ref().is_some_and(|p|p.enumeration_complete),"exhaustive_mixture_search":false,
+                "states_examined":report.pool.as_ref().map_or(0,|p|p.states_examined),"truncation_reasons":report.pool.as_ref().map(|p|&p.truncation_reasons),
+                "stable_physical_product_count":report.pool.as_ref().map_or(0,|p|p.stable_physical_product_count),"candidate_count":candidates.len(),"display_truncated":false,
+                "roles":report.materials.iter().map(|r|json!({"index":r.index,"role":r.role,"input_id":r.input_id,"source":r.source})).collect::<Vec<_>>(),
+                "carryover_sources":report.pool.as_ref().map(|p|&p.carryover_sources),
+                "candidates":candidates,"warnings":report.warnings,"artifact_id":artifact,
+                "authority":"Fresh declared-reaction inspection only; the probe selects no saved winner and establishes no laboratory outcome or exhaustive mixture claim. Select an exact index and both keys, then freshly verify its plan."}))
+        }).await
+    }
+    #[tool(
+        description = "Select one exact site-free candidate from an immutable whole-reaction Golden Gate artifact by context, index and both keys. Preserves original inputs, all explicit preparations and the declared reaction substrates; changes only the final GoldenGate candidate index. Atomically saves an unverified plan and binary cg2plan artifact. Does not trust serialized physical state, install product DNA or assert target agreement. verify_plan must freshly reconstruct the selected plan against the same independent target."
+    )]
+    async fn select_golden_gate_reaction_candidate(
+        &self,
+        Parameters(args): Parameters<PreparedGoldenGateSelectionQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || {
+            let (evidence,target) = {
+                let store = server.store.lock().unwrap();
+                let artifact=store.artifacts.get(&args.artifact_id).ok_or_else(||bad("unknown prepared pool artifact"))?;
+                if artifact.filename!="golden-gate-reaction.json" || artifact.mime_type!="application/json" { return Err(bad("artifact is not prepared pool evidence")); }
+                let ArtifactData::Text(text)=&artifact.data else {return Err(bad("prepared pool evidence must be JSON"));};
+                if text.len()>32*1024*1024 {return Err(bad("prepared pool evidence exceeds32MiB"));}
+                let evidence: GoldenGateReactionEvidence=serde_json::from_str(text).map_err(bad)?;
+                if evidence.kind!="golden-gate-reaction-v1" || evidence.inputs.len()!=evidence.report.probe_plan.inputs.len() { return Err(bad("prepared pool source context changed")); }
+                evidence.report.validate_binding(&args.selection.context_revision).map_err(bad)?;
+                let target=store.document(&evidence.target)?;
+                let mut sources=Vec::with_capacity(evidence.inputs.len());
+                for (bound,input) in evidence.inputs.iter().zip(&evidence.report.probe_plan.inputs) {
+                    let source=store.document(&bound.document)?;
+                    if input.id!=bound.id || input.revision!=bound.document.revision || source.revision()!=input.revision { return Err(bad("prepared pool original source differs from retained evidence")); }
+                    sources.push((bound.id.as_str(),source));
+                }
+                collagene_core::golden_gate_reaction::preflight(&sources,target,&evidence.report.request).map_err(bad)?;
+                if target.revision()!=evidence.report.verification.target_revision { return Err(bad("prepared pool independent target changed")); }
+                let target=target.clone();
+                (evidence,target)
+            };
+            let selected=collagene_core::golden_gate_reaction::select(&evidence.report,&args.selection).map_err(bad)?;
+            let expected=collagene_core::golden_gate_reaction::selection_revision(&evidence.report,&args.selection).map_err(bad)?;
             selected.validate_binding(&expected).map_err(bad)?;
             let revision=verification::plan_revision(&selected.plan);
             let bytes=transfer::save_candidate(&transfer::Candidate::new(selected.plan.clone())).map_err(bad)?;

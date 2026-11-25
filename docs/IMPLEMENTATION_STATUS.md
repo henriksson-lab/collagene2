@@ -695,3 +695,30 @@ The background web WASM compiler check passed as well. No browser check, full
 preview build or publication ran; port8082 retains the prior immutable snapshot.
 Whole-reaction Golden Gate preparation/cycling and the remaining cloning product
 requirements remain active.
+
+
+## Whole-reaction Golden Gate composition
+
+The shared alternatives panel now supports explicitly declared whole original
+circles/linear DNA, complete PCR amplicons and current isolated preparations.
+It is source-bound and available before ordered-method evidence. Whole-input
+inspection retains all cut pieces and reports uncut circular carryover separately.
+Native preparation plus actual enumeration execute once; index0 diagnostics retain
+the pool even when that probe is unavailable or recuttable. Selection creates no
+positive authority and changes only the final native candidate index.
+
+Worker49/MCP136 expose the new typed request/report while old prepared-pool formats,
+candidate11, plan9, science14 and archive1 remain unchanged. Complete cleavage and
+one-copy limits remain assumptions, with broader kinetic/partial/repeated-copy
+reaction modeling, optimization/domestication, bulk design and unfinished form
+persistence still active.
+
+The final native batch passed 25 cases: three new scientific/protocol fixtures,
+one actual MCP SDK group and 21 existing Golden Gate, prepared-pool and junction
+regressions. The literal 40-base target is declared independently. Tests retain
+six input digest/carryover records, distinguish self-products and recutting,
+preserve complete amplicons and verify selected plans freshly. The empty capped
+case explicitly uses minimum two fragments, since a one-state search can already
+find a one-fragment self-product.
+The web WASM check passed. No browser check or preview publication ran; the public
+8082 snapshot remains the last successful immutable build.

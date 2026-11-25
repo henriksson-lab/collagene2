@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current registry has 134 tools. Reference recombination adds explicit profile discovery, source inspection, independent target checking and fresh selected-component reconstruction. The optional `plan_sources` bridge binds a returned selection to typed plan sources without requiring a client to reproduce internal hash recipes. [Recombination tool contracts](RECOMBINATION_MCP.md).
+The current registry has 136 tools. Reference recombination adds explicit profile discovery, source inspection, independent target checking and fresh selected-component reconstruction. The optional `plan_sources` bridge binds a returned selection to typed plan sources without requiring a client to reproduce internal hash recipes. [Recombination tool contracts](RECOMBINATION_MCP.md).
 
 Build and configure:
 
@@ -716,3 +716,16 @@ from geometry/window completeness. Inspection does not promote a candidate or
 claim a functional fusion. Large Golden Gate reconstruction runs outside the
 session store lock after borrowed source/target preflight. Tool count stays134;
 worker48 protects the new nested method representation.
+
+
+## Declared whole-reaction Golden Gate
+
+`inspect_golden_gate_reaction` includes complete original circles/linear DNA,
+complete PCR amplicons or explicitly isolated preparations according to each row.
+It retains all digest pieces, separate uncut-circle carryover, backgrounds and
+finite-search limits. `probe_plan_revision`/`probe_verification` are diagnostics,
+not an automatically saved winner. `select_golden_gate_reaction_candidate` binds
+an exact artifact/context/index/key selection to an atomically stored unverified
+native plan and binary candidate; fresh `verify_plan` remains mandatory. Both
+operations preserve independent targets and explicit material choices. See
+[reaction MCP contract](GOLDEN_GATE_REACTION_MCP.md).

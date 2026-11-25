@@ -777,3 +777,23 @@ assembly supplies no windows. Worker48 adds only a nested method selector.
 This closes the previously recorded selected-path junction adapter gap; broader
 one-pot reaction, optimization/domestication, bulk cloning and remaining delivery
 gates stay active. [Inspection contract](ASSEMBLY_JUNCTIONS.md).
+
+
+### Explicit whole-reaction Golden Gate substrates
+
+The dock now shares its alternatives viewer between selected prepared pools and
+explicit reaction inputs. Users can supply an entire circular/linear original,
+a complete PCR amplicon or a selected preparation for each role. Every digest
+piece of whole inputs and uncut circular carryover remains represented. The
+reaction can be inspected before ordered-method computation; it does not require
+inventing an isolated fragment first. Original primer/preparation fields remain
+unchanged, while each substrate choice states which operations apply.
+
+One native pass captures preparation and actual enumeration even when diagnostic
+probe index0 is unavailable or recuttable. No probe becomes a saved winner. Exact
+candidate selection preserves sources/material steps, and fresh verification and
+actual-path junction/output/protocol review remain the normal route. Worker49/
+MCP136 expose this composition without new physical operations. Complete-cleavage,
+one-copy bounds remain explicit; partial/kinetic cycling, repeated-copy mixtures,
+fusion optimization, domestication and bulk cloning still require work. Broader
+unfinished reaction-form persistence also remains required. [Reaction scope](GOLDEN_GATE_REACTION.md).

@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **48** and reads supported schemas 1–47. Candidate files write schema 11; workspace plan schema is 9; the verifier is science-14.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **49** and reads supported schemas 1–48. Candidate files write schema 11; workspace plan schema is 9; the verifier is science-14.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -127,6 +127,8 @@ Postcard enum indexes are append-only. Existing tags and supported historical la
 | 112 | DesignGoldenGateJunctionPrimers | 46 |
 | 113 | InspectPreparedGoldenGatePool | 47 |
 | 114 | SelectPreparedGoldenGateCandidate | 47 |
+| 115 | InspectGoldenGateReaction | 49 |
+| 116 | SelectGoldenGateReaction | 49 |
 
 Result tags 0–29 retain their selectors (verification gains explicit versioned step evidence in schema 25) (`Search`, `Restriction`, `Error`, `Pcr`, `Verification`, `DuplexDigest`, `Translation`, `CdsTranslation`, `Orfs`, `Alignment`, `PcrDocuments`, `PrimerEvidence`, `PrimerDesign`, `ProtocolPdf`, `GoldenGate`, `MismatchPcr`, `InversePcr`, `Gel`, `DiagnosticDigest`, `MismatchPcrPreview`, `WorkspaceSaved`, `WorkspaceLoaded`, `TraceValidation`, `FeatureLibraryScan`, `AnnotatedDocument`, `AnnotationImport`, `AnnotationExport`, `RepairPreview`, `AnnealPreview`, `PhysicalPreviewDocument`). Schema 9 appends `ViewTracks` at tag 30, `DocumentSearch` at tag 31 and `TracksPrepared` at tag 32. New response variants cannot be decoded under older version labels.
 
@@ -624,3 +626,16 @@ The existing request payload remains valid at its original version: it already
 carried GoldenGate plans, previously reported as unsupported junction geometry.
 No new top-level job/result, operation or large-message exception is introduced.
 Ordinary32MiB caps and candidate11/plan9/science14/archive1 remain unchanged.
+
+
+## Explicit reaction substrates (schema 49)
+
+Append-only inspect115/result107 binds originals, independent target and explicit
+WholeSource/Prepared reaction roles. It captures the actual final enumeration in
+one verifier pass, including unavailable or recuttable probe index0, without
+publishing a candidate. Select116/result108 binds an exact context/index/key pair
+into an unverified native plan. It uses the existing generic key selection/report
+shape while keeping a separate whole-reaction context and result selector.
+Pre49 envelopes reject both new directions before payload decode. Ordinary32MiB
+limits apply; old prepared-pool DTOs, candidate11, plan9, science14 and archive1
+remain unchanged.

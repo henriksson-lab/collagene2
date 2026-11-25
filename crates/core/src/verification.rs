@@ -2036,8 +2036,19 @@ fn reconstruct(
                         }
                     }
                 }
-                let report =
-                    crate::golden_gate::simulate_reconstructed(&sources, &substrates, options)?;
+                let mut local_report = Some(crate::golden_gate::simulate_reconstructed(
+                    &sources,
+                    &substrates,
+                    options,
+                )?);
+                let report = if index + 1 == plan.steps.len() {
+                    *final_golden_gate = local_report.take();
+                    final_golden_gate.as_ref().expect("fresh final enumeration")
+                } else {
+                    local_report
+                        .as_ref()
+                        .expect("fresh intermediate enumeration")
+                };
                 let selected=report.candidates.get(*candidate_index).ok_or_else(||if report.enumeration_complete{Error::Format("Golden Gate candidate index does not exist".into())}else{Error::Unsupported("Golden Gate search is incomplete and the selected candidate is unavailable".into())})?;
                 if !selected.restriction_site_free {
                     return Err(Error::Format("Golden Gate candidate retains recognition sites; it is not a site-free cycling product".into()));
@@ -2116,9 +2127,6 @@ fn reconstruct(
                     return Err(Error::Format("Golden Gate positional propagation disagrees with independently selected duplex geometry".into()));
                 }
                 next_physical = Some(tracked);
-                if index + 1 == plan.steps.len() {
-                    *final_golden_gate = Some(report);
-                }
                 product
             }
             Operation::Overlap {

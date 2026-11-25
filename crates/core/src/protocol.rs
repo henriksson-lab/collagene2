@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 63;
+pub const WORKER_SCHEMA_VERSION: u16 = 64;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 12;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -854,6 +854,10 @@ pub enum AnalysisJob {
         inputs: Vec<crate::topo::Input>,
         request: crate::topo_nick_sealing::Request,
     },
+    ProjectProcessedTopo {
+        inputs: Vec<crate::topo::Input>,
+        request: crate::topo_processed_product::Request,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1006,6 +1010,7 @@ pub enum AnalysisResult {
     RankedGoldenGateFusions(crate::golden_gate_fusion_rank::Report),
     LigationCompetition(crate::ligation_fidelity::CompetitionReport),
     TopoNicksSealed(crate::topo_nick_sealing::Report),
+    ProcessedTopoProduct(crate::topo_processed_product::Report),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1226,6 +1231,9 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         crate::pairwise_context::preflight(report, reference, query, *translate)?;
     }
     match &r.job {
+        AnalysisJob::ProjectProcessedTopo { inputs, request } => {
+            crate::topo_processed_product::preflight(inputs, request)?
+        }
         AnalysisJob::SealTopoNicks { inputs, request } => {
             crate::topo_nick_sealing::preflight(inputs, request)?;
         }
@@ -1393,6 +1401,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_domestication_tag(bytes, &[131, 132, 133, 134])?;
     preflight_published_ligation_tag(bytes, &[135, 136, 137, 138])?;
     preflight_nick_sealing_tag(bytes, &[139])?;
+    preflight_processed_topo_tag(bytes, &[140])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1446,6 +1455,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         _ => decode_with_limit(b"CGR\0", bytes, maximum)?,
     };
     let required = match &response.result {
+        AnalysisResult::ProcessedTopoProduct(_) => 64,
         AnalysisResult::TopoNicksSealed(_) => 63,
         AnalysisResult::LigationProfiles(_)
         | AnalysisResult::PublishedLigationScore(_)
@@ -1603,6 +1613,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
     }
     match &response.result {
+        AnalysisResult::ProcessedTopoProduct(report) => {
+            report.validate_binding(&response.revision)?
+        }
         AnalysisResult::TopoNicksSealed(report) => report.validate_binding(&response.revision)?,
         AnalysisResult::LigationProfiles(items) => {
             let expected = crate::ligation_profiles::list()?;
@@ -2197,6 +2210,14 @@ fn preflight_domestication_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> 
     }
     Ok(())
 }
+fn preflight_processed_topo_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 64)?;
+    }
+    Ok(())
+}
 fn preflight_nick_sealing_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -2775,6 +2796,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_domestication_tag(bytes, &[139, 140, 141, 142])?;
     preflight_published_ligation_tag(bytes, &[143, 144, 145, 146])?;
     preflight_nick_sealing_tag(bytes, &[147])?;
+    preflight_processed_topo_tag(bytes, &[148])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -2782,6 +2804,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::ProjectProcessedTopo { .. } => 64,
         AnalysisJob::SealTopoNicks { .. } => 63,
         AnalysisJob::ListLigationProfiles
         | AnalysisJob::ScorePublishedLigation { .. }
@@ -3366,6 +3389,14 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             if crate::golden_gate_reaction::selection_revision(report, selection)? != r.revision {
                 return Err(Error::Format(
                     "Golden Gate reaction selection changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::ProjectProcessedTopo { inputs, request } => {
+            if crate::topo_processed_product::revision(inputs, request)? != r.revision {
+                return Err(Error::Format(
+                    "Processed TOPO source/treatment/contour context changed".into(),
                 ));
             }
             None
@@ -4128,6 +4159,10 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let result = match r.job {
+        AnalysisJob::ProjectProcessedTopo { inputs, request } => {
+            crate::topo_processed_product::inspect(&inputs, &request)
+                .map(AnalysisResult::ProcessedTopoProduct)
+        }
         AnalysisJob::SealTopoNicks { inputs, request } => {
             crate::topo_nick_sealing::inspect(&inputs, &request)
                 .map(AnalysisResult::TopoNicksSealed)

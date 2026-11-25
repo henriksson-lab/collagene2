@@ -186,7 +186,7 @@ fn source_identities(sources: &[topo::SourceIdentity]) -> Result<(), Error> {
     }
     Ok(())
 }
-fn preparation(preparation: &topo::PreparationEvidence) -> Result<(), Error> {
+pub(crate) fn preparation(preparation: &topo::PreparationEvidence) -> Result<(), Error> {
     let strands = &preparation.substrates.strands;
     if strands.is_empty()
         || strands.len() > 32
@@ -488,12 +488,12 @@ pub fn annotated_target_revision(
 ) -> Result<String, Error> {
     topo::annotated_target_revision(inputs, request, selection, target, policy)
 }
-fn annotation_shape(
+pub(crate) fn annotation_sources_shape(
     evidence: &crate::topo_annotations::AnnotationEvidence,
-    physical: &topo::Product,
+    sources: &[topo::SourceIdentity],
     length: usize,
 ) -> Result<(), Error> {
-    if evidence.sources.len() != physical.sources.len()
+    if evidence.sources.len() != sources.len()
         || evidence.sources.len() > 32
         || evidence.features.len() > 4096
         || evidence.warnings.len() > 65
@@ -504,7 +504,7 @@ fn annotation_shape(
     let mut feature_budget = collagene_model::bounds::ModelBudget::default();
     feature_budget.features(&evidence.features)?;
     let (mut maps, mut projected, mut retained) = (0usize, 0usize, 0usize);
-    for (source, identity) in evidence.sources.iter().zip(&physical.sources) {
+    for (source, identity) in evidence.sources.iter().zip(sources) {
         if source.role != identity.role
             || source.source_revision != identity.revision
             || source.maps.len() > 4096
@@ -576,9 +576,9 @@ pub fn validate_annotated_projection(
         }
     }
     if let Some(evidence) = &product.annotations {
-        annotation_shape(
+        annotation_sources_shape(
             evidence,
-            &product.physical,
+            &product.physical.sources,
             product.reference.as_ref().map_or(0, |r| r.sequence.len()),
         )?;
     }

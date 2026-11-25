@@ -2,7 +2,8 @@
 //! This module never repairs a nick, deletes an unpaired call, or takes a target
 //! sequence as an origin/orientation guide. The full physical graph is retained.
 use crate::{
-    Call, ChainEnds, FivePrime, Limits, PairSpan, Report, Substrates, ThreePrime, Transfer,
+    Call, ChainEnds, FivePrime, Limits, PairSpan, ProductGraph, Report, Substrates, ThreePrime,
+    Transfer,
 };
 use collagene_model::Sequence;
 use serde::{Deserialize, Serialize};
@@ -211,7 +212,7 @@ impl From<crate::Error> for Error {
         Self::Engine(e)
     }
 }
-fn limits(l: &ProjectionLimits) -> Result<(), Error> {
+pub(crate) fn limits(l: &ProjectionLimits) -> Result<(), Error> {
     if l.max_pairs == 0
         || l.max_pairs > 500_000
         || l.max_work_cells == 0
@@ -294,8 +295,12 @@ impl Graph {
     fn flat(&self, c: Call) -> usize {
         self.offsets[c.strand] + c.index
     }
-    fn new(s: &Substrates, r: &Report, component: usize) -> Result<Self, Withheld> {
-        let n = r.source_bases;
+    fn new(
+        s: &Substrates,
+        product: &ProductGraph,
+        n: usize,
+        component: usize,
+    ) -> Result<Self, Withheld> {
         let mut g = Self {
             offsets: vec![],
             bases: Vec::with_capacity(n),
@@ -317,7 +322,7 @@ impl Graph {
             strand_b,
             start_b,
             length,
-        } in &r.product.source_pairing
+        } in &product.source_pairing
         {
             for k in 0..*length {
                 let a = g.offsets[*strand_a] + start_a + k;
@@ -329,8 +334,8 @@ impl Graph {
                 g.pairs[b] = Some(a)
             }
         }
-        for (id, chain) in r.product.chains.iter().enumerate() {
-            let selected = r.product.components[component].chains.contains(&id);
+        for (id, chain) in product.chains.iter().enumerate() {
+            let selected = product.components[component].chains.contains(&id);
             let mut first = None;
             let mut last: Option<usize> = None;
             for p in &chain.sources {
@@ -424,19 +429,22 @@ fn budget(required: usize, limit: usize, kind: LimitKind) -> Result<(), Withheld
 fn known(f: FivePrime, t: &ThreePrime) -> bool {
     f != FivePrime::Unknown && !matches!(t, ThreePrime::Unknown)
 }
-fn prove(
+pub(crate) fn prove(
     s: &Substrates,
-    r: &Report,
-    select: &Selection,
+    product: &ProductGraph,
+    source_bases: usize,
+    all_requested_applied: bool,
+    component: usize,
+    reference_seed: Call,
     o: &Options,
 ) -> Result<DuplexView, Withheld> {
-    let c = &r.product.components[select.component];
+    let c = &product.components[component];
     if c.unpaired_nucleotides > 0 {
         return Err(Withheld::UnpairedNucleotides {
             count: c.unpaired_nucleotides,
         });
     }
-    if o.require_all_requested_transfers_applied && !r.all_requested_transfers_applied {
+    if o.require_all_requested_transfers_applied && !all_requested_applied {
         return Err(Withheld::RequestedTransfersNotApplied);
     }
     let pairs = c.paired_nucleotides / 2;
@@ -445,15 +453,15 @@ fn prove(
     }
     budget(pairs, o.limits.max_pairs, LimitKind::Pairs)?;
     // Additional projection workspace, not the engine's already-bounded report.
-    let work = r.source_bases * 64 + c.paired_nucleotides * 8;
-    let bytes = r.source_bases * 128
+    let work = source_bases * 64 + c.paired_nucleotides * 8;
+    let bytes = source_bases * 128
         + o.limits.max_mapping_segments.min(pairs) * 128
         + s.strands.len() * 4096
         + 8192;
     budget(work, o.limits.max_work_cells, LimitKind::WorkCells)?;
     budget(bytes, o.limits.max_work_bytes, LimitKind::WorkBytes)?;
-    let g = Graph::new(s, r, select.component)?;
-    let seed = g.flat(select.reference_seed);
+    let g = Graph::new(s, product, source_bases, component)?;
+    let seed = g.flat(reference_seed);
     if !g.member[seed] {
         return Err(Withheld::SeedOutsideComponent);
     }
@@ -468,8 +476,8 @@ fn prove(
             }
         }
     }
-    let mut next = vec![None; r.source_bases];
-    let mut prev = vec![None; r.source_bases];
+    let mut next = vec![None; source_bases];
+    let mut prev = vec![None; source_bases];
     for (node, &member) in g.member.iter().enumerate() {
         if member {
             next[node] = g.consensus(node, true)?;
@@ -515,7 +523,7 @@ fn prove(
             component_pairs: pairs,
         });
     }
-    let mut visited = vec![false; r.source_bases];
+    let mut visited = vec![false; source_bases];
     let mut path = Vec::with_capacity(pairs);
     let mut current = left;
     loop {
@@ -560,7 +568,7 @@ fn prove(
         path.iter()
             .position(|&p| p == seed)
             .ok_or(Withheld::NonAntiparallelCycle {
-                call: select.reference_seed,
+                call: reference_seed,
             })?;
     let mut maps: Vec<PairedSourceMap> = vec![];
     let mut top = String::with_capacity(pairs);
@@ -666,7 +674,7 @@ fn prove(
         nicks,
         ends,
         fully_known_terminal_chemistry: fully_known,
-        all_requested_transfers_applied: r.all_requested_transfers_applied,
+        all_requested_transfers_applied: all_requested_applied,
     })
 }
 /// Fresh reconstruction only. The physical report is moved intact into every
@@ -698,7 +706,15 @@ pub fn project(
     let outcome = if !seed_in_component {
         Outcome::Withheld(Withheld::SeedOutsideComponent)
     } else {
-        match prove(s, &physical, select, o) {
+        match prove(
+            s,
+            &physical.product,
+            physical.source_bases,
+            physical.all_requested_transfers_applied,
+            select.component,
+            select.reference_seed,
+            o,
+        ) {
             Ok(v) => Outcome::Proven(v),
             Err(reason) => Outcome::Withheld(reason),
         }

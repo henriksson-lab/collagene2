@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 161;
+pub const CURRENT_TOOL_COUNT: usize = 162;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -5473,6 +5473,15 @@ impl CollageneServer {
         Parameters(args): Parameters<published_ligation_tools::NickQuery>,
     ) -> Result<CallToolResult, ErrorData> {
         self.topo_seal_nicks(args).await
+    }
+    #[tool(
+        description = "Freshly reconstruct original-source TOPO preparation, explicit nick sealing, and a source-seeded paired contour of one selected treated component. Faithfully bridges representable strand/end/nick state with unknown internal modifications, preserving original/treated graphs and all other components. Atomically publishes an annotated sequence view with restrictive physical-evidence metadata and full artifact; imported documents cannot restore physical authority. No target acceptance, isolation or mixture winner is inferred."
+    )]
+    async fn project_processed_topo(
+        &self,
+        Parameters(args): Parameters<published_ligation_tools::ProcessedQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.topo_processed_product(args).await
     }
     #[tool(
         description = "Inspect source-bound restriction sites, explicit retained/protected ranges and coding-feature constraints for internal-site domestication. Uses exact catalog/feature/source pins and reports unsupported geometry or translation semantics rather than assuming a silent change. Reference inspection only; no physical stock is made."

@@ -22,6 +22,33 @@ and review proposals are implemented, despite older gap tables. See
 [workflow decisions](BENCHLING_WORKFLOW_DECISIONS.md). This documentation-only
 checkpoint adds no runtime/build/browser checks.
 
+## Fresh post-treatment contour and native duplex material
+
+Processed TOPO review now reconstructs original transfer and explicit ligase
+treatment once, then proves a source-seeded contour over the actual treated graph.
+The native bridge preserves representable top/bottom, topology, free-end and nick
+state; unsupported chemistry withholds material and internal modification calls
+remain Unknown. Source-coordinate annotations and complete original/treated
+component graphs remain retained. The standalone product document carries
+restrictive physical metadata, not a reusable proof of material state.
+[Contract and remaining integration](TOPO_PROCESSED_PRODUCT.md).
+
+Worker64/MCP162 append the reconstruction interfaces. Existing plan/candidate/
+science layouts are unchanged. The published afe2acf checkpoint passed every
+configured CI job ([run](https://github.com/henriksson-lab/collagene2/actions/runs/45671141448)).
+The preceding c288c98 checkpoint has passed Linux and web CI; macOS/Windows were
+still running at the last observation. Current validation passed40 focused
+native/SDK cases (processed/source/annotation/binding fixtures, original projection
+regressions and actual MCP routes), plus the corrected application/worker WASM
+compiler check. The unrelated four-call byproduct fixture selects its component
+by original source seed rather than assuming component ordering. No browser/HTTP
+check or full preview rebuild ran.
+
+Typed-plan consumption, retained historical graph/run attachments, HTML/PDF
+handoff, accounted directional flap processing and remaining delivery/acceptance
+work remain active. The next operation/schema migration inventory is explicit;
+no old TOPO report is fabricated and no imported sequence grants material state.
+
 ## Explicit downstream TOPO nick sealing
 
 An inspected TOPO orientation now opens a downstream ligase review with actual

@@ -785,3 +785,19 @@ preparation and original transfers precede the selected treatment. Blocked,
 unknown and unsupported choices remain explicit; all source calls/components and
 released activation remain in the evidence artifact. A sealed graph is not an
 accepted candidate or ordinary tracked duplex. [Contract](TOPO_NICK_SEALING.md).
+
+
+## Source-backed processed TOPO contours (162 tools)
+
+`project_processed_topo` accepts immutable `sources` and
+`request: { treatment: { preparation, sealing }, selection, options }`.
+`selection` pins `sealing_context_revision` (the physical sealing report context),
+`component` and original `reference_seed: { strand, index }`. Strict completion
+checks original transfers and requested seals. The native reconstruction returns
+actual proof/bridge availability and full evidence, atomically with an annotated
+sequence document where supported. That document retains restrictive physical
+metadata; importing it cannot restore the graph as physical state.
+
+Selected material is not an isolation/mixture-winner claim. Internal modifications
+remain unknown, unsupported chemistry is not erased, and no independent-target
+acceptance follows from this tool. [Contract](TOPO_PROCESSED_PRODUCT.md).

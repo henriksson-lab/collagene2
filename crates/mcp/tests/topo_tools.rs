@@ -181,6 +181,29 @@ async fn topo_sdk_retains_nicks_all_orientations_and_explicit_independent_target
             .iter()
             .all(|chain| chain["ends"] == "CovalentlyCircular")
     );
+    let projected=call(&c,"project_processed_topo",json!({"sources":sources,"request":{
+        "treatment":{"preparation":request,"sealing":sealing},
+        "selection":{"sealing_context_revision":proof["report"]["sealing"]["context_revision"],"component":0,"reference_seed":{"strand":0,"index":0}},
+        "options":{"require_all_requested_transfers_applied":true,"require_known_terminal_chemistry":true,"limits":t::physical::projection::ProjectionLimits::default()}
+    }})).await;
+    assert_eq!(projected["verified"], false);
+    assert_eq!(projected["contour_proven"], true);
+    assert!(!projected["document"].is_null());
+    assert_eq!(projected["duplex"]["covalently_closed_in_model"], true);
+    let product_evidence = evidence(&c, &projected["artifact_id"]).await;
+    let molecule: Molecule =
+        serde_json::from_value(product_evidence["report"]["product"].clone()).unwrap();
+    assert_eq!(molecule.sequence.as_str(), "AGGGGCATCCCTTCGAATGA");
+    assert!(collagene_core::chemistry::has_unmapped_physical_evidence(
+        &molecule
+    ));
+    assert_eq!(
+        product_evidence["report"]["projection"]["sealing"]["parent"]["product"]["nicks"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
     let mut wrong = sealing.clone();
     wrong["nicks"][0]["five"]["index"] = json!(1);
     let retained = call(

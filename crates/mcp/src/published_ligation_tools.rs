@@ -32,7 +32,32 @@ pub struct NickQuery {
     pub sources: Vec<TopoSourceRef>,
     pub request: collagene_core::topo_nick_sealing::Request,
 }
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ProcessedQuery {
+    pub sources: Vec<TopoSourceRef>,
+    pub request: collagene_core::topo_processed_product::Request,
+}
 impl CollageneServer {
+    pub(super) async fn topo_processed_product(
+        &self,
+        args: ProcessedQuery,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || {
+            if args.request.treatment.sealing.nicks.len()>16 || args.request.treatment.sealing.ligase_assumption.len()>4096 {
+                return Err(bad("Bounded source-backed treatment required"));
+            }
+            let (inputs,_) = server.topo_sources(&args.sources,&args.request.treatment.preparation,None)?;
+            let report=collagene_core::topo_processed_product::inspect(&inputs,&args.request).map_err(bad)?;
+            report.validate_binding(&collagene_core::topo_processed_product::revision(&inputs,&args.request).map_err(bad)?).map_err(bad)?;
+            let summary=report.duplex.as_ref().map(|d|d.summary()).transpose().map_err(bad)?;
+            let (artifact,document)=server.candidate_document_artifact_bounded(&json!({"sources":args.sources,"report":report}),report.product.clone(),"processed-topo-product.json",32*1024*1024)?;
+            output(json!({"state":"source-reconstructed-processed-contour","verified":false,"context_revision":report.context_revision,
+                "contour_proven":matches!(report.projection.outcome,collagene_core::topo::physical::projection::Outcome::Proven(_)),"withheld":match &report.projection.outcome { collagene_core::topo::physical::projection::Outcome::Withheld(reason)=>Some(reason),_=>None },"duplex":summary,"bridge_notes":report.bridge_notes,"document":document,
+                "artifact_id":artifact,"authority":"Fresh original-source transfer, explicit ligase treatment and selected-component paired-contour proof. Full parent/treated graphs and other components remain in evidence. Internal modifications remain unknown; an exported sequence document cannot restore physical state. No independent-target acceptance, isolation or experimental mixture winner is established."}))
+        }).await
+    }
     pub(super) async fn topo_seal_nicks(
         &self,
         args: NickQuery,

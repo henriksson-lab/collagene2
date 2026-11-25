@@ -8,7 +8,7 @@ use collagene_core::{
         self,
         physical::{self, nick_sealing},
     },
-    topo_nick_sealing,
+    topo_nick_sealing, topo_processed_product,
 };
 use leptos::prelude::*;
 use std::{
@@ -41,6 +41,7 @@ struct TreatmentForm {
     assumption: String,
 }
 struct Evidence {
+    ticket: u32,
     frame: Frame,
     form: TreatmentForm,
     report: Arc<topo_nick_sealing::Report>,
@@ -276,6 +277,7 @@ pub fn TopoNickView(
                             match report.validate_binding(&revision) {
                                 Ok(()) => {
                                     evidence.set(Some(Arc::new(Evidence {
+                                        ticket,
                                         frame: key,
                                         form: chosen,
                                         report: Arc::new(report),
@@ -337,5 +339,297 @@ pub fn TopoNickView(
         <p role="status">{move||status.get()}</p>
         {move||current().map(|e|report_view(e.report.clone()))}
         <button class="text-tool" disabled=move||current().is_none() on:click=move|_|export.run(())>"Download full nick treatment evidence JSON"</button>
+        <ProcessedTopoView evidence=evidence frame=frame treatment_form=form capture=capture locked=Memo::new(move |_|locked.get()||busy.get())/>
     </details> }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct ContourForm {
+    component: String,
+    strand: String,
+    call: String,
+    require_all: bool,
+    require_known: bool,
+}
+impl Default for ContourForm {
+    fn default() -> Self {
+        Self {
+            component: String::new(),
+            strand: String::new(),
+            call: String::new(),
+            require_all: true,
+            require_known: true,
+        }
+    }
+}
+struct ProcessedEvidence {
+    parent: Arc<Evidence>,
+    form: ContourForm,
+    report: Arc<topo_processed_product::Report>,
+}
+fn contour_view(report: Arc<topo_processed_product::Report>) -> AnyView {
+    use physical::projection::Outcome;
+    match &report.projection.outcome {
+        Outcome::Withheld(reason) => {
+            let notes = report.clone();
+            view!{<section><h4>"Paired contour withheld"</h4><p>{format!("{reason:?}")}</p><p>"The actual treated graph remains available in the nick review and evidence download. No duplex or accepted target was substituted."</p><p>{format!("Faithful chemistry duplex available: {} · tracked source-map bridge available: {}",report.duplex.is_some(),report.tracked.is_some())}</p><EvidencePage label="Bridge limitations" total=report.bridge_notes.len() row=Callback::new(move|i:usize|notes.bridge_notes[i].clone())/></section>}.into_any()
+        }
+        Outcome::Proven(view) => {
+            let text_page = RwSignal::new(0usize);
+            let length = view.top.len();
+            let sequence = report.clone();
+            let maps = report.clone();
+            let nicks = report.clone();
+            let notes = report.clone();
+            view!{<section>
+                <h4>"Paired contour proven — target not assessed"</h4>
+                <p>{format!("{:?} · top {} bases · bottom {} bases · {} retained nicks · known terminal chemistry: {}",view.topology,view.top.len(),view.bottom.len(),view.nicks.len(),view.fully_known_terminal_chemistry)}</p>
+                <p>{format!("Faithful chemistry duplex available: {} · tracked source-map bridge available: {} · source-derived reference available: {}",report.duplex.is_some(),report.tracked.is_some(),report.product.is_some())}</p>
+                <p class="helper">"A source-derived contour and faithful bridge do not establish an intended target or laboratory success. Top and bottom sequences below are each stored in their own 5′→3′ direction; their displayed text is not an antiparallel column alignment."</p>
+                <p>{move||format!("Sequence page {} of {}",text_page.get()+1,length.div_ceil(600).max(1))}</p>
+                <button class="text-tool" disabled=move||text_page.get()==0 on:click=move|_|text_page.update(|p|*p=p.saturating_sub(1))>"Previous sequence"</button>
+                <button class="text-tool" disabled=move||(text_page.get()+1)*600>=length on:click=move|_|text_page.update(|p|*p+=1)>"Next sequence"</button>
+                {move||match &sequence.projection.outcome {Outcome::Proven(v)=>{let start=text_page.get()*600;let end=(start+600).min(v.top.len());view!{<p>{format!("Stored offsets {start}–{end}")}</p><p>"Top 5′→3′"</p><pre>{v.top.as_str()[start..end].to_string()}</pre><p>"Bottom 5′→3′"</p><pre>{v.bottom.as_str()[start..end].to_string()}</pre>}.into_any()},_=>().into_any()}}
+                <EvidencePage label="Source-pair mapping" total=view.source_maps.len() row=Callback::new(move|i:usize|match &maps.projection.outcome {Outcome::Proven(v)=>{let m=&v.source_maps[i];format!("Reference {}–{}: top source {} offset {}; antiparallel bottom source {} offset {} · {} pairs",m.reference_start,m.reference_start+m.length,m.top_strand,m.top_start,m.bottom_strand,m.bottom_start,m.length)},_=>String::new()})/>
+                <EvidencePage label="Retained contour nicks" total=view.nicks.len() row=Callback::new(move|i:usize|match &nicks.projection.outcome {Outcome::Proven(v)=>{let n=&v.nicks[i];format!("{:?} boundary {}: {} ({:?}) → {} ({:?})",n.strand,n.boundary,call_text(n.three),n.three_prime,call_text(n.five),n.five_prime)},_=>String::new()})/>
+                <EvidencePage label="Bridge limitations" total=report.bridge_notes.len() row=Callback::new(move|i:usize|notes.bridge_notes[i].clone())/>
+            </section>}.into_any()
+        }
+    }
+}
+#[component]
+fn ProcessedTopoView(
+    evidence: RwSignal<Option<Arc<Evidence>>>,
+    frame: Memo<Option<Frame>>,
+    treatment_form: RwSignal<TreatmentForm>,
+    capture: Callback<Frame, Result<Capture, String>>,
+    locked: Memo<bool>,
+) -> impl IntoView {
+    let form = RwSignal::new(ContourForm::default());
+    let result = RwSignal::new(None::<Arc<ProcessedEvidence>>);
+    let status = RwSignal::new(String::new());
+    let busy = RwSignal::new(false);
+    let generation = RwSignal::new(0u32);
+    let worker = StoredValue::new_local(None::<Rc<CachedWorker>>);
+    let alive = Arc::new(AtomicBool::new(true));
+    let current_parent = move || {
+        evidence.get().filter(|e| {
+            !locked.get()
+                && frame.get().as_ref() == Some(&e.frame)
+                && treatment_form.get() == e.form
+        })
+    };
+    let parent_key =
+        Memo::new(move |_| current_parent().map(|e| (e.ticket, e.report.context_revision.clone())));
+    let cancel = Callback::new(move |()| {
+        generation.update(|n| *n = n.wrapping_add(1));
+        if let Some(w) = worker.get_value() {
+            w.close();
+        }
+        worker.set_value(None);
+        busy.set(false);
+    });
+    Effect::new(move |_| {
+        let _ = parent_key.get();
+        cancel.run(());
+        result.set(None);
+        form.set(ContourForm::default());
+        status.set(String::new());
+    });
+    Effect::new(move |_| {
+        let _ = form.get();
+        cancel.run(());
+        result.set(None);
+    });
+    let cleanup = alive.clone();
+    on_cleanup(move || {
+        cleanup.store(false, Ordering::Relaxed);
+        if let Some(w) = worker.get_value() {
+            w.close();
+        }
+        worker.set_value(None);
+    });
+    let inspect_alive = alive.clone();
+    let inspect = Callback::new(move |()| {
+        if locked.get_untracked() || busy.get_untracked() {
+            return;
+        }
+        let Some(parent) = current_parent() else {
+            return;
+        };
+        let chosen = form.get_untracked();
+        let parsed = (|| -> Result<(usize, physical::Call), String> {
+            let component = chosen
+                .component
+                .parse::<usize>()
+                .map_err(|_| "Choose an actual treated component.")?;
+            let strand = chosen
+                .strand
+                .parse::<usize>()
+                .map_err(|_| "Choose a prepared source strand.")?;
+            let call = chosen
+                .call
+                .parse::<usize>()
+                .ok()
+                .and_then(|v| v.checked_sub(1))
+                .ok_or("Choose a one-based source call.")?;
+            let product = &parent.report.sealing.product;
+            if component >= product.components.len() {
+                return Err("The component no longer exists.".into());
+            }
+            let source = parent
+                .report
+                .preparation
+                .substrates
+                .strands
+                .get(strand)
+                .ok_or("The source strand no longer exists.")?;
+            if call >= source.sequence.len() {
+                return Err("The call is outside the prepared source strand.".into());
+            }
+            Ok((
+                component,
+                physical::Call {
+                    strand,
+                    index: call,
+                },
+            ))
+        })();
+        let (component, seed) = match parsed {
+            Ok(v) => v,
+            Err(e) => {
+                status.set(e);
+                return;
+            }
+        };
+        let original = match capture.run(parent.frame.clone()) {
+            Ok(v) => v,
+            Err(e) => {
+                status.set(e);
+                return;
+            }
+        };
+        let request = topo_processed_product::Request {
+            treatment: parent.report.request.clone(),
+            selection: physical::processed_projection::Selection {
+                sealing_context_revision: parent.report.sealing.context_revision.clone(),
+                component,
+                reference_seed: seed,
+            },
+            options: physical::projection::Options {
+                require_all_requested_transfers_applied: chosen.require_all,
+                require_known_terminal_chemistry: chosen.require_known,
+                ..Default::default()
+            },
+        };
+        let revision = match topo_processed_product::revision(&original.inputs, &request) {
+            Ok(r) => r,
+            Err(e) => {
+                status.set(e.to_string());
+                return;
+            }
+        };
+        cancel.run(());
+        result.set(None);
+        let executor = match CachedWorker::new() {
+            Ok(w) => Rc::new(w),
+            Err(e) => {
+                status.set(e);
+                return;
+            }
+        };
+        worker.set_value(Some(executor.clone()));
+        busy.set(true);
+        let ticket = generation.get_untracked();
+        let alive = inspect_alive.clone();
+        status.set("Reconstructing the treated graph and selected contour from original source declarations…".into());
+        spawn_local(async move {
+            let response = executor
+                .ask(WireRequest {
+                    id: ticket,
+                    revision: revision.clone(),
+                    job: AnalysisJob::ProjectProcessedTopo {
+                        inputs: original.inputs,
+                        request,
+                    },
+                })
+                .await;
+            executor.close();
+            if !alive.load(Ordering::Relaxed) || generation.get_untracked() != ticket {
+                return;
+            }
+            if locked.get_untracked()
+                || form.get_untracked() != chosen
+                || !current_parent().is_some_and(|e| Arc::ptr_eq(&e, &parent))
+            {
+                return;
+            }
+            busy.set(false);
+            worker.set_value(None);
+            match response {
+                Ok(reply) if reply.id == ticket && reply.revision == revision => match reply.result
+                {
+                    AnalysisResult::ProcessedTopoProduct(report) => {
+                        match report.validate_binding(&revision) {
+                            Ok(()) => {
+                                result.set(Some(Arc::new(ProcessedEvidence {
+                                    parent,
+                                    form: chosen,
+                                    report: Arc::new(report),
+                                })));
+                                status.set("Source-derived contour review completed. Target identity was not assessed.".into());
+                            }
+                            Err(e) => status.set(e.to_string()),
+                        }
+                    }
+                    AnalysisResult::Error(e) => status.set(e),
+                    _ => status.set("Unexpected processed TOPO response.".into()),
+                },
+                Ok(_) => {
+                    status.set("Processed TOPO response has a different source binding.".into())
+                }
+                Err(e) => status.set(e),
+            }
+        });
+    });
+    let current = move || {
+        result.get().filter(|r| {
+            form.get() == r.form && current_parent().is_some_and(|e| Arc::ptr_eq(&e, &r.parent))
+        })
+    };
+    let export = Callback::new(move |()| {
+        let Some(value) = current() else {
+            return;
+        };
+        if let Err(e) = capture.run(value.parent.frame.clone()) {
+            status.set(e);
+            return;
+        }
+        let mut bytes = Json(vec![]);
+        if let Err(e) = serde_json::to_writer(&mut bytes, value.report.as_ref())
+            .map_err(|e| e.to_string())
+            .and_then(|()| download("topo-treated-contour.json", "application/json", &bytes.0))
+        {
+            status.set(e);
+        }
+    });
+    view! {<section class="topo-processed-contour">
+        <h4>"Review a contour after nick treatment"</h4>
+        <p class="helper">"Choose an actual treated component and a prepared source call to set direction and origin. Original sources and explicit nick treatment are reconstructed natively; a target sequence does not guide this proof."</p>
+        {move||current_parent().map(|parent|{
+            let strands=parent.clone();
+            view!{
+                <label>"Treated physical component"<select disabled=move||locked.get()||busy.get() prop:value=move||form.with(|f|f.component.clone()) on:change=move|e|form.update(|f|f.component=event_target_value(&e))><option value="">"Choose a component…"</option>{parent.report.sealing.product.components.iter().enumerate().map(|(i,c)|view!{<option value=i.to_string()>{format!("Component {i} · {} paired / {} unpaired calls",c.paired_nucleotides,c.unpaired_nucleotides)}</option>}).collect_view()}</select></label>
+                <label>"Prepared source strand"<select disabled=move||locked.get()||busy.get() prop:value=move||form.with(|f|f.strand.clone()) on:change=move|e|form.update(|f|{f.strand=event_target_value(&e);f.call.clear();})><option value="">"Choose a source strand…"</option>{strands.report.preparation.substrates.strands.iter().enumerate().map(|(i,s)|view!{<option value=i.to_string()>{format!("{i}: {} / {} · {} calls",s.role,s.id,s.sequence.len())}</option>}).collect_view()}</select></label>
+            }
+        })}
+        <label>"Prepared source call (one based)"<input type="number" min="1" disabled=move||locked.get()||busy.get() prop:value=move||form.with(|f|f.call.clone()) on:input=move|e|form.update(|f|f.call=event_target_value(&e))/></label>
+        <label class="checkbox-label"><input type="checkbox" disabled=move||locked.get()||busy.get() prop:checked=move||form.with(|f|f.require_all) on:change=move|e|form.update(|f|f.require_all=event_target_checked(&e))/>"Require all explicitly requested steps to apply"</label>
+        <label class="checkbox-label"><input type="checkbox" disabled=move||locked.get()||busy.get() prop:checked=move||form.with(|f|f.require_known) on:change=move|e|form.update(|f|f.require_known=event_target_checked(&e))/>"Require known terminal chemistry"</label>
+        <button class="button secondary" disabled=move||locked.get()||busy.get()||current_parent().is_none() on:click=move|_|inspect.run(())>"Reconstruct treated contour"</button>
+        <Show when=move||busy.get()><button class="text-tool" on:click=move|_|{cancel.run(());status.set("Contour reconstruction cancelled.".into());}>"Cancel contour reconstruction"</button></Show>
+        <p role="status">{move||status.get()}</p>
+        {move||current().map(|r|contour_view(r.report.clone()))}
+        <button class="text-tool" disabled=move||current().is_none() on:click=move|_|export.run(())>"Download full treated graph and contour evidence"</button>
+    </section>}
 }

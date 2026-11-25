@@ -1199,3 +1199,6 @@ pub mod projection;
 
 /// Explicit source-reconstructed downstream DNA ligase nick sealing.
 pub mod nick_sealing;
+
+/// Paired-contour proof after explicit source-reconstructed treatment.
+pub mod processed_projection;

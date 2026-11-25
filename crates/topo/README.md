@@ -97,3 +97,9 @@ reports are not accepted as physical starting state.
 The application adapter, binary worker, MCP and downstream review controls are
 described in [the source-bound contract](../../docs/TOPO_NICK_SEALING.md). Ordinary
 paired-contour projection and tracked-duplex composition remain separate stages.
+
+`processed_projection` now proves a source-seeded paired contour directly from
+that freshly treated graph, reusing the private contour algorithm. It retains both
+ancestral graphs and all other components. Strict requested-operation policy checks
+original transfers and nick treatment; directional unpaired flaps remain withheld.
+[Application bridge and remaining plan handoff](../../docs/TOPO_PROCESSED_PRODUCT.md).

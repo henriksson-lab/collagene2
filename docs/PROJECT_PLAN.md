@@ -1081,3 +1081,18 @@ without changing existing plan/candidate/science versions.
 
 Accounted flap processing, graph-to-duplex composition, durable graph-only handoff,
 broader methods and remaining delivery/acceptance work remain active.
+
+
+### Fresh processed contour and faithful duplex bridge
+
+Explicit TOPO nick treatment now feeds a source-seeded contour proof over the
+actual treated graph, sharing the private contour algorithm with the original
+TOPO path. Native duplex construction preserves representable strand/end/nick
+state; unsupported chemistry withholds the bridge, and internal modifications
+remain unknown. Source-coordinate annotations and complete parent/treated graphs
+stay available. The desktop review, worker64 and MCP162 use fresh reconstruction.
+[Contract and remaining end-to-end work](TOPO_PROCESSED_PRODUCT.md).
+
+Typed-plan/run/protocol consumption of processed material, accounted directional
+flap processing, broader chemistry and all remaining delivery/acceptance work
+remain active. Imported sequence views still cannot restore physical authority.

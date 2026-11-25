@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **63** and reads supported schemas 1–62. Candidate files write schema 12; workspace plan schema is 10; the verifier is science-15.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **64** and reads supported schemas 1–63. Candidate files write schema 12; workspace plan schema is 10; the verifier is science-15.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -822,3 +822,15 @@ message limits apply. Decoded evidence is structurally bound; scientific authori
 requires fresh reconstruction, never a caller-supplied graph or positive receipt.
 Existing operation/plan/candidate/science layouts remain unchanged.
 [Scientific contract](TOPO_NICK_SEALING.md).
+
+
+## Fresh processed TOPO contours (schema64)
+
+Job148 `ProjectProcessedTopo` returns140 `ProcessedTopoProduct`, binding original
+sources/preparation, explicit nick treatment, component/source seed and proof
+options. Pre64 envelopes reject these selectors before payload decode. Ordinary
+message caps apply; no workspace-size allowance is added. Full original/treated
+graphs and conservative annotation/state evidence remain retained; imported result
+validation cannot restore a fresh physical material. Existing old DTO/operation /
+plan/candidate/science layouts remain unchanged.
+[Contract](TOPO_PROCESSED_PRODUCT.md).

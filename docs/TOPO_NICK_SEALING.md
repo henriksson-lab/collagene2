@@ -52,3 +52,12 @@ Remaining F15 work includes accounted directional flap processing, fresh contour
 proof and tracked-duplex composition after processing, durable graph-only workflow
 handoff, broader method profiles and final delivery/GUI acceptance. Adding a
 ligase step does not imply these requirements are complete.
+
+
+## Post-treatment contour stage
+
+The [fresh processed-product stage](TOPO_PROCESSED_PRODUCT.md) now proves a paired
+contour over this actual child graph and bridges faithfully representable duplex
+state. It retains all original/treated evidence. The existing earlier projection
+path remains unchanged. Typed-plan/run/protocol handoff and accounted flap
+processing remain distinct unfinished work.

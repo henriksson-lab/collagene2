@@ -266,3 +266,6 @@
 .assembly-finalize-options { display:grid; gap:10px; }
 
 .modal.read-review-modal{width:min(1100px,96vw);max-height:92vh;overflow:auto}
+
+/* Local preparation diagnostics; row focus targets belong to each panel instance. */
+.method-diagnostics{margin:12px 0;padding:10px;border:1px solid #dce3e8;border-radius:5px}.method-diagnostics table{width:100%;border-collapse:collapse;font-size:12px}.method-diagnostics td,.method-diagnostics th{text-align:left;vertical-align:top;padding:6px;border-bottom:1px solid #e1e7e0;overflow-wrap:anywhere}.method-diagnostics .diagnostic-table{overflow:auto}.method-diagnostics .diagnostic-failure{border-left:3px solid #b55b3c;padding-left:9px}.method-preparation-focus:focus{outline:2px solid #527eb1;outline-offset:3px}.method-diagnostics .method-row-actions{display:flex;flex-wrap:wrap;gap:6px}

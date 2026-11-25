@@ -119,6 +119,8 @@ mod mutation_review;
 mod primer_pair_editor;
 #[cfg(any(target_arch = "wasm32", test))]
 mod primer_pair_model;
+#[cfg(any(target_arch = "wasm32", test))]
+mod primer_pair_storage;
 #[cfg(target_arch = "wasm32")]
 mod primer_picker;
 #[cfg(target_arch = "wasm32")]

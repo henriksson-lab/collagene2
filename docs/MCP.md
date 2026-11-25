@@ -647,3 +647,17 @@ revision agrees with separately built `build_edited_assembly_intent` for the sam
 sources/base/edits. Fresh `propose_overlap_assembly` against that independent target
 must still check all preparations and actual products. See
 [selective SDK contract](SELECTIVE_JUNCTION_MCP.md).
+
+
+## Local assembly diagnostics
+
+Existing `propose_overlap_assembly` and `propose_ligation_assembly` responses and
+full JSON artifacts add `diagnostics`, bound to the same preview/plan/target.
+Rows distinguish input references, reconstructed preparation chains, failed chains
+and blocked work. The first missing operation is located from the recorded dense
+product prefix and compiled row ownership, never by parsing findings. Target
+mismatch after all operations remains a separate stage. Exact homology/profile
+locations can identify overlap problems; available ligation endpoints do not by
+themselves identify an incompatible junction or establish chemistry. Full original
+findings, prepared products and verification remain available. This adds no tool,
+new authority or protocol version. [Detailed contract](ASSEMBLY_DIAGNOSTICS_MCP.md).

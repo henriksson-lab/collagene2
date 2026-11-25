@@ -692,3 +692,26 @@ validation then needs a shared reference/read/trace cursor and persistent
 previous/next discrepancy navigation. Inline primer-domain boundary edits should
 feed the same explicit proposal/Apply transaction. These are workflow refinements
 using current native engines; they do not reopen Primer3, MSA, inventory or mobile.
+
+
+### Local preparation recovery and saved primer pairs
+
+The existing preparation evidence now derives typed row, step and junction
+locations from the bound current-engine compiler/verifier receipt. It separates a
+failed operation, downstream blocked work, a final target mismatch, and complete
+operation execution with an overall incomplete assessment. It does not parse human
+finding strings or infer ligation compatibility from available end summaries.
+The dock provides direct Edit preparation and original-source navigation, preserving
+other rows and requiring fresh computation after changes. Existing overlap/ligation
+MCP responses include the same additive diagnostic report. See
+[diagnostic scope](ASSEMBLY_DIAGNOSTICS.md) and [MCP contract](ASSEMBLY_DIAGNOSTICS_MCP.md).
+
+The shared primer pair now persists unfinished text and exact selection anchors in
+the native workspace and browser autosave. Restoration checks retained historical
+source events and their actual oriented bases; mismatched edited domains remain
+explicit. Applied pairs, PCR results and positive scientific authority are not
+restored. [Draft contract](PRIMER_PAIR_DRAFT.md). These changes leave worker45,
+MCP131, candidate11, plan9, science14 and archive1 unchanged. Remaining work includes
+Golden Gate junction editing/optimization, broader method/form draft persistence,
+the synchronized reference/read/trace surface, output continuity and the rest of
+the in-scope delivery gates. No browser acceptance is claimed.

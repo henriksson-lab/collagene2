@@ -564,3 +564,32 @@ Validation for this checkpoint: eight focused native tests passed (five independ
 core fixtures, one append-only worker/binding fixture and two real MCP SDK groups).
 The WASM web target passed `cargo check`. Checks ran in the existing shared cache
 while implementation/research continued. No browser checks or preview refresh ran.
+
+
+## Local preparation recovery and persistent primer pair draft
+
+The cloning dock shows typed per-row preparation progress, first failed operation,
+blocked later steps and actual profile junction evidence. Direct Edit preparation
+focuses the existing row without changing its contents; source navigation retains
+exact context and pinned original regions. The same read-only locations are added
+to existing MCP overlap/ligation responses and full evidence artifacts. Complete
+reconstruction with an invalid independent target remains distinct from a failed
+preparation, and an incomplete result is never promoted by these locations.
+
+Unfinished shared primer pairs are saved as bounded native attachments with their
+names, raw domain/tail text and exact historical selection anchors. Native export
+and browser autosave use the existing workspace path. Restore verifies actual
+original oriented bases and source events, preserves intentional edits and does
+not restore prior PCR/mutation results. No new native/worker/science version or
+external runtime dependency is introduced.
+
+Validation: the final unified native batch passed 40 tests (five core diagnostic
+fixtures, two actual MCP SDK groups and 33 native web cases, including the three
+new pair-persistence cases). The full development Trunk build passed for web, worker and asset packaging.
+No separate repeated WASM compiler pass or browser check ran. Port 8082 now serves
+`/tmp/collagene2-diagnostics-public-dist`: 39 immutable assets / 175,726,276 bytes,
+retaining previously versioned workers for existing tabs. Index SHA256:
+`9e1828f66d6e8d1cc938ba931aaaeb7b4f61e31267dc0058443efaf1a2ad4309`; current worker bundle:
+`5338dcc50e30f7b717c2ad6620b9cf5b961c5be0986666a03902f9be88b4ce58`. The server exposes no writes or filesystem API. Detailed local evidence:
+`/tmp/collagene2-diagnostics-public-evidence.json`. This is build and publication
+evidence, not GUI acceptance or completion of the product.

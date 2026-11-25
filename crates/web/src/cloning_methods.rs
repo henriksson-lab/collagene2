@@ -12,7 +12,7 @@ use collagene_core::{
         DesignPlan, Operation, OrientedSource, PlanInput, Source, TailPreview, TailSubstrate,
     },
 };
-use leptos::prelude::*;
+use leptos::{html, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::{
     rc::Rc,
@@ -407,6 +407,8 @@ struct GoldenGateSuggestions {
 struct Evidence {
     config: MethodsState,
     revisions: Vec<String>,
+    context: Vec<crate::digest::SourceInfo>,
+    target_context: TargetContext,
     target: String,
     epoch: u64,
     tails: Vec<TailPreview>,
@@ -514,9 +516,15 @@ pub fn CloningMethodsPanel(
         Result<collagene_core::primer_reuse::Resolved, String>,
     >,
     #[prop(optional_no_strip)] on_finalize: Option<Callback<Candidate, Result<(), String>>>,
+    #[prop(optional_no_strip)] on_source: Option<Callback<(usize, usize), Result<(), String>>>,
     #[prop(default = false)] fixed_sources: bool,
     #[prop(default = false)] disable_plain_primer_design: bool,
 ) -> impl IntoView {
+    let row_nodes = StoredValue::new_local(
+        (0..12)
+            .map(|_| NodeRef::<html::Div>::new())
+            .collect::<Vec<_>>(),
+    );
     let source_indices = Memo::new(move |_| {
         config.with(|c| {
             if c.mode == Mode::Tailing {
@@ -959,6 +967,24 @@ pub fn CloningMethodsPanel(
             status.set("Choose available source documents".into());
             return;
         };
+        let Some(bound_context) = source_context.get_untracked() else {
+            status.set("Choose original source events before computing method evidence.".into());
+            return;
+        };
+        let bound_target_context = target_info.get_untracked();
+        if source_revisions.get_untracked()
+            != Some(
+                bound_context
+                    .iter()
+                    .map(|info| info.binding.revision.clone())
+                    .collect(),
+            )
+            || target.get_untracked() != bound_target_context.revision()
+        {
+            status.set("Source or target event revisions differ from their current models. Select the current documents again.".into());
+            return;
+        }
+
         let recipes = if state.mode == Mode::Tailing {
             match state
                 .vector
@@ -1102,6 +1128,8 @@ pub fn CloningMethodsPanel(
                 || generation.get_untracked() != token
                 || config.get_untracked() != state
                 || source_revisions.get_untracked() != Some(revs.clone())
+                || source_context.get_untracked() != Some(bound_context.clone())
+                || target_info.get_untracked() != bound_target_context
                 || target.get_untracked() != bound_target
                 || epoch.get_untracked() != bound_epoch
             {
@@ -1114,6 +1142,8 @@ pub fn CloningMethodsPanel(
                     evidence.set(Some(Arc::new(Evidence {
                         config: state,
                         revisions: revs,
+                        context: bound_context,
+                        target_context: bound_target_context,
                         target: bound_target,
                         epoch: bound_epoch,
                         tails,
@@ -1127,11 +1157,31 @@ pub fn CloningMethodsPanel(
             }
         });
     });
+    let diagnostic_guard = Callback::new(move |saved: Arc<Evidence>| -> Result<(), String> {
+        if !evidence.with_untracked(|current| {
+            current
+                .as_ref()
+                .is_some_and(|value| Arc::ptr_eq(value, &saved))
+        }) || config.get_untracked() != saved.config
+            || source_context.get_untracked() != Some(saved.context.clone())
+            || target_info.get_untracked() != saved.target_context
+            || source_revisions.get_untracked() != Some(saved.revisions.clone())
+            || target.get_untracked() != saved.target
+            || epoch.get_untracked() != saved.epoch
+        {
+            return Err("Sources or preparation settings changed. Compute fresh evidence before navigating its diagnostics.".into());
+        }
+        Ok(())
+    });
     let review = Callback::new(move |()| {
         let (Some(proof), Some(inputs)) = (evidence.get_untracked(), sources.get_untracked())
         else {
             return;
         };
+        if let Err(error) = diagnostic_guard.run(proof.clone()) {
+            status.set(error);
+            return;
+        }
         let state = config.get_untracked();
         let current_target = molecule.get_untracked();
         if proof.config != state
@@ -1240,7 +1290,7 @@ pub fn CloningMethodsPanel(
         <Show when=move||config.get().mode!=Mode::Tailing><Show when=move||config.get().mode==Mode::Overlap><label>"Overlap profile"<select aria-label="Overlap profile method" prop:value=move||format!("{:?}",config.get().method) on:change=move|e|config.update(|c|c.method=match event_target_value(&e).as_str(){"Gibson"=>OverlapMethod::Gibson,"InFusion"=>OverlapMethod::InFusion,_=>OverlapMethod::HiFi})><option value="Gibson">"Gibson"</option><option value="HiFi">"HiFi"</option><option value="InFusion">"In-Fusion"</option></select></label><p class="helper">"Fragments are listed in product order with explicit orientation. Homology geometry is checked exactly; published length guidance is advisory. No reaction completion or unique mixture product is established."</p></Show>
             <Show when=move||matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate)><p class="helper">"List fragments in intended ligation order. Preparation, end repair and terminal treatment are explicit source-bound operations. Whole linear DNA retains unknown terminal chemistry; its sequence alone does not imply cleaved or PCR ends. Unknown ends can withhold ligation even after phosphorylation."</p><label class="checkbox-label"><input type="checkbox" aria-label="Allow retained ordered ligation nicks" prop:checked=move||config.get().allow_nicked on:change=move|e|config.update(|c|c.allow_nicked=event_target_checked(&e))/>"Allow explicitly retained nicks"</label></Show>
             <h3>"1. Choose source fragments and regions"</h3>
-            <For each=move||config.with(|c|(0..c.rows.len()).collect::<Vec<_>>()) key=|i|*i children=move|i|view!{<OverlapFields config index=i query_options primer_sources list_primers resolve_primer epoch selected_region fixed_sources/>}/>
+            <Show when=move||config.with(|c|c.rows.len()>12)><p role="alert">"This preparation exceeds the supported 12 rows. No partial row list is shown."</p></Show><For each=move||config.with(|c|if c.rows.len()<=12{(0..c.rows.len()).collect::<Vec<_>>()}else{Vec::new()}) key=|i|*i children=move|i|view!{<div node_ref=row_nodes.with_value(|nodes|nodes[i]) tabindex="-1" class="method-preparation-focus"><OverlapFields config index=i query_options primer_sources list_primers resolve_primer epoch selected_region fixed_sources/></div>}/>
             <button class="button secondary full" disabled=move||{fixed_sources||config.with(|c|c.rows.len()>=12)} on:click=move|_|config.update(|c|c.rows.push(OverlapInput::default()))>{move||if matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate){"Add ligation fragment"}else{"Add overlap fragment"}}</button><p class="helper">"This panel supports up to 12 ordered fragments; the typed core has its separate documented work bounds."</p><Show when=move||config.get().mode==Mode::Overlap><label>"Overlap lengths in junction order (bp)"<input aria-label="Profile overlap lengths" prop:value=move||config.get().overlaps on:input=move|e|config.update(|c|c.overlaps=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label="Scan repeated overlap words" prop:checked=move||config.get().scan_repeats on:change=move|e|config.update(|c|c.scan_repeats=event_target_checked(&e))/>"Search supplied fragments for repeated homology words"</label><label>"Repeat comparison budget"<input type="number" min="1" aria-label="Overlap repeat budget" prop:value=move||config.get().comparisons on:input=move|e|config.update(|c|c.comparisons=event_target_value(&e))/></label><label>"Maximum reported homology occurrences"<input type="number" min="1" aria-label="Overlap occurrence limit" prop:value=move||config.get().occurrences on:input=move|e|config.update(|c|c.occurrences=event_target_value(&e))/></label></Show>
         </Show>
         <Show when=move||config.get().mode==Mode::GoldenGate><section class="golden-gate-primer-planner"><h3>"2. Prepare Type IIS fragments"</h3>
@@ -1269,11 +1319,32 @@ pub fn CloningMethodsPanel(
         </section></Show><Show when=move||config.get().mode!=Mode::Tailing><h3>"3. Verify the prepared assembly"</h3><p class="helper">"Review the applied preparation and orientation, then compute method evidence against your independent target. Suggested primers alone do not verify a cloning design."</p></Show>
         <label class="checkbox-label"><input disabled=fixed_sources type="checkbox" aria-label="Method product circular" prop:checked=move||config.get().circular on:change=move|e|config.update(|c|c.circular=event_target_checked(&e))/>"Circular candidate product"</label><button class="button primary full" disabled=move||busy.get() on:click=move|_|compute.run(())>"Compute method evidence"</button><button class="text-tool" disabled=move||!busy.get() on:click=move|_|{generation.update(|n|*n=n.wrapping_add(1));if let Some(w)=active.get_value(){w.close();}active.set_value(None);busy.set(false);suggestions.set(None);
         gate_suggestions.set(None);status.set("Method analysis cancelled".into());}>"Cancel method analysis"</button><p class="method-status" role="status">{move||status.get()}</p>
-        {move||evidence.get().map(|proof|{let report=proof.clone();view!{<div class="method-evidence">
+        {move||evidence.get().map(|proof|{
+            let report=proof.clone();
+            let current=StoredValue::new(proof.clone());
+            let edit=Callback::new(move|index:usize|{
+                let outcome=current.with_value(|saved|{diagnostic_guard.run(saved.clone())?;
+                    if index>=saved.config.rows.len(){return Err("The preparation row is unavailable.".into());}
+                    let node=row_nodes.with_value(|nodes|nodes.get(index).copied()).and_then(|node|node.get()).ok_or("The preparation editor is not currently visible.")?;
+                    node.scroll_into_view();node.focus().map_err(|_|"The preparation editor could not receive focus.".to_string())?;
+                    Ok::<_,String>(())
+                });if let Err(error)=outcome{status.set(error);}
+            });
+            let view_source=on_source.map(|navigate|Callback::new(move|row:usize|{
+                let outcome=current.with_value(|saved|{diagnostic_guard.run(saved.clone())?;
+                    let input=saved.config.rows.get(row).ok_or("The original source row is unavailable.")?;
+                    navigate.run((input.document,row))
+                });if let Err(error)=outcome{status.set(error);}
+            }));
+            let diagnostics=proof.overlap.as_ref().map(collagene_core::assembly_diagnostics::overlap).or_else(||proof.ligation.as_ref().map(collagene_core::assembly_diagnostics::ligation));
+            let names=proof.context.iter().map(|source|source.name.clone()).collect::<Vec<_>>();
+            let preparations=proof.config.rows.iter().map(OverlapInput::summary).collect::<Vec<_>>();
+            view!{<div class="method-evidence">
+            {diagnostics.map(|result|match result{Ok(diagnostics)=>view!{<MethodDiagnostics diagnostics names preparations on_edit=edit on_source=view_source/>}.into_any(),Err(error)=>view!{<p class="helper">{format!("Structured preparation diagnostics unavailable: {error}. The full fresh findings remain below.")}</p>}.into_any()})}
             {proof.ligation.as_ref().map(|p|(&p.compiled.plan,&p.verification)).or_else(||proof.overlap.as_ref().map(|p|(&p.compiled.plan,&p.verification))).map(|(plan,report)|{
                 let captured = StoredValue::new(proof.clone());
-                let captured_sources = StoredValue::new(source_context.get_untracked());
-                let captured_target = StoredValue::new(target_info.get_untracked());
+                let captured_sources = StoredValue::new(Some(proof.context.clone()));
+                let captured_target = StoredValue::new(proof.target_context.clone());
                 let guarded_finalize = on_finalize.map(|finalize|Callback::new(move|candidate:Candidate| {
                     let fresh = captured.with_value(|saved| {
                         evidence.with_untracked(|current|current.as_ref().is_some_and(|current|Arc::ptr_eq(current,saved)))
@@ -1906,4 +1977,41 @@ fn golden_gate_request(
         })
         .collect();
     Ok((inputs, request))
+}
+
+#[component]
+fn MethodDiagnostics(
+    diagnostics: collagene_core::assembly_diagnostics::Report,
+    names: Vec<String>,
+    preparations: Vec<String>,
+    on_edit: Callback<usize>,
+    #[prop(optional_no_strip)] on_source: Option<Callback<usize>>,
+) -> impl IntoView {
+    use collagene_core::assembly_diagnostics::{JunctionState, RowState, Stage};
+    let status = method_status(&diagnostics.status);
+    let stage_name = |stage: Stage| match stage {
+        Stage::Pcr => "PCR",
+        Stage::Digest => "restriction digest",
+        Stage::Repair => "end repair",
+        Stage::EndTreatment => "terminal treatment",
+        Stage::SourceDeclaration => "source assumption",
+        Stage::OverlapAssembly => "overlap assembly",
+        Stage::LigationAssembly => "ligation",
+        Stage::TargetComparison => "independent-target comparison",
+    };
+    view! {<section class="method-diagnostics" aria-label="Preparation and junction diagnostics">
+
+        <h3>"Preparation and junction review"</h3><p>{status}</p>
+        <p class="helper">"These locations come from the fresh typed step graph and retained product prefix. Later blocked rows have not been reconstructed; they are not additional failed experiments. Editing a field clears this evidence; viewing its editor does not change the draft."</p>
+        {diagnostics.failure.map(|failure|view!{<article class="diagnostic-failure"><h4>{format!("First blocking result: step {} · {}",failure.step+1,stage_name(failure.stage))}</h4><p>{failure.message}</p><p class="helper">{failure.recovery}</p>
+            <div class="method-row-actions">{failure.row.map(|row|view!{<button class="button secondary" on:click=move|_|on_edit.run(row)>"Edit preparation"</button>})}{failure.upstream.map(|row|view!{<button class="text-tool" on:click=move|_|on_edit.run(row)>"Edit upstream preparation"</button>})}{failure.downstream.map(|row|view!{<button class="text-tool" on:click=move|_|on_edit.run(row)>"Edit downstream preparation"</button>})}</div>
+        </article>})}
+        <div class="diagnostic-table"><table><thead><tr><th>"Original fragment / direction"</th><th>"Declared preparation"</th><th>"Reconstruction"</th><th>"Review"</th></tr></thead><tbody>
+            {diagnostics.rows.into_iter().map(|row|{let index=row.index;let state=match row.state{RowState::InputReference=>"Original reference; no preparation step",RowState::Reconstructed=>"Reconstructed",RowState::Failed=>"Failed at its preparation",RowState::Blocked=>"Blocked by an earlier result"};view!{<tr><td>{format!("{} · {} · {}",index+1,names.get(index).map(String::as_str).unwrap_or(&row.input_id),if row.reverse{"reverse after preparation"}else{"forward"})}</td><td>{preparations.get(index).cloned().unwrap_or_else(||"Preparation unavailable".into())}</td><td>{state}<p>{format!("{}/{} declared steps reconstructed",row.completed_steps,row.total_steps)}</p>{row.preparation_step.map(|step|view!{<p>{format!("Preparation step {}",step+1)}</p>})}{row.repair_step.map(|step|view!{<p>{format!("Repair step {}",step+1)}</p>})}</td><td><div class="method-row-actions"><button class="text-tool" aria-label=format!("Edit fragment {} preparation",index+1) on:click=move|_|on_edit.run(index)>"Edit preparation"</button>{on_source.map(|source|view!{<button class="text-tool" on:click=move|_|source.run(index)>"View original source"</button>})}</div></td></tr>}}).collect_view()}
+        </tbody></table></div>
+        {(!diagnostics.junctions.is_empty()).then(||view!{<h4>"Fresh junction evidence"</h4>})}
+        {diagnostics.junctions.into_iter().map(|junction|{let upstream=junction.upstream;let downstream=junction.downstream;let state=match junction.state{JunctionState::ExactHomology=>"Exact homology",JunctionState::HomologyMismatch=>"Incompatible homology",JunctionState::HomologyUnavailable=>"Homology unavailable",JunctionState::EndpointsAvailable=>"Ends available; compatibility is not inferred here",JunctionState::EndpointsUnavailable=>"Physical ends unavailable"};view!{<details><summary>{format!("Junction {} · fragment {} → {}{} · {}",junction.index+1,upstream+1,downstream+1,if junction.closing{" (circle closure)"}else{""},state)}</summary><p>{junction.message}</p><p class="helper">{junction.recovery}</p><div class="method-row-actions"><button class="text-tool" on:click=move|_|on_edit.run(upstream)>"Edit upstream preparation"</button><button class="text-tool" on:click=move|_|on_edit.run(downstream)>"Edit downstream preparation"</button>{on_source.map(|source|view!{<button class="text-tool" on:click=move|_|source.run(upstream)>"View upstream source"</button><button class="text-tool" on:click=move|_|source.run(downstream)>"View downstream source"</button>})}</div></details>}}).collect_view()}
+        <ul>{diagnostics.warnings.into_iter().map(|warning|view!{<li class="helper">{warning}</li>}).collect_view()}</ul>
+        <details><summary>"Full fresh findings"</summary><ul>{diagnostics.findings.into_iter().map(|finding|view!{<li>{finding}</li>}).collect_view()}</ul></details>
+    </section>}
 }

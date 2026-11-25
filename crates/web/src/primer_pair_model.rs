@@ -6,11 +6,13 @@ use collagene_core::{
     primers::MAX_OLIGO,
     run_lineage::EventBinding,
 };
+use serde::{Deserialize, Serialize};
 
 pub const MAX_NAME_BYTES: usize = 256;
 pub const MAX_RAW_BASE_BYTES: usize = MAX_OLIGO * 8;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SelectionAnchor {
     pub source: EventBinding,
     pub start: usize,
@@ -27,14 +29,16 @@ pub struct SelectionSeed {
     /// Original source-forward selected DNA, without wrapping or repeated calls.
     pub reference: String,
 }
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OligoDraft {
     pub name: String,
     pub annealing: String,
     pub tail: String,
     pub anchor: Option<SelectionAnchor>,
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PairDraft {
     pub forward: OligoDraft,
     pub reverse: OligoDraft,
@@ -81,7 +85,7 @@ fn binding_guard(b: &EventBinding) -> Result<(), String> {
     }
     Ok(())
 }
-fn selected_guard(
+pub(crate) fn selected_guard(
     source: &EventBinding,
     start: usize,
     end: usize,

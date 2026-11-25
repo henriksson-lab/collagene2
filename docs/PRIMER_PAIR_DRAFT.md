@@ -14,9 +14,10 @@ Changing sources or options must invalidate prior scientific results in the cont
 
 ## Connected controls
 
-The app owns a session-local pair draft shared by Primers and Mutagenesis. Switching
-panels or source documents retains editable fields; replacing/restoring a workspace
-resets the pair. Persisting unfinished pair drafts across reload is still pending.
+The app owns one pair draft per workspace, shared by Primers and Mutagenesis.
+Switching panels or source documents retains editable fields. Browser autosave and
+native workspace export retain unfinished text and exact selection anchors; loading
+a workspace restores its own pair, or the default empty pair when no draft exists.
 The selection toolbar offers forward and reverse-complement creation; it and the
 editor use the same exact contiguous-selection eligibility rules. Existing source
 annotations and ordered assembly primer tables remain independently saved data.
@@ -40,3 +41,22 @@ Four focused native model cases and the final web/worker WASM compiler check pas
 Full GUI behavior remains subject to the
 user-deferred browser acceptance review. No new scientific engine, protocol tag,
 archive version, external runtime program or positive experimental claim is added.
+
+
+## Unfinished text and reload
+
+The opaque native attachment `primer-pair-draft-v1` contains a bounded, versioned
+JSON envelope (64KiB maximum). Names, domains and tails are saved as editable text,
+including incomplete/invalid input, spacing and case. Restoring text does not parse
+it into a usable primer, normalize away edits or revive prior PCR/mutagenesis
+results. Normal primer validation and explicit Apply remain required.
+
+Only one active pair attachment is accepted. Unsupported versions, malformed fields,
+oversized text and non-JSON attachments fail restoration before workspace
+replacement. Each selection anchor is checked against its exact retained historical
+document/event/revision and actual oriented source bases, even when that source's
+current head has changed. Equal DNA in another document cannot supply the event.
+Intentional mismatches in the edited domain are preserved independently of the
+original selected reference. An absent attachment restores the default pair; resetting
+to that default removes the prior active attachment. Attachment storage leaves the
+native archive and worker/science versions unchanged. No filesystem access is added.

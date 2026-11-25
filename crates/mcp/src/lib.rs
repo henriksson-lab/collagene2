@@ -5280,7 +5280,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Compile an explicit ordered overlap cloning recipe from immutable source document revisions and an independent target. Each fragment declares WholeLinear, an explicit DeclaredDuplex original-source terminal assumption, complete Digest or exact CatalogDigest selection with chosen fragment/optional repair, or ExactPcr with actual ordered oligos, or PcrCatalogDigest chaining actual original-source PCR into a pinned catalog digest; orientations, homology lengths, topology and published-method advisory profile are explicit. Freshly reconstructs preparations and verifies the resulting typed plan. Atomically saves an immutable candidate and full preparation/junction/verification JSON; no guessed tails, automatic winner, source mutation or laboratory guarantee. Reuse verify_plan and HTML/PDF exports with its plan_revision."
+        description = "Compile an explicit ordered overlap cloning recipe from immutable source document revisions and an independent target. Each fragment declares WholeLinear, an explicit DeclaredDuplex original-source terminal assumption, complete Digest or exact CatalogDigest selection with chosen fragment/optional repair, or ExactPcr with actual ordered oligos, or PcrCatalogDigest chaining actual original-source PCR into a pinned catalog digest; orientations, homology lengths, topology and published-method advisory profile are explicit. Freshly reconstructs preparations and verifies the resulting typed plan. Returns additive typed diagnostics locating failed/blocked preparation rows, junction evidence and final target mismatch, without parsing findings. Atomically saves an immutable candidate and full preparation/junction/verification JSON; no guessed tails, automatic winner, source mutation or laboratory guarantee. Reuse verify_plan and HTML/PDF exports with its plan_revision."
     )]
     async fn propose_overlap_assembly(
         &self,
@@ -5311,15 +5311,25 @@ impl CollageneServer {
             let preview = collagene_core::assembly_recipe::preview(&inputs,&target,&args.recipe).map_err(bad)?;
             let expected = collagene_core::assembly_recipe::preview_revision(&inputs,&target,&args.recipe).map_err(bad)?;
             preview.validate_binding(&expected).map_err(bad)?;
+            // Typed locations come from the checked execution prefix, never finding strings.
+            let diagnostics = collagene_core::assembly_diagnostics::overlap(&preview).map_err(bad)?;
+            if diagnostics.context_revision != expected { return Err(bad("assembly diagnostics belong to another preview context")); }
+            // Preserve all existing top-level preview fields, adding diagnostics only.
+            #[derive(Serialize)]
+            struct Evidence<'a> {
+                #[serde(flatten)]
+                preview: &'a collagene_core::assembly_recipe::Preview,
+                diagnostics: &'a collagene_core::assembly_diagnostics::Report,
+            }
             // Serialize all outputs and capacity-check before either is published.
-            let text = bounded_json_limit(&preview,32*1024*1024)?;
+            let text = bounded_json_limit(&Evidence { preview: &preview, diagnostics: &diagnostics },32*1024*1024)?;
             let artifact_id = blake3::hash(text.as_bytes()).to_hex().to_string();
             let revision = verification::plan_revision(&preview.compiled.plan);
             if revision.is_empty() {return Err(bad("compiled plan has no bounded canonical revision"));}
             let plan_bytes = bounded_json(&preview.compiled.plan)?.len().checked_add(bounded_json(&target)?.len()).ok_or_else(||bad("candidate storage accounting overflow"))?;
             let result = json!({"plan_revision":revision,"state":"candidate","verified":false,
                 "target":args.target,"inputs":args.inputs,"context_revision":preview.context_revision,
-                "preparation_complete":preview.preparation_complete,"assembly_step":preview.compiled.assembly_step,
+                "preparation_complete":preview.preparation_complete,"diagnostics":diagnostics,"assembly_step":preview.compiled.assembly_step,
                 "verification":{"status":preview.verification.status,"engine_version":preview.verification.engine_version,
                     "findings":preview.verification.findings.iter().take(100).collect::<Vec<_>>(),
                     "findings_truncated":preview.verification.findings.len()>100,
@@ -5348,7 +5358,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Compile an explicit ordered ligation cloning recipe from immutable DNA source revisions and an independent target. Each fragment declares WholeLinear, explicit DeclaredDuplex terminal assumptions on an original intact linear DNA input, complete Digest or catalog-pinned CatalogDigest with optional end repair, or actual ExactPcr preparation, explicit terminal treatment and orientation; circular and allow_nicked policies are explicit. Freshly reconstructs physical strands, oriented ends, junctions and retained nicks through the deterministic verifier. Atomically stores a candidate and full preparation/physical/verification JSON, including failed drafts. No metadata-derived chemistry authority, automatic treatment/repair, experimental guarantee or source mutation. Reuse verify_plan and HTML/PDF exports with plan_revision."
+        description = "Compile an explicit ordered ligation cloning recipe from immutable DNA source revisions and an independent target. Each fragment declares WholeLinear, explicit DeclaredDuplex terminal assumptions on an original intact linear DNA input, complete Digest or catalog-pinned CatalogDigest with optional end repair, or actual ExactPcr preparation, explicit terminal treatment and orientation; circular and allow_nicked policies are explicit. Freshly reconstructs physical strands, oriented ends, junctions and retained nicks through the deterministic verifier. Returns additive typed row/step/junction diagnostics without treating available endpoints as proof of compatibility. Atomically stores a candidate and full preparation/physical/verification JSON, including failed drafts. No metadata-derived chemistry authority, automatic treatment/repair, experimental guarantee or source mutation. Reuse verify_plan and HTML/PDF exports with plan_revision."
     )]
     async fn propose_ligation_assembly(
         &self,
@@ -5381,15 +5391,25 @@ impl CollageneServer {
             let preview = collagene_core::ligation_recipe::preview(&inputs,&target,&args.recipe).map_err(bad)?;
             let expected = collagene_core::ligation_recipe::preview_revision(&inputs,&target,&args.recipe).map_err(bad)?;
             preview.validate_binding(&expected).map_err(bad)?;
+            // Typed locations come from the checked execution prefix, never finding strings.
+            let diagnostics = collagene_core::assembly_diagnostics::ligation(&preview).map_err(bad)?;
+            if diagnostics.context_revision != expected { return Err(bad("assembly diagnostics belong to another preview context")); }
+            // Preserve all existing top-level preview fields, adding diagnostics only.
+            #[derive(Serialize)]
+            struct Evidence<'a> {
+                #[serde(flatten)]
+                preview: &'a collagene_core::ligation_recipe::Preview,
+                diagnostics: &'a collagene_core::assembly_diagnostics::Report,
+            }
             // Serialize all outputs and capacity-check before either is published.
-            let text = bounded_json_limit(&preview,32*1024*1024)?;
+            let text = bounded_json_limit(&Evidence { preview: &preview, diagnostics: &diagnostics },32*1024*1024)?;
             let artifact_id = blake3::hash(text.as_bytes()).to_hex().to_string();
             let revision = verification::plan_revision(&preview.compiled.plan);
             if revision.is_empty() {return Err(bad("compiled plan has no bounded canonical revision"));}
             let plan_bytes = bounded_json(&preview.compiled.plan)?.len().checked_add(bounded_json(&target)?.len()).ok_or_else(||bad("candidate storage accounting overflow"))?;
             let result = json!({"plan_revision":revision,"state":"candidate","verified":false,
                 "target":args.target,"inputs":args.inputs,"context_revision":preview.context_revision,
-                "preparation_complete":preview.preparation_complete,"ligation_step":preview.compiled.ligation_step,
+                "preparation_complete":preview.preparation_complete,"diagnostics":diagnostics,"ligation_step":preview.compiled.ligation_step,
                 "fragment_count":preview.compiled.rows.len(),"junction_count":preview.junctions.len(),
                 "product_physical":preview.product_physical.as_ref().map(|physical|json!({"top_length":physical.top_length,"bottom_length":physical.bottom_length,"topology":physical.topology,"nick_count":physical.nicks.len(),"covalently_closed_in_model":physical.covalently_closed_in_model})),
                 "verification":{"status":preview.verification.status,"engine_version":preview.verification.engine_version,

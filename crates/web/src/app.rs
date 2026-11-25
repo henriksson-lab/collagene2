@@ -144,6 +144,7 @@ struct RestoredWorkspace {
     runs: Vec<collagene_core::run_lineage::RunSummary>,
     assemblies: Vec<collagene_core::contig_history::AssemblySummary>,
     assembly_draft: crate::assembly_workspace::Draft,
+    pair_draft: crate::primer_pair_model::PairDraft,
     hidden_products: std::collections::BTreeSet<String>,
 }
 fn restore_workspace_state(
@@ -224,10 +225,34 @@ fn restore_workspace_state(
             }
         }
     }
+    let pair_assets = frame
+        .attachments
+        .values()
+        .filter(|a| a.kind == crate::primer_pair_storage::ATTACHMENT_KIND)
+        .collect::<Vec<_>>();
+    if pair_assets.len() > 1 {
+        return Err("Workspace contains multiple active primer pair drafts.".into());
+    }
+    let pair_draft = match pair_assets.first() {
+        Some(asset) if asset.media_type == "application/json" => {
+            crate::primer_pair_storage::decode(&asset.bytes, |binding| {
+                let source = documents
+                    .iter()
+                    .find(|d| d.id == binding.document_id)
+                    .ok_or("Primer pair draft source document is not retained.")?;
+                source
+                    .revision_molecule(&binding.event_id)
+                    .map_err(|e| e.to_string())
+            })?
+        }
+        Some(_) => return Err("Primer pair draft has the wrong media type.".into()),
+        None => crate::primer_pair_model::PairDraft::default(),
+    };
     Ok(RestoredWorkspace {
         hidden_products: collagene_core::cloning_outputs::load_hidden(frame)
             .map_err(|e| e.to_string())?,
         assembly_draft,
+        pair_draft,
         runs: collagene_core::run_lineage::list_runs(frame).map_err(|e| e.to_string())?,
         assemblies: collagene_core::contig_history::list(frame).map_err(|e| e.to_string())?,
         name: frame.name.clone(),
@@ -1298,7 +1323,7 @@ pub fn App() -> impl IntoView {
         reviewed_check.set(None);
         review_seed.set(None);
         pending_read_review.set(None);
-        pair_draft.set(crate::primer_pair_model::PairDraft::default());
+        pair_draft.set(state.pair_draft);
         primer_seed.set(None);
         mutation_seed.set(None);
         hidden_products.set(state.hidden_products);
@@ -1365,6 +1390,44 @@ pub fn App() -> impl IntoView {
             Err(error) => {
                 message.set(format!("Assembly draft could not be saved: {error}"));
             }
+        }
+    });
+    Effect::new(move |_| {
+        let draft = pair_draft.get();
+        if workspace_restoring.get() {
+            return;
+        }
+        match crate::primer_pair_storage::encode(&draft) {
+            Ok(bytes) => {
+                let kind = crate::primer_pair_storage::ATTACHMENT_KIND;
+                let hash = blake3::hash(&bytes).to_hex().to_string();
+                if attachments
+                    .with_untracked(|assets| assets.get(&hash).is_some_and(|a| a.kind == kind))
+                {
+                    return;
+                }
+                let is_default = draft == crate::primer_pair_model::PairDraft::default();
+                if is_default
+                    && !attachments.with_untracked(|assets| assets.values().any(|a| a.kind == kind))
+                {
+                    return;
+                }
+                attachments.update(|assets| {
+                    assets.retain(|_, a| a.kind != kind);
+                    if !is_default {
+                        assets.insert(
+                            hash,
+                            collagene_core::workspace::WorkspaceAttachment {
+                                kind: kind.into(),
+                                name: "primer-pair-draft.json".into(),
+                                media_type: "application/json".into(),
+                                bytes,
+                            },
+                        );
+                    }
+                });
+            }
+            Err(error) => message.set(format!("Primer pair draft could not be saved: {error}")),
         }
     });
     spawn_local(async move {

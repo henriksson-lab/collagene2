@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 121;
+pub const CURRENT_TOOL_COUNT: usize = 122;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -1002,6 +1002,12 @@ pub struct OverlapPrimerDesignQuery {
     pub target: DocumentRef,
     /// Explicit ordered template intervals, orientation and bounded heuristic controls.
     pub request: collagene_core::overlap_primer_design::Request,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MutationIntentQuery {
+    pub document: DocumentRef,
+    pub request: collagene_core::mutation_intent::Request,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -4882,6 +4888,37 @@ impl CollageneServer {
                 "warnings_truncated":report.warnings.len()>100||report.warnings.iter().take(100).any(|w|w.chars().count()>1024),
                 "artifact_id":artifact,
                 "authority":"Unverified intended-reference document only. Original source snapshots are unchanged. Region selection does not imply PCR amplification, restriction cuts, compatible ends, sealing, chemistry or experimental success; actual preparation must be reconstructed separately."}))
+        }).await
+    }
+    #[tool(
+        description = "Build an unverified intended reference by explicitly replacing, inserting or deleting a single source interval. Uses only immutable source DNA and the requested edit, independently of any PCR or cloning simulator. Supports linear DNA and at most one circular turn with explicit origin shift. Atomically retains the intended target and full source-bound JSON. Does not mutate the source or claim physical material, successful cloning or observed DNA; design and verify inverse-PCR or another preparation separately against this frozen reference."
+    )]
+    async fn build_mutation_intent(
+        &self,
+        Parameters(args): Parameters<MutationIntentQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || {
+            let source = {
+                let store = server.store.lock().unwrap();
+                let source = store.document(&args.document)?;
+                collagene_core::mutation_intent::source_preflight(source,&args.request).map_err(bad)?;
+                source.clone()
+            };
+            let report = collagene_core::mutation_intent::build(&source,&args.request).map_err(bad)?;
+            let expected = collagene_core::mutation_intent::intent_revision(&source,&args.request).map_err(bad)?;
+            report.validate_binding(&expected).map_err(bad)?;
+            #[derive(Serialize)]
+            struct Evidence<'a> { document:&'a DocumentRef, report:&'a collagene_core::mutation_intent::Report }
+            let evidence = Evidence{document:&args.document,report:&report};
+            let (artifact, target) = server.candidate_document_artifact_bounded(&evidence,Some(report.target.clone()),"mutation-intent.json",32*1024*1024)?;
+            let target = target.ok_or_else(||bad("intended mutation reference was not retained"))?;
+            output(json!({"state":"intended-reference","verified":false,"preparation_simulated":false,
+                "document":args.document,"context_revision":report.context_revision,"request":report.request,
+                "source_revision":report.source_revision,"target":{"id":target["id"],"revision":target["revision"]},
+                "target_summary":target,"deleted_length":report.deleted.len(),"source_origin_shift":report.origin_shift,
+                "warnings":report.warnings,"artifact_id":artifact,
+                "authority":"Declared reference edit only. The source is unchanged; physical preparation, target agreement and experimental success require separate evidence."}))
         }).await
     }
     #[tool(

@@ -429,7 +429,8 @@ pub fn design_inverse_pcr(
         .edit_end
         .checked_sub(options.edit_start)
         .ok_or_else(|| Error::Coordinates("edit end precedes start".into()))?;
-    if options.edit_start >= n
+    let terminal_caret = options.edit_start == n && options.edit_end == n;
+    if (options.edit_start >= n && !terminal_caret)
         || deleted >= n
         || options.forward_length < 8
         || options.reverse_length < 8

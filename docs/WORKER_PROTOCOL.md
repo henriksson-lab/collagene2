@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **40** and reads supported schemas 1–39. Candidate files write schema 11; workspace plan schema is 9; the verifier is science-14.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **41** and reads supported schemas 1–40. Candidate files write schema 11; workspace plan schema is 9; the verifier is science-14.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -116,6 +116,7 @@ Postcard enum indexes are append-only. Existing tags and supported historical la
 | 101 | ExportProtocolHtml | 38 |
 | 102 | FinalizeCloningOutputs | 39 |
 | 103 | DesignGoldenGatePrimers | 40 |
+| 104 | BuildMutationIntent | 41 |
 
 Result tags 0–29 retain their selectors (verification gains explicit versioned step evidence in schema 25) (`Search`, `Restriction`, `Error`, `Pcr`, `Verification`, `DuplexDigest`, `Translation`, `CdsTranslation`, `Orfs`, `Alignment`, `PcrDocuments`, `PrimerEvidence`, `PrimerDesign`, `ProtocolPdf`, `GoldenGate`, `MismatchPcr`, `InversePcr`, `Gel`, `DiagnosticDigest`, `MismatchPcrPreview`, `WorkspaceSaved`, `WorkspaceLoaded`, `TraceValidation`, `FeatureLibraryScan`, `AnnotatedDocument`, `AnnotationImport`, `AnnotationExport`, `RepairPreview`, `AnnealPreview`, `PhysicalPreviewDocument`). Schema 9 appends `ViewTracks` at tag 30, `DocumentSearch` at tag 31 and `TracksPrepared` at tag 32. New response variants cannot be decoded under older version labels.
 
@@ -483,3 +484,19 @@ catalog digest operations, plus optional explicit repair, so candidate11, plan9 
 science-14 do not change. `PreparedRow.preparation_step` is the first PCR step,
 while `prepared_source` points to the final digest/repair result. No existing row
 fields or historical layouts change. See [planner](GOLDEN_GATE_PRIMER_DESIGN.md).
+
+## Explicit mutation intent (schema 41)
+
+`BuildMutationIntent` (job104/result96) binds an original source molecule and an
+explicit named replacement interval/inserted DNA request. The report contains the
+unverified intended reference, deleted source bases, actual source revision and
+explicit circular-origin shift. It is independent of all preparation simulators.
+New tags reject pre-41 headers before payload decoding and use ordinary32MiB limits.
+The target carries restrictive reference-only metadata, including source/request/
+sequence receipts. Readonly report validation does not establish prepared material.
+
+Candidate11, plan9, science-14 and native archive1 remain unchanged. The UI retains
+exact source events outside the scientific DTO, checks them before opening, and
+records computational parentage and `mutation-intent-v1` evidence. Inverse-PCR
+planning separately reconstructs against this intended target, including the valid
+circular terminal insertion caret. See [intent scope](MUTATION_INTENT.md).

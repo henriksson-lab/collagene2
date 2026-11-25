@@ -534,3 +534,23 @@ reuse the resulting plan. Changing the target changes the context token but neve
 selects different oligo bases. No source is domesticated to remove internal sites,
 no external tool is invoked, and ordered consistency is not experimental yield or
 an exhaustive mixture claim. [Detailed profile](GOLDEN_GATE_PRIMER_DESIGN.md).
+
+## Mutation intent before preparation
+
+`build_mutation_intent {document, request}` accepts an immutable original reference
+and `{name, edit_start, edit_end, inserted}`. Coordinates are zero-based half-open
+boundaries; equal boundaries insert, empty inserted DNA deletes, and circular edits
+can cross the origin by at most one turn. A circular terminal insertion caret at
+`start=end=length` is valid and preserves the original origin.
+
+The response is `state:"intended-reference"`, `verified:false` and
+`preparation_simulated:false`, with an atomically retained target `DocumentRef`,
+full immutable JSON artifact, context/source revisions, deleted length, explicit
+origin shift and warnings. Source DNA is unchanged. No PCR simulation generates
+the expected DNA. Pass the original document and returned target to
+`design_inverse_pcr`, then verify/export the resulting plan separately. Intended
+references remain restricted against reuse as physical inputs. Borrowed guards
+precede source cloning; source DNA is bounded to8MiB, inserted DNA to100,000 bases
+and report output to32MiB, with existing session capacities. Unsupported coordinate
+qualifiers fail before publication rather than receive guessed mappings.
+[Worked flow and interpretation](MCP_MUTATION_INTENT_FLOW.md).

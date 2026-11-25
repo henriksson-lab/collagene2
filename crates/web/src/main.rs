@@ -105,6 +105,8 @@ mod golden_gate;
 mod methylation;
 #[cfg(target_arch = "wasm32")]
 mod mutagenesis;
+#[cfg(any(target_arch = "wasm32", test))]
+mod mutation_review;
 #[cfg(target_arch = "wasm32")]
 mod primer_pair_editor;
 #[cfg(any(target_arch = "wasm32", test))]

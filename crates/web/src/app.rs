@@ -808,6 +808,7 @@ pub fn App() -> impl IntoView {
     let feature_initial_location = RwSignal::new(None::<Location>);
     let primer_seed = RwSignal::new(None::<Primer>);
     let pair_draft = RwSignal::new(crate::primer_pair_model::PairDraft::default());
+    let mutation_seed = RwSignal::new(None::<crate::mutagenesis::MutationSelection>);
     let inspected_feature = Memo::new(move |_| {
         molecule.with(|m| {
             selected_feature
@@ -987,6 +988,7 @@ pub fn App() -> impl IntoView {
                             .molecule
                             .metadata
                             .get("assembly:intent:reference_only")
+                            .or_else(|| doc.molecule.metadata.get("mutation:intent:reference_only"))
                             .is_some_and(|value| value == "true")
                         {
                             Some("Intended reference".into())
@@ -1092,6 +1094,27 @@ pub fn App() -> impl IntoView {
                         .collect::<Vec<_>>()
                 })
                 .collect::<std::collections::BTreeSet<_>>()
+        })
+    });
+    let mutation_selection = Callback::new(move |()| {
+        if workspace_restoring.get_untracked() {
+            return Err("Wait for the workspace operation to finish.".into());
+        }
+        documents.with_untracked(|docs| {
+            let document = active.get_untracked();
+            let source = &docs[document];
+            let (start, end) = crate::selection_toolbar::mutation_range(
+                &source.molecule,
+                selection.get_untracked(),
+                selected_feature.get_untracked(),
+                &highlighted_spans.get_untracked(),
+            )?;
+            Ok(crate::mutagenesis::MutationSelection {
+                source: current_event_binding(source),
+                document,
+                start,
+                end,
+            })
         })
     });
     let primer_anchor_available =
@@ -1225,6 +1248,7 @@ pub fn App() -> impl IntoView {
         pending_finalize.set(None);
         pair_draft.set(crate::primer_pair_model::PairDraft::default());
         primer_seed.set(None);
+        mutation_seed.set(None);
         hidden_products.set(state.hidden_products);
         show_prepared_history.set(false);
         documents.set(state.documents);
@@ -3106,6 +3130,40 @@ pub fn App() -> impl IntoView {
             })
         })
     });
+    let open_mutation_intent = Callback::new(
+        move |intent: crate::mutagenesis::IntentOpen| -> Result<(), String> {
+            if workspace_restoring.get_untracked() {
+                return Err("Wait for the workspace operation to finish.".into());
+            }
+            let frame = contig_snapshot.run(())?;
+            if !documents.with_untracked(|docs| {
+                docs.iter()
+                    .any(|doc| current_event_binding(doc) == intent.source)
+            }) {
+                return Err(
+                    "The mutation source event changed; preview the intended edit again.".into(),
+                );
+            }
+            let staged = crate::mutation_review::stage(&frame, &intent.source, &intent.report)?;
+            restore_workspace_state(&staged)?;
+            let restored = OpenDocument::restore_all(&staged).map_err(|e| e.to_string())?;
+            let index = restored
+                .iter()
+                .position(|doc| doc.id == staged.active_document)
+                .ok_or("The intended reference is unavailable.")?;
+            batch(|| {
+                documents.set(restored);
+                active.set(index);
+                attachments.set(staged.attachments);
+                selection.set(None);
+                selected_feature.set(None);
+                plan_report.set(None);
+                last_plan.set(None);
+                message.set("Opened the declared intended reference with its exact source history. Design and verify a preparation against this target next.".into());
+            });
+            Ok(())
+        },
+    );
     let contig_restore = Callback::new(move |frame: collagene_core::workspace::Workspace| {
         match restore_workspace_state(&frame) {
             Ok(state) => batch(|| apply_restored.run(state)),
@@ -3371,6 +3429,7 @@ pub fn App() -> impl IntoView {
                                     let location=molecule.with_untracked(|m|selected_feature.get_untracked().and_then(|i|m.features.get(i).map(|f|f.location.clone()))).or_else(||{let parts=highlighted_spans.get_untracked();if parts.is_empty()||parts.len()>4096{return None;}Some(if parts.len()==1{Location::range(parts[0].0,parts[0].1)}else{Location::Join(parts.into_iter().map(|(a,b)|Location::range(a,b)).collect())})});
                                     if let Some(location)=location{feature_for_editor.set(None);feature_initial_location.set(Some(location));modal_error.set(String::new());modal.set("feature");}
                                 })
+                                on_mutation=Callback::new(move|()|match mutation_selection.run(()){Ok(seed)=>{mutation_seed.set(Some(seed));panel.set("mutagenesis");},Err(error)=>message.set(error)})
                                 on_primer=Callback::new(move|reverse:bool|{match pair_selection.run(()).and_then(|selection|selection.oligo(if reverse{"Reverse"}else{"Forward"},reverse,"")){Ok(oligo)=>{match oligo.primer(){Ok(primer)=>{pair_draft.update(|draft|if reverse{draft.reverse=oligo}else{draft.forward=oligo});primer_seed.set(Some(primer));panel.set("primers");},Err(error)=>message.set(error)}},Err(error)=>message.set(error)}})
                                 on_edit=Callback::new(move|()|{if let Some((a,b))=selection.get_untracked(){edit_text.set(molecule.with_untracked(|m|m.sequence.as_str().get(a..b).unwrap_or_default().to_owned()));modal_error.set(String::new());modal.set("edit");}})
                                 on_clear=Callback::new(move|()|batch(||{selection.set(None);selected_feature.set(None);search_regions.set(None);restrictions.selected.set(None);}))
@@ -3422,7 +3481,7 @@ pub fn App() -> impl IntoView {
                                     candidate_events.set(None);candidate.set(Some(value));candidate_events.set(Some(preferred));plan_report.set(None);last_plan.set(None);last_plan_events.set(None);plan_generation.update(|g|*g=g.wrapping_add(1));panel.set("plan");message.set("Method candidate opened with exact source-event bindings for independent target verification. No experimental success or mixture uniqueness is established.".into());
                                 }) on_products=Callback::new(move|products:Vec<Molecule>|add_documents(documents,active,workspace_restoring,products))/></Show>
                                     <Show when=move||panel.get()=="ends"><crate::end_repair::EndRepairPanel molecule=molecule query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,doc)|(i,doc.molecule.name.clone())).collect())) get_query=Callback::new(move|index:usize|documents.with(|docs|docs.get(index).map(|doc|doc.molecule.clone()))) on_candidate=Callback::new(move|value:transfer::Candidate|{if workspace_restoring.get_untracked(){return;}candidate_events.set(None);candidate.set(Some(value));plan_report.set(None);last_plan.set(None);plan_generation.update(|generation|*generation=generation.wrapping_add(1));panel.set("plan");message.set("Physical candidate opened for review. Verify it against the independently selected active target; alternatives and chemistry remain explicit.".into());}) on_products=Callback::new(move|products:Vec<Molecule>|add_documents(documents,active,workspace_restoring,products))/></Show>
-                                    <Show when=move||panel.get()=="mutagenesis"><crate::mutagenesis::MutagenesisPanel molecule=molecule pair_draft pair_selection anchor_available=primer_anchor_available primer_sources list_primers=list_saved_primers resolve_primer=resolve_saved_primer epoch=workspace_epoch source_info=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(recombination_source_info))) target_binding=primer_context query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone()))) on_candidate=Callback::new(move|value:transfer::Candidate|{candidate_events.set(None);candidate.set(Some(value));plan_report.set(None);last_plan.set(None);plan_generation.update(|g|*g=g.wrapping_add(1));panel.set("plan");message.set("Candidate opened for review. Verify it against the independently selected target and current input revisions.".into());}) on_products=Callback::new(move|products:Vec<Molecule>|add_documents(documents,active,workspace_restoring,products))/></Show>
+                                    <Show when=move||panel.get()=="mutagenesis"><crate::mutagenesis::MutagenesisPanel molecule=molecule mutation_selection mutation_seed on_intent=open_mutation_intent pair_draft pair_selection anchor_available=primer_anchor_available primer_sources list_primers=list_saved_primers resolve_primer=resolve_saved_primer epoch=workspace_epoch source_info=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(recombination_source_info))) target_binding=primer_context query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone()))) on_candidate=Callback::new(move|value:transfer::Candidate|{candidate_events.set(None);candidate.set(Some(value));plan_report.set(None);last_plan.set(None);plan_generation.update(|g|*g=g.wrapping_add(1));panel.set("plan");message.set("Candidate opened for review. Verify it against the independently selected target and current input revisions.".into());}) on_products=Callback::new(move|products:Vec<Molecule>|add_documents(documents,active,workspace_restoring,products))/></Show>
                                     <Show when=move||panel.get()=="golden_gate"><crate::golden_gate::GoldenGatePanel molecule=molecule query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone()))) on_candidate=Callback::new(move|value:transfer::Candidate|{candidate_events.set(None);candidate.set(Some(value));plan_report.set(None);last_plan.set(None);plan_generation.update(|g|*g=g.wrapping_add(1));panel.set("plan");message.set("Candidate opened for review. Verify it against the independently selected target and current input revisions.".into());})/></Show>
                                     <Show when=move||panel.get()=="topo"><crate::topo_view::TopoPanel
                                         target=Memo::new(move|_|documents.with(|docs|recombination_source_info(&docs[active.get()])))

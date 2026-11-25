@@ -615,3 +615,15 @@ version transport; scientific operations remain science-14. Automatic fusion/end
 optimization, domestication, full prepared-pool alternative enumeration and bulk
 cloning remain required beyond this first connected single-design route.
 [Scientific scope](GOLDEN_GATE_PRIMER_DESIGN.md).
+
+### Sequence-centered mutagenesis intent checkpoint
+
+A contextual source selection/caret now seeds a declared mutation. Source-only
+reference editing previews literal deleted/inserted/intended DNA and circular
+origin changes before explicitly opening an independent target. Exact source-event
+parentage and native intent evidence are retained without replacing the original
+source or manual oligos. Existing inverse PCR then designs and reconstructs against
+that reference; a separate imported target remains supported. Worker41/MCP122 expose
+the same separation. Integrated assembly junction/oligo edit transactions, native
+unfinished-draft persistence and richer mutation geometries remain required.
+[Reference intent](MUTATION_INTENT.md).

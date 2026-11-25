@@ -1,5 +1,5 @@
 //! Revision-bound mutation design and conditional mismatch-PCR reference previews.
-use crate::worker;
+use crate::{worker, worker::CachedWorker};
 use collagene_core::{
     Molecule,
     analysis::Primer,
@@ -10,9 +10,12 @@ use collagene_core::{
     transfer::Candidate,
 };
 use leptos::prelude::*;
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use wasm_bindgen_futures::spawn_local;
 fn number<T: std::str::FromStr>(value: String, label: &str) -> Result<T, String> {
@@ -20,6 +23,33 @@ fn number<T: std::str::FromStr>(value: String, label: &str) -> Result<T, String>
         .trim()
         .parse()
         .map_err(|_| format!("{label} is not a valid number"))
+}
+#[derive(Clone, PartialEq, Eq)]
+pub struct MutationSelection {
+    pub source: EventBinding,
+    pub document: usize,
+    pub start: usize,
+    pub end: usize,
+}
+#[derive(Clone)]
+pub struct IntentOpen {
+    pub source: EventBinding,
+    pub report: collagene_core::mutation_intent::Report,
+}
+struct IntendedEdit {
+    report: collagene_core::mutation_intent::Report,
+    source: EventBinding,
+    document: usize,
+    form: (String, String, String, String),
+    epoch: u64,
+}
+fn dna_preview(dna: &str) -> String {
+    let shown = dna.chars().take(200).collect::<String>();
+    if dna.len() > shown.len() {
+        format!("{shown}… ({} bases total)", dna.len())
+    } else {
+        shown
+    }
 }
 #[derive(Clone)]
 struct AppliedPair {
@@ -61,6 +91,9 @@ pub fn MutagenesisPanel(
     epoch: RwSignal<u64>,
     source_info: Callback<usize, Option<crate::digest::SourceInfo>>,
     target_binding: Memo<EventBinding>,
+    mutation_selection: Callback<(), Result<MutationSelection, String>>,
+    mutation_seed: RwSignal<Option<MutationSelection>>,
+    on_intent: Callback<IntentOpen, Result<(), String>>,
 ) -> impl IntoView {
     let template_index = RwSignal::new(0usize);
     let source = Memo::new(move |_| get_query.run(template_index.get()));
@@ -76,6 +109,20 @@ pub fn MutagenesisPanel(
     let edit_start = RwSignal::new("1".to_string());
     let edit_end = RwSignal::new("1".to_string());
     let inserted = RwSignal::new(String::new());
+    let intended_name = RwSignal::new("Intended mutation".to_string());
+    let intended = RwSignal::new(None::<Arc<IntendedEdit>>);
+    let intent_busy = RwSignal::new(false);
+    let intent_status = RwSignal::new(String::new());
+    let intent_generation = RwSignal::new(0u32);
+    let intent_worker = StoredValue::new_local(None::<Rc<CachedWorker>>);
+    let intent_form = Callback::new(move |()| {
+        (
+            intended_name.get_untracked(),
+            edit_start.get_untracked(),
+            edit_end.get_untracked(),
+            inserted.get_untracked(),
+        )
+    });
     let f_length = RwSignal::new("20".to_string());
     let r_length = RwSignal::new("20".to_string());
     let split = RwSignal::new("0".to_string());
@@ -89,6 +136,198 @@ pub fn MutagenesisPanel(
         let alive = alive.clone();
         on_cleanup(move || alive.store(false, Ordering::Relaxed));
     }
+    on_cleanup(move || {
+        if let Some(worker) = intent_worker.get_value() {
+            worker.close();
+        }
+    });
+    Effect::new(move |_| {
+        let _ = (
+            intended_name.get(),
+            edit_start.get(),
+            edit_end.get(),
+            inserted.get(),
+            source_binding.get(),
+            template_index.get(),
+            epoch.get(),
+        );
+        intent_generation.update(|value| *value = value.wrapping_add(1));
+        if let Some(worker) = intent_worker.get_value() {
+            worker.close();
+        }
+        intent_worker.set_value(None);
+        intended.set(None);
+        intent_busy.set(false);
+        intent_status.set(String::new());
+    });
+    let use_selected = Callback::new(move |selected: MutationSelection| {
+        let captured_epoch = epoch.get_untracked();
+        let result = (|| -> Result<_, String> {
+            if selected.start > selected.end
+                || epoch.get_untracked() != captured_epoch
+                || source_info
+                    .run(selected.document)
+                    .is_none_or(|info| info.binding != selected.source)
+                || !anchor_available.run(selected.source.clone())
+            {
+                return Err("The selection source changed or its range is unavailable. Select the original source again.".into());
+            }
+            let start = selected
+                .start
+                .checked_add(1)
+                .ok_or("Selection coordinate overflow.")?;
+            let end = selected
+                .end
+                .checked_add(1)
+                .ok_or("Selection coordinate overflow.")?;
+            Ok((selected.document, start, end))
+        })();
+        match result {
+            Ok((document, start, end)) => {
+                template_index.set(document);
+                edit_start.set(start.to_string());
+                edit_end.set(end.to_string());
+                intent_status.set("Copied the selected source and edit boundaries. Replacement DNA was preserved; preview the intended edit next.".into());
+            }
+            Err(error) => intent_status.set(error),
+        }
+    });
+    let use_mutation_selection = move |_| match mutation_selection.run(()) {
+        Ok(selected) => use_selected.run(selected),
+        Err(error) => intent_status.set(error),
+    };
+    Effect::new(move |_| {
+        if let Some(selected) = mutation_seed.get() {
+            mutation_seed.set(None);
+            use_selected.run(selected);
+        }
+    });
+    let intent_alive = alive.clone();
+    let preview_intent = move |_| {
+        let captured_epoch = epoch.get_untracked();
+        let form = intent_form.run(());
+        let prepared = (|| -> Result<_, String> {
+            let source_binding = source_binding
+                .get_untracked()
+                .ok_or("Choose an original source document.")?;
+            if !anchor_available.run(source_binding.clone()) {
+                return Err("The original source event is unavailable.".into());
+            }
+            let source = source
+                .get_untracked()
+                .ok_or("The original source is unavailable.")?;
+            let request = collagene_core::mutation_intent::Request {
+                name: form.0.clone(),
+                edit_start: number::<usize>(form.1.clone(), "Edit start")?
+                    .checked_sub(1)
+                    .ok_or("Edit start is one-based.")?,
+                edit_end: number::<usize>(form.2.clone(), "Edit end")?
+                    .checked_sub(1)
+                    .ok_or("Edit end is one-based.")?,
+                inserted: form.3.clone(),
+            };
+            collagene_core::mutation_intent::source_preflight(&source, &request)
+                .map_err(|e| e.to_string())?;
+            let revision = collagene_core::mutation_intent::intent_revision(&source, &request)
+                .map_err(|e| e.to_string())?;
+            if source.revision() != source_binding.revision {
+                return Err("Original source revision changed before preview.".into());
+            }
+            let worker = Rc::new(CachedWorker::new()?);
+            Ok((source, source_binding, request, revision, worker))
+        })();
+        let (source_molecule, binding, request, revision, w) = match prepared {
+            Ok(value) => value,
+            Err(error) => {
+                intent_status.set(error);
+                return;
+            }
+        };
+        if let Some(old) = intent_worker.get_value() {
+            old.close();
+        }
+        intent_worker.set_value(Some(w.clone()));
+        let token = intent_generation.get_untracked().wrapping_add(1);
+        intent_generation.set(token);
+        let document = template_index.get_untracked();
+        intended.set(None);
+        intent_busy.set(true);
+        intent_status
+            .set("Building the declared intended reference from the original source…".into());
+        let alive = intent_alive.clone();
+        spawn_local(async move {
+            let response = w
+                .ask(Request {
+                    id: token,
+                    revision: revision.clone(),
+                    job: AnalysisJob::BuildMutationIntent {
+                        molecule: source_molecule,
+                        request,
+                    },
+                })
+                .await;
+            w.close();
+            if !alive.load(Ordering::Relaxed)
+                || intent_generation.get_untracked() != token
+                || epoch.get_untracked() != captured_epoch
+                || template_index.get_untracked() != document
+                || source_binding.get_untracked().as_ref() != Some(&binding)
+                || intent_form.run(()) != form
+                || !anchor_available.run(binding.clone())
+            {
+                return;
+            }
+            intent_worker.set_value(None);
+            intent_busy.set(false);
+            match response {
+                Ok(response) if response.id == token && response.revision == revision => {
+                    match response.result {
+                        AnalysisResult::MutationIntent(report) => {
+                            match report.validate_binding(&revision) {
+                                Ok(()) if report.source_revision == binding.revision => {
+                                    intended.set(Some(Arc::new(IntendedEdit {
+                                        report,
+                                        source: binding,
+                                        document,
+                                        form,
+                                        epoch: captured_epoch,
+                                    })));
+                                    intent_status.set("Intended edit ready for review. Open it explicitly as the independent target before inverse-PCR design.".into());
+                                }
+                                Ok(()) => intent_status.set(
+                                    "Intended edit belongs to a different original source.".into(),
+                                ),
+                                Err(error) => intent_status.set(error.to_string()),
+                            }
+                        }
+                        AnalysisResult::Error(error) => intent_status.set(error),
+                        _ => intent_status.set("Unexpected intended-edit result.".into()),
+                    }
+                }
+                Err(error) => intent_status.set(error),
+                _ => intent_status.set("Intended-edit response identity changed.".into()),
+            }
+        });
+    };
+    let open_intent = move |_| {
+        let Some(bound) = intended.get_untracked() else {
+            return;
+        };
+        if epoch.get_untracked() != bound.epoch
+            || template_index.get_untracked() != bound.document
+            || source_binding.get_untracked().as_ref() != Some(&bound.source)
+            || intent_form.run(()) != bound.form
+            || !anchor_available.run(bound.source.clone())
+        {
+            intent_status.set(
+                "Original source or edit settings changed. Preview the intended edit again.".into(),
+            );
+            return;
+        }
+        match on_intent.run(IntentOpen{source:bound.source.clone(),report:bound.report.clone()}) {
+            Ok(())=>intent_status.set("Intended reference opened. It is a design requirement, not a reconstructed experimental product; design and verify the inverse-PCR plan next.".into()),Err(error)=>intent_status.set(error),
+        }
+    };
     Effect::new(move |_| {
         let _ = (
             pair_draft.get(),
@@ -294,13 +533,32 @@ pub fn MutagenesisPanel(
     view! {
         <style>".mutation-panel .mutation-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.mutation-panel pre{white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.6 monospace;background:#f3f6f3;padding:9px;max-height:250px;overflow:auto}.mutation-panel .mutation-product{padding:10px 0;border-bottom:1px solid #e2e9e2;font-size:12px;line-height:1.6}.mutation-panel .mutation-status{font-size:12px;line-height:1.6;overflow-wrap:anywhere}.mutation-panel ul{padding-left:18px}.mutation-panel details{margin:10px 0}"</style>
         <div class="inspector-content mutation-panel"><h2>"Mutagenesis"</h2><label>"Source template"<select aria-label="Mutagenesis template" prop:value=move||template_index.get().to_string() on:change=move|e|template_index.set(event_target_value(&e).parse().unwrap_or(0))>{move||query_options.get().into_iter().map(|(i,name)|view!{<option value=i.to_string()>{name}</option>}).collect_view()}</select></label><p class="mutation-status" role="status">{move||status.get()}</p>
+        <section class="mutation-intent"><h3>"1. Set the intended edit"</h3>
+            <p class="helper">"Select the original DNA range to replace, or a caret for insertion. Preview the declared intended reference, open it as your target, then design inverse PCR below. An independently imported target can also be used; creating one here is optional."</p>
+            <button class="button secondary full" on:click=use_mutation_selection>"Use selected source range/caret"</button>
+            <label>"Intended reference name"<input maxlength="256" aria-label="Mutation intended reference name" prop:value=move||intended_name.get() on:input=move|e|intended_name.set(event_target_value(&e))/></label>
+            <p class="helper">"Edit coordinates are one-based boundaries: start inclusive, end exclusive. Equal values insert without deletion. A circular end can exceed the source length to cross the origin. Example: start 4, end 6 replaces source bases 4–5. Selection size is independent of primer length."</p>
+            <div class="mutation-grid">{[("Edit start boundary","Mutation edit start",edit_start),("Edit end boundary","Mutation edit end",edit_end)].into_iter().map(|(label,aria,value)|view!{<label>{label}<input aria-label=aria type="number" min="1" prop:value=move||value.get() on:input=move|e|value.set(event_target_value(&e))/></label>}).collect_view()}</div>
+            <label>"Replacement/inserted sequence"<textarea maxlength="200000" aria-label="Mutation inserted sequence" rows="3" prop:value=move||inserted.get() on:input=move|e|inserted.set(event_target_value(&e))></textarea></label>
+            <button class="button primary full" disabled=move||intent_busy.get()||busy.get()||source.get().is_none() on:click=preview_intent>"Preview intended edit"</button>
+            <button class="text-tool" disabled=move||!intent_busy.get() on:click=move|_|{intent_generation.update(|g|*g=g.wrapping_add(1));if let Some(w)=intent_worker.get_value(){w.close();}intent_worker.set_value(None);intended.set(None);intent_busy.set(false);intent_status.set("Intended-edit preview cancelled.".into());}>"Cancel intended edit"</button>
+            <p class="mutation-status" role="status">{move||intent_status.get()}</p>
+            {move||intended.get().map(|bound|{let replacement=bound.report.request.inserted.chars().filter(|call|!call.is_ascii_whitespace()).map(|call|call.to_ascii_uppercase()).collect::<String>();view!{<article class="mutation-intent-preview"><h4>"2. Review the intended reference"</h4>
+                <p>{format!("Source edit boundaries {}–{} (1-based, end exclusive) · {} deleted bases · {} inserted bases · {} desired bases",bound.report.request.edit_start+1,bound.report.request.edit_end+1,bound.report.deleted.len(),replacement.len(),bound.report.target.sequence.len())}</p>
+                <pre>{format!("Deleted source DNA: {}\nReplacement DNA: {}\nDesired target DNA: {}",dna_preview(&bound.report.deleted),dna_preview(&replacement),dna_preview(bound.report.target.sequence.as_str()))}</pre>
+                <p class="helper">{format!("DNA previews show at most 200 bases each. Origin shift: {} source bases (zero-based); an origin-crossing edit can rotate the intended reference. This is source plus your literal edit, not a PCR or ligation result.",bound.report.origin_shift)}</p>
+                <details><summary>"Original source event"</summary><p>{format!("Document {} · event {} · revision {}",bound.source.document_id,bound.source.event_id,bound.source.revision)}</p></details>
+                {bound.report.warnings.iter().map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view()}
+                <button class="button primary full" disabled=move||intent_busy.get()||busy.get() on:click=open_intent>"Open intended reference"</button>
+            </article>}})}
+        </section>
         <h3>"PCR with declared mismatches"</h3><p class="helper">"Enter actual ordered oligo domains 5′→3′, including intended substitutions. Binding mismatches are conditional rules, not predicted polymerase success."</p>
         <crate::primer_pair_editor::PrimerPairEditor draft=pair_draft selection=pair_selection anchor_available=anchor_available primer_sources=primer_sources list_primers=list_primers resolve_primer=resolve_primer epoch=epoch on_apply=apply_pair apply_label="Apply pair to mismatch PCR".to_string()/>
         <p class="helper" role="status">{move || applied_pair.get().map(|pair| format!("Applied: {} / {}. Draft edits require Apply again.",pair.primers.0.name,pair.primers.1.name)).unwrap_or_else(|| "No applied primer pair. Edit or reuse primers, then Apply before simulation.".into())}</p>
-        <div class="mutation-grid"><label>"Allowed disjoint mismatches"<input aria-label="Mutagenesis allowed mismatches" type="number" min="0" prop:value=move||mismatches.get() on:input=move|e|mismatches.set(event_target_value(&e))/></label><label>"Required exact 3′ bases"<input aria-label="Mutagenesis exact 3prime bases" type="number" min="0" prop:value=move||exact.get() on:input=move|e|exact.set(event_target_value(&e))/></label></div><button class="button primary full" disabled=move||busy.get()||source.get().is_none()||applied_pair.get().is_none() on:click=simulate>"Simulate mismatch PCR"</button>
+        <div class="mutation-grid"><label>"Allowed disjoint mismatches"<input aria-label="Mutagenesis allowed mismatches" type="number" min="0" prop:value=move||mismatches.get() on:input=move|e|mismatches.set(event_target_value(&e))/></label><label>"Required exact 3′ bases"<input aria-label="Mutagenesis exact 3prime bases" type="number" min="0" prop:value=move||exact.get() on:input=move|e|exact.set(event_target_value(&e))/></label></div><button class="button primary full" disabled=move||busy.get()||intent_busy.get()||source.get().is_none()||applied_pair.get().is_none() on:click=simulate>"Simulate mismatch PCR"</button>
         {move||pcr.get().map(|bound|{let report=&bound.report;let download=bound.clone();view!{<section class="mutation-pcr-result"><h3>{format!("{} conditional PCR products",report.products.len())}</h3><p class="helper">{format!("Search complete: {} · complete model: {} · unsupported geometries {} · conflicting overlaps {}",report.search_complete,report.enumeration_complete,report.unsupported_geometries,report.conflicting_overlaps)}</p><ul>{report.warnings.iter().chain(bound.findings.iter()).cloned().map(|w|view!{<li>{w}</li>}).collect_view()}</ul>{report.products.iter().take(50).enumerate().map(|(index,p)|{let action=bound.clone();view!{<article class="mutation-product"><strong>{format!("Product {} · {} bp · {} primer substitutions",index+1,p.sequence.len(),p.substitutions.len())}</strong><p>{format!("Source starts F {} / R {} · domains overlap: {} · concrete: {}",p.forward_start+1,p.reverse_start+1,p.overlapping_domains,p.certain)}</p><pre>{p.sequence.as_str().chars().take(160).collect::<String>()}</pre><button class="button secondary" on:click=move|_|match preview_document(&action,index).and_then(|m|on_products.run(vec![m])){Ok(())=>status.set("Reference preview opened with source annotation mapping. Changed or uncertain features require review.".into()),Err(e)=>status.set(e)}>"Open product reference preview"</button></article>}}).collect_view()}<p class="helper">"First 50 geometries shown. Previews retain source annotation mappings and binding evidence; changed or uncertain features require review. They assert neither target verification nor physical chemistry. JSON retains all returned products and limits."</p><button class="button secondary full" on:click=move|_|match serde_json::to_vec_pretty(&download.report){Ok(bytes)=>if let Err(e)=crate::app::download("mismatch-pcr.json","application/json",&bytes){status.set(e)},Err(e)=>status.set(e.to_string())}>"Download mismatch PCR evidence"</button></section>}})}
-        <h3>"Inverse-PCR replacement"</h3><p class="helper">{move||format!("Active document is the independently specified intended circular target: {}. Choose the original circular source above.",molecule.get().name)}</p><p class="helper">"Edit coordinates are one-based boundaries: start inclusive, end exclusive. Equal values insert without deletion. A circular end can exceed the source length to cross the origin. Example: start 4, end 6 replaces source bases 4–5."</p>
-        <div class="mutation-grid">{[("Edit start boundary","Mutation edit start",edit_start),("Edit end boundary","Mutation edit end",edit_end),("Forward annealing length","Mutation forward length",f_length),("Reverse annealing length","Mutation reverse length",r_length),("Inserted bases on reverse tail","Mutation tail split",split)].into_iter().map(|(label,aria,value)|view!{<label>{label}<input aria-label=aria type="number" prop:value=move||value.get() on:input=move|e|value.set(event_target_value(&e))/></label>}).collect_view()}</div><label>"Replacement/inserted sequence"<textarea aria-label="Mutation inserted sequence" rows="3" prop:value=move||inserted.get() on:input=move|e|inserted.set(event_target_value(&e))></textarea></label><button class="button primary full" disabled=move||busy.get()||source.get().is_none() on:click=design>"Design inverse-PCR candidate"</button>
+        <h3>"3. Design inverse-PCR preparation"</h3><p class="helper">{move||format!("Active document is the independently specified intended circular target: {}. Choose the original circular source above.",molecule.get().name)}</p>
+        <div class="mutation-grid">{[("Forward annealing length","Mutation forward length",f_length),("Reverse annealing length","Mutation reverse length",r_length),("Inserted bases on reverse tail","Mutation tail split",split)].into_iter().map(|(label,aria,value)|view!{<label>{label}<input aria-label=aria type="number" prop:value=move||value.get() on:input=move|e|value.set(event_target_value(&e))/></label>}).collect_view()}</div><button class="button primary full" disabled=move||busy.get()||intent_busy.get()||source.get().is_none() on:click=design>"Design inverse-PCR candidate"</button>
         {move||inverse.get().map(|report|{let candidate=Candidate::new(report.plan.clone());let download=report.clone();view!{<section class="inverse-pcr-result"><h3>{format!("Inverse-PCR check: {:?}",report.verification.status)}</h3><pre>{format!("F  {}\nR  {}",report.forward.ordered_sequence(),report.reverse.ordered_sequence())}</pre><p class="helper">{format!("Retained template {} bp · intended target {}…",report.retained_template_length,report.target_revision.chars().take(12).collect::<String>())}</p><ol><li>"Exact back-to-back PCR with explicit tails"</li><li>"Explicit terminal phosphorylation"</li><li>"Sealed blunt circular ligation"</li></ol><ul>{report.verification.findings.iter().chain(report.warnings.iter()).cloned().map(|w|view!{<li>{w}</li>}).collect_view()}</ul><button class="button primary full" on:click=move|_|on_candidate.run(candidate.clone())>"Review inverse-PCR candidate"</button><button class="button secondary full" on:click=move|_|match serde_json::to_vec_pretty(download.as_ref()){Ok(bytes)=>if let Err(e)=crate::app::download("inverse-pcr-design.json","application/json",&bytes){status.set(e)},Err(e)=>status.set(e.to_string())}>"Download inverse-PCR evidence"</button></section>}})}
         </div>
     }

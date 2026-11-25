@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 40;
+pub const WORKER_SCHEMA_VERSION: u16 = 41;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 11;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -668,6 +668,10 @@ pub enum AnalysisJob {
         target: Molecule,
         request: crate::golden_gate_primer_design::Request,
     },
+    BuildMutationIntent {
+        molecule: Molecule,
+        request: crate::mutation_intent::Request,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -773,6 +777,7 @@ pub enum AnalysisResult {
     ProtocolHtml(String),
     CloningOutputsFinalized(crate::cloning_outputs::Commit),
     GoldenGatePrimersDesigned(crate::golden_gate_primer_design::Report),
+    MutationIntent(crate::mutation_intent::Report),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1019,6 +1024,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_cloning_output_tag(bytes, &[91, 92, 93])?;
     preflight_finalize_tag(bytes, &[94])?;
     preflight_golden_gate_primer_tag(bytes, &[95])?;
+    preflight_mutation_intent_tag(bytes, &[96])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1072,6 +1078,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         _ => decode_with_limit(b"CGR\0", bytes, maximum)?,
     };
     let required = match &response.result {
+        AnalysisResult::MutationIntent(_) => 41,
         AnalysisResult::GoldenGatePrimersDesigned(_) => 40,
         AnalysisResult::CloningOutputsFinalized(_) => 39,
         AnalysisResult::DigestFragmentSelected(_)
@@ -1189,6 +1196,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
     }
     match &response.result {
+        AnalysisResult::MutationIntent(report) => report.validate_binding(&response.revision)?,
         AnalysisResult::GoldenGatePrimersDesigned(report) => {
             report.validate_binding(&response.revision)?
         }
@@ -1643,6 +1651,14 @@ fn preflight_topo_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     }
     Ok(())
 }
+fn preflight_mutation_intent_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 41)?;
+    }
+    Ok(())
+}
 fn preflight_golden_gate_primer_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -1958,6 +1974,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_cloning_output_tag(bytes, &[99, 100, 101])?;
     preflight_finalize_tag(bytes, &[102])?;
     preflight_golden_gate_primer_tag(bytes, &[103])?;
+    preflight_mutation_intent_tag(bytes, &[104])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -1965,6 +1982,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::BuildMutationIntent { .. } => 41,
         AnalysisJob::DesignGoldenGatePrimers { .. } => 40,
         AnalysisJob::PreviewOverlapRecipe { recipe, .. }
             if recipe.fragments.iter().any(|row| {
@@ -2288,6 +2306,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
                 return Err(Error::Format(
                     "assembly intent source/region/options changed".into(),
                 ));
+            }
+            None
+        }
+        AnalysisJob::BuildMutationIntent { molecule, request } => {
+            if crate::mutation_intent::intent_revision(molecule, request)? != r.revision {
+                return Err(Error::Format("Mutation intent source/edit changed".into()));
             }
             None
         }
@@ -2876,6 +2900,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         )),
         AnalysisJob::BuildAssemblyIntent { inputs, request } => {
             crate::assembly_intent::build(&inputs, &request).map(AnalysisResult::AssemblyIntent)
+        }
+        AnalysisJob::BuildMutationIntent { molecule, request } => {
+            crate::mutation_intent::build(&molecule, &request).map(AnalysisResult::MutationIntent)
         }
         AnalysisJob::DesignGoldenGatePrimers {
             inputs,

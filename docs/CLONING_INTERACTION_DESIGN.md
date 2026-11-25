@@ -167,3 +167,11 @@ segments and actual staggered end review. The ordered ligation verifier checks t
 full preparation graph; it does not enumerate a prepared reaction mixture. Internal
 site domestication and fusion optimization remain future work. See
 [Type IIS preparation](GOLDEN_GATE_PRIMER_DESIGN.md).
+
+Mutagenesis now accepts an exact source selection or caret, builds a source-only
+intended-edit preview and explicitly opens it as an independent reference for
+inverse-PCR planning. Native parent/evidence links preserve the actual source event;
+no reaction simulator supplies expected DNA. This connects source editing to an
+existing method without automatically rewriting manual primers or a prior plan.
+Assembly junction/oligo transactions and unfinished-draft persistence remain pending.
+[Mutation intent](MUTATION_INTENT.md).

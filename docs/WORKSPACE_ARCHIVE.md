@@ -108,3 +108,12 @@ IDs. All run documents, exact source events and causal parents remain in the
 archive and available for replay. Optional saved primers use `oligo-table-v1`.
 Finalization does not change archive version 1 and does not restore historical
 verification authority. See [output contract](CLONING_OUTPUTS.md).
+
+## Declared mutation references
+
+`mutation-intent-v1` JSON attachments retain the exact source event plus the
+source-bound edit report. Intended-reference documents have computational parent
+edges to those events; their restrictive `duplex_model` and explicit intent marker
+never establish material state. Reopening does not restore a positive scientific
+result. Source heads and existing raw evidence remain retained. Archive1 is
+unchanged. [Intent contract](MUTATION_INTENT.md).

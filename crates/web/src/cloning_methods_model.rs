@@ -15,6 +15,7 @@ pub enum Mode {
     Overlap,
     Ligation,
     GoldenGate,
+    MultiSiteReference,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Treatment {
@@ -239,6 +240,8 @@ pub struct MethodsState {
     /// Missing in older drafts: initialize using their preparation topology and row count.
     #[serde(default)]
     pub golden_gate_pool: Option<PoolForm>,
+    #[serde(default)]
+    pub multisite: Option<crate::multisite_form::Form>,
     /// Stable source-choice and bin identities. Older ordinary drafts keep the
     /// existing ordinal identity contract; explicit identities are never repinned.
     #[serde(default, deserialize_with = "deserialize_source_roles")]
@@ -368,12 +371,16 @@ impl Default for MethodsState {
             occurrences: "1000".into(),
             golden_gate: GoldenGateForm::default(),
             golden_gate_pool: None,
+            multisite: None,
             source_roles: None,
         }
     }
 }
 impl MethodsState {
     pub(crate) fn role_ids(&self, count: usize) -> Result<Vec<Role>, String> {
+        if self.mode == Mode::MultiSiteReference && self.source_roles.is_none() {
+            return crate::multisite_form::ordinary_roles(count);
+        }
         crate::assembly_role_ids::resolve(&self.source_roles, count)
     }
     pub(crate) fn preparation_context(&self) -> Self {

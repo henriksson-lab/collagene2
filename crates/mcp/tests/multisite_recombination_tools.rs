@@ -287,3 +287,152 @@ async fn sdk_multisite_exact_events_projection_independent_target_and_full_plan_
     client.cancel().await.unwrap();
     task.await.unwrap();
 }
+
+#[tokio::test]
+async fn sdk_library_multisite_freezes_original_intent_before_explicit_network_selection() {
+    let (a, b) = tokio::io::duplex(65536);
+    let server = tokio::spawn(async move {
+        CollageneServer::default()
+            .serve(a)
+            .await
+            .unwrap()
+            .waiting()
+            .await
+            .unwrap();
+    });
+    let client = ().serve(b).await.unwrap();
+    let resource=client.read_resource(rmcp::model::ReadResourceRequestParams::new(
+        "collagene://recombination/profile/tol2kit-228-383-302-vectorii-lr-reference/2026-11-25.1"
+    )).await.unwrap();
+    let value = serde_json::to_value(resource).unwrap();
+    let preset: Value =
+        serde_json::from_str(value["contents"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(preset["profile"]["variants"].as_array().unwrap().len(), 9);
+    assert_eq!(preset["specificities"], json!([4, 1, 2, 3]));
+    assert_eq!(preset["profile"]["edition"], "2026-11-25.1");
+    assert_eq!(preset["profile_revision"].as_str().unwrap().len(), 64);
+
+    let molecules = PARENTS
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            Molecule::dna(format!("Exact original parent {i}"), *s, Topology::Circular).unwrap()
+        })
+        .collect::<Vec<_>>();
+    let frame = workspace::Workspace::from_documents(
+        "Source-only library: independent target not yet built",
+        molecules,
+        0,
+    )
+    .unwrap();
+    let imported = call(
+        &client,
+        "import_workspace_archive",
+        json!({"data_base64":STANDARD.encode(workspace::save_workspace(&frame).unwrap())}),
+    )
+    .await;
+    let wr = json!({"id":imported["workspace"]["id"],"revision":imported["workspace"]["revision"]});
+    let bins = (0..4)
+        .map(|i| {
+            let d = &frame.documents[i];
+            let event = frame
+                .history
+                .iter()
+                .find(|e| e.document_id == d.id)
+                .unwrap();
+            // Original contribution intervals independently concatenate to MAIN.
+            // The destination interval wraps; no simulator or target-directed search
+            // supplies these coordinates or their order.
+            let (start, end) = if i == 3 { (23, 42) } else { (4, 23) };
+            json!({"id":format!("bin-{i}"),"label":format!("Original contribution {i}"),"choices":[{
+                "id":format!("choice-{i}"),"label":format!("Parent {i}"),
+                "source":{"document_id":d.id,"event_id":event.id,"revision":event.revision},
+                "start":start,"end":end,"reverse":false,"preparation":null,"treatment":null
+            }]})
+        })
+        .collect::<Vec<_>>();
+    let mut design = json!({"id":"multisite-library","name":"Declared ordered source-body scars","circular":true,"bins":bins,"method":{"MultiSiteReference":{"request":request(),"selection":null}}});
+    let construct = json!({"id":"construct-main","name":"Frozen scar-bearing reference","choices":(0..4).map(|i|json!({"bin_id":format!("bin-{i}"),"choice_id":format!("choice-{i}")})).collect::<Vec<_>>(),"target":{"OriginalRegions":{"junction_edits":[]}},"overrides":null});
+    // Resolve declared intent before invoking reaction discovery at all.
+    let intent = call(
+        &client,
+        "inspect_combinatorial_construct",
+        json!({"workspace":wr,"design":design,"construct":construct}),
+    )
+    .await;
+    let independent = artifact(&client, &intent["artifact_id"]).await;
+    assert_eq!(independent["independent_target"]["sequence"]["bases"], MAIN);
+    assert!(
+        independent["independent_intent"]
+            .get("OriginalRegions")
+            .is_some()
+    );
+    let found = call(
+        &client,
+        "inspect_combinatorial_multisite",
+        json!({"workspace":wr,"design":design,"construct":construct}),
+    )
+    .await;
+    assert_eq!(found["candidate_count"], 1);
+    assert_eq!(found["complete"], true);
+    let evidence = artifact(&client, &found["artifact_id"]).await;
+    let batch = &evidence["inspection"]["batch"];
+    assert_eq!(batch["documents"].as_array().unwrap().len(), 2);
+    let candidate = &batch["reference"]["candidates"][0];
+    let component = candidate["products"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|product| {
+            product["segments"].as_array().unwrap().iter().any(|map| {
+                map["input"] == 0
+                    && map["source_start"].as_u64().unwrap() <= 14
+                    && map["source_end"].as_u64().unwrap() >= 19
+                    && map["reverse"] == false
+            })
+        })
+        .unwrap();
+    design["method"]["MultiSiteReference"]["selection"] = json!({"source_revision":found["source_revision"],"selection":{"batch_revision":found["batch_revision"],"candidate_id":0,"component_id":component}});
+    let again = call(
+        &client,
+        "inspect_combinatorial_multisite",
+        json!({"workspace":wr,"design":design,"construct":construct}),
+    )
+    .await;
+    assert_eq!(
+        again["source_revision"], found["source_revision"],
+        "component selection must not change the source context it pins"
+    );
+    let saved = call(
+        &client,
+        "evaluate_combinatorial_batch",
+        json!({"workspace":wr,"matrix":{"design":design,"rows":[{"Ready":construct}]}}),
+    )
+    .await;
+    let batch_record = artifact(&client, &saved["artifact_id"]).await;
+    let row = &batch_record["rows"][0];
+    assert_eq!(row["state"], "Evaluated");
+    assert_eq!(
+        row["status"], "Incomplete",
+        "reference intent cannot assert physical recombination"
+    );
+    assert_eq!(row["completed_steps"], 1);
+    assert_eq!(row["input_bindings"].as_array().unwrap().len(), 4);
+    assert!(
+        row["target_binding"].is_null(),
+        "original-region intent was not an existing target event"
+    );
+    let mut changed = design.clone();
+    changed["bins"][0]["choices"][0]["start"] = json!(5);
+    let stale = call(
+        &client,
+        "evaluate_combinatorial_batch",
+        json!({"workspace":wr,"matrix":{"design":changed,"rows":[{"Ready":construct}]}}),
+    )
+    .await;
+    let stale_record = artifact(&client, &stale["artifact_id"]).await;
+    assert_eq!(stale_record["rows"][0]["state"], "Error");
+    assert!(stale_record["rows"][0]["status"].is_null());
+    client.cancel().await.unwrap();
+    server.await.unwrap();
+}

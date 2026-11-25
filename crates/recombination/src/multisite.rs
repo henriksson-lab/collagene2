@@ -100,6 +100,17 @@ impl Profile {
         hash(self)
     }
 }
+/// Finite, independently curated attachment-context facts from the cited source
+/// editions. Includes eight LR contexts and the known nested full-P3 competitor;
+/// not a universal kit, biochemical activity or manufacturer-endorsement model.
+pub fn three_entry_source_contexts() -> Result<Profile, Error> {
+    let profile: Profile =
+        serde_json::from_str(include_str!("../data/three-entry-source-contexts.json"))
+            .map_err(super::fmt)?;
+    profile.validate()?;
+    Ok(profile)
+}
+
 fn limits(l: &Limits) -> Result<(), Error> {
     if l.max_input_bases == 0
         || l.max_input_bases > 2_000_000

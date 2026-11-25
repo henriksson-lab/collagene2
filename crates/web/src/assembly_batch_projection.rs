@@ -134,6 +134,27 @@ fn typed_row(
                 }
             }
         }
+        Mode::MultiSiteReference => {
+            if !(2..=5).contains(&library.bins.len()) {
+                return Err("Reference exchange requires2..5 whole original parents.".into());
+            }
+            for raw in &state.rows {
+                if raw.preparation != OverlapPreparation::WholeLinear
+                    || raw.treatment != crate::cloning_methods_model::Treatment::Keep
+                    || raw.repair.is_some()
+                {
+                    return Err("Explicitly choose whole original parents without preparation, repair or treatment for reference exchange.".into());
+                }
+            }
+            let form = state
+                .multisite
+                .as_ref()
+                .ok_or("Configure the reference profile first.")?;
+            Method::MultiSiteReference {
+                request: form.request()?,
+                selection: form.selection(),
+            }
+        }
         Mode::Tailing => {
             return Err(
                 "TA/GC tailing is not a source-bin assembly method; inspect this row separately."
@@ -141,19 +162,31 @@ fn typed_row(
             );
         }
     };
-    let (_, prepared) =
-        cloning_preparations::prepared_rows(&preparation_state, library.bins.len())?;
-    let preparations = library
-        .bins
-        .iter()
-        .zip(prepared)
-        .zip(&preparation_state.rows)
-        .map(|((bin, fragment), raw)| PreparationOverride {
-            bin_id: bin.id.clone(),
-            preparation: Some(fragment.preparation),
-            treatment: raw.treatment.operation(),
-        })
-        .collect();
+    let preparations = if state.mode == Mode::MultiSiteReference {
+        library
+            .bins
+            .iter()
+            .map(|bin| PreparationOverride {
+                bin_id: bin.id.clone(),
+                preparation: None,
+                treatment: None,
+            })
+            .collect()
+    } else {
+        let (_, prepared) =
+            cloning_preparations::prepared_rows(&preparation_state, library.bins.len())?;
+        library
+            .bins
+            .iter()
+            .zip(prepared)
+            .zip(&preparation_state.rows)
+            .map(|((bin, fragment), raw)| PreparationOverride {
+                bin_id: bin.id.clone(),
+                preparation: Some(fragment.preparation),
+                treatment: raw.treatment.operation(),
+            })
+            .collect()
+    };
     let value = SelectedConstruct {
         id: row.id.clone(),
         name: row.edits.name.clone(),
@@ -395,6 +428,43 @@ pub fn project(draft: &Draft) -> Result<Projection, String> {
     request.validate().map_err(|e| e.to_string())?;
     let revision = declaration_revision(&stored, &request)?;
     Ok(Projection { request, revision })
+}
+
+/// Same typed declaration for the ordinary dock and an opened library construct.
+/// The ephemeral one-choice catalog has namespaced stable identities, never DNA-derived aliases.
+pub fn active(draft: &Draft) -> Result<(design::Design, SelectedConstruct), String> {
+    let ordinary;
+    let current = if draft.alternatives.is_none() {
+        ordinary = alternatives::enable(draft, crate::multisite_form::ORDINARY_ID)?;
+        &ordinary
+    } else {
+        draft
+    };
+    let projection = project(current)?;
+    let catalog = projection
+        .request
+        .design
+        .ok_or("Capture all original sources first.")?;
+    let id = &current
+        .alternatives
+        .as_ref()
+        .ok_or("Active construct unavailable.")?
+        .active_row;
+    let row = projection
+        .request
+        .rows
+        .into_iter()
+        .find_map(|row| match row {
+            RowRequest::Ready(row) if &row.id == id => Some(Ok(row)),
+            RowRequest::DraftError {
+                id: row_id,
+                message,
+                ..
+            } if &row_id == id => Some(Err(message)),
+            _ => None,
+        })
+        .ok_or("Active construct is unavailable.")??;
+    Ok((catalog, row))
 }
 
 #[cfg(test)]
@@ -757,5 +827,206 @@ mod tests {
         }
         let cleared = alternatives::set_active_pool_candidate(&saved, None).unwrap();
         assert_eq!(project(&cleared).unwrap().revision, before.revision);
+    }
+    fn reference_draft() -> Draft {
+        let mut draft = ordinary();
+        draft.methods.mode = Mode::MultiSiteReference;
+        let mut form = crate::multisite_form::Form::default();
+        form.reviewed = true;
+        draft.methods.multisite = Some(form);
+        for row in &mut draft.methods.rows {
+            row.preparation = OverlapPreparation::WholeLinear;
+            row.treatment = Treatment::Keep;
+            row.repair = None;
+        }
+        draft.sync_rows();
+        draft
+    }
+    #[test]
+    fn ordinary_reference_projection_has_matching_roles_and_explicit_no_preparation_without_a_saved_matrix()
+     {
+        let draft = reference_draft();
+        let before = serde_json::to_vec(&draft).unwrap();
+        let (catalog, row) = active(&draft).unwrap();
+        assert!(draft.alternatives.is_none());
+        assert_eq!(before, serde_json::to_vec(&draft).unwrap());
+        let roles = draft.methods.role_ids(draft.slots.len()).unwrap();
+        for (i, bin) in catalog.bins.iter().enumerate() {
+            let wanted =
+                design::source_role_ids(&catalog.id, &row.id, &bin.id, &row.choices[i].choice_id)
+                    .unwrap();
+            assert_eq!((&roles[i].input_id, &roles[i].role), (&wanted.0, &wanted.1));
+            assert_eq!(
+                bin.choices[0].source,
+                draft.slots[i].captured.as_ref().unwrap().source.binding
+            );
+            assert_eq!(
+                (
+                    bin.choices[0].start,
+                    bin.choices[0].end,
+                    bin.choices[0].reverse
+                ),
+                (
+                    draft.slots[i].start,
+                    draft.slots[i].end,
+                    draft.slots[i].reverse
+                )
+            );
+        }
+        let overrides = row.overrides.unwrap();
+        assert!(matches!(
+            overrides.method,
+            Some(Method::MultiSiteReference {
+                selection: None,
+                ..
+            })
+        ));
+        assert!(
+            overrides
+                .preparations
+                .iter()
+                .all(|p| p.preparation.is_none() && p.treatment.is_none())
+        );
+    }
+    #[test]
+    fn reference_projection_refuses_to_discard_an_existing_preparation_or_treatment() {
+        let mut draft = reference_draft();
+        draft.methods.rows[0].preparation = OverlapPreparation::ExactPcr;
+        draft.methods.rows[0].forward = "ACGT".into();
+        assert!(active(&draft).unwrap_err().contains("without preparation"));
+        assert_eq!(draft.methods.rows[0].forward, "ACGT");
+        draft.methods.rows[0].preparation = OverlapPreparation::WholeLinear;
+        draft.methods.rows[0].treatment = Treatment::Phosphorylate;
+        assert!(active(&draft).unwrap_err().contains("without preparation"));
+        draft.methods.rows[0].treatment = Treatment::Keep;
+        assert!(active(&draft).is_ok());
+    }
+    #[test]
+    fn reference_library_pin_and_unfinished_profile_persist_as_intent_without_proof() {
+        let mut draft = alternatives::enable(&reference_draft(), "ref-library").unwrap();
+        let form = draft.methods.multisite.as_mut().unwrap();
+        form.selection = Some(crate::multisite_form::ComponentIntent {
+            batch_revision: "a".repeat(64),
+            candidate_id: 2,
+            component_id: 1,
+            source_revision: "b".repeat(64),
+        });
+        let saved = alternatives::save_active(&draft).unwrap();
+        let bytes = crate::assembly_draft_model::encode_raw(&saved).unwrap();
+        let restored = crate::assembly_draft_model::decode(&bytes).unwrap();
+        let (_, row) = active(&restored).unwrap();
+        let Some(Method::MultiSiteReference {
+            selection: Some(pin),
+            ..
+        }) = row.overrides.unwrap().method
+        else {
+            panic!("reference component intent lost")
+        };
+        assert_eq!(pin.source_revision, "b".repeat(64));
+        assert_eq!(pin.selection.candidate_id, 2);
+        let mut raw = restored;
+        raw.methods.multisite.as_mut().unwrap().profile_json = "{unfinished profile Ω".into();
+        let raw = alternatives::save_active(&raw).unwrap();
+        let restored = crate::assembly_draft_model::decode(
+            &crate::assembly_draft_model::encode_raw(&raw).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            restored.methods.multisite.as_ref().unwrap().profile_json,
+            "{unfinished profile Ω"
+        );
+        assert!(
+            active(&restored).is_err(),
+            "editable malformed profile is retained but cannot generate a scientific request"
+        );
+    }
+    #[test]
+    fn ordinary_reference_and_edited_target_metadata_equal_the_frozen_intent_builder() {
+        use collagene_core::{
+            assembly_intent, assembly_junction_edit, overlap_primer_design::Fragment,
+            verification::PlanInput,
+        };
+        let originals = vec![
+            Molecule::dna("first source", "AACCGGTTAA", Topology::Linear).unwrap(),
+            Molecule::dna("second source", "GGTTAACCGG", Topology::Linear).unwrap(),
+        ];
+        let frame = Workspace::from_documents("Real source owners", originals.clone(), 0).unwrap();
+        let mut draft = reference_draft();
+        for (i, slot) in draft.slots.iter_mut().enumerate() {
+            let doc = &frame.documents[i];
+            slot.captured = Some(Arc::new(CapturedSource {
+                source: SourceInfo {
+                    binding: EventBinding {
+                        document_id: doc.id.clone(),
+                        event_id: doc.head_event.clone().unwrap(),
+                        revision: doc.head.clone(),
+                    },
+                    name: originals[i].name.clone(),
+                    length: originals[i].sequence.len(),
+                    alphabet: originals[i].sequence.alphabet(),
+                    topology: originals[i].topology,
+                },
+                molecule: originals[i].clone(),
+            }));
+            slot.start = i + 1;
+            slot.end = 8 + i;
+            slot.reverse = i == 1;
+        }
+        draft.sync_rows();
+        for edited in [false, true] {
+            draft.junction_edits = if edited {
+                vec![Edit {
+                    junction: 0,
+                    remove_left: 1,
+                    remove_right: 1,
+                    inserted: "GAT".into(),
+                }]
+            } else {
+                vec![]
+            };
+            let roles = draft.methods.role_ids(draft.slots.len()).unwrap();
+            let inputs = roles
+                .iter()
+                .zip(&draft.slots)
+                .map(|(r, s)| {
+                    let c = s.captured.as_ref().unwrap();
+                    PlanInput {
+                        id: r.input_id.clone(),
+                        revision: c.source.binding.revision.clone(),
+                        molecule: c.molecule.clone(),
+                    }
+                })
+                .collect::<Vec<_>>();
+            let request = assembly_intent::Request {
+                name: draft.name.clone(),
+                circular: draft.circular,
+                fragments: roles
+                    .iter()
+                    .zip(&draft.slots)
+                    .map(|(r, s)| Fragment {
+                        role: r.role.clone(),
+                        input_id: r.input_id.clone(),
+                        start: s.start,
+                        end: s.end,
+                        reverse: s.reverse,
+                    })
+                    .collect(),
+            };
+            let intended = if edited {
+                assembly_junction_edit::build_intent(&inputs, &request, &draft.junction_edits)
+                    .unwrap()
+                    .target
+            } else {
+                assembly_intent::build(&inputs, &request).unwrap().target
+            };
+            let (catalog, row) = active(&draft).unwrap();
+            let native = design::resolve(&catalog, &row, &frame).unwrap();
+            assert_eq!(
+                native.target.revision(),
+                intended.revision(),
+                "all name/role/source metadata as well as DNA must match the independently frozen target"
+            );
+            assert_eq!(native.target, intended);
+        }
     }
 }

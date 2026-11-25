@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 68;
+pub const WORKER_SCHEMA_VERSION: u16 = 69;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 16;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -885,6 +885,11 @@ pub enum AnalysisJob {
         selection: crate::multisite_recombination::Selection,
         target: Molecule,
     },
+    InspectCombinatorialMultiSite {
+        workspace: crate::workspace::Workspace,
+        design: crate::combinatorial_design::Design,
+        construct: crate::combinatorial_design::SelectedConstruct,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1044,6 +1049,7 @@ pub enum AnalysisResult {
     MultiSiteRecombination(crate::multisite_recombination::Batch),
     MultiSiteRecombinationProduct(crate::multisite_recombination::ProductDocument),
     MultiSiteRecombinationChecked(crate::multisite_recombination::CheckedProduct),
+    CombinatorialMultiSiteInspection(crate::combinatorial_design::MultiSiteInspection),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1273,6 +1279,13 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         crate::pairwise_context::preflight(report, reference, query, *translate)?;
     }
     match &r.job {
+        AnalysisJob::InspectCombinatorialMultiSite {
+            workspace,
+            design,
+            construct,
+        } => {
+            crate::combinatorial_design::inspect_multisite_revision(design, construct, workspace)?;
+        }
         AnalysisJob::SimulateMultiSiteRecombination { inputs, request } => {
             crate::multisite_recombination::preflight(inputs, request)?;
         }
@@ -1398,6 +1411,7 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::BeginCombinatorialRelease { .. }
             | AnalysisJob::FinishCombinatorialRelease { .. }
             | AnalysisJob::ExportCombinatorialOutputs { .. }
+            | AnalysisJob::InspectCombinatorialMultiSite { .. }
     ) {
         MAX_WORKSPACE_MESSAGE_BYTES
     } else {
@@ -1472,6 +1486,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_processed_run_tag(bytes, &[141])?;
     preflight_topo_actions_tag(bytes, &[142, 143])?;
     preflight_multisite_recombination_tag(bytes, &[144, 145, 146])?;
+    preflight_combinatorial_multisite_tag(bytes, &[147])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1528,6 +1543,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         },
     };
     let required = match &response.result {
+        AnalysisResult::CombinatorialMultiSiteInspection(_) => 69,
         AnalysisResult::MultiSiteRecombination(_)
         | AnalysisResult::MultiSiteRecombinationProduct(_)
         | AnalysisResult::MultiSiteRecombinationChecked(_) => 68,
@@ -2008,6 +2024,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
                     "read alignment disposal response mismatch".into(),
                 ));
             }
+        }
+        AnalysisResult::CombinatorialMultiSiteInspection(report) => {
+            report.validate_binding(&response.revision)?;
         }
         AnalysisResult::MultiSiteRecombination(report) => {
             report.validate_binding(&response.revision)?;
@@ -2638,6 +2657,14 @@ fn preflight_read_alignment_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error>
     }
     Ok(())
 }
+fn preflight_combinatorial_multisite_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 69)?;
+    }
+    Ok(())
+}
 fn preflight_multisite_recombination_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -2797,21 +2824,20 @@ fn check_combinatorial_request_version(
     request: &crate::combinatorial_batch::Request,
 ) -> Result<(), Error> {
     use crate::combinatorial_design::Method;
-    let pool = |method: &Method| matches!(method, Method::GoldenGatePool { .. });
-    if request
-        .design
-        .as_ref()
-        .is_some_and(|design| pool(&design.method))
-        || request.rows.iter().any(|row| match row {
-            crate::combinatorial_batch::RowRequest::Ready(row) => row
-                .overrides
-                .as_ref()
-                .and_then(|overrides| overrides.method.as_ref())
-                .is_some_and(pool),
-            _ => false,
-        })
-    {
-        check_variant_version(bytes, 59)?;
+    let required = |method: &Method| match method {
+        Method::MultiSiteReference { .. } => 69,
+        Method::GoldenGatePool { .. } => 59,
+        _ => 57,
+    };
+    if let Some(design) = &request.design {
+        check_variant_version(bytes, required(&design.method))?;
+    }
+    for row in &request.rows {
+        if let crate::combinatorial_batch::RowRequest::Ready(row) = row
+            && let Some(method) = row.overrides.as_ref().and_then(|o| o.method.as_ref())
+        {
+            check_variant_version(bytes, required(method))?;
+        }
     }
     Ok(())
 }
@@ -2997,6 +3023,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             (134, 58),
             (135, 58),
             (149, 65),
+            (155, 69),
         ],
     )?;
     preflight_codon_tag(bytes, &[44, 45])?;
@@ -3048,6 +3075,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_processed_run_tag(bytes, &[149])?;
     preflight_topo_actions_tag(bytes, &[150, 151])?;
     preflight_multisite_recombination_tag(bytes, &[152, 153, 154])?;
+    preflight_combinatorial_multisite_tag(bytes, &[155])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -3055,6 +3083,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::InspectCombinatorialMultiSite { .. } => 69,
         AnalysisJob::SimulateMultiSiteRecombination { .. }
         | AnalysisJob::ProjectMultiSiteRecombination { .. }
         | AnalysisJob::CheckMultiSiteRecombination { .. } => 68,
@@ -4054,6 +4083,22 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
                 "read alignment operations require a persistent worker session".into(),
             ));
         }
+        AnalysisJob::InspectCombinatorialMultiSite {
+            workspace,
+            design,
+            construct,
+        } => {
+            check_workspace_version(bytes, workspace)?;
+            if crate::combinatorial_design::inspect_multisite_revision(
+                design, construct, workspace,
+            )? != r.revision
+            {
+                return Err(Error::Format(
+                    "combinatorial multisite inspection source/declaration context changed".into(),
+                ));
+            }
+            None
+        }
         AnalysisJob::SimulateMultiSiteRecombination { inputs, request } => {
             if crate::multisite_recombination::revision(inputs, request)? != r.revision {
                 return Err(Error::Format(
@@ -4779,6 +4824,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         | AnalysisJob::DisposeReadAlignments { .. } => Err(Error::Unsupported(
             "read alignment operations require a persistent worker session".into(),
         )),
+        AnalysisJob::InspectCombinatorialMultiSite {
+            workspace,
+            design,
+            construct,
+        } => crate::combinatorial_design::inspect_multisite(&design, &construct, &workspace)
+            .map(AnalysisResult::CombinatorialMultiSiteInspection),
         AnalysisJob::SimulateMultiSiteRecombination { inputs, request } => {
             crate::multisite_recombination::simulate(&inputs, &request)
                 .map(AnalysisResult::MultiSiteRecombination)
@@ -5284,6 +5335,7 @@ impl AnalysisSession {
                 (134, 58),
                 (135, 58),
                 (149, 65),
+                (155, 69),
             ],
         )?;
         // Route by a borrowed prefix so ordinary jobs are not fully decoded twice.

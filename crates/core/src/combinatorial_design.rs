@@ -38,12 +38,16 @@ dto! {pub enum Method {
     /// Physical reaction substrates are independent of original target-contribution
     /// coordinates. An absent pin is an editable inspection draft, never candidate zero.
     GoldenGatePool{options:GoldenGateOptions,substrates:Vec<PoolSubstrate>,selection:Option<PoolSelection>},
+    /// Whole original reference parents; contribution intervals only define independent intent.
+    MultiSiteReference{request:crate::multisite_recombination::Request,selection:Option<MultiSiteSelection>},
 }}
 dto! {pub enum PoolSubstrateKind {WholeSource,Prepared}}
 dto! {pub struct PoolSubstrate {pub bin_id:String,pub kind:PoolSubstrateKind}}
 // Documentary user-selection intent, never imported scientific authority.
 // The outer revision also pins equal-DNA distinct workspace events and geometry.
 dto! {pub struct PoolSelection {pub selection:crate::prepared_golden_gate::Selection,pub source_revision:String}}
+dto! {pub struct MultiSiteSelection {pub selection:crate::recombination::Selection,pub source_revision:String}}
+dto! {pub struct MultiSiteInspection {pub context_revision:String,pub source_revision:String,pub batch:crate::multisite_recombination::Batch}}
 dto! {pub struct Design {pub id:String,pub name:String,pub circular:bool,pub bins:Vec<Bin>,pub method:Method}}
 dto! {pub struct ChoiceSelection {pub bin_id:String,pub choice_id:String}}
 dto! {pub struct Combination {pub id:String,pub choices:Vec<ChoiceSelection>}}
@@ -76,9 +80,16 @@ pub enum Recipe {
         selection: Option<PoolSelection>,
         source_revision: String,
     },
+    MultiSiteReference {
+        request: crate::multisite_recombination::Request,
+        selection: Option<MultiSiteSelection>,
+        source_revision: String,
+        sources: Vec<crate::verification::TopoSource>,
+    },
 }
 pub struct Resolved {
     pub construct_id: String,
+    pub construct_name: String,
     pub combination_id: String,
     pub declaration_revision: String,
     pub inputs: Vec<PlanInput>,
@@ -96,6 +107,7 @@ pub enum Preview {
     Overlap(assembly_recipe::Preview),
     Ligation(ligation_recipe::Preview),
     GoldenGatePool(PoolPreview),
+    MultiSiteReference(PoolPreview),
 }
 pub struct PoolPreview {
     pub plan: crate::verification::DesignPlan,
@@ -279,6 +291,23 @@ fn method_shape(method: &Method, bins: usize, circular: bool) -> Result<(), Erro
             ));
         }
         options.validate()?;
+    }
+    if let Method::MultiSiteReference { request, selection } = method {
+        if !(2..=5).contains(&bins) {
+            return Err(bad(
+                "multi-site reference exchange requires two to five original parent bins",
+            ));
+        }
+        crate::multisite_recombination::request_preflight(request)?;
+        if let Some(pin) = selection {
+            if !digest(&pin.source_revision)
+                || !digest(&pin.selection.batch_revision)
+                || pin.selection.candidate_id >= 256
+                || pin.selection.component_id >= 32
+            {
+                return Err(bad("invalid explicit multi-site candidate/component pin"));
+            }
+        }
     }
     if let Method::GoldenGatePool {
         options,
@@ -468,6 +497,21 @@ fn construct_shape(design: &Design, construct: &SelectedConstruct) -> Result<(),
             }
         }
     }
+    if matches!(method, Method::MultiSiteReference { .. }) {
+        for (bin, choice) in selected(design, &construct.choices)? {
+            let preparation = preparation_override(construct, &bin.id)
+                .map(|p| &p.preparation)
+                .unwrap_or(&choice.preparation);
+            let treatment = preparation_override(construct, &bin.id)
+                .map(|p| p.treatment)
+                .unwrap_or(choice.treatment);
+            if preparation.is_some() || treatment.is_some() {
+                return Err(bad(
+                    "multi-site reference parents must use no preparation or terminal treatment; clear those declarations explicitly instead of treating a reference as prepared physical material",
+                ));
+            }
+        }
+    }
     match &construct.target {
         TargetDeclaration::Existing(target) => binding(target)?,
         TargetDeclaration::OriginalRegions { junction_edits } => {
@@ -586,6 +630,20 @@ pub(crate) fn work_charge(
                     .checked_mul(options.max_fragments)
                     .ok_or(Error::TooLarge)?,
             )
+            .ok_or(Error::TooLarge)?;
+    }
+    if let Method::MultiSiteReference { request, .. } = method {
+        let limit = &request.reaction.limits;
+        work = work
+            .checked_add(usize::try_from(limit.max_comparisons).map_err(|_| Error::TooLarge)?)
+            .and_then(|work| {
+                work.checked_add(
+                    limit
+                        .max_combinations
+                        .checked_mul(request.reaction.specificities.len())?,
+                )
+            })
+            .and_then(|work| work.checked_add(limit.max_product_bases))
             .ok_or(Error::TooLarge)?;
     }
     Ok(work.max(1))
@@ -726,10 +784,24 @@ pub(crate) fn resolve_validated(
         }
         originals.push(molecule);
     }
+    if let Method::MultiSiteReference { request, .. } = method {
+        crate::multisite_recombination::source_preflight(&originals, request)?;
+    }
     let existing = match &construct.target {
         TargetDeclaration::Existing(target) => Some(resolve_event(workspace, target)?),
         _ => None,
     };
+    if matches!(method, Method::MultiSiteReference { .. }) {
+        if let Some(target) = existing {
+            if target.sequence.alphabet() != crate::Alphabet::Dna
+                || (target.topology == Topology::Circular) != circular
+            {
+                return Err(bad(
+                    "multi-site independent target alphabet/topology differs from the construct declaration",
+                ));
+            }
+        }
+    }
     let mut borrowed = originals.clone();
     if let Some(target) = existing {
         borrowed.push(target);
@@ -809,7 +881,49 @@ pub(crate) fn resolve_validated(
             }
         }
     };
-    let recipe = if let Method::GoldenGatePool {
+    let recipe = if let Method::MultiSiteReference { request, selection } = method {
+        let sources = identities
+            .iter()
+            .map(|(id, role)| crate::verification::TopoSource {
+                role: role.clone(),
+                source: crate::verification::Source::Input(id.clone()),
+            })
+            .collect::<Vec<_>>();
+        // No component selection is included: applying an explicit pin must not
+        // invalidate its own source/intent context. Every exact event and literal
+        // contribution remains bound even when source DNA or names are equal.
+        let source_revision = assembly_recipe::hash(&(
+            "combinatorial-multisite-source-intent-1",
+            &design.id,
+            &construct.id,
+            &construct.name,
+            &construct.choices,
+            &bindings,
+            &construct.target,
+            circular,
+            choices
+                .iter()
+                .map(|(bin, choice)| {
+                    (
+                        &bin.id,
+                        &choice.id,
+                        choice.start,
+                        choice.end,
+                        choice.reverse,
+                    )
+                })
+                .collect::<Vec<_>>(),
+            target.revision(),
+            request,
+            &sources,
+        ))?;
+        Recipe::MultiSiteReference {
+            request: request.clone(),
+            selection: selection.clone(),
+            source_revision,
+            sources,
+        }
+    } else if let Method::GoldenGatePool {
         options,
         substrates,
         selection,
@@ -966,7 +1080,9 @@ pub(crate) fn resolve_validated(
                 ligation_recipe::source_preflight(&native, &target, &recipe)?;
                 Recipe::Ligation(recipe)
             }
-            Method::GoldenGatePool { .. } => unreachable!("pool compiled above"),
+            Method::GoldenGatePool { .. } | Method::MultiSiteReference { .. } => {
+                unreachable!("whole-parent reaction compiled above")
+            }
         }
     };
     let combination_id = combination_key(design, &construct.choices)?;
@@ -974,6 +1090,7 @@ pub(crate) fn resolve_validated(
         assembly_recipe::hash(&(VERSION, design, construct, &bindings, target.revision()))?;
     Ok(Resolved {
         construct_id: construct.id.clone(),
+        construct_name: construct.name.clone(),
         combination_id,
         declaration_revision,
         inputs,
@@ -983,6 +1100,156 @@ pub(crate) fn resolve_validated(
         intent,
         recipe,
     })
+}
+
+fn multisite_inputs(
+    resolved: &Resolved,
+) -> Result<Vec<crate::recombination::reference::Input>, Error> {
+    let Recipe::MultiSiteReference {
+        request, sources, ..
+    } = &resolved.recipe
+    else {
+        return Err(bad(
+            "resolved construct is not a multi-site reference design",
+        ));
+    };
+    if sources.len() != resolved.inputs.len() {
+        return Err(bad("multi-site source role/input counts differ"));
+    }
+    let mut borrowed = Vec::with_capacity(sources.len());
+    let mut roles = BTreeSet::new();
+    for source in sources {
+        if !roles.insert(&source.role) {
+            return Err(bad("multi-site parent roles must be distinct"));
+        }
+        let crate::verification::Source::Input(id) = &source.source else {
+            return Err(bad(
+                "multi-site library parents must be whole original inputs",
+            ));
+        };
+        let input = resolved
+            .inputs
+            .iter()
+            .find(|input| input.id == *id)
+            .ok_or_else(|| bad("multi-site parent input is absent"))?;
+        borrowed.push((&source.role, &input.molecule));
+    }
+    crate::multisite_recombination::source_preflight(
+        &borrowed
+            .iter()
+            .map(|(_, molecule)| *molecule)
+            .collect::<Vec<_>>(),
+        request,
+    )?;
+    Ok(borrowed
+        .into_iter()
+        .map(|(role, molecule)| crate::recombination::reference::Input {
+            role: role.clone(),
+            molecule: molecule.clone(),
+        })
+        .collect())
+}
+/// Resolve whole original parents and freeze independent target intent. A missing
+/// component selection remains an inspection draft, not a default candidate.
+pub fn resolve_multisite(
+    design: &Design,
+    construct: &SelectedConstruct,
+    workspace: &Workspace,
+) -> Result<Resolved, Error> {
+    let resolved = resolve(design, construct, workspace)?;
+    if !matches!(&resolved.recipe, Recipe::MultiSiteReference { .. }) {
+        return Err(bad(
+            "selected construct is not a multi-site reference design",
+        ));
+    }
+    Ok(resolved)
+}
+/// Borrowed inspection context before source cloning, target construction or native
+/// enumeration. The workspace fingerprint retains equal-DNA distinct events.
+pub fn inspect_multisite_revision(
+    design: &Design,
+    construct: &SelectedConstruct,
+    workspace: &Workspace,
+) -> Result<String, Error> {
+    validate_construct(design, construct)?;
+    workspace_guard(workspace)?;
+    let (method, circular) = effective(design, construct);
+    let Method::MultiSiteReference { request, .. } = method else {
+        return Err(bad(
+            "selected construct is not a multi-site reference design",
+        ));
+    };
+    let selected = selected(design, &construct.choices)?;
+    let mut parents = Vec::with_capacity(selected.len());
+    for (_, choice) in selected {
+        let molecule = resolve_event(workspace, &choice.source)?;
+        let n = molecule.sequence.len();
+        if choice.start >= n
+            || choice.end - choice.start > n
+            || (molecule.topology == Topology::Linear && choice.end > n)
+        {
+            return Err(bad(
+                "independent contribution is outside its original parent",
+            ));
+        }
+        parents.push(molecule);
+    }
+    crate::multisite_recombination::source_preflight(&parents, request)?;
+    if let TargetDeclaration::Existing(binding) = &construct.target {
+        let target = resolve_event(workspace, binding)?;
+        crate::model::bounds::model_preflight(&[target])?;
+        if target.sequence.alphabet() != crate::Alphabet::Dna
+            || (target.topology == Topology::Circular) != circular
+        {
+            return Err(bad(
+                "independent target alphabet/topology differs from this construct",
+            ));
+        }
+    }
+    assembly_recipe::hash(&(
+        "combinatorial-multisite-inspection-1",
+        crate::run_lineage::workspace_fingerprint(workspace)?,
+        design,
+        construct,
+    ))
+}
+/// Native reference discovery runs only after the independent intent was frozen.
+/// Neither that target nor a stored pin selects the enumeration's pairings.
+pub fn inspect_multisite(
+    design: &Design,
+    construct: &SelectedConstruct,
+    workspace: &Workspace,
+) -> Result<MultiSiteInspection, Error> {
+    let context_revision = inspect_multisite_revision(design, construct, workspace)?;
+    let resolved = resolve_multisite(design, construct, workspace)?;
+    let Recipe::MultiSiteReference {
+        request,
+        source_revision,
+        ..
+    } = &resolved.recipe
+    else {
+        unreachable!()
+    };
+    let inputs = multisite_inputs(&resolved)?;
+    let batch = crate::multisite_recombination::simulate(&inputs, request)?;
+    let result = MultiSiteInspection {
+        context_revision: context_revision.clone(),
+        source_revision: source_revision.clone(),
+        batch,
+    };
+    result.validate_binding(&context_revision)?;
+    Ok(result)
+}
+impl MultiSiteInspection {
+    /// Readonly current response/source-selection context, not a scientific replay.
+    pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
+        if !digest(expected) || self.context_revision != expected || !digest(&self.source_revision)
+        {
+            return Err(bad("multi-site inspection context differs"));
+        }
+        self.batch.validate_binding(&self.batch.batch_revision)?;
+        count(self)
+    }
 }
 
 /// Pure plan compilation. The returned plan has not been scientifically verified.
@@ -1004,6 +1271,33 @@ pub fn compile_resolved(resolved: &Resolved) -> Result<crate::verification::Desi
         }
         Recipe::Ligation(recipe) => {
             Ok(ligation_recipe::compile(&resolved.inputs, &resolved.target, recipe)?.plan)
+        }
+        Recipe::MultiSiteReference {
+            request,
+            selection,
+            source_revision,
+            sources,
+        } => {
+            let pin=selection.as_ref().ok_or_else(||bad("inspect the multi-site network and explicitly select a candidate and reciprocal component before compilation"))?;
+            if &pin.source_revision != source_revision {
+                return Err(bad(
+                    "multi-site selection belongs to different exact source events, contribution geometry, or independent target intent",
+                ));
+            }
+            let native = multisite_inputs(resolved)?;
+            crate::multisite_recombination::product_revision(&native, request, &pin.selection)?;
+            Ok(crate::verification::DesignPlan {
+                name: resolved.construct_name.clone(),
+                target_revision: resolved.target.revision(),
+                inputs: resolved.inputs.clone(),
+                steps: vec![
+                    crate::verification::Operation::MultiSiteRecombineReference {
+                        sources: sources.clone(),
+                        request: request.clone(),
+                        selection: pin.selection.clone(),
+                    },
+                ],
+            })
         }
         Recipe::GoldenGatePool {
             request,
@@ -1083,6 +1377,16 @@ fn evaluate_resolved(resolved: Resolved) -> Result<Evaluation, Error> {
             &resolved.target,
             recipe,
         )?),
+        Recipe::MultiSiteReference { .. } => {
+            let plan = compile_resolved(&resolved)?;
+            let verification = crate::verification::verify(&plan, &resolved.target);
+            let preparation_complete = verification.products.len() == plan.steps.len();
+            Preview::MultiSiteReference(PoolPreview {
+                plan,
+                verification,
+                preparation_complete,
+            })
+        }
         Recipe::GoldenGatePool { .. } => {
             let plan = compile_resolved(&resolved)?;
             let verification = crate::verification::verify(&plan, &resolved.target);
@@ -1102,21 +1406,27 @@ impl Evaluation {
         match &self.preview {
             Preview::Overlap(preview) => &preview.verification,
             Preview::Ligation(preview) => &preview.verification,
-            Preview::GoldenGatePool(preview) => &preview.verification,
+            Preview::GoldenGatePool(preview) | Preview::MultiSiteReference(preview) => {
+                &preview.verification
+            }
         }
     }
     pub fn plan(&self) -> &crate::verification::DesignPlan {
         match &self.preview {
             Preview::Overlap(preview) => &preview.compiled.plan,
             Preview::Ligation(preview) => &preview.compiled.plan,
-            Preview::GoldenGatePool(preview) => &preview.plan,
+            Preview::GoldenGatePool(preview) | Preview::MultiSiteReference(preview) => {
+                &preview.plan
+            }
         }
     }
     pub fn preparation_complete(&self) -> bool {
         match &self.preview {
             Preview::Overlap(preview) => preview.preparation_complete,
             Preview::Ligation(preview) => preview.preparation_complete,
-            Preview::GoldenGatePool(preview) => preview.preparation_complete,
+            Preview::GoldenGatePool(preview) | Preview::MultiSiteReference(preview) => {
+                preview.preparation_complete
+            }
         }
     }
 }

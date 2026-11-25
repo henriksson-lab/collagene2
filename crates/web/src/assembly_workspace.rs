@@ -36,7 +36,11 @@ impl Draft {
         IntentIdentity {
             name: self.name.clone(),
             circular: self.circular,
-            roles: self.methods.source_roles.clone(),
+            roles: self.methods.source_roles.clone().or_else(|| {
+                (self.methods.mode == Mode::MultiSiteReference)
+                    .then(|| self.methods.role_ids(self.slots.len()).ok())
+                    .flatten()
+            }),
             combination: crate::assembly_alternatives::identity(self),
             junction_edits: self.junction_edits.clone(),
             slots: self
@@ -194,10 +198,14 @@ fn method_overview(methods: &MethodsState) -> String {
         ),
         Mode::Ligation => "Ordered ligation".into(),
         Mode::GoldenGate => format!("Golden Gate · {:?}", methods.golden_gate.enzyme),
+        Mode::MultiSiteReference => "Multi-parent BP/LR reference exchange".into(),
         Mode::Tailing => "TA / GC tailing and ligation".into(),
     }
 }
 fn preparation_overview(methods: &MethodsState, index: usize) -> String {
+    if methods.mode == Mode::MultiSiteReference {
+        return "Whole original reference parent; contribution region defines intent only".into();
+    }
     if methods.mode == Mode::GoldenGate {
         if let Some(pool) = methods
             .golden_gate_pool
@@ -225,6 +233,8 @@ fn preparation_overview(methods: &MethodsState, index: usize) -> String {
 pub fn AssemblyWorkspace(
     draft: RwSignal<Draft>,
     epoch: RwSignal<u64>,
+    snapshot: Callback<(), Result<collagene_core::workspace::Workspace, String>>,
+    workspace_busy: RwSignal<bool>,
     sources: Memo<Vec<SourceInfo>>,
     active_source: Memo<SourceInfo>,
     selected_region: Callback<(), Option<(usize, usize)>>,
@@ -584,6 +594,11 @@ pub fn AssemblyWorkspace(
     };
     view! {<section class="assembly-workspace"><header class="assembly-workspace-header"><h2>"Assembly workspace"</h2><p class="helper">"Choose a slot, select its source in the viewer above, then set the fragment. Switching source tabs preserves every pinned fragment. Preparation is reviewed against a separate intended construct."</p></header>
         <div class="assembly-draft-settings"><label>"Assembly name"<input maxlength="256" aria-label="Assembly draft name" prop:value=move||draft.with(|d|d.name.clone()) on:input=move|e|draft.update(|d|d.name=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label="Intended assembly circular" prop:checked=move||draft.with(|d|d.circular) on:change=move|e|draft.update(|d|{d.circular=event_target_checked(&e);d.junction_edits.clear();d.sync_rows();})/>"Circular intended construct"</label></div>
+        <label>"Cloning method"<select aria-label="Ordinary assembly cloning method" disabled=move||workspace_busy.get() prop:value=move||draft.with(|d|match d.methods.mode{Mode::Overlap=>"overlap",Mode::Ligation=>"ligation",Mode::GoldenGate=>"golden_gate",Mode::MultiSiteReference=>"multisite",Mode::Tailing=>"tailing"}) on:change=move|e|draft.update(|d|{
+            d.methods.mode=match event_target_value(&e).as_str(){"ligation"=>Mode::Ligation,"golden_gate"=>Mode::GoldenGate,"multisite"=>Mode::MultiSiteReference,_=>Mode::Overlap};
+            if d.methods.mode==Mode::MultiSiteReference && d.methods.multisite.is_none(){d.methods.multisite=Some(crate::multisite_form::Form::default());}
+        })><option value="overlap">"Gibson / HiFi / In-Fusion overlap"</option><option value="ligation">"Ordered ligation"</option><option value="golden_gate">"Golden Gate"</option><option value="multisite">"BP/LR multi-parent reference exchange"</option></select></label>
+        <Show when=move||draft.with(|d|d.methods.mode==Mode::MultiSiteReference)><crate::assembly_multisite_view::MultisiteSettings draft epoch busy=workspace_busy/></Show>
         <p class="helper" aria-label="Current assembly method"><strong>"Current method: "</strong>{move||draft.with(|d|method_overview(&d.methods))}". Review the intended construct to edit preparation settings in step 3."</p>
         <h3>"1. Set original source fragments"</h3><div class="assembly-slot-list" role="group" aria-label="Ordered assembly fragment slots">
         <For each=move||draft.with(|d|(0..d.slots.len()).collect::<Vec<_>>()) key=|i|*i children=move|i|view!{<article class="assembly-slot" class:active=move||draft.with(|d|d.active_slot==i)><button class="button secondary" aria-pressed=move||draft.with(|d|d.active_slot==i) on:click=move|_|draft.update(|d|d.active_slot=i)>{move||draft.with(|d|format!("{} · {}",i+1,d.slots.get(i).map(|s|s.label.as_str()).unwrap_or("slot")))}</button><label>"Slot label"<input maxlength="80" aria-label=format!("Assembly slot {} label",i+1) prop:value=move||draft.with(|d|d.slots.get(i).map(|s|s.label.clone()).unwrap_or_default()) on:input=move|e|draft.update(|d|if let Some(s)=d.slots.get_mut(i){s.label=event_target_value(&e)})/></label>
@@ -614,7 +629,7 @@ pub fn AssemblyWorkspace(
             }
         }>"Undo applied junction edit"</button>
         <Show when=move||undo_junction.with(|undo|undo.as_ref().is_some_and(|(_,applied)|!same_declaration(&draft.get(),applied)))><p class="helper">"Undo available before further draft changes. Later source, primer or design edits are preserved."</p></Show>
-        {move||frozen.get().map(|bound|view!{<FrozenWorkspace bound draft methods epoch on_navigate on_review on_finalize on_products primer_sources list_primers resolve_primer/>})}
+        {move||frozen.get().map(|bound|view!{<FrozenWorkspace bound draft methods epoch snapshot workspace_busy on_navigate on_review on_finalize on_products primer_sources list_primers resolve_primer/>})}
     </section>}
 }
 
@@ -650,6 +665,8 @@ fn FrozenWorkspace(
     draft: RwSignal<Draft>,
     methods: RwSignal<MethodsState>,
     epoch: RwSignal<u64>,
+    snapshot: Callback<(), Result<collagene_core::workspace::Workspace, String>>,
+    workspace_busy: RwSignal<bool>,
     on_navigate: Callback<SelectionNavigation>,
     on_review: Callback<ReviewRequest, Result<(), String>>,
     on_finalize: Callback<ReviewRequest, Result<(), String>>,
@@ -772,13 +789,46 @@ fn FrozenWorkspace(
         on_navigate.run(nav);
         Ok(())
     });
+    let reference_guard = Callback::new(move |()| -> Result<(), String> {
+        bound.with_value(|f| {
+            if workspace_busy.get_untracked()
+                || epoch.get_untracked() != f.epoch
+                || draft.with_untracked(Draft::identity) != f.identity
+            {
+                return Err(
+                    "The intended reference or pinned source changed; review intent again.".into(),
+                );
+            }
+            Ok(())
+        })
+    });
+    let reference_inputs = Callback::new(move |()| -> Result<Vec<PlanInput>, String> {
+        reference_guard.run(())?;
+        bound.with_value(|f| {
+            collagene_core::model::bounds::model_preflight(
+                &f.sources.iter().map(|s| &s.molecule).collect::<Vec<_>>(),
+            )
+            .map_err(|e| e.to_string())?;
+            let roles = crate::assembly_role_ids::resolve(&f.identity.roles, f.sources.len())?;
+            Ok(roles
+                .into_iter()
+                .zip(&f.sources)
+                .map(|(r, c)| PlanInput {
+                    id: r.input_id,
+                    revision: c.source.binding.revision.clone(),
+                    molecule: c.molecule.clone(),
+                })
+                .collect())
+        })
+    });
     view! {<section class="assembly-intended-review"><h3>"2. Review the intended construct"</h3><p>{bound.with_value(|f|format!("{} · {} bp · {}",f.intent.target().name,f.intent.target().sequence.len(),if f.intent.target().topology==Topology::Circular{"circular"}else{"linear"}))}</p><p class="helper">"This sequence is your declared design requirement, assembled from chosen source regions and any explicit junction edits. It is separate from any simulated cloning outcome. Editing a slot clears this review."</p>
         {bound.with_value(|f|match &f.intent{IntendedReference::Junctions(intent)=>Some(view!{<p class="helper">{format!("{} explicit junction edits are included. Ribbon output spans include each adjusted source core and its outgoing synthetic insert; source navigation selects only the adjusted original-source core.",intent.edits.len())}</p>}),_=>None})}
         <div class="assembly-fragment-ribbon" role="group" aria-label="Intended construct fragments">{bound.with_value(|f|f.intent.fragments().iter().enumerate().map(|(i,fragment)|view!{<button class="assembly-ribbon-fragment" on:click=move|_|navigate.run(i)>{format!("{}{} · {} bp · {}–{}",f.identity.slots[i].0,if fragment.reverse{" ←"}else{" →"},fragment.output_end-fragment.output_start,fragment.output_start+1,fragment.output_end)}</button>}).collect_view())}</div>
         {bound.with_value(|f|{let count=f.intent.fragments().len().saturating_sub(1)+usize::from(f.intent.target().topology==Topology::Circular);if count==0{return view!{<p>"One linear fragment has no internal junction."</p>}.into_any();}view!{<div class="assembly-intended-junction">{move||bound.with_value(|f|{let i=junction.get().min(count-1);let next=(i+1)%f.sources.len();let boundary=f.intent.fragments()[i].output_end;view!{<h4>{format!("Intended junction {} · {} → {}{}",i+1,f.identity.slots[i].0,f.identity.slots[next].0,if i+1==f.sources.len(){" · circle closure"}else{""})}</h4><pre>{intended_window(f.intent.target(),boundary)}</pre><p class="helper">{format!("| marks intended product boundary {} (zero-based). These letters are not a digest/ligation/homology validation.",if boundary==f.intent.target().sequence.len()&&f.intent.target().topology==Topology::Circular{0}else{boundary})}</p><button class="text-tool" on:click=move|_|navigate.run(i)>"View upstream source"</button><button class="text-tool" on:click=move|_|navigate.run(next)>"View downstream source"</button>}})}<div class="method-row-actions"><button class="text-tool" disabled=move||junction.get()==0 on:click=move|_|junction.update(|i|*i=i.saturating_sub(1))>"Previous intended junction"</button><button class="text-tool" disabled=move||{junction.get()+1>=count} on:click=move|_|junction.update(|i|*i=(*i+1).min(count-1))>"Next intended junction"</button></div></div>}.into_any()})}
         {bound.with_value(|f|warnings(&f.intent).iter().map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view())}
-        <h3>"3. Prepare fragments and verify the method"</h3><p class="helper">"PCR rows begin with no primer sequences. Suggest and explicitly apply primers, or choose another declared preparation. The pinned original sources remain the inputs; the intended reference is never used as physical source material."</p>
-        <CloningMethodsPanel molecule=target query_options get_query source_info target_info selected_region=Callback::new(|()|None) config=methods epoch on_candidate=review on_finalize=Some(finalize) on_products primer_sources list_primers resolve_primer fixed_sources=true disable_plain_primer_design=bound.with_value(|f|!f.identity.junction_edits.is_empty()) on_source=Some(diagnostic_source)/>
+        <h3>{move||draft.with(|d|if d.methods.mode==Mode::MultiSiteReference{"3. Reconstruct and choose a reference component"}else{"3. Prepare fragments and verify the method"})}</h3><p class="helper">{move||draft.with(|d|if d.methods.mode==Mode::MultiSiteReference{"Reconstruct the whole original parents under the reviewed site profile, then choose a reciprocal component explicitly. The intended reference remains a separate requirement; sequence agreement does not establish physical recombination."}else{"PCR rows begin with no primer sequences. Suggest and explicitly apply primers, or choose another declared preparation. The pinned original sources remain the inputs; the intended reference is never used as physical source material."})}</p>
+        <Show when=move||draft.with(|d|d.methods.mode==Mode::MultiSiteReference)><crate::assembly_multisite_view::MultisiteReview draft epoch busy=workspace_busy snapshot capture=reference_inputs guard=reference_guard target_revision=bound.with_value(|f|f.target_revision.clone()) on_review=review on_finalize=finalize/></Show>
+        <Show when=move||draft.with(|d|d.methods.mode!=Mode::MultiSiteReference)>        <CloningMethodsPanel molecule=target query_options get_query source_info target_info selected_region=Callback::new(|()|None) config=methods epoch on_candidate=review on_finalize=Some(finalize) on_products primer_sources list_primers resolve_primer fixed_sources=true disable_plain_primer_design=bound.with_value(|f|!f.identity.junction_edits.is_empty()) on_source=Some(diagnostic_source)/></Show>
         <p role="status">{move||status.get()}</p>
     </section>}
 }

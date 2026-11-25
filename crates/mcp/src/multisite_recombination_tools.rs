@@ -2,6 +2,17 @@
 use super::*;
 use collagene_core::{multisite_recombination as design, recombination::reference};
 
+pub const THREE_ENTRY_PROFILE_URI: &str =
+    "collagene://recombination/profile/tol2kit-228-383-302-vectorii-lr-reference/2026-11-25.1";
+pub fn three_entry_profile() -> Result<Value, ErrorData> {
+    let profile = reference::multisite::three_entry_source_contexts().map_err(bad)?;
+    let revision = profile.revision().map_err(bad)?;
+    Ok(
+        json!({"profile":profile,"profile_revision":revision,"recommended_reaction":"LR","specificities":[4,1,2,3],
+        "authority":"Finite source-edition context facts, eight LR contexts plus full P3 competitor. Review exact source editions and limitations before use. No universal kit recognition, physical chemistry or experimental success is established."}),
+    )
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NativePin {

@@ -1261,3 +1261,43 @@ MCP SDK flow. Native web compilation and Leptos/application-worker WASM checks
 also pass. These are compile/scientific checks, not GUI acceptance. Port8082
 continues to serve the preceding immutable worker67 snapshot; no application
 browser or HTTP smoke check was performed for this increment.
+
+
+### Connected ordinary and library MultiSite reference design
+
+Multi-parent reference exchange now joins the existing source-region → independent
+intent → product/plan review → output workflow. Ordinary assemblies project a
+single choice per ordered source into an ephemeral design, without requiring a
+saved library. Libraries keep their actual bin/choice/construct identities. The
+same `MultiSiteReference` compiler resolves exact original events, freezes
+OriginalRegions/junction intent or retains an independently chosen target, and
+only then discovers reciprocal networks. Component selection is explicit and pins
+both the native batch and its event/geometry/target context; no target chooses a
+candidate. Whole original parents are distinct from intended contribution regions.
+PCR/end-treatment declarations must be explicitly cleared for this reference path.
+
+The nine short functional contexts from original-lab228/383/302 and manufacturer
+VectorII/P3 source editions are now shipped as a finite, reviewable preset with
+source hashes. Whole plasmids, GenBank records and manual text remain unbundled.
+The longer P3 competitor is retained; the nested L3 context cannot independently
+identify an LR entry when the longer P3 context also matches. Native and MCP use
+the same facts; this is neither universal kit coverage nor physical chemistry.
+
+Worker69 adds the connected inspection and nested method gates; candidate16,
+plan14 and science19 remain unchanged. MCP169 adds library network discovery;
+its resource publishes the exact preset and content revision. Existing run
+capture, explicit incomplete reference release, reciprocal evidence and
+GenBank/FASTA/HTML/PDF exports consume the compiled typed operation21.
+[Connected contract](MULTISITE_CONNECTED_WORKFLOW.md).
+
+Physical Gateway chemistry, broader profiles and preparation routes, other
+unfinished cloning/batch features, platform delivery and deferred GUI acceptance
+remain within the full active goal. This increment does not close F15 or the plan.
+
+
+Connected-workflow validation passes35 focused native/model cases: core intent/
+selection/release, worker69 compatibility, existing design/release regressions,
+real MCP flows, finite-profile source facts and ordinary/library draft projection.
+The web/worker WASM check passes. The preceding3a834a7 checkpoint also completed
+Linux/macOS/Windows/web CI successfully. No browser/application or HTTP smoke
+checks were run; public8082 still serves its previous immutable worker67 build.

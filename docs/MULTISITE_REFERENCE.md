@@ -47,7 +47,7 @@ independent target leaves verification incomplete because reference agreement
 cannot establish physical chemistry. A downstream physical transformation cannot
 promote these letters into a duplex.
 
-The desktop panel accepts ordered original parents, a reviewed full-context
+The advanced desktop panel accepts ordered original parents, a reviewed full-context
 profile and an independent active target. Its built-in profile covers registered
 manufacturer site1/2 contexts only. Other contexts require an explicit imported
 profile; there is no universal MultiSite-kit preset. Results show candidate
@@ -78,14 +78,13 @@ and retain the original attachment bytes/hash; older physical-only and
 processed-only download formats remain unchanged. HTML/PDF describe the same
 selected reference recipe and its scope.
 
-Physical recombination chemistry, broader source-pinned biological profiles,
-PCR preparation into these networks and further connected material workflows
-remain part of F15. The ordinary destination/ordered-entry region-and-scar intent
-builder and combinatorial-method adapter described in
-[GATEWAY_MULTISITE_SCOPE.md](GATEWAY_MULTISITE_SCOPE.md) also remain outstanding;
-the explicit independent-target panel/Plan bridge is an increment toward that
-workflow, not its complete acceptance criterion. No application/browser acceptance
-is claimed.
+Physical recombination chemistry, broader source-pinned biological profiles and
+PCR preparation into these networks remain part of F15. The subsequent
+[connected ordinary/library workflow](MULTISITE_CONNECTED_WORKFLOW.md) now adds
+source-region/junction intent before enumeration and explicit selection through
+the shared library compiler. Its finite three-entry source-edition preset ships
+only short functional context facts with provenance, not complete biological
+source records. It does not claim full kit validity or GUI acceptance.
 
 
 Validation:44 focused native cases cover network conservation/orientation/caps,

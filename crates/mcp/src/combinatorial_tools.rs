@@ -333,6 +333,32 @@ impl CollageneServer {
                 "authority":"Finite native reaction discovery only. Choose an explicit index and both candidate keys with this source_revision. Target correspondence never chooses a candidate. Batch evaluation and output release reconstruct the selected path afresh; imported reports do not restore authority."}))
         }).await
     }
+    pub(super) async fn combinatorial_multisite_inspect(
+        &self,
+        args: InspectQuery,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || {
+            let frame = server.restore_workspace(&args.workspace)?;
+            let report = design::inspect_multisite(&args.design, &args.construct, &frame).map_err(bad)?;
+            report.validate_binding(&design::inspect_multisite_revision(&args.design, &args.construct, &frame).map_err(bad)?).map_err(bad)?;
+            let candidates = report.batch.reference.candidates.iter().take(25).map(|candidate| json!({
+                "candidate_id":candidate.id,"sites":candidate.sites,"pairs":candidate.pairs,
+                "components":candidate.products.iter().enumerate().map(|(i,p)|json!({"component_id":i,"length":p.molecule.sequence.len(),"topology":p.molecule.topology,"reference_revision":p.molecule.revision()})).collect::<Vec<_>>()
+            })).collect::<Vec<_>>();
+            let artifact = server.text_artifact(bounded_json_limit(&json!({
+                "workspace":args.workspace,"design":args.design,"construct":args.construct,"inspection":report,
+                "state":"fresh-reference-network-discovery","verified":false
+            }),32*1024*1024)?,"application/json","combinatorial-multisite-reference.json")?;
+            output(json!({"workspace":args.workspace,"context_revision":report.context_revision,"source_revision":report.source_revision,
+                "batch_revision":report.batch.batch_revision,"complete":report.batch.reference.complete,
+                "candidate_count":report.batch.reference.candidates.len(),"candidates":candidates,
+                "candidates_truncated":report.batch.reference.candidates.len()>25,
+                "warnings":report.batch.warnings,"unsupported":report.batch.reference.unsupported,"limits":report.batch.reference.limits,
+                "artifact_id":artifact,"state":"fresh-reference-network-discovery","verified":false,
+                "authority":"Independent target intent precedes reconstruction. Explicitly choose a candidate/component with this source_revision, then evaluate/release through the existing library workflow. All reciprocal components remain in typed evidence. Reference agreement does not establish physical chemistry."}))
+        }).await
+    }
     pub(super) async fn combinatorial_inspect(
         &self,
         args: InspectQuery,
@@ -343,7 +369,7 @@ impl CollageneServer {
             let resolved=design::resolve(&args.design,&args.construct,&frame).map_err(bad)?;
             let mut summary=summaries(&resolved);
             let intent=match &resolved.intent{Some(design::IndependentIntent::Regions(report))=>json!({"OriginalRegions":report}),Some(design::IndependentIntent::Junctions(report))=>json!({"OriginalJunctions":report}),None=>Value::Null};
-            let recipe=match &resolved.recipe{design::Recipe::Overlap(recipe)=>json!({"Overlap":recipe}),design::Recipe::Ligation(recipe)=>json!({"Ligation":recipe}),design::Recipe::GoldenGatePool{request,selection,source_revision}=>json!({"GoldenGatePool":{"request":request,"selection":selection,"source_revision":source_revision}})};
+            let recipe=match &resolved.recipe{design::Recipe::Overlap(recipe)=>json!({"Overlap":recipe}),design::Recipe::Ligation(recipe)=>json!({"Ligation":recipe}),design::Recipe::GoldenGatePool{request,selection,source_revision}=>json!({"GoldenGatePool":{"request":request,"selection":selection,"source_revision":source_revision}}),design::Recipe::MultiSiteReference{request,selection,source_revision,sources}=>json!({"MultiSiteReference":{"request":request,"selection":selection,"source_revision":source_revision,"sources":sources}})};
             let evidence=json!({"workspace":args.workspace,"design":args.design,"construct":args.construct,"construct_id":resolved.construct_id,"combination_id":resolved.combination_id,"declaration_revision":resolved.declaration_revision,"input_bindings":resolved.bindings,"inputs":resolved.inputs,"independent_target":resolved.target,"target_binding":resolved.target_binding,"independent_intent":intent,"recipe":recipe,"verified":false});
             let artifact=server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","combinatorial-construct.json")?;
             summary["workspace"]=serde_json::to_value(args.workspace).map_err(bad)?;summary["artifact_id"]=json!(artifact);

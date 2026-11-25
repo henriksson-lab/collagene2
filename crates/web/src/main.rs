@@ -39,6 +39,8 @@ mod assembly_library_topology;
 #[cfg(target_arch = "wasm32")]
 mod assembly_library_view;
 #[cfg(target_arch = "wasm32")]
+mod assembly_multisite_view;
+#[cfg(target_arch = "wasm32")]
 mod assembly_outputs;
 #[cfg(target_arch = "wasm32")]
 mod assembly_pool_view;
@@ -110,6 +112,8 @@ mod history_view;
 mod map_labels;
 #[cfg(target_arch = "wasm32")]
 mod mismatch_pcr_outputs;
+#[cfg(any(target_arch = "wasm32", test))]
+mod multisite_form;
 #[cfg(target_arch = "wasm32")]
 mod oligo_import;
 #[cfg(target_arch = "wasm32")]

@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 168;
+pub const CURRENT_TOOL_COUNT: usize = 169;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -2342,6 +2342,10 @@ impl ServerHandler for CollageneServer {
         let catalog = catalog_tools::builtin()?;
         let mut resources = vec![
             Resource::new(
+                multisite_recombination_tools::THREE_ENTRY_PROFILE_URI,
+                "Finite three-entry LR source contexts · Tol2kit228/383/302 and destination VectorII",
+            ).with_mime_type("application/json"),
+            Resource::new(
                 recombination_tools::PROFILE_URI,
                 "Explicit manufacturer-context recombination profile",
             )
@@ -2389,6 +2393,8 @@ impl ServerHandler for CollageneServer {
     ) -> Result<ReadResourceResponse, ErrorData> {
         let value = if request.uri == recombination_tools::PROFILE_URI {
             recombination_tools::profile()?
+        } else if request.uri == multisite_recombination_tools::THREE_ENTRY_PROFILE_URI {
+            multisite_recombination_tools::three_entry_profile()?
         } else if request.uri.starts_with("collagene://enzyme-catalog/") {
             let catalog = catalog_tools::builtin()?;
             if request.uri != catalog_tools::resource_uri(&catalog) {
@@ -2517,6 +2523,15 @@ impl CollageneServer {
         Parameters(args): Parameters<combinatorial_tools::InspectQuery>,
     ) -> Result<CallToolResult, ErrorData> {
         self.combinatorial_pool_inspect(args).await
+    }
+    #[tool(
+        description = "Inspect whole-parent multi-site BP/LR reference networks for one exact-source library construct. Resolve its independently declared target or freeze original contribution regions/junctions before reaction reconstruction. Returns a source_revision for explicit component selection, bounded candidate summaries and complete typed batch evidence. Missing selection never means candidate zero; matching the target never selects a pairing. Reference-only scope remains incomplete, with no physical recombination or experimental success claim."
+    )]
+    async fn inspect_combinatorial_multisite(
+        &self,
+        Parameters(args): Parameters<combinatorial_tools::InspectQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.combinatorial_multisite_inspect(args).await
     }
     #[tool(
         description = "Freshly evaluate explicitly selected constructs with the existing deterministic preparation compilers/verifier and retain a named immutable batch record in a NEW native workspace. Stable design/construct/bin/choice identities and exact original events are preserved. Per-construct preparation/method/topology overrides are explicit; unresolved draft rows remain errors. Imported reports never restore fresh authority. Original source heads remain unchanged; native archive and complete historical JSON are returned atomically. This does not release bulk outputs or assert experimental success."

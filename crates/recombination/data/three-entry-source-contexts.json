@@ -1,0 +1,198 @@
+{
+  "id": "tol2kit-228-383-302-vectorii-lr-reference",
+  "edition": "2026-11-25.1",
+  "sources": [
+    {
+      "id": "five_prime-L4-593-688-fwd",
+      "url": "https://tol2kitkwan.genetics.utah.edu/images/0/06/228.p5E-MCS.zip",
+      "raw_sha256": "9a4cfe981fd870a56783a0af1641cd59f884f66b1eb0abcad1b756ca0a8c8e39",
+      "vector_name": "p5E-MCS",
+      "vector_length": 2810,
+      "start_1based": 593,
+      "end_1based": 688,
+      "reverse_extraction": false,
+      "map_url": "https://tol2kitkwan.genetics.utah.edu/index.php/P5E-MCS",
+      "map_sha256": "f270c05758f70490e71f50ab9d72ce8636e636bf0b64016b191619f75a8eeb00"
+    },
+    {
+      "id": "five_prime-R1-856-1012-fwd",
+      "url": "https://tol2kitkwan.genetics.utah.edu/images/0/06/228.p5E-MCS.zip",
+      "raw_sha256": "9a4cfe981fd870a56783a0af1641cd59f884f66b1eb0abcad1b756ca0a8c8e39",
+      "vector_name": "p5E-MCS",
+      "vector_length": 2810,
+      "start_1based": 856,
+      "end_1based": 1012,
+      "reverse_extraction": false,
+      "map_url": "https://tol2kitkwan.genetics.utah.edu/index.php/P5E-MCS",
+      "map_sha256": "f270c05758f70490e71f50ab9d72ce8636e636bf0b64016b191619f75a8eeb00"
+    },
+    {
+      "id": "middle-L1-569-668-fwd",
+      "url": "https://tol2kitkwan.genetics.utah.edu/images/e/e9/383.pME-EGFP.zip",
+      "raw_sha256": "bd4677c48120be4c1655ccb6444032d0e489882a71d215b00db5abfebf6be3cf",
+      "vector_name": "pME-EGFP",
+      "vector_length": 3327,
+      "start_1based": 569,
+      "end_1based": 668,
+      "reverse_extraction": false,
+      "map_url": "https://tol2kitkwan.genetics.utah.edu/index.php/PME-EGFP",
+      "map_sha256": "45f9544ee66610006841ad6996cbd15c53e3cfd177dab1f40a89172ca4dfabc8"
+    },
+    {
+      "id": "middle-L2-1452-1551-rc",
+      "url": "https://tol2kitkwan.genetics.utah.edu/images/e/e9/383.pME-EGFP.zip",
+      "raw_sha256": "bd4677c48120be4c1655ccb6444032d0e489882a71d215b00db5abfebf6be3cf",
+      "vector_name": "pME-EGFP",
+      "vector_length": 3327,
+      "start_1based": 1452,
+      "end_1based": 1551,
+      "reverse_extraction": true,
+      "map_url": "https://tol2kitkwan.genetics.utah.edu/index.php/PME-EGFP",
+      "map_sha256": "45f9544ee66610006841ad6996cbd15c53e3cfd177dab1f40a89172ca4dfabc8"
+    },
+    {
+      "id": "three_prime-R2-591-747-rc",
+      "url": "https://tol2kitkwan.genetics.utah.edu/images/f/f7/302.p3E-polyA.zip",
+      "raw_sha256": "2b7d36c1ce28408040f22fbf05fcdcdaf27732134d7be59f9fdaad372398066b",
+      "vector_name": "p3E-polyA",
+      "vector_length": 2838,
+      "start_1based": 591,
+      "end_1based": 747,
+      "reverse_extraction": true,
+      "map_url": "https://tol2kitkwan.genetics.utah.edu/index.php/P3E-polyA",
+      "map_sha256": "28a6edd19e86c1ecd2fbea542abe6b014b1483a6d9269509aa4e25e4ead3bcdd"
+    },
+    {
+      "id": "three_prime-L3-947-1042-rc",
+      "url": "https://tol2kitkwan.genetics.utah.edu/images/f/f7/302.p3E-polyA.zip",
+      "raw_sha256": "2b7d36c1ce28408040f22fbf05fcdcdaf27732134d7be59f9fdaad372398066b",
+      "vector_name": "p3E-polyA",
+      "vector_length": 2838,
+      "start_1based": 947,
+      "end_1based": 1042,
+      "reverse_extraction": true,
+      "map_url": "https://tol2kitkwan.genetics.utah.edu/index.php/P3E-polyA",
+      "map_sha256": "28a6edd19e86c1ecd2fbea542abe6b014b1483a6d9269509aa4e25e4ead3bcdd"
+    },
+    {
+      "id": "destination-R4-37-161-fwd",
+      "url": "https://documents.thermofisher.com/TFS-Assets/vectors/pdestr4-r3_vector_ii_seq.txt",
+      "raw_sha256": "e91c6ae899edcfd029be1c796177f4e09466eb50e36a346edc239228858da3ea",
+      "vector_name": "pDEST R4-R3 Vector II",
+      "vector_length": 4555,
+      "start_1based": 37,
+      "end_1based": 161,
+      "reverse_extraction": false,
+      "map_url": "https://documents.thermofisher.com/TFS-Assets/vectors/pdestr4-r3_vector_ii_map.pdf",
+      "map_sha256": "76ba7de66ef89dcc9f4a66630d4a0448a0937089f96f51eeb80ee439824d1f63"
+    },
+    {
+      "id": "destination-R3-2064-2188-rc",
+      "url": "https://documents.thermofisher.com/TFS-Assets/vectors/pdestr4-r3_vector_ii_seq.txt",
+      "raw_sha256": "e91c6ae899edcfd029be1c796177f4e09466eb50e36a346edc239228858da3ea",
+      "vector_name": "pDEST R4-R3 Vector II",
+      "vector_length": 4555,
+      "start_1based": 2064,
+      "end_1based": 2188,
+      "reverse_extraction": true,
+      "map_url": "https://documents.thermofisher.com/TFS-Assets/vectors/pdestr4-r3_vector_ii_map.pdf",
+      "map_sha256": "76ba7de66ef89dcc9f4a66630d4a0448a0937089f96f51eeb80ee439824d1f63"
+    },
+    {
+      "id": "donor_p3_competitor-P3-2746-2977-rc",
+      "url": "https://documents.thermofisher.com/TFS-Assets/vectors/pdonrp2rp3_seq.txt",
+      "raw_sha256": "16b796fec73d1e06b38f5feeec059aa20f7e149d503ca75e0fc605222c1b10d9",
+      "vector_name": "pDONR P2R-P3",
+      "vector_length": 4773,
+      "start_1based": 2746,
+      "end_1based": 2977,
+      "reverse_extraction": true,
+      "map_url": "https://documents.thermofisher.com/TFS-Assets/vectors/pdonrp2rp3_map.pdf",
+      "map_sha256": "693c10f181ecc83aec070d5cd76c6c21f30bdb09411d6b1918674a19f52bb560"
+    }
+  ],
+  "variants": [
+    {
+      "id": "tol2kit-five_prime-L4-593-688-fwd",
+      "family": "L",
+      "subtype": 4,
+      "sequence": "AAATAATGATTTTATTTTGACTGATAGTGACCTGTTCGTTGCAACAAATTGATAAGCAATGCTTTTTTATAATGCCAACTTTGTATAGAAAAGTTG",
+      "overlap_start": 82,
+      "source_id": "five_prime-L4-593-688-fwd"
+    },
+    {
+      "id": "tol2kit-five_prime-R1-856-1012-fwd",
+      "family": "R",
+      "subtype": 1,
+      "sequence": "CAAGTTTGTACAAAAAAGTTGAACGAGAAACGTAAAATGATATAAATATCAATATATTAAATTAGATTTTGCATAAAAAACAGACTACATAATACTGTAAAACACAACATATGCAGTCACTATGAACCAACTACTTAGATGGTATTAGTGACCTGTA",
+      "overlap_start": 7,
+      "source_id": "five_prime-R1-856-1012-fwd"
+    },
+    {
+      "id": "tol2kit-middle-L1-569-668-fwd",
+      "family": "L",
+      "subtype": 1,
+      "sequence": "CAAATAATGATTTTATTTTGACTGATAGTGACCTGTTCGTTGCAACACATTGATGAGCAATGCTTTTTTATAATGCCAACTTTGTACAAAAAAGCAGGCT",
+      "overlap_start": 83,
+      "source_id": "middle-L1-569-668-fwd"
+    },
+    {
+      "id": "tol2kit-middle-L2-1452-1551-rc",
+      "family": "L",
+      "subtype": 2,
+      "sequence": "CAAATAATGATTTTATTTTGACTGATAGTGACCTGTTCGTTGCAACAAATTGATAAGCAATGCTTTCTTATAATGCCAACTTTGTACAAGAAAGCTGGGT",
+      "overlap_start": 83,
+      "source_id": "middle-L2-1452-1551-rc"
+    },
+    {
+      "id": "tol2kit-three_prime-R2-591-747-rc",
+      "family": "R",
+      "subtype": 2,
+      "sequence": "CCACTTTGTACAAGAAAGTTGAACGAGAAACGTAAAATGATATAAATATCAATATATTAAATTAGATTTTGCATAAAAAACAGACTACATAATACTGTAAAACACAACATATGCAGTCACTATGAACCAACTACTTAGATGGTATTAGTGACCTGTA",
+      "overlap_start": 7,
+      "source_id": "three_prime-R2-591-747-rc"
+    },
+    {
+      "id": "tol2kit-three_prime-L3-947-1042-rc",
+      "family": "L",
+      "subtype": 3,
+      "sequence": "AAATAATGATTTTATTTTGACTGATAGTGACCTGTTCGTTGCAACAAATTGATAAGCAATGCTTTTTTATAATGCCAACTTTGTATAATAAAGTTG",
+      "overlap_start": 82,
+      "source_id": "three_prime-L3-947-1042-rc"
+    },
+    {
+      "id": "tol2kit-destination-R4-37-161-fwd",
+      "family": "R",
+      "subtype": 4,
+      "sequence": "CAACTTTGTATAGAAAAGTTGAACGAGAAACGTAAAATGATATAAATATCAATATATTAAATTAGATTTTGCATAAAAAACAGACTACATAATACTGTAAAACACAACATATCCAGTCACTATGG",
+      "overlap_start": 7,
+      "source_id": "destination-R4-37-161-fwd"
+    },
+    {
+      "id": "tol2kit-destination-R3-2064-2188-rc",
+      "family": "R",
+      "subtype": 3,
+      "sequence": "CAACTATGTATAATAAAGTTGAACGAGAAACGTAAAATGATATAAATATCAATATATTAAATTAGATTTTGCATAAAAAACAGACTACATAATACTGTAAAACACAACATATCCAGTCACTATGG",
+      "overlap_start": 7,
+      "source_id": "destination-R3-2064-2188-rc"
+    },
+    {
+      "id": "tol2kit-donor_p3_competitor-P3-2746-2977-rc",
+      "family": "P",
+      "subtype": 3,
+      "sequence": "AAATAATGATTTTATTTTGACTGATAGTGACCTGTTCGTTGCAACAAATTGATAAGCAATGCTTTTTTATAATGCCAACTTTGTATAATAAAGTTGAACGAGAAACGTAAAATGATATAAATATCAATATATTAAATTAGATTTTGCATAAAAAACAGACTACATAATACTGTAAAACACAACATATGCAGTCACTATGAATCAACTACTTAGATGGTATTAGTGACCTGTA",
+      "overlap_start": 82,
+      "source_id": "donor_p3_competitor-P3-2746-2977-rc"
+    }
+  ],
+  "limitations": [
+    "Finite exact-context reference profile for these four source editions only; not a universal Tol2kit, Gateway, or experimental outcome model.",
+    "Variants preserve literal annotated spans from the original lab GenBank members, including 96-base L4, 157-base R1/R2 and 100-base L1/L2. No padding or invented arms.",
+    "Full P3 from the cited manufacturer donor is a registered non-LR competitor: the complete 96-base L3 context is its prefix at the same canonical core. Do not treat the donor as an L3 entry or let target matching select a family.",
+    "No short B-family documentary contexts are registered. Such shared contexts nest within genuine L/R and cannot globally veto LR family assignments.",
+    "The exact known P3 competitor does not exclude unregistered P alleles or other family contexts. Unknown contexts and incomplete scans remain unknown.",
+    "Lab source_record.url hashes the original ZIP bytes; exact GenBank member names and SHA256 are in the companion three-entry-source-contexts.README.md. map_url hashes the public source page linking annotated GenBank. Manufacturer source/map hashes are exact TXT/PDF bytes.",
+    "ApEinfo:methylated source comments are not interpreted as chemical state; all products here are reference-sequence intent, not atom/strand provenance or measured reaction efficiency.",
+    "Independently curated functional attachment-context facts retrieved 2026-11-25, cited to exact original-lab and manufacturer source editions. No whole plasmids, GenBank annotation records, manual text or third-party implementation code are bundled by this profile; no manufacturer endorsement or source-material relicensing is asserted."
+  ]
+}

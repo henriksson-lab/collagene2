@@ -1,6 +1,6 @@
 # Gateway F15 scope and next coherent deliverable
 
-Read-only audit,2026-11-25. Repository code/contracts and primary manufacturer sources; no code edits, builds or browser/application checks.
+Historical baseline audit,2026-11-25. Later implementation increments are recorded below and in [the connected workflow contract](MULTISITE_CONNECTED_WORKFLOW.md); the original baseline is retained as scope history. No application/browser acceptance is claimed.
 
 ## What is actually implemented
 
@@ -74,3 +74,18 @@ would be incorrect. The new finite model uses maximal certain physical contexts
 and withholds conflicting maximal families. Complete source fixtures remain outside
 the repository while redistribution terms are unresolved; synthetic fixtures
 independently establish reference graph bookkeeping, not biological kit validity.
+
+
+## Connected workflow and finite preset increment
+
+The [ordinary/library compiler and UI increment](MULTISITE_CONNECTED_WORKFLOW.md)
+now reuses ordered original contributions, optional junction intent, exact native
+events and the same named-output/history routes. Whole parents feed one network;
+source regions define a target before enumeration. Explicit component pins include
+source-event and contribution/target identity; neither a short motif nor the
+target chooses a family or candidate. A single construct does not require creating
+a library. The exact short nine-context source-edition profile is now bundled as
+functional scientific facts, with source hashes and independently written curator
+code; complete plasmid records remain unbundled. The next broader work includes
+physical chemistry, additional biological profile/preparation coverage and full
+GUI acceptance, rather than rebuilding this source/intent/output compiler.

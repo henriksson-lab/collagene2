@@ -249,12 +249,19 @@ pub(crate) fn validate_controls(
             return Err("Reaction substrate choices must match the assembly slots.".into());
         }
     }
+    if let Some(form) = &methods.multisite {
+        form.validate_shape()?;
+    }
     let junction_count = count.saturating_sub(1) + usize::from(circular);
     if junction_edits.len() > 12
-        || (!junction_edits.is_empty() && !matches!(methods.mode, Mode::Overlap | Mode::GoldenGate))
+        || (!junction_edits.is_empty()
+            && !matches!(
+                methods.mode,
+                Mode::Overlap | Mode::GoldenGate | Mode::MultiSiteReference
+            ))
     {
         return Err(
-            "Junction edits require overlap or Golden Gate assembly and at most 12 edits".into(),
+            "Junction edits require declared reference intent, overlap or Golden Gate assembly and at most12 edits".into(),
         );
     }
     let mut junctions = std::collections::BTreeSet::new();

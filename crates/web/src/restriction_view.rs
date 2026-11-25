@@ -564,6 +564,8 @@ pub fn RestrictionPanel(
     view! {<section class="inspector-content restriction-panel"><h2>"Restriction sites"</h2>
         <label class="restriction-visibility"><input type="checkbox" aria-label="Show restriction sites" prop:checked=move||state.visible.get() on:change=move|e|state.visible.set(event_target_checked(&e))/><span>"Show in sequence and map"</span></label>
         <label>"Find an enzyme"<input aria-label="Find restriction enzyme" placeholder="Name or recognition sequence" prop:value=move||search.get() on:input=move|e|search.set(event_target_value(&e))/></label>
+        <label>"Number of sites"<select aria-label="Restriction site count" prop:value=move||state.count_filter.get() on:change=move|e|{state.count_filter.set(match event_target_value(&e).as_str(){"0"=>"0","1"=>"1","2"=>"2","many"=>"many","uncertain"=>"uncertain",_=>"all"});}><option value="all">"All counts"</option><option value="0">"0 sites"</option><option value="1">"1 site"</option><option value="2">"2 sites"</option><option value="many">"3+ sites"</option><option value="uncertain">"Uncertain / incomplete"</option></select></label>
+        <details class="restriction-advanced"><summary>{move||if state.region_filter.get()=="all"{"Region and advanced filters"}else{"Region filter active"}}</summary>
         <label>"Region relation"<select aria-label="Restriction region relation" prop:value=move||state.region_filter.get() on:change=move|e|{
             let value=event_target_value(&e);
             let next=match value.as_str(){"inside"=>"inside","outside"=>"outside","crossing"=>"crossing","undetermined"=>"undetermined",_=>"all"};
@@ -574,7 +576,7 @@ pub fn RestrictionPanel(
         <button class="text-tool" on:click=move|_|{state.capture_selection();}>"Use current selection"</button>
         <p class="helper" role="status">{move||state.region_status.get()}</p>
         <p class="helper">"Recognition: all bases inside, none outside, overlap crossing. Cuts: both inside, both outside, mixed crossing; endpoints count as inside. Type IIS cuts can lie outside their recognition sequence. Missing or ambiguous cuts are undetermined; exact relation counts stay unavailable when such sites could change the count."</p>
-        <label>"Number of sites"<select aria-label="Restriction site count" prop:value=move||state.count_filter.get() on:change=move|e|{state.count_filter.set(match event_target_value(&e).as_str(){"0"=>"0","1"=>"1","2"=>"2","many"=>"many","uncertain"=>"uncertain",_=>"all"});}><option value="all">"All counts"</option><option value="0">"0 sites"</option><option value="1">"1 site"</option><option value="2">"2 sites"</option><option value="many">"3+ sites"</option><option value="uncertain">"Uncertain / incomplete"</option></select></label>
+        </details>
         <div class="restriction-picker-actions"><button class="text-tool" on:click=move|_|state.names.set(choices.with_untracked(|v|v.iter().map(|e|e.name.clone()).collect()))>"Select shown"</button><button class="text-tool" on:click=move|_|state.names.set(Vec::new())>"Clear"</button><button class="text-tool" disabled=move||state.busy.get() on:click=move|_|state.refresh.update(|v|*v=v.wrapping_add(1))>"Rescan"</button></div>
         <details><summary>"Named enzyme sets"</summary>
             <label>"Set name"<input aria-label="Enzyme set name" prop:value=move||set_name.get() on:input=move|e|{set_name.set(event_target_value(&e));}/></label>

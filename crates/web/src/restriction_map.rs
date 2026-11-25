@@ -14,6 +14,7 @@ use web_sys::CanvasRenderingContext2d as Ctx;
 const MAX_SITES: usize = 10_000;
 const LABELS: usize = 64;
 const FONT: &str = "12px system-ui";
+const BOLD_FONT: &str = "600 12px system-ui";
 
 pub struct Hit {
     pub index: usize,
@@ -58,13 +59,18 @@ struct Site {
     rank: u64,
     certain: bool,
     text: String,
+    tooltip: String,
+}
+struct Group {
+    members: Vec<usize>,
+    text: String,
     width: f64,
     left: f64,
     ascent: f64,
-    tooltip: String,
 }
 pub struct Cache {
     rows: Vec<Site>,
+    groups: Vec<Group>,
     by_id: BTreeMap<usize, usize>,
     total: usize,
     failed: bool,
@@ -76,6 +82,7 @@ impl Cache {
     pub fn prepare(sites: &Arc<Vec<InspectionSite>>, n: usize, circular: bool, ctx: &Ctx) -> Self {
         let mut cache = Self {
             rows: Vec::new(),
+            groups: Vec::new(),
             by_id: BTreeMap::new(),
             total: sites.len(),
             failed: false,
@@ -120,12 +127,7 @@ impl Cache {
                 cache.failed = true;
                 break;
             }
-            let text = format!(
-                "{} {}{}",
-                site.enzyme,
-                site.recognition_start + 1,
-                if site.certain { "" } else { " ?" }
-            );
+            let text = format!("{}{}", site.enzyme, if site.certain { "" } else { " ?" });
             let Ok(metrics) = ctx.measure_text(&text) else {
                 cache.failed = true;
                 break;
@@ -189,11 +191,66 @@ impl Cache {
                 rank: rank as u64,
                 certain: site.certain,
                 text,
-                width,
-                left,
-                ascent,
                 tooltip,
             });
+        }
+        if !cache.failed {
+            let mut by_anchor = BTreeMap::<u64, Vec<usize>>::new();
+            for (i, site) in cache.rows.iter().enumerate() {
+                by_anchor.entry(site.rank).or_default().push(i);
+            }
+            for members in by_anchor.into_values() {
+                let mut names = members
+                    .iter()
+                    .map(|i| cache.rows[*i].text.as_str())
+                    .collect::<Vec<_>>();
+                names.sort_unstable();
+                names.dedup();
+                let mut text = names.iter().take(3).copied().collect::<Vec<_>>().join(", ");
+                if names.len() > 3 {
+                    text.push_str(&format!(", +{}", names.len() - 3));
+                }
+                let Ok(m) = ctx.measure_text(&text) else {
+                    cache.failed = true;
+                    break;
+                };
+                ctx.set_font(BOLD_FONT);
+                let bold = ctx.measure_text(&text);
+                ctx.set_font(FONT);
+                let Ok(bold) = bold else {
+                    cache.failed = true;
+                    break;
+                };
+                let left = m
+                    .actual_bounding_box_left()
+                    .max(bold.actual_bounding_box_left())
+                    .max(0.);
+                let width = left
+                    + m.width()
+                        .max(m.actual_bounding_box_right())
+                        .max(bold.width())
+                        .max(bold.actual_bounding_box_right())
+                        .max(0.);
+                let ascent = m
+                    .actual_bounding_box_ascent()
+                    .max(bold.actual_bounding_box_ascent())
+                    .max(0.);
+                if !width.is_finite()
+                    || !ascent.is_finite()
+                    || width > layout::MAX_VIEWPORT
+                    || ascent > 16.
+                {
+                    cache.failed = true;
+                    break;
+                }
+                cache.groups.push(Group {
+                    members,
+                    text,
+                    width,
+                    left,
+                    ascent,
+                });
+            }
         }
         ctx.restore();
         if cache.failed {
@@ -215,19 +272,27 @@ impl Cache {
             return;
         }
         let input: Vec<_> = self
-            .rows
+            .groups
             .iter()
-            .map(|s| Label {
-                id: s.index as u64,
-                stable_rank: s.rank,
-                anchor: Point { x: 0., y: 0. },
-                preferred_center: Point { x: 0., y: 0. },
-                side: Side::Above,
-                measured: Size {
-                    width: 1.,
-                    height: 1.,
-                },
-                priority: u32::from(selected == Some(s.index)),
+            .enumerate()
+            .map(|(i, g)| {
+                let s = &self.rows[g.members[0]];
+                Label {
+                    id: i as u64,
+                    stable_rank: s.rank,
+                    anchor: Point { x: 0., y: 0. },
+                    preferred_center: Point { x: 0., y: 0. },
+                    side: Side::Above,
+                    measured: Size {
+                        width: 1.,
+                        height: 1.,
+                    },
+                    priority: u32::from(
+                        g.members
+                            .iter()
+                            .any(|i| selected == Some(self.rows[*i].index)),
+                    ),
+                }
             })
             .collect();
         self.candidates = layout::layout(
@@ -384,89 +449,73 @@ impl Cache {
             frame.markers += 1;
         }
         let _ = ctx.set_line_dash(solid.as_ref());
-        // RE text occupies central top/bottom bands. Feature labels occupy the
-        // side columns (circle), or their own above/below bands (linear).
         let circular = view.topology == Topology::Circular;
-        let inset = if circular {
-            (view.width * 0.18).clamp(40., 100.) + 16.
-        } else {
-            12.
-        };
-        let above_bottom = (cy - 0.38 * radius - 8.).max(32.);
-        let top_ok = circular || (12. + above_bottom) / 2. - 18. >= 44.;
-        let bottom_ok = circular || view.height >= 360.;
-        let mut columns = Vec::new();
-        if view.width > inset * 2. + 20. && view.height >= 160. {
-            if top_ok {
-                columns.push(Column {
-                    side: Side::Above,
-                    rect: Rect {
-                        x: inset,
-                        y: 8.,
-                        width: view.width - inset * 2.,
-                        height: 32.,
-                    },
-                });
-            }
-            if bottom_ok {
-                columns.push(Column {
-                    side: Side::Below,
-                    rect: Rect {
-                        x: inset,
-                        y: view.height - 44.,
-                        width: view.width - inset * 2.,
-                        height: 32.,
-                    },
-                });
-            }
-        }
+        let columns = vec![Column {
+            side: Side::Above,
+            rect: Rect {
+                x: 12.,
+                y: 12.,
+                width: (view.width - 24.).max(1.),
+                height: (cy - 44.).max(20.),
+            },
+        }];
         let mut input = Vec::with_capacity(self.candidates.len());
         for &i in &self.candidates {
-            let site = &self.rows[i];
+            let group = &self.groups[i];
+            let site = &self.rows[group.members[0]];
             let anchor = project(site.anchor, 0.66);
-            let side = if top_ok && (!bottom_ok || site.index % 2 == 0) {
-                Side::Above
-            } else {
-                Side::Below
-            };
-            let y = if side == Side::Above {
-                24.
-            } else {
-                view.height - 28.
-            };
             input.push(Label {
-                id: site.index as u64,
+                id: i as u64,
                 stable_rank: site.rank,
                 anchor,
-                preferred_center: Point { x: anchor.x, y },
-                side,
+                preferred_center: Point {
+                    x: anchor.x,
+                    y: cy - 45.,
+                },
+                side: Side::Above,
                 measured: Size {
-                    width: site.width + 4.,
+                    width: group.width + 4.,
                     height: 20.,
                 },
-                priority: u32::from(selected == Some(site.index)),
+                priority: u32::from(
+                    group
+                        .members
+                        .iter()
+                        .any(|i| selected == Some(self.rows[*i].index)),
+                ),
             });
         }
-        if let Ok(labels) = layout::layout(
-            &input,
-            Viewport {
-                width: view.width,
-                height: view.height,
-                padding: 8.,
-            },
-            &columns,
-            &layout::Options {
-                max_inputs: LABELS,
-                max_displayed: LABELS,
-                gap: 4.,
-            },
-        ) {
-            ctx.set_stroke_style_str("#b9b1c3");
+        let viewport = Viewport {
+            width: view.width,
+            height: view.height,
+            padding: 8.,
+        };
+        let options = layout::Options {
+            max_inputs: LABELS,
+            max_displayed: LABELS,
+            gap: 4.,
+        };
+        let placed = if circular {
+            layout::radial::outside_circle(
+                &input,
+                viewport,
+                Point { x: cx, y: cy },
+                radius * 0.66,
+                &options,
+            )
+        } else {
+            layout::layout(&input, viewport, &columns, &options)
+        };
+        if let Ok(labels) = placed {
+            ctx.set_stroke_style_str("#b4b4b4");
             ctx.set_line_width(0.8);
             for result in &labels.labels {
                 if let Outcome::Placed { leader, .. } = result.outcome {
                     ctx.begin_path();
                     ctx.move_to(leader.anchor.x, leader.anchor.y);
+                    if circular {
+                        ctx.line_to(leader.endpoint.x, leader.anchor.y);
+                    }
                     ctx.line_to(leader.endpoint.x, leader.endpoint.y);
                     ctx.stroke();
                 }
@@ -476,15 +525,37 @@ impl Cache {
             ctx.set_text_baseline("alphabetic");
             for (ordinal, result) in labels.labels.iter().enumerate() {
                 if let Outcome::Placed { rect, .. } = result.outcome {
-                    let site = &self.rows[self.candidates[ordinal]];
+                    let group = &self.groups[self.candidates[ordinal]];
+                    let site = &self.rows[*group
+                        .members
+                        .iter()
+                        .find(|i| selected == Some(self.rows[**i].index))
+                        .unwrap_or(&group.members[0])];
+                    ctx.set_font(
+                        if group
+                            .members
+                            .iter()
+                            .any(|i| selected == Some(self.rows[*i].index))
+                        {
+                            BOLD_FONT
+                        } else {
+                            FONT
+                        },
+                    );
                     ctx.set_fill_style_str("#fbfcfb");
                     ctx.fill_rect(rect.x, rect.y, rect.width, rect.height);
-                    ctx.set_fill_style_str(if site.certain { "#674478" } else { "#8b5b25" });
+                    ctx.set_fill_style_str(if selected == Some(site.index) {
+                        "#151515"
+                    } else if site.certain {
+                        "#333333"
+                    } else {
+                        "#756047"
+                    });
                     if ctx
                         .fill_text(
-                            &site.text,
-                            rect.x + 2. + site.left,
-                            rect.y + 2. + site.ascent,
+                            &group.text,
+                            rect.x + 2. + group.left,
+                            rect.y + 2. + group.ascent,
                         )
                         .is_ok()
                     {
@@ -495,7 +566,7 @@ impl Cache {
                             label: true,
                             segment: None,
                         });
-                        frame.labels += 1;
+                        frame.labels += group.members.len();
                     }
                 }
             }

@@ -32,7 +32,7 @@ pub fn color(feature: &Feature) -> [f32; 4] {
         _ => [0.48, 0.64, 0.59, 1.0],
     }
 }
-fn color_for_strand(feature: &Feature, reverse: bool) -> [f32; 4] {
+pub(crate) fn color_for_strand(feature: &Feature, reverse: bool) -> [f32; 4] {
     collagene_core::annotation_batch::feature_rgb_for_strand(feature, reverse)
         .map(|[r, g, b]| [r as f32 / 255., g as f32 / 255., b as f32 / 255., 1.])
         .unwrap_or_else(|| color(feature))
@@ -175,6 +175,8 @@ struct State {
     revision: String,
     interaction_context: String,
     geometry: PreparedGeometry,
+    feature_lanes: Vec<usize>,
+    lane_overflow: usize,
     hidden_features: BTreeSet<usize>,
     selection_spans: Vec<(usize, usize)>,
     geometry_valid: bool,
@@ -187,6 +189,8 @@ struct State {
     restriction_cache: Option<restriction_map::Cache>,
     restriction_hits: Vec<restriction_map::Hit>,
     selected_restriction: Option<usize>,
+    hovered_restriction: Option<usize>,
+    on_restriction_hover: Option<Rc<dyn Fn(Option<usize>)>>,
     pcr_overlay: Option<Arc<Overlay>>,
     pcr_hits: Vec<pcr_overlay_draw::Hit>,
     label_stats: Option<LabelStats>,
@@ -267,9 +271,9 @@ impl MapRenderer {
             .ok_or("Map label canvas is unavailable")?
             .dyn_into::<Ctx>()
             .map_err(|_| "Invalid map label context")?;
-        let prepared = annotation_geometry::prepare(&molecule);
+        let prepared = visible_geometry(&molecule, &BTreeSet::new());
         let geometry_valid = prepared.is_ok();
-        let geometry = prepared.unwrap_or_default();
+        let (geometry, feature_lanes, lane_overflow) = prepared.unwrap_or_default();
         let terminals = prepare_terminals(&molecule, &geometry);
         let annotation_total = molecule.features.len();
         // A failed borrowed geometry guard must not be followed by a rich-model hash.
@@ -278,8 +282,15 @@ impl MapRenderer {
         } else {
             String::new()
         };
-        let labels =
-            geometry_valid.then(|| map_labels::Cache::prepare(&molecule, &geometry, &overlay_ctx));
+        let labels = geometry_valid.then(|| {
+            map_labels::Cache::prepare(
+                &molecule,
+                &geometry,
+                &feature_lanes,
+                lane_overflow,
+                &overlay_ctx,
+            )
+        });
         let display_title = molecule.name.chars().take(28).collect();
         let display_subtitle = subtitle(&molecule);
         let gl: Gl = canvas
@@ -323,6 +334,8 @@ impl MapRenderer {
             interaction_context: String::new(),
             molecule,
             geometry,
+            feature_lanes,
+            lane_overflow,
             hidden_features: BTreeSet::new(),
             selection_spans: Vec::new(),
             geometry_valid,
@@ -335,6 +348,8 @@ impl MapRenderer {
             restriction_cache: None,
             restriction_hits: Vec::new(),
             selected_restriction: None,
+            hovered_restriction: None,
+            on_restriction_hover: None,
             pcr_overlay: None,
             pcr_hits: Vec::new(),
             label_stats: None,
@@ -381,7 +396,10 @@ impl MapRenderer {
                 state.pcr_hits.clear();
                 let prepared = visible_geometry(molecule, &state.hidden_features);
                 state.geometry_valid = prepared.is_ok();
-                state.geometry = prepared.unwrap_or_default();
+                let (geometry, lanes, overflow) = prepared.unwrap_or_default();
+                state.geometry = geometry;
+                state.feature_lanes = lanes;
+                state.lane_overflow = overflow;
                 state.terminals = prepare_terminals(molecule, &state.geometry);
                 state.annotation_source_total = molecule.features.len();
                 state.annotation_total = molecule
@@ -406,7 +424,13 @@ impl MapRenderer {
                 };
                 state.revision = revision.into();
                 state.labels = state.geometry_valid.then(|| {
-                    map_labels::Cache::prepare(molecule, &state.geometry, &state.overlay_ctx)
+                    map_labels::Cache::prepare(
+                        molecule,
+                        &state.geometry,
+                        &state.feature_lanes,
+                        state.lane_overflow,
+                        &state.overlay_ctx,
+                    )
                 });
                 state.label_hits.clear();
                 state.restriction_sites = Arc::new(Vec::new());
@@ -444,10 +468,19 @@ impl MapRenderer {
             // by validating that stripped fallback as if it were the source.
             if state.geometry_valid {
                 state.geometry_valid = prepared.is_ok();
-                state.geometry = prepared.unwrap_or_default();
+                let (geometry, lanes, overflow) = prepared.unwrap_or_default();
+                state.geometry = geometry;
+                state.feature_lanes = lanes;
+                state.lane_overflow = overflow;
                 state.terminals = prepare_terminals(&state.molecule, &state.geometry);
                 state.labels = state.geometry_valid.then(|| {
-                    map_labels::Cache::prepare(&state.molecule, &state.geometry, &state.overlay_ctx)
+                    map_labels::Cache::prepare(
+                        &state.molecule,
+                        &state.geometry,
+                        &state.feature_lanes,
+                        state.lane_overflow,
+                        &state.overlay_ctx,
+                    )
                 });
             }
             state.label_hits.clear();
@@ -491,6 +524,7 @@ impl MapRenderer {
         let changed = state.drag.take().is_some() || !state.range_preview.is_empty();
         state.range_preview.clear();
         drop(state);
+        self.emit_restriction_hover(None);
         if changed {
             self.queue_draw();
         }
@@ -498,6 +532,22 @@ impl MapRenderer {
 
     /// Bind only a freshly inspected report for this source revision. The host
     /// also clears on document/event identity changes, including equal DNA.
+    pub fn set_restriction_hover_callback(&self, callback: Rc<dyn Fn(Option<usize>)>) {
+        self.0.borrow_mut().on_restriction_hover = Some(callback);
+    }
+    fn emit_restriction_hover(&self, index: Option<usize>) {
+        let callback = {
+            let mut state = self.0.borrow_mut();
+            if state.hovered_restriction == index {
+                return;
+            }
+            state.hovered_restriction = index;
+            state.on_restriction_hover.clone()
+        };
+        if let Some(callback) = callback {
+            callback(index);
+        }
+    }
     pub fn set_restriction_sites(
         &self,
         revision: &str,
@@ -614,6 +664,15 @@ impl MapRenderer {
         }
         let mut s = self.0.borrow_mut();
         let rect = s.canvas.get_bounding_client_rect();
+        let hovered = if s.drag.is_none() {
+            s.restriction_hits
+                .iter()
+                .rev()
+                .find(|hit| hit.contains(x - rect.left(), y - rect.top()))
+                .map(|hit| hit.index)
+        } else {
+            None
+        };
         let hit = s.label_hits.iter().rev().find(|hit| {
             x - rect.left() >= hit.rect.x
                 && x - rect.left() < hit.rect.right()
@@ -644,9 +703,13 @@ impl MapRenderer {
         } else {
             let _ = s.canvas.remove_attribute("title");
         }
-        if s.drag.is_some() {
+        let dragging = s.drag.is_some();
+        if dragging {
             advance_gesture(&mut s, x, y);
-            drop(s);
+        }
+        drop(s);
+        self.emit_restriction_hover(hovered);
+        if dragging {
             self.queue_draw();
         }
     }
@@ -726,7 +789,37 @@ impl MapRenderer {
             });
         }
         let pos = reference_position(&s, local_x, local_y, rect.width(), rect.height(), false)?;
-        for located in s.geometry.located.iter().take(s.rendered_geometry_count) {
+        let view_radius = map_labels::radius(View {
+            width: rect.width(),
+            height: rect.height(),
+            rotation: s.rotation,
+            zoom: s.zoom,
+            topology: s.molecule.topology,
+        });
+        for (ordinal, located) in s
+            .geometry
+            .located
+            .iter()
+            .take(s.rendered_geometry_count)
+            .enumerate()
+        {
+            if view_radius <= 0. {
+                continue;
+            }
+            let within = if s.molecule.topology == Topology::Circular {
+                let distance =
+                    (local_x - rect.width() / 2.).hypot(local_y - rect.height() / 2.) / view_radius;
+                let (inner, outer) =
+                    collagene_map_label_layout::radial::feature_band(s.feature_lanes[ordinal]);
+                distance >= inner - 0.012 && distance <= outer + 0.012
+            } else {
+                let y = (rect.height() / 2. - local_y) / view_radius;
+                let low = -0.10 - s.feature_lanes[ordinal] as f64 * 0.07;
+                y >= low - 0.012 && y <= low + 0.067
+            };
+            if !within {
+                continue;
+            }
             if let Some(&(a, b, _)) = located.spans.iter().find(|&&(a, b, _)| pos >= a && pos < b) {
                 return Some(MapHit {
                     feature_index: Some(located.index),
@@ -758,7 +851,9 @@ impl MapRenderer {
                 spans: vec![span],
             });
         }
-        Some(MapHit {
+        // Empty map space is a navigation/rotation surface. It must not invent
+        // an apparently precise single-base selection from a screen coordinate.
+        s.selection_mode.then_some(MapHit {
             feature_index: None,
             restriction_index: None,
             span: (pos, pos + 1),
@@ -772,7 +867,7 @@ impl MapRenderer {
         // Reserve only the bounded numeric payload estimate, so an ordinary
         // plasmid does not allocate the full 12 MB geometry ceiling on selection.
         let mut vertices = Vec::with_capacity(geometry_capacity(&s, selection, MAX_FLOATS));
-        let mut limited = !s.geometry_valid;
+        let mut limited = !s.geometry_valid || s.lane_overflow > 0;
         let mut rendered = 0usize;
         let n = s.molecule.sequence.len();
         if n != 0 {
@@ -784,10 +879,10 @@ impl MapRenderer {
                     0.8,
                     -0.005,
                     0.005,
-                    [0.78, 0.83, 0.81, 1.],
+                    [0.53, 0.53, 0.53, 1.],
                 );
             } else {
-                arc(&mut vertices, 0., TAU, 0.65, 0.66, [0.78, 0.83, 0.81, 1.]);
+                arc(&mut vertices, 0., TAU, 0.65, 0.66, [0.53, 0.53, 0.53, 1.]);
             }
             for (ordinal, located) in s.geometry.located.iter().enumerate() {
                 let feature = &s.molecule.features[located.index];
@@ -799,15 +894,14 @@ impl MapRenderer {
                     .iter()
                     .try_fold(0usize, |sum, &(a, b, reverse)| {
                         let floats = if s.molecule.topology == Topology::Linear {
-                            36
+                            36 + usize::from(terminal == Some((a, b, reverse))) * 18
                         } else {
                             let start = a as f64 / nf * TAU - PI / 2.;
                             let end = b as f64 / nf * TAU - PI / 2.;
                             let width = end - start;
                             let segments = arc_segments(start, end);
                             segments * 36
-                                + usize::from(terminal == Some((a, b, reverse)) && width > 0.035)
-                                    * 18
+                                + usize::from(terminal == Some((a, b, reverse)) && width > 0.) * 18
                         };
                         sum.checked_add(floats)
                     });
@@ -818,28 +912,52 @@ impl MapRenderer {
                 for &(a, b, reverse) in &located.spans {
                     let rgba = color_for_strand(feature, reverse);
                     if s.molecule.topology == Topology::Linear {
-                        let y = 0.08 + (ordinal % 3) as f64 * 0.12;
-                        quad(
-                            &mut vertices,
-                            a as f64 / nf * 1.6 - 0.8,
-                            b as f64 / nf * 1.6 - 0.8,
-                            y,
-                            y + 0.045,
-                            rgba,
-                        );
+                        let y = -0.10 - s.feature_lanes[ordinal] as f64 * 0.07;
+                        let start = a as f64 / nf * 1.6 - 0.8;
+                        let end = b as f64 / nf * 1.6 - 0.8;
+                        if terminal == Some((a, b, reverse)) {
+                            let (tip, base) = collagene_map_label_layout::radial::arrow_head(
+                                start, end, reverse, 0.035,
+                            )
+                            .expect("positive feature span");
+                            quad(
+                                &mut vertices,
+                                if reverse { base } else { start },
+                                if reverse { end } else { base },
+                                y,
+                                y + 0.055,
+                                rgba,
+                            );
+                            for (x, y) in [(tip, y + 0.0275), (base, y), (base, y + 0.055)] {
+                                vertices.extend_from_slice(&[
+                                    x as f32, y as f32, rgba[0], rgba[1], rgba[2], rgba[3],
+                                ]);
+                            }
+                        } else {
+                            quad(&mut vertices, start, end, y, y + 0.055, rgba);
+                        }
                     } else {
-                        let radius = 0.67 + (ordinal % 3) as f64 * 0.057;
+                        let (inner, outer) = collagene_map_label_layout::radial::feature_band(
+                            s.feature_lanes[ordinal],
+                        );
                         let start = a as f64 / nf * TAU - PI / 2.;
                         let end = b as f64 / nf * TAU - PI / 2.;
-                        arc(&mut vertices, start, end, radius, radius + 0.04, rgba);
-                        if terminal == Some((a, b, reverse)) && end - start > 0.035 {
-                            let head = if reverse { start } else { end };
-                            let base = if reverse { start + 0.04 } else { end - 0.04 };
-                            for (angle, r) in [
-                                (head, radius + 0.02),
-                                (base, radius - 0.015),
-                                (base, radius + 0.055),
-                            ] {
+                        if terminal == Some((a, b, reverse)) {
+                            let (tip, base) = collagene_map_label_layout::radial::arrow_head(
+                                start, end, reverse, 0.055,
+                            )
+                            .expect("positive feature span");
+                            arc(
+                                &mut vertices,
+                                if reverse { base } else { start },
+                                if reverse { end } else { base },
+                                inner,
+                                outer,
+                                rgba,
+                            );
+                            for (angle, r) in
+                                [(tip, (inner + outer) / 2.), (base, inner), (base, outer)]
+                            {
                                 vertices.extend_from_slice(&[
                                     (angle.cos() * r) as f32,
                                     (-angle.sin() * r) as f32,
@@ -849,6 +967,8 @@ impl MapRenderer {
                                     rgba[3],
                                 ]);
                             }
+                        } else {
+                            arc(&mut vertices, start, end, inner, outer, rgba);
                         }
                     }
                 }
@@ -893,6 +1013,10 @@ impl MapRenderer {
         let _ = s
             .canvas
             .set_attribute("data-rendered-feature-count", &rendered.to_string());
+        let _ = s.canvas.set_attribute(
+            "data-map-feature-lane-overflow",
+            &s.lane_overflow.to_string(),
+        );
         let _ = s.canvas.set_attribute(
             "data-geometry-limited",
             if limited { "true" } else { "false" },
@@ -941,11 +1065,51 @@ impl Drop for State {
 fn visible_geometry(
     molecule: &Molecule,
     hidden: &BTreeSet<usize>,
-) -> Result<PreparedGeometry, String> {
+) -> Result<(PreparedGeometry, Vec<usize>, usize), String> {
     let mut geometry = annotation_geometry::prepare(molecule)?;
     geometry.located.retain(|f| !hidden.contains(&f.index));
     geometry.unplaced.retain(|i| !hidden.contains(i));
-    Ok(geometry)
+    // Source guards above bound all counts before this numeric-only copy.
+    let items = geometry
+        .located
+        .iter()
+        .map(|f| collagene_view_layout::Item {
+            id: f.index as u64,
+            spans: f
+                .spans
+                .iter()
+                .map(|&(a, b, _)| collagene_view_layout::Interval {
+                    start: a as u64,
+                    end: b as u64,
+                })
+                .collect(),
+        })
+        .collect::<Vec<_>>();
+    let layout = collagene_view_layout::pack(
+        &items,
+        molecule.sequence.len() as u64,
+        &collagene_view_layout::Limits {
+            max_items: annotation_geometry::MAX_FEATURES,
+            max_intervals: annotation_geometry::MAX_SPANS,
+            max_lanes: 3,
+            max_work: 128_000_000,
+        },
+    )
+    .map_err(|e| e.to_string())?;
+    let mut placed = Vec::with_capacity(geometry.located.len());
+    let mut lanes = Vec::with_capacity(geometry.located.len());
+    let mut overflow = 0;
+    for (feature, assignment) in geometry.located.into_iter().zip(layout.assignments) {
+        match assignment.placement {
+            collagene_view_layout::Placement::Lane(lane) => {
+                placed.push(feature);
+                lanes.push(lane);
+            }
+            collagene_view_layout::Placement::Overflow => overflow += 1,
+        }
+    }
+    geometry.located = placed;
+    Ok((geometry, lanes, overflow))
 }
 
 fn prepare_terminals(
@@ -983,11 +1147,10 @@ fn geometry_capacity(s: &State, selection: &[(usize, usize)], cap: usize) -> usi
                 let start = a as f64 / nf * TAU - PI / 2.;
                 let end = b as f64 / nf * TAU - PI / 2.;
                 arc_segments(start, end) * 36
-                    + usize::from(
-                        s.terminals[ordinal] == Some((a, b, reverse)) && end - start > 0.035,
-                    ) * 18
+                    + usize::from(s.terminals[ordinal] == Some((a, b, reverse)) && end - start > 0.)
+                        * 18
             } else {
-                36
+                36 + usize::from(s.terminals[ordinal] == Some((a, b, reverse))) * 18
             };
             total = total.saturating_add(amount);
             if total >= cap {
@@ -1261,14 +1424,14 @@ fn draw(s: &mut State) -> Option<LabelStats> {
         let _ = ctx.fill_text(
             &s.display_title,
             w / 2.,
-            h / 2. + if linear { 85. } else { -6. },
+            if linear { h - 42. } else { h / 2. - 6. },
         );
         ctx.set_font("14px system-ui");
         ctx.set_fill_style_str("#72817c");
         let _ = ctx.fill_text(
             &s.display_subtitle,
             w / 2.,
-            h / 2. + if linear { 112. } else { 20. },
+            if linear { h - 18. } else { h / 2. + 20. },
         );
         ctx.set_font("12px system-ui");
         ctx.set_fill_style_str("#87938e");
@@ -1277,7 +1440,7 @@ fn draw(s: &mut State) -> Option<LabelStats> {
             if linear {
                 for i in 0..=4 {
                     let x = w / 2. + (i as f64 / 4. * 1.6 - 0.8) * radius;
-                    let _ = ctx.fill_text(&(i * n / 4).max(1).to_string(), x, h / 2. + 28.);
+                    let _ = ctx.fill_text(&(i * n / 4).max(1).to_string(), x, h / 2. - 8.);
                 }
             } else {
                 for i in 0..8 {

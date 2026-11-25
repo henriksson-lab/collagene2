@@ -36,6 +36,7 @@ pub struct LabelStats {
     pub omitted: usize,
     pub abbreviated: usize,
     pub unplaced: usize,
+    pub lane_overflow: usize,
     pub limited: bool,
 }
 
@@ -51,8 +52,10 @@ pub struct Frame {
 
 struct Name {
     feature_index: usize,
-    ordinal: usize,
+    lane: usize,
     midpoint: f64,
+    span_fraction: f64,
+    inline_color: &'static str,
     stable_rank: u64,
     text: String,
     width: f64,
@@ -84,6 +87,7 @@ pub struct Cache {
     names: Vec<Name>,
     total: usize,
     unplaced: usize,
+    lane_overflow: usize,
     failed: bool,
     variants: BTreeMap<usize, Variant>,
     candidates: Vec<usize>,
@@ -102,11 +106,7 @@ fn valid_view(view: View) -> bool {
         && (0.1..=10.).contains(&view.zoom)
 }
 
-fn column_width(width: f64) -> f64 {
-    (width * 0.18).clamp(40., 100.)
-}
-
-/// Shared geometry scale: existing normalized feature arcs reach about .824r;
+/// Shared geometry scale: normalized feature arcs remain below .615r;
 /// linear bars span +/- .8r. The host must use this same radius for GPU scale,
 /// coordinate ticks, source-pointer projection and label anchors.
 pub fn radius(view: View) -> f64 {
@@ -114,8 +114,7 @@ pub fn radius(view: View) -> f64 {
         return 0.;
     }
     let available = match view.topology {
-        Topology::Circular => ((view.width - 2. * column_width(view.width) - 24.) / 1.65)
-            .min((view.height - 48.) / 1.65),
+        Topology::Circular => ((view.width - 220.) / 1.32).min((view.height - 76.) / 1.32),
         Topology::Linear => ((view.width - 32.) / 1.6).min(view.height * 0.9),
     };
     available.max(1.) * view.zoom
@@ -128,58 +127,47 @@ fn columns(view: View) -> Option<Vec<Column>> {
     let (w, h) = (view.width, view.height);
     Some(match view.topology {
         Topology::Circular => {
-            let width = column_width(w);
+            let r = radius(view);
+            let width = (r * 0.38).clamp(80., 170.);
+            let cy = h / 2.;
+            let cx = w / 2.;
             vec![
                 Column {
                     side: Side::Left,
                     rect: Rect {
-                        x: 12.,
-                        y: 16.,
+                        x: cx - width - 24.,
+                        y: cy - r * 0.4,
                         width,
-                        height: h - 32.,
+                        height: r * 0.8,
                     },
                 },
                 Column {
                     side: Side::Right,
                     rect: Rect {
-                        x: w - 12. - width,
-                        y: 16.,
+                        x: cx + 24.,
+                        y: cy - r * 0.4,
                         width,
-                        height: h - 32.,
+                        height: r * 0.8,
                     },
                 },
             ]
         }
         Topology::Linear => {
             let cy = h / 2.;
-            // Above the highest .365r feature bar; below band avoids +28 ticks
-            // and leaves +85/+112 title/subtitle regions untouched.
-            let above_bottom = (cy - 0.38 * radius(view) - 8.).max(12. + 20.);
-            let below_top = cy + 36.;
-            let below_bottom = (cy + 60.).min(h - 12.);
-            if below_bottom - below_top < 20. {
+            let top = cy + 0.28 * radius(view) + 12.;
+            let bottom = h - 72.;
+            if bottom - top < 20. {
                 return None;
             }
-            vec![
-                Column {
-                    side: Side::Above,
-                    rect: Rect {
-                        x: 12.,
-                        y: 12.,
-                        width: w - 24.,
-                        height: above_bottom - 12.,
-                    },
+            vec![Column {
+                side: Side::Below,
+                rect: Rect {
+                    x: 12.,
+                    y: top,
+                    width: w - 24.,
+                    height: bottom - top,
                 },
-                Column {
-                    side: Side::Below,
-                    rect: Rect {
-                        x: 12.,
-                        y: below_top,
-                        width: w - 24.,
-                        height: below_bottom - below_top,
-                    },
-                },
-            ]
+            }]
         }
     })
 }
@@ -220,20 +208,32 @@ impl Cache {
     /// Complete cache or explicit whole-cache limitation, never a first-feature
     /// prefix. Bounds on all names/counts/ranges precede names/colors/measurement.
     /// The full source remains untouched and available to the inspector.
-    pub fn prepare(molecule: &Molecule, geometry: &PreparedGeometry, ctx: &Ctx) -> Self {
+    pub fn prepare(
+        molecule: &Molecule,
+        geometry: &PreparedGeometry,
+        lanes: &[usize],
+        lane_overflow: usize,
+        ctx: &Ctx,
+    ) -> Self {
         let total = geometry
             .located
             .len()
-            .saturating_add(geometry.unplaced.len());
+            .saturating_add(geometry.unplaced.len())
+            .saturating_add(lane_overflow);
         let mut cache = Self {
             names: Vec::new(),
             total,
             unplaced: geometry.unplaced.len(),
+            lane_overflow,
             failed: false,
             variants: BTreeMap::new(),
             candidates: Vec::new(),
             candidate_key: None,
         };
+        if lanes.len() != geometry.located.len() || lanes.iter().any(|n| *n >= 3) {
+            cache.failed = true;
+            return cache;
+        }
         let mut bytes = 0usize;
         let mut spans = 0usize;
         let mut previous = None;
@@ -290,14 +290,23 @@ impl Cache {
             }
             names.push(Name {
                 feature_index: located.index,
-                ordinal,
+                lane: lanes[ordinal],
                 midpoint: midpoint / molecule.sequence.len() as f64,
+                span_fraction: (part.1 - part.0) as f64 / molecule.sequence.len() as f64,
+                inline_color: {
+                    let c = crate::renderer::color_for_strand(feature, part.2);
+                    if c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722 < 0.60 {
+                        "#ffffff"
+                    } else {
+                        "#173d35"
+                    }
+                },
                 stable_rank: (part.0 + (part.1 - part.0) / 2) as u64,
                 text: feature.label().to_owned(),
                 width: measured.width,
                 left: measured.left,
                 ascent: measured.ascent,
-                color: crate::renderer::css_color(feature),
+                color: crate::renderer::css_color_for_strand(feature, part.2),
             });
         }
         ctx.restore();
@@ -314,6 +323,7 @@ impl Cache {
                 total: self.total,
                 omitted: self.total,
                 unplaced: self.unplaced,
+                lane_overflow: self.lane_overflow,
                 limited: self.failed,
                 ..LabelStats::default()
             },
@@ -413,13 +423,84 @@ impl Cache {
         let r = radius(*view);
         let (cx, cy) = (view.width / 2., view.height / 2.);
         let mut labels = Vec::with_capacity(self.candidates.len());
+        let mut label_sources = Vec::with_capacity(self.candidates.len());
         for &candidate in &self.candidates {
             let name = &self.names[candidate];
-            let layer = (name.ordinal % 3) as f64;
+            let layer = name.lane as f64;
+            let (inner, outer) = label_layout::radial::feature_band(name.lane);
+            let distance = (inner + outer) / 2. * r;
+            let inline_width = if view.topology == Topology::Circular {
+                name.span_fraction * TAU * distance * 0.82
+            } else {
+                name.span_fraction * 1.6 * r - 12.
+            };
+            if name.width + 8. < inline_width
+                && (view.topology != Topology::Circular || name.width < distance * 0.65)
+            {
+                let angle = name.midpoint * TAU - PI / 2. + view.rotation;
+                let (anchor, mut rotate) = if view.topology == Topology::Circular {
+                    (
+                        Point {
+                            x: cx + angle.cos() * distance,
+                            y: cy + angle.sin() * distance,
+                        },
+                        angle + PI / 2.,
+                    )
+                } else {
+                    (
+                        Point {
+                            x: cx + (name.midpoint * 1.6 - 0.8) * r,
+                            y: cy + (0.0725 + layer * 0.07) * r,
+                        },
+                        0.,
+                    )
+                };
+                if rotate.cos() < 0. {
+                    rotate += PI;
+                }
+                let width = name.width * rotate.cos().abs() + LINE * rotate.sin().abs();
+                let height = name.width * rotate.sin().abs() + LINE * rotate.cos().abs();
+                let rect = Rect {
+                    x: anchor.x - width / 2.,
+                    y: anchor.y - height / 2.,
+                    width,
+                    height,
+                };
+                let collision = frame.hits.iter().any(|h| {
+                    h.rect.x < rect.right()
+                        && h.rect.right() > rect.x
+                        && h.rect.y < rect.bottom()
+                        && h.rect.bottom() > rect.y
+                });
+                if !collision
+                    && rect.x >= 0.
+                    && rect.y >= 0.
+                    && rect.right() <= view.width
+                    && rect.bottom() <= view.height
+                {
+                    ctx.save();
+                    ctx.set_font(FONT);
+                    let _ = ctx.translate(anchor.x, anchor.y);
+                    let _ = ctx.rotate(rotate);
+                    ctx.set_text_align("center");
+                    ctx.set_text_baseline("middle");
+                    ctx.set_fill_style_str(name.inline_color);
+                    let success = ctx.fill_text(&name.text, 0., 0.).is_ok();
+                    ctx.restore();
+                    if success {
+                        frame.hits.push(Hit {
+                            feature_index: name.feature_index,
+                            rect,
+                        });
+                        frame.stats.displayed += 1;
+                        continue;
+                    }
+                }
+            }
             let (anchor, side, preferred_center) = match view.topology {
                 Topology::Circular => {
                     let angle = name.midpoint * TAU - PI / 2. + view.rotation;
-                    let distance = (0.69 + layer * 0.057) * r;
+                    let distance = (inner + outer) / 2. * r;
                     let anchor = Point {
                         x: cx + angle.cos() * distance,
                         y: cy + angle.sin() * distance,
@@ -438,20 +519,20 @@ impl Cache {
                         side,
                         Point {
                             x: column.rect.x + column.rect.width / 2.,
-                            y: anchor.y,
+                            y: if (anchor.y - cy).abs() < 38. {
+                                cy + if anchor.y < cy { -44. } else { 44. }
+                            } else {
+                                anchor.y
+                            },
                         },
                     )
                 }
                 Topology::Linear => {
                     let anchor = Point {
                         x: cx + (name.midpoint * 1.6 - 0.8) * r,
-                        y: cy - (0.1025 + layer * 0.12) * r,
+                        y: cy + (0.0725 + layer * 0.07) * r,
                     };
-                    let side = if name.ordinal % 2 == 0 {
-                        Side::Above
-                    } else {
-                        Side::Below
-                    };
+                    let side = Side::Below;
                     let column = columns
                         .iter()
                         .find(|c| c.side == side)
@@ -466,6 +547,7 @@ impl Cache {
                     )
                 }
             };
+            label_sources.push(candidate);
             labels.push(Label {
                 id: name.feature_index as u64,
                 stable_rank: name.stable_rank,
@@ -511,7 +593,7 @@ impl Cache {
             else {
                 continue;
             };
-            let source_index = self.candidates[index];
+            let source_index = label_sources[index];
             let valid = self.variants.get(&source_index).is_some_and(|v| {
                 v.width_key == available.width.to_bits()
                     && v.height_key == line_capacity(available) as u64
@@ -558,7 +640,7 @@ impl Cache {
             let Outcome::Placed { rect, .. } = result.outcome else {
                 continue;
             };
-            let source_index = self.candidates[index];
+            let source_index = label_sources[index];
             let name = &self.names[source_index];
             let variant = applied
                 .binary_search(&index)
@@ -649,6 +731,31 @@ fn variant(ctx: &Ctx, text: &str, available: Size) -> Option<Variant> {
         if lo == 0 && suffix.is_empty() {
             return None;
         }
+        if !last && at + lo < chars.len() {
+            if let Some(split) = chars[at..at + lo]
+                .iter()
+                .rposition(|c| c.is_whitespace())
+                .filter(|n| *n > 0)
+            {
+                lo = split;
+            } else {
+                // An indivisible name gets one explicit abbreviated line.
+                let mut fitted: String = chars[at..at + lo].iter().collect();
+                while !fitted.is_empty() && measure(ctx, &format!("{fitted}…"))? > max_width {
+                    fitted.pop();
+                }
+                fitted.push('…');
+                let measured = metrics(ctx, &fitted)?;
+                width = width.max(measured.width);
+                lines.push(TextLine {
+                    text: fitted,
+                    left: measured.left,
+                    ascent: measured.ascent,
+                });
+                abbreviated = true;
+                break;
+            }
+        }
         let mut fitted: String = chars[at..at + lo].iter().collect();
         fitted.push_str(suffix);
         let measured = metrics(ctx, &fitted)?;
@@ -659,6 +766,9 @@ fn variant(ctx: &Ctx, text: &str, available: Size) -> Option<Variant> {
             ascent: measured.ascent,
         });
         at += lo;
+        while at < chars.len() && chars[at].is_whitespace() {
+            at += 1;
+        }
         if !suffix.is_empty() {
             abbreviated = true;
             break;

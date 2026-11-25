@@ -1301,3 +1301,23 @@ real MCP flows, finite-profile source facts and ordinary/library draft projectio
 The web/worker WASM check passes. The preceding3a834a7 checkpoint also completed
 Linux/macOS/Windows/web CI successfully. No browser/application or HTTP smoke
 checks were run; public8082 still serves its previous immutable worker67 build.
+
+
+### Viewer graphics and command hierarchy take priority
+
+User screenshot review on2026-11-25 identified fundamental presentation defects.
+Viewer drawing and compact controls now take priority over further chemistry
+expansion: directionally correct feature bodies, inline staggered RE hover cuts,
+readable radial map labels, actual overlap lanes and stable cross-view hover.
+The command surface uses a fixed right-hand tool rail with floating cards and
+grouped File/Create/Analyze/selection dropdowns. Circular map dragging defaults to
+rotation; exact range selection belongs in the sequence editor rather than the
+coarse overview. [Implementation contract](VIEWER_VISUAL_REWORK.md).
+
+Additional user/official screenshots distinguish the ordinary assembly method
+picker and bottom dock from the separate combinatorial document. Use that visual
+hierarchy for subsequent assembly presentation without duplicating the existing
+scientific compilers. [Wizard reference](BENCHLING_ASSEMBLY_WIZARD_VISUAL.md).
+Native numerical fixtures and a full web build cover this increment; browser
+checks remain deferred under the user's instruction and GUI acceptance remains
+outstanding. The full original in-scope plan and exclusions remain intact.

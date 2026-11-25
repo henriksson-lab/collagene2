@@ -166,6 +166,32 @@ const GROUPS: &[&str] = &[
     "Reads and references",
     "Files and history",
 ];
+pub fn panel_title(id: &str) -> &'static str {
+    match id {
+        "features" => "Annotations",
+        "restriction" => "Restriction sites",
+        "enzymes" => "Virtual digest",
+        _ => TOOLS
+            .iter()
+            .find_map(|t| match t.target {
+                Target::Panel(key) if key == id => Some(t.label),
+                _ => None,
+            })
+            .unwrap_or("Tools"),
+    }
+}
+fn rail_path(id: &str) -> &'static str {
+    match id {
+        "features" => "M4 5h16M4 12h11M4 19h16M7 3v4M18 10v4M8 17v4",
+        "restriction" => {
+            "M9 8l11 12M9 16 20 4M4 4a3 3 0 1 0 0 6 3 3 0 0 0 0-6M4 14a3 3 0 1 0 0 6 3 3 0 0 0 0-6"
+        }
+        "enzymes" => "M8 3h8M10 3v7l-6 9v2h16v-2l-6-9V3M7 16h10",
+        "primers" => "M3 7h15l-4-4M18 7l-4 4M21 17H6l4-4M6 17l4 4",
+        "history" => "M3 11a9 9 0 1 1 2 7M3 4v7h7M12 7v6l4 2",
+        _ => "M12 4v.01M12 12v.01M12 20v.01",
+    }
+}
 #[component]
 pub fn InspectorNavigation(
     panel: RwSignal<&'static str>,
@@ -174,17 +200,14 @@ pub fn InspectorNavigation(
 ) -> impl IntoView {
     let menu = NodeRef::<html::Details>::new();
     view! {
-        <nav class="inspector-tabs mvp-inspector-tabs" aria-label="Analysis panels">
-            <button data-panel-id="features" class:active=move||panel.get()=="features" on:click=move|_|{panel.set("features");if let Some(menu)=menu.get(){menu.set_open(false);}}>"Features"</button>
-            <button data-panel-id="restriction" class:active=move||panel.get()=="restriction" on:click=move|_|{panel.set("restriction");if let Some(menu)=menu.get(){menu.set_open(false);}}>"RE sites"</button>
-            <button data-panel-id="enzymes" class:active=move||panel.get()=="enzymes" on:click=move|_|{panel.set("enzymes");if let Some(menu)=menu.get(){menu.set_open(false);}}>"Digest"</button>
-            <button data-panel-id="pcr" class:active=move||panel.get()=="pcr" on:click=move|_|{panel.set("pcr");if let Some(menu)=menu.get(){menu.set_open(false);}}>"PCR"</button>
-            <button data-panel-id="methods" class:active=move||panel.get()=="methods" on:click=move|_|{on_assemble.run(());if let Some(menu)=menu.get(){menu.set_open(false);}}>"Assemble"</button>
-            <button data-panel-id="plan" class:active=move||panel.get()=="plan" on:click=move|_|{panel.set("plan");if let Some(menu)=menu.get(){menu.set_open(false);}}>"Plan"</button>
-            <details class="more-tools" node_ref=menu class:active=move||!matches!(panel.get(),"features"|"enzymes"|"restriction"|"pcr"|"methods"|"plan")>
-                <summary aria-label="More tools">"More tools"<span class="active-tool-name">{move||TOOLS.iter().find_map(|t|match t.target{Target::Panel(id)if id==panel.get()=>Some(t.label),_=>None}).unwrap_or("")}</span></summary>
-                <div class="more-tools-content">{GROUPS.iter().map(|group|view!{<section><h3>{*group}</h3>{TOOLS.iter().filter(|tool|tool.group==*group).map(|tool|{let target=tool.target;view!{<button class="secondary-tool" data-tool-id=target.id() on:click=move|_|{match target{Target::Panel(id)=>panel.set(id),Target::Auxiliary(action)=>on_auxiliary.run(action)}if let Some(menu)=menu.get(){menu.set_open(false);}}>{tool.label}</button>}}).collect_view()}</section>}).collect_view()}</div>
-            </details>
+        <nav class="viewer-tool-rail" aria-label="Sequence tools">
+            {[("features","Annotations"),("restriction","Restriction sites"),("enzymes","Virtual digest"),("primers","Primers"),("history","History")].into_iter().map(|(id,label)|view!{
+                <button class="viewer-rail-button" class:active=move||panel.get()==id title=label aria-label=label aria-expanded=move||(panel.get()==id).to_string() data-panel-id=id on:click=move |_|{panel.update(|current|*current=if *current==id{""}else{id});if let Some(menu)=menu.get(){menu.set_open(false);}}><svg viewBox="0 0 24 24" aria-hidden="true"><path d=rail_path(id)/></svg></button>
+            }).collect_view()}
+            <details class="viewer-tools-menu" node_ref=menu><summary class="viewer-rail-button" title="More sequence tools" aria-label="More sequence tools"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></summary><div class="viewer-tool-menu-content">
+                <button class="secondary-tool" on:click=move |_|{on_assemble.run(());if let Some(menu)=menu.get(){menu.set_open(false);}}>"Assembly workspace"</button>
+                {GROUPS.iter().map(|group|view!{<section><h3>{*group}</h3>{TOOLS.iter().filter(|tool|tool.group==*group).map(|tool|{let target=tool.target;view!{<button class="secondary-tool" data-tool-id=target.id() on:click=move |_|{match target{Target::Panel(id)=>panel.set(id),Target::Auxiliary(action)=>on_auxiliary.run(action)}if let Some(menu)=menu.get(){menu.set_open(false);}}>{tool.label}</button>}}).collect_view()}</section>}).collect_view()}
+            </div></details>
         </nav>
     }
 }

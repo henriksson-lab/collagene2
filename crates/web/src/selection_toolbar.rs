@@ -314,24 +314,26 @@ pub fn SelectionToolbar(
         })
     });
     view! {
-        <Show when=move||summary.with(Option::is_some)>
-            <div class="selection-toolbar" role="region" aria-label="Selection actions">
-                <div class="selection-toolbar-summary" role="status">
-                    <strong>{move||summary.with(|value|value.as_ref().map(|s|s.heading.clone()).unwrap_or_default())}</strong>
-                    <span>{move||summary.with(|value|value.as_ref().map(|s|s.detail.clone()).unwrap_or_default())}</span>
+            <Show when=move||summary.with(Option::is_some)>
+                <div class="selection-toolbar" role="region" aria-label="Selection actions">
+                    <div class="selection-toolbar-summary" role="status">
+                        <strong>{move||summary.with(|value|value.as_ref().map(|s|s.heading.clone()).unwrap_or_default())}</strong>
+                        <span>{move||summary.with(|value|value.as_ref().map(|s|s.detail.clone()).unwrap_or_default())}</span>
+                    </div>
+                    <div class="selection-toolbar-actions"><details class="selection-action-menu"><summary>"Selection actions"<span aria-hidden="true">"⌄"</span></summary><div class="selection-action-menu-content">
+                        <button class="text-tool" disabled=move||locked.get()||!summary.with(|s|s.as_ref().is_some_and(|s|s.annotate)) title="Annotate the selected known reference parts" on:click=move|_|if !locked.get_untracked()&&summary.with_untracked(|s|s.as_ref().is_some_and(|s|s.annotate)){on_annotate.run(());}>"Annotate selection"</button>
+                        <button class="text-tool" disabled=move||locked.get()||!summary.with(|s|s.as_ref().is_some_and(|s|s.primer)) title="Select one exact contiguous DNA range to make a primer" on:click=move|_|if !locked.get_untracked()&&summary.with_untracked(|s|s.as_ref().is_some_and(|s|s.primer)){on_primer.run(false);}>"Make forward primer"</button>
+                        <button class="text-tool" disabled=move||locked.get()||!summary.with(|s|s.as_ref().is_some_and(|s|s.primer)) title="Use the reverse complement of one exact DNA range, written 5′→3′" on:click=move|_|if !locked.get_untracked()&&summary.with_untracked(|s|s.as_ref().is_some_and(|s|s.primer)){on_primer.run(true);}>"Make reverse primer"</button>
+    <hr/>
+                        <button class="text-tool" disabled=move||locked.get()||molecule.with(|m|m.sequence.alphabet()!=Alphabet::Dna) title="Inspect unwanted restriction sites and source-bound synonymous changes" on:click=move|_|if !locked.get_untracked()&&molecule.with_untracked(|m|m.sequence.alphabet()==Alphabet::Dna){on_domestication.run(());}>"Remove internal sites"</button>
+                        <button class="text-tool" disabled=move||locked.get()||molecule.with(|m|m.sequence.alphabet()!=Alphabet::Dna)||!summary.with(|s|s.as_ref().is_some_and(|s|s.edit)) title="Declare a replacement, deletion or insertion as a new intended reference" on:click=move|_|if !locked.get_untracked()&&molecule.with_untracked(|m|m.sequence.alphabet()==Alphabet::Dna)&&summary.with_untracked(|s|s.as_ref().is_some_and(|s|s.edit)){on_mutation.run(());}>"Mutate selection"</button>
+                        <button class="text-tool" disabled=move||locked.get()||!summary.with(|s|s.as_ref().is_some_and(|s|s.edit)) title="Edit one contiguous reference range or insertion caret" on:click=move|_|if !locked.get_untracked()&&summary.with_untracked(|s|s.as_ref().is_some_and(|s|s.edit)){on_edit.run(());}>"Edit bases"</button>
+    </div></details>
+                        <button class="text-tool" disabled=move||locked.get() on:click=move|_|if !locked.get_untracked(){on_clear.run(());}>"Clear selection"</button>
+                    </div>
                 </div>
-                <div class="selection-toolbar-actions">
-                    <button class="text-tool" disabled=move||locked.get()||!summary.with(|s|s.as_ref().is_some_and(|s|s.annotate)) title="Annotate the selected known reference parts" on:click=move|_|if !locked.get_untracked()&&summary.with_untracked(|s|s.as_ref().is_some_and(|s|s.annotate)){on_annotate.run(());}>"Annotate selection"</button>
-                    <button class="text-tool" disabled=move||locked.get()||!summary.with(|s|s.as_ref().is_some_and(|s|s.primer)) title="Select one exact contiguous DNA range to make a primer" on:click=move|_|if !locked.get_untracked()&&summary.with_untracked(|s|s.as_ref().is_some_and(|s|s.primer)){on_primer.run(false);}>"Make forward primer"</button>
-                    <button class="text-tool" disabled=move||locked.get()||!summary.with(|s|s.as_ref().is_some_and(|s|s.primer)) title="Use the reverse complement of one exact DNA range, written 5′→3′" on:click=move|_|if !locked.get_untracked()&&summary.with_untracked(|s|s.as_ref().is_some_and(|s|s.primer)){on_primer.run(true);}>"Make reverse primer"</button>
-                    <button class="text-tool" disabled=move||locked.get()||molecule.with(|m|m.sequence.alphabet()!=Alphabet::Dna) title="Inspect unwanted restriction sites and source-bound synonymous changes" on:click=move|_|if !locked.get_untracked()&&molecule.with_untracked(|m|m.sequence.alphabet()==Alphabet::Dna){on_domestication.run(());}>"Remove internal sites"</button>
-                    <button class="text-tool" disabled=move||locked.get()||molecule.with(|m|m.sequence.alphabet()!=Alphabet::Dna)||!summary.with(|s|s.as_ref().is_some_and(|s|s.edit)) title="Declare a replacement, deletion or insertion as a new intended reference" on:click=move|_|if !locked.get_untracked()&&molecule.with_untracked(|m|m.sequence.alphabet()==Alphabet::Dna)&&summary.with_untracked(|s|s.as_ref().is_some_and(|s|s.edit)){on_mutation.run(());}>"Mutate selection"</button>
-                    <button class="text-tool" disabled=move||locked.get()||!summary.with(|s|s.as_ref().is_some_and(|s|s.edit)) title="Edit one contiguous reference range or insertion caret" on:click=move|_|if !locked.get_untracked()&&summary.with_untracked(|s|s.as_ref().is_some_and(|s|s.edit)){on_edit.run(());}>"Edit bases"</button>
-                    <button class="text-tool" disabled=move||locked.get() on:click=move|_|if !locked.get_untracked(){on_clear.run(());}>"Clear selection"</button>
-                </div>
-            </div>
-        </Show>
-    }
+            </Show>
+        }
 }
 
 #[cfg(test)]

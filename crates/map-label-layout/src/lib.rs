@@ -2,6 +2,8 @@
 //! Original anchors are retained; overflow is evidence, never silent deletion.
 #![doc = include_str!("../README.md")]
 
+pub mod radial;
+
 use std::{cmp::Ordering, fmt};
 
 pub const MAX_INPUTS: usize = 131_072;

@@ -117,3 +117,14 @@ edges to those events; their restrictive `duplex_model` and explicit intent mark
 never establish material state. Reopening does not restore a positive scientific
 result. Source heads and existing raw evidence remain retained. Archive1 is
 unchanged. [Intent contract](MUTATION_INTENT.md).
+
+## Construct-owned read checks
+
+`read-check-v1` JSON attachments retain exact reference/read document-event-revision
+bindings and full recorded native validation options/report. They remain historical
+on load, including imported engine/status assertions. The current validator must
+replay the retained original events for fresh evidence. Source heads, navigation,
+raw trace bytes and qualities are unchanged; repeated identical capture deduplicates
+while different equal-DNA events remain distinct. Limits are128 checks and17MiB per
+saved check under the existing workspace budgets. Archive1 is unchanged.
+[Detailed saved-check behavior](READ_CHECKS.md).

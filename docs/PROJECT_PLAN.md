@@ -627,3 +627,15 @@ that reference; a separate imported target remains supported. Worker41/MCP122 ex
 the same separation. Integrated assembly junction/oligo edit transactions, native
 unfinished-draft persistence and richer mutation geometries remain required.
 [Reference intent](MUTATION_INTENT.md).
+
+### Construct-owned sequencing evidence checkpoint
+
+Read validation now pins the construct independently of active read viewing,
+requires exact native source events, and navigates paginated discrepancies and
+columns to original chromatogram calls/samples. Saved checks retain full options
+and exact historical inputs, remain historical on load, and explicitly replay with
+the current engine. Capture uses a fresh worker reconstruction and durable atomic
+workspace recovery; MCP record/list/replay share the same core. Worker42/MCP125
+version transport. Explicit per-discrepancy review decisions and evidence-parented
+derived-reference proposals remain required; this does not reopen BAM/index work,
+MSA engines or ELN/inventory scope. [Read checks](READ_CHECKS.md).

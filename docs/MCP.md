@@ -554,3 +554,28 @@ precede source cloning; source DNA is bounded to8MiB, inserted DNA to100,000 bas
 and report output to32MiB, with existing session capacities. Unsupported coordinate
 qualifiers fail before publication rather than receive guessed mappings.
 [Worked flow and interpretation](MCP_MUTATION_INTENT_FLOW.md).
+
+## Construct-owned read check capture and replay
+
+`record_read_check {workspace, reference, reads, options}` takes an immutable native
+`WorkspaceRef`, exact `EventBinding {document_id,event_id,revision}` reference and
+ordered1–32 read bindings, plus existing `TraceValidationOptions`. It freshly checks
+retained events and atomically returns a new immutable workspace, receipt, full
+saved-check JSON artifact and native archive artifact. All artifact/workspace slots
+and bytes are reserved before publication. The original workspace, source heads and
+raw reads are unchanged. Repeated identical evidence reuses its attachment; event
+aliases remain distinct. Recorded status and engine are historical receipt fields.
+
+`list_read_checks {workspace}` returns historical summaries by attachment hash,
+construct reference event, read count and recorded engine/status. It never replays.
+`replay_read_check {workspace,attachment_hash}` resolves the exact saved original
+events and reconstructs with the current engine/model. It returns fresh computational
+status/coverage and a full immutable JSON artifact; source edits and navigation are
+not rewound. Neither capture nor replay establishes physical sample identity,
+experimental success or unobserved bases. Partial read support remains incomplete.
+Existing quality, ambiguity, placement and duplicate-file policies are retained.
+
+Saved evidence is bounded to17MiB and128 records per workspace; existing native
+workspace/session budgets remain. Replay artifacts use the bounded32MiB scientific
+JSON cap. No external aligner or basecaller is invoked.
+[Native read checks](READ_CHECKS.md).

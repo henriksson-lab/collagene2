@@ -61,6 +61,8 @@ mod protein_properties;
 #[cfg(target_arch = "wasm32")]
 mod read_alignments_view;
 #[cfg(target_arch = "wasm32")]
+mod read_checks_view;
+#[cfg(target_arch = "wasm32")]
 mod read_source_library;
 #[cfg(target_arch = "wasm32")]
 mod restriction_map;

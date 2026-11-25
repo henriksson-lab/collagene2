@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 122;
+pub const CURRENT_TOOL_COUNT: usize = 125;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -1002,6 +1002,25 @@ pub struct OverlapPrimerDesignQuery {
     pub target: DocumentRef,
     /// Explicit ordered template intervals, orientation and bounded heuristic controls.
     pub request: collagene_core::overlap_primer_design::Request,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RecordReadCheck {
+    pub workspace: WorkspaceRef,
+    pub reference: collagene_core::run_lineage::EventBinding,
+    pub reads: Vec<collagene_core::run_lineage::EventBinding>,
+    pub options: collagene_core::trace_validation::TraceValidationOptions,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ListReadChecks {
+    pub workspace: WorkspaceRef,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReplayReadCheck {
+    pub workspace: WorkspaceRef,
+    pub attachment_hash: String,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1998,6 +2017,22 @@ impl CollageneServer {
         } else {
             "cloning-run.json"
         };
+        self.commit_workspace_outputs_named(
+            workspace,
+            run_artifact,
+            native_artifact,
+            receipt_filename,
+            "historical run data; replay recomputes current evidence",
+        )
+    }
+    fn commit_workspace_outputs_named(
+        &self,
+        workspace: workspace::Workspace,
+        run_artifact: Option<(String, Value)>,
+        native_artifact: Option<Vec<u8>>,
+        receipt_filename: &'static str,
+        receipt_authority: &'static str,
+    ) -> Result<CallToolResult, ErrorData> {
         let mut pending_alignments = BTreeMap::new();
         for attachment in workspace
             .attachments
@@ -2137,8 +2172,7 @@ impl CollageneServer {
                 });
             response["receipt"] = receipt;
             response["artifact_id"] = json!(artifact_id);
-            response["authority"] =
-                json!("historical run data; replay recomputes current evidence");
+            response["authority"] = json!(receipt_authority);
         }
         if let Some(bytes) = native_artifact {
             let native_id = native_id.ok_or_else(|| bad("missing native artifact ID"))?;
@@ -3965,6 +3999,69 @@ impl CollageneServer {
             server.commit_workspace_outputs(commit.workspace, Some((text, receipt)), Some(native))
         })
         .await
+    }
+    #[tool(
+        description = "Freshly check sequencing reads against an exact construct reference event under explicit native-quality, trimming, placement and support rules, and retain the complete evidence in a NEW immutable native workspace. Reference and read event bindings are explicit; equal DNA never chooses events. Original sequences, heads and chromatograms are unchanged. Atomically returns workspace plus full JSON/native artifacts. Saved results are historical evidence, not restored current verification or experimental sample confirmation."
+    )]
+    async fn record_read_check(
+        &self,
+        Parameters(args): Parameters<RecordReadCheck>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.reads.is_empty() || args.reads.len() > 32 {
+            return Err(bad("choose1..32 exact read event bindings"));
+        }
+        let server = self.clone();
+        self.compute(move || {
+            let frame=server.restore_workspace(&args.workspace)?;
+            let expected=collagene_core::read_checks::capture_revision(&frame,&args.reference,&args.reads,&args.options).map_err(bad)?;
+            let commit=collagene_core::read_checks::capture(&frame,args.reference,args.reads,&args.options).map_err(bad)?;
+            commit.validate_binding(&expected).map_err(bad)?;
+            let saved=collagene_core::read_checks::load(&commit.workspace,&commit.attachment_hash).map_err(bad)?;
+            let text=bounded_json_limit(&saved,17*1024*1024)?;
+            let receipt=json!({"attachment_hash":commit.attachment_hash,"context_revision":commit.context_revision,
+                "reference":saved.reference,"read_count":saved.reads.len(),"recorded_status":saved.report.status,
+                "recorded_engine":saved.report.engine_version,"state":"historical","verified":false});
+            let native=workspace::save_workspace(&commit.workspace).map_err(bad)?;
+            server.commit_workspace_outputs_named(commit.workspace,Some((text,receipt)),Some(native),"read-check.json",
+                "Historical source-event-bound read evidence. Fresh replay reconstructs current evidence; no experimental sample identity or whole-construct confirmation is asserted.")
+        }).await
+    }
+    #[tool(
+        description = "List saved construct-owned read checks in an immutable native workspace. Every result retains its exact reference event and read count. Recorded engine/status are historical fields; this does not rerun reads or restore verification authority."
+    )]
+    async fn list_read_checks(
+        &self,
+        Parameters(args): Parameters<ListReadChecks>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let frame = self.restore_workspace(&args.workspace)?;
+        let checks = collagene_core::read_checks::list(&frame).map_err(bad)?;
+        output(
+            json!({"workspace":args.workspace,"checks":checks,"state":"historical","verified":false}),
+        )
+    }
+    #[tool(
+        description = "Replay one saved read check by resolving its exact retained reference/read events and freshly recomputing trimming, placement, coverage and native call evidence with the current engine. Does not change source heads, raw chromatograms, saved evidence or the native workspace. Current computational consistency remains distinct from empirical sample identity."
+    )]
+    async fn replay_read_check(
+        &self,
+        Parameters(args): Parameters<ReplayReadCheck>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.attachment_hash.len() != 64 {
+            return Err(bad("an exact saved read-check attachment hash is required"));
+        }
+        let server = self.clone();
+        self.compute(move || {
+            let frame=server.restore_workspace(&args.workspace)?;
+            let expected=collagene_core::read_checks::replay_revision(&frame,&args.attachment_hash).map_err(bad)?;
+            let checked=collagene_core::read_checks::replay(&frame,&args.attachment_hash).map_err(bad)?;
+            checked.validate_binding(&expected).map_err(bad)?;
+            let artifact=server.text_artifact(bounded_json_limit(&checked,32*1024*1024)?,"application/json","read-check-replay.json")?;
+            output(json!({"workspace":args.workspace,"attachment_hash":args.attachment_hash,"context_revision":checked.context_revision,
+                "reference":checked.saved.reference,"reads":checked.saved.reads,"state":"fresh-computational-evidence",
+                "engine_version":checked.report.engine_version,"status":checked.report.status,
+                "eligible_coverage":checked.report.eligible_coverage,"reference_coverage_fraction":checked.report.reference_coverage_fraction,
+                "artifact_id":artifact,"verified":false,"authority":"Fresh computational evidence under recorded rules; not experimental sample confirmation."}))
+        }).await
     }
     #[tool(
         description = "Reconstruct an exact session plan against explicit historical target/input event bindings and retain all products in a NEW immutable session workspace. Does not alter the original, browser workspace or any file. Incomplete evidence requires explicit allow_incomplete; failed reconstructions never record products. Returns a full JSON artifact and new workspace reference."

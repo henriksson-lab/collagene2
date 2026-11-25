@@ -1,17 +1,21 @@
 //! Explicit revision-bound read/reference evidence; no imported or AI-asserted verdict.
-use crate::worker;
+use crate::worker::CachedWorker;
 use collagene_core::{
     Alphabet, Molecule,
     protocol::{AnalysisJob, AnalysisResult, Request, Response},
+    run_lineage::EventBinding,
     trace_validation::{
         MissingQualityPolicy, SiteState, TraceValidationOptions, TraceValidationReport, TrimMode,
         TrimOptions,
     },
 };
 use leptos::prelude::*;
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use wasm_bindgen_futures::spawn_local;
 
@@ -19,14 +23,27 @@ fn number<T: std::str::FromStr>(text: String, label: &str) -> Result<T, String> 
     text.parse()
         .map_err(|_| format!("{label} is not a valid number"))
 }
-fn bound_reads(
-    get_query: Callback<usize, Option<Molecule>>,
-    indices: &[usize],
-) -> Option<Vec<String>> {
-    indices
-        .iter()
-        .map(|&i| get_query.run(i).map(|m| m.revision()))
-        .collect()
+#[derive(Clone)]
+pub struct ReferenceNavigation {
+    pub reference: EventBinding,
+    pub selection: Option<(usize, usize)>,
+    pub epoch: u64,
+}
+#[derive(Clone)]
+pub struct RecordRequest {
+    pub reference: EventBinding,
+    pub reads: Vec<EventBinding>,
+    pub options: TraceValidationOptions,
+    pub epoch: u64,
+}
+struct BoundEvidence {
+    report: TraceValidationReport,
+    reference: EventBinding,
+    reads: Vec<EventBinding>,
+    options: TraceValidationOptions,
+    epoch: u64,
+    indices: Vec<usize>,
+    generation: u32,
 }
 fn consensus_document(
     source: &Molecule,
@@ -53,6 +70,7 @@ fn consensus_document(
         "read_validation:report".into(),
         serde_json::to_string(report).map_err(|e| e.to_string())?,
     );
+    document.metadata.insert("duplex_model".into(),"Support-only reference DNA; physical strand/end chemistry is unavailable. Reconstruct the original source graph for physical operations.".into());
     document.metadata.insert("read_validation:note".into(),"Support-only reference-coordinate consensus. N denotes uncovered, low/unknown confidence, unresolved placement, deletion or insufficient support; IUPAC can indicate conflicting eligible calls. Reference annotations are not copied. Retain original read documents/attachments and the independent reference; this is not experimental sample confirmation or physical chemistry.".into());
     collagene_core::protocol::save_document(&document).map_err(|e| e.to_string())?;
     Ok(document)
@@ -66,7 +84,14 @@ pub fn TraceValidationPanel(
     selection: RwSignal<Option<(usize, usize)>>,
     selected_feature: RwSignal<Option<usize>>,
     on_consensus: Callback<Molecule, Result<(), String>>,
+    source_info: Callback<usize, Option<crate::digest::SourceInfo>>,
+    reference_info: Memo<crate::digest::SourceInfo>,
+    epoch: RwSignal<u64>,
+    on_read: Callback<crate::contigs::ReadNavigation>,
+    on_record: Callback<RecordRequest, Result<(), String>>,
+    on_reference: Callback<ReferenceNavigation, Result<(), String>>,
 ) -> impl IntoView {
+    let _ = (selection, selected_feature); // Host applies guarded navigation after switching documents.
     let selected = RwSignal::new(Vec::<usize>::new());
     let mode = RwSignal::new("quality".to_string());
     let threshold = RwSignal::new("20".to_string());
@@ -105,84 +130,149 @@ pub fn TraceValidationPanel(
             ..Default::default()
         })
     });
-    let report = RwSignal::new(None::<Arc<TraceValidationReport>>);
+    let report = RwSignal::new(None::<Arc<BoundEvidence>>);
     let status = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
     let generation = RwSignal::new(0u32);
     let alive = Arc::new(AtomicBool::new(true));
+    let active = StoredValue::new_local(None::<Rc<CachedWorker>>);
+    let read_context = Memo::new(move |_| {
+        let _ = epoch.get();
+        selected
+            .get()
+            .into_iter()
+            .map(|index| source_info.run(index).map(|info| info.binding))
+            .collect::<Option<Vec<_>>>()
+    });
     {
         let alive = alive.clone();
-        on_cleanup(move || alive.store(false, Ordering::Relaxed));
+        on_cleanup(move || {
+            alive.store(false, Ordering::Relaxed);
+            if let Some(worker) = active.get_value() {
+                worker.close();
+            }
+        });
     }
     Effect::new(move |_| {
         let _ = (
-            molecule.with(Molecule::revision),
-            bound_reads(get_query, &selected.get()),
+            selected.get(),
+            read_context.get(),
+            reference_info.get(),
             options.get(),
+            epoch.get(),
         );
         generation.update(|g| *g = g.wrapping_add(1));
+        if let Some(worker) = active.get_value() {
+            worker.close();
+        }
+        active.set_value(None);
         report.set(None);
         busy.set(false);
         status.set(String::new());
     });
+    let guard = Callback::new(move |bound: Arc<BoundEvidence>| -> Result<(), String> {
+        if epoch.get_untracked() != bound.epoch
+            || generation.get_untracked() != bound.generation
+            || selected.get_untracked() != bound.indices
+            || read_context.get_untracked() != Some(bound.reads.clone())
+            || reference_info.get_untracked().binding != bound.reference
+            || options.get_untracked()? != bound.options
+        {
+            return Err("The reference, read events or settings changed. Run validation again before using this evidence.".into());
+        }
+        Ok(())
+    });
     let run = {
         let alive = alive.clone();
         move |_| {
-            let input = selected.get_untracked();
-            let source = molecule.get_untracked();
-            let reads = match input
-                .iter()
-                .map(|&i| {
-                    get_query
-                        .run(i)
-                        .ok_or_else(|| "A read document is no longer open.".to_string())
-                })
-                .collect::<Result<Vec<_>, _>>()
-            {
-                Ok(reads) => reads,
-                Err(error) => {
-                    status.set(error);
-                    return;
-                }
-            };
-            if reads.is_empty() {
-                status.set("Choose at least one trace or quality-bearing FASTQ read.".into());
+            if busy.get_untracked() {
                 return;
             }
-            let opts = match options.get_untracked() {
-                Ok(options) => options,
-                Err(error) => {
-                    status.set(error);
-                    return;
+            let prepared = (|| -> Result<_, String> {
+                let input = selected.get_untracked();
+                if input.is_empty() || input.len() > 32 {
+                    return Err("Choose 1–32 read documents.".into());
                 }
-            };
-            let revision = source.revision();
-            let revisions = reads.iter().map(Molecule::revision).collect::<Vec<_>>();
+                let reference = reference_info.get_untracked().binding;
+                let bindings = read_context
+                    .get_untracked()
+                    .ok_or("A selected source event is no longer available.")?;
+                let source = molecule.get_untracked();
+                let reads = input
+                    .iter()
+                    .map(|&index| {
+                        get_query
+                            .run(index)
+                            .ok_or("A selected read document is no longer open.")
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let mut borrowed = Vec::with_capacity(reads.len() + 1);
+                borrowed.push(&source);
+                borrowed.extend(reads.iter());
+                collagene_core::model::bounds::model_preflight(&borrowed)
+                    .map_err(|e| e.to_string())?;
+                let revision = source.revision();
+                let revisions = reads.iter().map(Molecule::revision).collect::<Vec<_>>();
+                if reference.revision != revision
+                    || bindings
+                        .iter()
+                        .map(|b| b.revision.clone())
+                        .collect::<Vec<_>>()
+                        != revisions
+                {
+                    return Err("Selected document/event identities do not match the original read/reference models.".into());
+                }
+                let opts = options.get_untracked()?;
+                let worker = Rc::new(CachedWorker::new()?);
+                Ok((
+                    input, reference, bindings, source, reads, revision, revisions, opts, worker,
+                ))
+            })();
+            let (input, reference, bindings, source, reads, revision, revisions, opts, w) =
+                match prepared {
+                    Ok(value) => value,
+                    Err(error) => {
+                        status.set(error);
+                        return;
+                    }
+                };
+            let captured_epoch = epoch.get_untracked();
             let token = generation.get_untracked().wrapping_add(1);
             generation.set(token);
+            if let Some(old) = active.get_value() {
+                old.close();
+            }
+            active.set_value(Some(w.clone()));
             busy.set(true);
-            status.set("Aligning reads and reconstructing quality/coverage evidence…".into());
+            report.set(None);
+            status.set(
+                "Aligning event-bound reads and reconstructing quality/coverage evidence…".into(),
+            );
             let alive = alive.clone();
             spawn_local(async move {
-                let response = worker::analyze(Request {
-                    id: token,
-                    revision: revision.clone(),
-                    job: AnalysisJob::ValidateTraces {
-                        molecule: source,
-                        reads,
-                        options: opts,
-                    },
-                })
-                .await;
-                if !alive.load(Ordering::Relaxed) {
-                    return;
-                }
-                if generation.get_untracked() != token
-                    || molecule.with_untracked(Molecule::revision) != revision
-                    || untrack(|| bound_reads(get_query, &input)) != Some(revisions.clone())
+                let response = w
+                    .ask(Request {
+                        id: token,
+                        revision: revision.clone(),
+                        job: AnalysisJob::ValidateTraces {
+                            molecule: source,
+                            reads,
+                            options: opts.clone(),
+                        },
+                    })
+                    .await;
+                w.close();
+                if !alive.load(Ordering::Relaxed)
+                    || generation.get_untracked() != token
+                    || epoch.get_untracked() != captured_epoch
+                    || selected.get_untracked() != input
+                    || read_context.get_untracked() != Some(bindings.clone())
+                    || reference_info.get_untracked().binding != reference
+                    || options.get_untracked().as_ref() != Ok(&opts)
                 {
                     return;
                 }
+                active.set_value(None);
                 busy.set(false);
                 match response {
                     Ok(Response {
@@ -192,17 +282,38 @@ pub fn TraceValidationPanel(
                     }) if id == token
                         && returned == revision
                         && computed.reference_revision == revision
-                        && computed.read_revisions == revisions =>
+                        && computed.read_revisions == revisions
+                        && computed.options == opts
+                        && computed.reads.len() == bindings.len()
+                        && computed.engine_version
+                            == collagene_core::verification::ENGINE_VERSION
+                        && computed.model == collagene_core::trace_validation::MODEL
+                        && computed
+                            .reads
+                            .iter()
+                            .zip(&bindings)
+                            .all(|(read, binding)| read.source_revision == binding.revision) =>
                     {
-                        status.set("Read evidence computed under the recorded threshold and alignment rules; this is not experimental sample confirmation.".into());
-                        report.set(Some(Arc::new(computed)));
+                        status.set("Read evidence computed for these exact document events under the recorded threshold and alignment rules; this is not experimental sample confirmation.".into());
+                        report.set(Some(Arc::new(BoundEvidence {
+                            report: computed,
+                            reference,
+                            reads: bindings,
+                            options: opts,
+                            epoch: captured_epoch,
+                            indices: input,
+                            generation: token,
+                        })));
                     }
                     Ok(Response {
                         result: AnalysisResult::Error(error),
                         ..
                     })
                     | Err(error) => status.set(error),
-                    _ => status.set("Unexpected read-validation worker response.".into()),
+                    _ => status.set(
+                        "Unexpected read-validation worker response or source/options binding."
+                            .into(),
+                    ),
                 }
             });
         }
@@ -217,18 +328,187 @@ pub fn TraceValidationPanel(
         <label class="read-source"><input type="checkbox" aria-label="Read retain unscored" prop:checked=move||missing.get() on:change=move|e|missing.set(event_target::<web_sys::HtmlInputElement>(&e).checked())/>"Align unscored traces as evidence only"</label><label class="read-source"><input type="checkbox" aria-label="Read both orientations" prop:checked=move||both.get() on:change=move|e|both.set(event_target::<web_sys::HtmlInputElement>(&e).checked())/>"Search both read orientations"</label><label class="read-source"><input type="checkbox" aria-label="Read require both strands" prop:checked=move||both_support.get() on:change=move|e|both_support.set(event_target::<web_sys::HtmlInputElement>(&e).checked())/>"Require source support on both reference strands"</label>
         <details><summary>"Bounded alignment work"</summary><label>"Cells per alignment"<input aria-label="Read alignment cell budget" type="number" prop:value=move||matrix.get() on:input=move|e|matrix.set(event_target_value(&e))/></label><label>"Total alignment/proof cells"<input aria-label="Read total cell budget" type="number" prop:value=move||total.get() on:input=move|e|total.set(event_target_value(&e))/></label><p class="helper">"Exact matches use an upper-bound shortcut with an exhaustive placement scan. Imperfect reads use affine alignment plus an optimal-path uniqueness proof. Tied/unproven coordinates never become eligible consensus coverage."</p></details>
         <button class="button primary full" disabled=move||busy.get()||molecule.with(|m|m.sequence.alphabet()!=Alphabet::Dna)||selected.with(|s|s.is_empty()) on:click=run>"Validate selected reads"</button><p class="read-validation-status" role="status">{move||status.get()}</p>
-        {move||report.get().map(|computed|{
-            let json=computed.clone();let consensus=computed.clone();let fasta=computed.clone();let status_text=format!("{:?}",computed.status);let uncovered=computed.uncovered_ranges.iter().take(100).map(|(a,b)|format!("{}–{}",a+1,b)).collect::<Vec<_>>().join(", ");
-            view!{<section class="read-validation-result"><h3>{status_text}</h3><p>{format!("Eligible coverage {} / {} bases ({:.2}%)",computed.eligible_coverage,computed.consensus.len(),computed.reference_coverage_fraction*100.)}</p><p class="helper">{format!("Uncovered/insufficiently supported intervals (1-based): {}{}",if uncovered.is_empty(){"none"}else{&uncovered},if computed.uncovered_ranges.len()>100{" · first 100 shown"}else{""})}</p><ul>{computed.warnings.iter().cloned().map(|w|view!{<li>{w}</li>}).collect_view()}</ul>
-            <h4>"Support-only consensus"</h4><pre class="read-consensus-preview">{format!("{}{}",computed.consensus.chars().take(600).collect::<String>(),if computed.consensus.len()>600{"… (preview; export retains all bases)"}else{""})}</pre>
-            <button class="button secondary full" on:click=move|_|match consensus_document(&molecule.get_untracked(),&consensus).and_then(|m|on_consensus.run(m)){Ok(())=>status.set("Consensus reference opened. Source documents and original evidence remain separate.".into()),Err(error)=>status.set(error)}>"Open support-only consensus"</button>
-            <button class="button secondary full" on:click=move|_|match consensus_document(&molecule.get_untracked(),&fasta){Ok(m)=>{let text=collagene_core::formats::export_fasta(&m);if let Err(error)=crate::app::download("read-consensus.fasta","text/plain",text.as_bytes()){status.set(error)}},Err(error)=>status.set(error)}>"Download consensus FASTA"</button>
-            <button class="button secondary full" on:click=move|_|match serde_json::to_vec_pretty(json.as_ref()){Ok(bytes)=>if let Err(error)=crate::app::download("read-validation.json","application/json",&bytes){status.set(error)},Err(error)=>status.set(error.to_string())}>"Download read validation JSON"</button>
-            <h4>"Read mapping and native evidence"</h4>{computed.reads.iter().enumerate().map(|(i,read)|{let display=read;let alignment=read.alignment.as_ref().map(|a|format!("Score {} · CIGAR {}\nR {}\nQ {}",a.score,a.cigar.chars().take(300).collect::<String>(),a.reference_aligned.chars().take(300).collect::<String>(),a.query_aligned.chars().take(300).collect::<String>()));view!{<details class="read-observation"><summary>{format!("{}: {} · unique placement {}",i+1,display.name,display.placement_unique_proven)}</summary><p>{format!("{:?} · source {}… · orientation reverse {} · native format {:?}",display.trim.as_ref().map(|t|t.quality_source),display.source_revision.chars().take(12).collect::<String>(),display.original_read_reverse_to_reference,display.read_format)}</p>{display.error.clone().map(|e|view!{<p role="alert">{e}</p>})}{display.trim.as_ref().map(|t|view!{<p>{format!("Retained calls [{}, {}) of {}; passing native-score calls {}; low/unknown {}",t.start,t.end,t.original_calls,t.passing_calls,t.low_or_unknown_calls.len())}</p>})}<p>{format!("Optimal score proven {} · search complete {} · optimal paths (saturated) {} · paired reference coverage {:.2}%",display.optimality_proven,display.search_complete,display.optimal_paths_saturated,display.paired_reference_fraction*100.)}</p>{alignment.map(|a|view!{<pre>{a}</pre>})}<ul>{display.warnings.iter().cloned().map(|w|view!{<li>{w}</li>}).collect_view()}</ul><div class="read-table"><table><thead><tr><th>"Reference"</th><th>"Call / original"</th><th>"Peak / original"</th><th>"Score"</th><th>"Eligible"</th></tr></thead><tbody>{display.columns.iter().take(100).cloned().map(|c|view!{<tr><td>{c.reference_position.map(|p|(p+1).to_string()).unwrap_or_else(||format!("between at {}",c.reference_boundary))}</td><td>{format!("{:?} / {:?}",c.call_index,c.stored_call_index)}</td><td>{format!("{:?} / {:?}",c.sample_index,c.stored_sample_index)}</td><td>{format!("{:?}",c.raw_confidence)}</td><td>{c.eligible.to_string()}</td></tr>}).collect_view()}</tbody></table></div><p class="helper">"First 100 alignment columns; full calls, stored-call/sample coordinates and confidence evidence are in JSON."</p></details>}}).collect_view()}
-            <h4>"Insertion observations"</h4>{computed.insertions.iter().take(100).map(|insertion|{let boundary=insertion.reference_boundary;let n=computed.consensus.len();view!{<article class="read-observation"><button class="text-tool" on:click=move|_|{let p=boundary.min(n.saturating_sub(1));selected_feature.set(None);selection.set(Some((p,p+1)));}>{format!("Boundary {} · insert {} · read {}",boundary,insertion.sequence.chars().take(100).collect::<String>(),insertion.read_index+1)}</button><p>{format!("Eligible call evidence {} · original source reverse {} · call indices {:?}",insertion.eligible,insertion.original_read_reverse_to_reference,insertion.call_indices.iter().take(100).collect::<Vec<_>>())}</p></article>}}).collect_view()}<p class="helper">"First 100 insertion observations. Eligibility applies to individual calls; conclusive support also requires the recorded minimum file and strand rules. Boundaries are zero-based; inserted bases are not added to the reference-coordinate consensus."</p>
-            <h4>"Differences and unresolved sites"</h4>{computed.sites.iter().filter(|s|s.state!=SiteState::SupportedMatch).take(200).map(|site|{let position=site.position;let label=format!("Base {} · {:?} · {} → {}",position+1,site.state,site.reference_base,site.consensus_base);view!{<article class="read-observation"><button class="text-tool" on:click=move|_|{selected_feature.set(None);selection.set(Some((position,position+1)));}>{label}</button><p>{format!("Eligible files {:?} · F/R {}/{} · low {} · ambiguous {} · deletion observations {} (eligible {})",site.eligible_read_indices,site.forward_reads,site.reverse_reads,site.low_quality_calls,site.ambiguous_calls,site.deletion_observations,site.eligible_deletions)}</p></article>}}).collect_view()}<p class="helper">"First 200 nonmatching/unresolved sites. Uncovered intervals are listed above. Insertion/deletion observations and all per-call evidence remain in the full JSON report."</p>
-            </section>}
-        })}
+        <button class="text-tool" disabled=move||!busy.get() on:click=move|_|{generation.update(|g|*g=g.wrapping_add(1));if let Some(worker)=active.get_value(){worker.close();}active.set_value(None);busy.set(false);report.set(None);status.set("Read validation cancelled.".into());}>"Cancel read validation"</button>
+        {move||report.get().map(|bound|view!{<EvidenceView bound guard molecule on_consensus on_read on_record on_reference on_message=Callback::new(move|message|status.set(message))/>})}
         </div>
     }
+}
+
+#[component]
+fn Pager(page: RwSignal<usize>, total: usize, label: String) -> impl IntoView {
+    let pages = total.max(1).div_ceil(50);
+    let label = StoredValue::new(label);
+    view! {<div class="method-row-actions" role="group" aria-label=label.get_value()>
+        <button class="text-tool" disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous page"</button>
+        <span>{move||format!("{} · page {} of {}",total,page.get().min(pages-1)+1,pages)}</span>
+        <button class="text-tool" disabled=move||{page.get()+1>=pages} on:click=move|_|page.update(|p|*p=(*p+1).min(pages-1))>"Next page"</button>
+    </div>}
+}
+#[component]
+fn EvidenceView(
+    bound: Arc<BoundEvidence>,
+    guard: Callback<Arc<BoundEvidence>, Result<(), String>>,
+    molecule: Memo<Molecule>,
+    on_consensus: Callback<Molecule, Result<(), String>>,
+    on_read: Callback<crate::contigs::ReadNavigation>,
+    on_record: Callback<RecordRequest, Result<(), String>>,
+    on_reference: Callback<ReferenceNavigation, Result<(), String>>,
+    on_message: Callback<String>,
+) -> impl IntoView {
+    let bound = StoredValue::new(bound);
+    let uncovered_page = RwSignal::new(0usize);
+    let insertion_page = RwSignal::new(0usize);
+    let site_page = RwSignal::new(0usize);
+    let all_sites = RwSignal::new(false);
+    Effect::new(move |_| {
+        let _ = all_sites.get();
+        site_page.set(0);
+    });
+    let reference = Callback::new(move |(start, end): (usize, usize)| {
+        let outcome = bound.with_value(|b| {
+            guard.run(b.clone())?;
+            if start > end || end > b.report.consensus.len() {
+                return Err("Reference coordinate is unavailable.".into());
+            }
+            on_reference.run(ReferenceNavigation {
+                reference: b.reference.clone(),
+                selection: Some((start, end)),
+                epoch: b.epoch,
+            })?;
+            Ok::<_, String>(())
+        });
+        if let Err(error) = outcome {
+            on_message.run(error);
+        }
+    });
+    let read_call = Callback::new(move |(index, call_index): (usize, usize)| {
+        let outcome = bound.with_value(|b| {
+            guard.run(b.clone())?;
+            let binding = b
+                .reads
+                .get(index)
+                .ok_or("The original read event is unavailable.")?;
+            on_read.run(crate::contigs::ReadNavigation {
+                binding: crate::contigs::ReadBinding {
+                    document_id: binding.document_id.clone(),
+                    event_id: binding.event_id.clone(),
+                    revision: binding.revision.clone(),
+                },
+                call_index,
+                epoch: b.epoch,
+            });
+            Ok::<_, String>(())
+        });
+        if let Err(error) = outcome {
+            on_message.run(error);
+        }
+    });
+    let consensus = Callback::new(move |()| {
+        bound.with_value(|b| {
+            guard.run(b.clone())?;
+            let mut document = consensus_document(&molecule.get_untracked(), &b.report)?;
+            document.metadata.insert(
+                "read_validation:reference_event".into(),
+                serde_json::to_string(&b.reference).map_err(|e| e.to_string())?,
+            );
+            document.metadata.insert(
+                "read_validation:read_events".into(),
+                serde_json::to_string(&b.reads).map_err(|e| e.to_string())?,
+            );
+            Ok::<_, String>(document)
+        })
+    });
+    let save = move |_| {
+        let outcome = bound.with_value(|b| {
+            guard.run(b.clone())?;
+            on_record.run(RecordRequest {
+                reference: b.reference.clone(),
+                reads: b.reads.clone(),
+                options: b.options.clone(),
+                epoch: b.epoch,
+            })
+        });
+        match outcome {Ok(())=>on_message.run("Fresh source-bound check recording requested. Saved evidence does not restore current verification after reopening.".into()),Err(error)=>on_message.run(error)}
+    };
+    let download = move |_| {
+        let result = bound.with_value(|b| {
+            guard.run(b.clone())?;
+            // Preserve the existing top-level scientific report fields while
+            // adding exact document identities for this current display.
+            let mut value = serde_json::to_value(&b.report).map_err(|e| e.to_string())?;
+            if let Some(object) = value.as_object_mut() {
+                object.insert(
+                    "source_events".into(),
+                    serde_json::json!({"reference":b.reference,"reads":b.reads}),
+                );
+            }
+            let bytes = serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?;
+            crate::app::download("read-validation.json", "application/json", &bytes)
+        });
+        if let Err(error) = result {
+            on_message.run(error);
+        }
+    };
+    view! {<section class="read-validation-result">
+        <h3>{bound.with_value(|b|format!("{:?}",b.report.status))}</h3>
+        <p>{bound.with_value(|b|format!("Eligible coverage {} / {} bases ({:.2}%)",b.report.eligible_coverage,b.report.consensus.len(),b.report.reference_coverage_fraction*100.))}</p>
+        <p class="helper">"Evidence is bound to the exact reference and ordered read document events. Distinct files do not establish distinct biological samples. Saving recomputes the check from retained originals."</p>
+        <button class="button primary full" on:click=save>"Save check on this construct"</button>
+        <details><summary>"Bound source events"</summary>{bound.with_value(|b|view!{<p>{format!("Reference document {} · event {}",b.reference.document_id,b.reference.event_id)}</p><ol>{b.reads.iter().map(|r|view!{<li>{format!("Document {} · event {} · revision {}",r.document_id,r.event_id,r.revision)}</li>}).collect_view()}</ol>})}</details>
+        <ul>{bound.with_value(|b|b.report.warnings.iter().cloned().map(|warning|view!{<li>{warning}</li>}).collect_view())}</ul>
+        <h4>"Uncovered / insufficiently supported ranges"</h4>
+        {move||bound.with_value(|b|view!{<ul>{b.report.uncovered_ranges.iter().skip(uncovered_page.get()*50).take(50).map(|&(start,end)|view!{<li><button class="text-tool" on:click=move|_|reference.run((start,end))>{format!("{}–{} (1-based inclusive)",start+1,end)}</button></li>}).collect_view()}</ul>})}
+        <Pager page=uncovered_page total=bound.with_value(|b|b.report.uncovered_ranges.len()) label="Uncovered reference ranges".to_string()/>
+        <h4>"Support-only consensus"</h4><pre class="read-consensus-preview">{bound.with_value(|b|format!("{}{}",b.report.consensus.chars().take(600).collect::<String>(),if b.report.consensus.len()>600{"… (preview; export retains all bases)"}else{""}))}</pre>
+        <p class="helper">"Uncovered and unresolved positions remain explicit. This reference does not assert experimental sample identity or physical end/strand chemistry."</p>
+        <button class="button secondary full" on:click=move|_|match consensus.run(()).and_then(|m|on_consensus.run(m)){Ok(())=>on_message.run("Support-only consensus reference opened; original read evidence remains separate.".into()),Err(error)=>on_message.run(error)}>"Open support-only consensus"</button>
+        <button class="button secondary full" on:click=move|_|{let outcome=consensus.run(()).and_then(|m|crate::app::download("read-consensus.fasta","text/plain",collagene_core::formats::export_fasta(&m).as_bytes()));if let Err(error)=outcome{on_message.run(error);}}>"Download consensus FASTA"</button>
+        <button class="button secondary full" on:click=download>"Download read validation JSON"</button>
+        <h4>"Read mapping and native evidence"</h4>
+        {bound.with_value(|b|(0..b.report.reads.len()).map(|index|view!{<ReadEvidence bound=b.clone() index reference read_call/>}).collect_view())}
+        <h4>"Insertion observations"</h4>
+        {move||bound.with_value(|b|b.report.insertions.iter().enumerate().skip(insertion_page.get()*50).take(50).map(|(index,_)|view!{<InsertionEvidence bound=b.clone() index reference read_call/>}).collect_view())}
+        <Pager page=insertion_page total=bound.with_value(|b|b.report.insertions.len()) label="Insertion observations".to_string()/>
+        <p class="helper">"Reference insertion boundaries are zero-based carets, not existing bases. Inserted calls are not added to the reference-coordinate consensus. Individual call eligibility is separate from the minimum-file and strand-support rules."</p>
+        <h4>"Differences and unresolved sites"</h4>
+        <label class="read-source"><input type="checkbox" aria-label="Show all reported reference sites" prop:checked=move||all_sites.get() on:change=move|e|all_sites.set(event_target_checked(&e))/>"Include supported matches"</label>
+        {move||bound.with_value(|b|{let all=all_sites.get();let count=b.report.sites.iter().filter(|s|all||s.state!=SiteState::SupportedMatch).count();view!{<div>{b.report.sites.iter().filter(|s|all||s.state!=SiteState::SupportedMatch).skip(site_page.get()*50).take(50).map(|site|{let position=site.position;view!{<article class="read-observation"><button class="text-tool" on:click=move|_|reference.run((position,position+1))>{format!("Base {} · {:?} · {} → {}",position+1,site.state,site.reference_base,site.consensus_base)}</button><p>{format!("Eligible files {:?} · F/R {}/{} · low {} · ambiguous {} · deletion observations {} (eligible {})",site.eligible_read_indices,site.forward_reads,site.reverse_reads,site.low_quality_calls,site.ambiguous_calls,site.deletion_observations,site.eligible_deletions)}</p></article>}}).collect_view()}<Pager page=site_page total=count label="Reported reference sites".to_string()/></div>}})}
+    </section>}
+}
+
+fn optional<T: std::fmt::Display>(value: Option<T>) -> String {
+    value.map(|v| v.to_string()).unwrap_or_else(|| "—".into())
+}
+#[component]
+fn ReadEvidence(
+    bound: Arc<BoundEvidence>,
+    index: usize,
+    reference: Callback<(usize, usize)>,
+    read_call: Callback<(usize, usize)>,
+) -> impl IntoView {
+    let bound = StoredValue::new(bound);
+    let page = RwSignal::new(0usize);
+    view! {<details class="read-observation"><summary>{bound.with_value(|b|{let read=&b.report.reads[index];format!("{}: {} · unique placement {}",index+1,read.name,read.placement_unique_proven)})}</summary>
+        {bound.with_value(|b|{let read=&b.report.reads[index];view!{<div><p>{format!("Quality source {:?} · original source reverse to reference {} · format {:?}",read.trim.as_ref().map(|t|t.quality_source),read.original_read_reverse_to_reference,read.read_format)}</p>{read.error.clone().map(|error|view!{<p role="alert">{error}</p>})}{read.trim.as_ref().map(|trim|view!{<p>{format!("Retained current calls [{}, {}) of {}; passing native-score calls {}; low/unknown {}",trim.start,trim.end,trim.original_calls,trim.passing_calls,trim.low_or_unknown_calls.len())}</p>})}<p>{format!("Optimal score proven {} · search complete {} · optimal paths (saturated) {} · paired reference coverage {:.2}%",read.optimality_proven,read.search_complete,read.optimal_paths_saturated,read.paired_reference_fraction*100.)}</p>{read.alignment.as_ref().map(|a|view!{<pre>{format!("Alignment preview (first 300 characters per line); all columns paged below.\nScore {} · CIGAR {}\nR {}\nQ {}",a.score,a.cigar.chars().take(300).collect::<String>(),a.reference_aligned.chars().take(300).collect::<String>(),a.query_aligned.chars().take(300).collect::<String>())}</pre>})}<ul>{read.warnings.iter().cloned().map(|warning|view!{<li>{warning}</li>}).collect_view()}</ul></div>}})}
+        <div class="read-table"><table><thead><tr><th>"Reference / boundary"</th><th>"Call / original (1-based)"</th><th>"Peak / original (zero-based)"</th><th>"Native score"</th><th>"Column / quality"</th><th>"Eligible"</th></tr></thead><tbody>
+            {move||bound.with_value(|b|b.report.reads[index].columns.iter().skip(page.get()*50).take(50).map(|column|{let region=column.reference_position.map(|p|(p,p+1)).unwrap_or((column.reference_boundary,column.reference_boundary));let call=column.call_index;view!{<tr><td><button class="text-tool" on:click=move|_|reference.run(region)>{column.reference_position.map(|p|(p+1).to_string()).unwrap_or_else(||format!("Caret {}",column.reference_boundary))}</button></td><td><button class="text-tool" disabled=call.is_none() on:click=move|_|if let Some(call)=call{read_call.run((index,call))}>{format!("{} / {} · {}",optional(column.call_index.map(|n|n+1)),optional(column.stored_call_index.map(|n|n+1)),column.observed_base.map(|c|c.to_string()).unwrap_or_else(||"gap".into()))}</button></td><td>{format!("{} / {}",optional(column.sample_index),optional(column.stored_sample_index))}</td><td>{optional(column.raw_confidence)}</td><td>{format!("{} · score passes {} · flanks pass {}",match column.kind{collagene_core::trace_validation::ColumnKind::Pair=>"paired",collagene_core::trace_validation::ColumnKind::Insertion=>"insertion",collagene_core::trace_validation::ColumnKind::Deletion=>"deletion"},column.quality_passes,column.flank_quality_passes)}</td><td>{column.eligible.to_string()}</td></tr>}}).collect_view())}
+        </tbody></table></div>
+        <Pager page total=bound.with_value(|b|b.report.reads[index].columns.len()) label=format!("Read {} alignment columns",index+1)/>
+        <p class="helper">"Call buttons navigate the original retained read document at its current molecule call coordinate. Original attachment call/peak indices are separate evidence; deletions have no invented read call."</p>
+    </details>}
+}
+#[component]
+fn InsertionEvidence(
+    bound: Arc<BoundEvidence>,
+    index: usize,
+    reference: Callback<(usize, usize)>,
+    read_call: Callback<(usize, usize)>,
+) -> impl IntoView {
+    let bound = StoredValue::new(bound);
+    let page = RwSignal::new(0usize);
+    view! {<details class="read-observation"><summary>{bound.with_value(|b|{let insertion=&b.report.insertions[index];format!("Boundary {} · {} inserted calls · read {}",insertion.reference_boundary,insertion.call_indices.len(),insertion.read_index+1)})}</summary>
+        {bound.with_value(|b|{let insertion=&b.report.insertions[index];let boundary=insertion.reference_boundary;view!{<button class="text-tool" on:click=move|_|reference.run((boundary,boundary))>"Show reference insertion caret"</button><p>{format!("Eligible call evidence {} · original source reverse {}",insertion.eligible,insertion.original_read_reverse_to_reference)}</p>}})}
+        <div class="read-table"><table><thead><tr><th>"Insertion offset (1-based)"</th><th>"Base"</th><th>"Current read call (1-based)"</th></tr></thead><tbody>{move||bound.with_value(|b|{let insertion=&b.report.insertions[index];insertion.call_indices.iter().enumerate().skip(page.get()*50).take(50).map(|(offset,&call)|{let read=insertion.read_index;view!{<tr><td>{offset+1}</td><td>{insertion.sequence.as_bytes().get(offset).map(|b|char::from(*b).to_string()).unwrap_or_else(||"unavailable".into())}</td><td><button class="text-tool" on:click=move|_|read_call.run((read,call))>{call+1}</button></td></tr>}}).collect_view()})}</tbody></table></div>
+        <Pager page total=bound.with_value(|b|b.report.insertions[index].call_indices.len()) label=format!("Insertion {} calls",index+1)/>
+    </details>}
 }

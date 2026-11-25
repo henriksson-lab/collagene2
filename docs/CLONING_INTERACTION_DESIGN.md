@@ -175,3 +175,11 @@ no reaction simulator supplies expected DNA. This connects source editing to an
 existing method without automatically rewriting manual primers or a prior plan.
 Assembly junction/oligo transactions and unfinished-draft persistence remain pending.
 [Mutation intent](MUTATION_INTENT.md).
+
+Construct-owned read checking now keeps its reference pinned while the main viewer
+opens exact historical/current reads. Discrepancies, insertions, uncovered ranges
+and all call columns have bounded paging/navigation; saved check opening remains
+historical until explicit current-engine replay. This connects sequencing evidence
+to the construct without replacing source calls or inferring an edited reference.
+Human discrepancy decisions and derived revisions remain pending.
+[Read-check contract](READ_CHECKS.md).

@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **41** and reads supported schemas 1–40. Candidate files write schema 11; workspace plan schema is 9; the verifier is science-14.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **42** and reads supported schemas 1–41. Candidate files write schema 11; workspace plan schema is 9; the verifier is science-14.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -117,6 +117,8 @@ Postcard enum indexes are append-only. Existing tags and supported historical la
 | 102 | FinalizeCloningOutputs | 39 |
 | 103 | DesignGoldenGatePrimers | 40 |
 | 104 | BuildMutationIntent | 41 |
+| 105 | CaptureReadCheck | 42 |
+| 106 | ReplayReadCheck | 42 |
 
 Result tags 0–29 retain their selectors (verification gains explicit versioned step evidence in schema 25) (`Search`, `Restriction`, `Error`, `Pcr`, `Verification`, `DuplexDigest`, `Translation`, `CdsTranslation`, `Orfs`, `Alignment`, `PcrDocuments`, `PrimerEvidence`, `PrimerDesign`, `ProtocolPdf`, `GoldenGate`, `MismatchPcr`, `InversePcr`, `Gel`, `DiagnosticDigest`, `MismatchPcrPreview`, `WorkspaceSaved`, `WorkspaceLoaded`, `TraceValidation`, `FeatureLibraryScan`, `AnnotatedDocument`, `AnnotationImport`, `AnnotationExport`, `RepairPreview`, `AnnealPreview`, `PhysicalPreviewDocument`). Schema 9 appends `ViewTracks` at tag 30, `DocumentSearch` at tag 31 and `TracksPrepared` at tag 32. New response variants cannot be decoded under older version labels.
 
@@ -500,3 +502,20 @@ exact source events outside the scientific DTO, checks them before opening, and
 records computational parentage and `mutation-intent-v1` evidence. Inverse-PCR
 planning separately reconstructs against this intended target, including the valid
 circular terminal insertion caret. See [intent scope](MUTATION_INTENT.md).
+
+## Construct-owned read evidence (schema 42)
+
+`CaptureReadCheck` (job105/result97) carries the full workspace, exact construct
+reference/read event bindings and native validation options. It resolves retained
+events, runs fresh validation and returns a private workspace plus immutable saved
+check. The installation context binds the full incoming workspace; the stored
+check context binds events/options/engine, permitting content-addressed retry dedupe.
+`ReplayReadCheck` (job106/result98) resolves the saved original events and returns
+both historical record and newly reconstructed current-engine evidence.
+
+Both new jobs and the capture workspace result use the explicit128MiB workspace
+whitelist. The ordinary replay result retains32MiB. New tags refuse pre-42 headers
+before decoding; nested workspace semantics remain checked. Loading a record never
+restores scientific authority, and partial coverage cannot become whole-construct
+confirmation. Candidate11/plan9/science-14/archive1 are unchanged.
+[Read-check contract](READ_CHECKS.md).

@@ -216,7 +216,7 @@ pub struct TraceValidationReport {
 fn bad(s: &str) -> Error {
     Error::Unsupported(s.into())
 }
-fn validate_options(o: &TraceValidationOptions) -> Result<(), Error> {
+pub(crate) fn validate_options(o: &TraceValidationOptions) -> Result<(), Error> {
     if o.trim.window_size == 0
         || o.trim.window_size > 1000
         || o.trim.minimum_passing == 0

@@ -36,6 +36,20 @@ fn raw_preparation(f: &FragmentSpec) -> Result<(), Error> {
         Ok(())
     };
     match &f.preparation {
+        Preparation::MismatchPcrCatalogDigest {
+            forward,
+            reverse,
+            options,
+            selection,
+            fragment_index,
+            ..
+        } => assembly_recipe::mismatch_pcr_catalog_shape(
+            forward,
+            reverse,
+            options,
+            selection,
+            *fragment_index,
+        )?,
         Preparation::MismatchPcr {
             forward,
             reverse,

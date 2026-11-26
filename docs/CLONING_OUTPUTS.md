@@ -218,3 +218,38 @@ target. Exact-PCR primer proposals currently exclude internal substitutions;
 enter intentional-mismatch primers explicitly while retaining literal junction
 editing. Draftv6 persists declarations, while legacyv1–5 drafts keep their prior
 meaning. No saved draft or reference report restores scientific verification.
+
+
+## Intentional-mismatch PCR followed by a pinned digest
+
+Choose Intentional-mismatch PCR → pinned catalog digest in fragment preparation.
+Enter the original-source annealing domains, separate 5′ tails, mismatch/3′ policy
+and catalog enzymes, then inspect the actual amplicon digest. The existing picker
+shows native binding geometries, introduced bases, actual cleavage coordinates
+and strand-end chemistry. A sole certain non-overlapping geometry can provide a
+conditional digest when its search is incomplete. That limitation remains visible
+beside the selected fragment and in fresh final verification. Zero, multiple,
+ambiguous or overlapping geometries do not silently choose a physical amplicon.
+
+Advanced PCR search settings retain maximum binding hits, binding comparisons,
+primer pairs, product count and aggregate product bases. These settings apply to
+both mismatch-PCR preparations and their digest inspector. Selection changes only
+the fragment index; it preserves the entire recorded PCR policy. Drafts preserve
+unfinished numeric text, with bounds checked before saving and scientific parsing
+when preparation runs. Default settings remain omitted in older-compatible JSON;
+older applications reject unfamiliar named preparations/settings rather than
+coercing them to exact PCR.
+
+The native chain uses existing mismatch PCR → catalog digest → optional end repair
+operations. Saved material prepends a fresh origin replay. Newly synthesized outer
+PCR ends remain 5′OH/3′OH; internal restriction cuts have their actual cleaved
+chemistry. Complete cleavage remains an explicit assumption. Original sources and
+independently declared internal/junction edits are unchanged by inspection.
+
+Golden Gate checks the pinned enzyme geometry through the same readonly accessor
+for original and saved-run catalog preparations, including the mismatch chain.
+The complete recipe reconstructs and verifies again against the independent
+construct. A different Type IIS geometry fails explicitly; enzyme display names
+never substitute for exact recognition/cut pins. The existing finite-reaction
+complete-amplicon option retains mismatch policy while removing only the downstream
+digest request.

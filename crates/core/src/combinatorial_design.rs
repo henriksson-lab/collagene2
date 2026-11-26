@@ -279,6 +279,20 @@ fn preparation_shape(preparation: &assembly_recipe::Preparation) -> Result<(), E
             reverse,
             options,
         } => assembly_recipe::mismatch_pcr_shape(forward, reverse, options)?,
+        assembly_recipe::Preparation::MismatchPcrCatalogDigest {
+            forward,
+            reverse,
+            options,
+            selection,
+            fragment_index,
+            ..
+        } => assembly_recipe::mismatch_pcr_catalog_shape(
+            forward,
+            reverse,
+            options,
+            selection,
+            *fragment_index,
+        )?,
         assembly_recipe::Preparation::Digest { enzymes, .. } => {
             if enzymes.len() > 64 || enzymes.iter().any(|e| e.len() > 256) {
                 return Err(Error::TooLarge);
@@ -286,12 +300,8 @@ fn preparation_shape(preparation: &assembly_recipe::Preparation) -> Result<(), E
         }
         _ => {}
     }
-    match preparation {
-        assembly_recipe::Preparation::CatalogDigest { selection, .. }
-        | assembly_recipe::Preparation::PcrCatalogDigest { selection, .. } => {
-            selection.validate()?
-        }
-        _ => {}
+    if let Some(selection) = assembly_recipe::preparation_catalog_selection(preparation) {
+        selection.validate()?;
     }
 
     Ok(())
@@ -577,6 +587,12 @@ pub(crate) fn work_charge(
                     forward,
                     reverse,
                     options,
+                }
+                | assembly_recipe::Preparation::MismatchPcrCatalogDigest {
+                    forward,
+                    reverse,
+                    options,
+                    ..
                 } => {
                     work = work
                         .checked_add(assembly_recipe::mismatch_pcr_work(
@@ -597,7 +613,8 @@ pub(crate) fn work_charge(
             }
             match preparation {
                 assembly_recipe::Preparation::CatalogDigest { selection, .. }
-                | assembly_recipe::Preparation::PcrCatalogDigest { selection, .. } => {
+                | assembly_recipe::Preparation::PcrCatalogDigest { selection, .. }
+                | assembly_recipe::Preparation::MismatchPcrCatalogDigest { selection, .. } => {
                     let mut motif = 0usize;
                     for enzyme in &selection.enzymes {
                         motif = motif
@@ -607,6 +624,7 @@ pub(crate) fn work_charge(
                     let margin = if matches!(
                         preparation,
                         assembly_recipe::Preparation::PcrCatalogDigest { .. }
+                            | assembly_recipe::Preparation::MismatchPcrCatalogDigest { .. }
                     ) {
                         400
                     } else {
@@ -1064,17 +1082,7 @@ pub(crate) fn resolve_validated(
                 if let Method::GoldenGate { enzyme, .. } = method {
                     let profile = enzyme.profile();
                     for row in &rows {
-                        let selection = match &row.preparation {
-                            assembly_recipe::Preparation::CatalogDigest { selection, .. }
-                            | assembly_recipe::Preparation::PcrCatalogDigest {
-                                selection, ..
-                            } => selection,
-                            _ => {
-                                return Err(bad(
-                                    "Golden Gate needs pinned existing-site or PCR/catalog-digest preparation",
-                                ));
-                            }
-                        };
+                        let selection=assembly_recipe::preparation_catalog_selection(&row.preparation).ok_or_else(||bad("Golden Gate needs pinned existing-site or explicit PCR/catalog-digest preparation"))?;
                         if selection.enzymes.len() != 1
                             || !selection.enzymes.iter().all(|entry| {
                                 entry.enzyme.recognition == profile.recognition

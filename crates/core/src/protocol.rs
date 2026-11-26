@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 77;
+pub const WORKER_SCHEMA_VERSION: u16 = 78;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 17;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -920,6 +920,11 @@ pub enum AnalysisJob {
         inputs: Vec<crate::verification::PlanInput>,
         request: crate::assembly_substitution_intent::Request,
     },
+    InspectMismatchPcrDigest {
+        molecule: Molecule,
+        origin: Option<crate::run_material::Capsule>,
+        request: crate::mismatch_pcr_digest_inspection::Request,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1086,6 +1091,7 @@ pub enum AnalysisResult {
     RunPcrDigestInspection(crate::pcr_digest_inspection::RunPreview),
     RunCatalogRestrictionInspection(crate::run_catalog_digest::Inspection),
     SubstitutedAssemblyIntent(crate::assembly_substitution_intent::Report),
+    MismatchPcrDigestInspection(crate::mismatch_pcr_digest_inspection::Preview),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1315,6 +1321,17 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         crate::pairwise_context::preflight(report, reference, query, *translate)?;
     }
     match &r.job {
+        AnalysisJob::InspectMismatchPcrDigest {
+            molecule,
+            origin,
+            request,
+        } => {
+            crate::mismatch_pcr_digest_inspection::source_preflight(
+                molecule,
+                origin.as_ref(),
+                request,
+            )?;
+        }
         AnalysisJob::BuildSubstitutedAssemblyIntent { inputs, request } => {
             if inputs.len() > 32 {
                 return Err(Error::TooLarge);
@@ -1580,6 +1597,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_run_material_tag(bytes, &[150, 151])?;
     preflight_run_catalog_tag(bytes, &[152])?;
     preflight_substitution_intent_tag(bytes, &[153])?;
+    preflight_mismatch_digest_tag(bytes, &[154])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1636,6 +1654,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         },
     };
     let required = match &response.result {
+        AnalysisResult::MismatchPcrDigestInspection(_) => 78,
         AnalysisResult::SubstitutedAssemblyIntent(_) => 77,
         AnalysisResult::RunCatalogRestrictionInspection(_) => 75,
         AnalysisResult::RunMaterialInspection(_) | AnalysisResult::RunPcrDigestInspection(_) => 74,
@@ -1838,6 +1857,20 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             .any(|op| matches!(op, crate::verification::Operation::PcrWithMismatches { .. }))
     }) {
         check_variant_version(bytes, 76)?;
+    }
+    if recipe_plan.is_some_and(|p| {
+        p.steps.iter().any(|op| match op {
+            crate::verification::Operation::CatalogDigest {
+                template: crate::verification::Source::Step(index),
+                ..
+            } => matches!(
+                p.steps.get(*index),
+                Some(crate::verification::Operation::PcrWithMismatches { .. })
+            ),
+            _ => false,
+        })
+    }) {
+        check_variant_version(bytes, 78)?;
     }
     if let AnalysisResult::AnnotationImport(report) = &response.result {
         check_annotation_format_version(bytes, report.format)?;
@@ -2071,6 +2104,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
                 check_variant_version(bytes, 48)?;
             }
             report.validate_binding(&response.revision)?
+        }
+        AnalysisResult::MismatchPcrDigestInspection(report) => {
+            report.validate_binding(&response.revision)?;
         }
         AnalysisResult::SubstitutedAssemblyIntent(report) => {
             report.validate_binding(&response.revision)?;
@@ -2790,6 +2826,14 @@ fn preflight_assembly_junctions_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Er
     }
     Ok(())
 }
+fn preflight_mismatch_digest_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 78)?;
+    }
+    Ok(())
+}
 fn preflight_substitution_intent_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -3085,6 +3129,8 @@ mod preparation_shape {
             ("Preparation", "AnnealedOligos") => 71,
             ("Preparation", "FromRun") => 74,
             ("Preparation", "MismatchPcr") | ("RunPreparation", "MismatchPcr") => 76,
+            ("Preparation", "MismatchPcrCatalogDigest")
+            | ("RunPreparation", "MismatchPcrCatalogDigest") => 78,
             _ => 0,
         };
         if worker < minimum {
@@ -3280,7 +3326,7 @@ mod preparation_shape {
 }
 fn check_preparation_version(bytes: &[u8], value: &impl Serialize) -> Result<(), Error> {
     let worker = u16::from_le_bytes([bytes[4], bytes[5]]);
-    if worker < 76 {
+    if worker < 78 {
         value
             .serialize(preparation_shape::Visitor { worker })
             .map_err(|e| Error::Format(e.to_string()))?;
@@ -3562,6 +3608,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_run_material_tag(bytes, &[158, 159])?;
     preflight_run_catalog_tag(bytes, &[160])?;
     preflight_substitution_intent_tag(bytes, &[161])?;
+    preflight_mismatch_digest_tag(bytes, &[162])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -3569,6 +3616,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::InspectMismatchPcrDigest { .. } => 78,
         AnalysisJob::BuildSubstitutedAssemblyIntent { .. } => 77,
         AnalysisJob::InspectRunCatalogRestriction { .. } => 75,
         AnalysisJob::InspectRunMaterial { .. } | AnalysisJob::InspectRunPcrDigest { .. } => 74,
@@ -3990,6 +4038,24 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             if crate::plan_oligos::export_revision(plan, target, options, *delimiter)? != r.revision
             {
                 return Err(Error::Format("Plan oligo export context changed".into()));
+            }
+            None
+        }
+        AnalysisJob::InspectMismatchPcrDigest {
+            molecule,
+            origin,
+            request,
+        } => {
+            if crate::mismatch_pcr_digest_inspection::inspection_revision(
+                molecule,
+                origin.as_ref(),
+                request,
+            )? != r.revision
+            {
+                return Err(Error::Format(
+                    "Mismatch PCR digest original source/origin/policy/catalog context changed"
+                        .into(),
+                ));
             }
             None
         }
@@ -5203,6 +5269,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         AnalysisJob::ExportProtocolHtml { plan, target } => Ok(AnalysisResult::ProtocolHtml(
             crate::verification::export_protocol_html(&plan, &target),
         )),
+        AnalysisJob::InspectMismatchPcrDigest {
+            molecule,
+            origin,
+            request,
+        } => crate::mismatch_pcr_digest_inspection::inspect(&molecule, origin.as_ref(), &request)
+            .map(AnalysisResult::MismatchPcrDigestInspection),
         AnalysisJob::BuildSubstitutedAssemblyIntent { inputs, request } => {
             crate::assembly_substitution_intent::build(&inputs, &request)
                 .map(AnalysisResult::SubstitutedAssemblyIntent)

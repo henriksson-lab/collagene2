@@ -401,6 +401,16 @@ pub fn simulate_mutagenesis_preview(
         ));
     }
     let report = crate::mutagenesis::simulate_pcr(source, forward, reverse, options)?;
+    project_mutagenesis_preview(source, forward, reverse, options, report)
+}
+/// Project the one freshly computed native report, preserving its full search evidence.
+pub(crate) fn project_mutagenesis_preview(
+    source: &Molecule,
+    forward: &Primer,
+    reverse: &Primer,
+    options: &crate::mutagenesis::PcrOptions,
+    report: crate::mutagenesis::PcrReport,
+) -> Result<MutagenesisPreview, Error> {
     let mut documents = Vec::new();
     let mut findings = Vec::new();
     let mut bytes = 0usize;

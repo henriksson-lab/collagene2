@@ -1825,3 +1825,43 @@ annotation projection and tracked digest, preserve conditional incomplete-search
 semantics, and keep the independently declared substitutions separate from the
 amplicon. A common catalog-selection accessor must cover ordinary and saved-run
 preparations in both GUI and combinatorial Golden Gate filters.
+
+
+### Mismatch-PCR amplicon digestion and Golden Gate handoff
+
+Ordinary fragment preparation now chains intentional-mismatch PCR into an exact
+pinned catalog digest, optionally repairs the actual ends, and supports fresh
+saved-origin reconstruction. The existing PCR/digest picker now keeps typed exact
+and mismatch routes separate, shows native introduced bases and binding policy,
+and applies only the chosen fragment index. Its captured context includes original
+source event, saved origin, role, full PCR/search policy, catalog pin and epoch.
+The intended construct remains independently declared and unchanged by inspection.
+
+All mismatch-PCR search limits are editable advanced settings and persist with
+preparation: binding hits/work, primer pairs, product count and total product
+bases. A conditional singleton is selectable with an explicit persistent status;
+its native search limits and unresolved-alternative evidence remain in final
+verification. Multiple/ambiguous/overlapping geometries do not silently choose a
+physical amplicon. Shared borrowed preparation guards run before source clones or
+replay. Inspection replays an origin once and uses one native mismatch report for
+geometry, annotation projection and digestion; it does not rerun PCR to choose a
+more convenient product. Original sources, ordinary slot coordinates and intended
+internal/junction edits remain untouched.
+
+Golden Gate's GUI and combinatorial filters now share exact catalog-geometry
+lookup across original and FromRun preparations. Literal BsaI fixtures cover the
+mutant amplicon, actual ACTT/TCAG cleaved ends and independent32bp product, and
+reject a different Type IIS pin. Saved PCR amplicons replay through the same
+catalog route. Existing physical operations, candidate17, native plan15 and
+science20 remain unchanged. Worker78 appends inspection job162/result154 and
+preparation ordinals9/flat6; old exact inspection payloads remain intact. MCP's
+existing inspect_pcr_digest accepts optional pcr_options, retaining its exact route
+when omitted and its required native-workspace source attestation for origins.
+The registry remains174 tools.
+
+Validation:51 targeted native checks passed, including conditional-policy
+persistence, actual MCP flows and regressions for exact/saved PCR digestion. The
+final web/worker WASM check passed, as did formatting and whitespace checks.
+No browser/HTTP checks were run.
+Public8082 continues to serve53ccaea/worker77 until the next bundled preview.
+The full original implementation goal and all user exclusions remain unchanged.

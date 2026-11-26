@@ -202,6 +202,7 @@ pub mod reference_run_evidence;
 
 pub mod tailing_recipe;
 
+pub mod mismatch_pcr_digest_inspection;
 pub mod pcr_digest_inspection;
 
 pub mod run_catalog_digest;

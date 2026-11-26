@@ -49,7 +49,7 @@ pub(crate) fn prepared_rows(
                 left: row.left_terminus,
                 right: row.right_terminus,
             },
-            OverlapPreparation::CatalogDigest | OverlapPreparation::PcrCatalogDigest => {
+            OverlapPreparation::CatalogDigest | OverlapPreparation::PcrCatalogDigest | OverlapPreparation::MismatchPcrCatalogDigest => {
                 let selection = row.catalog_selection.as_ref().ok_or(
                     "Pin a catalog selection using Virtual digest or the PCR-product enzyme selector; then choose its fragment.",
                 )?;
@@ -61,7 +61,13 @@ pub(crate) fn prepared_rows(
                     .ok()
                     .and_then(|n| n.checked_sub(1))
                     .ok_or("Digest fragment numbers start at 1")?;
-                if row.preparation == OverlapPreparation::PcrCatalogDigest {
+                if row.preparation == OverlapPreparation::MismatchPcrCatalogDigest {
+                    Preparation::MismatchPcrCatalogDigest {
+                        forward: Primer::new(&row.forward_name, &row.forward, &row.forward_tail).map_err(|e|e.to_string())?,
+                        reverse: Primer::new(&row.reverse_name, &row.reverse_primer, &row.reverse_tail).map_err(|e|e.to_string())?,
+                        options: row.mismatch_options()?, selection: selection.clone(), fragment_index, repair: row.repair,
+                    }
+                } else if row.preparation == OverlapPreparation::PcrCatalogDigest {
                     Preparation::PcrCatalogDigest {
                         forward: Primer::new(&row.forward_name, &row.forward, &row.forward_tail)
                             .map_err(|e| e.to_string())?,
@@ -129,6 +135,7 @@ pub(crate) fn prepared_rows(
                 Preparation::ExactPcr { forward, reverse } => RunPreparation::ExactPcr { forward, reverse },
                 Preparation::MismatchPcr { forward, reverse, options } => RunPreparation::MismatchPcr { forward, reverse, options },
                 Preparation::PcrCatalogDigest { forward, reverse, selection, fragment_index, repair } => RunPreparation::PcrCatalogDigest { forward, reverse, selection, fragment_index, repair },
+                Preparation::MismatchPcrCatalogDigest { forward, reverse, options, selection, fragment_index, repair } => RunPreparation::MismatchPcrCatalogDigest { forward, reverse, options, selection, fragment_index, repair },
                 Preparation::DeclaredDuplex { .. } | Preparation::AnnealedOligos { .. } | Preparation::FromRun { .. } => return Err("Saved-run material supports whole material, digest or exact PCR preparation; declared duplex and paired-oligo substitution are unsupported.".into()),
             };
             Preparation::FromRun {

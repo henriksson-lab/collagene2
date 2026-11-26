@@ -111,6 +111,7 @@ pub enum OverlapPreparation {
     PcrCatalogDigest,
     AnnealedOligos,
     MismatchPcr,
+    MismatchPcrCatalogDigest,
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OverlapInput {
@@ -145,6 +146,31 @@ pub struct OverlapInput {
         skip_serializing_if = "is_default_mismatch_exact"
     )]
     pub mismatch_three_prime_exact: String,
+    #[serde(
+        default = "default_mismatch_hits",
+        skip_serializing_if = "is_default_mismatch_hits"
+    )]
+    pub mismatch_max_hits: String,
+    #[serde(
+        default = "default_mismatch_work",
+        skip_serializing_if = "is_default_mismatch_work"
+    )]
+    pub mismatch_max_work: String,
+    #[serde(
+        default = "default_mismatch_pairs",
+        skip_serializing_if = "is_default_mismatch_pairs"
+    )]
+    pub mismatch_max_pairs: String,
+    #[serde(
+        default = "default_mismatch_products",
+        skip_serializing_if = "is_default_mismatch_products"
+    )]
+    pub mismatch_max_products: String,
+    #[serde(
+        default = "default_mismatch_bases",
+        skip_serializing_if = "is_default_mismatch_bases"
+    )]
+    pub mismatch_max_product_bases: String,
     #[serde(default)]
     pub right_fusion: String,
     #[serde(default, skip_serializing_if = "default_anneal_options")]
@@ -175,6 +201,48 @@ fn is_default_mismatch_max(value: &String) -> bool {
 fn is_default_mismatch_exact(value: &String) -> bool {
     *value == default_mismatch_exact()
 }
+fn default_mismatch_hits() -> String {
+    collagene_core::mutagenesis::PcrOptions::default()
+        .binding
+        .max_hits
+        .to_string()
+}
+fn is_default_mismatch_hits(value: &String) -> bool {
+    *value == default_mismatch_hits()
+}
+fn default_mismatch_work() -> String {
+    collagene_core::mutagenesis::PcrOptions::default()
+        .binding
+        .max_work
+        .to_string()
+}
+fn is_default_mismatch_work(value: &String) -> bool {
+    *value == default_mismatch_work()
+}
+fn default_mismatch_pairs() -> String {
+    collagene_core::mutagenesis::PcrOptions::default()
+        .max_pair_checks
+        .to_string()
+}
+fn is_default_mismatch_pairs(value: &String) -> bool {
+    *value == default_mismatch_pairs()
+}
+fn default_mismatch_products() -> String {
+    collagene_core::mutagenesis::PcrOptions::default()
+        .max_products
+        .to_string()
+}
+fn is_default_mismatch_products(value: &String) -> bool {
+    *value == default_mismatch_products()
+}
+fn default_mismatch_bases() -> String {
+    collagene_core::mutagenesis::PcrOptions::default()
+        .max_product_bases
+        .to_string()
+}
+fn is_default_mismatch_bases(value: &String) -> bool {
+    *value == default_mismatch_bases()
+}
 fn default_anneal_options(options: &AnnealOptions) -> bool {
     *options == AnnealOptions::default()
 }
@@ -202,6 +270,11 @@ impl Default for OverlapInput {
             reverse_tail: String::new(),
             mismatch_max_mismatches: default_mismatch_max(),
             mismatch_three_prime_exact: default_mismatch_exact(),
+            mismatch_max_hits: default_mismatch_hits(),
+            mismatch_max_work: default_mismatch_work(),
+            mismatch_max_pairs: default_mismatch_pairs(),
+            mismatch_max_products: default_mismatch_products(),
+            mismatch_max_product_bases: default_mismatch_bases(),
             right_fusion: String::new(),
             anneal_options: AnnealOptions::default(),
             anneal_candidate: None,
@@ -217,6 +290,7 @@ impl OverlapInput {
             OverlapPreparation::ExactPcr
                 | OverlapPreparation::PcrCatalogDigest
                 | OverlapPreparation::MismatchPcr
+                | OverlapPreparation::MismatchPcrCatalogDigest
         )
     }
     /// Select the complete PCR product without replacing the declared PCR policy.
@@ -228,6 +302,8 @@ impl OverlapInput {
         }
         if self.preparation == OverlapPreparation::PcrCatalogDigest {
             self.preparation = OverlapPreparation::ExactPcr;
+        } else if self.preparation == OverlapPreparation::MismatchPcrCatalogDigest {
+            self.preparation = OverlapPreparation::MismatchPcr;
         }
         self.fragment = "1".into();
         Ok(())
@@ -256,6 +332,29 @@ impl OverlapInput {
         let mut options = collagene_core::mutagenesis::PcrOptions::default();
         options.binding.max_mismatches = max_mismatches;
         options.binding.min_three_prime_exact = min_three_prime_exact;
+        options.binding.max_hits = number(&self.mismatch_max_hits, "maximum primer hits")?;
+        options.binding.max_work = number(&self.mismatch_max_work, "binding work limit")?;
+        options.max_pair_checks = number(&self.mismatch_max_pairs, "primer pair check limit")?;
+        options.max_products = number(&self.mismatch_max_products, "PCR product limit")?;
+        options.max_product_bases = number(
+            &self.mismatch_max_product_bases,
+            "total PCR product base limit",
+        )?;
+        if options.binding.max_hits == 0
+            || options.binding.max_hits > 10_000
+            || options.binding.max_work == 0
+            || options.binding.max_work > 200_000_000
+            || options.max_pair_checks == 0
+            || options.max_pair_checks > 1_000_000
+            || options.max_products == 0
+            || options.max_products > 10_000
+            || options.max_product_bases == 0
+            || options.max_product_bases > 32_000_000
+        {
+            return Err(
+                "PCR search limits must be positive and inside the recorded native profile.".into(),
+            );
+        }
         Ok(options)
     }
     pub(crate) fn summary(&self) -> String {
@@ -268,9 +367,13 @@ impl OverlapInput {
                 declared_terminus(self.left_terminus),
                 declared_terminus(self.right_terminus)
             ),
-            OverlapPreparation::CatalogDigest | OverlapPreparation::PcrCatalogDigest => format!(
+            OverlapPreparation::CatalogDigest
+            | OverlapPreparation::PcrCatalogDigest
+            | OverlapPreparation::MismatchPcrCatalogDigest => format!(
                 "{}: {}; fragment {}",
-                if self.preparation == OverlapPreparation::PcrCatalogDigest {
+                if self.preparation == OverlapPreparation::MismatchPcrCatalogDigest {
+                    "Intentional-mismatch PCR followed by pinned catalog digest"
+                } else if self.preparation == OverlapPreparation::PcrCatalogDigest {
                     "Exact PCR followed by pinned catalog digest"
                 } else {
                     "Pinned catalog digest"

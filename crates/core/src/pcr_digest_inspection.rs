@@ -25,7 +25,7 @@ fn hex(value: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
-fn shape(request: &Request) -> Result<(), Error> {
+pub(crate) fn shape(request: &Request) -> Result<(), Error> {
     if request.source_role.is_empty()
         || request.source_role.len() > 128
         || request.source_role.chars().any(char::is_control)

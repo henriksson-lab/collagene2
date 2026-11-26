@@ -60,6 +60,20 @@ fn recipe_shape(recipe: &Recipe) -> Result<(), Error> {
             selection.validate()?;
         }
         match &f.source.preparation {
+            preparation::Preparation::MismatchPcrCatalogDigest {
+                forward,
+                reverse,
+                options,
+                selection,
+                fragment_index,
+                ..
+            } => preparation::mismatch_pcr_catalog_shape(
+                forward,
+                reverse,
+                options,
+                selection,
+                *fragment_index,
+            )?,
             preparation::Preparation::MismatchPcr {
                 forward,
                 reverse,

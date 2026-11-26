@@ -1,13 +1,13 @@
 //! Source-bound PCR-product digest inspection. Only the requested fragment index
 //! is applied; the complete recipe reconstructs material again before verification.
+use crate::pcr_digest_model::{InspectionPreview, InspectionRequest};
 use crate::{
     cloning_methods_model::MethodsState, pcr_digest_model, source_identity::SourceInfo,
     worker::CachedWorker,
 };
 use collagene_core::{
     Molecule, catalog_digest,
-    pcr_digest_inspection::{self, Preview},
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{AnalysisResult, Request},
 };
 use leptos::prelude::*;
 use std::{
@@ -29,10 +29,10 @@ struct Context {
 struct Saved {
     context: Context,
     revision: String,
-    preview: Preview,
+    preview: InspectionPreview,
 }
-fn request_key(request: &pcr_digest_inspection::Request) -> Result<String, String> {
-    serde_json::to_string(request).map_err(|e| e.to_string())
+fn request_key(request: &InspectionRequest) -> Result<String, String> {
+    request.key()
 }
 #[component]
 pub fn PcrDigestPicker(
@@ -63,7 +63,7 @@ pub fn PcrDigestPicker(
     let context = Memo::new(move |_| {
         let state = config.get();
         let row = state.rows.get(index)?;
-        let request = pcr_digest_model::build_request(&state, index).ok()?;
+        let request = pcr_digest_model::build_inspection_request(&state, index).ok()?;
         Some(Context {
             source: source_info.run(row.document)?,
             document: row.document,
@@ -114,16 +114,17 @@ pub fn PcrDigestPicker(
         }
     });
     let compute = Callback::new(move |()| {
-        let request =
-            match config.with_untracked(|state| pcr_digest_model::build_request(state, index)) {
-                Ok(request) => request,
-                Err(error) => {
-                    status.set(error);
-                    return;
-                }
-            };
+        let request = match config
+            .with_untracked(|state| pcr_digest_model::build_inspection_request(state, index))
+        {
+            Ok(request) => request,
+            Err(error) => {
+                status.set(error);
+                return;
+            }
+        };
         let Some(bound) = context.get_untracked() else {
-            status.set("Choose an available original source and exact PCR primers.".into());
+            status.set("Choose an available original source and explicit PCR primers.".into());
             return;
         };
         if bound.source.length > 8 * 1024 * 1024 {
@@ -149,16 +150,7 @@ pub fn PcrDigestPicker(
             status.set("The saved-material origin belongs to a different source event.".into());
             return;
         }
-        let revision = match bound.origin.as_ref().map_or_else(
-            || pcr_digest_inspection::inspection_revision(&source, &request),
-            |origin| {
-                pcr_digest_inspection::inspection_revision_from_run(
-                    &source,
-                    origin.as_ref(),
-                    &request,
-                )
-            },
-        ) {
+        let revision = match request.revision(&source, bound.origin.as_deref()) {
             Ok(revision) => revision,
             Err(error) => {
                 status.set(error.to_string());
@@ -180,21 +172,11 @@ pub fn PcrDigestPicker(
         generation.set(token);
         busy.set(true);
         proof.set(None);
-        status.set("Reconstructing exact PCR and the selected catalog digest…".into());
+        status.set("Reconstructing the declared PCR and selected catalog digest…".into());
         let alive = alive.clone();
         spawn_local(async move {
-            let job = if let Some(origin) = &bound.origin {
-                AnalysisJob::InspectRunPcrDigest {
-                    molecule: source,
-                    origin: origin.as_ref().clone(),
-                    request,
-                }
-            } else {
-                AnalysisJob::InspectPcrDigest {
-                    molecule: source,
-                    request,
-                }
-            };
+            let mismatch = matches!(&request, InspectionRequest::Mismatch(_));
+            let job = request.into_job(source, bound.origin.as_ref().map(|o| o.as_ref().clone()));
             let response = worker
                 .ask(Request {
                     id: token,
@@ -214,17 +196,23 @@ pub fn PcrDigestPicker(
             let result = match response {
                 Ok(response) if response.id == token && response.revision == revision => {
                     match response.result {
-                        AnalysisResult::PcrDigestInspection(preview) if bound.origin.is_none() => {
-                            Ok(preview)
+                        AnalysisResult::PcrDigestInspection(preview)
+                            if !mismatch && bound.origin.is_none() =>
+                        {
+                            Ok(InspectionPreview::Exact(preview))
                         }
                         AnalysisResult::RunPcrDigestInspection(report)
-                            if bound.origin.is_some() =>
+                            if !mismatch && bound.origin.is_some() =>
                         {
                             report
                                 .validate_binding(&revision)
-                                .map(|()| report.preview)
+                                .map(|()| InspectionPreview::Exact(report.preview))
                                 .map_err(|e| e.to_string())
                         }
+                        AnalysisResult::MismatchPcrDigestInspection(report) if mismatch => report
+                            .validate_binding(&revision)
+                            .map(|()| InspectionPreview::Mismatch(report))
+                            .map_err(|e| e.to_string()),
                         AnalysisResult::Error(error) => Err(error),
                         _ => Err("Unexpected PCR digest response.".into()),
                     }
@@ -234,27 +222,19 @@ pub fn PcrDigestPicker(
             };
             match result {
                 Ok(preview) => {
-                    let preview_revision = if bound.origin.is_some() {
-                        preview.context_revision.clone()
-                    } else {
-                        revision.clone()
-                    };
+                    let preview_revision = preview.context_revision().to_owned();
                     if let Err(error) = preview.validate_binding(&preview_revision) {
                         status.set(error.to_string());
                         return;
                     }
-                    if preview.source_revision != bound.source.binding.revision
-                        || request_key(&preview.request).ok() != Some(bound.request_key.clone())
+                    if preview.source_revision() != bound.source.binding.revision
+                        || request_key(&preview.request()).ok() != Some(bound.request_key.clone())
                     {
                         status.set("The inspection differs from the pinned original or primer/catalog request.".into());
                         return;
                     }
-                    let selectable = preview.pcr_geometries.len() == 1
-                        && preview
-                            .inspection
-                            .as_ref()
-                            .is_some_and(|i| i.scan_complete && i.products_determined);
-                    status.set(if selectable{"Choose a reconstructed digest fragment below. The complete assembly will independently reconstruct it again."}else{"Fragment selection is withheld. Review PCR alternatives and the reported limits or unavailable chemistry."}.into());
+                    let selectable = preview.selectable();
+                    status.set(if !selectable {"Fragment selection is withheld. Review PCR alternatives and the reported limits or unavailable chemistry."} else if preview.incomplete() {"Conditional geometry only: the PCR or saved-origin search is incomplete. Choosing a fragment keeps these limits; final verification retains the unresolved alternatives."} else {"Choose a reconstructed digest fragment below. The complete assembly will independently reconstruct it again."}.into());
                     proof.set(Some(Arc::new(Saved {
                         context: bound,
                         revision: preview_revision,
@@ -276,10 +256,10 @@ pub fn PcrDigestPicker(
             return;
         }
         let updated = config.with_untracked(|state| {
-            pcr_digest_model::apply(
+            pcr_digest_model::apply_inspection(
                 state,
                 index,
-                &saved.preview.request,
+                &saved.preview.request(),
                 &saved.preview,
                 &saved.revision,
                 fragment,
@@ -309,22 +289,34 @@ pub fn PcrDigestPicker(
         <button class="button secondary" disabled=move||busy.get() on:click=move|_|compute.run(())>"Inspect PCR digest fragments"</button>
         <p class="helper" role="status">{move||status.get()}</p>
         {move||proof.get().map(|saved|{
-            let preview=&saved.preview;let count=preview.pcr_geometries.len();let start=geometry_page.get().min(count.saturating_sub(1)/20)*20;
-            let geometries=preview.pcr_geometries.iter().skip(start).take(20).map(|g|view!{<tr><td>{g.index+1}</td><td>{g.product_length}</td><td>{format!("{} / {}",g.forward_start+1,g.reverse_start+1)}</td></tr>}).collect_view();
-            let selectable=count==1&&preview.amplicon.is_some()&&preview.inspection.as_ref().is_some_and(|i|i.scan_complete&&i.products_determined);
-            view!{<section class="pcr-digest-result"><p>{format!("{} exact PCR geometries",count)}</p>
-                {preview.findings.iter().map(|finding|view!{<p class="helper">{finding.clone()}</p>}).collect_view()}
+            let preview=&saved.preview;let count=preview.geometry_count();let start=geometry_page.get().min(count.saturating_sub(1)/20)*20;
+            let geometries=preview.geometry_page(start).iter().map(|g|view!{<tr><td>{g.index+1}</td><td>{g.product_length}</td><td>{format!("{} / {}",g.forward_start+1,g.reverse_start+1)}</td></tr>}).collect_view();
+            let selectable=preview.selectable();
+            view!{<section class="pcr-digest-result"><p>{format!("{} {} PCR geometries",count,if matches!(preview,InspectionPreview::Mismatch(_)){"intentional-mismatch"}else{"exact"})}</p>
+                {preview.incomplete().then(||view!{<p class="helper" role="status">"Conditional geometry: PCR alternatives or saved-origin evidence remain incomplete. Selecting a fragment does not resolve those limitations."</p>})}
+                {preview.findings().iter().take(40).map(|finding|view!{<p class="helper">{finding.clone()}</p>}).collect_view()}
+                {if let InspectionPreview::Mismatch(report)=preview {
+                    let pcr=&report.pcr.report;
+                    view!{<details><summary>"Mismatch policy and introduced bases"</summary>
+                        <p>{format!("At most {} mismatches / {} exact 3′ bases per primer · search complete {} · enumeration complete {} · conditional {}",report.request.pcr_options.binding.max_mismatches,report.request.pcr_options.binding.min_three_prime_exact,pcr.search_complete,pcr.enumeration_complete,report.incomplete)}</p>
+                        {pcr.products.iter().enumerate().skip(start).take(20).map(|(i,product)|view!{<details><summary>{format!("Geometry {} · {} introduced substitutions · certain {} · overlapping domains {}",i+1,product.substitutions.len(),product.certain,product.overlapping_domains)}</summary>
+                            <p>{format!("Forward/reverse mismatch counts: {}/{} · actual exact 3′ matches: {}/{}",product.forward_binding.mismatches.len(),product.reverse_binding.mismatches.len(),product.forward_binding.three_prime_exact,product.reverse_binding.three_prime_exact)}</p>
+                            {product.substitutions.iter().take(40).map(|change|view!{<p>{format!("Template {}: {} → {} at amplicon {}{}",change.source_position+1,change.template_base,change.product_base,change.product_position+1,if change.template_ambiguous{" (ambiguous template)"}else{""})}</p>}).collect_view()}
+                            {(product.substitutions.len()>40).then(||view!{<p>"First40 introduced bases shown for this geometry."</p>})}
+                        </details>}).collect_view()}
+                    </details>}.into_any()
+                }else{().into_any()}}
                 {(count>0).then(||view!{<details open={count>1}><summary>"PCR geometry review"</summary><table><thead><tr><th>"Geometry"</th><th>"Product nt"</th><th>"Template binding starts · 1-based"</th></tr></thead><tbody>{geometries}</tbody></table>
                     <div class="method-row-actions"><button class="text-tool" disabled=move||geometry_page.get()==0 on:click=move|_|geometry_page.update(|p|*p=p.saturating_sub(1))>"Previous PCR geometries"</button><button class="text-tool" disabled=move||(geometry_page.get()+1)*20>=count on:click=move|_|geometry_page.update(|p|*p=p.saturating_add(1))>"Next PCR geometries"</button></div>
                 </details>})}
-                {preview.amplicon.as_ref().map(|amplicon|view!{<p>{format!("Reconstructed amplicon · {} nt",amplicon.sequence.len())}</p>})}
-                {preview.inspection.as_ref().map(|inspection|{
+                {preview.amplicon().map(|amplicon|view!{<p>{format!("Reconstructed amplicon · {} nt",amplicon.sequence.len())}</p>})}
+                {preview.inspection().map(|inspection|{
                     let count=inspection.fragments.len();let start=page.get().min(count.saturating_sub(1)/20)*20;
                     view!{<section><p>{format!("Recognition scan complete {} · products determined {} · {} sites · {} fragments",inspection.scan_complete,inspection.products_determined,inspection.sites.len(),count)}</p>
                         <p class="helper">{format!("Recognition comparisons: {} · limits: {}",inspection.comparisons,if inspection.limits.is_empty(){"none reached".into()}else{inspection.limits.iter().map(|limit|match limit{collagene_core::restriction_inspection::InspectionLimit::Comparisons=>"comparison budget",collagene_core::restriction_inspection::InspectionLimit::Sites=>"site count",collagene_core::restriction_inspection::InspectionLimit::Fragments=>"fragment count",collagene_core::restriction_inspection::InspectionLimit::ReportBytes=>"report bytes"}).collect::<Vec<_>>().join(", ")})}</p>
                         {inspection.diagnostics.iter().map(|message|view!{<p class="helper">{message.clone()}</p>}).collect_view()}
                         <p class="helper">"Ends and coordinates use the PCR product’s top-strand reference, before assembly orientation, end repair and terminal treatment. Full reconstruction checks those later steps."</p>
-                        {inspection.fragments.iter().skip(start).take(20).map(|fragment|{let i=fragment.index;view!{<details><summary>{format!("Fragment {} · top {} nt / bottom {} nt · starts at amplicon top boundary {} (zero-based)",i+1,fragment.duplex.top_length,fragment.duplex.bottom_length,fragment.top_start)}</summary>{crate::end_view::summary(&fragment.duplex)}<button class="button secondary" disabled=!selectable on:click=move|_|choose.run(i)>{move||if config.with(|c|c.rows.get(index).and_then(|row|row.fragment.parse::<usize>().ok())==Some(i+1)){"Current fragment request"}else{"Use this fragment"}}</button></details>}}).collect_view()}
+                        {inspection.fragments.iter().skip(start).take(20).map(|fragment|{let i=fragment.index;let conditional=preview.incomplete();view!{<details><summary>{format!("Fragment {} · top {} nt / bottom {} nt · starts at amplicon top boundary {} (zero-based)",i+1,fragment.duplex.top_length,fragment.duplex.bottom_length,fragment.top_start)}</summary>{crate::end_view::summary(&fragment.duplex)}<button class="button secondary" disabled=!selectable on:click=move|_|choose.run(i)>{move||if config.with(|c|c.rows.get(index).and_then(|row|row.fragment.parse::<usize>().ok())==Some(i+1)){if conditional{"Current conditional fragment request"}else{"Current fragment request"}}else{if conditional{"Use conditional fragment"}else{"Use this fragment"}}}</button></details>}}).collect_view()}
                         <div class="method-row-actions"><button class="text-tool" disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous fragments"</button><button class="text-tool" disabled=move||(page.get()+1)*20>=count on:click=move|_|page.update(|p|*p=p.saturating_add(1))>"Next fragments"</button></div>
                     </section>}
                 })}

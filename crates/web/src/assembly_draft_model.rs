@@ -245,7 +245,18 @@ pub(crate) fn bounded_size(value: &impl Serialize) -> Result<(), String> {
     serde_json::to_writer(&mut Count(0), value).map_err(|e| e.to_string())
 }
 pub(crate) fn validate_preparation_input(row: &OverlapInput) -> Result<(), String> {
-    if row.mismatch_max_mismatches.len() > 20 || row.mismatch_three_prime_exact.len() > 20 {
+    if [
+        &row.mismatch_max_mismatches,
+        &row.mismatch_three_prime_exact,
+        &row.mismatch_max_hits,
+        &row.mismatch_max_work,
+        &row.mismatch_max_pairs,
+        &row.mismatch_max_products,
+        &row.mismatch_max_product_bases,
+    ]
+    .iter()
+    .any(|value| value.len() > 20)
+    {
         return Err("Mismatch-PCR policy fields exceed20 bytes.".into());
     }
     let options = &row.anneal_options;
@@ -2140,5 +2151,36 @@ mod substitution_tests {
         oversized["version"] = 6.into();
         oversized["substitutions"] = serde_json::to_value(vec![edit; 257]).unwrap();
         assert!(decode(&serde_json::to_vec(&oversized).unwrap()).is_err());
+    }
+}
+
+#[cfg(test)]
+mod mismatch_search_limit_tests {
+    use super::*;
+    #[test]
+    fn search_limits_and_unfinished_numeric_text_roundtrip_without_changing_intent() {
+        let mut draft = Draft::default();
+        let row = &mut draft.methods.rows[1];
+        row.preparation = OverlapPreparation::MismatchPcrCatalogDigest;
+        row.forward = "AGACCGAT".into();
+        row.reverse_primer = "TCCAGGTC".into();
+        row.mismatch_max_products = "1".into();
+        row.mismatch_max_work = "1e".into();
+        let restored = decode(&encode_raw(&draft).unwrap()).unwrap();
+        assert!(restored == draft);
+        assert!(restored.methods.rows[1].mismatch_options().is_err());
+        draft.methods.rows[1].mismatch_max_work = "1000".into();
+        let restored = decode(&encode_raw(&draft).unwrap()).unwrap();
+        let options = restored.methods.rows[1].mismatch_options().unwrap();
+        assert_eq!(options.max_products, 1);
+        assert_eq!(options.binding.max_work, 1000);
+        assert!(
+            restored.slots == draft.slots
+                && restored.junction_edits == draft.junction_edits
+                && restored.substitutions == draft.substitutions
+        );
+        draft.methods.rows[1].preparation = OverlapPreparation::WholeLinear;
+        draft.methods.rows[1].mismatch_max_pairs = "x".repeat(21);
+        assert!(draft.validate().is_err());
     }
 }

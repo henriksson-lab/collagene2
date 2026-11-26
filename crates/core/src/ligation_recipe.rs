@@ -64,6 +64,20 @@ pub fn source_preflight(
             selection.validate()?;
         }
         match &f.source.preparation {
+            preparation::Preparation::MismatchPcrCatalogDigest {
+                forward,
+                reverse,
+                options,
+                selection,
+                fragment_index,
+                ..
+            } => preparation::mismatch_pcr_catalog_shape(
+                forward,
+                reverse,
+                options,
+                selection,
+                *fragment_index,
+            )?,
             preparation::Preparation::MismatchPcr {
                 forward,
                 reverse,

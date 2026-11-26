@@ -21,8 +21,26 @@ const MAX_INPUT_BASES: usize = 8 << 20;
 pub(crate) const MAX_ROLE_BASES: usize = 16 << 20;
 const MAX_PREPARATION_WORK: usize = 100_000_000;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
-dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},AnnealedOligos{bottom_input_id:String,options:crate::chemistry::AnnealOptions,candidate_index:usize},FromRun{origin:crate::run_material::Capsule,preparation:RunPreparation},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions}}}
-dto! {pub enum RunPreparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions}}}
+dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},AnnealedOligos{bottom_input_id:String,options:crate::chemistry::AnnealOptions,candidate_index:usize},FromRun{origin:crate::run_material::Capsule,preparation:RunPreparation},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>}}}
+dto! {pub enum RunPreparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>}}}
+/// Literal catalog pin used by a preparation, including a flat saved-origin
+/// child. This is structural lookup only, never replay or cleavage authority.
+pub fn preparation_catalog_selection(
+    preparation: &Preparation,
+) -> Option<&crate::catalog_digest::CatalogSelection> {
+    match preparation {
+        Preparation::CatalogDigest { selection, .. }
+        | Preparation::PcrCatalogDigest { selection, .. }
+        | Preparation::MismatchPcrCatalogDigest { selection, .. } => Some(selection),
+        Preparation::FromRun { preparation, .. } => match preparation {
+            RunPreparation::CatalogDigest { selection, .. }
+            | RunPreparation::PcrCatalogDigest { selection, .. }
+            | RunPreparation::MismatchPcrCatalogDigest { selection, .. } => Some(selection),
+            _ => None,
+        },
+        _ => None,
+    }
+}
 impl RunPreparation {
     /// Bounded conversion to the existing preparation vocabulary; no recursion,
     /// chemistry restoration, or scientific computation.
@@ -57,6 +75,24 @@ impl RunPreparation {
                     return Err(Error::TooLarge);
                 }
                 Ok(Preparation::CatalogDigest {
+                    selection: selection.clone(),
+                    fragment_index: *fragment_index,
+                    repair: *repair,
+                })
+            }
+            Self::MismatchPcrCatalogDigest {
+                forward,
+                reverse,
+                options,
+                selection,
+                fragment_index,
+                repair,
+            } => {
+                mismatch_pcr_catalog_shape(forward, reverse, options, selection, *fragment_index)?;
+                Ok(Preparation::MismatchPcrCatalogDigest {
+                    forward: forward.clone(),
+                    reverse: reverse.clone(),
+                    options: options.clone(),
                     selection: selection.clone(),
                     fragment_index: *fragment_index,
                     repair: *repair,
@@ -370,8 +406,10 @@ pub(crate) fn prepared_chain(
             *cursor += 1;
         }
         let preceding = *steps.last().ok_or_else(|| bad("empty preparation chain"))?;
-        if matches!(plan.steps[preceding], Operation::Pcr { .. })
-            && *cursor < assembly
+        if matches!(
+            plan.steps[preceding],
+            Operation::Pcr { .. } | Operation::PcrWithMismatches { .. }
+        ) && *cursor < assembly
             && matches!(plan.steps.get(*cursor),Some(Operation::CatalogDigest{template:Source::Step(n),..})if *n==preceding)
         {
             steps.push(*cursor);
@@ -466,6 +504,20 @@ pub(crate) fn mismatch_pcr_shape(
         || options.max_product_bases > 32_000_000
     {
         return Err(bad("invalid mismatch PCR search/materialization bounds"));
+    }
+    Ok(())
+}
+pub(crate) fn mismatch_pcr_catalog_shape(
+    forward: &Primer,
+    reverse: &Primer,
+    options: &crate::mutagenesis::PcrOptions,
+    selection: &crate::catalog_digest::CatalogSelection,
+    fragment_index: usize,
+) -> Result<(), Error> {
+    mismatch_pcr_shape(forward, reverse, options)?;
+    selection.validate()?;
+    if fragment_index > 100_000 {
+        return Err(Error::TooLarge);
     }
     Ok(())
 }
@@ -622,18 +674,10 @@ fn preparation_preflight_inner(
     let mut role_bases = 0usize;
     let mut work = 0usize;
     let catalog = crate::analysis::starter_enzymes();
-    let pinned_catalog = if fragments.iter().any(|f| {
-        matches!(
-            f.preparation,
-            Preparation::CatalogDigest { .. }
-                | Preparation::PcrCatalogDigest { .. }
-                | Preparation::FromRun {
-                    preparation: RunPreparation::CatalogDigest { .. }
-                        | RunPreparation::PcrCatalogDigest { .. },
-                    ..
-                }
-        )
-    }) {
+    let pinned_catalog = if fragments
+        .iter()
+        .any(|f| preparation_catalog_selection(&f.preparation).is_some())
+    {
         Some(crate::catalog_digest::builtin_catalog()?)
     } else {
         None
@@ -736,9 +780,26 @@ fn preparation_preflight_inner(
                 selection,
                 fragment_index,
                 ..
+            }
+            | Preparation::MismatchPcrCatalogDigest {
+                forward,
+                reverse,
+                selection,
+                fragment_index,
+                ..
             } => {
-                primer(forward)?;
-                primer(reverse)?;
+                if let Preparation::MismatchPcrCatalogDigest { options, .. } = preparation {
+                    mismatch_pcr_catalog_shape(
+                        forward,
+                        reverse,
+                        options,
+                        selection,
+                        *fragment_index,
+                    )?;
+                } else {
+                    primer(forward)?;
+                    primer(reverse)?;
+                }
                 if *fragment_index > 100_000 {
                     return Err(Error::TooLarge);
                 }
@@ -759,12 +820,16 @@ fn preparation_preflight_inner(
                     .and_then(|n| n.checked_add(reverse.tail.len()))
                     .filter(|n| *n <= MAX_ROLE_BASES)
                     .ok_or(Error::TooLarge)?;
-                let pcr = m
-                    .sequence
-                    .len()
-                    .checked_mul(forward.annealing.len() + reverse.annealing.len())
-                    .and_then(|n| n.checked_mul(4))
-                    .ok_or(Error::TooLarge)?;
+                let pcr = if let Preparation::MismatchPcrCatalogDigest { options, .. } = preparation
+                {
+                    mismatch_pcr_work(m.sequence.len(), forward, reverse, options)?
+                } else {
+                    m.sequence
+                        .len()
+                        .checked_mul(forward.annealing.len() + reverse.annealing.len())
+                        .and_then(|n| n.checked_mul(4))
+                        .ok_or(Error::TooLarge)?
+                };
                 amplicon
                     .checked_mul(width)
                     .and_then(|n| n.checked_add(pcr))
@@ -963,6 +1028,12 @@ pub(crate) fn preparation_steps(
                 forward,
                 reverse,
                 options,
+            }
+            | Preparation::MismatchPcrCatalogDigest {
+                forward,
+                reverse,
+                options,
+                ..
             } => Some(Operation::PcrWithMismatches {
                 template: input.clone(),
                 forward: forward.clone(),
@@ -990,6 +1061,11 @@ pub(crate) fn preparation_steps(
             selection,
             fragment_index,
             ..
+        }
+        | Preparation::MismatchPcrCatalogDigest {
+            selection,
+            fragment_index,
+            ..
         } = preparation
         {
             let index = steps.len();
@@ -1009,6 +1085,10 @@ pub(crate) fn preparation_steps(
             ..
         }
         | Preparation::PcrCatalogDigest {
+            repair: Some(method),
+            ..
+        }
+        | Preparation::MismatchPcrCatalogDigest {
             repair: Some(method),
             ..
         } = preparation

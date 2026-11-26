@@ -8,14 +8,27 @@ use collagene_core::{
 };
 
 pub(crate) fn build_request(state: &MethodsState, row: usize) -> Result<Request, String> {
+    if state
+        .rows
+        .get(row)
+        .is_none_or(|r| r.preparation != OverlapPreparation::PcrCatalogDigest)
+    {
+        return Err("Choose exact PCR followed by a catalog digest.".into());
+    }
+    build_base(state, row)
+}
+fn build_base(state: &MethodsState, row: usize) -> Result<Request, String> {
     let roles = state.role_ids(state.rows.len())?;
     let input = state
         .rows
         .get(row)
         .ok_or("The preparation row is unavailable.")?;
-    if input.preparation != OverlapPreparation::PcrCatalogDigest {
+    if !matches!(
+        input.preparation,
+        OverlapPreparation::PcrCatalogDigest | OverlapPreparation::MismatchPcrCatalogDigest
+    ) {
         return Err(
-            "Choose Exact PCR → pinned catalog digest before inspecting PCR fragments.".into(),
+            "Choose PCR followed by a pinned catalog digest before inspecting fragments.".into(),
         );
     }
     for name in [&input.forward_name, &input.reverse_name] {
@@ -296,5 +309,350 @@ mod tests {
         );
         let revision = pcr_digest_inspection::inspection_revision(&repeated, &request).unwrap();
         assert!(apply(&state, 1, &request, &ambiguous, &revision, 0).is_err());
+    }
+}
+
+/// GUI-only sum types preserve both existing and additive native wire layouts.
+#[derive(Clone, serde::Serialize)]
+pub(crate) enum InspectionRequest {
+    Exact(Request),
+    Mismatch(collagene_core::mismatch_pcr_digest_inspection::Request),
+}
+pub(crate) enum InspectionPreview {
+    Exact(Preview),
+    Mismatch(collagene_core::mismatch_pcr_digest_inspection::Preview),
+}
+pub(crate) fn build_inspection_request(
+    state: &MethodsState,
+    row: usize,
+) -> Result<InspectionRequest, String> {
+    let base = build_base(state, row)?;
+    if state.rows[row].preparation == OverlapPreparation::MismatchPcrCatalogDigest {
+        Ok(InspectionRequest::Mismatch(
+            collagene_core::mismatch_pcr_digest_inspection::Request {
+                base,
+                pcr_options: state.rows[row].mismatch_options()?,
+            },
+        ))
+    } else {
+        Ok(InspectionRequest::Exact(base))
+    }
+}
+impl InspectionRequest {
+    pub(crate) fn key(&self) -> Result<String, String> {
+        serde_json::to_string(self).map_err(|e| e.to_string())
+    }
+    pub(crate) fn revision(
+        &self,
+        source: &collagene_core::Molecule,
+        origin: Option<&collagene_core::run_material::Capsule>,
+    ) -> Result<String, collagene_core::Error> {
+        match self {
+            Self::Exact(r) => match origin {
+                Some(o) => collagene_core::pcr_digest_inspection::inspection_revision_from_run(
+                    source, o, r,
+                ),
+                None => collagene_core::pcr_digest_inspection::inspection_revision(source, r),
+            },
+            Self::Mismatch(r) => {
+                collagene_core::mismatch_pcr_digest_inspection::inspection_revision(
+                    source, origin, r,
+                )
+            }
+        }
+    }
+    pub(crate) fn into_job(
+        self,
+        molecule: collagene_core::Molecule,
+        origin: Option<collagene_core::run_material::Capsule>,
+    ) -> collagene_core::protocol::AnalysisJob {
+        use collagene_core::protocol::AnalysisJob;
+        match self {
+            Self::Exact(request) => match origin {
+                Some(origin) => AnalysisJob::InspectRunPcrDigest {
+                    molecule,
+                    origin,
+                    request,
+                },
+                None => AnalysisJob::InspectPcrDigest { molecule, request },
+            },
+            Self::Mismatch(request) => AnalysisJob::InspectMismatchPcrDigest {
+                molecule,
+                origin,
+                request,
+            },
+        }
+    }
+}
+impl InspectionPreview {
+    pub(crate) fn context_revision(&self) -> &str {
+        match self {
+            Self::Exact(p) => &p.context_revision,
+            Self::Mismatch(p) => &p.context_revision,
+        }
+    }
+    pub(crate) fn source_revision(&self) -> &str {
+        match self {
+            Self::Exact(p) => &p.source_revision,
+            Self::Mismatch(p) => &p.source_revision,
+        }
+    }
+    pub(crate) fn request(&self) -> InspectionRequest {
+        match self {
+            Self::Exact(p) => InspectionRequest::Exact(p.request.clone()),
+            Self::Mismatch(p) => InspectionRequest::Mismatch(p.request.clone()),
+        }
+    }
+    pub(crate) fn validate_binding(&self, r: &str) -> Result<(), collagene_core::Error> {
+        match self {
+            Self::Exact(p) => p.validate_binding(r),
+            Self::Mismatch(p) => p.validate_binding(r),
+        }
+    }
+    pub(crate) fn amplicon(&self) -> Option<&collagene_core::Molecule> {
+        match self {
+            Self::Exact(p) => p.amplicon.as_ref(),
+            Self::Mismatch(p) => p.amplicon.as_ref(),
+        }
+    }
+    pub(crate) fn inspection(
+        &self,
+    ) -> Option<&collagene_core::restriction_inspection::RestrictionInspection> {
+        match self {
+            Self::Exact(p) => p.inspection.as_ref(),
+            Self::Mismatch(p) => p.inspection.as_ref(),
+        }
+    }
+    pub(crate) fn findings(&self) -> &[String] {
+        match self {
+            Self::Exact(p) => &p.findings,
+            Self::Mismatch(p) => &p.findings,
+        }
+    }
+    pub(crate) fn geometry_count(&self) -> usize {
+        match self {
+            Self::Exact(p) => p.pcr_geometries.len(),
+            Self::Mismatch(p) => p.pcr.report.products.len(),
+        }
+    }
+    pub(crate) fn geometry_page(
+        &self,
+        start: usize,
+    ) -> Vec<collagene_core::pcr_digest_inspection::GeometrySummary> {
+        match self {
+            Self::Exact(p) => p
+                .pcr_geometries
+                .iter()
+                .skip(start)
+                .take(20)
+                .cloned()
+                .collect(),
+            Self::Mismatch(p) => p
+                .pcr
+                .report
+                .products
+                .iter()
+                .enumerate()
+                .skip(start)
+                .take(20)
+                .map(
+                    |(index, g)| collagene_core::pcr_digest_inspection::GeometrySummary {
+                        index,
+                        forward_start: g.forward_start,
+                        reverse_start: g.reverse_start,
+                        product_length: g.sequence.len(),
+                    },
+                )
+                .collect(),
+        }
+    }
+    pub(crate) fn incomplete(&self) -> bool {
+        matches!(self,Self::Mismatch(p) if p.incomplete)
+    }
+    pub(crate) fn selectable(&self) -> bool {
+        self.geometry_count() == 1
+            && self.amplicon().is_some()
+            && self
+                .inspection()
+                .is_some_and(|i| i.scan_complete && i.products_determined)
+    }
+}
+/// Caller retains the exact original source event, saved origin and UI epoch.
+pub(crate) fn apply_inspection(
+    state: &MethodsState,
+    row: usize,
+    bound: &InspectionRequest,
+    preview: &InspectionPreview,
+    revision: &str,
+    fragment: usize,
+) -> Result<MethodsState, String> {
+    match (bound, preview) {
+        (InspectionRequest::Exact(r), InspectionPreview::Exact(p)) => {
+            apply(state, row, r, p, revision, fragment)
+        }
+        (InspectionRequest::Mismatch(r), InspectionPreview::Mismatch(p)) => {
+            let InspectionRequest::Mismatch(mut current) = build_inspection_request(state, row)?
+            else {
+                return Err("The PCR preparation mode changed.".into());
+            };
+            current.base.options = r.base.options.clone();
+            let key = InspectionRequest::Mismatch(r.clone()).key()?;
+            if InspectionRequest::Mismatch(current).key() != Ok(key.clone())
+                || preview.request().key() != Ok(key)
+            {
+                return Err(
+                    "The primers, mismatch policy, source role or catalog changed; inspect again."
+                        .into(),
+                );
+            }
+            p.validate_binding(revision).map_err(|e| e.to_string())?;
+            if !preview.selectable() {
+                return Err(
+                    "The PCR geometry or physical digest fragments are unavailable.".into(),
+                );
+            }
+            if !p
+                .inspection
+                .as_ref()
+                .is_some_and(|i| i.fragments.iter().any(|f| f.index == fragment))
+            {
+                return Err("The selected fragment is unavailable.".into());
+            }
+            let number = fragment.checked_add(1).ok_or("Fragment number overflow.")?;
+            let mut next = state.clone();
+            next.rows[row].fragment = number.to_string();
+            Ok(next)
+        }
+        _ => Err("The PCR inspection mode changed; inspect again.".into()),
+    }
+}
+
+#[cfg(test)]
+mod mismatch_digest_tests {
+    use super::*;
+    use collagene_core::{Molecule, Topology, catalog_digest, mismatch_pcr_digest_inspection};
+    const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTA";
+    const MUTANT: &str = "AGACCGATGCTACGTAGGACTTCAGACCTGGA";
+    fn fixture() -> (MethodsState, Molecule, InspectionRequest) {
+        let mut state = MethodsState::default();
+        let r = &mut state.rows[1];
+        r.preparation = OverlapPreparation::MismatchPcrCatalogDigest;
+        r.forward_name = "Mutant F + EcoRI".into();
+        r.forward = "AGACCGAT".into();
+        r.forward_tail = "CCGAATTC".into();
+        r.reverse_name = "Mutant R + XhoI".into();
+        r.reverse_primer = "TCCAGGTC".into();
+        r.reverse_tail = "GGCTCGAG".into();
+        r.mismatch_max_mismatches = "1".into();
+        r.mismatch_three_prime_exact = "2".into();
+        r.interval_start = "4".into();
+        r.interval_end = "29".into();
+        r.reverse = true;
+        r.fragment = "19".into();
+        let cat = catalog_digest::builtin_catalog().unwrap();
+        let ids = cat
+            .edition()
+            .enzymes
+            .iter()
+            .filter(|e| e.name == "EcoRI" || e.name == "XhoI")
+            .map(|e| e.id.clone())
+            .collect::<Vec<_>>();
+        r.catalog_selection = Some(catalog_digest::select(&cat, &ids).unwrap());
+        let source = Molecule::dna("Original template", ORIGINAL, Topology::Linear).unwrap();
+        let request = build_inspection_request(&state, 1).unwrap();
+        (state, source, request)
+    }
+    fn inspect(source: &Molecule, request: &InspectionRequest) -> InspectionPreview {
+        let InspectionRequest::Mismatch(r) = request else {
+            panic!("expected mismatch request")
+        };
+        InspectionPreview::Mismatch(
+            mismatch_pcr_digest_inspection::inspect(source, None, r).unwrap(),
+        )
+    }
+    #[test]
+    fn actual_mutant_digest_selection_preserves_all_source_intent_and_oligo_settings() {
+        let (state, source, request) = fixture();
+        let preview = inspect(&source, &request);
+        assert_eq!(
+            preview.amplicon().unwrap().sequence.as_str(),
+            format!("CCGAATTC{MUTANT}CTCGAGCC")
+        );
+        assert_eq!(preview.inspection().unwrap().fragments.len(), 3);
+        assert!(!preview.incomplete());
+        let revision = request.revision(&source, None).unwrap();
+        let next = apply_inspection(&state, 1, &request, &preview, &revision, 1).unwrap();
+        let mut expected = state.clone();
+        expected.rows[1].fragment = "2".into();
+        assert!(next == expected);
+        let (_, rows) = crate::cloning_preparations::prepared_rows(&next, 2).unwrap();
+        let collagene_core::assembly_recipe::Preparation::MismatchPcrCatalogDigest {
+            options,
+            forward,
+            reverse,
+            fragment_index,
+            ..
+        } = &rows[1].preparation
+        else {
+            panic!("selected preparation lost mismatch policy")
+        };
+        assert_eq!(options.binding.max_mismatches, 1);
+        assert_eq!(options.binding.min_three_prime_exact, 2);
+        assert_eq!(forward.ordered_sequence(), "CCGAATTCAGACCGAT");
+        assert_eq!(reverse.ordered_sequence(), "GGCTCGAGTCCAGGTC");
+        assert_eq!(*fragment_index, 1);
+    }
+    #[test]
+    fn stale_policies_modes_and_fragments_cannot_reuse_a_mutant_receipt() {
+        let (state, source, request) = fixture();
+        let preview = inspect(&source, &request);
+        let revision = request.revision(&source, None).unwrap();
+        for field in 0..5 {
+            let mut changed = state.clone();
+            let row = &mut changed.rows[1];
+            match field {
+                0 => row.mismatch_max_mismatches = "0".into(),
+                1 => row.mismatch_three_prime_exact = "3".into(),
+                2 => row.preparation = OverlapPreparation::PcrCatalogDigest,
+                3 => row.forward_name = "Different ordered oligo".into(),
+                _ => row.reverse_tail.push('A'),
+            }
+            assert!(apply_inspection(&changed, 1, &request, &preview, &revision, 1).is_err());
+        }
+        assert!(apply_inspection(&state, 1, &request, &preview, &"f".repeat(64), 1).is_err());
+        assert!(apply_inspection(&state, 1, &request, &preview, &revision, 99).is_err());
+    }
+    #[test]
+    fn conditional_singleton_and_complete_amplicon_keep_the_recorded_mismatch_policy() {
+        let (mut state, _, _) = fixture();
+        state.rows[1].mismatch_max_products = "1".into();
+        let request = build_inspection_request(&state, 1).unwrap();
+        let repeated =
+            Molecule::dna("Repeated original", &ORIGINAL.repeat(2), Topology::Linear).unwrap();
+        let preview = inspect(&repeated, &request);
+        assert!(preview.incomplete() && preview.selectable());
+        let revision = request.revision(&repeated, None).unwrap();
+        let applied = apply_inspection(&state, 1, &request, &preview, &revision, 1).unwrap();
+        let (_, rows) = crate::cloning_preparations::prepared_rows(&applied, 2).unwrap();
+        let collagene_core::assembly_recipe::Preparation::MismatchPcrCatalogDigest {
+            options, ..
+        } = &rows[1].preparation
+        else {
+            unreachable!()
+        };
+        assert_eq!(options.max_products, 1);
+        let old = state.rows[1].clone();
+        state.rows[1].use_complete_pcr_amplicon().unwrap();
+        assert!(state.rows[1].preparation == OverlapPreparation::MismatchPcr);
+        assert_eq!(
+            state.rows[1].mismatch_max_mismatches,
+            old.mismatch_max_mismatches
+        );
+        assert_eq!(
+            state.rows[1].mismatch_three_prime_exact,
+            old.mismatch_three_prime_exact
+        );
+        assert_eq!(state.rows[1].forward, old.forward);
+        assert_eq!(state.rows[1].reverse_tail, old.reverse_tail);
     }
 }

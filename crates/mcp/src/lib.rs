@@ -904,6 +904,9 @@ pub struct Restriction {
 pub struct PcrDigestInspectionQuery {
     pub document: DocumentRef,
     pub request: collagene_core::pcr_digest_inspection::Request,
+    /// Explicit mismatch-PCR policy; omitted keeps the exact-PCR inspector unchanged.
+    #[serde(default)]
+    pub pcr_options: Option<collagene_core::mutagenesis::PcrOptions>,
     /// Explicit documentary origin for a saved-run source; never inferred from metadata.
     #[serde(default)]
     pub origin: Option<collagene_core::run_material::Capsule>,
@@ -5262,7 +5265,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Inspect actual restriction fragments of a freshly reconstructed unique exact PCR product from an immutable original source, explicit ordered primers and a full catalog pin. Primer 5′ extensions participate in the actual product and catalog scan. Ambiguous/no PCR geometry withholds physical fragment inspection; uncertain or partial cleavage retains diagnostics. Returns a paged actual end-chemistry summary and immutable full JSON evidence. Optional saved-run origin requires an explicit native workspace proving exact original run/source/target events before fresh reconstruction. It never chooses a fragment, creates a plan, copies a result into an independent target, publishes a product document or infers amplification/cleavage success."
+        description = "Inspect actual restriction fragments of a freshly reconstructed unique exact PCR product from an immutable original source, explicit ordered primers and a full catalog pin. Primer 5′ extensions participate in the actual product and catalog scan. Ambiguous/no PCR geometry withholds physical fragment inspection; uncertain or partial cleavage retains diagnostics. Returns a paged actual end-chemistry summary and immutable full JSON evidence. Optional saved-run origin requires an explicit native workspace proving exact original run/source/target events before fresh reconstruction. Optional pcr_options enables the explicit mismatch-PCR engine with its own complete typed artifact and visible incomplete/conditional-singleton evidence; omitting it retains exact-PCR behavior. It never chooses a fragment, creates a plan, copies a result into an independent target, publishes a product document or infers amplification/cleavage success."
     )]
     async fn inspect_pcr_digest(
         &self,
@@ -5275,6 +5278,37 @@ impl CollageneServer {
             return Err(bad(
                 "saved-run PCR digest inspection requires its exact native workspace reference",
             ));
+        }
+        if let Some(pcr_options) = args.pcr_options {
+            let request = collagene_core::mismatch_pcr_digest_inspection::Request {
+                base: args.request,
+                pcr_options,
+            };
+            let server = self.clone();
+            return self.compute(move||{
+                let source={let store=server.store.lock().unwrap();let source=store.document(&args.document)?;
+                    collagene_core::mismatch_pcr_digest_inspection::source_preflight(source,args.origin.as_ref(),&request).map_err(bad)?;source.clone()};
+                if let Some(origin)=&args.origin {
+                    server.attest_run_source(args.workspace.as_ref().ok_or_else(||bad("saved mismatch-PCR source workspace unavailable"))?,origin,&source)?;
+                }
+                let expected=collagene_core::mismatch_pcr_digest_inspection::inspection_revision(&source,args.origin.as_ref(),&request).map_err(bad)?;
+                let preview=collagene_core::mismatch_pcr_digest_inspection::inspect(&source,args.origin.as_ref(),&request).map_err(bad)?;
+                preview.validate_binding(&expected).map_err(bad)?;
+                let count=preview.inspection.as_ref().map_or(0,|r|r.fragments.len());
+                if args.fragment_start>count{return Err(bad("mismatch-PCR digest fragment offset exceeds retained evidence"));}
+                let end=args.fragment_start.saturating_add(args.max_fragments).min(count);
+                let result=json!({"document":args.document,"mode":"mismatch-pcr","engine_version":preview.engine_version,"context_revision":preview.context_revision,"source_revision":preview.source_revision,
+                    "origin_revision":preview.origin_revision,"origin_status":preview.origin_status,"pcr_options":preview.request.pcr_options,"incomplete":preview.incomplete,
+                    "pcr_candidate_count":preview.pcr.report.products.len(),"pcr_search_complete":preview.pcr.report.search_complete,"pcr_enumeration_complete":preview.pcr.report.enumeration_complete,
+                    "pcr_candidates":preview.pcr.report.products.iter().take(100).enumerate().map(|(index,p)|json!({"index":index,"forward_start":p.forward_start,"reverse_start":p.reverse_start,"length":p.sequence.len(),"certain":p.certain,"overlapping_domains":p.overlapping_domains,"substitution_count":p.substitutions.len()})).collect::<Vec<_>>(),"pcr_candidates_truncated":preview.pcr.report.products.len()>100,
+                    "amplicon":preview.amplicon.as_ref().map(|m|json!({"revision":m.revision(),"length":m.sequence.len(),"topology":m.topology})),
+                    "products_determined":preview.inspection.as_ref().is_some_and(|i|i.products_determined),"scan_complete":preview.inspection.as_ref().map(|i|i.scan_complete),
+                    "fragment_count":count,"fragment_start":args.fragment_start,"next_fragment_start":end,"fragments_done":end==count,"fragments":preview.inspection.as_ref().map(|i|&i.fragments[args.fragment_start..end]),
+                    "findings":preview.findings.iter().take(100).collect::<Vec<_>>(),"findings_truncated":preview.findings.len()>100,
+                    "authority":"Explicit mismatch-PCR policy and fresh catalog cleavage inspection only. Conditional singleton and incomplete-search evidence remain explicit. The report creates no independent target, selected cloning product, physical stock or experimental success."});
+                let artifact=server.text_artifact(bounded_json_limit(&preview,32*1024*1024)?,"application/json","mismatch-pcr-digest-inspection.json")?;
+                let mut result=result;result["artifact_id"]=json!(artifact);output(result)
+            }).await;
         }
         let server = self.clone();
         self.compute(move||{

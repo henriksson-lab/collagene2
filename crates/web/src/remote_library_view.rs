@@ -55,6 +55,30 @@ struct History {
     next: Option<u32>,
     rows: Vec<base::RevisionSummary>,
 }
+#[derive(Clone)]
+struct PullReview {
+    local: SavedLocalDocument,
+    remote: wire::Remote,
+    failure: wire::Failure,
+}
+fn review_is_current(
+    review: &PullReview,
+    local: Option<&SavedLocalDocument>,
+    remote: Option<&wire::Remote>,
+) -> bool {
+    local.is_some_and(|local| {
+        !local.dirty && local.id == review.local.id && local.revision == review.local.revision
+    }) && remote == Some(&review.remote)
+}
+fn history_conflict(failure: &wire::Failure) -> bool {
+    matches!(
+        failure,
+        wire::Failure::Error {
+            code: wire::ErrorCode::HistoryConflict,
+            ..
+        }
+    )
+}
 struct Action {
     command: wire::Command,
     navigation: Option<Navigation>,
@@ -127,6 +151,16 @@ pub fn RemoteLibraryPane(
     let tree_offset = RwSignal::new(0u16);
     let tree_next = RwSignal::new(None::<u16>);
     let checkout = RwSignal::new(false);
+    let review = RwSignal::new(None::<PullReview>);
+    let bookmarks = RwSignal::new(None::<wire::BookmarkPage>);
+    let bookmark_offset = RwSignal::new(0u16);
+    // A review never follows a different editor selection, saved head, dirty
+    // state or remote. Its acceptance always names the original exact pins.
+    Effect::new(move |_| {
+        let _ = (saved.get(), selected.get());
+        checkout.set(false);
+        review.set(None);
+    });
     on_cleanup(move || {
         life.with_value(|v| v.set(v.get().wrapping_add(1)));
         if let Some(input) = key.get() {
@@ -165,6 +199,26 @@ pub fn RemoteLibraryPane(
             });
         let expected =
             remote_id.and_then(|id| remotes.with(|rows| rows.iter().find(|r| r.id == id).cloned()));
+        let review_context = match &action.command {
+            wire::Command::Pull {
+                local_document,
+                expected_local_revision,
+                ..
+            }
+            | wire::Command::QueuePush {
+                local_document,
+                expected_local_revision,
+                ..
+            } => saved
+                .get_untracked()
+                .filter(|local| {
+                    !local.dirty
+                        && &local.id == local_document
+                        && &local.revision == expected_local_revision
+                })
+                .zip(expected.clone()),
+            _ => None,
+        };
         if let Some(nav) = &action.navigation {
             navigation.set(nav.clone());
         }
@@ -173,10 +227,10 @@ pub fn RemoteLibraryPane(
         busy.set(true);
         status.set("Working…".into());
         spawn_local(async move {
-            let result = client.request(action.command, expected).await;
+            let result = client.request_outcome(action.command, expected).await;
             // A real native mutation may finish after navigation changed. Refresh
             // the local catalog even then, without loading anything into the editor.
-            if result.as_ref().is_ok_and(metadata_changed) {
+            if matches!(&result,Ok(wire::Outcome::Success(success)) if metadata_changed(success)) {
                 on_local_change.run(());
             }
             if life.get() != epoch {
@@ -185,10 +239,43 @@ pub fn RemoteLibraryPane(
             busy.set(false);
             match result {
                 Err(error) => status.set(error),
-                Ok(success) => {
+                Ok(wire::Outcome::Failure(failure)) => {
+                    status.set(crate::desktop_sync_client::failure_message(&failure));
+                    if matches!(
+                        &failure,
+                        wire::Failure::Error {
+                            code: wire::ErrorCode::BookmarkChanged,
+                            ..
+                        }
+                    ) {
+                        bookmarks.set(None);
+                        bookmark_offset.set(0);
+                    }
+                    if history_conflict(&failure)
+                        || matches!(&failure, wire::Failure::LocalConflict { .. })
+                    {
+                        if let Some((local, remote)) = review_context {
+                            checkout.set(false);
+                            let pinned = PullReview {
+                                local,
+                                remote,
+                                failure,
+                            };
+                            if review_is_current(
+                                &pinned,
+                                saved.get_untracked().as_ref(),
+                                selected.get_untracked().as_ref(),
+                            ) {
+                                review.set(Some(pinned));
+                            }
+                        }
+                    }
+                }
+                Ok(wire::Outcome::Success(success)) => {
                     status.set(note(&success));
                     match success {
                         wire::Success::Remotes(rows) => remotes.set(rows.into_vec()),
+                        wire::Success::Bookmarks(page) => bookmarks.set(Some(page)),
                         wire::Success::AddedRemote(remote) => {
                             remotes.update(|rs| rs.push(remote.clone()));
                             selected.set(Some(remote));
@@ -381,19 +468,41 @@ pub fn RemoteLibraryPane(
         let Some(remote) = selected.get_untracked() else {
             return;
         };
-        let mode = if checkout.get_untracked() {
-            wire::PullMode::ExplicitCheckout
-        } else {
-            wire::PullMode::CleanFastForward
-        };
-        checkout.set(false);
+        review.set(None);
         send.run(Action::command(wire::Command::Pull {
             local_document: local.id,
             expected_local_revision: local.revision,
             remote: remote.id,
-            mode,
+            mode: wire::PullMode::CleanFastForward,
         }));
     };
+    let accept_checkout = Callback::new(move |()| {
+        let Some(pinned) = review.get_untracked() else {
+            return;
+        };
+        if !checkout.get_untracked()
+            || !history_conflict(&pinned.failure)
+            || !review_is_current(
+                &pinned,
+                saved.get_untracked().as_ref(),
+                selected.get_untracked().as_ref(),
+            )
+        {
+            status.set(
+                "The reviewed selection changed. Review a fresh clean pull before checkout.".into(),
+            );
+            checkout.set(false);
+            return;
+        }
+        checkout.set(false);
+        review.set(None);
+        send.run(Action::command(wire::Command::Pull {
+            local_document: pinned.local.id,
+            expected_local_revision: pinned.local.revision,
+            remote: pinned.remote.id,
+            mode: wire::PullMode::ExplicitCheckout,
+        }));
+    });
     view! {
         <Show when=move||native>
         <details class="lab-library-pane remote-library-pane"><summary>"Databases"</summary>
@@ -446,11 +555,39 @@ pub fn RemoteLibraryPane(
                     <p>{move||saved.get().map(|s|s.name).unwrap_or_else(||"Save a plasmid to the local library first.".into())}</p>
                     <Show when=move||saved.with(|s|s.as_ref().is_some_and(|s|s.dirty))><p class="helper">"Unsaved editor changes: save to the local library before push or pull."</p></Show>
                     <button class="text-tool" disabled=move||busy.get()||locked.get()||saved.with(|s|s.as_ref().is_none_or(|s|s.dirty)) on:click=push>"Queue saved revision push"</button>
-                    <label><input type="checkbox" prop:checked=move||checkout.get() on:change=move|e|checkout.set(event_target_checked(&e))/>"Explicit checkout; preserve displaced local branch"</label>
-                    <button class="text-tool" disabled=move||busy.get()||locked.get()||saved.with(|s|s.as_ref().is_none_or(|s|s.dirty)) on:click=pull>{move||if checkout.get(){"Pull with explicit checkout"}else{"Pull clean fast-forward"}}</button>
+                    <button class="text-tool" disabled=move||busy.get()||locked.get()||saved.with(|s|s.as_ref().is_none_or(|s|s.dirty)) on:click=pull>"Pull clean fast-forward"</button>
+                    {move||review.get().map(|pinned|{
+                        let can_checkout=history_conflict(&pinned.failure);
+                        let conflict=match &pinned.failure {
+                            wire::Failure::LocalConflict{current}=>format!("The saved local head is now {}@{}. Refresh the catalog and review before another action.",current.id.as_str(),current.head.id.as_str()),
+                            _=>"The host could not reconcile these saved native histories as a clean fast-forward. No checkout was performed.".into(),
+                        };
+                        view!{<section class="library-revisions"><div class="library-heading"><strong>"Pull history review"</strong><button class="text-tool" on:click=move|_|{review.set(None);checkout.set(false);}>"Dismiss"</button></div>
+                            <p class="library-status">{conflict}</p>
+                            <p class="library-status">{format!("Reviewed local record: {}@{} · database {}",pinned.local.id.as_str(),pinned.local.revision.as_str(),pinned.remote.name.as_str())}</p>
+                            <p class="library-status">"Open this plasmid’s Revision history in the Local library to inspect the complete pre-pull archive. The working editor is retained."</p>
+                            <button class="text-tool" disabled=move||busy.get()||locked.get() on:click=move|_|on_local_change.run(())>"Refresh local catalog metadata"</button>
+                            {can_checkout.then(||view!{
+                                <p class="library-status">"Explicit checkout fetches the current remote branch and preserves the entire displaced local branch. The earlier failed pull does not pin a future remote head."</p>
+                                <label><input type="checkbox" prop:checked=move||checkout.get() on:change=move|e|checkout.set(event_target_checked(&e))/>"Preserve my local branch and explicitly select the fetched remote branch"</label>
+                                <button class="text-tool" disabled=move||busy.get()||locked.get()||!checkout.get()||review.with(|r|r.as_ref().is_none_or(|r|!review_is_current(r,saved.get().as_ref(),selected.get().as_ref()))) on:click=move|_|accept_checkout.run(())>"Pull with explicit checkout"</button>
+                            })}
+                        </section>}
+                    })}
                     <p class="helper">"Pull saves into the local library. Reopen it there to review; it does not replace the working editor."</p>
                 </details>
             </Show>
+            <details><summary>"Retained local branches"</summary>
+                <p class="helper">"Offline repository bookmarks, across all local plasmids. Reviewing these records makes no network request and does not change the working editor."</p>
+                <button class="text-tool" disabled=move||busy.get()||locked.get() on:click=move|_|{bookmark_offset.set(0);send.run(Action::command(wire::Command::ListBookmarks{page:wire::LocalPageRequest::default(),expected_checkpoint:None}));}>"Refresh retained branches"</button>
+                <ul class="lab-library-entries">{move||bookmarks.get().map(|page|page.items.into_vec().into_iter().map(|bookmark|match bookmark{
+                    wire::Bookmark::Snapshot{local_document,revision}=>view!{<li><div><strong>"Saved catalog snapshot"</strong><p class="library-status">{format!("{}@{}",local_document.as_str(),revision.as_str())}</p><p class="helper">"Open this local plasmid’s Revision history to inspect this exact saved revision."</p></div></li>}.into_any(),
+                    wire::Bookmark::NativeBranch{document,revision,event,undo_count,redo_count,incoming_revision,incoming_event}=>view!{<li><div><strong>"Retained native navigation branch"</strong><p class="library-status">{format!("Native document {} · revision {} · event {}",document.as_str(),revision.as_str(),event.as_ref().map(|e|e.as_str()).unwrap_or("none"))}</p><p class="library-status">{format!("{} undo / {} redo entries · incoming revision {} · event {}",undo_count,redo_count,incoming_revision.as_str(),incoming_event.as_ref().map(|e|e.as_str()).unwrap_or("none"))}</p><p class="helper">"This bookmark names native history rather than a catalog record. Review the relevant pre-pull archive through Local library Revision history."</p></div></li>}.into_any(),
+                }).collect_view())}</ul>
+                <Show when=move||bookmarks.with(|p|p.as_ref().is_some_and(|p|p.items.is_empty()))><p class="helper">"No retained branch bookmarks in this repository."</p></Show>
+                <div class="library-pages"><button class="text-tool" disabled=move||busy.get()||locked.get()||bookmark_offset.get()==0||bookmarks.with(Option::is_none) on:click=move|_|if let Some(page)=bookmarks.get_untracked(){let offset=bookmark_offset.get_untracked().saturating_sub(100);bookmark_offset.set(offset);send.run(Action::command(wire::Command::ListBookmarks{page:wire::LocalPageRequest{offset,limit:100},expected_checkpoint:page.checkpoint}));}>"Previous"</button>
+                    <button class="text-tool" disabled=move||busy.get()||locked.get()||bookmarks.with(|p|p.as_ref().is_none_or(|p|p.next_offset.is_none())) on:click=move|_|if let Some(page)=bookmarks.get_untracked(){if let Some(offset)=page.next_offset{bookmark_offset.set(offset);send.run(Action::command(wire::Command::ListBookmarks{page:wire::LocalPageRequest{offset,limit:100},expected_checkpoint:page.checkpoint}));}}>"Next"</button></div>
+            </details>
             <details><summary>"Pending pushes"</summary>
                 <button class="text-tool" disabled=move||busy.get()||locked.get() on:click=move|_|{pending_offset.set(0);send.run(Action::command(wire::Command::Pending{page:wire::LocalPageRequest::default()}));}>"Refresh pending"</button>
                 <ul class="lab-library-entries">{move||pending.get().into_iter().map(|p|{

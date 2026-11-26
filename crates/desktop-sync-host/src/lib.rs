@@ -493,6 +493,68 @@ impl<A: SyncAdapter> SyncHost<A> {
                     next_offset,
                 })
             }
+            C::ListBookmarks {
+                page,
+                expected_checkpoint,
+            } => {
+                let checkpoint = self
+                    .repository
+                    .checkpoint_version()
+                    .as_ref()
+                    .map(convert)
+                    .transpose()?;
+                if expected_checkpoint
+                    .as_ref()
+                    .is_some_and(|expected| checkpoint.as_ref() != Some(expected))
+                {
+                    return Err(Fault::error(
+                        wire::ErrorCode::BookmarkChanged,
+                        "The local repository changed; refresh retained branches before continuing.",
+                    ));
+                }
+                let mut items = Vec::new();
+                for bookmark in self.repository.bookmarks() {
+                    let old = &bookmark.document;
+                    items.push(wire::Bookmark::NativeBranch {
+                        document: library::Text::new(&old.id).map_err(|_| Fault::too_large())?,
+                        revision: library::Digest::new(&old.head)
+                            .map_err(|_| Fault::invalid("Invalid retained native revision."))?,
+                        event: old
+                            .head_event
+                            .as_ref()
+                            .map(library::Text::new)
+                            .transpose()
+                            .map_err(|_| Fault::too_large())?,
+                        undo_count: u32::try_from(old.undo.len())
+                            .map_err(|_| Fault::too_large())?,
+                        redo_count: u32::try_from(old.redo.len())
+                            .map_err(|_| Fault::too_large())?,
+                        incoming_revision: library::Digest::new(
+                            &bookmark.imported_selection.revision,
+                        )
+                        .map_err(|_| Fault::invalid("Invalid imported native revision."))?,
+                        incoming_event: bookmark
+                            .imported_selection
+                            .head_event
+                            .as_ref()
+                            .map(library::Text::new)
+                            .transpose()
+                            .map_err(|_| Fault::too_large())?,
+                    });
+                }
+                for bookmark in self.repository.snapshot_bookmarks() {
+                    items.push(wire::Bookmark::Snapshot {
+                        local_document: convert(&bookmark.document)?,
+                        revision: convert(&bookmark.revision)?,
+                    });
+                }
+                let (items, next_offset) = projection::page(items, page)?;
+                S::Bookmarks(wire::BookmarkPage {
+                    items: library::Rows::new(items).map_err(|_| Fault::too_large())?,
+                    next_offset,
+                    checkpoint,
+                })
+            }
             C::CancelUnattempted { job } => {
                 self.pending(job.as_str())?;
                 accepted(gate)?;

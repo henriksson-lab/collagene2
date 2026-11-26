@@ -1,7 +1,7 @@
 # Desktop remote-library protocol
 
 `collagene-desktop-sync-protocol` defines a portable Rust/WASM metadata protocol,
-separate from DTQ/DTR v1. It provides DSQ/DSR schema 1 frames for a future native
+separate from DTQ/DTR v1. It provides DSQ/DSR schema 1 frames for the native
 `collagene_rpc` dispatcher. This crate contains no networking, filesystem access,
 repository execution, native credentials or scientific algorithms. A native
 service must implement those operations over the trusted window's repository.
@@ -24,6 +24,18 @@ effects, never a client grant of membership. Native host authority supplies the
 local lab, window, repository, credential account and all transport permissions.
 
 ## Commands and results
+
+* `ListBookmarks` is a fully offline, read-only local repository query. It returns
+  bounded snapshot references (local catalog document/revision) and native branch
+  references (native document, old revision/event, undo/redo counts and incoming
+  revision/event). A native graph bookmark has no stored catalog association;
+  clients must not infer one from names, sequence equality or the active editor.
+  These references convey documentary history, not physical material authority.
+  The reply has no remote context and includes the exact repository checkpoint.
+  Continuation requests require that checkpoint; concurrent changes return
+  `BookmarkChanged` so a client refreshes instead of mixing pages. The append-only
+  command/result variants preserve existing schema1 discriminants. Reopening
+  retained archives uses the existing local immutable revision-history workflow.
 
 * `Remotes` / `AddRemote` list or create nonsecret configurations: generated
   `rem-` ID, bounded name, HTTP(S) origin and expected lab. Native execution must

@@ -1,5 +1,10 @@
 # Desktop build CI
 
+The opt-in [unsigned packaging workflow](DESKTOP_PACKAGING.md) additionally builds
+NSIS, app/DMG and AppImage/deb artifacts, with development or release profiles.
+Automatic desktop CI below builds development executables; it does not install
+or publish those packages.
+
 `.github/workflows/desktop.yml` builds the real Tauri desktop executable on Windows, macOS, and Linux. It runs independently of the scientific checks in `check.yml`; a platform failure does not cancel the other native builds. Relevant Rust, frontend, Cargo lockfile, Trunk configuration, and workflow changes trigger it, and it also supports manual dispatch.
 
 The Linux frontend job builds the current Leptos application and scientific worker once. All three native jobs download that exact workflow artifact from the same source revision. It starts with an empty `dist`, permits exactly one current content-addressed worker bundle, and bounds the snapshot to 512 files, 128 MiB per file, 256 MiB total, and depth 16. Symlinks and special files are rejected. The desktop build independently checks the snapshot and the `collagene_rpc` bridge in the actual referenced main WASM, so an old browser-only frontend cannot silently supply ephemeral browser storage instead of native persistence.

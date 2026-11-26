@@ -174,10 +174,16 @@ their existing 32/64 MiB payload and 128 MiB expansion profiles. Large binary
 payloads stay binary in checkpoint frames, never JSON integer arrays. Private
 SQLite/WAL files need normal supported backup and disk monitoring.
 
-The transport/UI adapter still needs authenticated remote sessions and OS-managed
-credentials, Tauri filesystem/IPC permissions, progress/cancellation presentation,
-branch/bookmark review and explicit remote selection controls. Local analysis does
-not wait for those adapters or require a remote account. Do not describe these
+The native transport/UI adapters now provide authenticated remote sessions,
+OS-managed credentials, scoped Tauri IPC, cancellation, explicit remote selection
+and typed divergence/bookmark review. `ListBookmarks` reads local documentary
+references without contacting a remote or credential vault; checkpoint-bound
+paging rejects concurrent metadata changes. Native branch summaries cannot imply
+a local catalog association absent from the persisted bookmark. The existing
+local revision-history workflow opens retained immutable archives explicitly.
+Full installation/offline graphical acceptance and the remaining recursive sync
+operations above are unfinished. Local analysis requires no remote account.
+Do not describe these
 selected sync primitives as a completed git clone/merge implementation.
 
 ## Focused real fixtures

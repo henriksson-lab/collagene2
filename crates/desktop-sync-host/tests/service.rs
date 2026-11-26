@@ -847,6 +847,84 @@ fn clone_and_explicit_pull_preserve_private_branches_and_durable_native_bookmark
         wire::Success::Pulled { .. }
     ));
     assert_eq!(clone_service.repository().bookmarks().len(), 1);
+    let calls = clone_service.adapter_mut().calls;
+    let checkpoint = clone_service.repository().checkpoint_version();
+    let req = command(
+        80,
+        wire::Command::ListBookmarks {
+            page: Default::default(),
+            expected_checkpoint: None,
+        },
+    );
+    let bytes = clone_service
+        .dispatch_raw(&wire::encode_request(&req).unwrap(), &mut || {
+            panic!("local bookmark read must not accept a mutation")
+        })
+        .unwrap();
+    let response = wire::decode_response_for(&bytes, &req).unwrap();
+    assert!(response.context.is_none());
+    let wire::Success::Bookmarks(bookmarks) = success(response) else {
+        panic!("expected local bookmarks")
+    };
+    assert_eq!(bookmarks.items.len(), 1);
+    assert_eq!(
+        clone_service.adapter_mut().calls,
+        calls,
+        "bookmark listing must be fully offline"
+    );
+    assert_eq!(
+        clone_service.repository().checkpoint_version(),
+        checkpoint,
+        "bookmark read must not modify the repository"
+    );
+    let wire::Bookmark::NativeBranch {
+        document,
+        revision,
+        event,
+        undo_count,
+        incoming_revision,
+        ..
+    } = &bookmarks.items[0]
+    else {
+        panic!("expected preserved graph branch")
+    };
+    let pin = selection(&private, "document-1");
+    assert_eq!(document.as_str(), pin.document_id);
+    assert_eq!(revision.as_str(), pin.revision);
+    assert_eq!(
+        event.as_ref().map(|e| e.as_str()),
+        pin.head_event.as_deref()
+    );
+    assert_eq!(*undo_count, private.documents[0].undo.len() as u32);
+    assert_eq!(
+        incoming_revision.as_str(),
+        selection(&changed, "document-1").revision
+    );
+    // Any concurrent checkpoint change invalidates the next page, even when
+    // it changes unrelated repository metadata rather than a bookmark itself.
+    let mut concurrent = Repository::open(&clone_disk.0).unwrap();
+    concurrent
+        .add_remote(
+            "Other database",
+            "https://other.example",
+            library::LabId::new("lab-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee").unwrap(),
+        )
+        .unwrap();
+    assert!(matches!(
+        call(
+            &mut clone_service,
+            81,
+            wire::Command::ListBookmarks {
+                page: Default::default(),
+                expected_checkpoint: bookmarks.checkpoint
+            }
+        )
+        .outcome,
+        wire::Outcome::Failure(wire::Failure::Error {
+            code: wire::ErrorCode::BookmarkChanged,
+            ..
+        })
+    ));
     let (repo, adapter) = clone_service.into_parts();
     drop(repo);
     let reopened = Repository::open(&clone_disk.0).unwrap();

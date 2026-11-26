@@ -10,7 +10,9 @@
     "withGlobalTauri": true,
     "windows": [],
     "security": {
-      "capabilities": ["main-local"],
+      "capabilities": [
+        "main-local"
+      ],
       "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
       "assetProtocol": {
         "enable": false,
@@ -20,6 +22,10 @@
   },
   "bundle": {
     "active": false,
-    "icon": ["icons/icon.png", "icons/icon.ico"]
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
   }
 }

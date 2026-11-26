@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "shortDescription": "Offline molecular cloning workspace",
+    "longDescription": "Design and verify molecular cloning workflows with a local Rust scientific engine and durable offline plasmid library.",
+    "category": "Science",
+    "windows": {
+      "webviewInstallMode": {
+        "type": "offlineInstaller"
+      }
+    }
+  }
+}

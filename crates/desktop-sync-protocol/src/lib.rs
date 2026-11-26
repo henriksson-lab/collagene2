@@ -157,12 +157,19 @@ dto! {pub enum Command {
     TreeJobs{page:LocalPageRequest},
     QueueTreeFolderMetadata{job:TreeJobId,local_folder:FolderId},
     QueueTreeDocumentMetadata{job:TreeJobId,local_document:DocumentId},
+    ListBookmarks{page:LocalPageRequest,expected_checkpoint:Option<Digest>},
 }}
 dto! {pub struct RequestEnvelope {pub request_id:u64,pub operation_id:OperationId,pub command:Command}}
 dto! {pub enum LocalTarget {Document(DocumentId),Folder(FolderId),DeletedFolder(FolderId)}}
 dto! {pub struct Rejection {pub code:library::ErrorCode,pub message:Text<1024>,pub conflict:Option<library::Conflict>}}
 dto! {pub struct PendingPush {pub job:PushJobId,pub remote:RemoteId,pub target:LocalTarget,pub local_revision:Option<library::RevisionId>,pub attempted:bool,pub rejection:Option<Rejection>}}
 dto! {pub struct PendingPage {pub items:Rows<PendingPush,MAX_PAGE_ROWS>,pub next_offset:Option<u16>}}
+// Documentary local history references, never material or remote authority.
+dto! {pub enum Bookmark {
+    Snapshot{local_document:DocumentId,revision:library::RevisionId},
+    NativeBranch{document:Text<128>,revision:Digest,event:Option<Text<128>>,undo_count:u32,redo_count:u32,incoming_revision:Digest,incoming_event:Option<Text<128>>},
+}}
+dto! {pub struct BookmarkPage {pub items:Rows<Bookmark,MAX_PAGE_ROWS>,pub next_offset:Option<u16>,pub checkpoint:Option<Digest>}}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TreePhase {
     Discovering,
@@ -199,6 +206,7 @@ dto! {pub enum Success {
     Queued(PendingPush),Resumed(PushReceipt),Pending(PendingPage),
     CancelledUnattempted{job:PushJobId},DiscardedRejected{job:PushJobId},
     Pulled{local:library::Document},TreeStarted(TreeStatus),TreeUpdated(TreeStatus),TreeJobs(TreePage),
+    Bookmarks(BookmarkPage),
 }}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ErrorCode {
@@ -213,6 +221,7 @@ pub enum ErrorCode {
     HistoryConflict,
     Cancelled,
     TooLarge,
+    BookmarkChanged,
 }
 dto! {pub enum Failure {
     Error{code:ErrorCode,message:Text<1024>},
@@ -342,6 +351,15 @@ impl RequestEnvelope {
                 endpoint(e)?;
             }
             Command::Pending { page } | Command::TreeJobs { page } => page.validate()?,
+            Command::ListBookmarks {
+                page,
+                expected_checkpoint,
+            } => {
+                page.validate()?;
+                if page.offset > 0 && expected_checkpoint.is_none() {
+                    return Err(Error::Invalid("bookmark continuation checkpoint"));
+                }
+            }
             Command::BeginTreeClone { root, limits, .. } => {
                 limits.validate()?;
                 if let TreeRoot::Folder {
@@ -473,6 +491,22 @@ impl ResponseEnvelope {
                 }
                 Success::Browsed(p) | Success::Searched(p) => p.validate()?,
                 Success::Revisions(p) => library::Success::Revisions(p.clone()).validate()?,
+                Success::Bookmarks(p) => {
+                    for item in p.items.iter() {
+                        if let Bookmark::NativeBranch {
+                            document,
+                            event,
+                            incoming_event,
+                            ..
+                        } = item
+                        {
+                            public_message(document)?;
+                            for event in [event, incoming_event].into_iter().flatten() {
+                                public_message(event)?;
+                            }
+                        }
+                    }
+                }
                 _ => {}
             },
         }
@@ -642,6 +676,19 @@ impl ResponseEnvelope {
             ) => job == &t.job,
             (Command::TreeJobs { page }, Outcome::Success(Success::TreeJobs(p))) => {
                 local_page(page, p.items.len(), p.next_offset)
+            }
+            (
+                Command::ListBookmarks {
+                    page,
+                    expected_checkpoint,
+                },
+                Outcome::Success(Success::Bookmarks(p)),
+            ) => {
+                self.context.is_none()
+                    && local_page(page, p.items.len(), p.next_offset)
+                    && expected_checkpoint
+                        .as_ref()
+                        .is_none_or(|expected| p.checkpoint.as_ref() == Some(expected))
             }
             (
                 Command::QueuePush {

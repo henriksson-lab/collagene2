@@ -1,0 +1,253 @@
+name: Desktop packages (unsigned)
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_profile:
+        description: Native build profile (development is faster; release for delivery candidates)
+        required: true
+        default: development
+        type: choice
+        options:
+          - development
+          - release
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-packages-${{ github.ref }}-${{ inputs.build_profile }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_BUILD_JOBS: "2"
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+  CARGO_PROFILE_RELEASE_DEBUG: "0"
+  NO_COLOR: "true"
+
+jobs:
+  frontend:
+    name: Fresh offline desktop frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: desktop-frontend
+      - name: Install pinned prebuilt frontend tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: trunk@0.21.14,wasm-bindgen-cli@0.2.128
+          fallback: none
+          checksum: true
+      # The post-build hook is cargo --offline. Populate locked metadata for
+      # every target before running it, and compile its native helper once.
+      - run: cargo fetch --locked
+      - run: cargo build --locked -p collagene-web-assets
+      - name: Build current main frontend and current worker
+        run: |
+          rm -rf dist
+          trunk build --locked true --offline true --skip-version-check
+      - name: Bound the fresh artifact before uploading
+        shell: python
+        run: |
+          from pathlib import Path
+          import stat
+          root = Path("dist")
+          if not (root / "index.html").is_file():
+              raise SystemExit("missing frontend index")
+          count = total = 0
+          for path in root.rglob("*"):
+              info = path.lstat()
+              if stat.S_ISLNK(info.st_mode):
+                  raise SystemExit("frontend symlinks forbidden")
+              if len(path.relative_to(root).parts) > 16:
+                  raise SystemExit("frontend depth limit")
+              if stat.S_ISREG(info.st_mode):
+                  count += 1
+                  total += info.st_size
+                  if info.st_size > 128 * 1024 * 1024:
+                      raise SystemExit("frontend file exceeds 128 MiB")
+              elif not stat.S_ISDIR(info.st_mode):
+                  raise SystemExit("frontend special files forbidden")
+          if count > 512 or total > 256 * 1024 * 1024:
+              raise SystemExit("frontend artifact exceeds snapshot limits")
+          workers = root / "workers"
+          if not workers.is_dir() or len(list(workers.iterdir())) != 1:
+              raise SystemExit("expected exactly one current worker bundle")
+          print(f"Fresh frontend: {count} files, {total} bytes")
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-package-frontend-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  packages:
+    name: Unsigned / ${{ matrix.os }} / ${{ inputs.build_profile }}
+    needs: frontend
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            bundles: appimage,deb
+          - os: windows-latest
+            bundles: nsis
+          - os: macos-latest
+            bundles: app,dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: desktop-packages-${{ inputs.build_profile }}
+      - name: Install Linux build and packaging prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev \
+            librsvg2-dev pkg-config patchelf xdg-utils libfuse2
+      - name: Install pinned upstream cargo-tauri binary (no source fallback)
+        shell: python
+        env:
+          RUNNER_ARCH: ${{ runner.arch }}
+        run: |
+          from pathlib import Path
+          import hashlib, io, os, platform, stat, tarfile, urllib.request, zipfile
+          # SHA256 values from the official tauri-cli-v2.11.3 release assets.
+          archives = {
+              ("Linux", "X64"): ("x86_64-unknown-linux-gnu.tgz", "56ebe242d3cab6747dea41b47cdabace47fbea86d65c796f34a95d620d3bad1d"),
+              ("Windows", "X64"): ("x86_64-pc-windows-msvc.zip", "a172fa09b791fa885739d252e0ba8b29d0b426fc0c4e3414158308d2da8976f8"),
+              ("Darwin", "ARM64"): ("aarch64-apple-darwin.zip", "69716bda20d50e9d3bbbe9797fe303dd55aef903c1aba19731b7355d4fd546b0"),
+              ("Darwin", "X64"): ("x86_64-apple-darwin.zip", "9bde55fe15646f1c814eed9ee25da52a79d2c0371ad75ccdb9abf74e93e64069"),
+          }
+          archive, checksum = archives[(platform.system(), os.environ["RUNNER_ARCH"])]
+          url = "https://github.com/tauri-apps/tauri/releases/download/tauri-cli-v2.11.3/cargo-tauri-" + archive
+          with urllib.request.urlopen(url, timeout=120) as response:
+              data = response.read(32 * 1024 * 1024 + 1)
+          if len(data) > 32 * 1024 * 1024 or hashlib.sha256(data).hexdigest() != checksum:
+              raise SystemExit("cargo-tauri archive limit/checksum mismatch")
+          name = "cargo-tauri.exe" if platform.system() == "Windows" else "cargo-tauri"
+          if archive.endswith(".zip"):
+              with zipfile.ZipFile(io.BytesIO(data)) as bundle:
+                  members = [m for m in bundle.infolist() if Path(m.filename).name == name and not m.is_dir()]
+                  if len(members) != 1 or members[0].file_size > 64 * 1024 * 1024:
+                      raise SystemExit("unexpected cargo-tauri archive layout")
+                  binary = bundle.read(members[0])
+          else:
+              with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as bundle:
+                  members = [m for m in bundle.getmembers() if Path(m.name).name == name and m.isfile()]
+                  if len(members) != 1 or members[0].size > 64 * 1024 * 1024:
+                      raise SystemExit("unexpected cargo-tauri archive layout")
+                  binary = bundle.extractfile(members[0]).read()
+          target = Path(os.environ["RUNNER_TEMP"]) / "collagene-tauri-cli"
+          target.mkdir()
+          executable = target / name
+          executable.write_bytes(binary)
+          executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+          with open(os.environ["GITHUB_PATH"], "a", encoding="utf-8") as output:
+              output.write(str(target) + "\n")
+      - uses: actions/download-artifact@v8
+        with:
+          name: desktop-package-frontend-${{ github.sha }}
+          path: dist
+      - name: Generate platform icon layers from the existing application icon
+        working-directory: crates/desktop
+        run: cargo tauri icon icons/icon.png --output icons
+      - name: Build unsigned packages with the selected Cargo profile
+        shell: python
+        env:
+          BUILD_PROFILE: ${{ inputs.build_profile }}
+          BUNDLES: ${{ matrix.bundles }}
+        run: |
+          import os, subprocess
+          command = ["cargo", "tauri", "build", "--ci", "--no-sign", "--config", "tauri.package.conf.json", "--bundles", os.environ["BUNDLES"]]
+          if os.environ["BUILD_PROFILE"] == "development":
+              command.append("--debug")
+          command += ["--", "--locked"]
+          subprocess.run(command, cwd="crates/desktop", check=True)
+      - name: Check actual package payload MCP without opening a GUI
+        shell: python
+        env:
+          BUILD_PROFILE: ${{ inputs.build_profile }}
+        run: |
+          from pathlib import Path
+          import os, platform, subprocess, sys
+          profile = "debug" if os.environ["BUILD_PROFILE"] == "development" else "release"
+          root = Path("target") / profile
+          if platform.system() == "Darwin":
+              candidates = list((root / "bundle/macos").glob("*.app/Contents/MacOS/collagene-desktop"))
+              if len(candidates) != 1:
+                  raise SystemExit("missing/ambiguous macOS application payload")
+              binary = candidates[0]
+          elif platform.system() == "Linux":
+              packages = list((root / "bundle/deb").glob("*.deb"))
+              if len(packages) != 1:
+                  raise SystemExit("missing/ambiguous Debian package")
+              extracted = Path(os.environ["RUNNER_TEMP"]) / "collagene-deb-payload"
+              subprocess.run(["dpkg-deb", "--extract", str(packages[0]), str(extracted)], check=True)
+              binary = extracted / "usr/bin/collagene-desktop"
+          else:
+              # This is the exact executable consumed by NSIS. Do not run the installer.
+              binary = root / "collagene-desktop.exe"
+          subprocess.run([sys.executable, "scripts/desktop_mcp_smoke.py", str(binary)], check=True)
+      - name: Stage only expected package formats and record checksums
+        shell: python
+        env:
+          BUILD_PROFILE: ${{ inputs.build_profile }}
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          from pathlib import Path
+          import hashlib, json, os, platform, shutil, tarfile
+          profile = "debug" if os.environ["BUILD_PROFILE"] == "development" else "release"
+          bundle = Path("target") / profile / "bundle"
+          output = Path("desktop-packages")
+          output.mkdir()
+          patterns = {"Linux": ["appimage/*.AppImage", "deb/*.deb"], "Windows": ["nsis/*-setup.exe"], "Darwin": ["dmg/*.dmg", "macos/*.app"]}[platform.system()]
+          for pattern in patterns:
+              files = list(bundle.glob(pattern))
+              if len(files) != 1:
+                  raise SystemExit("missing/ambiguous expected package: " + pattern)
+              source = files[0]
+              if source.suffix == ".app":
+                  # Tar preserves executable bits and application symlinks across artifact upload.
+                  with tarfile.open(output / (source.name + ".tar.gz"), "w:gz") as archive:
+                      archive.add(source, arcname=source.name)
+              else:
+                  shutil.copy2(source, output / source.name)
+          checksums = {}
+          total = 0
+          for path in output.iterdir():
+              if path.stat().st_size > 1024 * 1024 * 1024:
+                  raise SystemExit("package exceeds 1 GiB artifact limit")
+              total += path.stat().st_size
+              digest = hashlib.sha256()
+              with path.open("rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              checksums[path.name] = digest.hexdigest()
+          if total > 2 * 1024 * 1024 * 1024:
+              raise SystemExit("package artifacts exceed 2 GiB total")
+          metadata = {"source_revision": os.environ["SOURCE_REVISION"], "profile": os.environ["BUILD_PROFILE"], "os": platform.system(), "architecture": platform.machine(), "cargo_tauri": "2.11.3", "signed": False, "sha256": checksums}
+          (output / "BUILD.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-packages-unsigned-${{ matrix.os }}-${{ inputs.build_profile }}-${{ github.sha }}
+          path: desktop-packages/
+          if-no-files-found: error
+          retention-days: 7

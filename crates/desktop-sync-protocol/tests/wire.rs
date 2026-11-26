@@ -42,6 +42,75 @@ fn checked_frame(magic: &[u8; 4], raw: &[u8]) -> Vec<u8> {
 }
 
 #[test]
+fn local_bookmarks_bind_checkpoint_and_page_without_remote_authority() {
+    assert!(
+        request(Command::ListBookmarks {
+            page: LocalPageRequest {
+                offset: 1,
+                limit: 1
+            },
+            expected_checkpoint: None
+        })
+        .validate()
+        .is_err()
+    );
+    let checkpoint = library::Digest::of(b"repository checkpoint");
+    let request = request(Command::ListBookmarks {
+        page: LocalPageRequest {
+            offset: 0,
+            limit: 1,
+        },
+        expected_checkpoint: Some(checkpoint.clone()),
+    });
+    let mut reply = answer(
+        &request,
+        Success::Bookmarks(BookmarkPage {
+            items: library::Rows::new(vec![Bookmark::NativeBranch {
+                document: library::Text::new("document-1").unwrap(),
+                revision: library::Digest::of(b"old sequence"),
+                event: Some(library::Text::new("event-1").unwrap()),
+                undo_count: 2,
+                redo_count: 1,
+                incoming_revision: library::Digest::of(b"new sequence"),
+                incoming_event: None,
+            }])
+            .unwrap(),
+            next_offset: Some(1),
+            checkpoint: Some(checkpoint),
+        }),
+    );
+    assert!(
+        reply.validate_for(&request).is_err(),
+        "a local bookmark reply cannot claim a remote context"
+    );
+    reply.context = None;
+    assert_eq!(
+        decode_response_for(&encode_response(&reply).unwrap(), &request).unwrap(),
+        reply
+    );
+    let Outcome::Success(Success::Bookmarks(page)) = &mut reply.outcome else {
+        unreachable!()
+    };
+    page.checkpoint = Some(library::Digest::of(b"different checkpoint"));
+    assert!(reply.validate_for(&request).is_err());
+    let Outcome::Success(Success::Bookmarks(page)) = &mut reply.outcome else {
+        unreachable!()
+    };
+    page.checkpoint = match &request.command {
+        Command::ListBookmarks {
+            expected_checkpoint,
+            ..
+        } => expected_checkpoint.clone(),
+        _ => unreachable!(),
+    };
+    page.next_offset = Some(2);
+    assert!(
+        reply.validate_for(&request).is_err(),
+        "continuation must start after exactly the returned rows"
+    );
+}
+
+#[test]
 fn secret_is_bounded_on_decode_and_redacted_in_enclosing_debug() {
     let token = "private-native-access-token";
     let req = request(Command::SetCredential {

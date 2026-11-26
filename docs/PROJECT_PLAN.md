@@ -2802,3 +2802,27 @@ including source cancellation under saturated ordinary admission. CI now checks
 the same desktop executable's stdio initialization and a synthetic virtual digest
 without opening a GUI. Execution of that new command on all three platforms,
 release-mode Windows stdio, full packaging and runtime acceptance remain unfinished.
+
+### Offline divergence review and installer sources — 26 November 2026
+
+Native pulls now begin with a clean fast-forward attempt. Divergent histories
+show a separate review, pinned to the selected saved local revision and remote;
+explicit checkout requires a fresh confirmation and preserves the displaced
+branch. Changes to the editor's dirty state, saved revision or remote invalidate
+that review. A native metadata-only `ListBookmarks` query exposes retained local
+snapshot/native-navigation references without network or credential access.
+Checkpoint-bound continuation prevents mixed pages during concurrent edits.
+Existing local revision history remains the explicit way to open saved archives;
+native branch summaries do not invent a missing local catalog association.
+
+Six native service and seven wire fixture groups pass, including offline read,
+no-write/no-acceptance behavior, exact displaced-event references, checkpoint
+invalidation and page/context binding. The integrated UI WASM check passes.
+
+An opt-in unsigned desktop packaging workflow now supports development and release
+profiles: Windows NSIS with embedded offline WebView2 installer, macOS app/DMG and
+Linux AppImage/deb. It pins a prebuilt official CLI, embeds a fresh frontend and
+checks actual package executables' headless MCP operation where available. No
+installer build/install or release signing is claimed from configuration alone;
+hosted packaging, release-mode Windows stdio and real installation/runtime
+acceptance remain required. See [packaging](DESKTOP_PACKAGING.md).

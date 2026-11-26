@@ -21,6 +21,18 @@ impl Client {
         command: wire::Command,
         expected: Option<wire::Remote>,
     ) -> Result<wire::Success, String> {
+        match self.request_outcome(command, expected).await? {
+            wire::Outcome::Success(value) => Ok(value),
+            wire::Outcome::Failure(failure) => Err(failure_message(&failure)),
+        }
+    }
+    /// Preserve typed conflicts for an explicit, pinned review. Transport and
+    /// binding failures remain errors and must never enable a checkout action.
+    pub async fn request_outcome(
+        &self,
+        command: wire::Command,
+        expected: Option<wire::Remote>,
+    ) -> Result<wire::Outcome, String> {
         let request = (self.factory)(command)
             .map_err(|_| "Cannot allocate native database operation.".to_owned())?;
         let bytes = wire::encode_request(&request)
@@ -41,10 +53,7 @@ impl Client {
                     })?;
             }
         }
-        match response.outcome {
-            wire::Outcome::Success(value) => Ok(value),
-            wire::Outcome::Failure(failure) => Err(failure_message(&failure)),
-        }
+        Ok(response.outcome)
     }
 }
 pub fn failure_message(failure: &wire::Failure) -> String {

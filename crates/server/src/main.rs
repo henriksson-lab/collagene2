@@ -1,4 +1,4 @@
-use collagene_lab_library::{LabId, Library, StorageOptions};
+use collagene_lab_library::{LabId, Library, StorageOptions, backup};
 use collagene_server::{AccessKey, AssetSnapshot, Error, Limits, Result, ServerState};
 use std::{
     collections::BTreeMap,
@@ -51,6 +51,9 @@ async fn run() -> Result<()> {
                 "Created shared lab {}. Retain this lab ID for trusted server configuration.",
                 lab.id
             );
+        }
+        "backup" | "verify-backup" | "restore-new" => {
+            backup_command(&command, &options)?;
         }
         "serve" => {
             allowed(
@@ -134,6 +137,91 @@ async fn run() -> Result<()> {
     }
     Ok(())
 }
+fn backup_command(command: &str, options: &BTreeMap<String, String>) -> Result<()> {
+    let permitted = match command {
+        "backup" => vec![
+            "--storage-root",
+            "--lab-id",
+            "--backup-id",
+            "--max-backup-bytes",
+            "--max-lab-bytes",
+        ],
+        "verify-backup" => vec![
+            "--storage-root",
+            "--lab-id",
+            "--backup-id",
+            "--max-backup-bytes",
+        ],
+        "restore-new" => vec![
+            "--storage-root",
+            "--lab-id",
+            "--backup-id",
+            "--max-backup-bytes",
+            "--destination-root",
+        ],
+        _ => return Err(Error::Configuration(USAGE)),
+    };
+    allowed(options, &permitted)?;
+    let root = storage_root(Path::new(required(options, "--storage-root")?), false)?;
+    let path = backup_path(
+        &root,
+        required(options, "--backup-id")?,
+        command == "backup",
+    )?;
+    let mut policy = backup::Policy::single_lab(LabId::parse(required(options, "--lab-id")?)?);
+    if let Some(n) = options.get("--max-backup-bytes") {
+        policy.max_database_bytes = n
+            .parse()
+            .map_err(|_| Error::Configuration("backup byte bound"))?;
+    }
+    let manifest = match command {
+        "backup" => {
+            let db =
+                Library::open_with_options(database_path(&root, true)?, storage_options(options)?)?;
+            backup::create(&db, &path, &policy)?
+        }
+        "verify-backup" => backup::verify(&path, &policy)?,
+        "restore-new" => backup::restore_new(
+            &path,
+            Path::new(required(options, "--destination-root")?),
+            &policy,
+        )?,
+        _ => return Err(Error::Configuration(USAGE)),
+    };
+    println!(
+        "{} completed: {} checked database bytes; {} lab(s); immutable backup ID {}. No access-key contents were read or printed.",
+        command,
+        manifest.database_bytes,
+        manifest.labs.len(),
+        required(options, "--backup-id")?
+    );
+    println!(
+        "Recorded archive quota: {} bytes per lab. Restore does not change runtime server settings; supply the intended --max-lab-bytes when serving the recovered database.",
+        manifest.max_lab_archive_bytes
+    );
+    Ok(())
+}
+fn backup_path(root: &Path, id: &str, create: bool) -> Result<PathBuf> {
+    if id.is_empty()
+        || id.len() > 64
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+    {
+        return Err(Error::Configuration(
+            "backup ID must be1–64 ASCII letters, digits, hyphens or underscores",
+        ));
+    }
+    let directory = root.join("backups");
+    let existed = directory.exists();
+    storage_root(&directory, create)?;
+    #[cfg(unix)]
+    if create && !existed {
+        std::fs::File::open(root)?.sync_all()?;
+    }
+    let _ = existed;
+    Ok(directory.join(format!("backup-{id}.cglbak")))
+}
 fn allowed(options: &BTreeMap<String, String>, names: &[&str]) -> Result<()> {
     if options.keys().any(|key| !names.contains(&key.as_str())) {
         return Err(Error::Configuration("unknown option"));
@@ -202,4 +290,92 @@ fn database_path(root: &Path, must_exist: bool) -> Result<PathBuf> {
     }
     Ok(path)
 }
-const USAGE: &str = "Usage:\n  collagene-server keygen --key-file PATH\n  collagene-server init --storage-root DIRECTORY --lab-name NAME [--max-lab-bytes N]\n  collagene-server serve --storage-root DIRECTORY --lab-id ID --key-file PATH --assets DIRECTORY [--bind 127.0.0.1:8084] [--origin https://your-host] [--max-concurrent N] [--max-lab-bytes N]";
+const USAGE: &str = "Usage:\n  collagene-server keygen --key-file PATH\n  collagene-server init --storage-root DIRECTORY --lab-name NAME [--max-lab-bytes N]\n  collagene-server backup --storage-root DIRECTORY --lab-id ID --backup-id NAME [--max-backup-bytes N] [--max-lab-bytes N]\n  collagene-server verify-backup --storage-root DIRECTORY --lab-id ID --backup-id NAME [--max-backup-bytes N]\n  collagene-server restore-new --storage-root DIRECTORY --lab-id ID --backup-id NAME --destination-root NEW_DIRECTORY [--max-backup-bytes N]\n  collagene-server serve --storage-root DIRECTORY --lab-id ID --key-file PATH --assets DIRECTORY [--bind 127.0.0.1:8084] [--origin https://your-host] [--max-concurrent N] [--max-lab-bytes N]";
+
+#[cfg(test)]
+mod backup_cli_tests {
+    use super::*;
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    struct Temp(PathBuf);
+    impl Temp {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "collagene-backup-cli-{}-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ));
+            storage_root(&path, true).unwrap();
+            Self(path)
+        }
+    }
+    impl Drop for Temp {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    #[test]
+    fn native_backup_verify_restore_commands_use_fixed_confined_paths_and_never_overwrite() {
+        let temp = Temp::new();
+        let mut db = Library::open(temp.0.join("library.sqlite")).unwrap();
+        let lab = db.create_lab("Temporary operator fixture").unwrap();
+        drop(db);
+        let mut options = BTreeMap::from([
+            (
+                "--storage-root".into(),
+                temp.0.to_string_lossy().into_owned(),
+            ),
+            ("--lab-id".into(), lab.id.to_string()),
+            ("--backup-id".into(), "nightly_001".into()),
+        ]);
+        backup_command("backup", &options).unwrap();
+        let backup = backup_path(&temp.0, "nightly_001", false).unwrap();
+        let before = std::fs::read(&backup).unwrap();
+        backup_command("verify-backup", &options).unwrap();
+        assert!(backup_command("backup", &options).is_err());
+        assert_eq!(std::fs::read(&backup).unwrap(), before);
+        std::fs::rename(
+            temp.0.join("library.sqlite"),
+            temp.0.join("offline-original.sqlite"),
+        )
+        .unwrap();
+        backup_command("verify-backup", &options).unwrap();
+        assert!(
+            !temp.0.join("library.sqlite").exists(),
+            "verification never opens or recreates the source database"
+        );
+        let destination = temp.0.join("new-recovery");
+        options.insert(
+            "--destination-root".into(),
+            destination.to_string_lossy().into_owned(),
+        );
+        backup_command("restore-new", &options).unwrap();
+        assert!(backup_command("restore-new", &options).is_err());
+        let restored = Library::open(destination.join("library.sqlite")).unwrap();
+        let access = restored.trusted_host_access(&lab.id).unwrap();
+        assert_eq!(
+            restored.lab(&access).unwrap().name,
+            "Temporary operator fixture"
+        );
+        assert!(
+            backup_command("backup", &options).is_err(),
+            "restore-only option is rejected for backup"
+        );
+        for id in ["", "../other", "a/b", "a\\b", ".", "..\0", "with space"] {
+            assert!(backup_path(&temp.0, id, false).is_err());
+        }
+    }
+    #[cfg(unix)]
+    #[test]
+    fn backup_directory_symlink_is_not_followed() {
+        use std::os::unix::fs::symlink;
+        let temp = Temp::new();
+        let outside = Temp::new();
+        symlink(&outside.0, temp.0.join("backups")).unwrap();
+        assert!(backup_path(&temp.0, "snapshot", true).is_err());
+        assert_eq!(std::fs::read_dir(&outside.0).unwrap().count(), 0);
+    }
+}

@@ -109,7 +109,7 @@ mod tests {
         assert!(empty.summary().contains("without a primer collection"));
     }
     #[test]
-    fn real_embedded_topo_order_scope_is_unavailable_without_blocking_other_outputs() {
+    fn real_embedded_topo_primers_enable_collection_without_verifying_the_graph() {
         let (mut plan, target) = fixture();
         let Operation::Pcr {
             forward, reverse, ..
@@ -148,9 +148,15 @@ mod tests {
         });
         let cap = capability(&plan, &target);
         assert_eq!(cap.distinct_oligos, 2);
-        assert!(!cap.complete && !cap.can_save() && !cap.selected(true, true));
-        assert!(cap.unavailable.iter().any(|s| s.contains("TOPO")));
-        assert!(cap.summary().contains("construct can still be created"));
+        assert_eq!(cap.uses, 4);
+        assert!(cap.complete && cap.can_save() && cap.selected(true, true));
+        assert!(cap.unavailable.is_empty());
+        assert!(!cap.selected(true, false));
+        // Literal primer declarations do not validate this deliberately unbound graph.
+        assert_ne!(
+            collagene_core::verification::verify(&plan, &target).status,
+            collagene_core::verification::Status::ConsistentUnderAssumptions
+        );
     }
     fn binding(w: &Workspace, i: usize) -> EventBinding {
         let d = &w.documents[i];

@@ -37,6 +37,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Storage(#[from] collagene_lab_library::Error),
+    #[error(transparent)]
+    Backup(#[from] collagene_lab_library::backup::BackupError),
 }
 #[derive(Debug, Clone)]
 pub struct Limits {

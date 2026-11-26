@@ -90,7 +90,7 @@ fn dispatch_sync(state: &NativeState, bytes: &[u8]) -> Result<Vec<u8>, String> {
         Ok(JobStart::Run(job)) => job,
         Err(error) => {
             let cancelled = matches!(error, collagene_desktop_host::HostError::Cancelled);
-            return sync::encode_response(&sync_failure(&request, cancelled))
+            return sync::encode_response_for_frame(&sync_failure(&request, cancelled), bytes)
                 .map_err(|_| "Cannot encode native database failure.".into());
         }
     };
@@ -118,7 +118,7 @@ fn dispatch_sync(state: &NativeState, bytes: &[u8]) -> Result<Vec<u8>, String> {
         }) => OperationState::Cancelled,
         _ => OperationState::Failed,
     };
-    let reply = sync::encode_response(&response)
+    let reply = sync::encode_response_for_frame(&response, bytes)
         .map_err(|_| "Cannot encode native database response.".to_owned())?;
     job.finish(terminal, &reply).map_err(|_| {
         "Native database status could not be retained; review its durable job.".to_owned()

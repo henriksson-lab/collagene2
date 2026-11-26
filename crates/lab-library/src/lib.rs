@@ -1069,3 +1069,6 @@ CREATE TRIGGER immutable_revision_delete BEFORE DELETE ON revisions BEGIN SELECT
 
 /// Retry-safe native transactions and private repository checkpoints.
 pub mod mutations;
+
+/// Operator-only consistent SQLite backup and new-destination recovery.
+pub mod backup;

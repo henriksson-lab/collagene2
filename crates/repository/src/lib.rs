@@ -2,7 +2,9 @@
 //! clone/pull/resume calls. Credentials never enter this database's checkpoints
 //! or biological archives. Native graph identity is distinct from remote history.
 #![cfg(not(target_arch = "wasm32"))]
+pub mod folder_publication;
 pub mod http;
+pub mod publication_review;
 mod remote;
 use collagene_core::{
     protocol,

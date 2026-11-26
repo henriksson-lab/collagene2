@@ -167,8 +167,9 @@ fn checked_frames_reject_damage_trailing_data_wrong_namespace_and_bounds() {
         Err(Error::Malformed)
     );
     let mut version = frame.clone();
-    version[4] = 2;
-    assert_eq!(decode_request(&version), Err(Error::Version(2)));
+    let unsupported = SCHEMA_VERSION + 1;
+    version[4..6].copy_from_slice(&unsupported.to_le_bytes());
+    assert_eq!(decode_request(&version), Err(Error::Version(unsupported)));
     let oversized = checked_frame(b"DSQ\0", &vec![0; MAX_REQUEST_BYTES - HEADER_BYTES + 1]);
     assert_eq!(oversized.len(), MAX_REQUEST_BYTES + 1);
     assert_eq!(decode_request(&oversized), Err(Error::TooLarge));

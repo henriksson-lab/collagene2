@@ -271,6 +271,10 @@ mod multisite;
 mod mutagenesis;
 #[cfg(any(target_arch = "wasm32", test))]
 mod mutation_review;
+#[cfg(any(target_arch = "wasm32", test))]
+mod native_publication_model;
+#[cfg(target_arch = "wasm32")]
+mod native_publication_view;
 #[cfg(target_arch = "wasm32")]
 mod pairwise_context_view;
 #[cfg(target_arch = "wasm32")]

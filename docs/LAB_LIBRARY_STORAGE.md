@@ -119,7 +119,10 @@ folder names never control paths. Restrict filesystem access to the trusted host
 and administrators. A live WAL database includes its sidecar files: use SQLite's
 supported backup approach or stop all connections before copying database files;
 copying only the main file while writers are active can lose committed data.
-Future schema migrations must be explicit and transactional.
+The native [operator backup/verify/new-destination restore](LAB_LIBRARY_BACKUP.md)
+commands now use SQLite online snapshots and checked immutable manifests; they
+never replace an existing live database. Future schema migrations must be explicit
+and transactional.
 
 ## Validation
 

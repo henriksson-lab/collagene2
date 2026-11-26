@@ -4,6 +4,7 @@
 #![cfg(not(target_arch = "wasm32"))]
 mod adapter;
 mod projection;
+mod publication;
 pub use adapter::{ProductionAdapter, SyncAdapter};
 use collagene_desktop_credentials as credentials;
 use collagene_desktop_sync_protocol as wire;
@@ -163,6 +164,7 @@ pub struct SyncHost<A> {
     repository: Repository,
     adapter: A,
     local_lab: library::LabId,
+    reviews: publication::Reviews,
 }
 impl SyncHost<ProductionAdapter> {
     pub fn production(
@@ -194,6 +196,7 @@ impl<A: SyncAdapter> SyncHost<A> {
             repository,
             adapter,
             local_lab: local,
+            reviews: publication::Reviews::new()?,
         })
     }
     pub fn adapter_mut(&mut self) -> &mut A {
@@ -329,8 +332,28 @@ impl<A: SyncAdapter> SyncHost<A> {
             return Err(Fault::unavailable());
         }
         let checkpoint = self.repository.checkpoint_version();
+        if matches!(
+            &request.command,
+            wire::Command::SetCredential { .. }
+                | wire::Command::DeleteCredential { .. }
+                | wire::Command::ClearSession { .. }
+        ) {
+            self.reviews.clear();
+        }
+        if let Some(success) = self.execute_publication(&request.command, gate)? {
+            return Ok(success);
+        }
         use wire::{Command as C, Success as S};
         Ok(match &request.command {
+            C::PrepareMetadataPublication { .. }
+            | C::QueueMetadataPublication { .. }
+            | C::InspectPushChoices { .. }
+            | C::PrepareReviewedPush { .. }
+            | C::QueueReviewedPush { .. }
+            | C::DiscardPushReview { .. }
+            | C::ListDeletedFolderPublications { .. } => {
+                return Err(Fault::invalid("Publication command was not dispatched."));
+            }
             C::Remotes => S::Remotes(
                 library::Rows::new(
                     self.repository
@@ -766,6 +789,6 @@ impl<A: SyncAdapter> SyncHost<A> {
         response
             .validate_for(&request)
             .map_err(|_| HostError::Wire)?;
-        wire::encode_response(&response).map_err(|_| HostError::Unavailable)
+        wire::encode_response_for_frame(&response, bytes).map_err(|_| HostError::Unavailable)
     }
 }

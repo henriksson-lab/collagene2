@@ -2975,3 +2975,26 @@ outbox/binding/credential lifecycle contract. Existing CAS saves, durable retrie
 resumable folder cloning, divergent checkout/bookmarks and native credentials
 remain implemented. Their historical pending-status paragraphs are not a new
 implementation queue. All exclusions and the BAM/BAI deferral remain unchanged.
+
+
+### Native publication and operator recovery delivery — 26 November 2026
+
+The source now connects reviewed local-folder creation/metadata/deletion and
+native saved-revision SBOL subset publication to the existing durable queue and
+explicit resume workflow. The host rederives descriptors or retains opaque
+source-bound approval objects; a payload/hash cannot grant publication scope.
+Mount placement is preserved, and deleted-folder discovery is stably paged.
+DSQ/DSR2 carries only bounded metadata, choices and review IDs; old prefix commands
+keep version1 compatibility while new review semantics require version2.
+
+The native shared-library CLI implements online consistent backup, independent
+verification and new-destination restore. It preserves exact archived bytes,
+immutable histories, reliable receipts and repository checkpoints, and rejects
+foreign lab sets, unsupported schemas and corruption before publication or restore.
+It does not overwrite existing/live databases or switch a running server. Native
+SDK and UI/worker WASM checks and37 focused cases pass; cross-platform CI for this
+source remains required. Desktop backup controls, controlled service cutover,
+remote removal policy and the agreed F30 identities/comments/review model remain
+unfinished. Earlier audit lists are historical, not evidence these new controls
+are still absent. [Backups](LAB_LIBRARY_BACKUP.md) ·
+[Metadata publication](REPOSITORY_METADATA_PUBLICATION.md).

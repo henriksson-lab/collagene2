@@ -6,7 +6,9 @@ use library::{Digest, DocumentId, FolderId, LabId, Rows, Text};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-pub const SCHEMA_VERSION: u16 = 1;
+pub const SCHEMA_VERSION: u16 = 2;
+mod publication;
+pub use publication::*;
 pub const HEADER_BYTES: usize = 42;
 /// Limits include the complete frame header.
 pub const MAX_REQUEST_BYTES: usize = 64 << 10;
@@ -71,6 +73,7 @@ macro_rules! id {
 id!(RemoteId, "rem-");
 id!(PushJobId, "mut-");
 id!(TreeJobId, "tree-");
+id!(ReviewId, "review-");
 
 /// Intentionally has no Display/AsRef implementation and never appears in a reply.
 /// A host must not log request frames or serialized commands containing this value.
@@ -158,6 +161,13 @@ dto! {pub enum Command {
     QueueTreeFolderMetadata{job:TreeJobId,local_folder:FolderId},
     QueueTreeDocumentMetadata{job:TreeJobId,local_document:DocumentId},
     ListBookmarks{page:LocalPageRequest,expected_checkpoint:Option<Digest>},
+    PrepareMetadataPublication{target:PublicationTarget,remote:RemoteId},
+    QueueMetadataPublication{review:MetadataReview},
+    InspectPushChoices{local_document:DocumentId,expected_local_revision:library::RevisionId,remote:RemoteId},
+    PrepareReviewedPush{local_document:DocumentId,expected_local_revision:library::RevisionId,remote:RemoteId,choices:Rows<PushChoice,128>},
+    QueueReviewedPush{local_document:DocumentId,expected_local_revision:library::RevisionId,remote:RemoteId,review:ReviewId},
+    DiscardPushReview{review:ReviewId},
+    ListDeletedFolderPublications{remote:RemoteId,page:LocalPageRequest,expected_checkpoint:Option<Digest>},
 }}
 dto! {pub struct RequestEnvelope {pub request_id:u64,pub operation_id:OperationId,pub command:Command}}
 dto! {pub enum LocalTarget {Document(DocumentId),Folder(FolderId),DeletedFolder(FolderId)}}
@@ -207,6 +217,7 @@ dto! {pub enum Success {
     CancelledUnattempted{job:PushJobId},DiscardedRejected{job:PushJobId},
     Pulled{local:library::Document},TreeStarted(TreeStatus),TreeUpdated(TreeStatus),TreeJobs(TreePage),
     Bookmarks(BookmarkPage),
+    MetadataPrepared(MetadataReview),PushChoices(PushChoices),PushPrepared(PushPublicationReview),PushReviewDiscarded{review:ReviewId},DeletedFolderPublications(DeletedFolderPage),
 }}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ErrorCode {
@@ -222,6 +233,7 @@ pub enum ErrorCode {
     Cancelled,
     TooLarge,
     BookmarkChanged,
+    ReviewChanged,
 }
 dto! {pub enum Failure {
     Error{code:ErrorCode,message:Text<1024>},
@@ -307,8 +319,14 @@ impl Command {
             | Self::ListRevisions { remote, .. }
             | Self::CloneDocument { remote, .. }
             | Self::QueuePush { remote, .. }
+            | Self::PrepareMetadataPublication { remote, .. }
+            | Self::ListDeletedFolderPublications { remote, .. }
+            | Self::InspectPushChoices { remote, .. }
+            | Self::PrepareReviewedPush { remote, .. }
+            | Self::QueueReviewedPush { remote, .. }
             | Self::Pull { remote, .. }
             | Self::BeginTreeClone { remote, .. } => Some(remote),
+            Self::QueueMetadataPublication { review } => Some(&review.description.remote.id),
             _ => None,
         }
     }
@@ -342,6 +360,18 @@ impl RequestEnvelope {
             read.validate()?;
         }
         match &self.command {
+            Command::ListDeletedFolderPublications {
+                page,
+                expected_checkpoint,
+                ..
+            } => {
+                page.validate()?;
+                if page.offset > 0 && expected_checkpoint.is_none() {
+                    return Err(Error::Invalid("deleted folder continuation"));
+                }
+            }
+            Command::QueueMetadataPublication { review } => review.description.validate()?,
+            Command::PrepareReviewedPush { choices, .. } => validate_choices(choices)?,
             Command::AddRemote {
                 name: n,
                 endpoint: e,
@@ -463,6 +493,38 @@ impl ResponseEnvelope {
                     }
                 }
                 Success::AddedRemote(r) => r.validate()?,
+                Success::MetadataPrepared(r) => r.description.validate()?,
+                Success::DeletedFolderPublications(p) => {
+                    for f in p.items.iter() {
+                        f.remote_folder.validate()?;
+                    }
+                }
+                Success::PushPrepared(r) => {
+                    r.configuration.validate()?;
+                    if r.remote != r.configuration.id {
+                        return Err(Error::Mismatch);
+                    }
+                    if r.entries.iter().any(|entry| {
+                        entry.retained_objects > 10000
+                            || entry.omitted_objects > 10000
+                            || entry.omitted_sequence_edges > 200000
+                    }) {
+                        return Err(Error::TooLarge);
+                    }
+                }
+                Success::PushChoices(r) => {
+                    let mut seen = std::collections::BTreeSet::new();
+                    for c in r.requirements.iter() {
+                        if c.component_iri.is_empty()
+                            || !seen.insert((&c.original_hash, &c.component_iri))
+                            || c.required_sequences
+                                .iter()
+                                .any(|s| !c.available_sequences.iter().any(|a| a == s))
+                        {
+                            return Err(Error::Invalid("push choices"));
+                        }
+                    }
+                }
                 Success::Cloned { local, .. } | Success::Pulled { local } => local.validate()?,
                 Success::Queued(p) => p.validate()?,
                 Success::Pending(p) => {
@@ -564,6 +626,81 @@ impl ResponseEnvelope {
             return Ok(());
         }
         let matches = match (&r.command, &self.outcome) {
+            (
+                Command::ListDeletedFolderPublications {
+                    remote,
+                    page,
+                    expected_checkpoint,
+                },
+                Outcome::Success(Success::DeletedFolderPublications(v)),
+            ) => {
+                remote == &v.remote
+                    && v.items.len() <= usize::from(page.limit)
+                    && (page.offset == 0 || expected_checkpoint == &v.checkpoint)
+                    && v.next_offset.is_none_or(|next| next > page.offset)
+            }
+            (
+                Command::PrepareMetadataPublication { target, remote },
+                Outcome::Success(Success::MetadataPrepared(v)),
+            ) => target == &v.description.target && remote == &v.description.remote.id,
+            (
+                Command::QueueMetadataPublication { review },
+                Outcome::Success(Success::Queued(p)),
+            ) => {
+                review.description.remote.id == p.remote
+                    && match (&review.description.target, &p.target) {
+                        (PublicationTarget::Folder(a), LocalTarget::Folder(b))
+                        | (PublicationTarget::DeletedFolder(a), LocalTarget::DeletedFolder(b)) => {
+                            a == b
+                        }
+                        (PublicationTarget::DocumentMetadata(a), LocalTarget::Document(b)) => {
+                            a == b
+                        }
+                        _ => false,
+                    }
+            }
+            (
+                Command::InspectPushChoices {
+                    local_document,
+                    expected_local_revision,
+                    remote,
+                },
+                Outcome::Success(Success::PushChoices(v)),
+            ) => {
+                local_document == &v.local_document
+                    && expected_local_revision == &v.local_revision
+                    && remote == &v.remote
+            }
+            (
+                Command::PrepareReviewedPush {
+                    local_document,
+                    expected_local_revision,
+                    remote,
+                    ..
+                },
+                Outcome::Success(Success::PushPrepared(v)),
+            ) => {
+                local_document == &v.local_document
+                    && expected_local_revision == &v.local_revision
+                    && remote == &v.remote
+            }
+            (
+                Command::QueueReviewedPush {
+                    local_document,
+                    expected_local_revision,
+                    remote,
+                    ..
+                },
+                Outcome::Success(Success::Queued(v)),
+            ) => {
+                remote == &v.remote
+                    && v.target == LocalTarget::Document(local_document.clone())
+                    && v.local_revision.as_ref() == Some(expected_local_revision)
+            }
+            (
+                Command::DiscardPushReview { review },
+                Outcome::Success(Success::PushReviewDiscarded { review: actual }),
+            ) => review == actual,
             (Command::Remotes, Outcome::Success(Success::Remotes(_))) => true,
             (
                 Command::AddRemote {
@@ -770,7 +907,7 @@ fn payload<'a>(magic: &[u8; 4], bytes: &'a [u8], limit: usize) -> Result<&'a [u8
         return Err(Error::Malformed);
     }
     let version = u16::from_le_bytes([bytes[4], bytes[5]]);
-    if version != SCHEMA_VERSION {
+    if !(1..=SCHEMA_VERSION).contains(&version) {
         return Err(Error::Version(version));
     }
     let length =
@@ -804,11 +941,16 @@ fn decode<T: for<'de> Deserialize<'de>>(
 }
 pub fn encode_request(r: &RequestEnvelope) -> Result<Vec<u8>, Error> {
     r.validate()?;
-    encode(REQUEST_MAGIC, r, MAX_REQUEST_BYTES)
+    let mut bytes = encode(REQUEST_MAGIC, r, MAX_REQUEST_BYTES)?;
+    bytes[4..6].copy_from_slice(&request_version(&r.command).to_le_bytes());
+    Ok(bytes)
 }
 pub fn decode_request(bytes: &[u8]) -> Result<RequestEnvelope, Error> {
     let value: RequestEnvelope = decode(REQUEST_MAGIC, bytes, MAX_REQUEST_BYTES)?;
     value.validate()?;
+    if u16::from_le_bytes([bytes[4], bytes[5]]) < request_version(&value.command) {
+        return Err(Error::Version(1));
+    }
     Ok(value)
 }
 pub fn encode_response(r: &ResponseEnvelope) -> Result<Vec<u8>, Error> {
@@ -818,6 +960,9 @@ pub fn encode_response(r: &ResponseEnvelope) -> Result<Vec<u8>, Error> {
 pub fn decode_response(bytes: &[u8]) -> Result<ResponseEnvelope, Error> {
     let value: ResponseEnvelope = decode(RESPONSE_MAGIC, bytes, MAX_RESPONSE_BYTES)?;
     value.validate()?;
+    if u16::from_le_bytes([bytes[4], bytes[5]]) < response_version(&value.outcome) {
+        return Err(Error::Version(1));
+    }
     Ok(value)
 }
 pub fn decode_response_for(
@@ -825,6 +970,57 @@ pub fn decode_response_for(
     request: &RequestEnvelope,
 ) -> Result<ResponseEnvelope, Error> {
     let value = decode_response(bytes)?;
+    if u16::from_le_bytes([bytes[4], bytes[5]]) < request_version(&request.command) {
+        return Err(Error::Version(1));
+    }
     value.validate_for(request)?;
     Ok(value)
+}
+
+fn request_version(c: &Command) -> u16 {
+    if matches!(
+        c,
+        Command::PrepareMetadataPublication { .. }
+            | Command::QueueMetadataPublication { .. }
+            | Command::InspectPushChoices { .. }
+            | Command::PrepareReviewedPush { .. }
+            | Command::QueueReviewedPush { .. }
+            | Command::DiscardPushReview { .. }
+            | Command::ListDeletedFolderPublications { .. }
+    ) {
+        2
+    } else {
+        1
+    }
+}
+fn response_version(o: &Outcome) -> u16 {
+    if matches!(
+        o,
+        Outcome::Success(
+            Success::MetadataPrepared(_)
+                | Success::PushChoices(_)
+                | Success::PushPrepared(_)
+                | Success::PushReviewDiscarded { .. }
+                | Success::DeletedFolderPublications(_)
+        ) | Outcome::Failure(Failure::Error {
+            code: ErrorCode::ReviewChanged,
+            ..
+        })
+    ) {
+        2
+    } else {
+        1
+    }
+}
+/// Match a compatible legacy caller without weakening new review capability floors.
+pub fn encode_response_for_frame(r: &ResponseEnvelope, request: &[u8]) -> Result<Vec<u8>, Error> {
+    let q = decode_request(request)?;
+    r.validate_for(&q)?;
+    let version = u16::from_le_bytes([request[4], request[5]]);
+    if version < response_version(&r.outcome) {
+        return Err(Error::Version(version));
+    }
+    let mut bytes = encode_response(r)?;
+    bytes[4..6].copy_from_slice(&version.to_le_bytes());
+    Ok(bytes)
 }

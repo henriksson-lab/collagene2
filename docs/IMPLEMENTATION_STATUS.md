@@ -5,7 +5,8 @@ The implementation goal is active. The working application covers substantial pa
 ## Current source and public preview
 
 Current source uses worker89, candidate20, native plan18, science23 and181 MCP
-tools. The Tauri shell has a durable offline local library, explicit multi-remote
+tools. Desktop remote review messages now use DSQ/DSR2, with compatible legacy
+prefix commands/replies and explicit version floors for new review controls. The Tauri shell has a durable offline local library, explicit multi-remote
 synchronization, scoped native credentials, saved-branch review, embedded stdio
 MCP and authenticated URL-import adapters. All export controls now await native
 file receipts under the configured root, using a separate capability-based export
@@ -14,12 +15,13 @@ pass. Installer workflow sources are present, but packaging, installation and
 graphical/offline acceptance remain unfinished.
 
 The format checkpoint `73fd9d8` passes scientific tests, WASM, desktop builds/MCP
-and unsigned package builds on Windows/macOS/Linux. The published `6f3a8c7`
-frontend also passes desktop builds/MCP on all three systems and WASM. Its Linux
-scientific job exposed an outdated future-schema fixture: draft11 is now known,
-so the fixture is updated to exercise draft12 as unknown without weakening the
-privacy gate. That correction is part of the current work. Successful bundles do
-not establish installation or graphical/offline acceptance; those gates remain.
+and unsigned package builds on Windows/macOS/Linux. Desktop builds/MCP and WASM
+also pass for `ebe44ae`. Its wider scientific run found an outdated web capability
+fixture still expecting embedded TOPO oligos to be unavailable. That fixture now
+checks the supported collection while retaining independent graph-failure gates;
+all three related model cases pass locally. The prior draft11/unknown-draft12
+boundary correction remains intact. New cross-platform CI is pending. Installation
+and graphical/offline acceptance remain separate unfinished gates.
 
 The parallel format batch adds annotated GenPept/UniProt, PHYLIP/MSF/NEXUS and
 PIR/GDE/SELEX alignment exchange, plus an independent SBOL3.1 structural JSON-LD
@@ -1542,3 +1544,34 @@ in the UI and tool181 `inspect_saved_topo`. Candidate output is still freshly
 reconstructed and checked against its independent target. Thirty focused native/static cases and integrated UI/worker WASM checking pass.
 New cross-platform CI is pending the commit. [Workflow](TOPO_SAVED_TEMPLATE.md) ·
 [MCP](MCP_SAVED_TOPO.md).
+
+
+## Native publication reviews and operator backups
+
+Native Databases controls can review/queue a new local folder, a single rename or
+move, or deletion of a known locally removed bound empty folder. Parent bindings,
+remote configuration, local generations and checkpoint are rechecked. Root and
+selected-subtree mounts retain their acknowledged remote placement unless an
+actual relocation is declared. Deleted-folder choices have checkpoint-bound
+pagination, including access beyond item200. Queueing remains separate from
+network resume and durable receipts preserve retry identity.
+
+Saved native SBOL archives can now use structured reachable-sequence choices and
+an explicit omission-count/hash review before queueing the public subset. Private
+originals and native identities remain unchanged. Approval objects stay native,
+source-bound and non-deserializable; bounded review IDs expire on session reset,
+explicit discard, successful queue or replacement by newer reviews. Cancellation
+cannot retain an undisclosed prepared token. [Metadata](REPOSITORY_METADATA_PUBLICATION.md) ·
+[Native SBOL review](REPOSITORY_PUBLICATION_REVIEW.md).
+
+The shared-library operator CLI now creates immutable WAL-consistent backups,
+verifies database/schema/BLOB/history/receipt/checkpoint integrity and exact lab
+scope, and restores only into a new private directory. It invokes no external
+SQLite program and never overwrites a live database. Existing destination
+replacement, automatic cutover and desktop backup controls remain later work.
+[Backup and recovery](LAB_LIBRARY_BACKUP.md).
+
+Thirty-seven focused cases pass across repository, raw host protocol, review/UI
+models, backup/restore and related compatibility gates. Integrated UI/worker WASM
+and native SDK checks pass. No browser/application HTTP checks or live-user data
+backup/restore operations were performed.

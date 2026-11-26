@@ -175,8 +175,30 @@ impl Repository {
         }
         let payload = self.db.payload(&self.access, id, &doc.head.id)?;
         let (payload, native) = publish(payload)?;
+        self.queue_prepared_push(doc, remote, payload, native, false)
+    }
+    /// Internal prepared-publication path. The reviewed adapter has already
+    /// rechecked its opaque source/remote pins and derived exact public scope.
+    pub(super) fn queue_prepared_push(
+        &mut self,
+        doc: store::Document,
+        remote: RemoteConfig,
+        payload: wire::Payload,
+        native: NativePin,
+        documentary_update: bool,
+    ) -> Result<String> {
+        payload.validate().map_err(|_| Error::Native)?;
+        if payload.kind == wire::PayloadKind::WorkspaceArchive
+            && payload.sharing != Some(wire::WorkspaceSharing::DocumentClosure)
+        {
+            return Err(Error::Native);
+        }
+        let id = &doc.id;
+        let remote_id = &remote.id;
         let operation = if let Some(binding) = self.document_binding(id, remote_id) {
-            if binding.common_native == native {
+            if binding.common_native == native
+                && (!documentary_update || binding.remote.head.archive_hash == payload.archive_hash)
+            {
                 return Err(Error::NoChanges);
             }
             sync::MutationOperation::SaveRevision {

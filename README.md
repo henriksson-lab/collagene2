@@ -169,3 +169,10 @@ TOPO preparation can choose an exact saved insert-template origin, replay it for
 new PCR, inspect/declare physical processing and retain a normal verifiable plan.
 Source incompleteness remains visible; new ordered PCR oligos can be collected
 with outputs. [Saved-template TOPO](docs/TOPO_SAVED_TEMPLATE.md).
+
+Native Databases controls support explicitly reviewed local folder/metadata
+publication and SBOL subset pushes. Queue first, then resume the saved durable
+job when ready; local originals remain intact. Shared-library operators can use
+`backup`, `verify-backup` and `restore-new` without an external SQLite program.
+[Publication](docs/REPOSITORY_METADATA_PUBLICATION.md) ·
+[Recovery](docs/LAB_LIBRARY_BACKUP.md).

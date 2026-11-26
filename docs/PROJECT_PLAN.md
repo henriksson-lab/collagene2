@@ -1587,3 +1587,35 @@ The full offline frontend/worker build succeeds. Worker71, candidate16, plan14,
 science19 and MCP170 are unchanged. Browser and HTTP application checks remain
 deferred. The next common cloning UI gap is inspecting/selecting PCR-product
 catalog-digest fragments by actual lengths/ends instead of guessing an index.
+
+### PCR-product catalog digest fragment picker
+
+The active PCR→catalog-digest preparation now offers searchable multiple-enzyme
+selection and a bounded, paged list of reconstructed fragments with actual strand
+lengths, cut-relative coordinates and physical ends. Original source, exact primer
+domains/extensions, catalog identities, source events and workspace epoch bind the
+inspection. Applying a fragment updates only that row's declared fragment index;
+the independent intent and other preparations are retained. Existing Type IIS
+proposal pins remain usable, with manual index entry under an advanced disclosure.
+
+The native inspector reuses exact PCR reconstruction and existing restriction
+recognition/digestion. Only a uniquely reconstructed PCR product receives freshly
+established ideal PCR duplex chemistry; its outer termini stay5′OH/3′OH while
+restriction cuts supply5′ phosphate. Imported preview metadata never supplies
+physical state. Competing or absent PCR geometries and incomplete product sets
+withhold selectable fragments. Comparison counts and named limits remain visible.
+Complete assembly verification freshly reconstructs PCR/digestion from originals.
+
+Worker72 appends inspection job157/result149. MCP inspect_pcr_digest exposes the
+same bounded inspection and immutable report artifact, without creating material,
+a candidate or a target (171 tools). Candidate16/plan14/science19 remain unchanged.
+The ordinary restriction inspector retains its existing behaviour; a private fresh
+substrate entry point preserves PCR chemistry for this native-only composition.
+Browser and HTTP application checks remain deferred and the full project goal
+is unchanged.
+
+Validation:31 targeted core tests,4 web-model tests and1 MCP SDK test passed;
+the full offline worker/frontend Trunk build completed successfully. Formatting
+and whitespace checks passed. No browser or HTTP application checks were run.
+The right-hand circular overview remains rotation-first; precise base ranges
+are selected in the left-hand sequence pane.

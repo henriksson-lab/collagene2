@@ -84,7 +84,7 @@ fn wire(magic: &[u8; 4], version: u16, value: &impl serde::Serialize) -> Vec<u8>
 }
 #[test]
 fn all_three_recipe_requests_reject_downgraded_preparation_and_preview_rows_require71() {
-    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 71);
+    assert!(protocol::WORKER_SCHEMA_VERSION >= 71);
     assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 16);
     let (inputs, target, recipe) = fixture();
     let request = Request {

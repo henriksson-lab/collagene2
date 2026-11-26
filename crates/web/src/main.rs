@@ -132,6 +132,10 @@ mod mismatch_pcr_outputs;
 mod multisite_form;
 #[cfg(target_arch = "wasm32")]
 mod oligo_import;
+#[cfg(any(target_arch = "wasm32", test))]
+mod pcr_digest_model;
+#[cfg(target_arch = "wasm32")]
+mod pcr_digest_view;
 #[cfg(target_arch = "wasm32")]
 mod protein_properties;
 #[cfg(target_arch = "wasm32")]

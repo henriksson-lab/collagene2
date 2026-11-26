@@ -407,6 +407,32 @@ pub fn inspect(
     es: &[Enzyme],
     o: &InspectionOptions,
 ) -> Result<RestrictionInspection, Error> {
+    inspect_with_digest(role, m, es, o, || {
+        chemistry::Duplex::from_molecule(m).and_then(|d| chemistry::digest(&d, es))
+    })
+}
+/// Private fresh-native composition only. Callers must reconstruct this substrate,
+/// never deserialize a producer's physical summary as input authority.
+pub(crate) fn inspect_fresh_duplex(
+    role: &str,
+    m: &Molecule,
+    es: &[Enzyme],
+    o: &InspectionOptions,
+    duplex: &chemistry::Duplex,
+) -> Result<RestrictionInspection, Error> {
+    duplex.validate()?;
+    if duplex.top != m.sequence || duplex.topology != m.topology {
+        return Err(bad("fresh duplex/reference binding differs"));
+    }
+    inspect_with_digest(role, m, es, o, || chemistry::digest(duplex, es))
+}
+fn inspect_with_digest(
+    role: &str,
+    m: &Molecule,
+    es: &[Enzyme],
+    o: &InspectionOptions,
+    digest: impl FnOnce() -> Result<Vec<chemistry::DigestFragment>, Error>,
+) -> Result<RestrictionInspection, Error> {
     let mut r = scan(role, m, es, o)?;
     r.diagnostics = vec![INSPECTION_ASSUMPTIONS.into()];
     if r.scan_complete
@@ -427,7 +453,7 @@ pub fn inspect(
             })
             .collect();
         r.ref_top_lengths = Some(analysis::digest_lengths(m, &cuts)?);
-        match chemistry::Duplex::from_molecule(m).and_then(|d| chemistry::digest(&d, es)) {
+        match digest() {
             Ok(fs) => {
                 if fs.len() > o.max_fragments {
                     push_limit(&mut r, InspectionLimit::Fragments);

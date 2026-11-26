@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 170;
+pub const CURRENT_TOOL_COUNT: usize = 171;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -885,6 +885,17 @@ pub struct Restriction {
     pub document: DocumentRef,
     /// One name from the embedded starter catalog, e.g. EcoRI or BsaI.
     pub enzyme: String,
+}
+/// Inspect actual PCR-product digest geometry while keeping the original source immutable.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PcrDigestInspectionQuery {
+    pub document: DocumentRef,
+    pub request: collagene_core::pcr_digest_inspection::Request,
+    #[serde(default)]
+    pub fragment_start: usize,
+    #[serde(default = "default_methylation_page")]
+    pub max_fragments: usize,
 }
 /// Bounded recognition evidence and assumed-complete digest summaries for one immutable source.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -5184,6 +5195,37 @@ impl CollageneServer {
                 "sites_done":end==report.sites.len(),"sites":&report.sites[args.site_start..end],
                 "artifact_id":artifact_id,"authority":authority,
             }))
+        }).await
+    }
+    #[tool(
+        description = "Inspect actual restriction fragments of a freshly reconstructed unique exact PCR product from an immutable original source, explicit ordered primers and a full catalog pin. Primer 5′ extensions participate in the actual product and catalog scan. Ambiguous/no PCR geometry withholds physical fragment inspection; uncertain or partial cleavage retains diagnostics. Returns a paged actual end-chemistry summary and immutable full JSON evidence. It never chooses a fragment, creates a plan, copies a result into an independent target, publishes a product document or infers amplification/cleavage success."
+    )]
+    async fn inspect_pcr_digest(
+        &self,
+        Parameters(args): Parameters<PcrDigestInspectionQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if !(1..=100).contains(&args.max_fragments) {
+            return Err(bad("PCR digest fragment page size must be1..100"));
+        }
+        let server = self.clone();
+        self.compute(move||{
+            let source={let store=server.store.lock().unwrap();let source=store.document(&args.document)?;collagene_core::pcr_digest_inspection::source_preflight(source,&args.request).map_err(bad)?;source.clone()};
+            let expected=collagene_core::pcr_digest_inspection::inspection_revision(&source,&args.request).map_err(bad)?;
+            let preview=collagene_core::pcr_digest_inspection::inspect(&source,&args.request).map_err(bad)?;
+            preview.validate_binding(&expected).map_err(bad)?;
+            let count=preview.inspection.as_ref().map_or(0,|i|i.fragments.len());
+            if args.fragment_start>count{return Err(bad("PCR digest fragment offset exceeds retained evidence"));}
+            let end=args.fragment_start.saturating_add(args.max_fragments).min(count);
+            let result=json!({"document":args.document,"engine_version":preview.engine_version,"context_revision":preview.context_revision,"source_revision":preview.source_revision,
+                "pcr_geometry_count":preview.pcr_geometries.len(),"pcr_geometries":preview.pcr_geometries.iter().take(100).collect::<Vec<_>>(),"pcr_geometries_truncated":preview.pcr_geometries.len()>100,
+                "amplicon_length":preview.amplicon.as_ref().map(|m|m.sequence.len()),"products_determined":preview.inspection.as_ref().is_some_and(|i|i.products_determined),
+                "scan_complete":preview.inspection.as_ref().map(|i|i.scan_complete),"limits":preview.inspection.as_ref().map(|i|&i.limits),
+                "fragment_count":count,"fragment_start":args.fragment_start,"next_fragment_start":end,"fragments_done":end==count,
+                "fragments":preview.inspection.as_ref().map(|i|&i.fragments[args.fragment_start..end]),
+                "findings":preview.findings.iter().take(100).collect::<Vec<_>>(),"findings_truncated":preview.findings.len()>100,
+                "authority":"Fresh original-source PCR and assumed-complete catalog digestion evidence only. Inspect actual outer PCR and cut-derived termini; no selected product, target acceptance, reaction yield or imported physical authority is created."});
+            let artifact=server.text_artifact(bounded_json_limit(&preview,32*1024*1024)?,"application/json","pcr-digest-inspection.json")?;
+            let mut result=result;result["artifact_id"]=json!(artifact);output(result)
         }).await
     }
     #[tool(

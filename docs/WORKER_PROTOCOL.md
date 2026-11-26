@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **71** and reads supported schemas 1–70. Candidate files write schema 16; workspace plan schema is 14; the verifier is science-19.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **72** and reads supported schemas 1–71. Candidate files write schema 16; workspace plan schema is 14; the verifier is science-19.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -906,3 +906,9 @@ Worker schema71 appends `assembly_recipe::Preparation::AnnealedOligos {bottom_in
 Ligation/overlap/tailing preview rows whose actual `preparation_step` is `Operation::AnnealOligos` require71 even where the preview omits its recipe. Generic plans and Verify requests using the previously supported `Operation::AnnealOligos` keep their existing version requirements. Candidate16, plan14 and science19 are unchanged. Original inputs include both top and bottom oligos with exact revisions; the bottom input is not replaced by an annealed product.
 
 The additive structured recipe diagnostic stage `assembly_diagnostics::Stage::Annealing` identifies failed paired-oligo preparation in MCP/frontend evidence. No current binary job/result carries that diagnostic enum, so it needs no additional binary selector or layout gate. Existing diagnostic stages keep their ordinals.
+
+## Actual PCR-product digest inspection (schema72)
+
+Appended job157 `InspectPcrDigest {molecule, request}` and result149 `PcrDigestInspection(Preview)` require worker72. The request binds the original source, explicit forward/reverse annealing domains and 5′ extensions, full catalog selection and inspection limits. Borrowed source preflight precedes serialization; processing rejects a changed expected inspection context. The reply validates its exact context and bounded readonly shape. Both directions use the ordinary32MiB cap. Candidate16, plan14 and science19 remain unchanged.
+
+The inspector reconstructs a unique actual PCR geometry before performing assumed-complete catalog digestion. Competing or absent PCR geometry returns findings and withholds the amplicon/digest; uncertain or limited digestion does not become a selectable product. Fragment summaries retain actual outer PCR5′OH and cut-derived5′P chemistry. This is source-bound inspection, with no independent target creation, automatic fragment selection or material publication.

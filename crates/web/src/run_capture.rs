@@ -311,23 +311,6 @@ fn operation_title(operation: &Operation) -> &'static str {
         Operation::Overlap { .. } | Operation::ProfiledOverlap { .. } => "Overlap assembly",
     }
 }
-fn reference_only_steps(plan: &DesignPlan) -> Vec<bool> {
-    let mut flags = Vec::with_capacity(plan.steps.len());
-    for operation in &plan.steps {
-        let direct = matches!(
-            operation,
-            Operation::Topo { .. }
-                | Operation::CheckedTopo { .. }
-                | Operation::RecombineReference { .. }
-                | Operation::MultiSiteRecombineReference { .. }
-        );
-        let inherited = collagene_core::verification::operation_sources(operation)
-            .into_iter()
-            .any(|source| matches!(source,Source::Step(i) if flags.get(*i)==Some(&true)));
-        flags.push(direct || inherited);
-    }
-    flags
-}
 
 #[component]
 fn RunProvenanceOverview(
@@ -339,7 +322,7 @@ fn RunProvenanceOverview(
     let page = RwSignal::new(0usize);
     let reference_only = StoredValue::new(record.with_value(|r| {
         r.as_ref()
-            .map(|r| reference_only_steps(&r.plan))
+            .map(|r| crate::plan_processing_model::reference_only_steps(&r.plan))
             .unwrap_or_default()
     }));
     let count = record.with_value(|r| r.as_ref().map_or(0, |r| r.products.len()));

@@ -25,7 +25,13 @@ python3 scripts/stage_preview.py \
 Choose the actual current snapshot for `--previous` and unused output/manifest
 paths. Additional `--previous` arguments are supported. Staging drops obsolete
 main bundles but retains old worker bytes so open tabs can finish their work.
-Conflicting bytes at the same versioned worker path are rejected.
+Conflicting bytes at the same versioned worker path are rejected. If historical
+workers approach the immutable snapshot budget, use `--previous-active-only` to
+retain each supplied previous snapshot's active worker and the fresh worker,
+rather than the entire inherited collection. The default still retains all.
+This leaves the immediately previous version available for existing tabs;
+substantially older tabs that have not started their worker may require reload.
+It does not increase the server memory limit or rewrite versioned worker bytes.
 
 `--verify-assets` checks the index's local script/style/preload references and
 all declared SHA256/384/512 integrity digests, one active worker meta reference,

@@ -120,6 +120,33 @@ pub enum CaptureOutcome {
     },
 }
 
+/// Save the complete private snapshot to the embedded native catalog. This is
+/// selected only by the trusted desktop IPC transport, never by a server URL.
+/// Public publication choices/acknowledgements cannot silently change its scope.
+pub async fn capture_private_local(
+    frame: Workspace,
+    epoch: u64,
+    request: CaptureRequest,
+) -> Result<CaptureOutcome, String> {
+    bindings(&frame.attachments)?;
+    let local = current(&frame, epoch)?;
+    if request.approved.is_some() || !request.choices.is_empty() {
+        return Err("Publication review does not apply to a private local catalog save. Prepare a fresh local save.".into());
+    }
+    if request
+        .expected
+        .as_ref()
+        .is_some_and(|expected| expected != &local)
+    {
+        return Err("The local plasmid changed; prepare a fresh local save.".into());
+    }
+    let prepared = crate::library_capture::prepare_private(frame)?;
+    let (frame, selection) = prepared.into_parts();
+    let bytes = crate::app::encode_workspace(frame, u32::MAX - 302).await?;
+    let payload = crate::library_capture::private_payload(&selection, bytes)?;
+    Ok(CaptureOutcome::Ready(Captured { local, payload }))
+}
+
 pub async fn capture(
     frame: Workspace,
     epoch: u64,
@@ -248,8 +275,16 @@ pub async fn decode(opened: &Opened) -> Result<Decoded, String> {
             .await?;
             // Even an explicitly shared whole archive contributes only this plasmid's
             // declared dependency closure to the local workspace.
-            let projected = collagene_library_sharing::project_document_closure(&frame, &selection)
-                .map_err(|error| format!("Cannot import this plasmid's native history: {error}"))?;
+            let projected = if opened.guard.is_private_local()
+                && opened.payload.sharing == Some(wire::WorkspaceSharing::ExplicitWholeWorkspace)
+            {
+                collagene_library_sharing::project_private_document_closure(&frame, &selection)
+            } else {
+                // Historical native DocumentClosure records and all public
+                // transports retain the original strict publication rule.
+                collagene_library_sharing::project_document_closure(&frame, &selection)
+            }
+            .map_err(|error| format!("Cannot import this plasmid's native history: {error}"))?;
             (projected.workspace, selection)
         }
         wire::PayloadKind::NativeDocument => {
@@ -326,13 +361,15 @@ pub fn merge(local: &Workspace, decoded: &Decoded, opened: &Opened) -> Result<Wo
             }
         }
     }
-    let report = collagene_library_sharing::import::merge_document_closure(
-        local,
-        &decoded.frame,
-        &decoded.selection,
-        &options,
-    )
-    .map_err(|error| format!("Library import did not change local work: {error}"))?;
+    let merger = if opened.guard.is_private_local()
+        && opened.payload.sharing == Some(wire::WorkspaceSharing::ExplicitWholeWorkspace)
+    {
+        collagene_library_sharing::import::merge_private_document_closure
+    } else {
+        collagene_library_sharing::import::merge_document_closure
+    };
+    let report = merger(local, &decoded.frame, &decoded.selection, &options)
+        .map_err(|error| format!("Library import did not change local work: {error}"))?;
     let mut frame = report.workspace;
     if let Some(bookmark) = report.displaced_selected {
         retain_branch(&mut frame.attachments, bookmark)?;

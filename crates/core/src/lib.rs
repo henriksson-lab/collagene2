@@ -192,6 +192,7 @@ mod protocol_legacy_v64;
 pub mod processed_run_evidence;
 
 pub mod topo_actions;
+pub mod topo_run_preparation;
 
 pub mod physical_run_evidence;
 

@@ -239,6 +239,7 @@ impl Session {
         &self,
         operation: wire::Request,
     ) -> Result<wire::ResponseEnvelope, String> {
+        crate::library_capture::ensure_public_document_request(&operation)?;
         let controller =
             web_sys::AbortController::new().map_err(|_| "Cannot start a library request")?;
         let (request_id, epoch, key, context) = {

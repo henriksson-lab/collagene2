@@ -412,6 +412,33 @@ pub fn project_document_closure(
     let inventory = inspect_document_closure(source, selection)?;
     project_inventory(source, selection, inventory)
 }
+/// Native-local open scope. The immutable native dependency closure is narrowed,
+/// while its exact original documentary source bytes remain private. This API
+/// must never be used as a server/public upload authorization inventory.
+pub fn inspect_private_document_closure(
+    source: &Workspace,
+    selection: &Selection,
+) -> Result<Inventory, Error> {
+    let mut inventory = inspect_native_closure(source, selection)?;
+    let documentary =
+        sbol_source::required_private_assets(source, &inventory.revisions, MAX_REFERENCE_EDGES)?;
+    inventory.attachments.extend(documentary);
+    inventory.omitted.attachments = source.attachments.len() - inventory.attachments.len();
+    Ok(inventory)
+}
+/// Project one plasmid for trusted native-local reopen, not public sharing.
+/// Unrelated documents, navigation/UI sidecars and candidates are not restored.
+pub fn project_private_document_closure(
+    source: &Workspace,
+    selection: &Selection,
+) -> Result<Projection, Error> {
+    project_inventory(
+        source,
+        selection,
+        inspect_private_document_closure(source, selection)?,
+    )
+}
+
 pub(crate) fn inspect_native_closure(
     source: &Workspace,
     selection: &Selection,

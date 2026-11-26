@@ -50,6 +50,20 @@ class PreviewStaging(unittest.TestCase):
             self.assertFalse(evidence["application_browser_checks"])
             self.assertFalse(evidence["http_smoke_checks"])
 
+    def test_bounded_retention_keeps_each_previous_active_worker_without_copying_ancient_versions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            fresh, old, ancient, old_merged, output = (parent / name for name in ("fresh", "old", "ancient", "old_merged", "output"))
+            build(fresh)
+            build(old, "b" * 64)
+            build(ancient, "c" * 64)
+            stage(old, [ancient], old_merged, verify_assets=True)
+            stage(fresh, [old_merged], output, verify_assets=True, previous_active_only=True)
+            assets = snapshot(output)
+            self.assertEqual(validate_assets(assets)["worker_hashes"], ["a" * 64, "b" * 64])
+            self.assertEqual(assets["/workers/" + "b" * 64 + "/analysis-worker.js"][0], b"worker")
+            self.assertFalse(any(path.startswith("/workers/" + "c" * 64 + "/") for path in assets))
+
     def test_invalid_bundle_is_rejected_before_output_is_created(self):
         for problem in ("integrity", "missing", "worker", "wasm", "namespace"):
             with self.subTest(problem=problem), tempfile.TemporaryDirectory() as directory:

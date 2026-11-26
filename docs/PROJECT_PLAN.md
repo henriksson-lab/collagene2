@@ -2954,3 +2954,24 @@ and references into omitted original graph objects are rejected. Retained text i
 not redacted. Broader SBOL/RDF profiles remain outside this adapter. Six structural
 and ten new/legacy native sharing fixture groups pass, including actual saved-run
 and fresh capsule-PCR reuse. [Contract](SBOL_DOCUMENTARY_SUBSETS.md).
+
+
+### Source-based integration audit — 26 November 2026
+
+The next connected cloning fixes are standalone3′ operation authoring, saved
+native product→TOPO insert-PCR/processing, and preserving exact private source
+attachments on native local save/reopen. These are implementation gaps, rather
+than evidence that their existing native chemistry kernels are absent. See
+[private local capture](PRIVATE_LOCAL_LIBRARY.md) and
+[saved-template TOPO](TOPO_SAVED_TEMPLATE.md) for current source contracts and
+validation status.
+
+Further concrete delivery gaps remain after those fixes: explicit publication of
+new unbound local folders (repository queue APIs exist, desktop transport/UI do
+not); reviewed SBOL subset pushes from saved native revisions; supported backup/
+restore of the local/shared database; and the planned F30 identity, comment and
+immutable-revision review model. Native remote removal needs an explicit pending
+outbox/binding/credential lifecycle contract. Existing CAS saves, durable retries,
+resumable folder cloning, divergent checkout/bookmarks and native credentials
+remain implemented. Their historical pending-status paragraphs are not a new
+implementation queue. All exclusions and the BAM/BAI deferral remain unchanged.

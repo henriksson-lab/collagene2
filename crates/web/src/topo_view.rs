@@ -8,7 +8,7 @@ use crate::{
 };
 use collagene_core::{
     Alphabet, Molecule,
-    protocol::{AnalysisJob, AnalysisResult, Request as WireRequest},
+    protocol::AnalysisResult,
     run_lineage::{EventBinding, InputEventBinding},
     topo::{
         self,
@@ -37,14 +37,17 @@ pub struct CaptureRequest {
     pub sources: Vec<(String, EventBinding)>,
     pub target: EventBinding,
     pub request: topo::Request,
+    pub template_origin: Option<collagene_core::run_material::Selection>,
 }
 pub struct Captured {
     pub inputs: Vec<topo::Input>,
     pub target: Molecule,
+    pub template_origin: Option<collagene_core::run_material::Capsule>,
 }
 #[derive(Clone, PartialEq, Eq)]
 struct Context {
     draft: Draft,
+    template_origin: Option<collagene_core::run_material::Selection>,
     sources: Vec<(String, EventBinding)>,
     target: SourceInfo,
     epoch: u64,
@@ -224,29 +227,6 @@ fn AnnotationReview(product: Arc<topo::AnnotatedProduct>) -> impl IntoView {
         {product.annotations.is_none().then(||view!{<p>"No annotation projection is released because no paired reference contour is available."</p>})}
     </section>}
 }
-async fn analyze(
-    worker: Rc<CachedWorker>,
-    id: u32,
-    revision: String,
-    job: AnalysisJob,
-) -> Result<AnalysisResult, String> {
-    let result = worker
-        .ask(WireRequest {
-            id,
-            revision: revision.clone(),
-            job,
-        })
-        .await;
-    worker.close();
-    let response = result?;
-    if response.id != id || response.revision != revision {
-        return Err("TOPO response has a different input binding.".into());
-    }
-    match response.result {
-        AnalysisResult::Error(error) => Err(error),
-        value => Ok(value),
-    }
-}
 #[component]
 fn SourcePicker(
     label: &'static str,
@@ -266,8 +246,28 @@ pub fn TopoPanel(
     epoch: RwSignal<u64>,
     locked: Memo<bool>,
     on_candidate: Callback<(Candidate, Vec<InputEventBinding>)>,
+    get_workspace: Callback<(), Result<collagene_core::workspace::Workspace, String>>,
 ) -> impl IntoView {
     let draft = RwSignal::new(Draft::default());
+    let origin_review = RwSignal::new(None::<topo_preparation::OriginReview>);
+    let template_origin = RwSignal::new(None::<crate::run_origin_model::PinnedOrigin>);
+    let template_source = Memo::new(move |_| {
+        let id = draft.with(|d| d.insert_template.clone());
+        sources.with(|s| s.iter().find(|s| s.binding.document_id == id).cloned())
+    });
+    let selected_origin = Memo::new(move |_| template_origin.get());
+    let on_origin = Callback::new(move |pin: Option<crate::run_origin_model::PinnedOrigin>| {
+        if let Some(pin) = &pin {
+            if template_source
+                .get_untracked()
+                .is_none_or(|s| s.binding != pin.selection.event)
+            {
+                return Err("The insert template event changed.".into());
+            }
+        }
+        template_origin.set(pin);
+        Ok(())
+    });
     let cacc_proposal = RwSignal::new(None::<(Context, String)>);
     let orientation = RwSignal::new(String::new());
     let component = RwSignal::new(String::new());
@@ -311,8 +311,18 @@ pub fn TopoPanel(
         if target.length > 100_000 {
             return Err("The independent target exceeds the100,000-base check limit.".into());
         }
+        if let Some(pin) = template_origin.get() {
+            if bindings
+                .iter()
+                .find(|(r, _)| r == "insert_template")
+                .is_none_or(|(_, e)| *e != pin.selection.event)
+            {
+                return Err("Select the saved origin again for this exact template event.".into());
+            }
+        }
         Ok(Context {
             draft: d,
+            template_origin: template_origin.get().map(|p| p.selection.clone()),
             sources: bindings,
             target,
             epoch: epoch.get(),
@@ -335,6 +345,7 @@ pub fn TopoPanel(
     });
     Effect::new(move |_| {
         let _ = context.get();
+        origin_review.set(None);
         let _ = locked.get();
         cancel.run(());
         bound.set(None);
@@ -426,12 +437,17 @@ pub fn TopoPanel(
         let b=current_bound().ok_or("The original inspected source context changed.")?;
         let request=b.report.candidate_requests.get(expected.orientation).ok_or("The inspected orientation is unavailable.")?;
         let physical=b.report.reference.candidates.get(expected.orientation).ok_or("The inspected graph is unavailable.")?;
-        let fresh=capture.run(CaptureRequest{sources:b.context.sources.clone(),target:b.context.target.binding.clone(),request:request.clone()})?;
+        let fresh=capture.run(CaptureRequest{sources:b.context.sources.clone(),template_origin:b.context.template_origin.clone(),target:b.context.target.binding.clone(),request:request.clone()})?;
         if nick_frame.get_untracked().as_ref()!=Some(&expected){return Err("The source context changed during capture.".into());}
-        Ok(crate::topo_actions_view::Capture{inputs:fresh.inputs,request:request.clone(),physical:physical.clone()})
+        Ok(crate::topo_actions_view::Capture{template_origin:fresh.template_origin,inputs:fresh.inputs,request:request.clone(),physical:physical.clone()})
     });
     let open_processed = Callback::new(
         move |open: crate::topo_nick_view::OpenProcessed| -> Result<(), String> {
+            if template_origin.get_untracked().is_some() {
+                return Err(
+                    "Use ordered processing for a reconstructed saved PCR template.".into(),
+                );
+            }
             if nick_locked.get_untracked()
                 || nick_frame.get_untracked().as_ref() != Some(&open.frame)
             {
@@ -457,6 +473,7 @@ pub fn TopoPanel(
             // and the active independent target before cloning borrowed models.
             let fresh = capture.run(CaptureRequest {
                 sources: b.context.sources.clone(),
+                template_origin: b.context.template_origin.clone(),
                 target: b.context.target.binding.clone(),
                 request: inspected.clone(),
             })?;
@@ -542,11 +559,18 @@ pub fn TopoPanel(
                 .ok_or("The exact inspected orientation is unavailable.")?;
             let fresh = capture.run(CaptureRequest {
                 sources: b.context.sources.clone(),
+                template_origin: b.context.template_origin.clone(),
                 target: b.context.target.binding.clone(),
                 request: inspected.clone(),
             })?;
-            let revision = collagene_core::topo_actions::revision(&fresh.inputs, &open.request)
-                .map_err(|e| e.to_string())?;
+            let revision = topo_preparation::task_revision(
+                &fresh.inputs,
+                fresh.template_origin.as_ref(),
+                &collagene_core::topo_run_preparation::Task::ProcessActions {
+                    request: open.request.clone(),
+                },
+            )
+            .map_err(|e| e.to_string())?;
             if revision != open.expected_revision
                 || serde_json::to_vec(inspected).map_err(|e| e.to_string())?
                     != serde_json::to_vec(&open.request.preparation).map_err(|e| e.to_string())?
@@ -563,11 +587,11 @@ pub fn TopoPanel(
             }
             let inputs = fresh
                 .inputs
-                .into_iter()
+                .iter()
                 .map(|input| PlanInput {
-                    id: input.role,
+                    id: input.role.clone(),
                     revision: input.molecule.revision(),
-                    molecule: input.molecule,
+                    molecule: input.molecule.clone(),
                 })
                 .collect();
             let sources = b
@@ -588,15 +612,27 @@ pub fn TopoPanel(
                     event: event.clone(),
                 })
                 .collect();
-            let proposed = Candidate::new(DesignPlan {
-                name: "TOPO ordered physical actions candidate".into(),
-                target_revision: fresh.target.revision(),
-                inputs,
-                steps: vec![Operation::TopoActions {
-                    sources,
-                    request: open.request,
-                }],
-            });
+            let proposed_plan = if let Some(origin) = &fresh.template_origin {
+                collagene_core::topo_run_preparation::compile(
+                    &fresh.inputs,
+                    &fresh.target,
+                    "insert_template",
+                    origin,
+                    &open.request,
+                )
+                .map_err(|e| e.to_string())?
+            } else {
+                DesignPlan {
+                    name: "TOPO ordered physical actions candidate".into(),
+                    target_revision: fresh.target.revision(),
+                    inputs,
+                    steps: vec![Operation::TopoActions {
+                        sources,
+                        request: open.request,
+                    }],
+                }
+            };
+            let proposed = Candidate::new(proposed_plan);
             proposed.validate().map_err(|e| e.to_string())?;
             on_candidate.run((proposed, preferred));
             // The root callback can dispose this panel.
@@ -642,6 +678,7 @@ pub fn TopoPanel(
         let request = compiled.request;
         let captured = match capture.run(CaptureRequest {
             sources: ctx.sources.clone(),
+            template_origin: ctx.template_origin.clone(),
             target: ctx.target.binding.clone(),
             request: request.clone(),
         }) {
@@ -651,18 +688,19 @@ pub fn TopoPanel(
                 return;
             }
         };
-        if let Err(error) = topo_worker::source_preflight(&captured.inputs, &request)
-            .and_then(|_| topo_worker::target_preflight(&captured.target))
-        {
+        if let Err(error) = topo_worker::target_preflight(&captured.target) {
             status.set(error.to_string());
             return;
         }
-        let revision = match topo_worker::orientations_revision(
+        let revision = match topo_preparation::task_revision(
             &captured.inputs,
-            &request,
-            vector,
-            insert,
-            directional,
+            captured.template_origin.as_ref(),
+            &collagene_core::topo_run_preparation::Task::Orientations {
+                request: request.clone(),
+                vector,
+                insert,
+                directional,
+            },
         ) {
             Ok(value) => value,
             Err(error) => {
@@ -685,12 +723,12 @@ pub fn TopoPanel(
         status.set(if directional {"Preparing actual blunt PCR and both directional CACC orientations; flap or contour withholding remains explicit."}else{"Preparing explicit strands and inspecting both declared TA orientations…"}.into());
         let alive = inspect_alive.clone();
         spawn_local(async move {
-            let result = analyze(
+            let result = topo_preparation::execute(
                 worker,
                 ticket,
-                revision.clone(),
-                AnalysisJob::InspectTopoOrientations {
-                    inputs: captured.inputs.clone(),
+                captured.inputs.clone(),
+                captured.template_origin.clone(),
+                collagene_core::topo_run_preparation::Task::Orientations {
                     request: request.clone(),
                     vector,
                     insert,
@@ -706,6 +744,10 @@ pub fn TopoPanel(
             if context.get_untracked().as_ref().ok() != Some(&ctx) {
                 return;
             }
+            let result = result.map(|(value, review)| {
+                origin_review.set(review);
+                value
+            });
             match result {
                 Ok(AnalysisResult::TopoOrientations(report)) => {
                     match topo_worker::validate_orientations(&report, &revision) {
@@ -767,8 +809,12 @@ pub fn TopoPanel(
             {
                 return Err("The source seed is outside its original prepared strand.".into());
             }
-            let batch_revision = topo_worker::simulation_revision(&b.captured.inputs, &request)
-                .map_err(|e| e.to_string())?;
+            let batch_revision = topo_preparation::batch_revision(
+                &b.captured.inputs,
+                b.captured.template_origin.as_ref(),
+                &request,
+            )
+            .map_err(|e| e.to_string())?;
             Ok((
                 request,
                 topo::Selection {
@@ -788,10 +834,13 @@ pub fn TopoPanel(
                 return;
             }
         };
-        let revision = match topo_worker::annotated_projection_revision(
+        let revision = match topo_preparation::task_revision(
             &b.captured.inputs,
-            &request,
-            &selection,
+            b.captured.template_origin.as_ref(),
+            &collagene_core::topo_run_preparation::Task::Project {
+                request: request.clone(),
+                selection: selection.clone(),
+            },
         ) {
             Ok(value) => value,
             Err(error) => {
@@ -814,12 +863,12 @@ pub fn TopoPanel(
         );
         let alive = project_alive.clone();
         spawn_local(async move {
-            let result = analyze(
+            let result = topo_preparation::execute(
                 worker,
                 ticket,
-                revision.clone(),
-                AnalysisJob::ProjectAnnotatedTopo {
-                    inputs: b.captured.inputs.clone(),
+                b.captured.inputs.clone(),
+                b.captured.template_origin.clone(),
+                collagene_core::topo_run_preparation::Task::Project {
                     request: request.clone(),
                     selection: selection.clone(),
                 },
@@ -835,6 +884,10 @@ pub fn TopoPanel(
             {
                 return;
             }
+            let result = result.map(|(value, review)| {
+                origin_review.set(review);
+                value
+            });
             match result {
                 Ok(AnalysisResult::AnnotatedTopoProjection(value)) => {
                     match topo_worker::validate_annotated_projection(&value, &revision) {
@@ -865,12 +918,15 @@ pub fn TopoPanel(
             return;
         };
         let policy = p.choice.policies.policy();
-        let revision = match topo_worker::annotated_target_revision(
+        let revision = match topo_preparation::task_revision(
             &p.bound.captured.inputs,
-            &p.request,
-            &p.selection,
-            &p.bound.captured.target,
-            &policy,
+            p.bound.captured.template_origin.as_ref(),
+            &collagene_core::topo_run_preparation::Task::Check {
+                request: p.request.clone(),
+                selection: p.selection.clone(),
+                target: p.bound.captured.target.clone(),
+                policy: policy.clone(),
+            },
         ) {
             Ok(value) => value,
             Err(error) => {
@@ -890,12 +946,12 @@ pub fn TopoPanel(
         status.set("Reconstructing again and checking the independent target under only the selected acceptance policies…".into());
         let alive = target_alive.clone();
         spawn_local(async move {
-            let result = analyze(
+            let result = topo_preparation::execute(
                 worker,
                 ticket,
-                revision.clone(),
-                AnalysisJob::CheckAnnotatedTopoTarget {
-                    inputs: p.bound.captured.inputs.clone(),
+                p.bound.captured.inputs.clone(),
+                p.bound.captured.template_origin.clone(),
+                collagene_core::topo_run_preparation::Task::Check {
                     request: p.request.clone(),
                     selection: p.selection.clone(),
                     target: p.bound.captured.target.clone(),
@@ -913,6 +969,10 @@ pub fn TopoPanel(
             {
                 return;
             }
+            let result = result.map(|(value, review)| {
+                origin_review.set(review);
+                value
+            });
             match result {
                 Ok(AnalysisResult::AnnotatedTopoTarget(value)) => {
                     match topo_worker::validate_annotated_target(&value, &revision) {
@@ -933,6 +993,13 @@ pub fn TopoPanel(
     });
     let candidate = Callback::new(move |()| {
         if busy.get_untracked() || locked.get_untracked() || !reviewed.get_untracked() {
+            return;
+        }
+        if template_origin.get_untracked().is_some() {
+            status.set(
+                "Use the ordered processing candidate to preserve the saved template origin."
+                    .into(),
+            );
             return;
         }
         let Some(c) = current_check() else {
@@ -1095,6 +1162,9 @@ pub fn TopoPanel(
             <label>"Vector preparation assumption"<textarea aria-label="TOPO preparation assumption" rows="3" maxlength="4096" disabled=move||locked.get() prop:value=move||draft.with(|d|d.preparation_assumption.clone()) on:input=move|e|draft.update(|d|d.preparation_assumption=event_target_value(&e))/></label>
             <label class="checkbox-label"><input type="checkbox" aria-label="Declare activated TOPO vector chemistry" disabled=move||locked.get() prop:checked=move||draft.with(|d|d.activation_confirmed) on:change=move|e|draft.update(|d|d.activation_confirmed=event_target_checked(&e))/>"I explicitly declare vector 5′ phosphate and 3′ vaccinia Tyr274-phosphotyrosyl termini; sequence alone does not establish activation."</label>
             <SourcePicker label="TOPO insert PCR template" role="insert_template" draft=draft sources=sources locked=locked/>
+            {move||origin_review.get().filter(|r|r.incomplete).map(|r|view!{<aside class="helper"><p>"The saved source's originating check is incomplete. This inspection reconstructs actual material under those retained assumptions; it does not close origin search limits or establish a uniquely isolated experimental product. Final plan verification remains incomplete."</p><details><summary>"Retained origin findings"</summary><p>{format!("Showing {} of {} findings{}. The retained origin recipe remains available for full replay.",r.findings.len(),r.total,if r.truncated{"; displayed findings are truncated"}else{""})}</p><ul>{r.findings.into_iter().map(|s|view!{<li>{s}</li>}).collect_view()}</ul></details></aside>})}
+            <crate::run_origin_view::SourceOriginPicker source=template_source epoch get_workspace selected=selected_origin on_select=on_origin/>
+            <Show when=move||template_origin.get().is_some()><p class="helper">"The exact saved run is reconstructed before each new insert PCR. Vector activation remains an explicit original-source declaration. Use ordered processing below to review and open a reusable product candidate; no host repair or nick sealing is inferred."</p></Show>
             <label>"Forward ordered oligo 5′→3′"<input aria-label="TOPO forward ordered primer" maxlength="1024" disabled=move||locked.get() prop:value=move||draft.with(|d|d.forward_sequence.clone()) on:input=move|e|draft.update(|d|d.forward_sequence=event_target_value(&e))/></label>
             <label>"Forward 3′ annealing length"<input type="number" min="1" max="1024" aria-label="TOPO forward annealing length" disabled=move||locked.get() prop:value=move||draft.with(|d|if d.forward_annealing==0{String::new()}else{d.forward_annealing.to_string()}) on:input=move|e|draft.update(|d|d.forward_annealing=event_target_value(&e).parse().unwrap_or(0))/></label>
             <label>"Reverse ordered oligo 5′→3′"<input aria-label="TOPO reverse ordered primer" maxlength="1024" disabled=move||locked.get() prop:value=move||draft.with(|d|d.reverse_sequence.clone()) on:input=move|e|draft.update(|d|d.reverse_sequence=event_target_value(&e))/></label>
@@ -1120,7 +1190,7 @@ pub fn TopoPanel(
                     <button class="text-tool" disabled=move||busy.get()||locked.get() on:click=move|_|export.run(())>"Download TOPO evidence JSON"</button>
                 </section>
             })}
-            <crate::topo_nick_view::TopoNickView frame=nick_frame capture=nick_capture on_open=open_processed locked=nick_locked/>
+            <Show when=move||template_origin.get().is_none()><crate::topo_nick_view::TopoNickView frame=nick_frame capture=nick_capture on_open=open_processed locked=nick_locked/></Show>
             <crate::topo_actions_view::TopoActionsView frame=nick_frame capture=actions_capture on_open=open_actions locked=nick_locked/>
             <fieldset class="topo-acceptance"><legend>"Explicit independent-target acceptance policy"</legend><p class="helper">"Every permission starts off. Accepting a retained limitation does not repair it or prove laboratory success; changing policy requires fresh projection and target checking."</p>
                 <label class="checkbox-label"><input type="checkbox" disabled=move||locked.get() prop:checked=move||policies.with(|p|p.nicks) on:change=move|e|policies.update(|p|p.nicks=event_target_checked(&e))/>"Accept explicitly retained nicks"</label>
@@ -1131,7 +1201,7 @@ pub fn TopoPanel(
                 <label class="checkbox-label"><input type="checkbox" disabled=move||locked.get() prop:checked=move||policies.with(|p|p.reverse) on:change=move|e|policies.update(|p|p.reverse=event_target_checked(&e))/>"Allow reverse-complement target comparison"</label>
             </fieldset>
             {move||current_projection().map(|p|view!{<section class="topo-projection"><h3>"Fresh selected component"</h3><p>{projection_text(&p.product)}</p><AnnotationReview product=p.product.clone()/><details><summary>"Retained full-graph summary"</summary><pre>{physical_text(&p.product.physical.projection.physical)}</pre></details><button class="button primary full" disabled=move||busy.get()||locked.get() on:click=move|_|check.run(())>"Check independent target"</button></section>})}
-            {move||current_check().map(|c|{let accepted=matches!(&c.report.outcome,topo::TargetOutcome::AcceptedUnderDeclaredGraph)&&c.report.product.physical.projection.physical.fully_specified_dna;view!{<section class="topo-target"><h3>"Fresh independent-target assessment"</h3><p>{format!("{:?}",c.report.outcome)}</p><p class="helper">"Agreement applies only to this source/event/recipe/component and explicit policy. A final checked TOPO plan can verify as consistent under declared graph assumptions when the full DNA is specified. This does not predict experimental success, repair retained nicks or flaps, validate annotation biology, or promote the graph into downstream generic chemistry."</p><label class="checkbox-label"><input type="checkbox" prop:checked=move||reviewed.get() on:change=move|e|reviewed.set(event_target_checked(&e))/>"I reviewed the preparation assumptions, both paths, all components and nicks, and accept this explicit policy for final target checking."</label><button class="button secondary full" disabled=move||busy.get()||locked.get()||!accepted||!reviewed.get() on:click=move|_|candidate.run(())>"Review checked TOPO candidate in Plan"</button></section>}})}
+            {move||current_check().map(|c|{let accepted=matches!(&c.report.outcome,topo::TargetOutcome::AcceptedUnderDeclaredGraph)&&c.report.product.physical.projection.physical.fully_specified_dna;view!{<section class="topo-target"><h3>"Fresh independent-target assessment"</h3><p>{format!("{:?}",c.report.outcome)}</p><p class="helper">"Agreement applies only to this source/event/recipe/component and explicit policy. A final checked TOPO plan can verify as consistent under declared graph assumptions when the full DNA is specified. This does not predict experimental success, repair retained nicks or flaps, validate annotation biology, or promote the graph into downstream generic chemistry."</p><label class="checkbox-label"><input type="checkbox" prop:checked=move||reviewed.get() on:change=move|e|reviewed.set(event_target_checked(&e))/>"I reviewed the preparation assumptions, both paths, all components and nicks, and accept this explicit policy for final target checking."</label><button class="button secondary full" disabled=move||busy.get()||locked.get()||!accepted||!reviewed.get()||template_origin.get().is_some() on:click=move|_|candidate.run(())>"Review checked TOPO candidate in Plan"</button></section>}})}
         </div>
     }
 }

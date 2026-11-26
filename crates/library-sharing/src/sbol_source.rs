@@ -252,3 +252,50 @@ pub(crate) fn required_assets(
     }
     Ok((assets, edges))
 }
+
+/// Local-only documentary scope: preserve exact original bytes for retained
+/// native claims even when that original contains other graph objects. This is
+/// not a permitted-publication inventory and must never authorize an upload.
+pub(crate) fn required_private_assets(
+    source: &Workspace,
+    revisions: &BTreeSet<String>,
+    edge_limit: usize,
+) -> Result<BTreeSet<String>, Error> {
+    let (claims, mut used) = claims(source, revisions, edge_limit)?;
+    let mut assets = BTreeSet::new();
+    for (hash, selections) in claims {
+        if let Some(a) = source.attachments.get(&hash) {
+            if a.kind != KIND
+                || a.media_type != "application/ld+json"
+                || blake3::hash(&a.bytes).to_hex().as_str() != hash
+            {
+                return Err(denied(
+                    "private original SBOL attachment kind/hash mismatch",
+                ));
+            }
+            // Bounded syntax/profile validation retains opaque unsupported graph
+            // objects as documentary bytes; it grants no native material status.
+            let doc = sbol::import(&a.bytes).map_err(|_| {
+                denied("private original SBOL source is not a bounded supported document")
+            })?;
+            used = used
+                .checked_add(doc.objects().len())
+                .filter(|n| *n <= edge_limit)
+                .ok_or(Error::TooLarge)?;
+            assets.insert(hash);
+        } else {
+            let (required, count) = crate::sbol_subset::received_assets(
+                source,
+                &hash,
+                &selections,
+                edge_limit.saturating_sub(used),
+            )?;
+            used = used
+                .checked_add(count)
+                .filter(|n| *n <= edge_limit)
+                .ok_or(Error::TooLarge)?;
+            assets.extend(required);
+        }
+    }
+    Ok(assets)
+}

@@ -361,6 +361,22 @@ pub fn revision_actions(inputs: &[topo::Input], r: &ActionsRequest) -> Result<St
 pub fn inspect_actions(inputs: &[topo::Input], r: &ActionsRequest) -> Result<Inspection, Error> {
     preflight_actions(inputs, r)?;
     let preparation_revision = topo::batch_revision(inputs, &r.preparation)?;
+    actions_preflighted(inputs, r, preparation_revision)
+}
+pub(crate) fn inspect_actions_reconstructed(
+    inputs: &[topo::Input],
+    r: &ActionsRequest,
+    templates: &[(String, &tracked::TrackedDuplex)],
+) -> Result<Inspection, Error> {
+    action_shape(&r.preparation, &r.processing)?;
+    let revision = topo::batch_revision_reconstructed(inputs, &r.preparation, templates)?;
+    actions_preflighted(inputs, r, revision)
+}
+fn actions_preflighted(
+    inputs: &[topo::Input],
+    r: &ActionsRequest,
+    preparation_revision: String,
+) -> Result<Inspection, Error> {
     let sources = topo::identities(inputs);
     let context_revision = action_binding(&preparation_revision, &sources, r)?;
     let preparation = topo::prepare(inputs, &r.preparation)?;

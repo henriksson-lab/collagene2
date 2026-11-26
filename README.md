@@ -159,3 +159,13 @@ per-source cuts and actual strand/gap/nick review. No filling, sealing or cellul
 rescue is inferred; the annealed joined reference remains incomplete. MCP exposes
 `preview_annealing_recipe` alongside the existing 5′ physical preview. Draft11
 preserves both routes' settings. [3′ processing contract](docs/THREE_PRIME_HOMOLOGY.md).
+
+Native Local library saves retain exact private originals without a sharing review;
+opening narrows native history while preserving required original exchange evidence.
+Public sharing keeps its separate scope and explicit subset review.
+[Private local library](docs/PRIVATE_LOCAL_LIBRARY.md).
+
+TOPO preparation can choose an exact saved insert-template origin, replay it for
+new PCR, inspect/declare physical processing and retain a normal verifiable plan.
+Source incompleteness remains visible; new ordered PCR oligos can be collected
+with outputs. [Saved-template TOPO](docs/TOPO_SAVED_TEMPLATE.md).

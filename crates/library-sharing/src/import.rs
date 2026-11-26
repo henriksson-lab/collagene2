@@ -179,9 +179,17 @@ fn candidate_equal(a: &Candidate, b: &Candidate) -> Result<bool, ImportError> {
     };
     Ok(serde_json::to_writer(&mut other, b).is_ok() && other.offset == first.0.len())
 }
-fn exact_closure(fetched: &Workspace, selected: &Selection) -> Result<(), ImportError> {
-    let inventory =
-        inspect_document_closure(fetched, selected).map_err(|_| ImportError::InvalidClosure)?;
+fn exact_closure(
+    fetched: &Workspace,
+    selected: &Selection,
+    private_local: bool,
+) -> Result<(), ImportError> {
+    let inventory = if private_local {
+        crate::inspect_private_document_closure(fetched, selected)
+    } else {
+        inspect_document_closure(fetched, selected)
+    }
+    .map_err(|_| ImportError::InvalidClosure)?;
     if fetched.active_document != selected.document_id
         || fetched.active_candidate.is_some()
         || inventory.documents.len() != fetched.documents.len()
@@ -249,11 +257,31 @@ pub fn merge_document_closure(
     selected: &Selection,
     options: &ImportOptions,
 ) -> Result<ImportReport, ImportError> {
+    merge_inner(local, fetched, selected, options, false)
+}
+/// Trusted native-local counterpart. Scope validation allows exact private SBOL
+/// originals, but every immutable collision, head CAS and bookmark check is the
+/// same as public import. Never call this with an HTTP-origin document.
+pub fn merge_private_document_closure(
+    local: &Workspace,
+    fetched: &Workspace,
+    selected: &Selection,
+    options: &ImportOptions,
+) -> Result<ImportReport, ImportError> {
+    merge_inner(local, fetched, selected, options, true)
+}
+fn merge_inner(
+    local: &Workspace,
+    fetched: &Workspace,
+    selected: &Selection,
+    options: &ImportOptions,
+    private_local: bool,
+) -> Result<ImportReport, ImportError> {
     local.validate().map_err(|_| ImportError::InvalidLocal)?;
     fetched
         .validate()
         .map_err(|_| ImportError::InvalidFetched)?;
-    exact_closure(fetched, selected)?;
+    exact_closure(fetched, selected, private_local)?;
     let incoming = fetched
         .documents
         .iter()

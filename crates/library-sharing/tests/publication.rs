@@ -345,7 +345,7 @@ fn current_and_historical_app_state_is_local_but_future_or_scientific_schemas_ar
         revision: selected.head.clone(),
         head_event: selected.head_event.clone(),
     };
-    let mut kinds: Vec<String> = (1..=10)
+    let mut kinds: Vec<String> = (1..=11)
         .map(|version| format!("assembly-draft-v{version}"))
         .collect();
     kinds.extend(
@@ -400,7 +400,7 @@ fn current_and_historical_app_state_is_local_but_future_or_scientific_schemas_ar
     );
 
     for kind in [
-        "assembly-draft-v11",
+        "assembly-draft-v12",
         "primer-pair-draft-v3",
         "assembly-design-v2",
         "pcr-output-reference-v1",

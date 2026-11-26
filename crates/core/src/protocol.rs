@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 88;
+pub const WORKER_SCHEMA_VERSION: u16 = 89;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 20;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -954,6 +954,12 @@ pub enum AnalysisJob {
         recipe: crate::assembly_recipe::Recipe,
         policy: crate::homology_annealing::Options,
     },
+    InspectTopoRun {
+        inputs: Vec<crate::topo::Input>,
+        template_role: String,
+        origin: crate::run_material::Capsule,
+        task: crate::topo_run_preparation::Task,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1125,6 +1131,7 @@ pub enum AnalysisResult {
     OverlapExtensionPrimersDesigned(crate::overlap_extension_primer_design::Report),
     OverlapExtensionDigestInspection(crate::overlap_extension_digest_inspection::Preview),
     EditedOverlapPrimersDesigned(crate::assembly_edited_primer_design::Report),
+    TopoRunInspection(crate::topo_run_preparation::Inspection),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1354,6 +1361,14 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         crate::pairwise_context::preflight(report, reference, query, *translate)?;
     }
     match &r.job {
+        AnalysisJob::InspectTopoRun {
+            inputs,
+            template_role,
+            origin,
+            task,
+        } => {
+            crate::topo_run_preparation::preflight(inputs, template_role, origin, task)?;
+        }
         AnalysisJob::PreviewAnnealingRecipe {
             inputs,
             target,
@@ -1615,6 +1630,7 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::InspectCombinatorialMultiSite { .. }
             | AnalysisJob::InspectRunMaterial { .. }
             | AnalysisJob::PreviewAnnealingRecipe { .. }
+            | AnalysisJob::InspectTopoRun { .. }
     ) {
         MAX_WORKSPACE_MESSAGE_BYTES
     } else {
@@ -1641,6 +1657,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             (122, 57),
             (126, 58),
             (127, 58),
+            (159, 89),
         ],
     )?;
     preflight_codon_tag(bytes, &[42, 43])?;
@@ -1700,6 +1717,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_overlap_extension_primer_tag(bytes, &[156])?;
     preflight_overlap_extension_digest_tag(bytes, &[157])?;
     preflight_edited_overlap_primer_tag(bytes, &[158])?;
+    preflight_topo_run_tag(bytes, &[159])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1756,6 +1774,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         },
     };
     let required = match &response.result {
+        AnalysisResult::TopoRunInspection(_) => 89,
         AnalysisResult::EditedOverlapPrimersDesigned(_) => 85,
         AnalysisResult::OverlapExtensionDigestInspection(_) => 84,
         AnalysisResult::OverlapExtensionPrimersDesigned(_) => 83,
@@ -2035,6 +2054,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
     }
     match &response.result {
+        AnalysisResult::TopoRunInspection(report) => {
+            report.validate_binding(&response.revision)?;
+        }
         AnalysisResult::TopoActionsProduct(report) => {
             report.validate_binding(&response.revision)?
         }
@@ -2991,6 +3013,14 @@ fn preflight_mismatch_digest_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error
     }
     Ok(())
 }
+fn preflight_topo_run_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 89)?;
+    }
+    Ok(())
+}
 fn preflight_homology_recipe_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -3898,6 +3928,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             (155, 69),
             (158, 74),
             (168, 88),
+            (169, 89),
         ],
     )?;
     preflight_codon_tag(bytes, &[44, 45])?;
@@ -3962,6 +3993,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_edited_overlap_primer_tag(bytes, &[166])?;
     preflight_homology_recipe_tag(bytes, &[167])?;
     preflight_annealing_recipe_tag(bytes, &[168])?;
+    preflight_topo_run_tag(bytes, &[169])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -3969,6 +4001,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::InspectTopoRun { .. } => 89,
         AnalysisJob::PreviewAnnealingRecipe { .. } => 88,
         AnalysisJob::PreviewHomologyRecipe { .. } => 86,
         AnalysisJob::DesignEditedOverlapPrimers { .. } => 85,
@@ -4685,6 +4718,21 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             if crate::golden_gate_reaction::selection_revision(report, selection)? != r.revision {
                 return Err(Error::Format(
                     "Golden Gate reaction selection changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::InspectTopoRun {
+            inputs,
+            template_role,
+            origin,
+            task,
+        } => {
+            if crate::topo_run_preparation::revision(inputs, template_role, origin, task)?
+                != r.revision
+            {
+                return Err(Error::Format(
+                    "Saved TOPO source, origin or inspection context changed".into(),
                 ));
             }
             None
@@ -5593,6 +5641,13 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let result = match r.job {
+        AnalysisJob::InspectTopoRun {
+            inputs,
+            template_role,
+            origin,
+            task,
+        } => crate::topo_run_preparation::inspect(&inputs, &template_role, &origin, &task)
+            .map(AnalysisResult::TopoRunInspection),
         AnalysisJob::ProcessTopoActions { inputs, request } => {
             crate::topo_actions::inspect(&inputs, &request).map(AnalysisResult::TopoActionsProduct)
         }
@@ -6436,6 +6491,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     let maximum = if matches!(
         result,
         AnalysisResult::WorkspaceSaved(_)
+            | AnalysisResult::TopoRunInspection(_)
             | AnalysisResult::WorkspaceLoaded(_)
             | AnalysisResult::RunCommit(_)
             | AnalysisResult::RunReplay(_)

@@ -687,7 +687,11 @@ pub(crate) fn prepare(inputs: &[Input], r: &Request) -> Result<PreparationEviden
     })
 }
 pub fn simulate(inputs: &[Input], r: &Request) -> Result<TopoReport, Error> {
-    let batch_revision = batch_revision(inputs, r)?;
+    source_preflight(inputs, r)?;
+    simulate_preflighted(inputs, r)
+}
+fn simulate_preflighted(inputs: &[Input], r: &Request) -> Result<TopoReport, Error> {
+    let batch_revision = batch_binding(inputs, r)?;
     let preparation = prepare(inputs, r)?;
     let physical = physical::simulate(&preparation.substrates, &r.transfers, &r.engine_limits)
         .map_err(engine_error)?;
@@ -710,8 +714,16 @@ pub fn product_revision(inputs: &[Input], r: &Request, s: &Selection) -> Result<
 }
 /// Fresh source reconstruction; imported Product/Report values are never authority.
 pub fn product(inputs: &[Input], r: &Request, s: &Selection) -> Result<Product, Error> {
-    let batch_revision = product_revision(inputs, r, s)?;
-    let fresh = simulate(inputs, r)?;
+    product_revision(inputs, r, s)?;
+    product_preflighted(inputs, r, s)
+}
+fn product_preflighted(inputs: &[Input], r: &Request, s: &Selection) -> Result<Product, Error> {
+    let batch = batch_binding(inputs, r)?;
+    if s.batch_revision != batch || s.component >= 64 {
+        return Err(bad("selection does not bind current source/recipe"));
+    }
+    let batch_revision = hash(&(ENGINE_VERSION, "selected-physical-component", batch, s))?;
+    let fresh = simulate_preflighted(inputs, r)?;
     let select = projection::Selection {
         source_batch_revision: fresh.physical.batch_revision.clone(),
         component: s.component,
@@ -882,6 +894,14 @@ pub fn check_target(
     source_preflight(inputs, r)?;
     target_preflight(target)?;
     let product = product(inputs, r, s)?;
+    check_fresh_product(product, target, policy)
+}
+fn check_fresh_product(
+    product: Product,
+    target: &Molecule,
+    policy: &AcceptancePolicy,
+) -> Result<TargetAssessment, Error> {
+    target_preflight(target)?;
     let target_revision = target.revision();
     let batch_revision = hash(&(
         ENGINE_VERSION,
@@ -933,6 +953,7 @@ pub fn replay_product(
 /// Both declared vector/insert orientations, retaining the bounded engine's full
 /// component graphs. This is not an exhaustive chemical reaction mixture.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct OrientationInspection {
     pub engine_version: String,
@@ -951,6 +972,15 @@ pub fn inspect_orientations(
     directional: bool,
 ) -> Result<OrientationInspection, Error> {
     source_preflight(inputs, r)?;
+    orientations_preflighted(inputs, r, vector, insert, directional)
+}
+fn orientations_preflighted(
+    inputs: &[Input],
+    r: &Request,
+    vector: [usize; 2],
+    insert: [usize; 2],
+    directional: bool,
+) -> Result<OrientationInspection, Error> {
     if !r.transfers.is_empty() {
         return Err(bad(
             "orientation inspection requires an empty transfer list; orientation-specific requests are returned explicitly",
@@ -998,4 +1028,106 @@ pub fn inspect_orientations(
     };
     bounded(&result, MAX_REPORT_BYTES)?;
     Ok(result)
+}
+
+// Only the native saved-run adapter calls this entry after obtaining real tracked
+// state. All shared implementations remain private; public standalone APIs retain
+// their original source guards.
+pub(crate) fn inspect_reconstructed_task(
+    inputs: &[Input],
+    templates: &[(String, &crate::modified_duplex::TrackedDuplex)],
+    task: &crate::topo_run_preparation::Task,
+) -> Result<crate::topo_run_preparation::Reply, Error> {
+    use crate::topo_run_preparation::{Reply, Task};
+    source_preflight_reconstructed(inputs, task.preparation(), templates)?;
+    Ok(match task {
+        Task::Orientations {
+            request,
+            vector,
+            insert,
+            directional,
+        } => Reply::Orientations(orientations_preflighted(
+            inputs,
+            request,
+            *vector,
+            *insert,
+            *directional,
+        )?),
+        Task::Project { request, selection } => Reply::Projected(annotate_fresh_product(
+            inputs,
+            product_preflighted(inputs, request, selection)?,
+        )?),
+        Task::Check {
+            request,
+            selection,
+            target,
+            policy,
+        } => {
+            let TargetAssessment {
+                product,
+                policy,
+                target_revision,
+                outcome,
+                ..
+            } = check_fresh_product(
+                product_preflighted(inputs, request, selection)?,
+                target,
+                policy,
+            )?;
+            let product = annotate_fresh_product(inputs, product)?;
+            Reply::Checked(AnnotatedAssessment {
+                engine_version: ANNOTATION_ENGINE_VERSION.into(),
+                batch_revision: annotated_target_binding(
+                    &product.batch_revision,
+                    &target_revision,
+                    &policy,
+                )?,
+                target_revision,
+                policy,
+                product,
+                outcome,
+            })
+        }
+        Task::InspectActions { request } => Reply::ActionsInspected(
+            crate::topo_actions::inspect_actions_reconstructed(inputs, request, templates)?,
+        ),
+        Task::ProcessActions { request } => Reply::ActionsProcessed(
+            crate::topo_actions::inspect_reconstructed(inputs, request, templates)?,
+        ),
+    })
+}
+// Bounds/declaration check only. Never returns tracked material or bypasses native
+// replay; caller must independently bind the supplied capsule and exact event.
+pub(crate) fn declared_template_preflight(
+    inputs: &[Input],
+    r: &Request,
+    role: &str,
+) -> Result<(), Error> {
+    text(role, 256)?;
+    let mut roles = BTreeSet::new();
+    roles.insert(role.to_string());
+    source_preflight_inner(inputs, r, &roles)?;
+    if inputs.iter().filter(|i| i.role == role).count() != 1 {
+        return Err(bad("saved template role must occur exactly once"));
+    }
+    let mut used = false;
+    for material in &r.recipe.materials {
+        match material {
+            MaterialRecipe::Prepared { strands, .. }
+                if strands
+                    .iter()
+                    .any(|s| s.segments.iter().any(|p| p.source_role == role)) =>
+            {
+                return Err(bad(
+                    "saved template may only feed explicit new PCR; prepared vector ancestry is unsupported",
+                ));
+            }
+            MaterialRecipe::ExactPcr { template_role, .. } if template_role == role => used = true,
+            _ => (),
+        }
+    }
+    if !used {
+        return Err(bad("saved template must feed explicit exact PCR"));
+    }
+    Ok(())
 }

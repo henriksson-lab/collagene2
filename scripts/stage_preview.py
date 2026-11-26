@@ -88,15 +88,20 @@ def validate_assets(assets):
     }
 
 
-def stage(build, previous, output, verify_assets=False):
+def stage(build, previous, output, verify_assets=False, previous_active_only=False):
     assets = dict(snapshot(build))
     for old_root in previous:
         old_assets = snapshot(old_root)
+        old_active = None
+        if previous_active_only:
+            old_active = validate_assets(old_assets)["active_worker"]
         for path, asset in old_assets.items():
             if not WORKER.fullmatch(path):
                 continue
             if path in assets and assets[path][0] != asset[0]:
                 raise ValueError("A versioned worker path has conflicting bytes.")
+            if old_active is not None and path.split("/")[2] != old_active:
+                continue
             assets.setdefault(path, asset)
         del old_assets
     total = sum(len(asset[0]) for asset in assets.values())
@@ -120,6 +125,7 @@ def main():
     parser.add_argument("--build", type=Path, required=True)
     parser.add_argument("--previous", type=Path, action="append", default=[])
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--previous-active-only", action="store_true", help="Keep only each previous snapshot's active worker, rather than its full historical worker collection")
     parser.add_argument("--verify-assets", action="store_true", help="Validate index references, integrity digests and complete versioned workers before staging")
     parser.add_argument("--manifest", type=Path, help="Write static verification evidence to a new file (requires --verify-assets)")
     args = parser.parse_args()
@@ -127,10 +133,11 @@ def main():
         parser.error("--manifest requires --verify-assets")
     if args.manifest and args.manifest.exists():
         parser.error("Manifest destination already exists")
-    files, total = stage(args.build, args.previous, args.output, args.verify_assets)
+    files, total = stage(args.build, args.previous, args.output, args.verify_assets, args.previous_active_only)
     if args.manifest:
         evidence = validate_assets(snapshot(args.output))
         evidence["root"] = str(args.output.resolve())
+        evidence["previous_active_only"] = args.previous_active_only
         with args.manifest.open("x") as target:
             json.dump(evidence, target, indent=2)
             target.write("\n")

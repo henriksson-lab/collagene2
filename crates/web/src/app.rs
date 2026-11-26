@@ -2162,7 +2162,11 @@ pub fn App() -> impl IntoView {
             })();
             Box::pin(async move {
                 let (frame, epoch) = prepared?;
-                let captured = crate::library_documents::capture(frame, epoch, request).await?;
+                let captured = if crate::desktop_rpc::is_desktop() {
+                    crate::library_documents::capture_private_local(frame, epoch, request).await?
+                } else {
+                    crate::library_documents::capture(frame, epoch, request).await?
+                };
                 if workspace_epoch.try_get_untracked() != Some(epoch)
                     || workspace_restoring.try_get_untracked().unwrap_or(true)
                 {
@@ -6253,6 +6257,12 @@ pub fn App() -> impl IntoView {
                                             capture=Callback::new(move|capture:crate::topo_view::CaptureRequest|->Result<crate::topo_view::Captured,String>{
                                                 if workspace_restoring.get_untracked(){return Err("Wait for the workspace operation to finish.".into());}
                                                 if capture.sources.is_empty()||capture.sources.len()>32{return Err("Choose 1–32 explicit source roles.".into());}
+                                                let template_origin=capture.template_origin.as_ref().map(|selection|{
+                                                    let (_,binding)=capture.sources.iter().find(|(role,_)|role=="insert_template").ok_or("The selected PCR template role is unavailable.")?;
+                                                    if selection.event!=*binding{return Err("The saved template origin belongs to another source event.".to_string());}
+                                                    let frame=library_snapshot.run(())?;
+                                                    collagene_core::run_material::capsule(&frame,selection).map_err(|error|error.to_string())
+                                                }).transpose()?;
                                                 documents.with_untracked(|docs|{
                                                     let resolve=|binding:&collagene_core::run_lineage::EventBinding|docs.iter().find(|d|current_event_binding(d)==*binding).ok_or_else(||"A selected source event changed. Inspect again.".to_string());
                                                     let target=resolve(&capture.target)?;
@@ -6265,11 +6275,11 @@ pub fn App() -> impl IntoView {
                                                     }
                                                     let mut models=molecules.clone();models.push(&target.molecule);
                                                     collagene_core::model::bounds::model_preflight(&models).map_err(|e|e.to_string())?;
-                                                    let inputs=verification::topo_inputs(&roles,&molecules,&capture.request).map_err(|e|e.to_string())?;
+                                                    let inputs=collagene_core::topo_run_preparation::source_inputs(&roles,&molecules,&capture.request,"insert_template",template_origin.as_ref()).map_err(|e|e.to_string())?;
                                                     target.molecule.validate().map_err(|e|e.to_string())?;
-                                                    Ok(crate::topo_view::Captured{inputs,target:target.molecule.clone()})
+                                                    Ok(crate::topo_view::Captured{inputs,target:target.molecule.clone(),template_origin})
                                                 })
-                                            }) epoch=workspace_epoch locked=Memo::new(move|_|workspace_restoring.get())
+                                            }) get_workspace=library_snapshot epoch=workspace_epoch locked=Memo::new(move|_|workspace_restoring.get())
                                             on_candidate=Callback::new(move|(value,bindings):(transfer::Candidate,Vec<collagene_core::run_lineage::InputEventBinding>)|{
                                                 if workspace_restoring.get_untracked(){return;}
                                                 let target=documents.with_untracked(|docs|docs.get(active.get_untracked()).map(current_event_binding));let Some(target)=target else{return;};

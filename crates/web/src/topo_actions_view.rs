@@ -2,7 +2,7 @@
 //! No target-driven deletion, implicit repair, or advisory-plan handoff.
 use crate::{topo_nick_view::Frame, worker::CachedWorker};
 use collagene_core::{
-    protocol::{AnalysisJob, AnalysisResult, Request as WireRequest},
+    protocol::AnalysisResult,
     topo::{
         self,
         physical::{self, processing},
@@ -28,6 +28,7 @@ pub struct OpenActions {
 }
 pub struct Capture {
     pub inputs: Vec<topo::Input>,
+    pub template_origin: Option<collagene_core::run_material::Capsule>,
     pub request: topo::Request,
     pub physical: physical::Report,
 }
@@ -191,6 +192,7 @@ pub fn TopoActionsView(
     let inspected = RwSignal::new(None::<Arc<Inspected>>);
     let choice = RwSignal::new(ContourForm::default());
     let projected = RwSignal::new(None::<Arc<Projected>>);
+    let origin_review = RwSignal::new(None::<crate::topo_preparation::OriginReview>);
     let status = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
     let generation = RwSignal::new(0u32);
@@ -206,6 +208,7 @@ pub fn TopoActionsView(
     });
     Effect::new(move |_| {
         let _ = frame.get();
+        origin_review.set(None);
         let _ = locked.get();
         cancel.run(());
         captured.set(None);
@@ -404,7 +407,13 @@ pub fn TopoActionsView(
                 limits: Default::default(),
             },
         };
-        let revision = match topo_actions::revision_actions(&fresh.inputs, &request) {
+        let revision = match crate::topo_preparation::task_revision(
+            &fresh.inputs,
+            fresh.template_origin.as_ref(),
+            &collagene_core::topo_run_preparation::Task::InspectActions {
+                request: request.clone(),
+            },
+        ) {
             Ok(v) => v,
             Err(e) => {
                 status.set(e.to_string());
@@ -428,16 +437,14 @@ pub fn TopoActionsView(
         status
             .set("Reconstructing original preparation and every declared action in order…".into());
         spawn_local(async move {
-            let reply = executor
-                .ask(WireRequest {
-                    id: ticket,
-                    revision: revision.clone(),
-                    job: AnalysisJob::InspectTopoActions {
-                        inputs: fresh.inputs,
-                        request,
-                    },
-                })
-                .await;
+            let reply = crate::topo_preparation::execute(
+                executor.clone(),
+                ticket,
+                fresh.inputs,
+                fresh.template_origin,
+                collagene_core::topo_run_preparation::Task::InspectActions { request },
+            )
+            .await;
             executor.close();
             if !alive.load(Ordering::Relaxed) || generation.get_untracked() != ticket {
                 return;
@@ -450,9 +457,12 @@ pub fn TopoActionsView(
             }
             busy.set(false);
             worker.set_value(None);
+            let reply = reply.map(|(value, review)| {
+                origin_review.set(review);
+                value
+            });
             match reply {
-                Ok(reply) if reply.id == ticket && reply.revision == revision => match reply.result
-                {
+                Ok(result) => match result {
                     AnalysisResult::TopoActionsInspected(report) => {
                         match report.validate_binding(&revision) {
                             Ok(()) => {
@@ -469,7 +479,6 @@ pub fn TopoActionsView(
                     AnalysisResult::Error(e) => status.set(e),
                     _ => status.set("Unexpected actions inspection response.".into()),
                 },
-                Ok(_) => status.set("Actions inspection has a different binding.".into()),
                 Err(e) => status.set(e),
             }
         });
@@ -540,7 +549,13 @@ pub fn TopoActionsView(
                 ..Default::default()
             },
         };
-        let revision = match topo_actions::revision(&fresh.inputs, &request) {
+        let revision = match crate::topo_preparation::task_revision(
+            &fresh.inputs,
+            fresh.template_origin.as_ref(),
+            &collagene_core::topo_run_preparation::Task::ProcessActions {
+                request: request.clone(),
+            },
+        ) {
             Ok(v) => v,
             Err(e) => {
                 status.set(e.to_string());
@@ -562,16 +577,14 @@ pub fn TopoActionsView(
         let alive = project_alive.clone();
         status.set("Reconstructing actions and proving the explicitly selected contour from actual source calls…".into());
         spawn_local(async move {
-            let reply = executor
-                .ask(WireRequest {
-                    id: ticket,
-                    revision: revision.clone(),
-                    job: AnalysisJob::ProcessTopoActions {
-                        inputs: fresh.inputs,
-                        request,
-                    },
-                })
-                .await;
+            let reply = crate::topo_preparation::execute(
+                executor.clone(),
+                ticket,
+                fresh.inputs,
+                fresh.template_origin,
+                collagene_core::topo_run_preparation::Task::ProcessActions { request },
+            )
+            .await;
             executor.close();
             if !alive.load(Ordering::Relaxed) || generation.get_untracked() != ticket {
                 return;
@@ -584,9 +597,12 @@ pub fn TopoActionsView(
             }
             busy.set(false);
             worker.set_value(None);
+            let reply = reply.map(|(value, review)| {
+                origin_review.set(review);
+                value
+            });
             match reply {
-                Ok(reply) if reply.id == ticket && reply.revision == revision => match reply.result
-                {
+                Ok(result) => match result {
                     AnalysisResult::TopoActionsProduct(report) => {
                         match report.validate_binding(&revision) {
                             Ok(()) => {
@@ -603,7 +619,6 @@ pub fn TopoActionsView(
                     AnalysisResult::Error(e) => status.set(e),
                     _ => status.set("Unexpected processed-actions response.".into()),
                 },
-                Ok(_) => status.set("Processed-actions response has a different binding.".into()),
                 Err(e) => status.set(e),
             }
         });
@@ -697,6 +712,7 @@ pub fn TopoActionsView(
         }
     });
     view! {<details class="topo-actions"><summary>"Directional flap processing and ordered physical actions"</summary>
+        {move||origin_review.get().filter(|r|r.incomplete).map(|r|view!{<aside class="helper"><p>"The saved template's originating check remains incomplete. New PCR and explicit processing do not close its retained search limits or establish experimental isolation; the compiled plan preserves this limitation."</p><details><summary>"Retained origin findings"</summary><p>{format!("Showing {} of {} findings{}. The retained origin recipe remains available for full replay.",r.findings.len(),r.total,if r.truncated{"; displayed findings are truncated"}else{""})}</p><ul>{r.findings.into_iter().map(|s|view!{<li>{s}</li>}).collect_view()}</ul></details></aside>})}
         <p class="helper">"Declare ideal hydrolytic flap cleavage and nick sealing explicitly. Detached material remains as a free component; target DNA never determines what to remove. These actions do not model a repair kit or establish laboratory success."</p>
         <button class="text-tool" disabled=move||locked.get()||busy.get()||frame.get().is_none() on:click=move|_|load.run(())>"Load original selected path for action review"</button>
         <label>"Ideal hydrolytic cleavage assumption"<textarea rows="2" maxlength="4096" disabled=move||locked.get()||busy.get() prop:value=move||form.with(|f|f.hydrolysis.clone()) on:input=move|e|form.update(|f|f.hydrolysis=event_target_value(&e))/></label>

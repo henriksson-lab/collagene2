@@ -4,7 +4,7 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-Current source uses worker88, candidate20, native plan18, science23 and180 MCP
+Current source uses worker89, candidate20, native plan18, science23 and181 MCP
 tools. The Tauri shell has a durable offline local library, explicit multi-remote
 synchronization, scoped native credentials, saved-branch review, embedded stdio
 MCP and authenticated URL-import adapters. All export controls now await native
@@ -13,13 +13,13 @@ service. Native SDK and UI WASM checks pass; focused backend/scientific fixtures
 pass. Installer workflow sources are present, but packaging, installation and
 graphical/offline acceptance remain unfinished.
 
-The format checkpoint `73fd9d8` passes desktop build and embedded-MCP jobs on
-Windows/macOS/Linux. Its scientific tests on all three systems and WASM check
-also pass. Unsigned Linux and macOS package jobs pass; Windows packaging is
-still running.
-The earlier Linux apt-feed failure and invalid bundle category have source fixes;
-Windows installer creation, installation and graphical acceptance remain
-separate gates.
+The format checkpoint `73fd9d8` passes scientific tests, WASM, desktop builds/MCP
+and unsigned package builds on Windows/macOS/Linux. The published `6f3a8c7`
+frontend also passes desktop builds/MCP on all three systems and WASM. Its Linux
+scientific job exposed an outdated future-schema fixture: draft11 is now known,
+so the fixture is updated to exercise draft12 as unknown without weakening the
+privacy gate. That correction is part of the current work. Successful bundles do
+not establish installation or graphical/offline acceptance; those gates remain.
 
 The parallel format batch adds annotated GenPept/UniProt, PHYLIP/MSF/NEXUS and
 PIR/GDE/SELEX alignment exchange, plus an independent SBOL3.1 structural JSON-LD
@@ -41,13 +41,15 @@ reusable assembled material. Focused scientific, sharing and MCP fixtures,
 integrated UI/worker WASM checking and the native SDK check pass. All57 focused cases pass, including draft11
 roundtrip/migration. The full product goal remains active.
 
-The latest recorded public8082 publication is the immutable `334f4b8` frontend
-with worker86, hash `3fb7ed14ce8175df3fd728c4f1db25727c7d215d37f3321ccea3231a1a24ebff`.
-Static asset and process/socket metadata checks passed at publication. It exposes
-no host filesystem API. Current native/import/export source is ahead of that
-snapshot. No application browser or HTTP checks were run for these changes;
-visual acceptance remains deferred until all in-scope implementation is complete.
-Earlier sections below describe historical checkpoints.
+Public8082 now serves the exact CI frontend for `6f3a8c7`, with worker88 hash
+`819025a440572207fab6a0f6429e3450754841f03f2f06b1aa0c21027de1ae06`.
+Its16 immutable assets total149,678,894 bytes, retaining the immediately previous
+worker86 for existing tabs. Static references/integrity and exact process/socket
+metadata were verified without browser or application HTTP checks. The preview
+exposes no host filesystem API. The separately authenticated loopback8084 preview
+is unchanged. Current work on private local saves and saved-template TOPO is ahead
+of the published source. Visual acceptance remains deferred until all in-scope
+implementation is complete. Earlier sections below describe historical checkpoints.
 
 ## Current priority
 
@@ -1514,3 +1516,29 @@ case explicitly uses minimum two fragments, since a one-state search can already
 find a one-fragment self-product.
 The web WASM check passed. No browser check or preview publication ran; the public
 8082 snapshot remains the last successful immutable build.
+
+
+## Connected private-save and saved-template TOPO workflows
+
+Current source separates private native saves from public sharing. Local catalog
+snapshots retain exact original attachments and the complete bounded workspace;
+opening restores only the selected native dependency graph plus its required
+private documentary sources. Browser transport rejects private workspace mutation
+payloads before serialization. Public selected-document and explicit SBOL subset
+review paths remain separate. The native local capture admission check now accepts
+its intended whole-workspace scope; public admission still requires document
+closure. [Contract](PRIVATE_LOCAL_LIBRARY.md).
+
+The candidate editor now inserts and edits standalone3′ resection with explicit
+bounded counts while preserving its selected source. Saved-run ancestry labels
+identify incomplete annealing references instead of implying reusable material.
+
+Saved-native-template TOPO inspection replays the originating run before new PCR,
+keeps vectors as explicit original preparations, and uses a separate worker89
+wrapper binding the full source/capsule/task context. New PCR oligos are retained
+for ordinary primer collection/export; inherited source-run oligos are not
+reordered. Origin incompleteness and bounded finding-excerpt counts remain visible
+in the UI and tool181 `inspect_saved_topo`. Candidate output is still freshly
+reconstructed and checked against its independent target. Thirty focused native/static cases and integrated UI/worker WASM checking pass.
+New cross-platform CI is pending the commit. [Workflow](TOPO_SAVED_TEMPLATE.md) ·
+[MCP](MCP_SAVED_TOPO.md).

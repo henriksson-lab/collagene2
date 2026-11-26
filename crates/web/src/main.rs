@@ -345,6 +345,8 @@ mod assembly_junctions_view;
 mod plan_editing_host;
 #[cfg(target_arch = "wasm32")]
 mod plan_editing_view;
+#[cfg(any(target_arch = "wasm32", test))]
+mod plan_processing_model;
 
 #[cfg(any(target_arch = "wasm32", test))]
 mod plan_editing_sources;
@@ -365,6 +367,8 @@ mod transient_menus;
 
 #[cfg(target_arch = "wasm32")]
 mod library_bindings;
+#[cfg(any(target_arch = "wasm32", test))]
+mod library_capture;
 #[cfg(target_arch = "wasm32")]
 mod library_client;
 #[cfg(target_arch = "wasm32")]

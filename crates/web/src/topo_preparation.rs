@@ -326,3 +326,172 @@ mod tests {
         assert!(cacc_prefix_proposal(&too_long).is_err());
     }
 }
+
+/// Shared native/standalone dispatch; retained origins always use the native
+/// capsule replay endpoint. Original report identities remain unchanged.
+pub(crate) fn task_revision(
+    inputs: &[topo::Input],
+    origin: Option<&collagene_core::run_material::Capsule>,
+    task: &collagene_core::topo_run_preparation::Task,
+) -> Result<String, collagene_core::Error> {
+    use collagene_core::{
+        topo_actions,
+        topo_run_preparation::{self, Task},
+        topo_worker,
+    };
+    if let Some(origin) = origin {
+        return topo_run_preparation::documentary_revision(inputs, "insert_template", origin, task);
+    }
+    match task {
+        Task::Orientations {
+            request,
+            vector,
+            insert,
+            directional,
+        } => topo_worker::orientations_revision(inputs, request, *vector, *insert, *directional),
+        Task::Project { request, selection } => {
+            topo_worker::annotated_projection_revision(inputs, request, selection)
+        }
+        Task::Check {
+            request,
+            selection,
+            target,
+            policy,
+        } => topo_worker::annotated_target_revision(inputs, request, selection, target, policy),
+        Task::InspectActions { request } => topo_actions::revision_actions(inputs, request),
+        Task::ProcessActions { request } => topo_actions::revision(inputs, request),
+    }
+}
+pub(crate) fn batch_revision(
+    inputs: &[topo::Input],
+    origin: Option<&collagene_core::run_material::Capsule>,
+    request: &topo::Request,
+) -> Result<String, collagene_core::Error> {
+    match origin {
+        Some(origin) => collagene_core::topo_run_preparation::preparation_revision(
+            inputs,
+            "insert_template",
+            origin,
+            request,
+        ),
+        None => collagene_core::topo_worker::simulation_revision(inputs, request),
+    }
+}
+#[derive(Clone)]
+pub(crate) struct OriginReview {
+    pub incomplete: bool,
+    pub findings: Vec<String>,
+    pub total: usize,
+    pub truncated: bool,
+}
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn execute(
+    worker: std::rc::Rc<crate::worker::CachedWorker>,
+    id: u32,
+    inputs: Vec<topo::Input>,
+    origin: Option<collagene_core::run_material::Capsule>,
+    task: collagene_core::topo_run_preparation::Task,
+) -> Result<
+    (
+        collagene_core::protocol::AnalysisResult,
+        Option<OriginReview>,
+    ),
+    String,
+> {
+    use collagene_core::{
+        protocol::{AnalysisJob, AnalysisResult, Request},
+        topo_run_preparation::{self, Reply, Task},
+    };
+    let (revision, job) = if let Some(origin) = &origin {
+        (
+            topo_run_preparation::revision(&inputs, "insert_template", origin, &task)
+                .map_err(|e| e.to_string())?,
+            AnalysisJob::InspectTopoRun {
+                inputs: inputs.clone(),
+                template_role: "insert_template".into(),
+                origin: origin.clone(),
+                task: task.clone(),
+            },
+        )
+    } else {
+        let revision = task_revision(&inputs, None, &task).map_err(|e| e.to_string())?;
+        let job = match task.clone() {
+            Task::Orientations {
+                request,
+                vector,
+                insert,
+                directional,
+            } => AnalysisJob::InspectTopoOrientations {
+                inputs: inputs.clone(),
+                request,
+                vector,
+                insert,
+                directional,
+            },
+            Task::Project { request, selection } => AnalysisJob::ProjectAnnotatedTopo {
+                inputs: inputs.clone(),
+                request,
+                selection,
+            },
+            Task::Check {
+                request,
+                selection,
+                target,
+                policy,
+            } => AnalysisJob::CheckAnnotatedTopoTarget {
+                inputs: inputs.clone(),
+                request,
+                selection,
+                target,
+                policy,
+            },
+            Task::InspectActions { request } => AnalysisJob::InspectTopoActions {
+                inputs: inputs.clone(),
+                request,
+            },
+            Task::ProcessActions { request } => AnalysisJob::ProcessTopoActions {
+                inputs: inputs.clone(),
+                request,
+            },
+        };
+        (revision, job)
+    };
+    let reply = worker
+        .ask(Request {
+            id,
+            revision: revision.clone(),
+            job,
+        })
+        .await;
+    worker.close();
+    let reply = reply?;
+    if reply.id != id || reply.revision != revision {
+        return Err("TOPO response belongs to a different source, origin or declaration.".into());
+    }
+    match (reply.result, origin) {
+        (AnalysisResult::Error(e), _) => Err(e),
+        (AnalysisResult::TopoRunInspection(report), Some(origin)) => {
+            report
+                .validate_for(&inputs, "insert_template", &origin, &task, &revision)
+                .map_err(|e| e.to_string())?;
+            let review = OriginReview {
+                incomplete: report.origin_incomplete,
+                findings: report.origin_findings,
+                total: report.origin_findings_total,
+                truncated: report.origin_findings_truncated,
+            };
+            Ok((
+                match report.reply {
+                    Reply::Orientations(r) => AnalysisResult::TopoOrientations(r),
+                    Reply::Projected(r) => AnalysisResult::AnnotatedTopoProjection(r),
+                    Reply::Checked(r) => AnalysisResult::AnnotatedTopoTarget(r),
+                    Reply::ActionsInspected(r) => AnalysisResult::TopoActionsInspected(r),
+                    Reply::ActionsProcessed(r) => AnalysisResult::TopoActionsProduct(r),
+                },
+                Some(review),
+            ))
+        }
+        (_, Some(_)) => Err("Unexpected saved-template inspection response.".into()),
+        (value, None) => Ok((value, None)),
+    }
+}

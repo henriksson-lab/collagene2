@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 180;
+pub const CURRENT_TOOL_COUNT: usize = 181;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -84,6 +84,94 @@ pub struct TopoTargetQuery {
     pub target: DocumentRef,
     /// Every allowance is explicit; the target never chooses a component/seed.
     pub policy: collagene_core::topo::AcceptancePolicy,
+}
+/// Saved template context is attested against an exact session-owned archive;
+/// the task can never supply an alleged reconstructed duplex.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub enum SavedTopoTask {
+    Orientations {
+        request: collagene_core::topo::Request,
+        vector: [usize; 2],
+        insert: [usize; 2],
+        directional: bool,
+    },
+    Project {
+        request: collagene_core::topo::Request,
+        selection: collagene_core::topo::Selection,
+    },
+    Check {
+        request: collagene_core::topo::Request,
+        selection: collagene_core::topo::Selection,
+        target: DocumentRef,
+        policy: collagene_core::topo::AcceptancePolicy,
+    },
+    InspectActions {
+        request: collagene_core::topo_actions::ActionsRequest,
+    },
+    ProcessActions {
+        request: collagene_core::topo_actions::Request,
+    },
+}
+impl SavedTopoTask {
+    fn preparation(&self) -> &collagene_core::topo::Request {
+        match self {
+            Self::Orientations { request, .. }
+            | Self::Project { request, .. }
+            | Self::Check { request, .. } => request,
+            Self::InspectActions { request } => &request.preparation,
+            Self::ProcessActions { request } => &request.preparation,
+        }
+    }
+    fn native(
+        &self,
+        target: Option<Molecule>,
+    ) -> Result<collagene_core::topo_run_preparation::Task, ErrorData> {
+        use collagene_core::topo_run_preparation::Task;
+        Ok(match self {
+            Self::Orientations {
+                request,
+                vector,
+                insert,
+                directional,
+            } => Task::Orientations {
+                request: request.clone(),
+                vector: *vector,
+                insert: *insert,
+                directional: *directional,
+            },
+            Self::Project { request, selection } => Task::Project {
+                request: request.clone(),
+                selection: selection.clone(),
+            },
+            Self::Check {
+                request,
+                selection,
+                policy,
+                ..
+            } => Task::Check {
+                request: request.clone(),
+                selection: selection.clone(),
+                target: target.ok_or_else(|| bad("Independent target reference is required"))?,
+                policy: policy.clone(),
+            },
+            Self::InspectActions { request } => Task::InspectActions {
+                request: request.clone(),
+            },
+            Self::ProcessActions { request } => Task::ProcessActions {
+                request: request.clone(),
+            },
+        })
+    }
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SavedTopoInspectionQuery {
+    pub inputs: Vec<BoundInput>,
+    pub template_role: String,
+    pub origin: collagene_core::run_material::Capsule,
+    pub origin_workspace: WorkspaceRef,
+    pub task: SavedTopoTask,
 }
 #[derive(Serialize)]
 struct TopoEvidence<'a, T: Serialize> {
@@ -5990,6 +6078,72 @@ impl CollageneServer {
         Parameters(args): Parameters<published_ligation_tools::RankQuery>,
     ) -> Result<CallToolResult, ErrorData> {
         self.published_fusion_rank(args).await
+    }
+    #[tool(
+        description = "Freshly inspect TOPO insert PCR from one deliberately selected saved native material origin. Requires immutable source references, an explicit template role, complete originating capsule and its exact retained native workspace. Replays the origin before actual new PCR; graph metadata or matching DNA cannot substitute for material authority. Select an explicit orientations, projection, independent-target Check, actions inspection or processed-actions task. Check resolves an exact immutable session target reference, never replaces it with a projected product. Returns bounded full typed evidence without saving any candidate or document; kit activation, transfers, processing and acceptance remain explicit assumptions."
+    )]
+    async fn inspect_saved_topo(
+        &self,
+        Parameters(args): Parameters<SavedTopoInspectionQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.inputs.is_empty()
+            || args.inputs.len() > 32
+            || args.template_role.is_empty()
+            || args.template_role.len() > 256
+        {
+            return Err(bad(
+                "Saved TOPO inspection requires 1–32 bounded original roles and an explicit template role",
+            ));
+        }
+        args.origin.validate_documentary().map_err(bad)?;
+        // Bound literal option trees before cloning them into the native task.
+        bounded_json_limit(&args.task, 2 * 1024 * 1024)?;
+        let server = self.clone();
+        self.compute(move||{
+            let (inputs,target)={
+                let store=server.store.lock().unwrap();
+                let mut ids=BTreeSet::new();
+                let mut refs=Vec::with_capacity(args.inputs.len());
+                let mut sources=Vec::with_capacity(args.inputs.len());
+                for input in &args.inputs {
+                    if input.id.trim().is_empty() || input.id.len()>128 || !ids.insert(input.id.as_str()) { return Err(bad("Invalid or duplicate original TOPO source role")); }
+                    refs.push(store.document(&input.document)?);
+                    sources.push(verification::TopoSource{role:input.id.clone(),source:verification::Source::Input(input.id.clone())});
+                }
+                let target=if let SavedTopoTask::Check{target,..}=&args.task {
+                    let molecule=store.document(target)?;
+                    collagene_core::topo_worker::target_preflight(molecule).map_err(bad)?;
+                    Some(molecule.clone())
+                }else{None};
+                let inputs=collagene_core::topo_run_preparation::source_inputs(&sources,&refs,args.task.preparation(),&args.template_role,Some(&args.origin)).map_err(bad)?;
+                (inputs,target)
+            };
+            let template=inputs.iter().find(|input| input.role==args.template_role).ok_or_else(||bad("Selected saved template role is unavailable"))?;
+            server.attest_run_source(&args.origin_workspace,&args.origin,&template.molecule)?;
+            let task=args.task.native(target)?;
+            collagene_core::topo_run_preparation::preflight(&inputs,&args.template_role,&args.origin,&task).map_err(bad)?;
+            let context=collagene_core::topo_run_preparation::revision(&inputs,&args.template_role,&args.origin,&task).map_err(bad)?;
+            let report=collagene_core::topo_run_preparation::inspect(&inputs,&args.template_role,&args.origin,&task).map_err(bad)?;
+            report.validate_for(&inputs,&args.template_role,&args.origin,&task,&context).map_err(bad)?;
+            use collagene_core::topo_run_preparation::Reply;
+            let summary=match &report.reply {
+                Reply::Orientations(_)=>json!({"kind":"Orientations"}),
+                Reply::Projected(r)=>json!({"kind":"Projected","reference_length":r.reference.as_ref().map(|m|m.sequence.len())}),
+                Reply::Checked(r)=>json!({"kind":"Checked","target_revision":r.target_revision,"outcome":r.outcome}),
+                Reply::ActionsInspected(_)=>json!({"kind":"ActionsInspected"}),
+                Reply::ActionsProcessed(_)=>json!({"kind":"ActionsProcessed"}),
+            };
+            #[derive(Serialize)]
+            struct Evidence<'a>{inputs:&'a[BoundInput],template_role:&'a str,origin:&'a collagene_core::run_material::Capsule,origin_workspace:&'a WorkspaceRef,task:&'a SavedTopoTask,inspection:&'a collagene_core::topo_run_preparation::Inspection}
+            let evidence=Evidence{inputs:&args.inputs,template_role:&args.template_role,origin:&args.origin,origin_workspace:&args.origin_workspace,task:&args.task,inspection:&report};
+            let artifact=server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","saved-template-topo-inspection.json")?;
+            output(json!({"state":"saved-template-inspection","verified":false,"candidate_saved":false,"document_saved":false,
+                "context_revision":context,"engine_version":collagene_core::topo_run_preparation::ENGINE_VERSION,"template_role":args.template_role,
+                "origin_revision":args.origin.selection.event.revision,"origin_event":args.origin.selection.event,
+                "origin_incomplete":report.origin_incomplete,"origin_findings":report.origin_findings,
+                "origin_findings_total":report.origin_findings_total,"origin_findings_truncated":report.origin_findings_truncated,"summary":summary,"artifact_id":artifact,
+                "authority":"Exact retained native origin attestation and fresh origin/PCR/TOPO replay under explicit declarations. Origin incompleteness and bounded original findings remain explicit; a local graph or target comparison cannot clear them. Only Check reports comparison with the independently selected immutable session target; no summary grants global verification, reusable material, isolation, kit success or mixture uniqueness. No candidate or projected document was saved; serialized metadata cannot restore private physical state."}))
+        }).await
     }
     #[tool(
         description = "Compile explicit source-backed TA or directional CACC TOPO preparation declarations into the shared native recipe. Preserves actual ordered primers, vector strand geometry, terminal states and activation assumptions. Does not simulate activation or repair, add a tail silently, select transfers or invent a closed clone. Reuse inspect_topo_orientations and existing projection/target checks with the returned fields."

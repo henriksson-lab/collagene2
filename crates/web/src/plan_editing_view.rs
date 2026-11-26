@@ -91,6 +91,10 @@ fn first_source(ids: &[String], index: usize) -> Option<Source> {
 }
 fn new_operation(kind: &str, source: Source) -> Operation {
     match kind {
+        "resect-three" => Operation::ResectThreePrime {
+            source,
+            cuts: collagene_core::three_prime_resection::Cuts { left: 0, right: 0 },
+        },
         "digest" => Operation::Digest {
             template: source,
             enzymes: vec![],
@@ -427,7 +431,7 @@ pub fn PlanEditingView(
         <For each=move||steps.with(|rows|(page.get()*10..rows.len().min((page.get()+1)*10)).collect::<Vec<_>>()) key=|i|*i children=move|i|view!{<div class="plan-edit-row" class:active=move||selected.get()==i><button class="text-tool" disabled=move||frame.with(Option::is_some) on:click=move|_|selected.set(i)>{move||steps.with(|rows|rows.get(i).map(|op|format!("{}. {}",i+1,title(op))).unwrap_or_default())}</button></div>}/>
         <div class="plan-edit-actions"><button class="text-tool" disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous steps"</button><button class="text-tool" disabled=move||{(page.get()+1)*10>=steps.with(|rows|rows.len())} on:click=move|_|page.update(|p|*p+=1)>"Next steps"</button></div>
         <div class="plan-edit-actions"><button class="button secondary" disabled=move||frame.with(Option::is_some)||steps.with(|rows|rows.is_empty()) on:click=move|_|start_edit.run((selected.get_untracked(),false))>"Edit selected step"</button><button class="text-tool" disabled=move||frame.with(Option::is_some)||selected.get()==0 on:click=move|_|move_step.run(selected.get_untracked().saturating_sub(1))>"Move earlier"</button><button class="text-tool" disabled=move||frame.with(Option::is_some)||{selected.get()+1>=steps.with(|rows|rows.len())} on:click=move|_|move_step.run(selected.get_untracked()+1)>"Move later"</button><button class="text-tool" disabled=move||frame.with(Option::is_some)||steps.with(|rows|rows.is_empty()) on:click=remove>"Remove selected step"</button></div>
-        <label>"New operation"<select aria-label="New plan operation" prop:value=move||kind.get() on:change=move|e|kind.set(event_target_value(&e))>{[("pcr","PCR"),("digest","Restriction digest"),("anneal","Oligo annealing"),("treatment","End treatment"),("repair","End repair"),("tail","3′ tailing"),("ligate","Ordered ligation")].into_iter().map(|(value,label)|view!{<option value=value>{label}</option>}).collect_view()}</select></label>
+        <label>"New operation"<select aria-label="New plan operation" prop:value=move||kind.get() on:change=move|e|kind.set(event_target_value(&e))>{[("pcr","PCR"),("digest","Restriction digest"),("resect-three","Explicit 3′ source resection"),("anneal","Oligo annealing"),("treatment","End treatment"),("repair","End repair"),("tail","3′ tailing"),("ligate","Ordered ligation")].into_iter().map(|(value,label)|view!{<option value=value>{label}</option>}).collect_view()}</select></label>
         <div class="plan-edit-actions"><button class="button secondary" disabled=move||frame.with(Option::is_some)||steps.with(|rows|rows.len()>=1000) on:click=move|_|start_edit.run((selected.get_untracked().min(steps.with_untracked(|rows|rows.len())),true))>"Insert before selected step"</button><button class="button secondary" disabled=move||frame.with(Option::is_some)||steps.with(|rows|rows.len()>=1000) on:click=move|_|start_edit.run((steps.with_untracked(|rows|rows.len()),true))>"Append step"</button></div>
         <For each=editing_rows key=editing_key children=editing_child/>
         <p class="helper">"Moves preserve dependencies and are refused if a source would follow its consumer. A referenced step must be disconnected before removal."</p>
@@ -454,6 +458,7 @@ struct Fields {
     top_three: String,
     bottom_five: String,
     bottom_three: String,
+    resection: crate::plan_processing_model::ResectionDraft,
 }
 impl Fields {
     fn capture(op: &Operation, new: bool) -> Self {
@@ -503,6 +508,12 @@ impl Fields {
                     EndRepairMethod::Blunt => "blunt",
                 }
                 .into()
+            }
+            Operation::ResectThreePrime { cuts, .. } => {
+                // Insertion starts unfinished; neither end is silently chosen.
+                if !new {
+                    f.resection = crate::plan_processing_model::ResectionDraft::capture(cuts);
+                }
             }
             Operation::Tail3Prime { base, .. } => f.mode = base.as_str().into(),
             Operation::Ligate {
@@ -625,6 +636,11 @@ fn OperationEditor(
         </div>}.into_any(),
         Operation::ReconstructRunProduct{origin,..}=>view!{<div class="helper"><p>{format!("Immutable originating run {} · step {} · selected source event {}",origin.selection.run_id,origin.selection.step_index+1,origin.selection.event.event_id)}</p><p>{format!("Original independent target: {} · event {}",origin.target.name,origin.target_event.event_id)}</p><p>"The retained origin plan is reconstructed against its own target. Origin parameters and historical selections are preserved; this editor changes only the outer dependency. A different event cannot acquire material authority through matching DNA or imported summaries. Historical primers are not added to a new order."</p></div>}.into_any(),
         Operation::Digest{..}=>view!{<div>{text_field(fields,"Restriction enzymes (comma separated)",|f|&f.enzymes,|f,v|f.enzymes=v)}{text_field(fields,"Digest fragment index (zero based)",|f|&f.index,|f,v|f.index=v)}</div>}.into_any(),
+        Operation::ResectThreePrime{..}=>view!{<div>
+            {text_field(fields,"Left bottom-strand 3′ cut (bases)",|f|&f.resection.left,|f,v|f.resection.left=v)}
+            {text_field(fields,"Right top-strand 3′ cut (bases)",|f|&f.resection.right,|f,v|f.resection.right=v)}
+            <p class="helper">"Enter both cuts explicitly, including zero for an end left unchanged. Values shorten stored 3′ suffixes of the selected physical duplex; original 5′ groups remain. Choose an earlier eligible physical preparation (such as PCR or digest), or an explicitly declared source-termini step. Raw sequence letters alone do not establish accessible 3′ hydroxyls. Native verification rejects circular, nicked, blocked, unknown or exhausted substrates as applicable; no enzyme, unblocking, fill, sealing or host repair is inferred."</p>
+        </div>}.into_any(),
         Operation::TreatEnds{..}=>choice_field(fields,"End treatment",|f|&f.mode,|f,v|f.mode=v,vec![("phosphorylate","Phosphorylate 5′ ends"),("dephosphorylate","Dephosphorylate 5′ ends")]),
         Operation::RepairEnds{..}=>choice_field(fields,"End repair",|f|&f.mode,|f,v|f.mode=v,vec![("fill","Fill 5′ overhangs"),("remove","Remove 3′ overhangs"),("blunt","Blunt ends")]),
         Operation::Tail3Prime{..}=>choice_field(fields,"Added 3′ base",|f|&f.mode,|f,v|f.mode=v,vec![("A","A"),("C","C"),("G","G"),("T","T")]),
@@ -746,6 +762,9 @@ fn OperationEditor(
                 }
                 _ => {}
             }
+            if matches!(&op, Operation::ResectThreePrime { .. }) {
+                return f.resection.apply(&op);
+            }
             Ok(op)
         })()
         .and_then(|op| on_commit.run(op));
@@ -770,6 +789,7 @@ fn OperationEditor(
         | Operation::TreatEnds { .. }
         | Operation::RepairEnds { .. }
         | Operation::Tail3Prime { .. }
+        | Operation::ResectThreePrime { .. }
         | Operation::DeclareSourceModifications { .. }
         | Operation::DeclareSourceTermini { .. } => vec!["Template".to_string()],
         _ => vec![],

@@ -36,8 +36,12 @@ pub struct Opened {
 pub struct OpenGuard {
     life: Rc<Cell<u64>>,
     sequence: u64,
+    private_local: bool,
 }
 impl OpenGuard {
+    pub fn is_private_local(&self) -> bool {
+        self.private_local
+    }
     pub fn is_current(&self) -> bool {
         self.life.get() == self.sequence
     }
@@ -315,7 +319,11 @@ pub fn LibraryPane(
                             .ok_or("A shared plasmid must retain its native history.")?;
                         if value.payload.kind != wire::PayloadKind::WorkspaceArchive
                             || value.payload.sharing
-                                != Some(wire::WorkspaceSharing::DocumentClosure)
+                                != Some(if client.is_local() {
+                                    wire::WorkspaceSharing::ExplicitWholeWorkspace
+                                } else {
+                                    wire::WorkspaceSharing::DocumentClosure
+                                })
                             || selected.document_id.as_str() != value.local.id
                             || selected.revision != value.local.revision
                             || selected.head_event.as_ref().map(|id| id.as_str())
@@ -398,6 +406,7 @@ pub fn LibraryPane(
                                 guard: OpenGuard {
                                     life: life.clone(),
                                     sequence,
+                                    private_local: client.is_local(),
                                 },
                             })
                             .await?;
@@ -559,6 +568,13 @@ pub fn LibraryPane(
         }
     });
     let prepare_publication = Callback::new(move |()| {
+        if local {
+            send.run(Command::Publish(crate::library_documents::CaptureRequest {
+                expected: current.get_untracked(),
+                ..Default::default()
+            }));
+            return;
+        }
         let text = publication_choices.get_untracked();
         if text.len() > 16 * 1024 {
             status.set("Alternative sequence declarations exceed 16 KiB.".into());
@@ -672,6 +688,7 @@ pub fn LibraryPane(
                 </form>
                 <div class="library-actions"><button class="text-tool" disabled=move||busy.get()||locked.get() on:click=move|_|{name.set(String::new());editor.set(Some(NameEditor::Folder));}>"New folder"</button>
                     <button class="text-tool" disabled=move||busy.get()||locked.get()||current.with(Option::is_none) on:click=move|_|prepare_publication.run(())>{move||if local { if current_binding.get().is_some(){"Save plasmid revision"}else{"Save current plasmid"} } else if current_binding.get().is_some(){"Push plasmid revision"}else{"Share current plasmid"}}</button>
+                    <Show when=move||!local>
                     <details><summary>"SBOL sequence alternatives"</summary><p class="helper">"Only needed when a reachable SBOL component has alternative sequences. Declare choices explicitly as original file hash → component IRI → sequence IRI array. No alternative is automatically selected."</p><textarea aria-label="Explicit SBOL sequence alternative declarations" maxlength="16384" prop:value=move||publication_choices.get() disabled=move||busy.get() on:input=move|event|{publication_choices.set(event_target_value(&event));publication.set(None);}/></details>
                     {move||sequence_requirements.get().map(|(_,requirements)|view!{<details open><summary>"Reachable SBOL sequence choices"</summary><p class="helper">"These identifiers belong to selected structural dependencies. For each component with no required sequence, explicitly declare one or more available sequences using the JSON field above. Required native source sequences must remain included. No first alternative is chosen."</p>{requirements.into_iter().map(|r|view!{<div><p>"Original file: "<code>{r.original_hash}</code></p><p>"Component: "<code>{r.component_iri}</code></p><p>{format!("Required by native source: {:?}",r.required_sequences)}</p><ul>{r.available_sequences.into_iter().map(|id|view!{<li><code>{id}</code></li>}).collect_view()}</ul></div>}).collect_view()}</details>})}
                     {move||publication.get().map(|pending|view!{<section class="library-publication-review" aria-label="Documentary subset publication review">
@@ -680,6 +697,7 @@ pub fn LibraryPane(
                         {pending.capture.review.entries().iter().map(|entry|view!{<div><p>"Original file omitted: "<code>{entry.original_hash.clone()}</code></p><p>"Published subset: "<code>{entry.subset_hash.clone()}</code></p><p>{format!("{} retained objects · {} unrelated objects omitted · {} alternative sequence edges omitted",entry.retained_objects,entry.omissions.unrelated_objects,entry.omissions.alternative_sequence_edges)}</p></div>}).collect_view()}
                         <button class="button secondary" disabled=move||busy.get()||locked.get() on:click=move|_|approve_publication.run(())>"Approve subset and save plasmid"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|{publication.set(None);status.set("Documentary publication cancelled. Nothing was sent.".into());}>"Cancel"</button>
                     </section>})}
+                    </Show>
                     <button class="text-tool" disabled=move||busy.get() on:click=move|_|send.run(Command::Browse(navigation.get_untracked().refresh("Library refreshed.".into())))>"Refresh"</button>
                 </div>
                 {move||editor.get().map(|_|view!{<form class="library-name-editor" on:submit=move|event|{event.prevent_default();submit_name();}><label>"Name"<input autofocus=true prop:value=move||name.get() on:input=move|event|name.set(event_target_value(&event))/></label><button class="text-tool" disabled=move||busy.get()||locked.get() type="submit">"Save"</button><button class="text-tool" type="button" on:click=move|_|editor.set(None)>"Cancel"</button></form>})}

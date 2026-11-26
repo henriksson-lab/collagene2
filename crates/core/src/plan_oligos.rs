@@ -175,6 +175,93 @@ fn source_guard(source: &Source, index: usize, ids: &BTreeSet<&str>) -> Result<(
         _ => Err(bad("unknown, forward or oversized oligo source reference")),
     }
 }
+/// The original declarations remain in the exact plan. No strand preparation
+/// or physical report is deserialized as an oligo order.
+fn topo_declarations(
+    step: &Operation,
+) -> Option<(&[verification::TopoSource], &crate::topo::Request)> {
+    match step {
+        Operation::Topo {
+            sources, request, ..
+        }
+        | Operation::CheckedTopo {
+            sources, request, ..
+        } => Some((sources, request)),
+        Operation::ProcessedTopo { sources, request } => {
+            Some((sources, &request.treatment.preparation))
+        }
+        Operation::TopoActions { sources, request } => Some((sources, &request.preparation)),
+        _ => None,
+    }
+}
+fn topo_source<'a>(
+    sources: &'a [verification::TopoSource],
+    role: &str,
+) -> Result<&'a Source, Error> {
+    let mut rows = sources.iter().filter(|s| s.role == role);
+    let source = &rows
+        .next()
+        .ok_or_else(|| bad("embedded TOPO PCR/prepared source role is absent"))?
+        .source;
+    if rows.next().is_some() {
+        return Err(bad("embedded TOPO source role is ambiguous"));
+    }
+    Ok(source)
+}
+fn topo_preflight(
+    sources: &[verification::TopoSource],
+    request: &crate::topo::Request,
+    index: usize,
+    ids: &BTreeSet<&str>,
+) -> Result<(), Error> {
+    if sources.is_empty()
+        || sources.len() > 32
+        || request.recipe.schema_version != 1
+        || request.recipe.materials.len() > 16
+    {
+        return Err(Error::TooLarge);
+    }
+    let mut roles = BTreeSet::new();
+    for source in sources {
+        if source.role.is_empty() || source.role.len() > 256 || !roles.insert(source.role.as_str())
+        {
+            return Err(bad("invalid embedded TOPO source roles"));
+        }
+        source_guard(&source.source, index, ids)?;
+    }
+    let mut segments = 0usize;
+    let mut strand_count = 0usize;
+    for material in &request.recipe.materials {
+        match material {
+            crate::topo::MaterialRecipe::ExactPcr {
+                template_role,
+                forward,
+                reverse,
+                ..
+            } => {
+                topo_source(sources, template_role)?;
+                primer_guard(forward)?;
+                primer_guard(reverse)?;
+            }
+            crate::topo::MaterialRecipe::Prepared { strands, .. } => {
+                strand_count = strand_count
+                    .checked_add(strands.len())
+                    .filter(|n| *n <= 32)
+                    .ok_or(Error::TooLarge)?;
+                for strand in strands {
+                    for segment in &strand.segments {
+                        segments = segments
+                            .checked_add(1)
+                            .filter(|n| *n <= 2048)
+                            .ok_or(Error::TooLarge)?;
+                        topo_source(sources, &segment.source_role)?;
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
 /// Borrowed guards precede canonical hashing, source decoding or table allocation.
 /// No preparation, annealing, PCR or verification algorithm is invoked.
 pub fn preflight(plan: &DesignPlan, target: &Molecule, _options: &Options) -> Result<(), Error> {
@@ -192,6 +279,9 @@ pub fn preflight(plan: &DesignPlan, target: &Molecule, _options: &Options) -> Re
         }
     }
     for (index, step) in plan.steps.iter().enumerate() {
+        if let Some((sources, request)) = topo_declarations(step) {
+            topo_preflight(sources, request, index, &ids)?;
+        }
         match step {
             Operation::Pcr {
                 template,
@@ -575,13 +665,85 @@ pub fn build(plan: &DesignPlan, target: &Molecule, options: &Options) -> Result<
             Operation::Topo { .. }
             | Operation::CheckedTopo { .. }
             | Operation::ProcessedTopo { .. }
-            | Operation::TopoActions { .. } => warning(
-                &mut builder.unavailable,
-                format!(
-                    "Step {} embedded TOPO preparation oligos are outside this typed-PCR extraction profile; inspect the retained physical recipe separately.",
-                    index + 1
-                ),
-            ),
+            | Operation::TopoActions { .. } => {
+                let (sources, request) = topo_declarations(step)
+                    .ok_or_else(|| bad("missing embedded TOPO declaration"))?;
+                for (material_index, material) in request.recipe.materials.iter().enumerate() {
+                    match material {
+                        crate::topo::MaterialRecipe::ExactPcr {
+                            template_role,
+                            forward,
+                            reverse,
+                            tail,
+                            ..
+                        } => {
+                            let source = topo_source(sources, template_role)?;
+                            builder.pcr(
+                                index,
+                                &format!("topo-pcr-{}-forward", material_index + 1),
+                                source,
+                                forward,
+                                None,
+                            )?;
+                            builder.pcr(
+                                index,
+                                &format!("topo-pcr-{}-reverse", material_index + 1),
+                                source,
+                                reverse,
+                                None,
+                            )?;
+                            if tail.is_some() {
+                                warning(
+                                    &mut builder.warnings,
+                                    format!(
+                                        "Step {} TOPO PCR material {} has a separately declared post-PCR 3′ addition. That addition is not part of either ordered primer.",
+                                        index + 1,
+                                        material_index + 1
+                                    ),
+                                );
+                            }
+                        }
+                        crate::topo::MaterialRecipe::Prepared { strands, .. } => {
+                            warning(
+                                &mut builder.warnings,
+                                format!(
+                                    "Step {} TOPO prepared material {} is supplied DNA with explicit activation/terminal assumptions, not an inferred synthesis order. Its strand intervals, orientation, pairing and chemistry remain in the retained plan.",
+                                    index + 1,
+                                    material_index + 1
+                                ),
+                            );
+                            for strand in strands {
+                                for segment in &strand.segments {
+                                    let source = topo_source(sources, &segment.source_role)?;
+                                    let unsupported = match source {
+                                        Source::Step(_) => true,
+                                        Source::Input(id) => {
+                                            plan.inputs.iter().find(|i| &i.id == id).is_none_or(
+                                                |i| {
+                                                    i.molecule
+                                                        .metadata
+                                                        .keys()
+                                                        .any(|k| k.starts_with("oligo:"))
+                                                },
+                                            )
+                                        }
+                                    };
+                                    if unsupported {
+                                        warning(
+                                            &mut builder.unavailable,
+                                            format!(
+                                                "Step {} prepared TOPO material {} refers to derived material or original oligo-order evidence. No strand slice, reverse complement, activation or modification was converted into a supplier order; retain the source record and review this preparation separately.",
+                                                index + 1,
+                                                material_index + 1
+                                            ),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }

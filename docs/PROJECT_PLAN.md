@@ -2826,3 +2826,23 @@ checks actual package executables' headless MCP operation where available. No
 installer build/install or release signing is claimed from configuration alone;
 hosted packaging, release-mode Windows stdio and real installation/runtime
 acceptance remain required. See [packaging](DESKTOP_PACKAGING.md).
+
+### Declared 3′ resection and homology-annealing kernel — 26 November 2026
+
+The new `three_prime_resection` and `homology_annealing` modules implement
+explicit hydrolytic shortening and ordered pairing of exposed 5′ tails. They
+retain actual separate strands, source coordinates, surviving modifications,
+unchanged 5′ groups, accessible 3′ termini, nicks and unfilled gaps. Selected
+homology is checked against actual source strands without consulting a target;
+bounded alternatives never imply exhaustive reaction-mixture uniqueness.
+Eight focused scientific fixture groups pass against literal expected strands,
+cut boundaries, gap/nick geometry, chemistry and modification calls. Source-count
+bounds are also checked before allocating borrowed-source lists.
+
+This is the missing mechanistic foundation for a future explicit In-Fusion-style
+preparation route, not a claim about proprietary formulations or cellular repair.
+No joined complex becomes reusable sealed material. The existing 5′ assembly
+route and In-Fusion reference profile retain their semantics. Append-only
+verifier/recipe operations, retained event/target evidence, worker/MCP transport
+and compact workflow controls still need integration. See the
+[scientific contract and primary sources](THREE_PRIME_HOMOLOGY.md).

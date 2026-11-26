@@ -901,6 +901,67 @@ pub fn homology_assemble(
     )?;
     Ok((Some(tracked), report))
 }
+// Source-bound bridge: no serialized report is accepted as tracked material.
+fn tracked_resection(
+    source: &TrackedDuplex,
+    report: &crate::three_prime_resection::Report,
+) -> Result<TrackedDuplex, Error> {
+    let pieces = report
+        .mappings
+        .iter()
+        .map(|m| Piece {
+            source,
+            strand: m.source_strand,
+            start: m.source_start,
+            len: m.source_end - m.source_start,
+            destination: m.product_strand,
+            offset: m.product_start,
+        })
+        .collect::<Vec<_>>();
+    from_pieces(
+        report.product.clone(),
+        &pieces,
+        &[],
+        source.generation.clone(),
+    )
+}
+impl TrackedDuplex {
+    /// Fresh hydrolytic shortening of this actual tracked operand. No assumed
+    /// phosphorylation, synthesis, blocked-end removal or joining is performed.
+    pub fn resect_three_prime(
+        &self,
+        cuts: &crate::three_prime_resection::Cuts,
+    ) -> Result<(Self, crate::three_prime_resection::Report), Error> {
+        crate::three_prime_resection::preflight(&self.duplex, cuts)?;
+        self.validate()?;
+        let report = crate::three_prime_resection::geometry(&self.duplex, cuts)?;
+        Ok((tracked_resection(self, &report)?, report))
+    }
+}
+/// Retain each source's separate processed covalent strands and modifications.
+/// The paired/gapped complex is documentary; this deliberately returns no
+/// concatenated assembled TrackedDuplex or invented host-repair authority.
+pub fn homology_anneal(
+    sources: &[&TrackedDuplex],
+    options: &crate::homology_annealing::Options,
+) -> Result<(Vec<TrackedDuplex>, crate::homology_annealing::Report), Error> {
+    options.validate_shape(sources.len())?;
+    let duplexes = sources.iter().map(|s| &s.duplex).collect::<Vec<_>>();
+    crate::homology_annealing::preflight_borrowed(&duplexes, options)?;
+    // Bound combined positional/generation metadata before copying any operand.
+    crate::three_prime_resection::revision(&sources)?;
+    for source in sources {
+        source.validate()?;
+    }
+    let report = crate::homology_annealing::geometry_borrowed(&duplexes, options)?;
+    let operands = sources
+        .iter()
+        .zip(&report.preparations)
+        .map(|(source, preparation)| tracked_resection(source, preparation))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((operands, report))
+}
+
 pub fn profile_revision() -> String {
     hash(&(PROFILE_VERSION,methylation::profile_revision(),"Full internal CpG duplex at NotI/SmaI blocked; unmodified recognition permitted; other positional modification contexts remain unknown unless a published insensitive methylase context matches actual chemical position.")).expect("fixed bounded profile")
 }

@@ -220,3 +220,6 @@ pub mod overlap_extension_primer_design;
 pub mod overlap_extension_digest_inspection;
 
 pub mod assembly_edited_primer_design;
+
+pub mod homology_annealing;
+pub mod three_prime_resection;

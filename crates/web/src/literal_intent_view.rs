@@ -37,7 +37,8 @@ pub fn LiteralIntentEditor(draft: RwSignal<Draft>) -> impl IntoView {
         if next.slots.is_empty()
             || i >= count()
             || (!matches!(next.methods.mode, Mode::Ligation | Mode::Tailing)
-                && next.substitutions.is_empty())
+                && next.substitutions.is_empty()
+                && next.edits.is_empty())
         {
             status.set("Choose a declared junction in the current construct.".into());
             return;

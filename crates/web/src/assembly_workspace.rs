@@ -14,7 +14,7 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    Alphabet, Molecule, Topology, assembly_intent, assembly_junction_edit,
+    Alphabet, Molecule, Topology, assembly_edit_intent, assembly_intent, assembly_junction_edit,
     assembly_substitution_intent, golden_gate_junction_edit, primer_reuse,
     protocol::{AnalysisJob, AnalysisResult, Request},
     run_lineage::EventBinding,
@@ -44,6 +44,7 @@ impl Draft {
             combination: crate::assembly_alternatives::identity(self),
             junction_edits: self.junction_edits.clone(),
             substitutions: self.substitutions.clone(),
+            edits: self.edits.clone(),
             paired_rows: self
                 .methods
                 .rows
@@ -84,6 +85,7 @@ fn same_declaration(current: &Draft, applied: &Draft) -> bool {
         && current.methods == applied.methods
         && current.junction_edits == applied.junction_edits
         && current.substitutions == applied.substitutions
+        && current.edits == applied.edits
         && current.alternatives == applied.alternatives
 }
 #[derive(Clone, PartialEq, Eq)]
@@ -94,6 +96,7 @@ struct IntentIdentity {
     combination: Option<(String, String, Vec<String>)>,
     junction_edits: Vec<assembly_junction_edit::Edit>,
     substitutions: Vec<assembly_substitution_intent::Substitution>,
+    edits: Vec<assembly_edit_intent::Edit>,
     paired_rows: Vec<usize>,
     secondary_sources: Vec<Option<SourceInfo>>,
     slots: Vec<(
@@ -123,6 +126,7 @@ fn context(intent: &IntendedReference) -> &str {
         IntendedReference::Regions(i) => &i.context_revision,
         IntendedReference::Junctions(i) => &i.context_revision,
         IntendedReference::Substitutions(i) => &i.context_revision,
+        IntendedReference::Edits(i) => &i.context_revision,
     }
 }
 fn warnings(intent: &IntendedReference) -> &[String] {
@@ -130,6 +134,7 @@ fn warnings(intent: &IntendedReference) -> &[String] {
         IntendedReference::Regions(i) => &i.warnings,
         IntendedReference::Junctions(i) => &i.warnings,
         IntendedReference::Substitutions(i) => &i.warnings,
+        IntendedReference::Edits(i) => &i.warnings,
     }
 }
 struct Frozen {
@@ -214,6 +219,10 @@ fn inputs_request(
         )
         .map_err(|e| e.to_string())?;
     }
+    if !draft.edits.is_empty() {
+        assembly_edit_intent::source_preflight(&borrowed, &edit_request(draft, request.clone()))
+            .map_err(|e| e.to_string())?;
+    }
     let inputs = ids
         .into_iter()
         .zip(&captures)
@@ -224,6 +233,17 @@ fn inputs_request(
         })
         .collect();
     Ok((inputs, request, captures))
+}
+
+fn edit_request(draft: &Draft, base: assembly_intent::Request) -> assembly_edit_intent::Request {
+    assembly_edit_intent::Request {
+        base: assembly_substitution_intent::Request {
+            base,
+            junction_edits: draft.junction_edits.clone(),
+            substitutions: draft.substitutions.clone(),
+        },
+        edits: draft.edits.clone(),
+    }
 }
 
 fn method_overview(methods: &MethodsState) -> String {
@@ -479,7 +499,12 @@ pub fn AssemblyWorkspace(
                 return;
             }
         };
-        let revision = match if !declared.substitutions.is_empty() {
+        let revision = match if !declared.edits.is_empty() {
+            assembly_edit_intent::intent_revision(
+                &inputs,
+                &edit_request(&declared, request.clone()),
+            )
+        } else if !declared.substitutions.is_empty() {
             assembly_substitution_intent::intent_revision(
                 &inputs,
                 &assembly_substitution_intent::Request {
@@ -503,7 +528,12 @@ pub fn AssemblyWorkspace(
             .iter()
             .map(|input| input.id.clone())
             .collect::<Vec<_>>();
-        let job = if !declared.substitutions.is_empty() {
+        let job = if !declared.edits.is_empty() {
+            AnalysisJob::BuildContributionEditIntent {
+                request: edit_request(&declared, request),
+                inputs,
+            }
+        } else if !declared.substitutions.is_empty() {
             AnalysisJob::BuildSubstitutedAssemblyIntent {
                 inputs,
                 request: assembly_substitution_intent::Request {
@@ -568,6 +598,9 @@ pub fn AssemblyWorkspace(
                         AnalysisResult::SubstitutedAssemblyIntent(intent) => intent
                             .validate_binding(&revision)
                             .map(|()| IntendedReference::Substitutions(intent)),
+                        AnalysisResult::ContributionEditIntent(intent) => intent
+                            .validate_binding(&revision)
+                            .map(|()| IntendedReference::Edits(intent)),
                         AnalysisResult::Error(error) => {
                             status.set(error);
                             return;
@@ -606,8 +639,8 @@ pub fn AssemblyWorkspace(
                 );
             }
             let mut next = proposal.before.clone();
-            if !next.substitutions.is_empty() {
-                return Err("This primer proposal does not include internal substitutions. Keep the literal intended edits and enter primers explicitly.".into());
+            if !next.substitutions.is_empty() || !next.edits.is_empty() {
+                return Err("This primer proposal does not include internal substitutions, insertions or deletions. Keep the literal intended edits and enter primers explicitly.".into());
             }
             if proposal.report.len() != next.slots.len() {
                 return Err(
@@ -789,9 +822,10 @@ pub fn AssemblyWorkspace(
         <Show when=move||draft.with(|d|d.methods.mode==Mode::Ligation&&d.alternatives.is_none())><details class="assembly-fragment-options"><summary>"Use an annealed oligo insert"</summary><p class="helper">"Pin the top oligo for this slot using Use whole source, then open the bottom oligo in the viewer and capture it below. Both ordered sequences are 5′→3′. The top source region declares your intended reference contribution; add any intended extra junction bases separately, before reaction simulation."</p><button class="button secondary" on:click=move|_|pin_bottom.run(())>"Capture viewer source as bottom oligo"</button><p class="helper">{move||draft.with(|d|d.slots.get(d.active_slot).and_then(|slot|slot.anneal_bottom.as_ref()).map(|capture|format!("Pinned bottom: {} · {} bases",capture.source.name,capture.molecule.sequence.len())).unwrap_or_else(||"No bottom oligo captured for this slot.".into()))}</p></details></Show>
         <section class="assembly-set-fragment"><p>{move||format!("Active viewer source: {} · set {}",active_source.get().name,draft.with(|d|d.slots.get(d.active_slot).map(|s|s.label.as_str()).unwrap_or("selected slot").to_owned()))}</p><button class="button primary" on:click=move|_|pin.run(1)>"Set from sequence selection"</button><button class="button secondary" on:click=move|_|pin.run(0)>"Use whole source"</button><button class="button secondary" on:click=move|_|pin.run(2)>"Keep outside selection"</button><p class="helper">"Keep outside selection retains the complementary path on circular DNA, including an origin crossing. This sets intended source coordinates; it does not digest, amplify or prove a physical fragment."</p></section></div></details>
         <button class="button primary" disabled=move||busy.get() on:click=move|_|review_intent.run(())>"Review intended construct"</button><Show when=move||busy.get()><button class="text-tool" on:click=cancel>"Cancel intended construct"</button></Show><p class="assembly-workspace-status" role="status">{move||status.get()}</p>
-        <Show when=move||draft.with(|d|matches!(d.methods.mode,Mode::Tailing|Mode::Ligation)||!d.substitutions.is_empty())><crate::literal_intent_view::LiteralIntentEditor draft/></Show>
+        <Show when=move||draft.with(|d|matches!(d.methods.mode,Mode::Tailing|Mode::Ligation)||!d.substitutions.is_empty()||!d.edits.is_empty())><crate::literal_intent_view::LiteralIntentEditor draft/></Show>
         <crate::assembly_substitution_view::SubstitutionEditor draft active_source selected_region on_navigate/>
-        <Show when=move||draft.with(|d|!matches!(d.methods.mode,Mode::Tailing|Mode::Ligation)&&d.substitutions.is_empty())><details class="assembly-junction-options"><summary>"Edit intended junctions"</summary><JunctionEditor draft epoch on_apply=apply_junction/></details></Show>
+        <crate::assembly_edit_view::ContributionEditEditor draft active_source selected_region on_navigate/>
+        <Show when=move||draft.with(|d|!matches!(d.methods.mode,Mode::Tailing|Mode::Ligation)&&d.substitutions.is_empty()&&d.edits.is_empty())><details class="assembly-junction-options"><summary>"Edit intended junctions"</summary><JunctionEditor draft epoch on_apply=apply_junction/></details></Show>
         <Show when=move||undo_junction.with(|undo|undo.is_some())><button class="text-tool" disabled=move||undo_junction.with(|undo|undo.as_ref().is_none_or(|(_,applied)|!same_declaration(&draft.get(),applied))) on:click=move|_|{
             if let Some((mut previous,applied))=undo_junction.get_untracked(){
                 let current=draft.get_untracked();
@@ -1021,7 +1055,7 @@ fn FrozenWorkspace(
         {bound.with_value(|f|warnings(&f.intent).iter().map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view())}
         <h3>{move||draft.with(|d|if d.methods.mode==Mode::MultiSiteReference{"3. Reconstruct and choose a reference component"}else{"3. Prepare fragments and verify the method"})}</h3><p class="helper">{move||draft.with(|d|if d.methods.mode==Mode::MultiSiteReference{"Reconstruct the whole original parents under the reviewed site profile, then choose a reciprocal component explicitly. The intended reference remains a separate requirement; sequence agreement does not establish physical recombination."}else{"PCR rows begin with no primer sequences. Suggest and explicitly apply primers, or choose another declared preparation. The pinned original sources remain the inputs; the intended reference is never used as physical source material."})}</p>
         <Show when=move||draft.with(|d|d.methods.mode==Mode::MultiSiteReference)><crate::assembly_multisite_view::MultisiteReview draft epoch busy=workspace_busy snapshot capture=reference_inputs guard=reference_guard target_revision=bound.with_value(|f|f.target_revision.clone()) on_review=review on_finalize=finalize/></Show>
-        <Show when=move||draft.with(|d|d.methods.mode!=Mode::MultiSiteReference)>        <CloningMethodsPanel molecule=target query_options get_query source_info target_info selected_region=Callback::new(|()|None) config=methods epoch on_candidate=review on_finalize=Some(finalize) on_products primer_sources list_primers resolve_primer active_row=Some(active_preparation) on_edit_row=Some(edit_preparation) fixed_sources=true get_workspace=Some(snapshot) disable_plain_primer_design=bound.with_value(|f|!f.identity.junction_edits.is_empty()||!f.identity.substitutions.is_empty()) on_source=Some(diagnostic_source)/></Show>
+        <Show when=move||draft.with(|d|d.methods.mode!=Mode::MultiSiteReference)>        <CloningMethodsPanel molecule=target query_options get_query source_info target_info selected_region=Callback::new(|()|None) config=methods epoch on_candidate=review on_finalize=Some(finalize) on_products primer_sources list_primers resolve_primer active_row=Some(active_preparation) on_edit_row=Some(edit_preparation) fixed_sources=true get_workspace=Some(snapshot) disable_plain_primer_design=bound.with_value(|f|!f.identity.junction_edits.is_empty()||!f.identity.substitutions.is_empty()||!f.identity.edits.is_empty()) on_source=Some(diagnostic_source)/></Show>
         <p role="status">{move||status.get()}</p>
     </section>}
 }

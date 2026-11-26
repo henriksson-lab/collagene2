@@ -36,7 +36,8 @@ use web_sys::{HtmlCanvasElement, HtmlInputElement};
 
 type OpenDocument = collagene_core::history::DocumentHistory;
 const MAX_WORKSPACE_BYTES: usize = 64 * 1024 * 1024;
-const ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v6";
+const ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v7";
+const SUBSTITUTION_ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v6";
 const RECENT_ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v5";
 const PREVIOUS_ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v4";
 const OLDER_ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v3";
@@ -46,6 +47,7 @@ fn assembly_draft_kind(kind: &str) -> bool {
     matches!(
         kind,
         ASSEMBLY_DRAFT_KIND
+            | SUBSTITUTION_ASSEMBLY_DRAFT_KIND
             | RECENT_ASSEMBLY_DRAFT_KIND
             | PREVIOUS_ASSEMBLY_DRAFT_KIND
             | OLDER_ASSEMBLY_DRAFT_KIND
@@ -257,8 +259,10 @@ fn restore_workspace_state(
                     4
                 } else if asset.kind == RECENT_ASSEMBLY_DRAFT_KIND {
                     5
-                } else {
+                } else if asset.kind == SUBSTITUTION_ASSEMBLY_DRAFT_KIND {
                     6
+                } else {
+                    7
                 },
             )?
         }
@@ -1135,7 +1139,6 @@ pub fn App() -> impl IntoView {
     let render_error = RwSignal::new(String::new());
     let map_labels = RwSignal::new(crate::map_labels::LabelStats::default());
     let editor_view = RwSignal::new("split");
-    let map_select = RwSignal::new(false);
     let show_library = RwSignal::new(true);
     let layout = crate::workspace_layout::use_layout(
         editor_view,
@@ -1842,8 +1845,10 @@ pub fn App() -> impl IntoView {
         }
         match crate::assembly_draft_model::encode_raw(&draft) {
             Ok(bytes) => {
-                let draft_kind = if draft.version >= 6 {
+                let draft_kind = if draft.version >= 7 {
                     ASSEMBLY_DRAFT_KIND
+                } else if draft.version >= 6 {
+                    SUBSTITUTION_ASSEMBLY_DRAFT_KIND
                 } else if draft.version >= 5 {
                     RECENT_ASSEMBLY_DRAFT_KIND
                 } else if draft.version >= 4 {
@@ -2088,7 +2093,7 @@ pub fn App() -> impl IntoView {
                                     let _ = hovered_restriction.try_set(site);
                                 }
                             }));
-                            map.set_selection_mode(map_select.get_untracked());
+                            map.set_selection_mode(false);
                             map.set_hidden_features(&annotation_hidden.get());
                             renderer.set_value(Some(map));
                         }
@@ -5657,7 +5662,7 @@ pub fn App() -> impl IntoView {
                                 <section class="sequence-panel"><div class="panel-heading"><div><h2>"Sequence"</h2></div><span class="panel-subtitle">{move||molecule.with(|doc|if doc.sequence.alphabet()==Alphabet::Protein{"Amino-acid reference"}else{"Reference & complement"})}</span></div><Show when=move||molecule.with(|doc|doc.metadata.contains_key("legacy:upper_aligned"))><details class="legacy-source-rows"><summary>"Original aligned source rows"</summary><p class="helper">"Upper is stored 5′→3′; lower is aligned 3′→5′. These original rows may describe an earlier document revision. The editor displays the reference and its calculated complement."</p><pre>{move||molecule.with(|doc|format!("{}\n{}",doc.metadata.get("legacy:upper_aligned").map(|value|value.chars().take(2000).collect::<String>()).unwrap_or_default(),doc.metadata.get("legacy:lower_aligned").map(|value|value.chars().take(2000).collect::<String>()).unwrap_or_default()))}</pre><p class="helper">"First 2,000 columns shown; original legacy-file download retains all source evidence."</p></details></Show><Show when=move||molecule.get().metadata.contains_key("trace_original_base64")><button class="text-tool" on:click=move|_|trace_view.update(|v|*v=!*v)>{move||if trace_view.get(){"Show sequence"}else{"Show chromatogram"}}</button></Show><Show when=move||trace_view.get()&&molecule.get().metadata.contains_key("trace_original_base64") fallback=move||view!{<crate::sequence_view::SequenceView pcr_overlay=Some(pcr_overlay) hidden_features=Some(annotation_hidden) molecule=molecule selection=selection selected_feature=selected_feature highlighted_spans=highlighted_spans search_regions=search_regions on_show_features=Callback::new(move|()|panel.set("features")) identity=Memo::new(move|_|documents.with(|docs|format!("{}:{}",workspace_epoch.get(),docs[active.get()].id))) pcr_context=Some(restriction_identity) locked=Memo::new(move|_|workspace_restoring.get()) on_message=Callback::new(move|text:String|message.set(text)) on_history=Callback::new(move|redo:bool|{if workspace_restoring.get_untracked(){return Err("Workspace restoration is in progress.".into());}let mut result=Ok(());documents.update(|docs|{let doc=&mut docs[active.get_untracked()];result=if redo{doc.redo()}else{doc.undo()}.map(|_|()).map_err(|e|e.to_string());});result}) restriction_sites=restrictions.displayed restriction_visible=restrictions.visible on_show_restrictions=Callback::new(move|()|panel.set("restriction")) restriction_focus=Some(hovered_restriction) on_select_restriction=navigate_restriction on_edit=Callback::new(move|(base,a,b,replacement):(String,usize,usize,String)|{let current=molecule.get_untracked();if current.revision()!=base{return Err("The sequence changed before this edit could be applied.".into());}let edited=current.replace(a,b,&replacement).map_err(|e|e.to_string())?;commit_document(documents,active,workspace_restoring,&base,edited)})/>}><crate::trace_view::TraceView molecule=molecule selection=selection/></Show></section>
                                 <crate::workspace_layout::PaneResize layout=layout pane=crate::workspace_layout::Pane::Sequence/>
                                 <section class="map-panel"><div class="panel-heading"><div><h2>{move||if molecule.get().topology==Topology::Circular{"Plasmid map"}else{"Linear map"}}</h2></div><div class="map-controls"><button class="icon-button" title="Zoom out" on:click=move|_|if let Some(r)=renderer.get_value(){r.zoom(1./1.15);}>"−"</button><button class="icon-button" title="Reset map view" on:click=move|_|if let Some(r)=renderer.get_value(){r.reset();}>"Fit"</button><button class="icon-button" title="Zoom in" on:click=move|_|if let Some(r)=renderer.get_value(){r.zoom(1.15);}>"+"</button></div></div>
-                                    <div class="map-stage"><canvas node_ref=gl_canvas aria-label=move||if map_select.get(){"Interactive sequence map; drag to select a range, click labels to inspect, scroll to zoom"}else if molecule.with(|m|m.topology==Topology::Circular){"Interactive circular sequence overview; drag to rotate, use zoom buttons, click to select"}else{"Interactive linear sequence overview; use zoom buttons, click to select"} on:pointerdown=move|e|{if let Some(canvas)=gl_canvas.get(){let _=canvas.set_pointer_capture(e.pointer_id());}if let Some(r)=renderer.get_value(){r.pointer_down(e.client_x()as f64,e.client_y()as f64);}} on:pointermove=move|e|if let Some(r)=renderer.get_value(){r.pointer_move(e.client_x()as f64,e.client_y()as f64);} on:pointerup=move|e|if let Some(r)=renderer.get_value(){if let Some(hit)=r.pointer_up(e.client_x()as f64,e.client_y()as f64){if let Some(index)=hit.restriction_index{if let Some(site)=restrictions.scan.with_untracked(|s|s.as_ref().and_then(|s|s.sites.iter().find(|site|site.index==index).cloned())){navigate_restriction.run(site);}}else{batch(||{restrictions.selected.set(None);search_regions.set(None);selected_feature.set(hit.feature_index);selection.set(if hit.spans.len()==1{Some(hit.span)}else{None});if hit.spans.len()>1{search_regions.set(Some((molecule_revision.get_untracked(),hit.spans.clone())));}if hit.feature_index.is_some(){panel.set("features");}});}}} on:pointercancel=move|_|if let Some(r)=renderer.get_value(){r.pointer_cancel();} on:lostpointercapture=move|_|if let Some(r)=renderer.get_value(){r.pointer_cancel();} on:wheel=move|e|{e.prevent_default();if let Some(r)=renderer.get_value(){r.zoom(if e.delta_y()>0.{0.95}else{1.05});}}></canvas><canvas node_ref=label_canvas class="map-labels" aria-hidden="true"></canvas><p class="map-geometry-note" role="status">"Overview is simplified. Browse the annotation pages or export the full annotation set."</p><p class="restriction-map-note" role="status">"Some restriction labels are hidden for space. Open RE sites to inspect the selected positions."</p>
+                                    <div class="map-stage"><canvas node_ref=gl_canvas aria-label=move||if molecule.with(|m|m.topology==Topology::Circular){"Interactive circular sequence overview; drag to rotate, scroll to zoom, click annotations to inspect"}else{"Interactive linear sequence overview; scroll to zoom, click annotations to inspect"} on:pointerdown=move|e|{if let Some(canvas)=gl_canvas.get(){let _=canvas.set_pointer_capture(e.pointer_id());}if let Some(r)=renderer.get_value(){r.pointer_down(e.client_x()as f64,e.client_y()as f64);}} on:pointermove=move|e|if let Some(r)=renderer.get_value(){r.pointer_move(e.client_x()as f64,e.client_y()as f64);} on:pointerup=move|e|if let Some(r)=renderer.get_value(){if let Some(hit)=r.pointer_up(e.client_x()as f64,e.client_y()as f64){if let Some(index)=hit.restriction_index{if let Some(site)=restrictions.scan.with_untracked(|s|s.as_ref().and_then(|s|s.sites.iter().find(|site|site.index==index).cloned())){navigate_restriction.run(site);}}else{batch(||{restrictions.selected.set(None);search_regions.set(None);selected_feature.set(hit.feature_index);selection.set(if hit.spans.len()==1{Some(hit.span)}else{None});if hit.spans.len()>1{search_regions.set(Some((molecule_revision.get_untracked(),hit.spans.clone())));}if hit.feature_index.is_some(){panel.set("features");}});}}} on:pointercancel=move|_|if let Some(r)=renderer.get_value(){r.pointer_cancel();} on:lostpointercapture=move|_|if let Some(r)=renderer.get_value(){r.pointer_cancel();} on:wheel=move|e|{e.prevent_default();if let Some(r)=renderer.get_value(){r.zoom(if e.delta_y()>0.{0.95}else{1.05});}}></canvas><canvas node_ref=label_canvas class="map-labels" aria-hidden="true"></canvas><p class="map-geometry-note" role="status">"Overview is simplified. Browse the annotation pages or export the full annotation set."</p><p class="restriction-map-note" role="status">"Some restriction labels are hidden for space. Open RE sites to inspect the selected positions."</p>
                                         <Show when=move||!render_error.get().is_empty()><div class="map-error">{move||render_error.get()}</div></Show>
                                     </div><div class="map-caption"><span>{move||if molecule.get().topology==Topology::Circular{"Drag to rotate · scroll to zoom · select exact ranges in Sequence"}else{"Scroll to zoom · click features or sites to inspect"}}</span></div>
                                     <Show when=move||{let stats=map_labels.get();stats.omitted>0||stats.abbreviated>0||stats.limited}><div class="map-label-note"><span>{move||{let stats=map_labels.get();let mut parts=vec![format!("{} of {} annotation labels shown",stats.displayed,stats.total)];if stats.abbreviated>0{parts.push(format!("{} abbreviated",stats.abbreviated));}if stats.unplaced>0{parts.push(format!("{} without local coordinates",stats.unplaced));}if stats.lane_overflow>0{parts.push(format!("{} overlapping features hidden (3 map lanes)",stats.lane_overflow));}if stats.limited{parts.push("display limit reached".into());}parts.join(" · ")}}</span><button class="text-tool" on:click=move|_|panel.set("features")>"Inspect annotations"</button></div></Show>
@@ -5855,7 +5860,7 @@ pub fn App() -> impl IntoView {
                                 <crate::assembly_workspace::AssemblyWorkspace draft=assembly_draft previous_draft=previous_assembly_draft epoch=workspace_epoch snapshot=contig_snapshot workspace_busy=workspace_restoring
                                     sources=Memo::new(move|_|documents.with(|docs|docs.iter().map(recombination_source_info).collect()))
                                     active_source=Memo::new(move|_|documents.with(|docs|recombination_source_info(&docs[active.get()])))
-                                    selected_region=Callback::new(move|():()|{if inspected_feature.get_untracked().is_some_and(|f|f.location.spans().len()>1){return None;}selection.get_untracked().filter(|(a,b)|a<b)})
+                                    selected_region=Callback::new(move|():()|{if inspected_feature.get_untracked().is_some_and(|f|f.location.spans().len()>1){return None;}selection.get_untracked()})
                                     get_source=Callback::new(move|binding:collagene_core::run_lineage::EventBinding|documents.with_untracked(|docs|{
                                         let doc=docs.iter().find(|d|d.id==binding.document_id).ok_or("The selected source document is unavailable.")?;
                                         let exact=doc.revision_molecule(&binding.event_id).map_err(|e|e.to_string())?;

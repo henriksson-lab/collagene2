@@ -207,4 +207,5 @@ pub mod pcr_digest_inspection;
 
 pub mod run_catalog_digest;
 
+pub mod assembly_edit_intent;
 pub mod assembly_substitution_intent;

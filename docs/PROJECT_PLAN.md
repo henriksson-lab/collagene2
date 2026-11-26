@@ -1963,3 +1963,63 @@ The correction is test-only and did not change the frozen production bundle.
 Native/Tauri host integration and actual cross-platform installer/offline/recovery
 checks remain required delivery work; the current static preview and MCP managed
 storage already restrict their own asset/storage roots.
+
+### General internal edits in ordinary assembly intent
+
+The ordinary dock now declares internal insertions, deletions and replacements
+against pinned original source contributions, alongside existing single-base
+substitutions and junction edits. Start/end refer to the original contribution
+in construct orientation before junction trimming; preceding edit length changes
+do not retarget subsequent declarations. The compact disclosure accepts exact
+sequence selections or one-based half-open contribution boundaries. The right
+plasmid overview remains for rotation, zoom and annotation navigation.
+
+The additive native `assembly_edit_intent` builds its reference independently of
+primers and preparation. Expected original literals, stable role identities,
+reverse/origin-crossing coordinates, conflicting insertion boundaries, overlapping
+substitutions and junction trims are checked explicitly. Native document editing
+remaps retained annotations, flags intersected features and drops stale translations.
+Original inputs remain intact, including annotations deleted from the intended
+reference. Coordinate-bearing qualifiers and unresolved locations retain the
+existing explicit refusal rather than silently acquiring stale coordinates.
+
+Draft version7 persists only declarations, never a restored scientific verdict.
+Older versions retain their layouts. Source replacement/orientation changes clear
+that role's edits; reordering preserves them. The worker79 additive binary job and
+MCP `build_contribution_edit_intent` use the same native engine. Native workspace
+installation rebuilds against the exact original inputs and attests source events
+before atomic installation. An MCP intended reference does not fabricate native
+source-event ancestry. Primer proposals that omit internal edits cannot overwrite
+these declarations; preparation remains explicit and freshly verified separately.
+
+The initial edit engine bounds requests to256 edits and100000 total removed/added
+bases, within the existing8MiB source/target profile. Repeated native annotation
+remapping also has an explicit128MiB serialized-copy work cap; rich large designs
+may exceed it. This is an implementation limit to revisit with a batched native
+annotation editor, not a claim of complete large-design performance. General
+internal library-row edits and automatic indel primer design remain delivery work.
+Seventy-seven distinct focused native fixtures pass across the new engine,
+binary transport, real MCP client/server flow, draft persistence, exact selection
+mapping and atomic source-event staging, including existing substitution/junction
+regressions. A forged Protein-alphabet target with otherwise unchanged DNA letters
+and receipts is explicitly rejected. The full offline web/worker build passed. Static integrity validation passed for45
+immutable assets, retaining12 worker versions for open tabs. Public8082 now serves
+worker79 and the general-edit disclosure, exact insertion-caret handoff, and
+explicit rotation-only overview cleanup. Exact process/socket metadata was checked
+without browser or HTTP application checks. Formatting passes; the only post-build
+source adjustment alphabetized two independent core module declarations, recorded
+as a formatting-only difference in the local source proof. Visual acceptance and
+the original full project goal remain outstanding.
+
+The next cloning workflow gap is direct preparation of a dock-declared internal
+indel. Reuse existing inverse-PCR design/compile for compatible circular sources,
+then retain its reconstructed run product for downstream preparation. The current
+general-edit declaration does not claim an ordinary contiguous annealing pair can
+remove an arbitrary internal interval. Multiple stages and source-bound review
+remain explicit; no new scientific engine is needed for the initial bridge.
+
+The preceding3d3c40d commit subsequently completed its full native Windows/macOS/
+Linux matrix and web job successfully in GitHub run45757888263. That is evidence
+for that exact preceding commit; the new general-edit increment requires its own
+post-push matrix. A direct dock inverse-PCR adapter has been drafted in a separate,
+unregistered module for the next milestone and is not part of the published bundle.

@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 174;
+pub const CURRENT_TOOL_COUNT: usize = 175;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -1050,6 +1050,14 @@ pub struct SubstitutedAssemblyIntentQuery {
     pub inputs: Vec<BoundInput>,
     /// Independent regions, junction edits and expected-base substitutions; never primer-derived.
     pub request: collagene_core::assembly_substitution_intent::Request,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ContributionEditIntentQuery {
+    /// Exact immutable original source snapshots, never products or guessed native parents.
+    pub inputs: Vec<BoundInput>,
+    /// Independent construct-oriented original contribution intervals and literal edits.
+    pub request: collagene_core::assembly_edit_intent::Request,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -5602,6 +5610,38 @@ impl CollageneServer {
             let evidence=Evidence{inputs:&args.inputs,report:&report,binding_scope:scope};
             let(artifact,target)=server.candidate_document_artifact_bounded(&evidence,Some(report.target.clone()),"substituted-assembly-intent.json",32*1024*1024)?;
             let target=target.ok_or_else(||bad("substituted intended reference was not retained"))?;
+            output(json!({"state":"intended-reference","verified":false,"preparation_simulated":false,"inputs":args.inputs,"context_revision":report.context_revision,"request":report.request,
+                "target":{"id":target["id"],"revision":target["revision"]},"target_summary":target,"intended_length":report.target.sequence.len(),"topology":report.target.topology,
+                "fragments":report.fragments,"applied":report.applied,"warnings":report.warnings,"artifact_id":artifact,"binding_scope":scope,
+                "authority":"Independent source-bound design requirement only; original sources are unchanged. No primer-derived target, physical preparation, experimental success or native event ancestry is inferred."}))
+        }).await
+    }
+    #[tool(
+        description = "Build an independently declared assembly reference from exact immutable source snapshots, explicit region/order/orientation, junction trims/inserts, expected-base substitutions and literal contribution insertions/deletions/replacements. Mutation intent comes from the declaration, never primers or simulated products. Checks original expected literal bases before copying/building and atomically retains an unverified intended-reference session document plus complete mapping JSON. Repeated source contributions retain distinct roles. Original/historical source snapshots remain unchanged. Binding scope is MCP document roles/revisions, not native workspace event ancestry; native parents require separate explicit adoption. No preparation, material or successful verification is created."
+    )]
+    async fn build_contribution_edit_intent(
+        &self,
+        Parameters(args): Parameters<ContributionEditIntentQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.inputs.is_empty() || args.inputs.len() > 32 {
+            return Err(bad(
+                "contribution edit intent requires1..32 exact original source bindings",
+            ));
+        }
+        let server = self.clone();
+        self.compute(move||{
+            let inputs={let store=server.store.lock().unwrap();let mut seen=BTreeSet::new();let mut sources=Vec::with_capacity(args.inputs.len());
+                for bound in &args.inputs{if bound.id.trim().is_empty()||bound.id.len()>128||!seen.insert(bound.id.as_str()){return Err(bad("invalid or duplicate original contribution edit source ID"));}sources.push((bound.id.as_str(),store.document(&bound.document)?));}
+                collagene_core::assembly_edit_intent::source_preflight(&sources,&args.request).map_err(bad)?;
+                sources.into_iter().map(|(id,m)|PlanInput{id:id.into(),revision:m.revision(),molecule:m.clone()}).collect::<Vec<_>>()};
+            let report=collagene_core::assembly_edit_intent::build(&inputs,&args.request).map_err(bad)?;
+            let expected=collagene_core::assembly_edit_intent::intent_revision(&inputs,&args.request).map_err(bad)?;
+            report.validate_sources(&inputs,&expected).map_err(bad)?;
+            #[derive(Serialize)]struct Evidence<'a>{inputs:&'a[BoundInput],report:&'a collagene_core::assembly_edit_intent::Report,binding_scope:&'static str}
+            let scope="Exact immutable MCP source roles/document revisions only. Native event parents are established separately through explicit workspace adoption, never guessed by equal DNA or current heads.";
+            let evidence=Evidence{inputs:&args.inputs,report:&report,binding_scope:scope};
+            let(artifact,target)=server.candidate_document_artifact_bounded(&evidence,Some(report.target.clone()),"contribution-edit-intent.json",32*1024*1024)?;
+            let target=target.ok_or_else(||bad("contribution-edited intended reference was not retained"))?;
             output(json!({"state":"intended-reference","verified":false,"preparation_simulated":false,"inputs":args.inputs,"context_revision":report.context_revision,"request":report.request,
                 "target":{"id":target["id"],"revision":target["revision"]},"target_summary":target,"intended_length":report.target.sequence.len(),"topology":report.target.topology,
                 "fragments":report.fragments,"applied":report.applied,"warnings":report.warnings,"artifact_id":artifact,"binding_scope":scope,

@@ -30,6 +30,10 @@ mod assembly_comparison_view;
 mod assembly_draft_actions;
 #[cfg(any(target_arch = "wasm32", test))]
 mod assembly_draft_model;
+#[cfg(any(target_arch = "wasm32", test))]
+mod assembly_edit_model;
+#[cfg(target_arch = "wasm32")]
+mod assembly_edit_view;
 #[cfg(target_arch = "wasm32")]
 mod assembly_finalize;
 #[cfg(any(target_arch = "wasm32", test))]

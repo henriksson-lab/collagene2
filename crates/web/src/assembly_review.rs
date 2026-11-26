@@ -13,6 +13,7 @@ pub enum IntendedReference {
     Regions(assembly_intent::Report),
     Junctions(collagene_core::assembly_junction_edit::Intent),
     Substitutions(collagene_core::assembly_substitution_intent::Report),
+    Edits(collagene_core::assembly_edit_intent::Report),
 }
 impl IntendedReference {
     pub fn target(&self) -> &collagene_core::Molecule {
@@ -20,6 +21,7 @@ impl IntendedReference {
             Self::Regions(intent) => &intent.target,
             Self::Junctions(intent) => &intent.target,
             Self::Substitutions(intent) => &intent.target,
+            Self::Edits(intent) => &intent.target,
         }
     }
     pub fn fragments(&self) -> &[assembly_intent::PlacedFragment] {
@@ -27,6 +29,7 @@ impl IntendedReference {
             Self::Regions(intent) => &intent.fragments,
             Self::Junctions(intent) => &intent.fragments,
             Self::Substitutions(intent) => &intent.fragments,
+            Self::Edits(intent) => &intent.fragments,
         }
     }
 }
@@ -41,6 +44,9 @@ pub fn stage_any(
         IntendedReference::Junctions(intent) => stage_edited(frame, intent, sources, candidate),
         IntendedReference::Substitutions(intent) => {
             stage_substituted(frame, intent, sources, candidate)
+        }
+        IntendedReference::Edits(intent) => {
+            stage_contribution_edits(frame, intent, sources, candidate)
         }
     }
 }
@@ -389,6 +395,51 @@ pub fn stage_substituted(
     sources: &[EventBinding],
     candidate: &Candidate,
 ) -> Result<Staged, String> {
+    stage_internal_edits(frame, sources, candidate, || {
+        let fresh = collagene_core::assembly_substitution_intent::build(
+            &candidate.plan.inputs,
+            &intent.request,
+        )
+        .map_err(|e| e.to_string())?;
+        intent
+            .validate_binding(&fresh.context_revision)
+            .map_err(|e| e.to_string())?;
+        if intent.target.revision() != fresh.target.revision() {
+            return Err(
+                "Declared substitution target differs from fresh source-bound intent.".into(),
+            );
+        }
+        Ok((fresh.context_revision, fresh.target))
+    })
+}
+
+pub fn stage_contribution_edits(
+    frame: &Workspace,
+    intent: &collagene_core::assembly_edit_intent::Report,
+    sources: &[EventBinding],
+    candidate: &Candidate,
+) -> Result<Staged, String> {
+    stage_internal_edits(frame, sources, candidate, || {
+        let expected = collagene_core::assembly_edit_intent::intent_revision(
+            &candidate.plan.inputs,
+            &intent.request,
+        )
+        .map_err(|e| e.to_string())?;
+        intent
+            .validate_sources(&candidate.plan.inputs, &expected)
+            .map_err(|e| e.to_string())?;
+        Ok((expected, intent.target.clone()))
+    })
+}
+
+/// Both declarations use the same exact-event and atomic workspace installation.
+/// The supplied builder must reconstruct intent from the candidate's original inputs.
+fn stage_internal_edits(
+    frame: &Workspace,
+    sources: &[EventBinding],
+    candidate: &Candidate,
+    build: impl FnOnce() -> Result<(String, collagene_core::Molecule), String>,
+) -> Result<Staged, String> {
     if candidate.plan.inputs.is_empty() || candidate.plan.inputs.len() > 32 {
         return Err("Edited assembly inputs exceed the bounded staging profile.".into());
     }
@@ -415,22 +466,11 @@ pub fn stage_substituted(
         }
         parents.push((doc, binding.event_id.as_str()));
     }
-    let fresh = collagene_core::assembly_substitution_intent::build(
-        &candidate.plan.inputs,
-        &intent.request,
-    )
-    .map_err(|e| e.to_string())?;
-    intent
-        .validate_binding(&fresh.context_revision)
-        .map_err(|e| e.to_string())?;
-    if intent.target.revision() != fresh.target.revision()
-        || candidate.plan.target_revision != fresh.target.revision()
-    {
-        return Err(
-            "The candidate does not target the independently declared source regions, junction edits and internal substitutions.".into(),
-        );
+    let (fresh_context, fresh_target) = build()?;
+    if candidate.plan.target_revision != fresh_target.revision() {
+        return Err("The candidate does not target the independently declared source regions and literal edits.".into());
     }
-    let expected_target_revision = fresh.target.revision();
+    let expected_target_revision = fresh_target.revision();
     let expected_parents = sources
         .iter()
         .map(|s| s.event_id.as_str())
@@ -461,15 +501,12 @@ pub fn stage_substituted(
         if docs.len() >= 1000 {
             return Err("The workspace document limit has been reached.".into());
         }
-        let prefix = format!(
-            "assembly-substitution-intent-{}",
-            &fresh.context_revision[..16]
-        );
+        let prefix = format!("assembly-edited-intent-{}", &fresh_context[..16]);
         let id = (1..=1001)
             .map(|n| format!("{prefix}-{n}"))
             .find(|id| !docs.iter().any(|d| d.id == *id))
             .ok_or("No assembly document identity is available.")?;
-        let derived=DocumentHistory::derive_from_events(&parents,id,fresh.target,"Declared assembly design intent from pinned source regions and explicit junction edits and literal internal substitutions; declared bases are design intent, not observed DNA or verified physical preparation").map_err(|e|e.to_string())?;
+        let derived=DocumentHistory::derive_from_events(&parents,id,fresh_target,"Declared assembly design intent from pinned source regions and explicit junction edits and literal internal edits; declared bases are design intent, not observed DNA or verified physical preparation").map_err(|e|e.to_string())?;
         let target = EventBinding {
             document_id: derived.id.clone(),
             event_id: derived.head_event().into(),
@@ -1580,5 +1617,192 @@ mod tests {
             stage_substituted(&frame, &changed, std::slice::from_ref(&event), &candidate).is_err()
         );
         assert_eq!(serde_json::to_value(&frame).unwrap(), before);
+    }
+    #[test]
+    fn contribution_indels_stage_original_events_without_upgrading_wrong_pcr_output() {
+        use collagene_core::{
+            analysis::Primer, assembly_edit_intent as edits,
+            assembly_substitution_intent as substitutions, verification,
+        };
+        let source =
+            Molecule::dna("Original parent", "ACGACCCCGGGGTAAC", Topology::Linear).unwrap();
+        let frame =
+            Workspace::from_documents("Independent literal indels", vec![source.clone()], 0)
+                .unwrap();
+        let doc = &frame.documents[0];
+        let original_event = EventBinding {
+            document_id: doc.id.clone(),
+            event_id: doc.head_event.clone().unwrap(),
+            revision: doc.head.clone(),
+        };
+        let inputs = vec![PlanInput {
+            id: "original".into(),
+            revision: source.revision(),
+            molecule: source.clone(),
+        }];
+        let request = edits::Request {
+            base: substitutions::Request {
+                base: assembly_intent::Request {
+                    name: "Independent insertion and deletion".into(),
+                    circular: false,
+                    fragments: vec![Fragment {
+                        role: "backbone".into(),
+                        input_id: "original".into(),
+                        start: 0,
+                        end: 16,
+                        reverse: false,
+                    }],
+                },
+                junction_edits: vec![],
+                substitutions: vec![],
+            },
+            edits: vec![
+                edits::Edit {
+                    role: "backbone".into(),
+                    start: 4,
+                    end: 4,
+                    expected: "".into(),
+                    replacement: "TT".into(),
+                },
+                edits::Edit {
+                    role: "backbone".into(),
+                    start: 8,
+                    end: 10,
+                    expected: "GG".into(),
+                    replacement: "".into(),
+                },
+            ],
+        };
+        let intent = edits::build(&inputs, &request).unwrap();
+        assert_eq!(intent.target.sequence.as_str(), "ACGATTCCCCGGTAAC");
+        let candidate = Candidate::new(DesignPlan {
+            name: "Unedited PCR cannot satisfy literal indels".into(),
+            target_revision: intent.target.revision(),
+            inputs,
+            steps: vec![Operation::Pcr {
+                template: Source::Input("original".into()),
+                forward: Primer::new("Original F", "ACGACCCC", "").unwrap(),
+                reverse: Primer::new("Original R", "GTTACCCC", "").unwrap(),
+            }],
+        });
+        let checked = verification::verify(&candidate.plan, &intent.target);
+        assert_eq!(
+            checked.status,
+            verification::Status::Invalid,
+            "{:?}",
+            checked.findings
+        );
+        assert_eq!(
+            checked.products.last().unwrap().sequence.as_str(),
+            source.sequence.as_str()
+        );
+        let before = serde_json::to_value(&frame).unwrap();
+        let original_inputs = serde_json::to_value(&candidate.plan.inputs).unwrap();
+        let staged = stage_any(
+            &frame,
+            &IntendedReference::Edits(intent.clone()),
+            std::slice::from_ref(&original_event),
+            &candidate,
+        )
+        .unwrap();
+        assert_eq!(staged.sources[0].event, original_event);
+        assert_eq!(staged.sources[0].input_id, "original");
+        assert_eq!(staged.workspace.documents[0].head, frame.documents[0].head);
+        assert_eq!(
+            serde_json::to_value(&staged.workspace.candidates[0].plan.inputs).unwrap(),
+            original_inputs
+        );
+        let target_document = DocumentHistory::restore_all(&staged.workspace)
+            .unwrap()
+            .into_iter()
+            .find(|doc| doc.id == staged.target.document_id)
+            .unwrap();
+        assert_eq!(target_document.molecule, intent.target);
+        assert_eq!(
+            target_document
+                .summaries()
+                .iter()
+                .find(|e| e.current)
+                .unwrap()
+                .parents,
+            vec![original_event.event_id.clone()]
+        );
+        let rechecked = verification::verify(
+            &staged.workspace.candidates[0].plan,
+            &target_document.molecule,
+        );
+        assert_eq!(rechecked.status, verification::Status::Invalid);
+        assert_eq!(
+            rechecked.products.last().unwrap().sequence.as_str(),
+            source.sequence.as_str()
+        );
+        assert_eq!(serde_json::to_value(&frame).unwrap(), before);
+        let again = stage_contribution_edits(
+            &staged.workspace,
+            &intent,
+            std::slice::from_ref(&original_event),
+            &candidate,
+        )
+        .unwrap();
+        assert_eq!(again.target, staged.target);
+        assert_eq!(again.workspace.documents.len(), 2);
+
+        let mut forged = intent.clone();
+        forged
+            .target
+            .metadata
+            .insert("tampered".into(), "yes".into());
+        assert!(
+            stage_contribution_edits(
+                &frame,
+                &forged,
+                std::slice::from_ref(&original_event),
+                &candidate
+            )
+            .is_err()
+        );
+        forged = intent.clone();
+        forged.context_revision = "0".repeat(64);
+        assert!(
+            stage_contribution_edits(
+                &frame,
+                &forged,
+                std::slice::from_ref(&original_event),
+                &candidate
+            )
+            .is_err()
+        );
+        forged = intent.clone();
+        forged.applied[0].output_start += 1;
+        assert!(
+            stage_contribution_edits(
+                &frame,
+                &forged,
+                std::slice::from_ref(&original_event),
+                &candidate
+            )
+            .is_err()
+        );
+        let mut stale = original_event.clone();
+        stale.event_id = "0".repeat(64);
+        assert!(stage_contribution_edits(&frame, &intent, &[stale], &candidate).is_err());
+        let mut changed = candidate.plan.clone();
+        changed.inputs[0].molecule.sequence =
+            collagene_core::Sequence::dna("TTTTTTTTTTTTTTTT").unwrap();
+        changed.inputs[0].revision = changed.inputs[0].molecule.revision();
+        assert!(
+            stage_contribution_edits(
+                &frame,
+                &intent,
+                std::slice::from_ref(&original_event),
+                &Candidate::new(changed)
+            )
+            .is_err()
+        );
+        assert_eq!(serde_json::to_value(&frame).unwrap(), before);
+        assert_eq!(
+            serde_json::to_value(&candidate.plan.inputs).unwrap(),
+            original_inputs
+        );
     }
 }

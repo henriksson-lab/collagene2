@@ -29,8 +29,11 @@ The same cached lanes and label boxes drive rendering and hit testing. Feature
 text remains readable with deliberate abbreviation rather than arbitrary word
 breaks.
 
-Dragging a circular map rotates the view by default. Precise base ranges are
-selected in Sequence; the overview's approximate range-mode buttons are removed.
+Dragging the right-hand circular map rotates only the display, preserving the
+sequence origin and any exact sequence selection. Precise base ranges are selected
+in the left-hand Sequence view or entered as coordinates; the overview does not
+offer approximate range selection. The main viewer explicitly disables map range
+mode, with no separate mutable range-selection flag.
 Feature, site and primer-overlay clicks still navigate exact known coordinates.
 Empty map-space clicks do not fabricate single-base selections.
 

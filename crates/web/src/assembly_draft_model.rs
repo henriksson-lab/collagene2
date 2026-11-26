@@ -85,8 +85,42 @@ pub struct Draft {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub substitutions: Vec<collagene_core::assembly_substitution_intent::Substitution>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_internal_edits",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub edits: Vec<collagene_core::assembly_edit_intent::Edit>,
     #[serde(default)]
     pub alternatives: Option<crate::assembly_alternatives::Library>,
+}
+fn deserialize_internal_edits<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<collagene_core::assembly_edit_intent::Edit>, D::Error> {
+    struct Visitor;
+    impl<'de> serde::de::Visitor<'de> for Visitor {
+        type Value = Vec<collagene_core::assembly_edit_intent::Edit>;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("at most256 literal contribution edits")
+        }
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(
+            self,
+            mut seq: A,
+        ) -> Result<Self::Value, A::Error> {
+            if seq.size_hint().is_some_and(|n| n > 256) {
+                return Err(serde::de::Error::custom("at most256 contribution edits"));
+            }
+            let mut result = Vec::new();
+            while let Some(value) = seq.next_element()? {
+                if result.len() == 256 {
+                    return Err(serde::de::Error::custom("at most256 contribution edits"));
+                }
+                result.push(value);
+            }
+            Ok(result)
+        }
+    }
+    deserializer.deserialize_seq(Visitor)
 }
 fn deserialize_substitutions<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
@@ -189,6 +223,7 @@ impl Default for Draft {
             methods: MethodsState::default(),
             junction_edits: Vec::new(),
             substitutions: Vec::new(),
+            edits: Vec::new(),
             alternatives: None,
         };
         value.sync_rows();
@@ -535,6 +570,64 @@ impl Draft {
         let roles = self.methods.role_ids(self.slots.len())?;
         let role = roles.get(index).ok_or("The source slot is unavailable.")?;
         self.substitutions.retain(|edit| edit.role != role.role);
+        self.edits.retain(|edit| edit.role != role.role);
+        Ok(())
+    }
+    fn validate_internal_edits(&self) -> Result<(), String> {
+        if self.edits.len() > 256 {
+            return Err("At most256 explicit contribution edits are supported.".into());
+        }
+        if self.edits.is_empty() {
+            return Ok(());
+        }
+        if self.version < 7 || self.alternatives.is_some() || self.methods.source_roles.is_none() {
+            return Err("Internal contribution edits require version7, an ordinary construct and stable source roles.".into());
+        }
+        let roles = self.methods.role_ids(self.slots.len())?;
+        let mut total = 0usize;
+        for (index, edit) in self.edits.iter().enumerate() {
+            let length = edit
+                .end
+                .checked_sub(edit.start)
+                .ok_or("Contribution edit end precedes its start.")?;
+            total = total
+                .checked_add(length)
+                .and_then(|n| n.checked_add(edit.replacement.len()))
+                .filter(|n| *n <= 100_000)
+                .ok_or("Contribution edits exceed100000 affected/inserted bases.")?;
+            if !token(&edit.role, 128)
+                || !roles.iter().any(|r| r.role == edit.role)
+                || edit.end > collagene_core::model::MAX_SEQUENCE_LEN
+                || edit.expected.len() != length
+                || edit.expected == edit.replacement
+                || !edit
+                    .expected
+                    .bytes()
+                    .chain(edit.replacement.bytes())
+                    .all(|b| b"ACGTRYSWKMBDHVN".contains(&b))
+            {
+                return Err("Contribution edits require original-role coordinates and distinct uppercase DNA literals.".into());
+            }
+            // Insertions sharing a boundary with another edit are intentionally
+            // rejected: their relative order is not declared by these literals.
+            let conflict = |a: usize, b: usize, c: usize, d: usize| {
+                if a == b {
+                    c <= a && a <= d
+                } else if c == d {
+                    a <= c && c <= b
+                } else {
+                    a < d && c < b
+                }
+            };
+            if self.edits[..index].iter().any(|other| {
+                other.role == edit.role && conflict(edit.start, edit.end, other.start, other.end)
+            }) || self.substitutions.iter().any(|other| {
+                other.role == edit.role
+                    && conflict(edit.start, edit.end, other.offset, other.offset + 1)
+            }) {
+                return Err("Contribution edits must not overlap each other or substitutions, or share insertion boundaries.".into());
+            }
+        }
         Ok(())
     }
     /// Explicitly reverse the declared pair by swapping its ordered originals.
@@ -663,7 +756,7 @@ impl Draft {
     /// Structural/bounded source consistency only. Historical event IDs require
     /// the host workspace to attest them before installing any candidate.
     pub fn validate(&self) -> Result<(), String> {
-        if !matches!(self.version, 1 | 2 | 3 | 4 | 5 | 6)
+        if !matches!(self.version, 1 | 2 | 3 | 4 | 5 | 6 | 7)
             || self.version == 1 && self.alternatives.is_some()
         {
             return Err(
@@ -710,6 +803,7 @@ impl Draft {
                 }
             }
         }
+        self.validate_internal_edits()?;
         let has_origin = self.methods.rows.iter().any(|row| row.run_origin.is_some());
         if has_origin && self.version < 5 {
             return Err("Saved-run material requires assembly draft version 5.".into());
@@ -885,6 +979,9 @@ impl Draft {
         if !self.substitutions.is_empty() {
             self.version = self.version.max(6);
         }
+        if !self.edits.is_empty() {
+            self.version = self.version.max(7);
+        }
     }
 }
 
@@ -895,8 +992,8 @@ pub fn encode(draft: &Draft) -> Result<Vec<u8>, String> {
 }
 /// Encode current editable state without promoting working fields into saved rows.
 pub fn encode_raw(draft: &Draft) -> Result<Vec<u8>, String> {
-    if !matches!(draft.version, 3 | 4 | 5 | 6) {
-        return Err("Raw assembly persistence requires draft version3–6.".into());
+    if !matches!(draft.version, 3 | 4 | 5 | 6 | 7) {
+        return Err("Raw assembly persistence requires draft version3–7.".into());
     }
     draft.validate()?;
     let mut writer = Bounded { bytes: Vec::new() };
@@ -2182,5 +2279,108 @@ mod mismatch_search_limit_tests {
         draft.methods.rows[1].preparation = OverlapPreparation::WholeLinear;
         draft.methods.rows[1].mismatch_max_pairs = "x".repeat(21);
         assert!(draft.validate().is_err());
+    }
+}
+
+#[cfg(test)]
+mod contribution_edit_tests {
+    use super::*;
+    use collagene_core::{assembly_edit_intent::Edit, assembly_substitution_intent::Substitution};
+    fn edited() -> Draft {
+        let mut d = Draft::default();
+        let roles = d.methods.role_ids(d.slots.len()).unwrap();
+        d.edits.push(Edit {
+            role: roles[0].role.clone(),
+            start: 2,
+            end: 4,
+            expected: "CC".into(),
+            replacement: "N".into(),
+        });
+        d.methods.source_roles = Some(roles);
+        d.sync_rows();
+        d
+    }
+    #[test]
+    fn persisted_general_edits_require_v7_stable_roles_and_bounded_literals() {
+        let original = serde_json::to_value(Draft::default()).unwrap();
+        assert!(original.get("edits").is_none());
+        for version in 1..=6 {
+            let mut old = original.clone();
+            old["version"] = version.into();
+            assert!(
+                decode(&serde_json::to_vec(&old).unwrap())
+                    .unwrap()
+                    .edits
+                    .is_empty()
+            );
+        }
+        let d = edited();
+        assert_eq!(d.version, 7);
+        assert!(d.validate().is_ok());
+        assert!(decode_version(&encode_raw(&d).unwrap(), 7).unwrap() == d);
+        let mut wrong = d.clone();
+        wrong.version = 6;
+        assert!(wrong.validate().is_err());
+        wrong = d.clone();
+        wrong.methods.source_roles = None;
+        assert!(wrong.validate().is_err());
+        wrong = d.clone();
+        wrong.edits[0].expected = "C".into();
+        assert!(wrong.validate().is_err());
+        wrong = d.clone();
+        wrong.edits[0].replacement = "Z".into();
+        assert!(wrong.validate().is_err());
+        wrong = d.clone();
+        wrong.edits[0].replacement = "A".repeat(100_001);
+        assert!(wrong.validate().is_err());
+        let mut oversized = serde_json::to_value(&d).unwrap();
+        oversized["edits"] = serde_json::to_value(vec![d.edits[0].clone(); 257]).unwrap();
+        assert!(decode(&serde_json::to_vec(&oversized).unwrap()).is_err());
+    }
+    #[test]
+    fn general_edits_reject_ambiguous_order_and_cross_kind_overlap() {
+        let d = edited();
+        let role = d.edits[0].role.clone();
+        let mut next = d.clone();
+        next.edits.push(Edit {
+            role: role.clone(),
+            start: 4,
+            end: 5,
+            expected: "G".into(),
+            replacement: "T".into(),
+        });
+        assert!(next.validate().is_ok()); // Adjacent nonempty intervals have an unambiguous order.
+        next.edits[1] = Edit {
+            role: role.clone(),
+            start: 4,
+            end: 4,
+            expected: "".into(),
+            replacement: "T".into(),
+        };
+        assert!(next.validate().is_err());
+        next = d.clone();
+        next.substitutions.push(Substitution {
+            role: role.clone(),
+            offset: 3,
+            expected: "C".into(),
+            replacement: "G".into(),
+        });
+        assert!(next.validate().is_err());
+        next = d.clone();
+        next.substitutions.push(Substitution {
+            role: role.clone(),
+            offset: 4,
+            expected: "G".into(),
+            replacement: "T".into(),
+        });
+        assert!(next.validate().is_ok());
+        next.edits[0] = Edit {
+            role,
+            start: 4,
+            end: 4,
+            expected: "".into(),
+            replacement: "C".into(),
+        };
+        assert!(next.validate().is_err());
     }
 }

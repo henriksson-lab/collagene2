@@ -6,8 +6,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 90;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 21;
+pub const WORKER_SCHEMA_VERSION: u16 = 91;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 22;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
@@ -993,6 +993,17 @@ pub enum AnalysisJob {
         trace: crate::traces::Trace,
         options: crate::scf_export::Options,
     },
+    InstallMaterialDerivation {
+        workspace: crate::workspace::Workspace,
+        request: crate::material_derivation::Request,
+    },
+    InspectMaterialDigest {
+        source_role: String,
+        source: Molecule,
+        origin: crate::material_derivation::SourceOrigin,
+        selection: crate::catalog_digest::CatalogSelection,
+        options: crate::catalog_digest::InspectionOptions,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1172,6 +1183,8 @@ pub enum AnalysisResult {
     SequenceExportAssessment(crate::sequence_export::Assessment),
     SequenceExportPrepared(crate::sequence_export::Prepared),
     ScfTraceExported(crate::scf_export::Exported),
+    MaterialDerivationInstalled(crate::material_derivation::Installed),
+    MaterialDigestInspection(crate::material_derivation::DigestPreview),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1430,6 +1443,24 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         }
         AnalysisJob::ExportScfTrace { trace, options } => {
             crate::scf_export::revision(trace, options)?;
+        }
+        AnalysisJob::InstallMaterialDerivation { workspace, request } => {
+            crate::material_derivation::preflight(workspace, request)?;
+        }
+        AnalysisJob::InspectMaterialDigest {
+            source_role,
+            source,
+            origin,
+            selection,
+            options,
+        } => {
+            crate::material_derivation::digest_inspection_revision(
+                source_role,
+                source,
+                origin,
+                selection,
+                options,
+            )?;
         }
 
         AnalysisJob::InspectTopoRun {
@@ -1709,6 +1740,8 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::ReviewSequenceExport { .. }
             | AnalysisJob::PrepareSequenceExport { .. }
             | AnalysisJob::ExportScfTrace { .. }
+            | AnalysisJob::InstallMaterialDerivation { .. }
+            | AnalysisJob::InspectMaterialDigest { .. }
     ) {
         MAX_WORKSPACE_MESSAGE_BYTES
     } else {
@@ -1743,6 +1776,8 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             (164, 90),
             (165, 90),
             (166, 90),
+            (167, 91),
+            (168, 91),
         ],
     )?;
     preflight_codon_tag(bytes, &[42, 43])?;
@@ -1866,6 +1901,14 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         AnalysisResult::RunDigestInstalled(report) => {
             report.validate_binding(&response.revision)?;
             90
+        }
+        AnalysisResult::MaterialDerivationInstalled(report) => {
+            report.validate_binding(&response.revision)?;
+            91
+        }
+        AnalysisResult::MaterialDigestInspection(report) => {
+            report.validate_binding(&response.revision)?;
+            91
         }
         AnalysisResult::SequenceExportAssessment(report) => {
             report.validate_binding(&response.revision)?;
@@ -3358,6 +3401,10 @@ fn check_verification_report_version(
                 ));
             }
             match &step.evidence {
+                crate::verification::PhysicalProcessingEvidence::DerivedOrigin(r) => {
+                    check_variant_version(bytes, 91)?;
+                    r.validate_documentary()?;
+                }
                 crate::verification::PhysicalProcessingEvidence::SavedDigestOrigin(r) => {
                     check_variant_version(bytes, 90)?;
                     r.validate_documentary()?;
@@ -3418,6 +3465,9 @@ fn check_verification_report_version(
     Ok(())
 }
 fn check_scientific_report_version(bytes: &[u8], engine: &str) -> Result<(), Error> {
+    if engine.ends_with("/science-25") {
+        check_variant_version(bytes, 91)?;
+    }
     if engine.ends_with("/science-24") {
         check_variant_version(bytes, 90)?;
     }
@@ -3512,6 +3562,11 @@ mod preparation_shape {
     }
     fn variant(worker: u16, name: &str, variant: &str) -> Result<(), Found> {
         let minimum = match (name, variant) {
+            ("Preparation", "FromDerived")
+            | ("Operation", "ReconstructMaterial")
+            | ("PhysicalProcessingEvidence", "DerivedOrigin")
+            | ("MaterialOrigin", "Derived")
+            | ("MaterialSelection", "Derived") => 91,
             ("Preparation", "FromDigest")
             | ("Operation", "ReconstructDigestFragment")
             | ("PhysicalProcessingEvidence", "SavedDigestOrigin")
@@ -3744,7 +3799,7 @@ mod preparation_shape {
 }
 fn check_preparation_version(bytes: &[u8], value: &impl Serialize) -> Result<(), Error> {
     let worker = u16::from_le_bytes([bytes[4], bytes[5]]);
-    if worker < 90 {
+    if worker < 91 {
         value
             .serialize(preparation_shape::Visitor {
                 worker,
@@ -3814,6 +3869,11 @@ fn check_workspace_version(
         if attachment.kind == crate::alignment_formats::WORKSPACE_ATTACHMENT_KIND {
             let document = crate::alignment_formats::load_alignment(&attachment.bytes)?;
             check_variant_version(bytes, alignment_document_worker_version(&document))?;
+        } else if attachment.kind == "assembly-draft-v13" {
+            check_variant_version(bytes, 91)?;
+        } else if attachment.kind == crate::material_derivation::WORKSPACE_ATTACHMENT_KIND {
+            check_variant_version(bytes, 91)?;
+            crate::material_derivation::load_record(&attachment.bytes)?;
         } else if attachment.kind == "assembly-draft-v12" {
             check_variant_version(bytes, 90)?;
         } else if attachment.kind == crate::run_digest_history::WORKSPACE_ATTACHMENT_KIND {
@@ -3844,6 +3904,12 @@ fn check_workspace_version(
             let record = crate::run_lineage::load_run_record(&attachment.bytes)?;
             check_variant_version(bytes, plan_worker_version(&record.plan))?;
             check_preparation_version(bytes, &record.plan)?;
+            if record.plan_schema >= 20 {
+                check_variant_version(bytes, 91)?;
+            }
+            if record.plan_schema >= 19 {
+                check_variant_version(bytes, 90)?;
+            }
             if record.plan_schema >= 18 {
                 check_variant_version(bytes, 88)?;
             }
@@ -3988,6 +4054,7 @@ fn plan_worker_version(plan: &crate::verification::DesignPlan) -> u16 {
     plan.steps
         .iter()
         .map(|step| match step {
+            crate::verification::Operation::ReconstructMaterial { .. } => 91,
             crate::verification::Operation::ReconstructDigestFragment { .. } => 90,
             crate::verification::Operation::ResectThreePrime { .. }
             | crate::verification::Operation::HomologyAnnealing { .. } => 88,
@@ -4053,6 +4120,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             (174, 90),
             (175, 90),
             (176, 90),
+            (177, 91),
+            (178, 91),
         ],
     )?;
     preflight_codon_tag(bytes, &[44, 45])?;
@@ -4125,6 +4194,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::InstallMaterialDerivation { .. }
+        | AnalysisJob::InspectMaterialDigest { .. } => 91,
         AnalysisJob::InspectMaterialOrigin { .. }
         | AnalysisJob::InstallRunDigestFragment { .. }
         | AnalysisJob::MaterialPcrDocuments { .. }
@@ -4578,6 +4649,36 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             if crate::scf_export::revision(trace, options)? != r.revision {
                 return Err(Error::Format(
                     "Trace export source/view/options changed".into(),
+                ));
+            }
+            None
+        }
+
+        AnalysisJob::InstallMaterialDerivation { workspace, request } => {
+            if crate::material_derivation::revision(workspace, request)? != r.revision {
+                return Err(Error::Format(
+                    "Material derivation workspace/source/recipe changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::InspectMaterialDigest {
+            source_role,
+            source,
+            origin,
+            selection,
+            options,
+        } => {
+            if crate::material_derivation::digest_inspection_revision(
+                source_role,
+                source,
+                origin,
+                selection,
+                options,
+            )? != r.revision
+            {
+                return Err(Error::Format(
+                    "Material digest source/origin/options changed".into(),
                 ));
             }
             None
@@ -5883,6 +5984,24 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         AnalysisJob::ExportScfTrace { trace, options } => {
             crate::scf_export::export(&trace, &options).map(AnalysisResult::ScfTraceExported)
         }
+        AnalysisJob::InstallMaterialDerivation { workspace, request } => {
+            crate::material_derivation::install(&workspace, &request)
+                .map(AnalysisResult::MaterialDerivationInstalled)
+        }
+        AnalysisJob::InspectMaterialDigest {
+            source_role,
+            source,
+            origin,
+            selection,
+            options,
+        } => crate::material_derivation::inspect_digest(
+            &source_role,
+            &source,
+            &origin,
+            &selection,
+            &options,
+        )
+        .map(AnalysisResult::MaterialDigestInspection),
 
         AnalysisJob::InspectTopoRun {
             inputs,
@@ -6749,6 +6868,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             | AnalysisResult::SequenceExportAssessment(_)
             | AnalysisResult::SequenceExportPrepared(_)
             | AnalysisResult::ScfTraceExported(_)
+            | AnalysisResult::MaterialDerivationInstalled(_)
+            | AnalysisResult::MaterialDigestInspection(_)
     ) {
         MAX_WORKSPACE_MESSAGE_BYTES
     } else {

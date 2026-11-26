@@ -168,6 +168,13 @@ pub fn has_unmapped_physical_evidence(molecule: &Molecule) -> bool {
     molecule.metadata.contains_key("duplex_model")
         || molecule
             .metadata
+            .contains_key(crate::material_pcr::ORIGIN_METADATA)
+        || molecule
+            .metadata
+            .keys()
+            .any(|key| key.starts_with("source:material_derivation:"))
+        || molecule
+            .metadata
             .get("source:legacy:chemistry_unmapped")
             .is_some_and(|value| value == "true")
         || molecule

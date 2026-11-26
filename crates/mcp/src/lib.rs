@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 186;
+pub const CURRENT_TOOL_COUNT: usize = 187;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -973,6 +973,67 @@ pub struct MaterialOriginQuery {
     pub event: collagene_core::run_lineage::EventBinding,
     /// None discovers choices; Some explicitly replays that exact retained origin.
     pub selection: Option<collagene_core::run_material::MaterialSelection>,
+}
+/// MCP callers pass small immutable event selections, never closed capsule bytes.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub enum MaterialDerivationOrigin {
+    OriginalReference,
+    Saved(collagene_core::run_material::MaterialSelection),
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MaterialPcrChoice {
+    pub selected_index: usize,
+    pub expected_preview_revision: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub enum MaterialDerivationOperation {
+    ExactPcr {
+        forward: Primer,
+        reverse: Primer,
+        selection: MaterialPcrChoice,
+    },
+    CatalogDigest {
+        selection: collagene_core::catalog_digest::CatalogSelection,
+        options: collagene_core::restriction_inspection::InspectionOptions,
+        fragment_index: usize,
+    },
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MaterialDerivationInstallRequest {
+    pub source: collagene_core::run_lineage::EventBinding,
+    pub origin: MaterialDerivationOrigin,
+    pub derivation: MaterialDerivationOperation,
+    pub name: String,
+    pub save_primers: bool,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub enum MaterialDerivationTask {
+    PreviewPcr {
+        source: collagene_core::run_lineage::EventBinding,
+        origin: MaterialDerivationOrigin,
+        forward: Primer,
+        reverse: Primer,
+    },
+    PreviewDigest {
+        source: collagene_core::run_lineage::EventBinding,
+        origin: MaterialDerivationOrigin,
+        selection: collagene_core::catalog_digest::CatalogSelection,
+        options: collagene_core::restriction_inspection::InspectionOptions,
+    },
+    Install {
+        request: MaterialDerivationInstallRequest,
+    },
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MaterialDerivationQuery {
+    pub workspace: WorkspaceRef,
+    pub task: MaterialDerivationTask,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -2333,6 +2394,85 @@ impl CollageneServer {
             ));
         }
         Ok(())
+    }
+    fn resolve_material_derivation_origin(
+        &self,
+        workspace: &workspace::Workspace,
+        event: &collagene_core::run_lineage::EventBinding,
+        origin: &MaterialDerivationOrigin,
+    ) -> Result<collagene_core::material_derivation::SourceOrigin, ErrorData> {
+        use collagene_core::{material_derivation::SourceOrigin, run_material};
+        match origin {
+            MaterialDerivationOrigin::OriginalReference => {
+                SourceOrigin::OriginalReference
+                    .validate_shallow_for(event)
+                    .map_err(bad)?;
+                Ok(SourceOrigin::OriginalReference)
+            }
+            MaterialDerivationOrigin::Saved(selection) => {
+                selection.validate().map_err(bad)?;
+                if selection.event() != event {
+                    return Err(bad(
+                        "Selected material handle names a different exact source event.",
+                    ));
+                }
+                let requested = Some(selection.clone());
+                let expected =
+                    run_material::material_inspection_revision(workspace, event, &requested)
+                        .map_err(bad)?;
+                let inspection =
+                    run_material::inspect_material(workspace, event, &requested).map_err(bad)?;
+                inspection.validate_binding(&expected).map_err(bad)?;
+                let selected=inspection.selected.ok_or_else(||bad("Selected retained material cannot currently be reconstructed; inspect its origin findings."))?;
+                if selected.selection() != *selection {
+                    return Err(bad("Fresh origin differs from explicit selected handle."));
+                }
+                selected
+                    .validate_for_workspace(workspace, event)
+                    .map_err(bad)?;
+                Ok(SourceOrigin::Saved(selected))
+            }
+        }
+    }
+    fn material_derivation_source(
+        &self,
+        workspace: &workspace::Workspace,
+        event: &collagene_core::run_lineage::EventBinding,
+        origin: &collagene_core::material_derivation::SourceOrigin,
+    ) -> Result<Molecule, ErrorData> {
+        origin.validate_shallow_for(event).map_err(bad)?;
+        workspace.validate().map_err(bad)?;
+        let exact = workspace
+            .history
+            .iter()
+            .find(|e| e.id == event.event_id)
+            .ok_or_else(|| bad("material source event is absent"))?;
+        if exact.document_id != event.document_id || exact.revision != event.revision {
+            return Err(bad("material source event/document/revision disagree"));
+        }
+        let document = workspace
+            .documents
+            .iter()
+            .find(|d| d.id == event.document_id)
+            .ok_or_else(|| bad("material source document is absent"))?;
+        if document.head != event.revision
+            || document.head_event.as_deref() != Some(event.event_id.as_str())
+        {
+            return Err(bad(
+                "material source must be the exact retained current document head",
+            ));
+        }
+        if let collagene_core::material_derivation::SourceOrigin::Saved(selected) = origin {
+            selected
+                .validate_for_workspace(workspace, event)
+                .map_err(bad)?;
+        }
+        let source = workspace
+            .revisions
+            .get(&event.revision)
+            .ok_or_else(|| bad("material source revision is absent"))?;
+        collagene_core::model::bounds::model_preflight(&[source]).map_err(bad)?;
+        Ok(source.clone())
     }
     fn restore_workspace(
         &self,
@@ -5764,7 +5904,76 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Discover or explicitly replay a saved run product or saved digest fragment origin for an exact event in an immutable native workspace. No origin is automatically selected. Returns bounded origin choices, findings and complete immutable inspection JSON including any selected closed documentary origin. Every later FromRun/FromDigest preparation must freshly replay again; imported summaries and equal DNA are not material authority. Creates no documents, candidates, targets or stock."
+        description = "Preview or install target-free native exact PCR/catalog digestion from an exact current source event in an immutable workspace. Preview tasks return bounded metadata plus complete reference/geometry artifacts; they create no material documents. Install freshly reconstructs actual source strands, validates the literal selected PCR geometry or actual digest fragment and atomically returns a NEW session workspace, receipt and native archive, with optional newly performed PCR primers. No independent target, isolation, yield, experimental success, database write or filesystem authority is fabricated. Pass saved-origin MaterialSelection handles and explicit PCR preview index/revision only; closed capsules and whole amplicon geometry are resolved natively, never copied into requests. Saved Run/Digest/Derived handles must match their exact retained source events; marked reference-only documents cannot bypass replay as plain originals."
+    )]
+    async fn material_derivation(
+        &self,
+        Parameters(args): Parameters<MaterialDerivationQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move||{
+            use collagene_core::material_derivation as native;
+            let mut workspace=server.restore_workspace(&args.workspace)?;
+            match args.task {
+                MaterialDerivationTask::PreviewPcr{source,origin,forward,reverse}=>{
+                    let origin=server.resolve_material_derivation_origin(&workspace,&source,&origin)?;
+                    let molecule=server.material_derivation_source(&workspace,&source,&origin)?;
+                    let context=native::pcr_preview_revision(&molecule,&origin,&forward,&reverse).map_err(bad)?;
+                    let documents=native::preview_pcr(&molecule,&origin,&forward,&reverse).map_err(bad)?;
+                    #[derive(Serialize)]
+                    struct PcrEvidence<'a>{workspace:&'a WorkspaceRef,source:&'a collagene_core::run_lineage::EventBinding,context_revision:&'a str,forward:&'a Primer,reverse:&'a Primer,documents:&'a[verification::PcrDocument]}
+                    let text=bounded_json_limit(&PcrEvidence{workspace:&args.workspace,source:&source,context_revision:&context,forward:&forward,reverse:&reverse,documents:&documents},32*1024*1024)?;
+                    let artifact=server.text_artifact(text,"application/json","material-pcr-preview.json")?;
+                    let rows=documents.iter().take(100).enumerate().map(|(index,d)|json!({"index":index,"preview_revision":d.molecule.revision(),"length":d.molecule.sequence.len(),"reusable":documents.len()==1 && d.molecule.sequence.as_str().bytes().all(|b|b"ACGT".contains(&b)) && forward.ordered_sequence().bytes().chain(reverse.ordered_sequence().bytes()).all(|b|b"ACGT".contains(&b)),"forward_start":d.geometry.forward_start,"reverse_start":d.geometry.reverse_start,"crosses_origin":d.geometry.crosses_origin,"forward_primer":d.geometry.forward_primer,"reverse_primer":d.geometry.reverse_primer})).collect::<Vec<_>>();
+                    output(json!({"workspace":args.workspace,"source":source,"context_revision":context,"count":documents.len(),"previews":rows,"previews_truncated":documents.len()>100,"artifact_id":artifact,"authority":"Reference PCR previews only. Use the explicit preview index and revision for Install; the server recomputes full geometry internally. Full geometry remains optional artifact evidence. Multiple products do not establish isolation or reusable material."}))
+                },
+                MaterialDerivationTask::PreviewDigest{source,origin,selection,options}=>{
+                    let origin=server.resolve_material_derivation_origin(&workspace,&source,&origin)?;
+                    let molecule=server.material_derivation_source(&workspace,&source,&origin)?;
+                    let role=collagene_core::restriction_history::source_role(&source).map_err(bad)?;
+                    let context=native::digest_inspection_revision(&role,&molecule,&origin,&selection,&options).map_err(bad)?;
+                    let preview=native::inspect_digest(&role,&molecule,&origin,&selection,&options).map_err(bad)?;
+                    preview.validate_binding(&context).map_err(bad)?;
+                    let artifact=server.text_artifact(bounded_json_limit(&preview,32*1024*1024)?,"application/json","material-digest-preview.json")?;
+                    output(json!({"workspace":args.workspace,"source":source,"source_role":role,"context_revision":context,"products_determined":preview.inspection.products_determined,"scan_complete":preview.inspection.scan_complete,"fragment_count":preview.inspection.fragments.len(),"fragments":preview.inspection.fragments.iter().take(100).collect::<Vec<_>>(),"fragments_truncated":preview.inspection.fragments.len()>100,"incomplete":preview.incomplete,"findings":preview.findings,"findings_total":preview.findings_total,"findings_truncated":preview.findings_truncated,"artifact_id":artifact,"authority":"Fresh actual source-strand catalog inspection under declared complete cleavage. This creates no material document, selected physical stock or independent target assessment."}))
+                },
+                MaterialDerivationTask::Install{request}=>{
+                    if request.name.trim().is_empty()||request.name.trim()!=request.name||request.name.len()>256||request.name.chars().any(char::is_control){return Err(bad("Declare a bounded nonempty material product name."));}
+                    let origin=server.resolve_material_derivation_origin(&workspace,&request.source,&request.origin)?;
+                    let molecule=server.material_derivation_source(&workspace,&request.source,&origin)?;
+                    let derivation=match request.derivation {
+                        MaterialDerivationOperation::ExactPcr{forward,reverse,selection}=>{
+                            if selection.selected_index>=10000||selection.expected_preview_revision.len()!=64||!selection.expected_preview_revision.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b)){return Err(bad("Invalid explicit PCR preview index/revision."));}
+                            let previews=native::preview_pcr(&molecule,&origin,&forward,&reverse).map_err(bad)?;
+                            let chosen=previews.into_iter().nth(selection.selected_index).ok_or_else(||bad("The explicitly selected PCR preview no longer exists."))?;
+                            if chosen.molecule.revision()!=selection.expected_preview_revision {return Err(bad("The explicitly selected PCR preview changed; preview again."));}
+                            native::Derivation::ExactPcr{forward,reverse,selection:native::PcrSelection{selected_index:selection.selected_index,expected_preview_revision:selection.expected_preview_revision,geometry:chosen.geometry}}
+                        },
+                        MaterialDerivationOperation::CatalogDigest{selection,options,fragment_index}=>native::Derivation::CatalogDigest{selection,options,fragment_index},
+                    };
+                    let request=native::Request{source:request.source,origin,derivation,name:request.name,save_primers:request.save_primers};
+                    // Selecting the requested retained source in this local copy
+                    // changes presentation only; the stored input is immutable.
+                    workspace.active_document=request.source.document_id.clone();
+                    let expected=native::revision(&workspace,&request).map_err(bad)?;
+                    let installed=native::prepare_install(&workspace,&request).map_err(bad)?;
+                    installed.receipt.validate_binding(&expected).map_err(bad)?;
+                    installed.receipt.validate_archive(&installed.workspace).map_err(bad)?;
+                    let receipt=serde_json::to_value(&installed.receipt).map_err(bad)?;
+                    let text=bounded_json_limit(&installed.receipt,32*1024*1024)?;
+                    let archive=workspace::save_workspace(&installed.workspace).map_err(bad)?;
+                    let result=server.commit_workspace_outputs_named(installed.workspace,Some((text,receipt)),Some(archive),"material-derivation.json","Target-free material derivation in a NEW immutable session workspace only; every reuse reconstructs native source history again.")?;
+                    let mut value=result.structured_content.ok_or_else(||bad("missing installed workspace receipt"))?;
+                    value["source_workspace"]=json!(args.workspace);
+                    value["source_selection"]=json!("Only the derived working copy selects the requested source tab before installation; all source biological heads and the input session workspace remain unchanged.");
+                    value["authority"]=json!("Target-free declared-model material derivation saved to a NEW immutable session workspace/archive only. No independent target was invented or assessed, and no experimental isolation/yield, local catalog write, filesystem write or external publication occurred. Reuse freshly replays the complete native record.");
+                    output(value)
+                },
+            }
+        }).await
+    }
+    #[tool(
+        description = "Discover or explicitly replay a saved run product, saved digest fragment or generic target-free material derivation origin for an exact event in an immutable native workspace. No origin is automatically selected. Returns bounded origin choices, findings and complete immutable inspection JSON including any selected closed documentary origin. Every later material preparation must freshly replay again; imported summaries and equal DNA are not material authority. Creates no documents, candidates, targets or stock."
     )]
     async fn inspect_material_origin(
         &self,

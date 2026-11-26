@@ -281,6 +281,7 @@ fn operation_title(operation: &Operation) -> &'static str {
     match operation {
         Operation::ReconstructRunProduct { .. } => "Reconstruct saved material",
         Operation::ReconstructDigestFragment { .. } => "Reconstruct saved digest fragment",
+        Operation::ReconstructMaterial { .. } => "Reconstruct target-free derived material",
         Operation::CatalogDigest { .. } => "Catalog-pinned digest",
         Operation::DeclareSourceTermini { .. } => "Declare original source termini",
         Operation::Pcr { .. } => "PCR",

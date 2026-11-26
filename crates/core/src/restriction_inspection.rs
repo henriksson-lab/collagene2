@@ -424,7 +424,9 @@ pub(crate) fn inspect_fresh_duplex(
     if duplex.top != m.sequence || duplex.topology != m.topology {
         return Err(bad("fresh duplex/reference binding differs"));
     }
-    inspect_with_digest(role, m, es, o, || chemistry::digest(duplex, es))
+    inspect_with_digest_for_source(role, m, es, o, &duplex.summary()?, || {
+        chemistry::digest(duplex, es)
+    })
 }
 pub(crate) fn inspect_with_digest(
     role: &str,
@@ -433,7 +435,32 @@ pub(crate) fn inspect_with_digest(
     o: &InspectionOptions,
     digest: impl FnOnce() -> Result<Vec<chemistry::DigestFragment>, Error>,
 ) -> Result<RestrictionInspection, Error> {
+    inspect_with_digest_inner(role, m, es, o, None, digest)
+}
+/// Native callers supply a summary of their private freshly replayed substrate;
+/// a deserialized summary alone never supplies material to the digest closure.
+pub(crate) fn inspect_with_digest_for_source(
+    role: &str,
+    m: &Molecule,
+    es: &[Enzyme],
+    o: &InspectionOptions,
+    source: &chemistry::DuplexSummary,
+    digest: impl FnOnce() -> Result<Vec<chemistry::DigestFragment>, Error>,
+) -> Result<RestrictionInspection, Error> {
+    inspect_with_digest_inner(role, m, es, o, Some(source), digest)
+}
+fn inspect_with_digest_inner(
+    role: &str,
+    m: &Molecule,
+    es: &[Enzyme],
+    o: &InspectionOptions,
+    source: Option<&chemistry::DuplexSummary>,
+    digest: impl FnOnce() -> Result<Vec<chemistry::DigestFragment>, Error>,
+) -> Result<RestrictionInspection, Error> {
     let mut r = scan(role, m, es, o)?;
+    if let Some(source) = source {
+        crate::digest_cut_selection::source_geometry_preflight(&r, source)?;
+    }
     r.diagnostics = vec![INSPECTION_ASSUMPTIONS.into()];
     if r.scan_complete
         && r.sites
@@ -488,7 +515,11 @@ pub(crate) fn inspect_with_digest(
             r.scan_complete = false;
         }
     }
-    r.validate()?;
+    if let Some(source) = source {
+        r.validate_with_source(source)?;
+    } else {
+        r.validate()?;
+    }
     Ok(r)
 }
 /// Recompute the current science and project source annotations into one lazily requested product.
@@ -606,19 +637,23 @@ fn version(s: &str) -> bool {
     !s.is_empty() && s.len() <= 128 && s.bytes().all(|b| b.is_ascii_graphic())
 }
 fn summary_valid(s: &FragmentSummary, n: usize) -> Result<(), Error> {
+    summary_valid_for_source(s, n, n)
+}
+fn summary_valid_for_source(s: &FragmentSummary, n: usize, bottom_n: usize) -> Result<(), Error> {
+    let extent = n.max(bottom_n);
     let d = &s.duplex;
     if s.top_start >= n
         || d.top_length == 0
         || d.top_length > n
         || d.bottom_length == 0
-        || d.bottom_length > n
-        || d.bottom_start.unsigned_abs() > n as u64
-        || s.bottom_start.unsigned_abs() > 2 * n as u64
+        || d.bottom_length > bottom_n
+        || d.bottom_start.unsigned_abs() > extent as u64
+        || s.bottom_start.unsigned_abs() > 2 * extent as u64
         || d.nicks.len() > 10_000
         || d.model.len() > 256
         || d.ends
             .as_ref()
-            .is_some_and(|(a, b)| a.overhang.len() > n || b.overhang.len() > n)
+            .is_some_and(|(a, b)| a.overhang.len() > extent || b.overhang.len() > extent)
     {
         return Err(bad("invalid fragment summary"));
     }
@@ -630,6 +665,18 @@ fn summary_valid(s: &FragmentSummary, n: usize) -> Result<(), Error> {
 impl RestrictionInspection {
     /// Bounded structural validation only. Historical reports are evidence, never science authority.
     pub fn validate(&self) -> Result<(), Error> {
+        self.validate_inner(None)
+    }
+    /// Documentary conservation against an explicitly supplied actual source
+    /// contour. This does not restore private material from the summary.
+    pub fn validate_with_source(&self, source: &chemistry::DuplexSummary) -> Result<(), Error> {
+        self.validate_inner(Some(source))
+    }
+    fn validate_inner(&self, source: Option<&chemistry::DuplexSummary>) -> Result<(), Error> {
+        if let Some(source) = source {
+            crate::digest_cut_selection::source_geometry_preflight(self, source)?;
+        }
+        let bottom_length = source.map_or(self.source_length, |source| source.bottom_length);
         self.options.validate()?;
         specs_valid(&self.enzymes)?;
         if !version(&self.engine_version)
@@ -740,11 +787,11 @@ impl RestrictionInspection {
                 if s.index != i {
                     return Err(bad("fragment order"));
                 }
-                summary_valid(s, self.source_length)?;
+                summary_valid_for_source(s, self.source_length, bottom_length)?;
                 total = total.saturating_add(s.duplex.top_length);
                 bottom_total = bottom_total.saturating_add(s.duplex.bottom_length);
             }
-            if total != self.source_length || bottom_total != self.source_length {
+            if total != self.source_length || bottom_total != bottom_length {
                 return Err(bad("fragment strand accounting"));
             }
         } else if !self.fragments.is_empty() {

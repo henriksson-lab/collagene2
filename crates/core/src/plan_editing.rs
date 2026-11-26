@@ -51,6 +51,7 @@ fn reference_count(op: &Operation) -> usize {
         Operation::ResectThreePrime { .. }
         | Operation::ReconstructRunProduct { .. }
         | Operation::ReconstructDigestFragment { .. }
+        | Operation::ReconstructMaterial { .. }
         | Operation::Pcr { .. }
         | Operation::PcrWithMismatches { .. }
         | Operation::Digest { .. }

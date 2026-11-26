@@ -30,7 +30,7 @@ const MAX_ENTRIES: usize = 50_000;
 const MAX_STACK: usize = 1000;
 const FORMAT: &str = "collagene-workspace";
 const VERSION: u32 = 1;
-pub const PLAN_SCHEMA_VERSION: u32 = 19;
+pub const PLAN_SCHEMA_VERSION: u32 = 20;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -404,6 +404,7 @@ impl Workspace {
         }
         crate::run_lineage::validate_workspace_runs(self)?;
         crate::run_digest_history::validate_workspace_records(self)?;
+        crate::material_derivation::validate_workspace_records(self)?;
         crate::reference_run_evidence::validate_workspace(self)?;
         crate::contig_history::validate_workspace_assemblies(self)?;
         Ok(())
@@ -1053,7 +1054,25 @@ pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
         || !matches!(
             header.get("plan_schema").and_then(|v| v.as_u64()),
             Some(
-                1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19
+                1 | 2
+                    | 3
+                    | 4
+                    | 5
+                    | 6
+                    | 7
+                    | 8
+                    | 9
+                    | 10
+                    | 11
+                    | 12
+                    | 13
+                    | 14
+                    | 15
+                    | 16
+                    | 17
+                    | 18
+                    | 19
+                    | 20
             )
         )
     {
@@ -1216,6 +1235,15 @@ pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
             });
         }
         let steps: Vec<Operation> = json_exact(get(&blobs, &record.steps)?)?;
+        if manifest.plan_schema < 20
+            && steps
+                .iter()
+                .any(|step| matches!(step, Operation::ReconstructMaterial { .. }))
+        {
+            return Err(Error::Unsupported(
+                "Material derivation reconstruction requires plan schema20".into(),
+            ));
+        }
         if manifest.plan_schema < 19
             && steps
                 .iter()

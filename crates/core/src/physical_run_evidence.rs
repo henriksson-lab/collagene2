@@ -85,6 +85,7 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
                 Operation::TopoActions { .. }
                     | Operation::ReconstructRunProduct { .. }
                     | Operation::ReconstructDigestFragment { .. }
+                    | Operation::ReconstructMaterial { .. }
                     | Operation::OverlapExtension { .. }
                     | Operation::HomologyAssembly { .. }
                     | Operation::ResectThreePrime { .. }
@@ -207,6 +208,37 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
                 continue;
             }
             (
+                Operation::ReconstructMaterial { template, origin },
+                crate::verification::PhysicalProcessingEvidence::DerivedOrigin(replay),
+            ) => {
+                origin.validate_documentary()?;
+                replay.validate_documentary()?;
+                if assembly_recipe::hash(origin)? != assembly_recipe::hash(&replay.origin)? {
+                    return Err(bad("saved derivation origin declaration changed"));
+                }
+                let Source::Input(id) = template else {
+                    return Err(bad(
+                        "saved derivation reconstruction requires an exact original input",
+                    ));
+                };
+                let revision = r
+                    .plan
+                    .inputs
+                    .iter()
+                    .find(|i| &i.id == id)
+                    .map(|i| i.revision.as_str())
+                    .ok_or_else(|| bad("saved derivation source missing"))?;
+                let binding = r
+                    .inputs
+                    .iter()
+                    .find(|i| &i.input_id == id)
+                    .ok_or_else(|| bad("saved derivation source event missing"))?;
+                if revision != origin.product.revision || binding.event != origin.product {
+                    return Err(bad("saved derivation exact input event changed"));
+                }
+                continue;
+            }
+            (
                 Operation::TopoActions { .. },
                 crate::verification::PhysicalProcessingEvidence::TopoActions(report),
             ) => report,
@@ -321,6 +353,7 @@ pub(crate) fn validate_workspace(w: &Workspace) -> Result<(), Error> {
                 Operation::TopoActions { .. }
                     | Operation::ReconstructRunProduct { .. }
                     | Operation::ReconstructDigestFragment { .. }
+                    | Operation::ReconstructMaterial { .. }
                     | Operation::OverlapExtension { .. }
                     | Operation::HomologyAssembly { .. }
                     | Operation::ResectThreePrime { .. }

@@ -238,4 +238,5 @@ pub mod snapgene_export;
 
 mod format_fidelity;
 
+pub mod material_derivation;
 pub mod material_pcr;

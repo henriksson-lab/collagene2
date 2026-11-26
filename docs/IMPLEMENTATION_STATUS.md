@@ -4,9 +4,12 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-Current source uses worker90, candidate21, native plan19, science24 and186 MCP
-tools. Eighty-six distinct focused cases and the integrated web/worker WASM
-compiler check pass for this increment. Desktop remote review messages use DSQ/DSR3, with compatible legacy
+Current source uses worker91, candidate22, native plan20, science25 and187 MCP
+tools. The target-free material phase passes361 focused native/model/SDK cases,
+with19 ancestry/derivation/sharing/SDK cases rerun after the validation performance
+correction. The integrated web/worker WASM compiler check passes. The real depth8
+ancestry fixture remains enabled; its four-case suite fell from199.84s to44.48s
+by avoiding redundant nested validation, without changing resource limits. Desktop remote review messages use DSQ/DSR3, with compatible legacy
 prefix commands/replies and explicit version floors for new review controls.
 Saved-catalog backup commands use DTQ/DTR2 with legacy commands retaining their
 version-1 wire floor. The Tauri shell has a durable offline local library, explicit multi-remote
@@ -47,7 +50,10 @@ They preserve durable retry identities and leave the working editor state in
 its existing recovery scope. Reviewed database disconnection resolves pending
 work first, forgets its scoped credentials, then atomically retires only that
 remote's bookkeeping while retaining local designs/history. Controlled active
-catalog cutover and broader collaboration remain unfinished.
+catalog cutover is being implemented in an isolated Tauri branch, including
+repeat adoption and rollback, exact source/target review and restart-bound
+activation. It is not yet merged or validated. Broader collaboration remains
+unfinished.
 [Backup controls](NATIVE_CATALOG_BACKUP_CONTROLS.md) ·
 [Removal lifecycle](REMOTE_REMOVAL.md).
 
@@ -56,12 +62,12 @@ cut and normalized paste, while clearing stale external/undo/restore selections.
 GenBank RNA T/U handling and citation replay are corrected; explicit FASTA
 alphabet review is connected to file/paste and MCP imports. The committed
 target-free digest foundation passes38 focused cases and web/worker WASM checking.
-Pending source now connects fragment opening, mixed Run/Digest origin selection,
-typed preparations, downstream PCR/assembly and exact native replay. Opened PCR
-reference documents still require a future target-free derivation before they
-can be selected as standalone physical material; typed preparation followed by
-assembly and a saved run is the supported physical path. New source has its own
-focused checks in progress. [Editor](SEQUENCE_EDIT_TRANSITIONS.md) · [RNA](GENBANK_RNA.md) ·
+Saved digest opening and mixed Run/Digest preparations are committed. New source
+adds target-free exact-PCR and repeated digest derivations, native archive/replay,
+atomic primer collection installation, Derived-origin preparation and selected
+sharing closure. Ordinary PCR controls explicitly request a reusable native
+product; ambiguous/multiple-product and mismatch-PCR previews remain
+reference-only. Assembly still checks a separately declared independent target. [Editor](SEQUENCE_EDIT_TRANSITIONS.md) · [RNA](GENBANK_RNA.md) ·
 [FASTA](FASTA_ALPHABETS.md) · [Digest foundation](RUN_DIGEST_HISTORY.md).
 
 The resumed format batch adds fresh reviewed SnapGene DNA/protein reference

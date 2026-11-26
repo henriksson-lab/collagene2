@@ -2,6 +2,7 @@
 //! Native immutable events, run declarations and origin capsules remain exact.
 //! This module computes documentary dependency scope, not scientific authority.
 pub mod import;
+mod material_derivation_closure;
 mod sbol_source;
 pub mod sbol_subset;
 pub use sbol_source::KIND as SBOL_SOURCE_ATTACHMENT_KIND;
@@ -101,6 +102,7 @@ fn presentation(kind: &str) -> bool {
             | "assembly-draft-v10"
             | "assembly-draft-v11"
             | "assembly-draft-v12"
+            | "assembly-draft-v13"
             // Named working designs, unfinished primer text and visibility
             // preferences produce no immutable plasmid/run event themselves.
             | "assembly-design-v1"
@@ -213,6 +215,9 @@ impl<'a> Graph<'a> {
                 }
                 // Only index ownership here. Selecting an unrelated document
                 // must not enqueue this derivation's private source/target runs.
+            } else if a.kind == collagene_core::material_derivation::WORKSPACE_ATTACHMENT_KIND {
+                // Exact typed ownership is indexed in resolve. Merely having
+                // an unrelated derivation never publishes its sources/assets.
             } else if run_evidence(&a.kind) {
                 let owner: EvidenceOwner = serde_json::from_slice(&a.bytes)
                     .map_err(|_| Error::Unresolved("run evidence owner"))?;
@@ -274,6 +279,8 @@ impl<'a> Graph<'a> {
         Ok(())
     }
     fn resolve(&mut self) -> Result<(), Error> {
+        let material = material_derivation_closure::Index::new(self.source)?;
+        material.validate_existing_owners(&self.owners, &self.digest_owners)?;
         while !self.pending_events.is_empty() || !self.pending_runs.is_empty() {
             while let Some(id) = self.pending_events.pop_front() {
                 let event = *self
@@ -304,6 +311,8 @@ impl<'a> Graph<'a> {
                     for run in collagene_core::run_digest_history::required_run_ids(&record)? {
                         self.run(&run)?;
                     }
+                } else if material.follow_product(self, &id)? {
+                    // All source/closed-origin dependencies enter this same queue.
                 }
                 // This is a reserved native producer label, not a free-form
                 // user description contract. An orphan cannot be published as
@@ -316,6 +325,7 @@ impl<'a> Graph<'a> {
                 {
                     return Err(Error::Unresolved("orphan saved-run digest product event"));
                 }
+                material.reject_orphan(event)?;
             }
             while let Some(id) = self.pending_runs.pop_front() {
                 let hash = self
@@ -349,6 +359,9 @@ impl<'a> Graph<'a> {
                 // Following owner plans avoids independently interpreting opaque
                 // serialized candidate packages or inventing material state.
                 for op in &run.plan.steps {
+                    if let Operation::ReconstructMaterial { origin, .. } = op {
+                        material.follow_capsule(self, origin)?;
+                    }
                     if let Operation::ReconstructDigestFragment { origin, .. } = op {
                         // The native owner record validates the exact capsule; close
                         // its actual retained derivation, not a label or sequence alias.

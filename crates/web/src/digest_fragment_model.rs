@@ -142,16 +142,15 @@ mod tests {
             collagene_core::catalog_digest::select(&catalog, &[enzyme.id.clone()]).unwrap();
         let options = InspectionOptions::default();
         let role = collagene_core::restriction_history::source_role(&info.binding).unwrap();
-        let inspected = collagene_core::run_catalog_digest::inspect(
-            &catalog,
-            &selection,
+        let inspected = collagene_core::material_derivation::inspect_digest(
             &role,
             &molecule,
-            pin.as_run().unwrap(),
+            &collagene_core::material_derivation::SourceOrigin::Saved(pin.as_ref().clone()),
+            &selection,
             &options,
         )
         .unwrap();
-        let f = &inspected.inspection.inspection.fragments[fragment_index];
+        let f = &inspected.inspection.fragments[fragment_index];
         AssemblyFragment {
             source: info,
             molecule: Arc::new(molecule),

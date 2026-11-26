@@ -3164,3 +3164,42 @@ outside the verified worker90 checkpoint until its native/archive/protocol/
 sharing/UI integration is complete. Also retain the explicit Golden Gate
 internal-site domestication proposal gap; existing manual OE/Golden Gate engines
 alone do not establish that connected workflow.
+
+### Reusable material and independent desktop continuation — 26 November 2026
+
+The next integrated material checkpoint implements ordinary exact PCR and
+catalog digestion as target-free native derivations. Saved Run/Digest/Derived
+origins reconstruct actual strands under one bounded ancestry ledger. PCR can
+be saved with its newly ordered primers, reopened after archive/restart, digested
+and re-digested, then used by a typed `FromDerived` assembly preparation against
+an independent target. No cloning target is invented for a standalone transform.
+The capability versions are worker91, candidate22, plan20, science25, draft13 and
+MCP187. Focused native/model/SDK tests and web/worker WASM checking pass; browser
+and application HTTP acceptance remain deferred.
+
+Separate Tauri workers are implementing restart-bound managed-catalog adoption
+and repeated rollback with exact source/target review, append-only activation
+generations, paused library/sync lanes and preserved editor/autosave data. Native
+MCP preload must use genuinely read-only SQLite access without migration or
+initialization. This isolated branch is not yet merged or verified. Existing
+three-OS build/package CI does not prove installed/offline graphical behavior.
+
+A parallel unregistered ligation-outcomes kernel retains the intended physical
+path and enumerates bounded alternative products without probabilities. Complete
+delivery requires structured verifier/history evidence and HTML/PDF extraction;
+the kernel alone does not close that requirement.
+
+Remaining concrete cloning gaps include standalone mismatch-PCR material reuse;
+internal Type IIS domestication beyond circular inverse PCR; methylation-aware
+Golden Gate cleavage/recutting; internal edits across combinatorial library rows;
+generic saved-material mutagenesis/TOPO inputs and prepared TOPO vectors;
+actual-strand-aware reverse sticky-fragment intent; direct saved-material end
+repair; per-row keep-existing versus add-tail TA/GC preparation; saved-run
+rehydration/current review and direct saved-run protocol exports; and typed
+plate/well assignments. Gateway products remain reference-only until actual
+strand crossover/composition is implemented. Standalone map SVG controls, wider
+format corpus checks, GUI refinement/user review, collaboration and desktop
+installation acceptance also remain open. Do not confuse these gaps with already
+implemented general indel/OE primer design, fusion-fidelity ranking or TOPO
+TA/CACC transfer chemistry. BAM/index extensions remain last; excluded ELN,
+inventory, instruments, external aligners and mobile remain outside this work.

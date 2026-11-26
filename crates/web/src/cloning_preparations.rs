@@ -151,13 +151,19 @@ pub(crate) fn prepared_rows(
                 Preparation::MismatchPcr { forward, reverse, options } => RunPreparation::MismatchPcr { forward, reverse, options },
                 Preparation::PcrCatalogDigest { forward, reverse, selection, fragment_index, repair } => RunPreparation::PcrCatalogDigest { forward, reverse, selection, fragment_index, repair },
                 Preparation::MismatchPcrCatalogDigest { forward, reverse, options, selection, fragment_index, repair } => RunPreparation::MismatchPcrCatalogDigest { forward, reverse, options, selection, fragment_index, repair },
-                Preparation::DeclaredDuplex { .. } | Preparation::AnnealedOligos { .. } | Preparation::FromRun { .. } | Preparation::FromDigest { .. } => return Err("Saved-run material supports whole material, digest or exact PCR preparation; declared duplex and paired-oligo substitution are unsupported.".into()),
+                Preparation::DeclaredDuplex { .. } | Preparation::AnnealedOligos { .. } | Preparation::FromRun { .. } | Preparation::FromDigest { .. } | Preparation::FromDerived { .. } => return Err("Saved-run material supports whole material, digest or exact PCR preparation; declared duplex and paired-oligo substitution are unsupported.".into()),
             };
             match origin.as_ref() {
                 collagene_core::run_material::MaterialOrigin::Run(origin) => Preparation::FromRun {
                     origin: origin.clone(),
                     preparation,
                 },
+                collagene_core::run_material::MaterialOrigin::Derived(origin) => {
+                    Preparation::FromDerived {
+                        origin: origin.clone(),
+                        preparation,
+                    }
+                }
                 collagene_core::run_material::MaterialOrigin::Digest(origin) => {
                     Preparation::FromDigest {
                         origin: origin.clone(),

@@ -157,7 +157,8 @@ pub fn source_bindings(record: &Record) -> Result<Vec<EventBinding>, Error> {
     };
     add(&record.request.source);
     let mut nested = Vec::new();
-    crate::run_material_capsule::digest_origin_walk(
+    let mut derived = Vec::new();
+    crate::run_material_capsule::digest_origin_walk_mixed(
         &record.request.origin,
         |_, _| Ok(()),
         |r, _| {
@@ -165,8 +166,13 @@ pub fn source_bindings(record: &Record) -> Result<Vec<EventBinding>, Error> {
             nested.push(r.product.clone());
             Ok(())
         },
+        |r, _| {
+            derived.push(r.request.source.clone());
+            derived.push(r.product.clone());
+            Ok(())
+        },
     )?;
-    for binding in &nested {
+    for binding in nested.iter().chain(&derived) {
         add(binding);
     }
     origins(&record.request.origin, |origin, _| {
@@ -366,16 +372,22 @@ fn fresh(
     }
     let replay = crate::run_material_capsule::replay(&request.origin, source)?;
     let report = replay.evidence.decode_report()?;
-    let origin_findings_total = report.findings.len();
+    let origin_findings_total = report
+        .findings
+        .len()
+        .checked_add(report.assumptions.len())
+        .ok_or(Error::TooLarge)?;
     let origin_findings_truncated = origin_findings_total > 128
         || report
             .findings
             .iter()
+            .chain(&report.assumptions)
             .take(128)
             .any(|s| s.chars().count() > 2048);
     let origin_findings = report
         .findings
         .iter()
+        .chain(&report.assumptions)
         .take(128)
         .map(|s| s.chars().take(2048).collect())
         .collect();

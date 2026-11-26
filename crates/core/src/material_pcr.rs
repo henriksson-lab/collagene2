@@ -110,47 +110,13 @@ pub fn simulate(
     reverse: &Primer,
 ) -> Result<Vec<verification::PcrDocument>, Error> {
     let context = revision(source, origin, forward, reverse)?;
-    let (mut previews, receipt) = match origin {
-        MaterialOrigin::Run(origin_run) => {
-            let fresh = crate::run_material_capsule::replay(origin_run, source)?;
-            let report = fresh.evidence.decode_report()?;
-            let total = report.findings.len();
-            let previews = verification::simulate_pcr_documents_from_fresh(
-                source,
-                forward,
-                reverse,
-                &fresh.tracked,
-            )?;
-            (
-                previews,
-                evidence(
-                    source,
-                    origin,
-                    context,
-                    fresh.incomplete,
-                    report.findings,
-                    total,
-                    false,
-                )?,
-            )
-        }
-        MaterialOrigin::Digest(origin_digest) => {
-            let fresh = crate::run_digest_history::replay(origin_digest, source)?;
-            let previews = verification::simulate_pcr_documents_from_fresh(
-                source,
-                forward,
-                reverse,
-                fresh.tracked(),
-            )?;
-            let (_, _, incomplete, findings, total, truncated) = fresh.into_parts();
-            (
-                previews,
-                evidence(
-                    source, origin, context, incomplete, findings, total, truncated,
-                )?,
-            )
-        }
-    };
+    let fresh = origin.replay(source)?;
+    let mut previews =
+        verification::simulate_pcr_documents_from_fresh(source, forward, reverse, fresh.tracked())?;
+    let (_, _, incomplete, findings, total, truncated) = fresh.into_parts();
+    let receipt = evidence(
+        source, origin, context, incomplete, findings, total, truncated,
+    )?;
     let encoded = serde_json::to_string(&receipt).map_err(|e| bad(&e.to_string()))?;
     let mut bytes = 0usize;
     for preview in &mut previews {

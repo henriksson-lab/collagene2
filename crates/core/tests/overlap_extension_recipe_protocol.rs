@@ -162,7 +162,7 @@ fn worker82_preserves_actual_branched_preparation_and_existing_candidate18_opera
     );
     assert_eq!(serde_json::to_value(inputs).unwrap(), sources_before);
     assert!(protocol::decode_response(&wire(b"CGR\0", 81, &response)).is_err());
-    assert!(preview.verification.engine_version.ends_with("/science-24"));
+    assert!(preview.verification.engine_version.ends_with("/science-25"));
     let candidate = Candidate::new(preview.compiled.plan.clone());
     let encoded_candidate = transfer::save_candidate(&candidate).unwrap();
     assert_eq!(

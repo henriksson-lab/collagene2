@@ -27,7 +27,8 @@ pub(crate) fn reference_export_guard(m: &Molecule) -> Result<(), Error> {
                 | "source:recombination:reference_only"
                 | "source:recombination:unverified_recipe"
                 | "source:restriction_inspection:recipe"
-        ) || key == crate::recombination::REFERENCE_ONLY_KEY
+        ) || key == crate::material_pcr::ORIGIN_METADATA
+            || key == crate::recombination::REFERENCE_ONLY_KEY
             || key == crate::recombination::RECIPE_KEY
             || key == crate::restriction_inspection::RECIPE_KEY
             || key.starts_with("topo:")
@@ -35,6 +36,7 @@ pub(crate) fn reference_export_guard(m: &Molecule) -> Result<(), Error> {
             || key.starts_with("source:restriction_inspection:")
             || key.starts_with("restriction_catalog:")
             || key.starts_with("source:restriction_catalog:")
+            || key.starts_with("source:material_derivation:")
     });
     let protein_state = m.sequence.alphabet() == Alphabet::Protein
         && m.metadata.keys().any(|k| {

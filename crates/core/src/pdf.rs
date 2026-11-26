@@ -1304,6 +1304,11 @@ pub(crate) fn export_protocol_pdf_checked(
                 origin.target.name,
                 origin.target_event.event_id
             ),
+            Operation::ReconstructMaterial { template, origin } => format!(
+                "Retrieve saved material {} from exact derivation event {} by replaying its original source and typed native recipe. Retain actual strands, termini, modifications and inherited limitations. This is material retrieval, not a new laboratory reaction, invented target check or evidence of isolation.",
+                source_name(template),
+                origin.product.event_id
+            ),
             Operation::ReconstructDigestFragment { template, origin } => format!(
                 "Reconstruct saved catalog digest fragment {} from exact product event {}, originating source event {}, fragment {}. Replay the unchanged native origin recipe, then the pinned catalog digest and fragment selection; no independent target is invented for this source preparation. Historical primers are not newly ordered or executed. Origin assumptions, modifications and incomplete search findings remain applicable.",
                 source_name(template),
@@ -1636,6 +1641,25 @@ pub(crate) fn export_protocol_pdf_checked(
                         INK,
                     )?;
                     for finding in &evidence.origin_findings {
+                        layout.paragraph_size(&format!("Origin finding: {finding}"), 9.0, INK)?;
+                    }
+                }
+                verification::PhysicalProcessingEvidence::DerivedOrigin(evidence) => {
+                    evidence.validate_documentary()?;
+                    let material = &evidence.material;
+                    layout.paragraph_size(&format!("Fresh material derivation event {}. Actual top/bottom lengths {}/{} nt, bottom start {}, retained nicks {}. Modified / chemically unknown eligible / known unmodified bases: {} / {} / {}. Origin incomplete: {}. Material identity {}. This documentary summary does not grant imported chemical authority, isolation or a newly performed historical reaction.", evidence.origin.product.event_id, material.duplex.top_length, material.duplex.bottom_length, material.duplex.bottom_start, material.duplex.nicks.len(), material.modifications.known_modified, material.modifications.unknown_eligible, material.modifications.known_unmodified, material.origin_incomplete, material.material_revision),9.0,INK)?;
+                    layout.paragraph_size(
+                        &format!(
+                            "Origin findings shown {} of {}; excerpt truncated: {}. {}",
+                            material.origin_findings.len(),
+                            material.origin_findings_total,
+                            material.origin_findings_truncated,
+                            material.duplex.describe()
+                        ),
+                        9.0,
+                        INK,
+                    )?;
+                    for finding in &material.origin_findings {
                         layout.paragraph_size(&format!("Origin finding: {finding}"), 9.0, INK)?;
                     }
                 }

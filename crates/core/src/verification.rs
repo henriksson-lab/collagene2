@@ -213,6 +213,11 @@ pub enum Operation {
         template: Source,
         origin: crate::run_digest_history::Capsule,
     },
+    /// Replay a target-free typed derivation; serialized summaries confer no material.
+    ReconstructMaterial {
+        template: Source,
+        origin: crate::material_derivation::Capsule,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -293,6 +298,7 @@ pub enum PhysicalProcessingEvidence {
     ThreePrimeResection(crate::three_prime_resection::Report),
     HomologyAnnealing(crate::homology_annealing::Report),
     SavedDigestOrigin(SavedDigestOriginEvidence),
+    DerivedOrigin(DerivedOriginEvidence),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -346,8 +352,8 @@ impl SavedDigestOriginEvidence {
                 .iter()
                 .any(|s| s.len() > 8192 || s.chars().count() > 2048)
             || self.origin_findings_total < self.origin_findings.len()
-            || self.origin_findings_truncated
-                != (self.origin_findings_total > self.origin_findings.len())
+            || (!self.origin_findings_truncated
+                && self.origin_findings_total > self.origin_findings.len())
         {
             return Err(Error::Format(
                 "Saved digest evidence changed its bounded source/material binding".into(),
@@ -357,6 +363,89 @@ impl SavedDigestOriginEvidence {
         Ok(())
     }
 }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct MaterialStateEvidence {
+    pub material_revision: String,
+    pub duplex: chemistry::DuplexSummary,
+    pub modifications: modified_duplex::ModificationSummary,
+    pub origin_incomplete: bool,
+    pub origin_findings: Vec<String>,
+    pub origin_findings_total: usize,
+    pub origin_findings_truncated: bool,
+}
+impl MaterialStateEvidence {
+    /// Documentary shape and exact recipe binding, never imported material authority.
+    pub fn validate_against(
+        &self,
+        expected_state: &str,
+        expected_incomplete: bool,
+    ) -> Result<(), Error> {
+        let hex = |value: &str| {
+            value.len() == 64
+                && value
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        };
+        let count = self
+            .modifications
+            .known_modified
+            .checked_add(self.modifications.unknown_eligible)
+            .and_then(|n| n.checked_add(self.modifications.known_unmodified))
+            .ok_or(Error::TooLarge)?;
+        let total = self
+            .duplex
+            .top_length
+            .checked_add(self.duplex.bottom_length)
+            .ok_or(Error::TooLarge)?;
+        if !hex(&self.material_revision)
+            || self.material_revision != self.modifications.state_revision
+            || self.material_revision != expected_state
+            || self.origin_incomplete != expected_incomplete
+            || self.modifications.engine_version != modified_duplex::ENGINE_VERSION
+            || self.duplex.top_length == 0
+            || self.duplex.bottom_length == 0
+            || self.duplex.top_length > crate::model::MAX_SEQUENCE_LEN
+            || self.duplex.bottom_length > crate::model::MAX_SEQUENCE_LEN
+            || self.modifications.top_length != self.duplex.top_length
+            || self.modifications.bottom_length != self.duplex.bottom_length
+            || count > total
+            || self.origin_findings.len() > 128
+            || self
+                .origin_findings
+                .iter()
+                .any(|s| s.len() > 8192 || s.chars().count() > 2048)
+            || self.origin_findings_total < self.origin_findings.len()
+            || (!self.origin_findings_truncated
+                && self.origin_findings_total > self.origin_findings.len())
+        {
+            return Err(Error::Format(
+                "Derived material evidence changed its bounded source/material binding".into(),
+            ));
+        }
+        evidence_bytes(self, 32 * 1024 * 1024)?;
+        Ok(())
+    }
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct DerivedOriginEvidence {
+    pub origin: crate::material_derivation::Capsule,
+    pub material: MaterialStateEvidence,
+}
+impl DerivedOriginEvidence {
+    pub fn validate_documentary(&self) -> Result<(), Error> {
+        self.origin.validate_documentary()?;
+        let record = crate::material_derivation::load_record_shallow(&self.origin.record_bytes)?;
+        self.material
+            .validate_against(&record.product_state_revision, record.incomplete)?;
+        evidence_bytes(self, 32 * 1024 * 1024)?;
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -380,7 +469,7 @@ pub struct ReferenceStepReport {
     pub evidence: ReferenceStepEvidence,
 }
 
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-24");
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-25");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrDocument {
@@ -544,7 +633,7 @@ fn build_pcr_documents(
     Ok(documents)
 }
 
-fn project_pcr_annotations(
+pub(crate) fn project_pcr_annotations(
     source: &Molecule,
     geometry: &analysis::PcrGeometryProduct,
     product: &mut Molecule,
@@ -1247,7 +1336,8 @@ pub fn operation_sources(op: &Operation) -> Vec<&Source> {
         | Operation::RepairEnds { template, .. }
         | Operation::Tail3Prime { template, .. } => vec![template],
         Operation::ReconstructRunProduct { template, .. }
-        | Operation::ReconstructDigestFragment { template, .. } => vec![template],
+        | Operation::ReconstructDigestFragment { template, .. }
+        | Operation::ReconstructMaterial { template, .. } => vec![template],
         Operation::ResectThreePrime { source, .. } => vec![source],
         Operation::Overlap { fragments, .. }
         | Operation::GoldenGate {
@@ -1292,7 +1382,8 @@ pub fn operation_sources_mut(op: &mut Operation) -> Vec<&mut Source> {
         | Operation::RepairEnds { template, .. }
         | Operation::Tail3Prime { template, .. } => vec![template],
         Operation::ReconstructRunProduct { template, .. }
-        | Operation::ReconstructDigestFragment { template, .. } => vec![template],
+        | Operation::ReconstructDigestFragment { template, .. }
+        | Operation::ReconstructMaterial { template, .. } => vec![template],
         Operation::ResectThreePrime { source, .. } => vec![source],
         Operation::Overlap { fragments, .. }
         | Operation::GoldenGate {
@@ -2759,6 +2850,55 @@ fn reconstruct(
                 next_physical = Some(tracked);
                 reference
             }
+            Operation::ReconstructMaterial { template, origin } => {
+                if !matches!(template, Source::Input(_)) {
+                    return Err(Error::Unsupported(
+                        "Derived material reconstruction requires an exact original input event"
+                            .into(),
+                    ));
+                }
+                let fresh = crate::material_derivation::replay(origin, resolve(template)?)?;
+                let modification_summary = modified_duplex::summary(fresh.tracked())?;
+                let duplex_summary = fresh.tracked().duplex.summary()?;
+                let bytes = evidence_bytes(origin, crate::material_derivation::MAX_CAPSULE_BYTES)?
+                    .checked_add(evidence_bytes(&modification_summary, 32 * 1024 * 1024)?)
+                    .ok_or(Error::TooLarge)?;
+                step_evidence_bytes = step_evidence_bytes
+                    .checked_add(bytes)
+                    .filter(|n| *n <= 32 * 1024 * 1024)
+                    .ok_or(Error::TooLarge)?;
+                let (
+                    reference,
+                    tracked,
+                    origin_incomplete,
+                    origin_findings,
+                    origin_findings_total,
+                    origin_findings_truncated,
+                ) = fresh.into_parts();
+                let evidence = DerivedOriginEvidence {
+                    origin: origin.clone(),
+                    material: MaterialStateEvidence {
+                        material_revision: modification_summary.state_revision.clone(),
+                        duplex: duplex_summary,
+                        modifications: modification_summary,
+                        origin_incomplete,
+                        origin_findings,
+                        origin_findings_total,
+                        origin_findings_truncated,
+                    },
+                };
+                evidence.validate_documentary()?;
+                findings.push(format!("Step {} freshly reconstructs saved material derivation event {} from its exact original source and typed recipe. Actual strand termini and positional modifications are retained; this is material retrieval, not a new target check or proof of experimental isolation.",index+1,origin.product.event_id));
+                if origin_incomplete {
+                    incomplete.push(format!("Step {} retains incomplete origin findings; saved material reuse does not upgrade them.",index+1));
+                }
+                physical_processing_reports.push(PhysicalProcessingStepReport {
+                    step_index: index,
+                    evidence: PhysicalProcessingEvidence::DerivedOrigin(evidence),
+                });
+                next_physical = Some(tracked);
+                reference
+            }
             Operation::ReconstructRunProduct { template, origin } => {
                 if !matches!(template, Source::Input(_)) {
                     return Err(Error::Unsupported("Saved material reconstruction requires an explicit saved input event, not an enclosing step projection".into()));
@@ -4049,6 +4189,9 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
             Operation::OverlapExtension { left, right, options } => {
                 body.push_str(&format!("<li>Denature overlapping duplexes {} ({}) and {} ({}), reanneal left top/right bottom strands across {} bp, and extend both paired 3′ ends. Minimum terminal pairing {} bp. Complementary synthesis is assumed unmodified; selected geometry does not establish isolation or experimental success.</li>", source(&left.source), if left.reverse {"reverse complement"} else {"forward"}, source(&right.source), if right.reverse {"reverse complement"} else {"forward"}, options.overlap, options.min_paired_bases));
             },
+            Operation::ReconstructMaterial { template, origin } => {
+                body.push_str(&format!("<li>Retrieve saved material {} by replaying its exact source and native derivation for event <code>{}</code>. Preserve actual strands, termini, modifications and inherited uncertainty. This retrieves material; it does not rerun historical reactions, create a target assessment or prove isolation.</li>",source(template),e(&origin.product.event_id)));
+            },
             Operation::ReconstructDigestFragment { template, origin } => {
                 body.push_str(&format!("<li>Retrieve saved digest fragment {} by freshly replaying its original source event <code>{}</code> and selected cleavage {}. Retain actual strands, termini, modifications and unresolved origin findings. No independent fragment target or experimental isolation is inferred.</li>",source(template),e(&origin.record.request.source.event_id),origin.record.request.fragment_index+1));
             },
@@ -4225,6 +4368,14 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
                 }
                 PhysicalProcessingEvidence::OverlapExtension(geometry) => {
                     body.push_str(&format!("<li>Step {} reciprocal extension: selected homology {} bp; retained terminal pairings {:?}; complete search {}; unique within terminal model {}; {} comparisons. Original source geometry revisions: {} / {}. Exact copied/synthesized strand mappings remain in the reconstruction report.</li>", step.step_index+1, geometry.options.overlap, geometry.terminal_pairings.overlaps, geometry.terminal_pairings.complete, geometry.terminal_pairings.unique, geometry.terminal_pairings.comparisons, e(&geometry.source_geometry_revisions[0]), e(&geometry.source_geometry_revisions[1])));
+                }
+                PhysicalProcessingEvidence::DerivedOrigin(evidence) => {
+                    let material = &evidence.material;
+                    body.push_str(&format!("<li>Step {}: replayed derivation event <code>{}</code>; material <code>{}</code>. {} Origin incomplete: {}; showing {} of {} findings{}.<ul>",step.step_index+1,e(&evidence.origin.product.event_id),e(&material.material_revision),e(&material.duplex.describe()),material.origin_incomplete,material.origin_findings.len(),material.origin_findings_total,if material.origin_findings_truncated {" (truncated)"} else {""}));
+                    for finding in &material.origin_findings {
+                        body.push_str(&format!("<li>{}</li>", e(finding)));
+                    }
+                    body.push_str("</ul></li>");
                 }
                 PhysicalProcessingEvidence::SavedDigestOrigin(evidence) => {
                     body.push_str(&format!("<li>Step {}: freshly replayed saved digest event <code>{}</code>; material <code>{}</code>. {} Known modified/unknown/unmodified eligible calls: {}/{}/{}. Origin incomplete: {}; showing {} of {} findings{}.<ul>",step.step_index+1,e(&evidence.origin.record.product.event_id),e(&evidence.material_revision),e(&evidence.duplex.describe()),evidence.modifications.known_modified,evidence.modifications.unknown_eligible,evidence.modifications.known_unmodified,evidence.origin_incomplete,evidence.origin_findings.len(),evidence.origin_findings_total,if evidence.origin_findings_truncated{" (truncated)"}else{""}));

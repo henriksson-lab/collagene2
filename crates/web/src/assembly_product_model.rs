@@ -118,6 +118,11 @@ pub(crate) fn operation_label(operation: &Operation) -> String {
             base.as_str(),
             source_label(template)
         ),
+        Operation::ReconstructMaterial { template, origin } => format!(
+            "Reconstruct reusable PCR/digest material from {} · exact event {}",
+            source_label(template),
+            origin.product.event_id
+        ),
         Operation::ReconstructDigestFragment { template, origin } => format!(
             "Reconstruct saved digest fragment from {} · exact event {} · originating run {}",
             source_label(template),

@@ -311,6 +311,15 @@ pub fn preflight(plan: &DesignPlan, target: &Molecule, _options: &Options) -> Re
                     ));
                 }
             }
+            Operation::ReconstructMaterial { template, origin } => {
+                source_guard(template, index, &ids)?;
+                origin.validate_documentary()?;
+                if !matches!(template, Source::Input(_)) {
+                    return Err(bad(
+                        "saved derived material reconstruction requires an original input",
+                    ));
+                }
+            }
             Operation::AnnealOligos { top, bottom, .. } => {
                 source_guard(top, index, &ids)?;
                 source_guard(bottom, index, &ids)?;
@@ -671,6 +680,14 @@ pub fn build(plan: &DesignPlan, target: &Molecule, options: &Options) -> Result<
                     index + 1,
                     origin.record.request.source.event_id,
                     origin.record.request.fragment_index + 1
+                ),
+            ),
+            Operation::ReconstructMaterial { origin, .. } => warning(
+                &mut builder.warnings,
+                format!(
+                    "Step {} retrieves already prepared material event {}. Its historical PCR oligos are retained in the native derivation and excluded from this new order. Only newly declared downstream PCR/annealing contributes orderable oligos.",
+                    index + 1,
+                    origin.product.event_id
                 ),
             ),
             Operation::MultiSiteRecombineReference { .. } => warning(

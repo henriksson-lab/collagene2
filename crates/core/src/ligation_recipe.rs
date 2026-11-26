@@ -41,6 +41,9 @@ fn sources(recipe: &Recipe) -> Result<Vec<FragmentSpec>, Error> {
             preparation::Preparation::FromDigest { origin, .. } => {
                 Some(crate::run_material::MaterialOriginRef::Digest(origin))
             }
+            preparation::Preparation::FromDerived { origin, .. } => {
+                Some(crate::run_material::MaterialOriginRef::Derived(origin))
+            }
             _ => None,
         }
     }))?;
@@ -51,6 +54,12 @@ fn sources(recipe: &Recipe) -> Result<Vec<FragmentSpec>, Error> {
         } = &row.source.preparation
         {
             preparation::from_digest_shape(origin, child)?;
+        } else if let preparation::Preparation::FromDerived {
+            origin,
+            preparation: child,
+        } = &row.source.preparation
+        {
+            preparation::from_derived_shape(origin, child)?;
         }
     }
     Ok(recipe.fragments.iter().map(|f| f.source.clone()).collect())
@@ -140,6 +149,10 @@ pub fn source_preflight(
                 origin,
                 preparation: child,
             } => preparation::from_digest_shape(origin, child)?,
+            preparation::Preparation::FromDerived {
+                origin,
+                preparation: child,
+            } => preparation::from_derived_shape(origin, child)?,
             preparation::Preparation::AnnealedOligos {
                 bottom_input_id,
                 options,
@@ -445,6 +458,7 @@ impl Preview {
                             | Operation::OverlapExtension { .. }
                             | Operation::ReconstructRunProduct { .. }
                             | Operation::ReconstructDigestFragment { .. }
+                            | Operation::ReconstructMaterial { .. }
                             | Operation::AnnealOligos { .. }
                             | Operation::DeclareSourceTermini { .. }
                             | Operation::Digest { .. }

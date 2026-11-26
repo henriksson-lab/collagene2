@@ -1,7 +1,8 @@
-//! Fresh digest derivation and atomic native installation, separate from panel rendering.
+//! Fresh material derivation and atomic native installation, separate from panel rendering.
 use crate::worker::CachedWorker;
 use collagene_core::{
-    catalog_digest::{self, CatalogSelection},
+    catalog_digest::CatalogSelection,
+    material_derivation::{self, Derivation, SourceOrigin},
     protocol::{AnalysisJob, AnalysisResult, Request},
     restriction_history::SourceBinding,
     restriction_inspection::InspectionOptions,
@@ -26,6 +27,13 @@ pub struct DigestOpenRequest {
     pub options: InspectionOptions,
     pub fragment_index: usize,
     pub epoch: u64,
+    pub guard: Callback<(), Result<(), String>>,
+}
+#[derive(Clone)]
+pub struct MaterialOpenRequest {
+    pub request: material_derivation::Request,
+    pub epoch: u64,
+    pub guard: Callback<(), Result<(), String>>,
 }
 #[component]
 pub fn DigestOpenPanel(
@@ -40,8 +48,43 @@ pub fn DigestOpenPanel(
     epoch: RwSignal<u64>,
     message: RwSignal<String>,
 ) -> impl IntoView {
+    let request = MaterialOpenRequest {
+        request: material_derivation::Request {
+            source: request.source,
+            origin: request
+                .origin
+                .as_ref()
+                .map_or(SourceOrigin::OriginalReference, |origin| {
+                    SourceOrigin::Saved(origin.as_ref().clone())
+                }),
+            derivation: Derivation::CatalogDigest {
+                selection: request.selection,
+                options: request.options,
+                fragment_index: request.fragment_index,
+            },
+            name: format!("Digest fragment {}", request.fragment_index + 1),
+            save_primers: false,
+        },
+        epoch: request.epoch,
+        guard: request.guard,
+    };
+    view! {<MaterialOpenPanel request snapshot validate on_restore db busy loaded save_generation epoch message/>}
+}
+#[component]
+pub fn MaterialOpenPanel(
+    request: MaterialOpenRequest,
+    snapshot: Callback<(), Result<Workspace, String>>,
+    validate: Callback<Workspace, Result<(), String>>,
+    on_restore: Callback<Workspace>,
+    db: StoredValue<Option<crate::storage::Database>, LocalStorage>,
+    busy: RwSignal<bool>,
+    loaded: RwSignal<bool>,
+    save_generation: RwSignal<u64>,
+    epoch: RwSignal<u64>,
+    message: RwSignal<String>,
+) -> impl IntoView {
     let request = StoredValue::new(request);
-    let status = RwSignal::new("Preparing the selected fragment…".to_owned());
+    let status = RwSignal::new("Preparing the selected product…".to_owned());
     let failed = RwSignal::new(false);
     let started = RwSignal::new(false);
     let alive = Arc::new(AtomicBool::new(true));
@@ -70,7 +113,8 @@ pub fn DigestOpenPanel(
     let watch_lock = owns_lock.clone();
     Effect::new(move |_| {
         let current = epoch.get();
-        if watch_lock.get() && current != request.with_value(|r| r.epoch) {
+        let valid = request.with_value(|r| current == r.epoch && r.guard.run(()).is_ok());
+        if watch_lock.get() && !valid {
             watch_alive.store(false, Ordering::Relaxed);
             if let Some(w) = worker.get_value() {
                 w.close();
@@ -78,7 +122,7 @@ pub fn DigestOpenPanel(
             if let Some(tx) = watch_transaction.borrow().as_ref() {
                 let _ = tx.abort();
             }
-            status.set("The workspace changed; fragment opening was cancelled.".into());
+            status.set("The workspace changed; product opening was cancelled.".into());
         }
     });
     let run = {
@@ -98,9 +142,9 @@ pub fn DigestOpenPanel(
                 return;
             };
             let input = request.get_value();
-            if input.epoch != epoch.get_untracked() {
+            if input.epoch != epoch.get_untracked() || input.guard.run(()).is_err() {
                 status.set(
-                    "The workspace changed. Run the digest again before opening a fragment.".into(),
+                    "The workspace changed. Refresh the preview before opening a product.".into(),
                 );
                 failed.set(true);
                 return;
@@ -113,45 +157,14 @@ pub fn DigestOpenPanel(
                 let frame = snapshot.run(())?;
                 let fingerprint =
                     run_lineage::workspace_fingerprint(&frame).map_err(|e| e.to_string())?;
-                let catalog = catalog_digest::builtin_catalog().map_err(|e| e.to_string())?;
-                let saved_request = input
-                    .origin
-                    .as_ref()
-                    .map(|origin| {
-                        Ok::<_, String>(collagene_core::run_digest_history::Request {
-                            source: input.source.clone(),
-                            origin: origin.as_run()?.clone(),
-                            selection: input.selection.clone(),
-                            options: input.options.clone(),
-                            fragment_index: input.fragment_index,
-                        })
-                    })
-                    .transpose()?;
-                if let Some(origin) = &input.origin {
-                    origin
-                        .as_ref()
-                        .validate_for_workspace(&frame, &input.source)
-                        .map_err(|e| e.to_string())?;
-                }
-                let revision = if let Some(request) = &saved_request {
-                    collagene_core::run_digest_history::installation_revision(&frame, request)
-                        .map_err(|e| e.to_string())?
-                } else {
-                    catalog_digest::installation_revision(
-                        &catalog,
-                        &input.selection,
-                        &frame,
-                        &input.source,
-                        &input.options,
-                        input.fragment_index,
-                    )
-                    .map_err(|e| e.to_string())?
-                };
+                input.guard.run(())?;
+                let revision = material_derivation::revision(&frame, &input.request)
+                    .map_err(|e| e.to_string())?;
                 let w = Rc::new(CachedWorker::new()?);
                 worker.set_value(Some(w.clone()));
-                Ok((frame, fingerprint, revision, w, catalog, saved_request))
+                Ok((frame, fingerprint, revision, w))
             })();
-            let (frame, fingerprint, revision, w, catalog, saved_request) = match prepared {
+            let (frame, fingerprint, revision, w) = match prepared {
                 Ok(v) => v,
                 Err(e) => {
                     owns_lock.set(false);
@@ -161,7 +174,7 @@ pub fn DigestOpenPanel(
                     return;
                 }
             };
-            status.set("Reconstructing the fragment and preserving its source history…".into());
+            status.set("Reconstructing the product and preserving its source history…".into());
             let alive = alive.clone();
             let transaction = transaction.clone();
             let owns_lock = owns_lock.clone();
@@ -171,19 +184,9 @@ pub fn DigestOpenPanel(
                         .ask(Request {
                             id: u32::MAX - 60,
                             revision: revision.clone(),
-                            job: if let Some(request) = saved_request.clone() {
-                                AnalysisJob::InstallRunDigestFragment {
-                                    workspace: frame.clone(),
-                                    request,
-                                }
-                            } else {
-                                AnalysisJob::InstallCatalogDigestFragment {
-                                    workspace: frame.clone(),
-                                    source: input.source.clone(),
-                                    selection: input.selection.clone(),
-                                    options: input.options.clone(),
-                                    fragment_index: input.fragment_index,
-                                }
+                            job: AnalysisJob::InstallMaterialDerivation {
+                                workspace: frame.clone(),
+                                request: input.request.clone(),
                             },
                         })
                         .await?;
@@ -192,42 +195,32 @@ pub fn DigestOpenPanel(
                             "Digest installation response belongs to another request.".into()
                         );
                     }
-                    let (archive, plain_receipt, saved_receipt) = match response.result {
-                        AnalysisResult::CatalogDigestInstalled(p) if saved_request.is_none() => {
-                            p.validate_bindings_for(
-                                &catalog,
-                                &input.selection,
-                                &frame,
-                                &input.source,
-                                &input.options,
-                                input.fragment_index,
-                            )
-                            .map_err(|e| e.to_string())?;
-                            (p.installed.archive.clone(), Some(p), None)
-                        }
-                        AnalysisResult::RunDigestInstalled(p) if saved_request.is_some() => {
-                            p.validate_binding(&revision).map_err(|e| e.to_string())?;
-                            if p.receipt.source != input.source {
-                                return Err("Saved digest installation source changed.".into());
-                            }
-                            (p.archive, None, Some(p.receipt))
-                        }
+                    let installed = match response.result {
+                        AnalysisResult::MaterialDerivationInstalled(p) => p,
                         AnalysisResult::Error(e) => return Err(e),
-                        _ => return Err("Unexpected digest installation result.".into()),
+                        _ => return Err("Unexpected material derivation result.".into()),
                     };
+                    installed
+                        .validate_binding(&revision)
+                        .map_err(|e| e.to_string())?;
+                    if installed.receipt.source != input.request.source {
+                        return Err("Material derivation receipt source changed.".into());
+                    }
+                    let archive = installed.archive.clone();
                     let guard = || -> Result<(), String> {
                         if !alive.load(Ordering::Relaxed) || epoch.get_untracked() != input.epoch {
                             return Err(
                                 "The operation was cancelled or its workspace changed.".into()
                             );
                         }
+                        input.guard.run(())?;
                         let current = snapshot.run(())?;
                         if run_lineage::workspace_fingerprint(&current)
                             .map_err(|e| e.to_string())?
                             != fingerprint
                         {
                             return Err(
-                                "The workspace changed while the fragment was being prepared."
+                                "The workspace changed while the product was being prepared."
                                     .into(),
                             );
                         }
@@ -235,22 +228,10 @@ pub fn DigestOpenPanel(
                     };
                     guard()?;
                     let next = crate::app::decode_workspace(archive.clone(), u32::MAX - 61).await?;
-                    if let Some(installed) = &plain_receipt {
-                        installed
-                            .validate_archive_bindings_for(
-                                &catalog,
-                                &input.selection,
-                                &frame,
-                                &input.source,
-                                &input.options,
-                                input.fragment_index,
-                                &next,
-                            )
-                            .map_err(|e| e.to_string())?;
-                    }
-                    if let Some(receipt) = &saved_receipt {
-                        receipt.validate_archive(&next).map_err(|e| e.to_string())?;
-                    }
+                    installed
+                        .receipt
+                        .validate_archive(&next)
+                        .map_err(|e| e.to_string())?;
                     validate.run(next.clone())?;
                     let previous = crate::app::encode_workspace(frame, u32::MAX - 62).await?;
                     guard()?;
@@ -267,12 +248,12 @@ pub fn DigestOpenPanel(
                 match result {
                     Ok(next) => {
                         loaded.set(true);
-                        message.set("Opened the digest fragment with its exact source-event parent. Cleavage conditions remain assumptions; saved end summaries are producer evidence.".into());
+                        message.set("Opened reusable material with its exact source-event derivation record. No independent target verification or experimental success is asserted.".into());
                         on_restore.run(next);
                     }
                     Err(e) => {
                         if alive.load(Ordering::Relaxed) {
-                            status.set(format!("The fragment was not opened. {e}"));
+                            status.set(format!("The product was not opened. {e}"));
                             failed.set(true);
                         }
                     }
@@ -291,5 +272,5 @@ pub fn DigestOpenPanel(
             run.with_value(|start| start());
         }
     });
-    view! {<section class="digest-open-panel"><p>"Opening a freshly reconstructed fragment. Its source sequence stays in the workspace."</p><p role="status">{move||status.get()}</p><Show when=move||failed.get()><button class="button primary" disabled=move||busy.get() on:click=move|_|run.with_value(|start|start())>"Retry fragment opening"</button></Show></section>}
+    view! {<section class="digest-open-panel"><p>"Opening freshly reconstructed material with its source and replay record. Nothing is opened until the recovery transaction succeeds."</p><p role="status">{move||status.get()}</p><Show when=move||failed.get()><button class="button primary" disabled=move||busy.get() on:click=move|_|run.with_value(|start|start())>"Retry product opening"</button></Show></section>}
 }

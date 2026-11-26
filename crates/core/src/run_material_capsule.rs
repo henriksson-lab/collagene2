@@ -17,6 +17,8 @@ use std::{
 
 pub const MAX_NESTING: usize = 8;
 pub const MAX_CAPSULE_BYTES: usize = 8 * 1024 * 1024;
+/// Worker91 policy: one ledger for all root/descendant native origin wrappers.
+pub const MAX_AGGREGATE_ORIGIN_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_REPORT_BYTES: usize = 32 * 1024 * 1024;
 const MAX_STEPS: usize = 1000;
 const MAX_INPUT_BASES: usize = 8 * 1024 * 1024;
@@ -202,6 +204,9 @@ impl Budget {
                 } | Operation::ReconstructDigestFragment {
                     template: Source::Step(_),
                     ..
+                } | Operation::ReconstructMaterial {
+                    template: Source::Step(_),
+                    ..
                 }
             ) {
                 return Err(bad(
@@ -223,6 +228,22 @@ enum Pending<'a> {
     Run(std::borrow::Cow<'a, Capsule>),
     Digest(std::borrow::Cow<'a, crate::run_digest_history::Capsule>),
     Record(&'a crate::run_digest_history::Record),
+    Derived(std::borrow::Cow<'a, crate::material_derivation::Capsule>),
+    DerivedRecord(std::borrow::Cow<'a, crate::material_derivation::Record>),
+}
+fn material_node(origin: &run_material::MaterialOrigin) -> Pending<'_> {
+    match origin {
+        run_material::MaterialOrigin::Run(o) => Pending::Run(std::borrow::Cow::Borrowed(o)),
+        run_material::MaterialOrigin::Digest(o) => Pending::Digest(std::borrow::Cow::Borrowed(o)),
+        run_material::MaterialOrigin::Derived(o) => Pending::Derived(std::borrow::Cow::Borrowed(o)),
+    }
+}
+fn material_owned(origin: run_material::MaterialOrigin) -> Pending<'static> {
+    match origin {
+        run_material::MaterialOrigin::Run(o) => Pending::Run(std::borrow::Cow::Owned(o)),
+        run_material::MaterialOrigin::Digest(o) => Pending::Digest(std::borrow::Cow::Owned(o)),
+        run_material::MaterialOrigin::Derived(o) => Pending::Derived(std::borrow::Cow::Owned(o)),
+    }
 }
 fn origins(plan: &DesignPlan) -> Vec<(usize, Pending<'_>)> {
     plan.steps
@@ -234,6 +255,9 @@ fn origins(plan: &DesignPlan) -> Vec<(usize, Pending<'_>)> {
             Operation::ReconstructDigestFragment { origin, .. } => {
                 Some((1, Pending::Digest(std::borrow::Cow::Borrowed(origin))))
             }
+            Operation::ReconstructMaterial { origin, .. } => {
+                Some((1, Pending::Derived(std::borrow::Cow::Borrowed(origin))))
+            }
             _ => None,
         })
         .collect()
@@ -241,21 +265,33 @@ fn origins(plan: &DesignPlan) -> Vec<(usize, Pending<'_>)> {
 // Count bounded serialized structure without allocating a duplicate capsule. In
 // particular a digest layer is charged before its inner candidate is decoded.
 fn charge_serialized(budget: &mut Budget, value: &impl Serialize) -> Result<(), Error> {
-    struct Count<'a>(&'a mut usize);
-    impl Write for Count<'_> {
+    charge_serialized_bounded(budget, value, MAX_CAPSULE_BYTES)
+}
+fn charge_serialized_bounded(
+    budget: &mut Budget,
+    value: &impl Serialize,
+    limit: usize,
+) -> Result<(), Error> {
+    struct Count {
+        bytes: usize,
+        limit: usize,
+    }
+    impl Write for Count {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            *self.0 = self
-                .0
+            self.bytes = self
+                .bytes
                 .checked_add(bytes.len())
-                .filter(|n| *n <= MAX_CAPSULE_BYTES)
-                .ok_or_else(|| std::io::Error::other("mixed origin bytes exceed bound"))?;
+                .filter(|n| *n <= self.limit)
+                .ok_or_else(|| std::io::Error::other("individual origin package exceeds bound"))?;
             Ok(bytes.len())
         }
         fn flush(&mut self) -> std::io::Result<()> {
             Ok(())
         }
     }
-    serde_json::to_writer(Count(&mut budget.bytes), value).map_err(|_| Error::TooLarge)
+    let mut count = Count { bytes: 0, limit };
+    serde_json::to_writer(&mut count, value).map_err(|_| Error::TooLarge)?;
+    add(&mut budget.bytes, count.bytes, MAX_AGGREGATE_ORIGIN_BYTES)
 }
 
 fn shallow_binding(origin: &Capsule, candidate: &Candidate) -> Result<(), Error> {
@@ -308,6 +344,7 @@ pub fn validate_input_origins(
             Operation::ReconstructDigestFragment { template, origin } => {
                 (template, &origin.record.product)
             }
+            Operation::ReconstructMaterial { template, origin } => (template, &origin.product),
             _ => continue,
         };
         let Source::Input(id) = template else {
@@ -336,13 +373,38 @@ fn walk<'a>(
 ) -> Result<(), Error> {
     walk_enclosed(stack, None, budget, visit, digest_visit)
 }
+fn walk_mixed<'a>(
+    nodes: Vec<(usize, Pending<'a>)>,
+    budget: Budget,
+    visit: impl FnMut(&Capsule, &Candidate) -> Result<(), Error>,
+    digest_visit: impl FnMut(&crate::run_digest_history::Record, Option<&Molecule>) -> Result<(), Error>,
+    derived_visit: impl FnMut(
+        &crate::material_derivation::Record,
+        Option<&Molecule>,
+    ) -> Result<(), Error>,
+) -> Result<(), Error> {
+    walk_enclosed_mixed(nodes, None, budget, visit, digest_visit, derived_visit)
+}
 fn walk_enclosed<'a>(
+    nodes: Vec<(usize, Pending<'a>)>,
+    enclosing: Option<u16>,
+    budget: Budget,
+    visit: impl FnMut(&Capsule, &Candidate) -> Result<(), Error>,
+    digest_visit: impl FnMut(&crate::run_digest_history::Record, Option<&Molecule>) -> Result<(), Error>,
+) -> Result<(), Error> {
+    walk_enclosed_mixed(nodes, enclosing, budget, visit, digest_visit, |_, _| Ok(()))
+}
+fn walk_enclosed_mixed<'a>(
     roots: Vec<(usize, Pending<'a>)>,
     enclosing_version: Option<u16>,
     mut budget: Budget,
     mut visit: impl FnMut(&Capsule, &Candidate) -> Result<(), Error>,
     mut digest_visit: impl FnMut(
         &crate::run_digest_history::Record,
+        Option<&Molecule>,
+    ) -> Result<(), Error>,
+    mut derived_visit: impl FnMut(
+        &crate::material_derivation::Record,
         Option<&Molecule>,
     ) -> Result<(), Error>,
 ) -> Result<(), Error> {
@@ -356,7 +418,14 @@ fn walk_enclosed<'a>(
         }
         match node {
             Pending::Run(origin) => {
-                add(&mut budget.bytes, origin.candidate.len(), MAX_CAPSULE_BYTES)?;
+                if origin.candidate.len() > MAX_CAPSULE_BYTES {
+                    return Err(Error::TooLarge);
+                }
+                charge_serialized_bounded(
+                    &mut budget,
+                    origin.as_ref(),
+                    MAX_AGGREGATE_ORIGIN_BYTES,
+                )?;
                 if origin.schema_version != 1
                     || origin.inputs.len() > 1000
                     || origin.products.len() > 1000
@@ -393,11 +462,17 @@ fn walk_enclosed<'a>(
                             enclosing,
                             Pending::Digest(std::borrow::Cow::Owned(origin)),
                         )),
+                        Operation::ReconstructMaterial { origin, .. } => stack.push((
+                            depth + 1,
+                            enclosing,
+                            Pending::Derived(std::borrow::Cow::Owned(origin)),
+                        )),
                         _ => {}
                     }
                 }
             }
             Pending::Digest(origin) => {
+                add(&mut budget.steps, 1, MAX_STEPS)?;
                 charge_serialized(&mut budget, origin.as_ref())?;
                 if origin.schema_version != 1 {
                     return Err(bad("unsupported derived capsule schema"));
@@ -422,6 +497,7 @@ fn walk_enclosed<'a>(
                 }
             }
             Pending::Record(record) => {
+                add(&mut budget.steps, 1, MAX_STEPS)?;
                 charge_serialized(&mut budget, record)?;
                 record.validate_shallow()?;
                 digest_visit(record, None)?;
@@ -430,6 +506,65 @@ fn walk_enclosed<'a>(
                     enclosing,
                     Pending::Run(std::borrow::Cow::Borrowed(&record.request.origin)),
                 ));
+            }
+            Pending::Derived(origin) => {
+                if enclosing.is_some_and(|version| version < 22) {
+                    return Err(bad(
+                        "material derivation requires candidate schema22 in every enclosing native capsule",
+                    ));
+                }
+                // Account the opaque bytes and full wrapper BEFORE decoding it.
+                charge_serialized_bounded(
+                    &mut budget,
+                    origin.as_ref(),
+                    crate::material_derivation::MAX_CAPSULE_BYTES,
+                )?;
+                if origin.schema_version != 1 {
+                    return Err(bad("unsupported material capsule schema"));
+                }
+                run_material::event_shape(&origin.product)?;
+                budget.model(&origin.source_snapshot)?;
+                let record = crate::material_derivation::load_record_shallow(&origin.record_bytes)?;
+                record.validate_shallow()?;
+                if origin.product != record.product
+                    || origin.source_snapshot.revision() != record.request.source.revision
+                {
+                    return Err(bad("material capsule source/product snapshot changed"));
+                }
+                add(&mut budget.steps, 1, MAX_STEPS)?;
+                derived_visit(&record, Some(&origin.source_snapshot))?;
+                if let crate::material_derivation::SourceOrigin::Saved(saved) =
+                    record.request.origin
+                {
+                    stack.push((depth + 1, enclosing, material_owned(saved)));
+                }
+            }
+            Pending::DerivedRecord(record) => {
+                if enclosing.is_some_and(|version| version < 22) {
+                    return Err(bad(
+                        "material derivation requires candidate schema22 in every enclosing native capsule",
+                    ));
+                }
+                charge_serialized(&mut budget, record.as_ref())?;
+                record.validate_shallow()?;
+                add(&mut budget.steps, 1, MAX_STEPS)?;
+                derived_visit(&record, None)?;
+                match record {
+                    std::borrow::Cow::Borrowed(record) => {
+                        if let crate::material_derivation::SourceOrigin::Saved(saved) =
+                            &record.request.origin
+                        {
+                            stack.push((depth + 1, enclosing, material_node(saved)));
+                        }
+                    }
+                    std::borrow::Cow::Owned(record) => {
+                        if let crate::material_derivation::SourceOrigin::Saved(saved) =
+                            record.request.origin
+                        {
+                            stack.push((depth + 1, enclosing, material_owned(saved)));
+                        }
+                    }
+                }
             }
         }
     }
@@ -450,7 +585,9 @@ pub fn plan_preflight(plan: &DesignPlan) -> Result<(), Error> {
     if !plan.steps.iter().any(|step| {
         matches!(
             step,
-            Operation::ReconstructRunProduct { .. } | Operation::ReconstructDigestFragment { .. }
+            Operation::ReconstructRunProduct { .. }
+                | Operation::ReconstructDigestFragment { .. }
+                | Operation::ReconstructMaterial { .. }
         )
     }) {
         return Ok(());
@@ -475,6 +612,7 @@ pub fn capsules_preflight<'a>(origins: impl IntoIterator<Item = &'a Capsule>) ->
 pub enum MaterialOriginRef<'a> {
     Run(&'a Capsule),
     Digest(&'a crate::run_digest_history::Capsule),
+    Derived(&'a crate::material_derivation::Capsule),
 }
 pub fn material_capsules_preflight<'a>(
     origins: impl IntoIterator<Item = MaterialOriginRef<'a>>,
@@ -489,6 +627,9 @@ pub fn material_capsules_preflight<'a>(
                         MaterialOriginRef::Run(o) => Pending::Run(std::borrow::Cow::Borrowed(o)),
                         MaterialOriginRef::Digest(o) => {
                             Pending::Digest(std::borrow::Cow::Borrowed(o))
+                        }
+                        MaterialOriginRef::Derived(o) => {
+                            Pending::Derived(std::borrow::Cow::Borrowed(o))
                         }
                     },
                 )
@@ -515,6 +656,9 @@ pub fn material_origins_preflight<'a>(
                         }
                         run_material::MaterialOrigin::Digest(o) => {
                             Pending::Digest(std::borrow::Cow::Borrowed(o))
+                        }
+                        run_material::MaterialOrigin::Derived(o) => {
+                            Pending::Derived(std::borrow::Cow::Borrowed(o))
                         }
                     },
                 )
@@ -556,6 +700,71 @@ pub(crate) fn digest_origin_walk(
         Budget::default(),
         visit,
         digest_visit,
+    )
+}
+
+/// One mixed ledger, including opaque bytes before any derived-record decode.
+pub(crate) fn derived_capsule_preflight(
+    origin: &crate::material_derivation::Capsule,
+) -> Result<(), Error> {
+    walk(
+        vec![(1, Pending::Derived(std::borrow::Cow::Borrowed(origin)))],
+        Budget::default(),
+        |_, _| Ok(()),
+        |_, _| Ok(()),
+    )
+}
+pub(crate) fn derived_record_preflight(
+    record: &crate::material_derivation::Record,
+) -> Result<(), Error> {
+    walk(
+        vec![(
+            1,
+            Pending::DerivedRecord(std::borrow::Cow::Borrowed(record)),
+        )],
+        Budget::default(),
+        |_, _| Ok(()),
+        |_, _| Ok(()),
+    )
+}
+/// Documentary dependency enumeration across all native material families.
+pub(crate) fn derived_ancestry_walk(
+    record: &crate::material_derivation::Record,
+    visit: impl FnMut(&Capsule, &Candidate) -> Result<(), Error>,
+    digest_visit: impl FnMut(&crate::run_digest_history::Record, Option<&Molecule>) -> Result<(), Error>,
+    derived_visit: impl FnMut(
+        &crate::material_derivation::Record,
+        Option<&Molecule>,
+    ) -> Result<(), Error>,
+) -> Result<(), Error> {
+    walk_mixed(
+        vec![(
+            1,
+            Pending::DerivedRecord(std::borrow::Cow::Borrowed(record)),
+        )],
+        Budget::default(),
+        visit,
+        digest_visit,
+        derived_visit,
+    )
+}
+/// Existing digest dependencies can opt into explicit derived-record callbacks
+/// without starting a separate recursively-reset ledger.
+pub(crate) fn digest_origin_walk_mixed(
+    origin: &Capsule,
+    visit: impl FnMut(&Capsule, &Candidate) -> Result<(), Error>,
+    digest_visit: impl FnMut(&crate::run_digest_history::Record, Option<&Molecule>) -> Result<(), Error>,
+    derived_visit: impl FnMut(
+        &crate::material_derivation::Record,
+        Option<&Molecule>,
+    ) -> Result<(), Error>,
+) -> Result<(), Error> {
+    walk_mixed(
+        vec![(2, Pending::Run(std::borrow::Cow::Borrowed(origin)))],
+        Budget::default(),
+        visit,
+        digest_visit,
+        derived_visit,
     )
 }
 
@@ -664,11 +873,23 @@ fn workspace_walk(
                         Pending::Digest(std::borrow::Cow::Borrowed(origin.as_ref()))
                     }
                     Pending::Record(record) => Pending::Record(record),
+                    Pending::Derived(origin) => {
+                        Pending::Derived(std::borrow::Cow::Borrowed(origin.as_ref()))
+                    }
+                    Pending::DerivedRecord(record) => {
+                        Pending::DerivedRecord(std::borrow::Cow::Borrowed(record.as_ref()))
+                    }
                 },
             )
         })
         .collect();
-    walk(borrowed, checked, |_, _| Ok(()), |_, _| Ok(()))?;
+    walk_mixed(
+        borrowed,
+        checked,
+        |_, _| Ok(()),
+        |_, _| Ok(()),
+        |_, _| Ok(()),
+    )?;
     let mut records = BTreeMap::new();
     for attachment in workspace
         .attachments
@@ -680,12 +901,15 @@ fn workspace_walk(
             return Err(bad("duplicate retained origin run"));
         }
     }
-    walk(
+    walk_mixed(
         nodes,
         budget,
         |origin, candidate| attest_run(workspace, &records, origin, candidate),
         |record, source| {
             crate::run_digest_history::attest_record_shallow(workspace, record, source)
+        },
+        |record, source| {
+            crate::material_derivation::attest_record_shallow(workspace, record, source)
         },
     )
 }
@@ -693,7 +917,9 @@ pub fn validate_plan_origins(workspace: &Workspace, plan: &DesignPlan) -> Result
     if !plan.steps.iter().any(|step| {
         matches!(
             step,
-            Operation::ReconstructRunProduct { .. } | Operation::ReconstructDigestFragment { .. }
+            Operation::ReconstructRunProduct { .. }
+                | Operation::ReconstructDigestFragment { .. }
+                | Operation::ReconstructMaterial { .. }
         )
     }) {
         return Ok(());
@@ -733,6 +959,37 @@ pub(crate) fn validate_digest_capsule_origins(
         Budget::default(),
     )
 }
+pub(crate) fn validate_derived_request_origins(
+    workspace: &Workspace,
+    request: &crate::material_derivation::Request,
+) -> Result<(), Error> {
+    let source = run_material::resolve(workspace, &request.source)?;
+    let mut budget = Budget::default();
+    charge_serialized(&mut budget, request)?;
+    budget.model(source)?;
+    let nodes = match &request.origin {
+        crate::material_derivation::SourceOrigin::OriginalReference => vec![],
+        crate::material_derivation::SourceOrigin::Saved(origin) => {
+            if origin.event() != &request.source {
+                return Err(bad(
+                    "derived request origin names another exact source event",
+                ));
+            }
+            vec![(2, material_node(origin))]
+        }
+    };
+    workspace_walk(workspace, nodes, budget)
+}
+pub(crate) fn validate_derived_capsule_origins(
+    workspace: &Workspace,
+    origin: &crate::material_derivation::Capsule,
+) -> Result<(), Error> {
+    workspace_walk(
+        workspace,
+        vec![(1, Pending::Derived(std::borrow::Cow::Borrowed(origin)))],
+        Budget::default(),
+    )
+}
 /// Capability checks can visit nested plans without another recursive decoder or
 /// per-generation budget. The initial bytes are an origin's candidate envelope.
 pub fn visit_candidate_plans(
@@ -740,7 +997,10 @@ pub fn visit_candidate_plans(
     mut visit: impl FnMut(&Candidate) -> Result<(), Error>,
 ) -> Result<(), Error> {
     let mut budget = Budget::default();
-    add(&mut budget.bytes, first.len(), MAX_CAPSULE_BYTES)?;
+    if first.len() > MAX_CAPSULE_BYTES {
+        return Err(Error::TooLarge);
+    }
+    add(&mut budget.bytes, first.len(), MAX_AGGREGATE_ORIGIN_BYTES)?;
     let candidate = transfer::decode_candidate_shallow(first)?;
     budget.plan(&candidate.plan)?;
     visit(&candidate)?;

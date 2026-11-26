@@ -67,7 +67,7 @@ struct Inputs {
 #[derive(Clone)]
 struct Bound {
     origin: Option<PinnedOrigin>,
-    origin_inspection: Option<Arc<collagene_core::run_catalog_digest::Inspection>>,
+    origin_inspection: Option<Arc<collagene_core::material_derivation::DigestPreview>>,
     source: SourceInfo,
     molecule: Arc<Molecule>,
     inputs: Inputs,
@@ -413,16 +413,14 @@ pub fn DigestPanel(
                 {
                     return Err("The source document/event changed. Run the digest again.".into());
                 }
-                if let Some(pin) = &origin_snapshot {
-                    pin.as_run()?;
-                }
                 let revision = if let Some(pin) = &origin_snapshot {
-                    collagene_core::run_catalog_digest::inspection_revision(
-                        &bound_catalog,
-                        &selection,
+                    collagene_core::material_derivation::digest_inspection_revision(
                         &role,
                         &molecule,
-                        pin.as_run()?,
+                        &collagene_core::material_derivation::SourceOrigin::Saved(
+                            pin.as_ref().clone(),
+                        ),
+                        &selection,
                         &options,
                     )
                 } else {
@@ -492,16 +490,12 @@ pub fn DigestPanel(
                         id: 1,
                         revision: revision.clone(),
                         job: if let Some(pin) = &origin_snapshot {
-                            AnalysisJob::InspectRunCatalogRestriction {
+                            AnalysisJob::InspectMaterialDigest {
                                 source_role: role.clone(),
-                                molecule: molecule.clone(),
-                                origin: match pin.as_run() {
-                                    Ok(p) => p.clone(),
-                                    Err(error) => {
-                                        status.set(error);
-                                        return;
-                                    }
-                                },
+                                source: molecule.clone(),
+                                origin: collagene_core::material_derivation::SourceOrigin::Saved(
+                                    pin.as_ref().clone(),
+                                ),
                                 selection: selection.clone(),
                                 options: options.clone(),
                             }
@@ -527,40 +521,6 @@ pub fn DigestPanel(
                 w.close();
                 worker.set_value(None);
                 busy.set(false);
-                let (report, origin_inspection) = match response {
-                    Ok(response) if response.id == 1 && response.revision == revision => {
-                        match response.result {
-                            AnalysisResult::CatalogRestrictionInspection(report)
-                                if origin_snapshot.is_none() =>
-                            {
-                                (report, None)
-                            }
-                            AnalysisResult::RunCatalogRestrictionInspection(report)
-                                if origin_snapshot.is_some() =>
-                            {
-                                (report.inspection.clone(), Some(Arc::new(report)))
-                            }
-                            AnalysisResult::Error(e) => {
-                                status.set(e);
-                                return;
-                            }
-                            _ => {
-                                status.set("Unexpected restriction inspection response.".into());
-                                return;
-                            }
-                        }
-                    }
-                    Ok(_) => {
-                        status.set(
-                            "Restriction response envelope does not match this request.".into(),
-                        );
-                        return;
-                    }
-                    Err(e) => {
-                        status.set(e);
-                        return;
-                    }
-                };
                 let bound_catalog = match catalog.get_value() {
                     Ok(c) => c,
                     Err(e) => {
@@ -568,48 +528,72 @@ pub fn DigestPanel(
                         return;
                     }
                 };
-                if let Some(saved) = &origin_inspection {
-                    let Some(pin) = &origin_snapshot else {
-                        return;
-                    };
-                    if let Err(e) = saved.validate_bindings_for(
-                        &bound_catalog,
-                        &selection,
-                        &role,
-                        &molecule,
-                        match pin.as_run() {
-                            Ok(p) => p,
-                            Err(error) => {
-                                status.set(error);
-                                return;
+                let (report, origin_inspection, catalog_revision, catalog_engine_version) =
+                    match response {
+                        Ok(response) if response.id == 1 && response.revision == revision => {
+                            match response.result {
+                                AnalysisResult::CatalogRestrictionInspection(report)
+                                    if origin_snapshot.is_none() =>
+                                {
+                                    if let Err(e) = report.validate_bindings_for(
+                                        &bound_catalog,
+                                        &selection,
+                                        &role,
+                                        &molecule,
+                                        &options,
+                                    ) {
+                                        status.set(format!("Digest report binding failed: {e}"));
+                                        return;
+                                    }
+                                    (
+                                        report.inspection,
+                                        None,
+                                        report.batch_revision,
+                                        report.engine_version,
+                                    )
+                                }
+                                AnalysisResult::MaterialDigestInspection(report)
+                                    if origin_snapshot.is_some() =>
+                                {
+                                    if let Err(e) = report.validate_binding(&revision) {
+                                        status.set(format!("Saved digest binding failed: {e}"));
+                                        return;
+                                    }
+                                    if serde_json::to_vec(&report.selection).ok()
+                                        != serde_json::to_vec(&selection).ok()
+                                    {
+                                        status.set("Saved digest catalog changed.".into());
+                                        return;
+                                    }
+                                    (
+                                        report.inspection.clone(),
+                                        Some(Arc::new(report.clone())),
+                                        report.context_revision,
+                                        report.engine_version,
+                                    )
+                                }
+                                AnalysisResult::Error(e) => {
+                                    status.set(e);
+                                    return;
+                                }
+                                _ => {
+                                    status
+                                        .set("Unexpected restriction inspection response.".into());
+                                    return;
+                                }
                             }
-                        },
-                        &options,
-                    ) {
-                        status.set(format!("Saved digest binding failed: {e}"));
-                        return;
-                    }
-                    if saved.context_revision != revision {
-                        status.set("Saved digest context changed.".into());
-                        return;
-                    }
-                }
-                if let Err(e) = report.validate_bindings_for(
-                    &bound_catalog,
-                    &selection,
-                    &role,
-                    &molecule,
-                    &options,
-                ) {
-                    status.set(format!("Digest report binding failed: {e}"));
-                    return;
-                }
-                let catalog_revision = origin_inspection
-                    .as_ref()
-                    .map(|saved| saved.context_revision.clone())
-                    .unwrap_or_else(|| report.batch_revision.clone());
-                let catalog_engine_version = report.engine_version.clone();
-                let report = report.inspection;
+                        }
+                        Ok(_) => {
+                            status.set(
+                                "Restriction response envelope does not match this request.".into(),
+                            );
+                            return;
+                        }
+                        Err(e) => {
+                            status.set(e);
+                            return;
+                        }
+                    };
                 status.set(if report.products_determined{format!("{} recognition sites · {} virtual fragment(s), assuming complete cleavage.",report.sites.len(),report.fragments.len())}else if report.scan_complete{"Recognition scan finished; a unique complete product set is not determined. Review the evidence below.".into()}else{"Recognition scan is incomplete. Unsearched sequence cannot establish absence or a complete product set.".into()});
                 bound.set(Some(Arc::new(Bound {
                     origin: origin_snapshot,
@@ -660,6 +644,16 @@ pub fn DigestPanel(
             options: data.inputs.limits.options(),
             fragment_index: index,
             epoch: data.epoch,
+            guard: Callback::new(move |()| {
+                if data.origin != origin.get()
+                    || data.epoch != epoch.get()
+                    || source.get() != data.source
+                    || inputs.get() != Ok(data.inputs.clone())
+                {
+                    return Err("Digest source, origin or options changed; inspect again.".into());
+                }
+                Ok(())
+            }),
         };
         if let Err(e) = on_open.run(request) {
             status.set(e);
@@ -1319,7 +1313,7 @@ pub fn DigestPanel(
             authority: &'static str,
             source: &'a SourceInfo,
             saved_origin: Option<&'a collagene_core::run_material::MaterialOrigin>,
-            saved_inspection: Option<&'a collagene_core::run_catalog_digest::Inspection>,
+            saved_inspection: Option<&'a collagene_core::material_derivation::DigestPreview>,
             report: &'a RestrictionInspection,
             catalog_pin: &'a CatalogSelection,
             catalog_engine_version: &'a str,
@@ -1381,7 +1375,7 @@ pub fn DigestPanel(
             <details class="digest-catalog" data-catalog-edition=move||catalog.with_value(|c|c.as_ref().map(|c|c.edition().edition.clone()).unwrap_or_default()) data-catalog-hash=move||catalog.with_value(|c|c.as_ref().map(|c|c.content_hash().to_string()).unwrap_or_default())><summary>"Catalog and formulation evidence"</summary><p class="helper">{move||catalog.with_value(|c|match c {Ok(c)=>format!("{} enzyme identities · edition {} · content hash {}",c.edition().enzymes.len(),c.edition().edition,c.content_hash()),Err(e)=>format!("Catalog unavailable: {e}")})}</p><p class="helper">"Recognition and strand-cut geometry determine the virtual digest. Same-cut enzymes remain distinct identities; vendor formulations and their documentary conditions are reviewed separately and never change or validate predicted cleavage."</p>{move||catalog.with_value(|c|c.as_ref().ok().map(|c|catalog_evidence(c,&names.get())))}</details><div class="digest-actions"><button class="button primary" disabled=move||busy.get()||names.with(Vec::is_empty)||source.get().alphabet!=Alphabet::Dna on:click=run>"Run virtual digest"</button><button class="button secondary" disabled=move||!busy.get() on:click=move|_|{stop.run(());status.set("Digest request cancelled; no pending result or product was accepted.".into());}>"Cancel digest"</button></div>
             <p class="digest-status helper" role="status">{move||status.get()}</p>
             <details class="digest-options"><summary>"Assumptions and analysis limits"</summary><p class="helper">"The pinned catalog selection describes recognition and strand-cut geometry. Documentary vendor formulation evidence is separate and is not a reaction-compatibility assessment. Recognition can be certain while cuts lack sufficient substrate, and ambiguous sites can prevent a complete product set."</p><button class="text-tool" on:click=move|_|on_methylation.run(())>"Review methylation assumptions"</button><label>"Maximum comparisons"<input aria-label="Digest comparison limit" prop:value=move||comparisons.get() on:input=move|e|comparisons.set(event_target_value(&e))/></label><label>"Maximum recognition sites"<input aria-label="Digest site limit" prop:value=move||max_sites.get() on:input=move|e|max_sites.set(event_target_value(&e))/></label><label>"Maximum fragments"<input aria-label="Digest fragment limit" prop:value=move||max_fragments.get() on:input=move|e|max_fragments.set(event_target_value(&e))/></label><label>"Maximum report bytes"<input aria-label="Digest report byte limit" prop:value=move||report_bytes.get() on:input=move|e|report_bytes.set(event_target_value(&e))/></label></details>
-            {move||bound.get().map(|data|{let sites=data.report.sites.len();let fragments=data.report.fragments.len();let first_report=data.report.clone();let second_report=data.report.clone();let linear_source=data.source.topology==Topology::Linear;view!{<div class="digest-results" data-scan-complete=data.report.scan_complete.to_string() data-products-determined=data.report.products_determined.to_string()>{data.origin_inspection.as_ref().map(|saved|{let saved=saved.clone();let total=saved.findings.len();view!{<section class="saved-digest-material"><h3>"Fresh saved-material reconstruction"</h3>{crate::end_view::summary(&saved.source_duplex)}<p>{format!("Origin assessment: {:?}. Original source modifications: {} known modified · {} eligible unknown · {} known unmodified.",saved.origin_status,saved.source_modifications.known_modified,saved.source_modifications.unknown_eligible,saved.source_modifications.known_unmodified)}</p><p class="helper">"Cleavage geometry assumes complete digestion; modification susceptibility and reaction performance remain unassessed. Origin limitations remain applicable."</p>{move||saved.findings.iter().skip(origin_finding_page.get()*20).take(20).map(|finding|view!{<p class="digest-warning">{finding.clone()}</p>}).collect_view()}<div class="digest-actions"><button class="text-tool" disabled=move||origin_finding_page.get()==0 on:click=move|_|origin_finding_page.update(|page|*page=page.saturating_sub(1))>"Previous origin findings"</button><button class="text-tool" disabled={move||(origin_finding_page.get()+1)*20>=total} on:click=move|_|origin_finding_page.update(|page|*page+=1)>"Next origin findings"</button></div></section>}})}<h3>"Recognition and products"</h3><p>{format!("Recognition scan: {}. Product set: {}.",if data.report.scan_complete{"finished"}else{"incomplete"},if data.report.products_determined{"determined under complete-cleavage assumptions"}else{"not determined"})}</p>{data.report.limits.iter().map(|limit|view!{<p class="digest-warning">{format!("{} reached. Incomplete evidence cannot establish absence or complete products.",limit_label(*limit))}</p>}).collect_view()}{data.report.diagnostics.iter().map(|d|view!{<p class="digest-warning">{d.clone()}</p>}).collect_view()}
+            {move||bound.get().map(|data|{let sites=data.report.sites.len();let fragments=data.report.fragments.len();let first_report=data.report.clone();let second_report=data.report.clone();let linear_source=data.source.topology==Topology::Linear;view!{<div class="digest-results" data-scan-complete=data.report.scan_complete.to_string() data-products-determined=data.report.products_determined.to_string()>{data.origin_inspection.as_ref().map(|saved|{let saved=saved.clone();let total=saved.findings.len();view!{<section class="saved-digest-material"><h3>"Fresh saved-material reconstruction"</h3>{crate::end_view::summary(&saved.source_duplex)}<p>{format!("Inherited incomplete assessment: {}. Original source modifications: {} known modified · {} eligible unknown · {} known unmodified.",saved.incomplete,saved.source_modifications.known_modified,saved.source_modifications.unknown_eligible,saved.source_modifications.known_unmodified)}</p><p class="helper">"Cleavage geometry assumes complete digestion; modification susceptibility and reaction performance remain unassessed. Origin limitations remain applicable."</p>{move||saved.findings.iter().skip(origin_finding_page.get()*20).take(20).map(|finding|view!{<p class="digest-warning">{finding.clone()}</p>}).collect_view()}<div class="digest-actions"><button class="text-tool" disabled=move||origin_finding_page.get()==0 on:click=move|_|origin_finding_page.update(|page|*page=page.saturating_sub(1))>"Previous origin findings"</button><button class="text-tool" disabled={move||(origin_finding_page.get()+1)*20>=total} on:click=move|_|origin_finding_page.update(|page|*page+=1)>"Next origin findings"</button></div></section>}})}<h3>"Recognition and products"</h3><p>{format!("Recognition scan: {}. Product set: {}.",if data.report.scan_complete{"finished"}else{"incomplete"},if data.report.products_determined{"determined under complete-cleavage assumptions"}else{"not determined"})}</p>{data.report.limits.iter().map(|limit|view!{<p class="digest-warning">{format!("{} reached. Incomplete evidence cannot establish absence or complete products.",limit_label(*limit))}</p>}).collect_view()}{data.report.diagnostics.iter().map(|d|view!{<p class="digest-warning">{d.clone()}</p>}).collect_view()}
             <section class="digest-cut-selection"><h3>"Choose a cut-defined assembly fragment"</h3><p class="helper">"Pick the first cut, then the second in the source sequence/map, or use the buttons below. Circular paths follow first → second; keep the opposite path for a retained backbone. A same-cut pair can describe a full circle opened at that cut. Internal selected-enzyme cuts must not split the retained path."</p><p>{move||cut_boundary_label(first_boundary.get().as_ref(),&first_report,"First")}</p><p>{move||cut_boundary_label(second_boundary.get().as_ref(),&second_report,"Second")}</p><Show when=move||linear_source><div class="digest-actions"><button class="text-tool" disabled=move||busy.get() on:click=move|_|choose_boundary.run((true,collagene_core::digest_cut_selection::Boundary::SourceStart))>"First: source start"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|choose_boundary.run((true,collagene_core::digest_cut_selection::Boundary::SourceEnd))>"First: source end"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|choose_boundary.run((false,collagene_core::digest_cut_selection::Boundary::SourceStart))>"Second: source start"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|choose_boundary.run((false,collagene_core::digest_cut_selection::Boundary::SourceEnd))>"Second: source end"</button></div></Show><Show when=move||!linear_source><label class="checkbox-label"><input type="checkbox" aria-label="Keep complementary digest cut path" prop:checked=move||complement.get() on:change=move|e|{stop.run(());complement.set(event_target_checked(&e));}/>"Keep opposite path (outside selected cut interval)"</label></Show><div class="digest-actions"><button class="text-tool" on:click=clear_boundaries>"Clear boundaries / start new pair"</button><button class="button primary" disabled=move||busy.get()||first_boundary.with(Option::is_none)||second_boundary.with(Option::is_none) on:click=move|_|use_boundaries.run(())>"Use selected cut boundaries in assembly"</button></div></section>
     <h3>{format!("{sites} recognition sites")}</h3><p class="helper">"Recognition ranges are original source bases, 1-based inclusive. Strand cuts are boundaries measured from the source origin; 0 is before the first base."</p>{data.report.sites.iter().skip(site_page.get()*25).take(25).map(|site|{let index=site.index;view!{<article class="digest-site"><button class="result-entry" on:click=move|_|navigate.run(index)>{format!("{} · {} · {}{}",site.enzyme,span_label(site),if site.reverse{"reverse"}else{"forward"},if site.certain{""}else{" · possible"})}</button><p>{format!("Top / bottom cut boundaries: {} / {}",cut_label(site.top_cut,site.top_boundary),cut_label(site.bottom_cut,site.bottom_boundary))}</p><div class="digest-actions"><button class="text-tool" disabled=move||busy.get() on:click=move|_|{choose_boundary.run((true,collagene_core::digest_cut_selection::Boundary::Cut{site_index:index}));navigate.run(index);}>"Use as first boundary"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|{choose_boundary.run((false,collagene_core::digest_cut_selection::Boundary::Cut{site_index:index}));navigate.run(index);}>"Use as second boundary"</button></div>{site.diagnostics.iter().map(|d|view!{<p class="digest-warning">{site_diagnostic(*d)}</p>}).collect_view()}</article>}}).collect_view()}<div class="digest-actions"><button class="button secondary" disabled=move||site_page.get()==0 on:click=move|_|site_page.update(|p|*p=p.saturating_sub(1))>"Previous digest sites"</button><button class="button secondary" disabled={move||(site_page.get()+1)*25>=sites} on:click=move|_|site_page.update(|p|*p+=1)>"Next digest sites"</button></div>
             <h3>"Reference-strand fragment lengths"</h3><p class="fragment-sizes">{data.report.ref_top_lengths.as_ref().map(|lengths|lengths.iter().take(100).map(|n|format!("{n} nt")).collect::<Vec<_>>().join(" · ")).unwrap_or_else(||"Not determined from this recognition evidence.".into())}</p><p class="helper">"First 100 lengths shown, following the reference/top strand and sorted by size. The JSON evidence retains every determined length. Physical summaries below use ascending reference cut order; staggered ends can give different top and bottom lengths."</p>

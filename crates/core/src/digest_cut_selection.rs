@@ -137,7 +137,22 @@ fn selected_inner<'a>(
     choice: &Choice,
     source: Option<&crate::chemistry::DuplexSummary>,
 ) -> Result<&'a FragmentSummary, Error> {
-    let r = &inspection.inspection;
+    selected_raw_inner(&inspection.inspection, choice, source)
+}
+pub(crate) fn selected_fragment_raw_with_source<'a>(
+    inspection: &'a crate::restriction_inspection::RestrictionInspection,
+    choice: &Choice,
+    source: &crate::chemistry::DuplexSummary,
+) -> Result<&'a FragmentSummary, Error> {
+    inspection.validate_with_source(source)?;
+    source_geometry_preflight(inspection, source)?;
+    selected_raw_inner(inspection, choice, Some(source))
+}
+fn selected_raw_inner<'a>(
+    r: &'a crate::restriction_inspection::RestrictionInspection,
+    choice: &Choice,
+    source: Option<&crate::chemistry::DuplexSummary>,
+) -> Result<&'a FragmentSummary, Error> {
     choice_shape(choice, r.topology, r.options.max_sites)?;
     let (mut first, mut second) = (
         endpoint(&choice.first, r, source)?,

@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use crate::run_material_capsule::{
-    Capsule, MaterialOriginRef, ReplayEvidence, capsule, capsules_preflight,
-    material_capsules_preflight, material_origins_preflight, plan_preflight,
+    Capsule, MAX_AGGREGATE_ORIGIN_BYTES, MaterialOriginRef, ReplayEvidence, capsule,
+    capsules_preflight, material_capsules_preflight, material_origins_preflight, plan_preflight,
     validate_input_origins, validate_plan_origins, visit_candidate_plans,
 };
 
@@ -145,18 +145,19 @@ pub struct Selection {
 pub enum MaterialSelection {
     Run(Selection),
     Digest(EventBinding),
+    Derived(EventBinding),
 }
 impl MaterialSelection {
     pub fn event(&self) -> &EventBinding {
         match self {
             Self::Run(s) => &s.event,
-            Self::Digest(e) => e,
+            Self::Digest(e) | Self::Derived(e) => e,
         }
     }
     pub fn validate(&self) -> Result<(), Error> {
         match self {
             Self::Run(s) => shape(s),
-            Self::Digest(e) => event_shape(e),
+            Self::Digest(e) | Self::Derived(e) => event_shape(e),
         }
     }
 }
@@ -166,24 +167,28 @@ impl MaterialSelection {
 pub enum MaterialOrigin {
     Run(Capsule),
     Digest(crate::run_digest_history::Capsule),
+    Derived(crate::material_derivation::Capsule),
 }
 impl MaterialOrigin {
     pub fn event(&self) -> &EventBinding {
         match self {
             Self::Run(o) => &o.selection.event,
             Self::Digest(o) => &o.record.product,
+            Self::Derived(o) => &o.product,
         }
     }
     pub fn selection(&self) -> MaterialSelection {
         match self {
             Self::Run(o) => MaterialSelection::Run(o.selection.clone()),
             Self::Digest(o) => MaterialSelection::Digest(o.record.product.clone()),
+            Self::Derived(o) => MaterialSelection::Derived(o.product.clone()),
         }
     }
     pub fn validate_documentary(&self) -> Result<(), Error> {
         match self {
             Self::Run(o) => o.validate_documentary(),
             Self::Digest(o) => o.validate_documentary(),
+            Self::Derived(o) => o.validate_documentary(),
         }
     }
     /// Exact retained archive attestation. No marker, alias or documentary graph
@@ -206,7 +211,104 @@ impl MaterialOrigin {
             Self::Digest(origin) => {
                 crate::run_digest_history::validate_capsule_for_workspace(workspace, origin, event)
             }
+            Self::Derived(origin) => {
+                crate::material_derivation::validate_capsule_for_workspace(workspace, origin, event)
+            }
         }
+    }
+}
+/// Fresh private state from one just-executed native origin. Documentary
+/// capsules still require separate exact-workspace attestation at host boundaries.
+#[derive(Debug)]
+pub struct FreshMaterial {
+    reference: Molecule,
+    tracked: TrackedDuplex,
+    incomplete: bool,
+    findings: Vec<String>,
+    findings_total: usize,
+    findings_truncated: bool,
+}
+impl FreshMaterial {
+    pub fn reference(&self) -> &Molecule {
+        &self.reference
+    }
+    pub fn tracked(&self) -> &TrackedDuplex {
+        &self.tracked
+    }
+    pub fn incomplete(&self) -> bool {
+        self.incomplete
+    }
+    pub fn findings(&self) -> &[String] {
+        &self.findings
+    }
+    pub fn findings_total(&self) -> usize {
+        self.findings_total
+    }
+    pub fn findings_truncated(&self) -> bool {
+        self.findings_truncated
+    }
+    pub fn into_parts(self) -> (Molecule, TrackedDuplex, bool, Vec<String>, usize, bool) {
+        (
+            self.reference,
+            self.tracked,
+            self.incomplete,
+            self.findings,
+            self.findings_total,
+            self.findings_truncated,
+        )
+    }
+}
+impl MaterialOrigin {
+    /// Execute the unchanged closed native recipe; imported state is never
+    /// deserialized into material. This does not attest an unrelated workspace.
+    pub fn replay(&self, source: &Molecule) -> Result<FreshMaterial, Error> {
+        let (reference, tracked, incomplete, findings, total, prior_truncated) = match self {
+            Self::Run(origin) => {
+                let fresh = crate::run_material_capsule::replay(origin, source)?;
+                let report = fresh.evidence.decode_report()?;
+                let mut findings = report.findings;
+                findings.extend(
+                    report
+                        .assumptions
+                        .into_iter()
+                        .map(|s| format!("Origin assumption: {s}")),
+                );
+                let total = findings.len();
+                (
+                    fresh.reference,
+                    fresh.tracked,
+                    fresh.incomplete,
+                    findings,
+                    total,
+                    false,
+                )
+            }
+            Self::Digest(origin) => crate::run_digest_history::replay(origin, source)?.into_parts(),
+            Self::Derived(origin) => {
+                crate::material_derivation::replay(origin, source)?.into_parts()
+            }
+        };
+        let mut truncated = prior_truncated || findings.len() > 128;
+        let findings = findings
+            .into_iter()
+            .take(128)
+            .map(|s| {
+                if s.chars().count() > 2048 {
+                    truncated = true;
+                    s.chars().take(2048).collect()
+                } else {
+                    s
+                }
+            })
+            .collect();
+        Ok(FreshMaterial {
+            reference,
+            tracked,
+            incomplete,
+            findings,
+            findings_total: total,
+            findings_truncated: truncated,
+        })
     }
 }
 pub const MATERIAL_INSPECTION_ENGINE_VERSION: &str = "material-origin-inspection-1";
@@ -263,6 +365,16 @@ pub fn inspect_material(
             origins.push(MaterialSelection::Digest(event.clone()));
         }
     }
+    for asset in workspace
+        .attachments
+        .values()
+        .filter(|a| a.kind == crate::material_derivation::WORKSPACE_ATTACHMENT_KIND)
+    {
+        let record = crate::material_derivation::load_record(&asset.bytes)?;
+        if record.product == *event {
+            origins.push(MaterialSelection::Derived(event.clone()));
+        }
+    }
     if origins.len() > 1000 {
         return Err(Error::TooLarge);
     }
@@ -278,6 +390,9 @@ pub fn inspect_material(
             MaterialSelection::Digest(e) => {
                 crate::run_digest_history::capsule(workspace, e).map(MaterialOrigin::Digest)
             }
+            MaterialSelection::Derived(e) => {
+                crate::material_derivation::capsule(workspace, e).map(MaterialOrigin::Derived)
+            }
         };
         match result {
             Ok(origin) => {
@@ -290,7 +405,7 @@ pub fn inspect_material(
             }
         }
     } else {
-        findings.push("Choose a retained native run product or exact saved digest fragment. Documentary origin discovery does not restore physical material. Renamed digest descendants are not inferred.".into());
+        findings.push("Choose a retained native run product, exact saved digest fragment or target-free material derivation. Documentary origin discovery does not restore physical material. Renamed digest/derivation descendants are not inferred.".into());
         None
     };
     let result = MaterialInspection {

@@ -822,7 +822,7 @@ impl Draft {
     pub fn validate(&self) -> Result<(), String> {
         if !matches!(
             self.version,
-            1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12
+            1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13
         ) || self.version == 1 && self.alternatives.is_some()
         {
             return Err(
@@ -884,6 +884,21 @@ impl Draft {
             }
         }
         self.validate_internal_edits()?;
+        if self.version < 13
+            && self
+                .methods
+                .rows
+                .iter()
+                .filter_map(|row| row.run_origin.as_ref())
+                .any(|origin| {
+                    matches!(
+                        origin.as_ref(),
+                        collagene_core::run_material::MaterialOrigin::Derived(_)
+                    )
+                })
+        {
+            return Err("Target-free derived material requires assembly draft version13.".into());
+        }
         let has_origin = self.methods.rows.iter().any(|row| row.run_origin.is_some());
         if self.version < 12
             && self
@@ -1088,6 +1103,20 @@ impl Draft {
                 },
             );
         }
+        if self
+            .methods
+            .rows
+            .iter()
+            .filter_map(|row| row.run_origin.as_ref())
+            .any(|origin| {
+                matches!(
+                    origin.as_ref(),
+                    collagene_core::run_material::MaterialOrigin::Derived(_)
+                )
+            })
+        {
+            self.version = self.version.max(13);
+        }
         if !self.substitutions.is_empty() {
             self.version = self.version.max(6);
         }
@@ -1116,8 +1145,8 @@ pub fn encode(draft: &Draft) -> Result<Vec<u8>, String> {
 }
 /// Encode current editable state without promoting working fields into saved rows.
 pub fn encode_raw(draft: &Draft) -> Result<Vec<u8>, String> {
-    if !matches!(draft.version, 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12) {
-        return Err("Raw assembly persistence requires draft version3–12.".into());
+    if !matches!(draft.version, 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13) {
+        return Err("Raw assembly persistence requires draft version3–13.".into());
     }
     draft.validate()?;
     let mut writer = Bounded { bytes: Vec::new() };
@@ -2094,9 +2123,82 @@ mod run_origin_tests {
         downgraded.version = 11;
         assert!(downgraded.validate().is_err());
         let mut future = draft;
-        future.version = 13;
+        future.version = 14;
         assert!(future.validate().is_err());
         assert_eq!(serde_json::to_vec(&installed.workspace).unwrap(), before);
+    }
+
+    #[test]
+    fn reusable_pcr_derived_origin_requires13_and_keeps_native_record_and_primers() {
+        let (mut draft, mut workspace) = saved_pcr_workspace();
+        let source_event = {
+            let document = &workspace.documents[0];
+            EventBinding {
+                document_id: document.id.clone(),
+                event_id: document.head_event.clone().unwrap(),
+                revision: document.head.clone(),
+            }
+        };
+        workspace.active_document = source_event.document_id.clone();
+        let source = &workspace.revisions[&source_event.revision];
+        let forward = Primer::new("F", "ACGACCCC", "").unwrap();
+        let reverse = Primer::new("R", "GTTACCCC", "").unwrap();
+        let preview =
+            collagene_core::verification::simulate_pcr_documents(source, &forward, &reverse)
+                .unwrap()
+                .remove(0);
+        let request = collagene_core::material_derivation::Request {
+            source: source_event,
+            origin: collagene_core::material_derivation::SourceOrigin::OriginalReference,
+            derivation: collagene_core::material_derivation::Derivation::ExactPcr {
+                forward,
+                reverse,
+                selection: collagene_core::material_derivation::PcrSelection {
+                    selected_index: 0,
+                    expected_preview_revision: preview.molecule.revision(),
+                    geometry: preview.geometry,
+                },
+            },
+            name: "Reusable exact PCR".into(),
+            save_primers: true,
+        };
+        let installed =
+            collagene_core::material_derivation::prepare_install(&workspace, &request).unwrap();
+        assert!(installed.receipt.primer_attachment.is_some());
+        let product = installed.receipt.product.clone();
+        let molecule = installed.workspace.revisions[&product.revision].clone();
+        let capsule =
+            collagene_core::material_derivation::capsule(&installed.workspace, &product).unwrap();
+        draft.slots[0].captured = Some(Arc::new(CapturedSource {
+            source: SourceInfo {
+                binding: product,
+                name: molecule.name.clone(),
+                length: molecule.sequence.len(),
+                alphabet: Alphabet::Dna,
+                topology: molecule.topology,
+            },
+            molecule,
+        }));
+        draft.methods.rows[0].run_origin = Some(
+            crate::run_origin_model::PinnedOrigin::from_material(
+                run_material::MaterialOrigin::Derived(capsule),
+            )
+            .unwrap(),
+        );
+        draft.sync_rows();
+        assert_eq!(draft.version, 13);
+        let bytes = encode_raw(&draft).unwrap();
+        assert!(decode_version(&bytes, 13).unwrap() == draft);
+        assert!(decode_version(&bytes, 12).is_err());
+        let (_, rows) = crate::cloning_preparations::prepared_rows(&draft.methods, 1).unwrap();
+        assert!(matches!(
+            &rows[0].preparation,
+            collagene_core::assembly_recipe::Preparation::FromDerived { .. }
+        ));
+        draft.version = 12;
+        assert!(draft.validate().is_err());
+        draft.version = 14;
+        assert!(draft.validate().is_err());
     }
 
     #[test]
@@ -2208,13 +2310,11 @@ pub fn set_digest_fragment(
         if *origin.event() != fragment.source.binding {
             return Err("Saved material belongs to a different exact source event".into());
         }
-        origin.as_run()?;
-        collagene_core::run_catalog_digest::source_preflight(
-            &catalog,
-            &fragment.selection,
+        collagene_core::material_derivation::digest_inspection_revision(
             &role,
             &fragment.molecule,
-            origin.as_run()?,
+            &collagene_core::material_derivation::SourceOrigin::Saved(origin.as_ref().clone()),
+            &fragment.selection,
             &fragment.options,
         )
         .map_err(|e| e.to_string())?;
@@ -2254,14 +2354,13 @@ pub fn set_digest_fragment(
                     )
                 },
                 |origin| {
-                    collagene_core::run_catalog_digest::inspection_revision(
-                        &catalog,
-                        &fragment.selection,
+                    collagene_core::material_derivation::digest_inspection_revision(
                         &role,
                         &fragment.molecule,
-                        origin
-                            .as_run()
-                            .expect("origin was explicitly checked above"),
+                        &collagene_core::material_derivation::SourceOrigin::Saved(
+                            origin.as_ref().clone(),
+                        ),
+                        &fragment.selection,
                         &fragment.options,
                     )
                 },

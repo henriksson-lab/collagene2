@@ -62,7 +62,7 @@ pub fn PcrOutputsPanel(
         String::new()
     };
     let name = RwSignal::new(initial_name);
-    let save_product = RwSignal::new(true);
+    let save_product = RwSignal::new(count == 1);
     let save_primers = RwSignal::new(false);
     let page = RwSignal::new(0usize);
     let sequence_page = RwSignal::new(0usize);
@@ -215,8 +215,8 @@ pub fn PcrOutputsPanel(
     view! {
         <section class="pcr-output-review">
             <h3>"Review PCR products"</h3>
-            {saved_material.then(||view!{<p class="helper">"The saved material was reconstructed before PCR geometry was calculated. Opened outputs remain documentary reference previews; use a saved-origin PCR preparation in assembly and record its verified run to create reusable material."</p>})}
-            <p class="helper">{format!("{count} exact-annealing binding geometries. Choose the reference preview to retain; alternative geometries remain separate. Physical end chemistry, target verification and experimental success are not established.")}</p>
+            {saved_material.then(||view!{<p class="helper">"The saved material was reconstructed before PCR geometry was calculated. The displayed preview remains documentary. Opening a reusable product replays the exact source and primers again and commits its native derivation record atomically."</p>})}
+            <p class="helper">{format!("{count} exact-annealing binding geometries. Choose the reference preview to retain; alternative geometries remain separate. A reusable product requires fresh native replay and a successful recovery transaction. No independent target verification or experimental success is asserted.")}</p>
             <details><summary>"Original template event"</summary><p>{bound.with_value(|r|format!("Document {} · event {} · revision {}",r.source.document_id,r.source.event_id,r.source.revision))}</p></details>
             <details open><summary>"Declared oligos · ordered 5′→3′"</summary>
                 {bound.with_value(|r|[r.forward.clone(),r.reverse.clone()]).into_iter().enumerate().map(|(index,primer)|view!{
@@ -262,7 +262,8 @@ pub fn PcrOutputsPanel(
                 </section>
             })}
             <label>"Output name"<input maxlength="256" disabled=move||busy.get() prop:value=move||name.get() on:input=move|event|name.set(event_target_value(&event))/></label>
-            <label><input type="checkbox" prop:checked=move||save_product.get() disabled=move||busy.get() on:change=move|event|save_product.set(event_target_checked(&event))/>"Create selected PCR reference preview"</label>
+            <label><input type="checkbox" prop:checked=move||save_product.get() disabled=move||busy.get()||count!=1 on:change=move|event|save_product.set(event_target_checked(&event))/>"Open as reusable PCR product with a native replay record"</label>
+            {(count!=1).then(||view!{<p class="helper">"Reusable PCR installation requires one complete geometry. Multiple geometries remain separate reference previews; selecting one is not experimental isolation. The declared primer pair can still be saved."</p>})}
             <label><input type="checkbox" prop:checked=move||save_primers.get() disabled=move||busy.get() on:change=move|event|save_primers.set(event_target_checked(&event))/>"Save declared primer pair as an oligo collection"</label>
             <button class="button primary full" disabled=move||busy.get()||selected.get().is_none()||!valid_name(&name.get())||(!save_product.get()&&!save_primers.get()) on:click=create>"Create selected outputs"</button>
             <p class="helper" role="status">{move||status.get()}</p>

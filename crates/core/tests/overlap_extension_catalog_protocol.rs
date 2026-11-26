@@ -151,7 +151,7 @@ fn compound_preparation11_requires84_but_compiled_operations_remain_candidate18_
         preview.compiled.rows[0].preparation.prepared_source,
         Source::Step(5)
     ));
-    assert!(preview.verification.engine_version.ends_with("/science-24"));
+    assert!(preview.verification.engine_version.ends_with("/science-25"));
     let candidate = Candidate::new(preview.compiled.plan);
     let encoded_candidate = transfer::save_candidate(&candidate).unwrap();
     assert_eq!(

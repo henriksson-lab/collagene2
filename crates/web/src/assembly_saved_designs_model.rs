@@ -242,7 +242,7 @@ fn version(value: &Value) -> Result<u32, String> {
     value
         .get("version")
         .and_then(Value::as_u64)
-        .filter(|v| (1..=9).contains(v))
+        .filter(|v| (1..=10).contains(v))
         .map(|v| v as u32)
         .ok_or_else(|| fail("unsupported editable-draft version."))
 }
@@ -728,7 +728,7 @@ mod tests {
     fn ordinary_versions_and_latest_literal_declarations_roundtrip_without_source_copies() {
         let (frame, base) = fixture();
         let before = serde_json::to_value(&frame).unwrap();
-        for version in 1..=9 {
+        for version in 1..=10 {
             let mut draft = base.clone();
             draft.version = version;
             draft.validate().unwrap();
@@ -1099,6 +1099,39 @@ mod tests {
         assert!(error.contains("before source copies"), "{error}");
     }
 
+    #[test]
+    fn saved_version10_keeps_inactive_unfinished_strand_policy_and_original_event_pins() {
+        let (frame, mut draft) = fixture();
+        let sources = draft
+            .slots
+            .iter()
+            .map(|s| s.captured.as_ref().unwrap().source.clone())
+            .collect::<Vec<_>>();
+        let mut form = crate::cloning_methods_model::HomologyForm::default();
+        form.enabled = false;
+        form.exact_homology = false;
+        form.cuts = "12:unfinished, :".into();
+        form.outer_right = "2e".into();
+        draft.methods.homology = Some(form);
+        draft.sync_rows();
+        let (saved, entry) = save(&frame, "Physical homology settings", &draft).unwrap();
+        assert_eq!(entry.draft_version, 10);
+        let restored = load(&saved, &entry.id).unwrap();
+        assert!(restored == draft);
+        assert!(
+            restored
+                .slots
+                .iter()
+                .map(|s| s.captured.as_ref().unwrap().source.clone())
+                .collect::<Vec<_>>()
+                == sources
+        );
+        assert_eq!(
+            serde_json::to_value(&saved.documents).unwrap(),
+            serde_json::to_value(&frame.documents).unwrap()
+        );
+        assert!(saved.candidates.is_empty());
+    }
     #[test]
     fn saved_digest_chain_retains_unfinished_six_oligos_pins_and_source_events_as_version9() {
         let (frame, mut draft) = fixture();

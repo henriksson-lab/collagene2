@@ -124,6 +124,18 @@ pub(crate) fn operation_label(operation: &Operation) -> String {
             clip(&origin.selection.run_id, 16),
             origin.selection.step_index + 1
         ),
+        Operation::HomologyAssembly {
+            fragments, policy, ..
+        } => format!(
+            "Reconstruct homology-assembly strands · {} fragments · {} · joining homology {:?} bp",
+            fragments.len(),
+            if policy.topology == collagene_core::Topology::Circular {
+                "circular"
+            } else {
+                "linear"
+            },
+            policy.overlaps
+        ),
         Operation::ProfiledOverlap {
             fragments,
             circular,

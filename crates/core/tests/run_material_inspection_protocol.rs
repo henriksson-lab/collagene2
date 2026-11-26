@@ -71,7 +71,6 @@ fn wire(magic: &[u8; 4], v: u16, value: &impl serde::Serialize) -> Vec<u8> {
 #[test]
 fn discovery_and_explicit_capsule_roundtrip74_tags_and_exact_context_guards() {
     assert!(protocol::WORKER_SCHEMA_VERSION >= 74);
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 18);
     let commit = original();
     let binding = commit.receipt.construct.clone();
     let selection = Selection {

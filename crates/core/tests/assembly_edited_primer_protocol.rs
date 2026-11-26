@@ -193,9 +193,16 @@ fn appended166_158_whole_design_preserves_literal_junction_and_internal_edit_aga
         TARGET
     );
     let candidate = Candidate::new(report.preview.compiled.plan.clone());
-    assert!(transfer::load_candidate(&transfer::save_candidate(&candidate).unwrap()).is_ok());
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 18);
-    assert_eq!(collagene_core::workspace::PLAN_SCHEMA_VERSION, 16);
+    let encoded_candidate = transfer::save_candidate(&candidate).unwrap();
+    assert_eq!(
+        &encoded_candidate[4..6],
+        &protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
+    );
+    assert!(transfer::load_candidate(&encoded_candidate).is_ok());
+    // These existing operations still retain their historical candidate18 floor.
+    let mut historical_candidate = encoded_candidate;
+    historical_candidate[4..6].copy_from_slice(&18u16.to_le_bytes());
+    assert!(transfer::load_candidate(&historical_candidate).is_ok());
     assert!(
         report
             .preview

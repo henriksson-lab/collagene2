@@ -303,6 +303,7 @@ fn operation_title(operation: &Operation) -> &'static str {
         Operation::AnnealOligos { .. } => "Anneal oligos",
         Operation::GoldenGate { .. } => "Golden Gate",
         Operation::SelectedGoldenGate { .. } => "Golden Gate with exact candidate keys",
+        Operation::HomologyAssembly { .. } => "Physical homology assembly",
         Operation::Overlap { .. } | Operation::ProfiledOverlap { .. } => "Overlap assembly",
     }
 }

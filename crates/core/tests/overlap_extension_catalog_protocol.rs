@@ -151,11 +151,18 @@ fn compound_preparation11_requires84_but_compiled_operations_remain_candidate18_
         preview.compiled.rows[0].preparation.prepared_source,
         Source::Step(5)
     ));
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 18);
-    assert_eq!(collagene_core::workspace::PLAN_SCHEMA_VERSION, 16);
     assert!(preview.verification.engine_version.ends_with("/science-22"));
     let candidate = Candidate::new(preview.compiled.plan);
-    assert!(transfer::load_candidate(&transfer::save_candidate(&candidate).unwrap()).is_ok());
+    let encoded_candidate = transfer::save_candidate(&candidate).unwrap();
+    assert_eq!(
+        &encoded_candidate[4..6],
+        &protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
+    );
+    assert!(transfer::load_candidate(&encoded_candidate).is_ok());
+    // These existing operations still retain their historical candidate18 floor.
+    let mut historical_candidate = encoded_candidate;
+    historical_candidate[4..6].copy_from_slice(&18u16.to_le_bytes());
+    assert!(transfer::load_candidate(&historical_candidate).is_ok());
     let verify = Request {
         id: 81,
         revision: target.revision(),

@@ -178,7 +178,11 @@ fn appended_operation_and_candidate_floor_preserve_historical_plain_plans() {
     assert_eq!(tag, 23);
     let candidate = Candidate::new(plan.clone());
     let bytes = transfer::save_candidate(&candidate).unwrap();
-    assert_eq!(&bytes[4..6], &18u16.to_le_bytes());
+    assert_eq!(
+        &bytes[4..6],
+        &protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
+    );
+    assert!(transfer::load_candidate(&wire(b"CGP\0", 18, &candidate)).is_ok());
     assert!(transfer::load_candidate(&bytes).is_ok());
     assert!(transfer::load_candidate(&wire(b"CGP\0", 17, &candidate)).is_err());
     let request = Request {
@@ -256,7 +260,10 @@ fn closed_extension_origin_cannot_hide_new_semantics_in_old_worker_envelope() {
     assert!(protocol::process_request(&wire(b"CGQ\0", 80, &load)).is_err());
     assert!(protocol::process_request(&protocol::encode_request(&load).unwrap()).is_ok());
     let record = run_lineage::load_run(&commit.workspace, &commit.receipt.run.run_id).unwrap();
-    assert_eq!(record.plan_schema, 16);
+    assert_eq!(
+        record.plan_schema,
+        collagene_core::workspace::PLAN_SCHEMA_VERSION
+    );
     assert!(run_lineage::save_run_record(&record).is_ok());
     let mut downgraded = record;
     downgraded.plan_schema = 15;

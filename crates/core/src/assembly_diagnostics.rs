@@ -42,7 +42,9 @@ fn stage(op: &Operation) -> Result<Stage, Error> {
         Operation::RepairEnds { .. } => Stage::Repair,
         Operation::TreatEnds { .. } => Stage::EndTreatment,
         Operation::DeclareSourceTermini { .. } => Stage::SourceDeclaration,
-        Operation::ProfiledOverlap { .. } => Stage::OverlapAssembly,
+        Operation::ProfiledOverlap { .. } | Operation::HomologyAssembly { .. } => {
+            Stage::OverlapAssembly
+        }
         Operation::Ligate { .. } => Stage::LigationAssembly,
         _ => return Err(bad("operation is outside shared recipe compiler scope")),
     })
@@ -363,14 +365,21 @@ pub fn overlap(p: &assembly_recipe::Preview) -> Result<Report, Error> {
             ));
         }
     }
-    let Operation::ProfiledOverlap {
-        fragments,
-        circular,
-        overlaps,
-        ..
-    } = &plan.steps[assembly]
-    else {
-        return Err(bad("expected final overlap operation"));
+    let (fragments, circular, overlaps) = match &plan.steps[assembly] {
+        Operation::ProfiledOverlap {
+            fragments,
+            circular,
+            overlaps,
+            ..
+        } => (fragments, *circular, overlaps),
+        Operation::HomologyAssembly {
+            fragments, policy, ..
+        } => (
+            fragments,
+            policy.topology == crate::Topology::Circular,
+            &policy.overlaps,
+        ),
+        _ => return Err(bad("expected final overlap operation")),
     };
     let mut junctions = Vec::with_capacity(overlaps.len());
     for index in 0..overlaps.len() {
@@ -402,7 +411,7 @@ pub fn overlap(p: &assembly_recipe::Preview) -> Result<Report, Error> {
             index,
             upstream,
             downstream,
-            closing: *circular && downstream == 0,
+            closing: circular && downstream == 0,
             state,
             message: message.into(),
             recovery: recovery.into(),

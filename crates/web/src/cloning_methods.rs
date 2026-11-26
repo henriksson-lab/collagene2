@@ -874,23 +874,46 @@ pub fn CloningMethodsPanel(
                     let _ = (overlaps, options); // shared recipe reuses the exact parsed profile.
                     let (bound_inputs, recipe) =
                         overlap_request(&state, inputs, &bound_target_molecule)?;
-                    let revision = collagene_core::assembly_recipe::preview_revision(
-                        &bound_inputs,
-                        &bound_target_molecule,
-                        &recipe,
-                    )
+                    let policy = state
+                        .homology
+                        .as_ref()
+                        .filter(|form| form.enabled)
+                        .map(|form| {
+                            form.policy(
+                                recipe.overlaps.clone(),
+                                recipe.circular,
+                                recipe.fragments.len(),
+                            )
+                        })
+                        .transpose()?;
+                    let revision = match &policy {
+                        Some(policy) => collagene_core::assembly_recipe::homology_preview_revision(
+                            &bound_inputs,
+                            &bound_target_molecule,
+                            &recipe,
+                            policy,
+                        ),
+                        None => collagene_core::assembly_recipe::preview_revision(
+                            &bound_inputs,
+                            &bound_target_molecule,
+                            &recipe,
+                        ),
+                    }
                     .map_err(|e| e.to_string())?;
-                    let response = ask(
-                        &worker,
-                        AnalysisJob::PreviewOverlapRecipe {
+                    let job = match policy {
+                        Some(policy) => AnalysisJob::PreviewHomologyRecipe {
+                            inputs: bound_inputs,
+                            target: bound_target_molecule,
+                            recipe,
+                            policy,
+                        },
+                        None => AnalysisJob::PreviewOverlapRecipe {
                             inputs: bound_inputs,
                             target: bound_target_molecule,
                             recipe,
                         },
-                        revision.clone(),
-                        token,
-                    )
-                    .await?;
+                    };
+                    let response = ask(&worker, job, revision.clone(), token).await?;
                     if let AnalysisResult::OverlapRecipePreview(preview) = response {
                         preview
                             .validate_binding(&revision)
@@ -1085,7 +1108,26 @@ pub fn CloningMethodsPanel(
                     return;
                 }
             };
-            match collagene_core::assembly_recipe::compile(&bound, &current_target, &recipe) {
+            let compiled = if let Some(form) = state.homology.as_ref().filter(|form| form.enabled) {
+                form.policy(
+                    recipe.overlaps.clone(),
+                    recipe.circular,
+                    recipe.fragments.len(),
+                )
+                .and_then(|policy| {
+                    collagene_core::assembly_recipe::compile_homology(
+                        &bound,
+                        &current_target,
+                        &recipe,
+                        &policy,
+                    )
+                    .map_err(|e| e.to_string())
+                })
+            } else {
+                collagene_core::assembly_recipe::compile(&bound, &current_target, &recipe)
+                    .map_err(|e| e.to_string())
+            };
+            match compiled {
                 Ok(compiled) => {
                     on_candidate.run(Candidate::new(compiled.plan));
                     return;
@@ -1163,7 +1205,8 @@ pub fn CloningMethodsPanel(
     view! {<div class="inspector-content cloning-methods-panel" class:active-fragment-preparation=active_row.is_some()><Show when=move||!fixed_sources><h2>"Cloning methods"</h2></Show><p class="helper">{if fixed_sources {"Verify the prepared fragments against the separately reviewed intended construct."} else {"The active document is the independently chosen target. Method evidence never selects a target or establishes experimental success."}}</p><Show when=move||!fixed_sources>
         <label>"Method workflow"<select aria-label="Cloning workflow" disabled=disable_plain_primer_design prop:value=move||match config.get().mode{Mode::Tailing=>"tailing",Mode::Overlap=>"overlap",Mode::Ligation=>"ligation",Mode::GoldenGate=>"golden_gate",Mode::MultiSiteReference=>"multisite"} on:change=move|e|config.update(|c|c.mode=match event_target_value(&e).as_str(){"overlap"=>Mode::Overlap,"ligation"=>Mode::Ligation,"golden_gate"=>Mode::GoldenGate,_=>Mode::Tailing})><option value="tailing">"TA / GC tailing and ligation"</option><option value="overlap">"Gibson / HiFi / In-Fusion overlap"</option><option value="ligation">"Ordered multi-fragment ligation"</option><option value="golden_gate">"Golden Gate — reaction and prepared assembly"</option></select></label></Show>
         <Show when=move||config.get().mode==Mode::Tailing><p class="helper">"Append one declared nucleotide to both actual 3′ ends of an established blunt duplex. This is an ideal endpoint operation; polymerase activity, mixtures and proprietary kit chemistry are not predicted. TA/GC products include two added junction bases."</p><div class="method-shortcuts"><button class="text-tool" on:click=move|_|config.update(|c|{c.vector.base=TailingBase::T;c.insert.base=TailingBase::A;})>"Use T/A pair"</button><button class="text-tool" on:click=move|_|config.update(|c|{c.vector.base=TailingBase::C;c.insert.base=TailingBase::G;})>"Use C/G pair"</button></div><Show when=move||active_row.is_none_or(|row|row.get()==0)><TailFields vector=true config=config query_options=query_options primer_sources list_primers resolve_primer epoch fixed_sources/></Show><Show when=move||active_row.is_none_or(|row|row.get()==1)><TailFields vector=false config=config query_options=query_options primer_sources list_primers resolve_primer epoch fixed_sources/></Show><label class="checkbox-label"><input type="checkbox" aria-label="Allow retained tailing ligation nicks" prop:checked=move||config.get().allow_nicked on:change=move|e|config.update(|c|c.allow_nicked=event_target_checked(&e))/>"Allow explicitly retained nicks"</label><p class="helper">"Exact PCR has 5′ OH termini. A sealed ligation may need an explicit phosphorylation step. Factory-vector chemistry and host nick repair are not inferred."</p></Show>
-        <Show when=move||config.get().mode!=Mode::Tailing||fixed_sources><Show when=move||config.get().mode==Mode::Overlap><label>"Overlap profile"<select aria-label="Overlap profile method" prop:value=move||format!("{:?}",config.get().method) on:change=move|e|config.update(|c|c.method=match event_target_value(&e).as_str(){"Gibson"=>OverlapMethod::Gibson,"InFusion"=>OverlapMethod::InFusion,_=>OverlapMethod::HiFi})><option value="Gibson">"Gibson"</option><option value="HiFi">"HiFi"</option><option value="InFusion">"In-Fusion"</option></select></label><p class="helper">"Fragments are listed in product order with explicit orientation. Homology geometry is checked exactly; published length guidance is advisory. No reaction completion or unique mixture product is established."</p></Show>
+        <Show when=move||config.get().mode==Mode::Overlap><HomologyControls config/></Show>
+        <Show when=move||config.get().mode!=Mode::Tailing||fixed_sources><Show when=move||config.get().mode==Mode::Overlap><label>"Published homology guidance"<select aria-label="Overlap profile method" prop:value=move||format!("{:?}",config.get().method) on:change=move|e|config.update(|c|c.method=match event_target_value(&e).as_str(){"Gibson"=>OverlapMethod::Gibson,"InFusion"=>OverlapMethod::InFusion,_=>OverlapMethod::HiFi})><option value="Gibson">"Gibson"</option><option value="HiFi">"HiFi"</option><option value="InFusion">"In-Fusion"</option></select></label><p class="helper">"Fragments are listed in product order with explicit orientation. Homology geometry is checked exactly; published length guidance is advisory. No reaction completion or unique mixture product is established."</p></Show>
             <Show when=move||matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate)><p class="helper">"List fragments in intended ligation order. Preparation, end repair and terminal treatment are explicit source-bound operations. Whole linear DNA retains unknown terminal chemistry; its sequence alone does not imply cleaved or PCR ends. Unknown ends can withhold ligation even after phosphorylation."</p><label class="checkbox-label"><input type="checkbox" aria-label="Allow retained ordered ligation nicks" prop:checked=move||config.get().allow_nicked on:change=move|e|config.update(|c|c.allow_nicked=event_target_checked(&e))/>"Allow explicitly retained nicks"</label></Show>
             <h3>{if fixed_sources{"Prepare active fragment"}else{"1. Choose source fragments and regions"}}</h3>
             <Show when=move||config.with(|c|c.rows.len()>12)><p role="alert">"This preparation exceeds the supported 12 rows. No partial row list is shown."</p></Show><For each=move||config.with(|c|if c.rows.len()<=12{(0..c.rows.len()).collect::<Vec<_>>()}else{Vec::new()}) key=|i|*i children=move|i|view!{<Show when=move||active_row.is_none_or(|row|row.get()==i)><div node_ref=row_nodes.with_value(|nodes|nodes[i]) tabindex="-1" class="method-preparation-focus"><OverlapFields config index=i query_options primer_sources list_primers resolve_primer epoch selected_region fixed_sources edited_junctions=disable_plain_primer_design get_query source_info get_workspace/></div></Show>}/>
@@ -1455,8 +1498,20 @@ fn overlap_request(
         .zip(&inputs)
         .map(|(id, m)| (id.as_str(), m))
         .collect::<Vec<_>>();
-    collagene_core::assembly_recipe::source_preflight(&borrowed, target, &recipe)
+    if let Some(form) = state.homology.as_ref().filter(|form| form.enabled) {
+        let policy = form.policy(
+            recipe.overlaps.clone(),
+            recipe.circular,
+            recipe.fragments.len(),
+        )?;
+        collagene_core::assembly_recipe::homology_source_preflight(
+            &borrowed, target, &recipe, &policy,
+        )
         .map_err(|e| e.to_string())?;
+    } else {
+        collagene_core::assembly_recipe::source_preflight(&borrowed, target, &recipe)
+            .map_err(|e| e.to_string())?;
+    }
     let bound = ids
         .into_iter()
         .zip(inputs)
@@ -2377,5 +2432,27 @@ fn PoolCandidateDetails(bound: Arc<PoolEvidence>, index: usize) -> impl IntoView
         {move||bound.with_value(|saved|saved.report.pool().and_then(|pool|pool.candidates.get(index)).map(|candidate|candidate.recut_sites.iter().skip(page.get()*25).take(25).map(|site|view!{<p>{format!("Recognition at {}{} · paired {} · cleavable under model {}",site.recognition_start+1,if site.reverse{" reverse"}else{" forward"},site.fully_double_stranded,site.cleavable_under_model)}</p>}).collect_view()))}
         <p>{move||format!("{} recut observations · page {} of {}",total,page.get()+1,pages)}</p>
         <button class="text-tool" disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous recut observations"</button><button class="text-tool" disabled=move||{page.get()+1>=pages} on:click=move|_|page.update(|p|*p=(*p+1).min(pages-1))>"Next recut observations"</button>
+    </details>}
+}
+
+#[component]
+fn HomologyControls(config: RwSignal<MethodsState>) -> impl IntoView {
+    let form = move || config.with(|c| c.homology.clone().unwrap_or_default());
+    view! {<details class="assembly-fragment-options"><summary>"Reconstruct product strands"</summary>
+        <p class="helper">"Choose a generic 5′ resection, annealing, gap-fill and ligation model when you need a reconstructed duplex for later cloning steps. This is a declared reaction model, not a vendor formulation or a prediction of experimental completion."</p>
+        <Show when=move||config.with(|c|c.method==OverlapMethod::InFusion)><p class="helper">"In-Fusion uses a different processing/host-repair mechanism; leave physical reconstruction off and use the reference check."</p></Show>
+        <Show when=move||config.with(|c|c.rows.len()==1&&!c.circular)><p class="helper">"A single linear fragment has no joining boundary. Leave junction homology empty; outer-end processing remains explicit below."</p></Show>
+        <label class="checkbox-label"><input type="checkbox" prop:checked=move||config.with(|c|c.homology.as_ref().is_some_and(|f|f.enabled)) on:change=move|e|config.update(|c|c.homology.get_or_insert_with(Default::default).enabled=event_target_checked(&e))/>"Reconstruct physical strands under these assumptions"</label>
+        <Show when=move||form().enabled&&config.with(|c|c.homology.is_some())>
+            <label>"5′ resection at joining ends"<select prop:value=move||if form().exact_homology{"homology"}else{"explicit"} on:change=move|e|config.update(|c|c.homology.get_or_insert_with(Default::default).exact_homology=event_target_value(&e)=="homology")><option value="homology">"Exactly the declared junction homology"</option><option value="explicit">"Explicit cuts for every fragment"</option></select></label>
+            <Show when=move||!form().exact_homology><label>"5′ cuts, left:right per oriented fragment"<input type="text" placeholder="20:20, 20:20" prop:value=move||form().cuts on:input=move|e|config.update(|c|c.homology.get_or_insert_with(Default::default).cuts=event_target_value(&e))/></label><p class="helper">"One comma-separated pair per prepared fragment, in product order. Left removes the top-strand 5′ end; right removes the bottom-strand 5′ end. Values refer to the oriented prepared fragment."</p></Show>
+            <Show when=move||!config.get().circular><label>"Linear outer-end processing"<select prop:value=move||if form().all_accessible_ends{"all"}else{"joining"} on:change=move|e|config.update(|c|c.homology.get_or_insert_with(Default::default).all_accessible_ends=event_target_value(&e)=="all")><option value="joining">"Idealized scope: process joining ends only"</option><option value="all">"Also resect accessible outer ends"</option></select></label><p class="helper">"Joining-ends-only assumes outer termini are spared; it is an explicit idealization. Processing outer ends retains the resulting real 3′ overhangs rather than declaring a blunt product."</p><Show when=move||form().all_accessible_ends><div class="primer-grid"><label>"Left outer 5′ cut (bp)"<input type="text" prop:value=move||form().outer_left on:input=move|e|config.update(|c|c.homology.get_or_insert_with(Default::default).outer_left=event_target_value(&e))/></label><label>"Right outer 5′ cut (bp)"<input type="text" prop:value=move||form().outer_right on:input=move|e|config.update(|c|c.homology.get_or_insert_with(Default::default).outer_right=event_target_value(&e))/></label></div></Show></Show>
+            <details><summary>"Terminal pairing and search limits"</summary><div class="primer-grid">
+                <label>"Minimum paired terminal bases"<input type="text" prop:value=move||form().min_paired_bases on:input=move|e|config.update(|c|c.homology.get_or_insert_with(Default::default).min_paired_bases=event_target_value(&e))/></label>
+                <label>"Terminal comparison limit"<input type="text" prop:value=move||form().max_comparisons on:input=move|e|config.update(|c|c.homology.get_or_insert_with(Default::default).max_comparisons=event_target_value(&e))/></label>
+                <label>"Retained terminal candidates"<input type="text" prop:value=move||form().max_candidates on:input=move|e|config.update(|c|c.homology.get_or_insert_with(Default::default).max_candidates=event_target_value(&e))/></label>
+            </div></details>
+            <p class="helper">"Review every removed 5′ segment, joining nick and gap below. Unsupported gaps withhold a reusable product. Save a reconstructed product with its run history, then choose that exact saved material in a later preparation."</p>
+        </Show>
     </details>}
 }

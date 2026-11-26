@@ -1356,6 +1356,15 @@ pub fn compile(
 pub fn preview(inputs: &[PlanInput], target: &Molecule, recipe: &Recipe) -> Result<Preview, Error> {
     let context_revision = preview_revision(inputs, target, recipe)?;
     let compiled = compile(inputs, target, recipe)?;
+    finish_preview(context_revision, compiled, target, recipe)
+}
+
+fn finish_preview(
+    context_revision: String,
+    compiled: Compiled,
+    target: &Molecule,
+    recipe: &Recipe,
+) -> Result<Preview, Error> {
     // Exactly the existing verifier prepares PCR/digest products and projects
     // annotations. Neither the target nor a preview chooses a fragment or geometry.
     let mut verification = verification::verify(&compiled.plan, target);
@@ -1419,6 +1428,107 @@ pub fn preview(inputs: &[PlanInput], target: &Molecule, recipe: &Recipe) -> Resu
     result.validate()?;
     Ok(result)
 }
+/// Physical homology requests retain the original preparation recipe and require
+/// its geometry to agree exactly with the separate versioned material policy.
+pub fn homology_source_preflight(
+    inputs: &[(&str, &Molecule)],
+    target: &Molecule,
+    recipe: &Recipe,
+    policy: &crate::homology_assembly::Options,
+) -> Result<(), Error> {
+    policy.validate_shape(recipe.fragments.len())?;
+    if recipe.options.method == overlap_profiles::OverlapMethod::InFusion {
+        return Err(bad(
+            "In-Fusion requires its distinct 3′ processing/host-rescue model. Keep reference-only interpretation; this declared 5′ resection/fill/ligase model cannot establish an In-Fusion physical product.",
+        ));
+    }
+    if policy.overlaps != recipe.overlaps
+        || policy.topology
+            != if recipe.circular {
+                Topology::Circular
+            } else {
+                Topology::Linear
+            }
+    {
+        return Err(bad(
+            "physical policy geometry differs from the declared recipe",
+        ));
+    }
+    source_preflight(inputs, target, recipe)
+}
+pub fn homology_preflight(
+    inputs: &[PlanInput],
+    target: &Molecule,
+    recipe: &Recipe,
+    policy: &crate::homology_assembly::Options,
+) -> Result<(), Error> {
+    homology_source_preflight(
+        &inputs
+            .iter()
+            .map(|i| (i.id.as_str(), &i.molecule))
+            .collect::<Vec<_>>(),
+        target,
+        recipe,
+        policy,
+    )?;
+    preflight(inputs, target, recipe)
+}
+pub fn homology_preview_revision(
+    inputs: &[PlanInput],
+    target: &Molecule,
+    recipe: &Recipe,
+    policy: &crate::homology_assembly::Options,
+) -> Result<String, Error> {
+    homology_preflight(inputs, target, recipe, policy)?;
+    bound_revisions(inputs, target)?;
+    hash(&(
+        ENGINE_VERSION,
+        crate::homology_assembly::ENGINE_VERSION,
+        "physical-preview",
+        inputs,
+        target,
+        recipe,
+        policy,
+    ))
+}
+pub fn compile_homology(
+    inputs: &[PlanInput],
+    target: &Molecule,
+    recipe: &Recipe,
+    policy: &crate::homology_assembly::Options,
+) -> Result<Compiled, Error> {
+    homology_preflight(inputs, target, recipe, policy)?;
+    let mut compiled = compile(inputs, target, recipe)?;
+    let last = compiled
+        .plan
+        .steps
+        .last_mut()
+        .ok_or_else(|| bad("missing assembly operation"))?;
+    let Operation::ProfiledOverlap {
+        fragments, options, ..
+    } = last
+    else {
+        return Err(bad("unexpected final preparation operation"));
+    };
+    *last = Operation::HomologyAssembly {
+        fragments: fragments.clone(),
+        options: options.clone(),
+        policy: policy.clone(),
+    };
+    hash(&compiled)?;
+    Ok(compiled)
+}
+pub fn preview_homology(
+    inputs: &[PlanInput],
+    target: &Molecule,
+    recipe: &Recipe,
+    policy: &crate::homology_assembly::Options,
+) -> Result<Preview, Error> {
+    let context = homology_preview_revision(inputs, target, recipe, policy)?;
+    let compiled = compile_homology(inputs, target, recipe, policy)?;
+    finish_preview(context, compiled, target, recipe)
+}
+
 impl Preview {
     /// Readonly shape/binding checks only. No reconstruction or authority restoration.
     pub fn validate(&self) -> Result<(), Error> {
@@ -1497,14 +1607,31 @@ impl Preview {
             &self.compiled.rows,
             self.compiled.assembly_step,
         )?;
-        let Some(Operation::ProfiledOverlap {
-            fragments,
-            overlaps,
-            circular,
-            options,
-        }) = self.compiled.plan.steps.last()
-        else {
-            return Err(bad("preview has no final profiled overlap operation"));
+        let (fragments, overlaps, circular, options) = match self.compiled.plan.steps.last() {
+            Some(Operation::ProfiledOverlap {
+                fragments,
+                overlaps,
+                circular,
+                options,
+            }) => (fragments, overlaps, *circular, options),
+            Some(Operation::HomologyAssembly {
+                fragments,
+                options,
+                policy,
+            }) => {
+                policy.validate_shape(fragments.len())?;
+                (
+                    fragments,
+                    &policy.overlaps,
+                    policy.topology == Topology::Circular,
+                    options,
+                )
+            }
+            _ => {
+                return Err(bad(
+                    "preview has no final reference or physical homology operation",
+                ));
+            }
         };
         if fragments.len() != self.compiled.rows.len()
             || self.compiled.plan.steps[..self.compiled.assembly_step]
@@ -1539,7 +1666,7 @@ impl Preview {
         if let Some(profile) = &self.profile {
             profile.validate()?;
             if &profile.overlaps != overlaps
-                || profile.circular != *circular
+                || profile.circular != circular
                 || hash(&profile.options)? != hash(options)?
             {
                 return Err(bad("profile recipe options changed"));

@@ -449,7 +449,7 @@ fn record_retention_count_exhaustion_refuses_the_whole_edit_without_pruning() {
 #[test]
 fn newer_ordinary_drafts_cannot_be_ignored_as_second_active_library_drafts() {
     let original = fixture();
-    for version in 5..=9 {
+    for version in 5..=10 {
         let mut w = original.clone();
         let raw = format!("ordinary editable draft {version}").into_bytes();
         w.attachments.insert(

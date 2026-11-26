@@ -839,6 +839,68 @@ pub fn summary(source: &TrackedDuplex) -> Result<ModificationSummary, Error> {
         generation: source.generation.clone(),
     })
 }
+/// Reconstruct private homology-assembly state only from freshly supplied tracked
+/// operands. Documentary mappings cannot be used as a material-import channel.
+pub fn homology_assemble(
+    sources: &[&TrackedDuplex],
+    options: &crate::homology_assembly::Options,
+) -> Result<(Option<TrackedDuplex>, crate::homology_assembly::Report), Error> {
+    options.validate_shape(sources.len())?;
+    crate::homology_assembly::preflight_borrowed(
+        &sources.iter().map(|s| &s.duplex).collect::<Vec<_>>(),
+        options,
+    )?;
+    // Guard aggregate source material before the geometry clone. Source metadata
+    // never authorizes state; callers must resolve actual tracked operands.
+    let mut total = 0usize;
+    for source in sources {
+        total = total
+            .checked_add(source.top.len())
+            .and_then(|n| n.checked_add(source.bottom.len()))
+            .filter(|n| *n <= crate::homology_assembly::MAX_SOURCE_BASES)
+            .ok_or(Error::TooLarge)?;
+        source.validate()?;
+    }
+    let duplexes: Vec<_> = sources.iter().map(|s| s.duplex.clone()).collect();
+    let mut report = crate::homology_assembly::geometry(&duplexes, options)?;
+    // Current Duplex::Nick records a boundary, not its 3′/5′ chemical groups.
+    // The diagnostic report preserves those groups, but reducing blocked or
+    // unknown junction chemistry to that private representation would be lossy.
+    // Keep reference geometry available without granting reusable material.
+    if report.product.as_ref().is_some_and(|p| !p.nicks.is_empty()) {
+        report.incomplete = true;
+        report.limits.push("Reusable material withheld: the current private nick representation cannot preserve the unsealed junction's blocked/unknown chemical groups; full nick chemistry remains unsupported.".into());
+        report.validate_documentary()?;
+        return Ok((None, report));
+    }
+    let Some(product) = &report.product else {
+        return Ok((None, report));
+    };
+    let mut pieces = vec![];
+    let mut synthesis = vec![];
+    for sourced in &report.mappings {
+        let m = &sourced.mapping;
+        if m.synthesized {
+            synthesis.push((m.product_strand, m.product_start, m.product_end));
+        } else {
+            pieces.push(Piece {
+                source: sources[sourced.source],
+                strand: m.source_strand,
+                start: m.source_start,
+                len: m.source_end - m.source_start,
+                destination: m.product_strand,
+                offset: m.product_start,
+            });
+        }
+    }
+    let tracked = from_pieces(
+        product.clone(),
+        &pieces,
+        &synthesis,
+        provenance(sources.iter().copied())?,
+    )?;
+    Ok((Some(tracked), report))
+}
 pub fn profile_revision() -> String {
     hash(&(PROFILE_VERSION,methylation::profile_revision(),"Full internal CpG duplex at NotI/SmaI blocked; unmodified recognition permitted; other positional modification contexts remain unknown unless a published insensitive methylase context matches actual chemical position.")).expect("fixed bounded profile")
 }

@@ -252,6 +252,9 @@ pub fn AssemblyProductView(
                 }/>
             </Show>
         </details>
+        {snapshot.with_value(|s|s.report.physical_processing_reports.iter().filter_map(|step|match &step.evidence {
+            collagene_core::verification::PhysicalProcessingEvidence::HomologyAssembly(report)=>Some(homology_processing_view(step.step_index,report)),_=>None,
+        }).collect_view())}
         <details class="assembly-product-details"><summary>"Sources, preparation history and verification findings"</summary>
             <p>{snapshot.with_value(|s|format!("Scientific engine: {}",s.report.engine_version))}</p>
             <p>{snapshot.with_value(|s|format!("Plan {} · independent target {} ({})",s.plan_revision,clip(&s.target.name,120),s.target_revision))}</p>
@@ -622,4 +625,57 @@ pub(crate) fn ReferenceCanvas(
             {move||selected_feature.get().and_then(|index|source.with_value(|source|source.features.get(index).map(|feature|view!{<article class="annotation-details"><h4>{clip(feature.label(),256)}</h4><p>{format!("Reference feature index {} · {} · review {}",index,clip(&feature.kind,80),feature.needs_review)}</p><dl>{feature.qualifiers.iter().take(30).map(|(key,value)|view!{<dt>{clip(key,80)}</dt><dd>{value.as_deref().map(|value|clip(value,512)).unwrap_or_else(||"present".into())}</dd>}).collect_view()}</dl><p class="helper">"Bounded qualifier preview; the opened native reference retains complete annotations and source evidence. Partial/fuzzy/ordered drawing bounds do not establish a complete feature sequence; unresolved locations are not placed."</p></article>})))}
         </section></Show>
     </div>}.into_any()
+}
+
+/// Read-only processing evidence from a freshly bound complete verifier report.
+/// Includes withheld outcomes; it never promotes a reference into material.
+pub(crate) fn homology_processing_view(
+    step_index: usize,
+    report: &collagene_core::homology_assembly::Report,
+) -> AnyView {
+    use collagene_core::chemistry::{FivePrime, Strand, ThreePrime};
+    let five = |v: FivePrime| match v {
+        FivePrime::Phosphate => "phosphate",
+        FivePrime::Hydroxyl => "hydroxyl",
+        FivePrime::Unknown => "unknown",
+    };
+    let three = |v: ThreePrime| match v {
+        ThreePrime::Hydroxyl => "hydroxyl",
+        ThreePrime::Blocked => "blocked",
+        ThreePrime::Unknown => "unknown",
+    };
+    let physical = report.product.as_ref().and_then(|p| p.summary().ok());
+    let reusable = report.product.as_ref().is_some_and(|p| p.nicks.is_empty())
+        && report
+            .junctions
+            .iter()
+            .all(|j| j.top_sealed && j.bottom_sealed);
+    let unsealed = report
+        .junctions
+        .iter()
+        .any(|j| !j.top_sealed || !j.bottom_sealed);
+    let complete = report.terminal_search_complete;
+    let incomplete = report.incomplete;
+    view!{<details class="assembly-product-details"><summary>{format!("Step {} · homology-assembly strand processing",step_index+1)}</summary>
+        <p>{if reusable{"A duplex was reconstructed with every joining nick sealed under the declared processing assumptions."}else if physical.is_some(){"A paired diagnostic duplex is available; reusable physical material is withheld."}else{"A reusable duplex was withheld. An intended reference does not replace missing material."}}</p>
+        {unsealed.then(||view!{<p role="alert">"An unsealed joining nick retains blocked or unknown terminal chemistry that the reusable material model cannot faithfully represent. Its coordinates and groups remain diagnostic evidence; this reference cannot be reused as saved physical material."</p>})}
+        <p>{format!("Terminal search: {} · unresolved assumptions or alternatives: {} · {} comparisons",if complete{"complete within this adjacent-pair model"}else{"incomplete"},if incomplete{"retained"}else{"none reported within this model"},report.comparisons)}</p>
+        <p>{format!("Product top-reference interval in the assembled contour: {}..{} of {} nt (zero-based, half-open). Joining coordinates below use the actual product top-reference origin.",report.reference_top_start,report.reference_top_end,report.reference_length)}</p>
+        <p class="helper">"This generic model assumes declared 5′ resection, annealing, template-supported gap fill and chemistry-dependent nick sealing. It does not establish enzyme activity, vendor chemistry, isolation or a unique reaction outcome."</p>
+        <details><summary>{format!("Removed 5′ source segments · {}",report.resected.len())}</summary>
+            {report.resected.is_empty().then(||view!{<p>"No 5′ source segments removed."</p>})}
+            <table><thead><tr><th>"Fragment"</th><th>"Strand"</th><th>"Original strand interval · zero-based half-open"</th><th>"Removed bases"</th></tr></thead><tbody>{report.resected.iter().map(|cut|view!{<tr><td>{cut.source+1}</td><td>{match cut.strand{Strand::Top=>"top",Strand::Bottom=>"bottom"}}</td><td>{format!("{}..{}",cut.start,cut.end)}</td><td>{cut.end.saturating_sub(cut.start)}</td></tr>}).collect_view()}</tbody></table>
+        </details>
+        {report.junctions.iter().enumerate().map(|(index,j)|view!{<details><summary>{format!("Junction {} · fragment {} → {} · {} bp homology",index+1,j.left_source+1,j.right_source+1,j.overlap)}</summary>
+            <pre>{j.homology.clone()}</pre>
+            <p>{format!("Homology at product top-reference interval {}..{} (zero-based, unrolled across circle closure)",j.homology_start,j.homology_end)}</p>
+            <p>{format!("Joining gaps before processing: top {} nt · bottom {} nt",j.top_gap,j.bottom_gap)}</p>
+            <p>{format!("Top join at product boundary {} · 3′ {} / 5′ {} · {}",j.top_nick,three(j.top_three_prime),five(j.top_five_prime),if j.top_sealed{"sealed under declared chemistry"}else{"nick remains or processing withheld"})}</p>
+            <p>{format!("Bottom join at product boundary {} · 3′ {} / 5′ {} · {}",j.bottom_nick,three(j.bottom_three_prime),five(j.bottom_five_prime),if j.bottom_sealed{"sealed under declared chemistry"}else{"nick remains or processing withheld"})}</p>
+            <p>{format!("Adjacent terminal search {} · other retained overlap lengths: {}",if j.terminal_search_complete{"complete within declared bounds"}else{"incomplete"},if j.alternatives.is_empty(){"none".into()}else{j.alternatives.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")})}</p>
+        </details>}).collect_view()}
+        {physical.map(|summary|view!{<details><summary>"Remaining product nicks and outer termini"</summary>{crate::end_view::summary(&summary)}</details>})}
+        <details><summary>"Processing findings and limits"</summary>{report.warnings.iter().chain(&report.limits).map(|finding|view!{<p>{finding.clone()}</p>}).collect_view()}</details>
+        <p class="helper">{if reusable{"Save the actual reconstructed final product with its run, then select that exact saved material for later cloning. Imported or detached strand summaries cannot establish physical material."}else{"Diagnostic DNA and processing evidence can be inspected and retained. This outcome does not establish reusable material for a later cloning step."}}</p>
+    </details>}.into_any()
 }

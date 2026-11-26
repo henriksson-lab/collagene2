@@ -457,6 +457,9 @@ pub(crate) fn validate_controls(
             return Err("Assembly option field exceeds64KiB".into());
         }
     }
+    if let Some(form) = &methods.homology {
+        form.validate_raw()?;
+    }
     methods.all_input_ids()?;
     Ok(())
 }
@@ -697,6 +700,15 @@ impl Draft {
         next.validate()?;
         Ok(next)
     }
+    fn uses_homology_fields(&self) -> bool {
+        self.methods.homology.is_some()
+            || self.alternatives.as_ref().is_some_and(|library| {
+                library
+                    .rows
+                    .iter()
+                    .any(|saved| saved.edits.methods.homology.is_some())
+            })
+    }
     fn uses_overlap_extension_catalog_fields(&self) -> bool {
         let uses = |row: &OverlapInput| {
             row.preparation == OverlapPreparation::OverlapExtensionPcrCatalogDigest
@@ -796,11 +808,16 @@ impl Draft {
     /// Structural/bounded source consistency only. Historical event IDs require
     /// the host workspace to attest them before installing any candidate.
     pub fn validate(&self) -> Result<(), String> {
-        if !matches!(self.version, 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9)
+        if !matches!(self.version, 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10)
             || self.version == 1 && self.alternatives.is_some()
         {
             return Err(
                 "Unsupported assembly draft version or alternatives in a legacy draft.".into(),
+            );
+        }
+        if self.uses_homology_fields() && self.version < 10 {
+            return Err(
+                "Editable strand reconstruction settings require assembly draft version10.".into(),
             );
         }
         if self.uses_overlap_extension_catalog_fields() && self.version < 9 {
@@ -1034,6 +1051,9 @@ impl Draft {
         if self.uses_overlap_extension_catalog_fields() {
             self.version = self.version.max(9);
         }
+        if self.uses_homology_fields() {
+            self.version = self.version.max(10);
+        }
     }
 }
 
@@ -1044,8 +1064,8 @@ pub fn encode(draft: &Draft) -> Result<Vec<u8>, String> {
 }
 /// Encode current editable state without promoting working fields into saved rows.
 pub fn encode_raw(draft: &Draft) -> Result<Vec<u8>, String> {
-    if !matches!(draft.version, 3 | 4 | 5 | 6 | 7 | 8 | 9) {
-        return Err("Raw assembly persistence requires draft version3–9.".into());
+    if !matches!(draft.version, 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10) {
+        return Err("Raw assembly persistence requires draft version3–10.".into());
     }
     draft.validate()?;
     let mut writer = Bounded { bytes: Vec::new() };
@@ -2484,6 +2504,27 @@ mod extension_draft_tests {
         assert!(encode_raw(&oversized).is_err());
     }
 
+    #[test]
+    fn physical_homology_working_settings_require10_and_roundtrip_unfinished_inactive_values() {
+        let mut draft = Draft::default();
+        assert!(draft.methods.homology.is_none());
+        let mut form = crate::cloning_methods_model::HomologyForm::default();
+        form.enabled = false;
+        form.exact_homology = false;
+        form.cuts = "20:unfinished, 3:".into();
+        form.outer_left = "partial".into();
+        draft.methods.homology = Some(form);
+        draft.sync_rows();
+        assert_eq!(draft.version, 10);
+        let restored = decode_version(&encode_raw(&draft).unwrap(), 10).unwrap();
+        assert!(restored == draft);
+        let mut downgraded = restored.clone();
+        downgraded.version = 9;
+        assert!(downgraded.validate().is_err());
+        assert!(decode_version(&encode_raw(&draft).unwrap(), 9).is_err());
+        draft.methods.homology.as_mut().unwrap().cuts = "x".repeat(1025);
+        assert!(encode_raw(&draft).is_err());
+    }
     #[test]
     fn extension_catalog_selector_and_unfinished_raw6_require_version9() {
         let mut draft = Draft::default();

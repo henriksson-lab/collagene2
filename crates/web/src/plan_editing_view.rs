@@ -30,6 +30,7 @@ fn title(op: &Operation) -> &'static str {
         Operation::Tail3Prime { .. } => "3′ tailing",
         Operation::Ligate { .. } => "Ordered ligation",
         Operation::AnnealOligos { .. } => "Oligo annealing",
+        Operation::HomologyAssembly { .. } => "Physical homology assembly",
         Operation::Overlap { .. } | Operation::ProfiledOverlap { .. } => "Overlap assembly",
         Operation::GoldenGate { .. } | Operation::SelectedGoldenGate { .. } => "Golden Gate",
         Operation::DeclareSourceModifications { .. } => "Source modification assumptions",

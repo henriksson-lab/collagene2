@@ -1231,6 +1231,28 @@ pub(crate) fn export_protocol_pdf_checked(
     layout.heading("Cloning steps")?;
     for (index, step) in plan.steps.iter().enumerate() {
         let body = match step {
+            Operation::HomologyAssembly {
+                fragments,
+                options,
+                policy,
+            } => format!(
+                "Physical homology assembly of {}. Explicit source-strand resection, complementary synthesis and sealing under policy {}. {:?} sequence guidance remains advisory; this model does not establish reagent activity, experimental completion or mixture uniqueness.",
+                fragments
+                    .iter()
+                    .map(|fragment| format!(
+                        "{} ({})",
+                        source_name(&fragment.source),
+                        if fragment.reverse {
+                            "reverse complement"
+                        } else {
+                            "forward"
+                        }
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(" -> "),
+                serde_json::to_string(policy).map_err(|error| Error::Format(error.to_string()))?,
+                options.method
+            ),
             Operation::OverlapExtension {
                 left,
                 right,
@@ -1571,6 +1593,10 @@ pub(crate) fn export_protocol_pdf_checked(
             .find(|entry| entry.step_index == index)
         {
             match &entry.evidence {
+                verification::PhysicalProcessingEvidence::HomologyAssembly(geometry) => {
+                    geometry.validate_documentary()?;
+                    layout.paragraph_size(&format!("Homology assembly physical evidence: selected product top length {:?}; terminal search complete {}; incomplete {}; comparisons {}. Source geometry identities: {}. Full strand/resection/mapping evidence remains in the retained report.", geometry.product.as_ref().map(|product|product.top.len()), geometry.terminal_search_complete, geometry.incomplete, geometry.comparisons, geometry.source_geometry_revisions.join(" / ")), 9.0, INK)?;
+                }
                 verification::PhysicalProcessingEvidence::OverlapExtension(geometry) => {
                     geometry.validate_documentary()?;
                     layout.paragraph_size(&format!("Reciprocal extension evidence: selected homology {} bp; retained terminal pairings {:?}; complete {}; unique within terminal model {}; {} comparisons. Source geometry revisions {} / {}. Exact copied/synthesized strand mappings are retained in the reconstruction report.", geometry.options.overlap, geometry.terminal_pairings.overlaps, geometry.terminal_pairings.complete, geometry.terminal_pairings.unique, geometry.terminal_pairings.comparisons, geometry.source_geometry_revisions[0], geometry.source_geometry_revisions[1]), 9.0, INK)?;

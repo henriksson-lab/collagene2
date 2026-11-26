@@ -210,6 +210,7 @@ pub mod run_catalog_digest;
 pub mod assembly_edit_intent;
 pub mod assembly_substitution_intent;
 
+pub mod homology_assembly;
 pub mod overlap_extension;
 
 pub mod overlap_extension_pcr;

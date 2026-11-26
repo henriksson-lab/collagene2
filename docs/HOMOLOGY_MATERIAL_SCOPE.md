@@ -1,5 +1,9 @@
 # Remaining homology-assembly material workflow
 
+This audit preceded the new [physical model](HOMOLOGY_ASSEMBLY.md). Known sealed
+products now have a checked material-reuse path; the broader limitations below
+remain relevant to reference-only and unsupported outcomes.
+
 The current ordinary overlap recipe ends in `Operation::ProfiledOverlap`
 (`assembly_recipe.rs`, `compile`). The verifier checks oriented sequence,
 homology and the declared profile, then produces a reference molecule. It does

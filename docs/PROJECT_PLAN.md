@@ -2453,3 +2453,37 @@ navigation fix. The frozen source commit also passes all four CI jobs
 (run45789901783): scientific Windows/macOS/Linux and web. This is publication evidence, not GUI acceptance. The original
 full-product goal remains active. Primary literature/vendor references for the
 next physical homology-material work are recorded in [sources](HOMOLOGY_MATERIAL_SOURCES.md).
+
+
+### Physical homology assembly and saved-product reuse — native/WASM checked
+
+The new append-only physical operation reconstructs ordered source strands under
+explicit resection, annealing, template-supported synthesis and eligible nick
+sealing. Historical `ProfiledOverlap` remains reference-only. Ordinary known
+sealed products now support finalize/archive/exact `FromRun` replay into PCR and
+digestion. Circular, linear, self-circularization and single-linear processing
+are represented; real outer overhangs and modification mappings remain explicit.
+
+Unsealed blocked/unknown nick chemistry cannot fit the current private nick
+representation. Its paired diagnostic product and exact chemical/nick evidence
+remain available, explicitly incomplete and reference-only; reusable material is
+withheld. In-Fusion remains its distinct reference route, not an alias for the
+5′ model. Broader nick chemistry, In-Fusion/SLIC and remaining method/platform
+scope stay active. [Model contract](HOMOLOGY_ASSEMBLY.md).
+
+Worker86 adds preview job167, operation24 and physical-evidence3 require
+candidate19/native-plan17, and MCP tool179 shares the same reconstruction.
+Existing science22 operation semantics remain unchanged. Draft10 retains active,
+disabled and unfinished processing fields; old drafts retain their reference
+route. Version fixtures preserve old18 candidate compatibility and reject old
+containers for the new operation rather than weakening historical floors.
+
+52 distinct focused cases pass, including the native circle→finalize/archive→
+closed-origin PCR/digest→HTML/PDF workflow, explicit loss-of-authority negatives,
+real linear ends/fuzzy annotation clipping, independent strand/modification
+fixtures, old ancestry/capability behavior and UI persistence. The new negative
+fixtures were corrected to the established Unsupported→Incomplete contract and
+shared conservative fuzzy-feature policy; actual absence of downstream products
+and material remains asserted. Native/WASM compilation and formatting pass.
+Public8082 remains the combined-cloning worker85 snapshot; no browser checks or
+HTTP smoke checks were run. The complete original product objective remains active.

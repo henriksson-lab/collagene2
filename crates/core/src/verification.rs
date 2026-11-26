@@ -189,6 +189,13 @@ pub enum Operation {
         right: OrientedSource,
         options: crate::overlap_extension::Options,
     },
+    /// Fresh physical resection/pairing/fill/seal under a versioned declared model.
+    /// Historical ProfiledOverlap remains a sequence-reference operation.
+    HomologyAssembly {
+        fragments: Vec<OrientedSource>,
+        options: crate::overlap_profiles::ProfileOptions,
+        policy: crate::homology_assembly::Options,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -265,6 +272,7 @@ pub enum PhysicalProcessingEvidence {
     TopoActions(crate::topo_actions::Report),
     RunProduct(crate::run_material::ReplayEvidence),
     OverlapExtension(crate::overlap_extension::Geometry),
+    HomologyAssembly(crate::homology_assembly::Report),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -801,6 +809,29 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
     };
     let mut count = 0usize;
     for step in &plan.steps {
+        if let Operation::HomologyAssembly {
+            fragments,
+            options,
+            policy,
+        } = step
+        {
+            count += 1;
+            if count > 64 {
+                return Err(Error::TooLarge);
+            }
+            policy.validate_shape(fragments.len())?;
+            options.validate()?;
+            if options.method == crate::overlap_profiles::OverlapMethod::InFusion {
+                return Err(Error::Unsupported("The declared 5′ resection/fill/seal model cannot represent In-Fusion 3′ processing and host rescue; retain its reference-only interpretation.".into()));
+            }
+            if fragments.iter().any(
+                |f| matches!(&f.source, Source::Input(id) if id.trim().is_empty() || id.len()>128),
+            ) {
+                return Err(Error::Format(
+                    "Invalid physical homology source identity".into(),
+                ));
+            }
+        }
         if let Operation::SelectedGoldenGate {
             templates,
             options,
@@ -971,6 +1002,7 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
                 Operation::DeclareSourceTermini { .. }
                     | Operation::CatalogDigest { .. }
                     | Operation::SelectedGoldenGate { .. }
+                    | Operation::HomologyAssembly { .. }
             )
         })
     {
@@ -1031,7 +1063,9 @@ pub fn operation_sources(op: &Operation) -> Vec<&Source> {
             templates: fragments,
             ..
         } => fragments.iter().collect(),
-        Operation::Ligate { fragments, .. } | Operation::ProfiledOverlap { fragments, .. } => {
+        Operation::Ligate { fragments, .. }
+        | Operation::ProfiledOverlap { fragments, .. }
+        | Operation::HomologyAssembly { fragments, .. } => {
             fragments.iter().map(|f| &f.source).collect()
         }
         Operation::OverlapExtension { left, right, .. } => vec![&left.source, &right.source],
@@ -1071,7 +1105,9 @@ pub fn operation_sources_mut(op: &mut Operation) -> Vec<&mut Source> {
             templates: fragments,
             ..
         } => fragments.iter_mut().collect(),
-        Operation::Ligate { fragments, .. } | Operation::ProfiledOverlap { fragments, .. } => {
+        Operation::Ligate { fragments, .. }
+        | Operation::ProfiledOverlap { fragments, .. }
+        | Operation::HomologyAssembly { fragments, .. } => {
             fragments.iter_mut().map(|f| &mut f.source).collect()
         }
         Operation::OverlapExtension { left, right, .. } => {
@@ -1185,6 +1221,7 @@ fn evaluate_captured(
                     | Operation::DeclareSourceTermini { .. }
                     | Operation::CatalogDigest { .. }
                     | Operation::SelectedGoldenGate { .. }
+                    | Operation::HomologyAssembly { .. }
             )
         }) {
             let mut models = plan.inputs.iter().map(|i| &i.molecule).collect::<Vec<_>>();
@@ -2108,6 +2145,9 @@ fn reconstruct(
         {
             return Err(Error::Unsupported("Reference-only ancestry cannot establish a physical PCR/annealing/TOPO substrate. Its full originating graph must be consumed by an explicit supported physical operation; no materialization or graph repair is inferred.".into()));
         }
+        if inherited_reference_only && matches!(step, Operation::HomologyAssembly { .. }) {
+            return Err(Error::Unsupported("Reference-only ancestry cannot provide a physical homology substrate; reconstruct actual original strands first.".into()));
+        }
         let resolve = |source: &Source| -> Result<&Molecule, Error> {
             match source {
                 Source::Input(id) => inputs
@@ -2131,7 +2171,151 @@ fn reconstruct(
         let resolve_physical =
             |source: &Source| -> Result<Duplex, Error> { Ok(resolve_tracked(source)?.duplex) };
         let mut next_physical = None;
+        let mut diagnostic_reference_only = false;
         let mut product = match step {
+            Operation::HomologyAssembly {
+                fragments,
+                options,
+                policy,
+            } => {
+                if physical_processing_reports.len() >= 64 {
+                    return Err(Error::TooLarge);
+                }
+                policy.validate_shape(fragments.len())?;
+                options.validate()?;
+                // Resolve actual native states first. Reference-only steps and
+                // imported producer metadata cannot supply this operation.
+                let mut tracked = Vec::with_capacity(fragments.len());
+                for fragment in fragments {
+                    let material = resolve_tracked(&fragment.source)?;
+                    tracked.push(if fragment.reverse {
+                        material.reverse()?
+                    } else {
+                        material
+                    });
+                }
+                let refs = tracked.iter().collect::<Vec<_>>();
+                let (material, geometry) = modified_duplex::homology_assemble(&refs, policy)?;
+                step_evidence_bytes = step_evidence_bytes
+                    .checked_add(evidence_bytes(&geometry, 32 * 1024 * 1024)?)
+                    .filter(|n| *n <= 32 * 1024 * 1024)
+                    .ok_or(Error::TooLarge)?;
+                findings.extend(geometry.warnings.iter().take(100).cloned());
+                findings.extend(geometry.limits.iter().take(100).cloned());
+                if geometry.incomplete {
+                    incomplete.push(format!("Step {} physical homology assembly retains unresolved nick chemistry, terminal alternatives or bounded-search limits.",index+1));
+                }
+                let reference_top_start = geometry.reference_top_start;
+                let reference_top_end = geometry.reference_top_end;
+                let reference_length = geometry.reference_length;
+                let diagnostic = if material.is_none() {
+                    geometry
+                        .product
+                        .as_ref()
+                        .map(|d| d.molecule(format!("Homology diagnostic {}", index + 1)))
+                        .transpose()?
+                } else {
+                    None
+                };
+                physical_processing_reports.push(PhysicalProcessingStepReport {
+                    step_index: index,
+                    evidence: PhysicalProcessingEvidence::HomologyAssembly(geometry),
+                });
+                let mut product = if let Some(material) = &material {
+                    material
+                        .duplex
+                        .molecule(format!("Homology assembly {}", index + 1))?
+                } else {
+                    diagnostic_reference_only = true;
+                    incomplete.push(format!("Step {} retains paired diagnostic strands but withholds reusable material: internal nick chemistry cannot be faithfully represented by the current private duplex model.",index+1));
+                    diagnostic.ok_or_else(|| Error::Unsupported("Physical homology assembly withheld its product: no unsupported gap fill or reference-derived material is invented.".into()))?
+                };
+                // Advisory sequence guidance is checked on the exact source
+                // molecules, after actual strand reconstruction. It cannot
+                // choose a physical path or create the private material above.
+                let sources = fragments
+                    .iter()
+                    .map(|f| resolve(&f.source).cloned())
+                    .collect::<Result<Vec<_>, _>>()?;
+                let reverse = fragments.iter().map(|f| f.reverse).collect::<Vec<_>>();
+                let circular = policy.topology == Topology::Circular;
+                let profile = crate::overlap_profiles::check_oriented_fragments(
+                    &sources,
+                    &reverse,
+                    &policy.overlaps,
+                    circular,
+                    options,
+                )?;
+                if !profile.geometry_valid {
+                    return Err(Error::Format("Source homology guidance disagrees with freshly reconstructed material geometry".into()));
+                }
+                if !profile.complete {
+                    incomplete.push(format!("Step {} advisory homology repeat scan reached its bound; alternatives remain unsearched.",index+1));
+                }
+                findings.extend(profile.findings.iter().take(100).cloned());
+                findings.extend(profile.warnings.iter().take(100).cloned());
+                let mut oriented = Vec::with_capacity(sources.len());
+                for (source, reverse) in sources.iter().zip(&reverse) {
+                    if *reverse {
+                        let mut model = Molecule::dna(
+                            format!("Oriented {}", source.name),
+                            source.sequence.reverse_complement()?.as_str(),
+                            source.topology,
+                        )?;
+                        project_into(
+                            source,
+                            &[MappingSegment {
+                                source_start: 0,
+                                source_end: source.sequence.len(),
+                                destination_start: 0,
+                                reverse: true,
+                            }],
+                            &mut model,
+                            findings,
+                        )?;
+                        carry_unmapped_evidence(source, &mut model);
+                        oriented.push(model);
+                    } else {
+                        oriented.push(source.clone());
+                    }
+                }
+                let refs = oriented.iter().collect::<Vec<_>>();
+                let reference =
+                    assemble_overlap(&refs, &policy.overlaps, circular, index, findings)?;
+                if reference.sequence.len() != reference_length
+                    || reference_top_start >= reference_top_end
+                    || reference
+                        .sequence
+                        .as_str()
+                        .get(reference_top_start..reference_top_end)
+                        != Some(product.sequence.as_str())
+                {
+                    return Err(Error::Format("Source-only annotation reference differs from independently constructed physical strands".into()));
+                }
+                project_into(
+                    &reference,
+                    &[MappingSegment {
+                        source_start: reference_top_start,
+                        source_end: reference_top_end,
+                        destination_start: 0,
+                        reverse: false,
+                    }],
+                    &mut product,
+                    findings,
+                )?;
+                carry_unmapped_evidence(&reference, &mut product);
+                product.metadata.insert(
+                    "homology_assembly:policy".into(),
+                    serde_json::to_string(policy).map_err(|e| Error::Format(e.to_string()))?,
+                );
+                product.metadata.insert(
+                    "homology_assembly:profile".into(),
+                    serde_json::to_string(options).map_err(|e| Error::Format(e.to_string()))?,
+                );
+                findings.push(format!("Step {} reconstructs retained source strands, declared 5′ cuts, template-supported synthesis and eligible nick seals before target comparison. This explicit ideal model is not experimental success, host rescue or proprietary kit chemistry.",index+1));
+                next_physical = material;
+                product
+            }
             Operation::OverlapExtension {
                 left,
                 right,
@@ -3286,7 +3470,8 @@ fn reconstruct(
                 product
             }
         };
-        let is_reference_only = inherited_reference_only
+        let is_reference_only = diagnostic_reference_only
+            || inherited_reference_only
             || matches!(
                 step,
                 Operation::RecombineReference { .. }
@@ -3462,6 +3647,9 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
     };
     for (step_index, step) in plan.steps.iter().enumerate() {
         match step {
+            Operation::HomologyAssembly { fragments, options, policy } => {
+                body.push_str(&format!("<li>Physical homology assembly of ordered substrates {}. Declared geometry and 5′ processing/fill/sealing policy: <code>{}</code>. Advisory sequence profile: <code>{}</code>. Surviving source strands retain modifications; only actual template-supported synthesis is unmodified. Eligible paired 3′OH/5′P nicks may seal; unresolved chemistry stays explicit. Linear outer-end processing is retained, not silently blunted. This model does not establish experimental success or a proprietary formulation.</li>",fragments.iter().map(|f|format!("{} ({})",source(&f.source),if f.reverse{"reverse complement"}else{"forward"})).collect::<Vec<_>>().join(", "),e(&serde_json::to_string(policy).unwrap_or_default()),e(&serde_json::to_string(options).unwrap_or_default())));
+            },
             Operation::OverlapExtension { left, right, options } => {
                 body.push_str(&format!("<li>Denature overlapping duplexes {} ({}) and {} ({}), reanneal left top/right bottom strands across {} bp, and extend both paired 3′ ends. Minimum terminal pairing {} bp. Complementary synthesis is assumed unmodified; selected geometry does not establish isolation or experimental success.</li>", source(&left.source), if left.reverse {"reverse complement"} else {"forward"}, source(&right.source), if right.reverse {"reverse complement"} else {"forward"}, options.overlap, options.min_paired_bases));
             },
@@ -3616,6 +3804,16 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
         body.push_str("<h2>Accounted physical processing evidence</h2><ul>");
         for step in &report.physical_processing_reports {
             match &step.evidence {
+                PhysicalProcessingEvidence::HomologyAssembly(geometry) => {
+                    body.push_str(&format!("<li>Step {} physical homology assembly: {} junctions, {} resected strand spans; paired diagnostic product available {}; incomplete {}; terminal search complete {}; {} comparisons.<ul>",step.step_index+1,geometry.junctions.len(),geometry.resected.len(),geometry.product.is_some(),geometry.incomplete,geometry.terminal_search_complete,geometry.comparisons));
+                    for junction in &geometry.junctions {
+                        body.push_str(&format!("<li>Sources {} → {}: {} bp homology; gaps top/bottom {}/{}; seals top/bottom {}/{}; top nick at {} and bottom nick at {} (zero-based product boundaries).</li>",junction.left_source+1,junction.right_source+1,junction.overlap,junction.top_gap,junction.bottom_gap,junction.top_sealed,junction.bottom_sealed,junction.top_nick,junction.bottom_nick));
+                    }
+                    for note in geometry.warnings.iter().chain(&geometry.limits) {
+                        body.push_str(&format!("<li>{}</li>", e(note)));
+                    }
+                    body.push_str("</ul></li>");
+                }
                 PhysicalProcessingEvidence::OverlapExtension(geometry) => {
                     body.push_str(&format!("<li>Step {} reciprocal extension: selected homology {} bp; retained terminal pairings {:?}; complete search {}; unique within terminal model {}; {} comparisons. Original source geometry revisions: {} / {}. Exact copied/synthesized strand mappings remain in the reconstruction report.</li>", step.step_index+1, geometry.options.overlap, geometry.terminal_pairings.overlaps, geometry.terminal_pairings.complete, geometry.terminal_pairings.unique, geometry.terminal_pairings.comparisons, e(&geometry.source_geometry_revisions[0]), e(&geometry.source_geometry_revisions[1])));
                 }

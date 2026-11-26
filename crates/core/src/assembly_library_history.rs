@@ -269,6 +269,7 @@ fn active(w: &Workspace) -> Result<(&str, &WorkspaceAttachment), Error> {
                 | "assembly-draft-v7"
                 | "assembly-draft-v8"
                 | "assembly-draft-v9"
+                | "assembly-draft-v10"
                 | ACTIVE_DRAFT_KIND
         )
     });
@@ -357,6 +358,7 @@ pub fn allocation_highwater(w: &Workspace, library_id: &str) -> Result<u64, Erro
                     | "assembly-draft-v7"
                     | "assembly-draft-v8"
                     | "assembly-draft-v9"
+                    | "assembly-draft-v10"
                     | ACTIVE_DRAFT_KIND
             )
         })
@@ -489,6 +491,7 @@ pub fn install(mut w: Workspace, record: Record, after: Vec<u8>) -> Result<Commi
                 | "assembly-draft-v7"
                 | "assembly-draft-v8"
                 | "assembly-draft-v9"
+                | "assembly-draft-v10"
                 | ACTIVE_DRAFT_KIND
         )
     });

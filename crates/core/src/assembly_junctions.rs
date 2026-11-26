@@ -58,7 +58,7 @@ impl Options {
 }
 dto! {#[derive(PartialEq,Eq)] pub struct Range {pub start:usize,pub end:usize}}
 dto! {pub struct GoldenGatePart {pub path_index:usize,pub pool_fragment:usize,pub template_index:usize,pub template:Source,pub template_revision:String,pub template_length:usize,pub fragment_index:usize,pub top_start:usize,pub bottom_start:i64,pub reverse:bool,pub top_length:usize,pub bottom_length:usize,pub output_start:usize,pub output_end:usize,pub left_end:Option<End>,pub right_end:Option<End>}}
-dto! {pub enum Method {Ligate,Overlap,ProfiledOverlap,GoldenGate{candidate_index:usize,path:Vec<GoldenGatePart>,enumeration_complete:bool,states_examined:usize,truncation_reasons:Vec<String>}}}
+dto! {pub enum Method {Ligate,Overlap,ProfiledOverlap,GoldenGate{candidate_index:usize,path:Vec<GoldenGatePart>,enumeration_complete:bool,states_examined:usize,truncation_reasons:Vec<String>},HomologyAssembly}}
 dto! {pub struct Window {pub parts:Vec<Range>,pub dna:String,pub boundary_offset:usize,pub left_bases:usize,pub right_bases:usize,pub clipped:bool}}
 dto! {pub struct Codon {pub dna:String,pub amino_acid:char,/// Offset in the selected frame's oriented WINDOW, not the full product.
 pub window_start:usize}}
@@ -398,6 +398,76 @@ fn geometry(
             *circular,
             Method::Overlap,
         ),
+        Operation::HomologyAssembly {
+            fragments, policy, ..
+        } => {
+            let step = plan
+                .steps
+                .len()
+                .checked_sub(1)
+                .ok_or_else(|| bad("empty homology plan"))?;
+            let native = verification
+                .physical_processing_reports
+                .iter()
+                .find_map(|entry| {
+                    if entry.step_index != step {
+                        return None;
+                    }
+                    match &entry.evidence {
+                        verification::PhysicalProcessingEvidence::HomologyAssembly(report) => {
+                            Some(report)
+                        }
+                        _ => None,
+                    }
+                })
+                .ok_or_else(|| bad("native homology strand evidence is unavailable"))?;
+            native.validate_documentary()?;
+            if assembly_recipe::hash(&native.options)? != assembly_recipe::hash(policy)?
+                || native.source_geometry_revisions.len() != fragments.len()
+                || native.product.as_ref().is_none_or(|duplex| {
+                    duplex.top != product.sequence || duplex.topology != product.topology
+                })
+            {
+                return Err(bad(
+                    "homology junction evidence does not match the actual final product/policy",
+                ));
+            }
+            let physical = native
+                .product
+                .as_ref()
+                .ok_or_else(|| bad("homology product withheld"))?;
+            let mut output = Vec::with_capacity(native.junctions.len());
+            for (index, junction) in native.junctions.iter().enumerate() {
+                let start = usize::try_from(junction.homology_start)
+                    .map_err(|_| bad("homology lies outside the displayed top reference"))?;
+                let end = usize::try_from(junction.homology_end)
+                    .map_err(|_| bad("homology lies outside the displayed top reference"))?;
+                if start >= end
+                    || end > product.sequence.len()
+                    || junction.left_source >= fragments.len()
+                    || junction.right_source >= fragments.len()
+                {
+                    return Err(bad(
+                        "native homology coordinates exceed this displayed top reference",
+                    ));
+                }
+                let closing = policy.topology == Topology::Circular && junction.right_source == 0;
+                output.push(Geometry {
+                    index,
+                    upstream: junction.left_source,
+                    downstream: junction.right_source,
+                    closing,
+                    boundary: if closing { 0 } else { end },
+                    homology: vec![Range { start, end }],
+                    physical: Some(JunctionPhysical {
+                        upstream_end: None,
+                        downstream_end: None,
+                        product_nicks: physical.nicks.clone(),
+                    }),
+                });
+            }
+            Ok((Method::HomologyAssembly, output))
+        }
         Operation::ProfiledOverlap {
             fragments,
             overlaps,

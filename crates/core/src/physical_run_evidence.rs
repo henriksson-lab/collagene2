@@ -85,6 +85,7 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
                 Operation::TopoActions { .. }
                     | Operation::ReconstructRunProduct { .. }
                     | Operation::OverlapExtension { .. }
+                    | Operation::HomologyAssembly { .. }
             )
             .then_some(i)
         })
@@ -97,6 +98,16 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
             return Err(bad("processed step order changed"));
         }
         let report = match (&r.plan.steps[index], &step.evidence) {
+            (
+                Operation::HomologyAssembly { policy, .. },
+                crate::verification::PhysicalProcessingEvidence::HomologyAssembly(geometry),
+            ) => {
+                geometry.validate_documentary()?;
+                if assembly_recipe::hash(policy)? != assembly_recipe::hash(&geometry.options)? {
+                    return Err(bad("homology assembly policy changed"));
+                }
+                continue;
+            }
             (
                 Operation::OverlapExtension { options, .. },
                 crate::verification::PhysicalProcessingEvidence::OverlapExtension(geometry),
@@ -251,7 +262,10 @@ pub(crate) fn validate_workspace(w: &Workspace) -> Result<(), Error> {
         if r.plan.steps.iter().any(|s| {
             matches!(
                 s,
-                Operation::TopoActions { .. } | Operation::ReconstructRunProduct { .. }
+                Operation::TopoActions { .. }
+                    | Operation::ReconstructRunProduct { .. }
+                    | Operation::OverlapExtension { .. }
+                    | Operation::HomologyAssembly { .. }
             )
         }) && !found.contains(&r.run_id)
         {

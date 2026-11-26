@@ -134,6 +134,18 @@ pub fn load_candidate(bytes: &[u8]) -> Result<Candidate, Error> {
 /// Candidate::validate through nested origins.
 pub(crate) fn decode_candidate_shallow(bytes: &[u8]) -> Result<Candidate, Error> {
     let candidate: Candidate = protocol::decode(b"CGP\0", bytes)?;
+    if u16::from_le_bytes([bytes[4], bytes[5]]) < 19
+        && candidate.plan.steps.iter().any(|step| {
+            matches!(
+                step,
+                crate::verification::Operation::HomologyAssembly { .. }
+            )
+        })
+    {
+        return Err(Error::Unsupported(
+            "Physical homology assembly requires candidate schema19".into(),
+        ));
+    }
     if u16::from_le_bytes([bytes[4], bytes[5]]) < 18
         && candidate
             .plan

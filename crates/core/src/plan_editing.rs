@@ -41,9 +41,9 @@ fn reference_count(op: &Operation) -> usize {
             templates: fragments,
             ..
         } => fragments.len(),
-        Operation::Ligate { fragments, .. } | Operation::ProfiledOverlap { fragments, .. } => {
-            fragments.len()
-        }
+        Operation::Ligate { fragments, .. }
+        | Operation::ProfiledOverlap { fragments, .. }
+        | Operation::HomologyAssembly { fragments, .. } => fragments.len(),
         Operation::RecombineReference { .. }
         | Operation::AnnealOligos { .. }
         | Operation::OverlapExtension { .. } => 2,

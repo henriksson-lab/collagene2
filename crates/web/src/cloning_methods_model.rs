@@ -599,6 +599,120 @@ impl OverlapInput {
         )
     }
 }
+/// Editable generic 5′ resection policy, never evidence of a completed reaction.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HomologyForm {
+    pub enabled: bool,
+    pub exact_homology: bool,
+    pub cuts: String,
+    pub all_accessible_ends: bool,
+    pub outer_left: String,
+    pub outer_right: String,
+    pub min_paired_bases: String,
+    pub max_comparisons: String,
+    pub max_candidates: String,
+}
+impl Default for HomologyForm {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            exact_homology: true,
+            cuts: String::new(),
+            all_accessible_ends: false,
+            outer_left: "0".into(),
+            outer_right: "0".into(),
+            min_paired_bases: "12".into(),
+            max_comparisons: "20000000".into(),
+            max_candidates: "100".into(),
+        }
+    }
+}
+impl HomologyForm {
+    pub(crate) fn validate_raw(&self) -> Result<(), String> {
+        if self.cuts.len() > 1024
+            || [
+                &self.outer_left,
+                &self.outer_right,
+                &self.min_paired_bases,
+                &self.max_comparisons,
+                &self.max_candidates,
+            ]
+            .iter()
+            .any(|s| s.len() > 20)
+        {
+            return Err(
+                "Strand reconstruction settings exceed their editable field bounds.".into(),
+            );
+        }
+        Ok(())
+    }
+    pub(crate) fn policy(
+        &self,
+        overlaps: Vec<usize>,
+        circular: bool,
+        rows: usize,
+    ) -> Result<collagene_core::homology_assembly::Options, String> {
+        use collagene_core::homology_assembly::{EndCuts, Options, OuterEndPolicy, Resection};
+        self.validate_raw()?;
+        let number = |s: &str| -> Result<usize, String> {
+            if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+                return Err(
+                    "Complete the strand reconstruction settings with nonnegative whole numbers."
+                        .into(),
+                );
+            }
+            s.parse()
+                .map_err(|_| "A strand reconstruction number is too large.".into())
+        };
+        let resection = if self.exact_homology {
+            Resection::ExactHomology
+        } else {
+            let cuts = self
+                .cuts
+                .split(',')
+                .map(|pair| {
+                    let (left, right) = pair.trim().split_once(':').ok_or(
+                        "Supply one left:right 5′ cut pair per fragment, separated by commas.",
+                    )?;
+                    Ok(EndCuts {
+                        left: number(left.trim())?,
+                        right: number(right.trim())?,
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            if cuts.len() != rows {
+                return Err(
+                    "Supply exactly one 5′ cut pair per oriented prepared fragment.".into(),
+                );
+            }
+            Resection::Explicit { cuts }
+        };
+        let outer_end_policy = if !circular && self.all_accessible_ends {
+            OuterEndPolicy::AllAccessibleEnds {
+                left: number(&self.outer_left)?,
+                right: number(&self.outer_right)?,
+            }
+        } else {
+            OuterEndPolicy::JoiningEndsOnly
+        };
+        let policy = Options {
+            overlaps,
+            topology: if circular {
+                collagene_core::Topology::Circular
+            } else {
+                collagene_core::Topology::Linear
+            },
+            resection,
+            outer_end_policy,
+            min_paired_bases: number(&self.min_paired_bases)?,
+            max_comparisons: number(&self.max_comparisons)?,
+            max_candidates: number(&self.max_candidates)?,
+        };
+        policy.validate_shape(rows).map_err(|e| e.to_string())?;
+        Ok(policy)
+    }
+}
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MethodsState {
     pub mode: Mode,
@@ -626,6 +740,8 @@ pub struct MethodsState {
     /// existing ordinal identity contract; explicit identities are never repinned.
     #[serde(default, deserialize_with = "deserialize_source_roles")]
     pub source_roles: Option<Vec<Role>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub homology: Option<HomologyForm>,
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GoldenGateForm {
@@ -753,6 +869,7 @@ impl Default for MethodsState {
             golden_gate_pool: None,
             multisite: None,
             source_roles: None,
+            homology: None,
         }
     }
 }
@@ -902,6 +1019,15 @@ impl MethodsState {
         }
     }
     pub(crate) fn profile(&self) -> Result<(Vec<usize>, ProfileOptions), String> {
+        // A linear singleton has no joining boundary. An empty declaration is
+        // meaningful only in the explicitly selected physical processing route.
+        if self.overlaps.trim().is_empty()
+            && self.rows.len() == 1
+            && !self.circular
+            && self.homology.as_ref().is_some_and(|form| form.enabled)
+        {
+            return Ok((Vec::new(), self.profile_options()?));
+        }
         let overlaps = self
             .overlaps
             .split(',')
@@ -1085,5 +1211,71 @@ mod overlap_extension_tests {
         }
         raw.max_comparisons = "9".repeat(21);
         assert!(raw.validate_raw().is_err());
+    }
+}
+
+#[cfg(test)]
+mod homology_tests {
+    use super::*;
+    #[test]
+    fn physical_linear_singleton_has_no_phantom_junction_and_reference_csv_stays_strict() {
+        let mut state = MethodsState::default();
+        state.circular = false;
+        state.rows.truncate(1);
+        state.overlaps.clear();
+        assert!(state.profile().is_err());
+        state.homology = Some(HomologyForm::default());
+        let (overlaps, _) = state.profile().unwrap();
+        assert!(overlaps.is_empty());
+        let policy = state
+            .homology
+            .as_ref()
+            .unwrap()
+            .policy(overlaps, false, 1)
+            .unwrap();
+        assert!(policy.overlaps.is_empty());
+        state.circular = true;
+        assert!(state.profile().is_err());
+        state.circular = false;
+        state.rows.push(OverlapInput::default());
+        assert!(state.profile().is_err());
+        state.rows.truncate(1);
+        state.homology.as_mut().unwrap().enabled = false;
+        assert!(state.profile().is_err());
+    }
+    #[test]
+    fn raw_policy_maps_oriented_cuts_outer_tails_and_bounds_without_promoting_partials() {
+        use collagene_core::homology_assembly::{OuterEndPolicy, Resection};
+        let mut form = HomologyForm::default();
+        let policy = form.policy(vec![16], false, 2).unwrap();
+        assert_eq!(policy.overlaps, vec![16]);
+        assert_eq!(policy.topology, collagene_core::Topology::Linear);
+        assert!(matches!(policy.resection, Resection::ExactHomology));
+        assert!(matches!(
+            policy.outer_end_policy,
+            OuterEndPolicy::JoiningEndsOnly
+        ));
+        form.exact_homology = false;
+        form.cuts = "2:19, 17:3".into();
+        form.all_accessible_ends = true;
+        form.outer_left = "2".into();
+        form.outer_right = "3".into();
+        let policy = form.policy(vec![16], false, 2).unwrap();
+        assert!(
+            matches!(policy.resection,Resection::Explicit{cuts} if cuts.len()==2&&cuts[0].left==2&&cuts[0].right==19&&cuts[1].left==17&&cuts[1].right==3)
+        );
+        assert!(matches!(
+            policy.outer_end_policy,
+            OuterEndPolicy::AllAccessibleEnds { left: 2, right: 3 }
+        ));
+        form.cuts = "2:unfinished,17:3".into();
+        form.validate_raw().unwrap();
+        assert!(form.policy(vec![16], false, 2).is_err());
+        form.exact_homology = true;
+        form.all_accessible_ends = false;
+        form.outer_left = "inactive".into();
+        assert!(form.policy(vec![16, 16], true, 2).is_ok());
+        let legacy = serde_json::to_value(MethodsState::default()).unwrap();
+        assert!(legacy.get("homology").is_none());
     }
 }

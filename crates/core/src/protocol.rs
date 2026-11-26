@@ -6,8 +6,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 85;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 18;
+pub const WORKER_SCHEMA_VERSION: u16 = 86;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 19;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
@@ -942,6 +942,12 @@ pub enum AnalysisJob {
         inputs: Vec<crate::verification::PlanInput>,
         request: crate::assembly_edited_primer_design::Request,
     },
+    PreviewHomologyRecipe {
+        inputs: Vec<crate::verification::PlanInput>,
+        target: Molecule,
+        recipe: crate::assembly_recipe::Recipe,
+        policy: crate::homology_assembly::Options,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1342,6 +1348,21 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         crate::pairwise_context::preflight(report, reference, query, *translate)?;
     }
     match &r.job {
+        AnalysisJob::PreviewHomologyRecipe {
+            inputs,
+            target,
+            recipe,
+            policy,
+        } => {
+            if inputs.len() > crate::assembly_recipe::MAX_ROWS {
+                return Err(Error::TooLarge);
+            }
+            let sources = inputs
+                .iter()
+                .map(|input| (input.id.as_str(), &input.molecule))
+                .collect::<Vec<_>>();
+            crate::assembly_recipe::homology_source_preflight(&sources, target, recipe, policy)?;
+        }
         AnalysisJob::DesignEditedOverlapPrimers { inputs, request } => {
             if inputs.len() > 32 {
                 return Err(Error::TooLarge);
@@ -2944,6 +2965,14 @@ fn preflight_mismatch_digest_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error
     }
     Ok(())
 }
+fn preflight_homology_recipe_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 86)?;
+    }
+    Ok(())
+}
 fn preflight_edited_overlap_primer_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -3173,6 +3202,10 @@ fn check_verification_report_version(
                     check_variant_version(bytes, 81)?;
                     r.validate_documentary()?;
                 }
+                crate::verification::PhysicalProcessingEvidence::HomologyAssembly(report) => {
+                    check_variant_version(bytes, 86)?;
+                    report.validate_documentary()?;
+                }
             }
         }
     }
@@ -3283,6 +3316,9 @@ mod preparation_shape {
     }
     fn variant(worker: u16, name: &str, variant: &str) -> Result<(), Found> {
         let minimum = match (name, variant) {
+            ("Operation", "HomologyAssembly")
+            | ("PhysicalProcessingEvidence", "HomologyAssembly")
+            | ("Method", "HomologyAssembly") => 86,
             ("Preparation", "OverlapExtensionPcrCatalogDigest")
             | ("RunPreparation", "OverlapExtensionPcrCatalogDigest") => 84,
             ("Preparation", "OverlapExtensionPcr")
@@ -3503,7 +3539,7 @@ mod preparation_shape {
 }
 fn check_preparation_version(bytes: &[u8], value: &impl Serialize) -> Result<(), Error> {
     let worker = u16::from_le_bytes([bytes[4], bytes[5]]);
-    if worker < 84 {
+    if worker < 86 {
         value
             .serialize(preparation_shape::Visitor {
                 worker,
@@ -3549,7 +3585,9 @@ fn check_workspace_version(
         check_preparation_version(bytes, &candidate.plan)?;
     }
     for attachment in workspace.attachments.values() {
-        if attachment.kind == "assembly-draft-v9" {
+        if attachment.kind == "assembly-draft-v10" {
+            check_variant_version(bytes, 86)?;
+        } else if attachment.kind == "assembly-draft-v9" {
             check_variant_version(bytes, 84)?;
         } else if attachment.kind == "assembly-draft-v8" {
             check_variant_version(bytes, 82)?;
@@ -3566,6 +3604,9 @@ fn check_workspace_version(
             let record = crate::run_lineage::load_run_record(&attachment.bytes)?;
             check_variant_version(bytes, plan_worker_version(&record.plan))?;
             check_preparation_version(bytes, &record.plan)?;
+            if record.plan_schema >= 17 {
+                check_variant_version(bytes, 86)?;
+            }
             if record.plan_schema >= 16 {
                 check_variant_version(bytes, 81)?;
             }
@@ -3722,6 +3763,7 @@ fn plan_worker_version(plan: &crate::verification::DesignPlan) -> u16 {
     plan.steps
         .iter()
         .map(|step| match step {
+            crate::verification::Operation::HomologyAssembly { .. } => 86,
             crate::verification::Operation::OverlapExtension { .. } => 81,
             crate::verification::Operation::ReconstructRunProduct { .. } => 73,
             crate::verification::Operation::MultiSiteRecombineReference { .. } => 68,
@@ -3836,6 +3878,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_overlap_extension_primer_tag(bytes, &[164])?;
     preflight_overlap_extension_digest_tag(bytes, &[165])?;
     preflight_edited_overlap_primer_tag(bytes, &[166])?;
+    preflight_homology_recipe_tag(bytes, &[167])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -3843,6 +3886,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::PreviewHomologyRecipe { .. } => 86,
         AnalysisJob::DesignEditedOverlapPrimers { .. } => 85,
         AnalysisJob::InspectOverlapExtensionDigest { .. } => 84,
         AnalysisJob::DesignOverlapExtensionPrimers { .. } => 83,
@@ -4287,6 +4331,19 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
                     "Mismatch PCR digest original source/origin/policy/catalog context changed"
                         .into(),
                 ));
+            }
+            None
+        }
+        AnalysisJob::PreviewHomologyRecipe {
+            inputs,
+            target,
+            recipe,
+            policy,
+        } => {
+            if crate::assembly_recipe::homology_preview_revision(inputs, target, recipe, policy)?
+                != r.revision
+            {
+                return Err(Error::Format("Homology recipe source, target, preparation or explicit physical policy changed".into()));
             }
             None
         }
@@ -5552,6 +5609,13 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             request,
         } => crate::mismatch_pcr_digest_inspection::inspect(&molecule, origin.as_ref(), &request)
             .map(AnalysisResult::MismatchPcrDigestInspection),
+        AnalysisJob::PreviewHomologyRecipe {
+            inputs,
+            target,
+            recipe,
+            policy,
+        } => crate::assembly_recipe::preview_homology(&inputs, &target, &recipe, &policy)
+            .map(AnalysisResult::OverlapRecipePreview),
         AnalysisJob::DesignEditedOverlapPrimers { inputs, request } => {
             crate::assembly_edited_primer_design::design(&inputs, &request)
                 .map(AnalysisResult::EditedOverlapPrimersDesigned)

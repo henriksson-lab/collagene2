@@ -162,11 +162,18 @@ fn worker82_preserves_actual_branched_preparation_and_existing_candidate18_opera
     );
     assert_eq!(serde_json::to_value(inputs).unwrap(), sources_before);
     assert!(protocol::decode_response(&wire(b"CGR\0", 81, &response)).is_err());
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 18);
-    assert_eq!(collagene_core::workspace::PLAN_SCHEMA_VERSION, 16);
     assert!(preview.verification.engine_version.ends_with("/science-22"));
     let candidate = Candidate::new(preview.compiled.plan.clone());
-    assert!(transfer::load_candidate(&transfer::save_candidate(&candidate).unwrap()).is_ok());
+    let encoded_candidate = transfer::save_candidate(&candidate).unwrap();
+    assert_eq!(
+        &encoded_candidate[4..6],
+        &protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
+    );
+    assert!(transfer::load_candidate(&encoded_candidate).is_ok());
+    // These existing operations still retain their historical candidate18 floor.
+    let mut historical_candidate = encoded_candidate;
+    historical_candidate[4..6].copy_from_slice(&18u16.to_le_bytes());
+    assert!(transfer::load_candidate(&historical_candidate).is_ok());
     // Compiled plans contain the already-versioned physical operation, not the
     // new recipe selector, and therefore keep their worker81 capability floor.
     let verify = Request {

@@ -2067,3 +2067,47 @@ has been drafted separately and remains unregistered/uncompiled for the next
 milestone. Its viewer integration must update the sequence selection without
 remounting or resetting the right-hand plasmid camera. The full original project
 goal and exclusions remain active.
+
+### Precise actual-junction navigation
+
+The reconstructed-product junction inspector now offers explicit navigation to
+its native junction window or homology bases. Navigation is tied to the exact
+original plan, independent target, inspection options, engine and full actual
+final molecule. A leading preparation cannot substitute for a missing final
+product. A wrong-target reconstruction remains available for diagnosis, without
+changing the verifier's verdict. Circular-origin windows retain their biological
+order as separate exact product-coordinate ranges.
+
+The parent rechecks the native receipt and selection before issuing a private
+readonly display request. The existing ReferenceCanvas updates selection/highlight
+signals rather than rebuilding the molecule or renderer; repeated navigation can
+revisit the same interval after manual scrolling. Map-only mode reveals Sequence
+in Split view and the sequence pane scrolls into view after layout. Plasmid rotation
+and zoom are preserved. The overview remains rotation-only; neither navigation nor
+highlighting creates documents, physical material, history events or new authority.
+Stale epoch/settings/identity and disposed owners cannot apply pending navigation.
+
+Nine focused native fixtures pass for actual ligation/overlap windows, circular
+order, homology, full-product/source/target binding, missing-final rejection and
+existing product-snapshot invariants. The ligation fixture explicitly declares
+its original duplex termini before phosphorylation and sealed closure. Native
+product bounds and DNA alphabet checks are retained. The full offline frontend/
+worker build passes, as do formatting and whitespace checks. Static integrity
+validation passes for45 immutable assets, retaining the existing12 worker versions;
+the active scientific worker remains79. Public8082 now serves the combined
+inverse-PCR and exact-junction navigation bundle. Exact process/socket metadata
+was verified without browser or HTTP application checks. The final source matches
+the frozen compiled inputs; visual acceptance and the full original goal remain
+outstanding.
+
+The queued navigation frame checks both its request identity and the current
+feature/range/view state before scrolling or notifying selection. A newer Clear,
+Go to, feature, base-range or Map action cannot be overwritten by that frame.
+Named editable design persistence and its compact controls have been drafted in
+two separate unregistered modules for the next milestone; they are not part of
+this published bundle and their new fixtures have not yet been compiled.
+
+The preceding138f220 commit completed all four CI jobs successfully in GitHub
+run45762136629 (native Windows/macOS/Linux and web). The new junction-viewer
+increment will receive its own post-push matrix; no result is inferred for it
+from that preceding commit.

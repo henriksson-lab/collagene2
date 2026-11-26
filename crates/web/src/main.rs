@@ -44,6 +44,8 @@ mod assembly_fusion_view;
 mod assembly_inverse_pcr_model;
 #[cfg(target_arch = "wasm32")]
 mod assembly_inverse_pcr_view;
+#[cfg(any(target_arch = "wasm32", test))]
+mod assembly_junction_navigation_model;
 #[cfg(target_arch = "wasm32")]
 mod assembly_library_add_view;
 #[cfg(any(target_arch = "wasm32", test))]

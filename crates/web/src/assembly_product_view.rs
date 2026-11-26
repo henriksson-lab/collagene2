@@ -11,7 +11,13 @@ use collagene_core::{
     verification::{self, DesignPlan, Status, VerificationReport},
 };
 use leptos::{html, prelude::*};
-use std::{rc::Rc, sync::Arc};
+use std::{
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
@@ -24,6 +30,15 @@ fn clip(value: &str, limit: usize) -> String {
         text
     }
 }
+/// Private display request: the parent has checked the complete native receipt.
+/// A new serial can revisit the same exact interval without recreating the map.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ReferenceNavigation {
+    product_revision: String,
+    parts: Vec<(usize, usize)>,
+    serial: u64,
+}
+
 #[component]
 pub fn AssemblyProductView(
     plan: DesignPlan,
@@ -41,6 +56,10 @@ pub fn AssemblyProductView(
     let current = Memo::new(move |_| epoch.get() == captured_epoch);
     let status = RwSignal::new(String::new());
     let junctions_open = RwSignal::new(false);
+    let navigation = RwSignal::new(None::<ReferenceNavigation>);
+    let navigation_serial = RwSignal::new(0u64);
+    let navigation_request = Memo::new(move |_| navigation.get());
+
     let intermediates_open = RwSignal::new(false);
     let inspected_step =
         RwSignal::new(snapshot.with_value(|s| s.prefix_available.saturating_sub(1)));
@@ -78,6 +97,36 @@ pub fn AssemblyProductView(
             Ok((s.plan.clone(), s.target.clone()))
         })
     });
+    let navigate_junction = Callback::new(
+        move |(report, index, kind): (
+            Arc<collagene_core::assembly_junctions::Report>,
+            usize,
+            crate::assembly_junction_navigation_model::Kind,
+        )|
+              -> Result<(), String> {
+            if let Some(guard) = guard {
+                guard.run(())?;
+            }
+            if !current.get_untracked() {
+                return Err("Reconstruct the current product before navigating junctions.".into());
+            }
+            let selected = snapshot.with_value(|s| {
+                use crate::assembly_junction_navigation_model as model;
+                let bound = model::capture(s, report.options.clone())?;
+                let selected = model::select(s, &bound, &report, index, kind)?;
+                model::validate_selection(s, &bound, &report, &selected)?;
+                Ok::<_, String>(selected)
+            })?;
+            navigation_serial.update(|serial| *serial = serial.wrapping_add(1));
+            navigation.set(Some(ReferenceNavigation {
+                product_revision: selected.product_revision,
+                parts: selected.parts,
+                serial: navigation_serial.get_untracked(),
+            }));
+            status.set("Exact reconstructed-product bases selected in Sequence. Plasmid rotation and zoom are preserved.".into());
+            Ok(())
+        },
+    );
     let export_identity = Memo::new(move |_| {
         if current.get() {
             snapshot.with_value(|s| {
@@ -154,7 +203,7 @@ pub fn AssemblyProductView(
                 <p>{format!("Final step {} · {} bases · {:?} · {} annotations",s.plan.steps.len(),product.sequence.len(),product.topology,product.features.len())}</p>
                 {(s.report.status==Status::Invalid).then(||view!{<p class="assembly-product-status" role="alert">"The plan/independent target was not accepted. The actual final reconstructed DNA is shown for diagnosis; it must not be mistaken for the intended target."</p>})}
                 {(s.report.status==Status::Incomplete).then(||view!{<p class="helper">"Reconstruction is incomplete under the declared model. This reference view does not resolve its missing evidence or assumptions."</p>})}
-                <ReferenceCanvas product=product identity=product_identity current=current on_message=Callback::new(move|text|status.set(text))/>
+                <ReferenceCanvas product=product identity=product_identity current=current navigation=Some(navigation_request) on_message=Callback::new(move|text|status.set(text))/>
                 <button class="button secondary" disabled=move||!current.get() on:click=open>"Open reconstructed product reference"</button>
             </div>}
         })}else{None})}
@@ -220,7 +269,7 @@ pub fn AssemblyProductView(
             <p class="helper">"Descriptive output from this fresh reconstruction only. This receipt cannot restore physical authority when detached or imported."</p>
         </details>}))}
         <button class="text-tool" disabled=move||!available||!current.get() on:click=move|_|junctions_open.update(|open|*open=!*open)>{move||if junctions_open.get(){"Close fresh junction inspection"}else{"Inspect reconstructed junctions"}}</button>
-        <Show when=move||junctions_open.get()&&available&&current.get()><AssemblyJunctionsPanel capture=capture identity=identity epoch=epoch/></Show>
+        <Show when=move||junctions_open.get()&&available&&current.get()><AssemblyJunctionsPanel capture=capture identity=identity epoch=epoch on_navigate=Some(navigate_junction)/></Show>
     </section>}
 }
 
@@ -269,6 +318,7 @@ pub(crate) fn ReferenceCanvas(
     current: Memo<bool>,
     on_message: Callback<String>,
     #[prop(optional)] initial_spans: Vec<(usize, usize)>,
+    #[prop(optional_no_strip)] navigation: Option<Memo<Option<ReferenceNavigation>>>,
     #[prop(optional_no_strip)] pcr_overlay: Option<Memo<Option<Arc<crate::pcr_overlay::Overlay>>>>,
 ) -> impl IntoView {
     let visible_pcr_overlay = Memo::new(move |_| {
@@ -299,6 +349,74 @@ pub(crate) fn ReferenceCanvas(
     let feature_page = RwSignal::new(0usize);
     let mode = RwSignal::new(Mode::Split);
     let map_stats = RwSignal::new(crate::map_labels::LabelStats::default());
+    let sequence_pane = NodeRef::<html::Div>::new();
+    let alive = Arc::new(AtomicBool::new(true));
+    let cleanup_alive = alive.clone();
+    on_cleanup(move || cleanup_alive.store(false, Ordering::Relaxed));
+    Effect::new(move |_| {
+        let Some(request) = navigation.and_then(|value| value.get()) else {
+            return;
+        };
+        if !current.get_untracked() {
+            return;
+        }
+        let valid =
+            source.with_value(|source| {
+                let n = source.sequence.len();
+                request.product_revision == revision.get_value()
+                    && !request.parts.is_empty()
+                    && request.parts.len() <= 1024
+                    && request.parts.iter().all(|&(a, b)| a < b && b <= n)
+                    && request.parts.iter().enumerate().all(|(i, &(a, b))| {
+                        request.parts[..i].iter().all(|&(c, d)| !(a < d && c < b))
+                    })
+            });
+        if !valid {
+            on_message
+                .run("The navigation interval differs from this exact product reference.".into());
+            return;
+        }
+        batch(|| {
+            selected_feature.set(None);
+            selection.set(request.parts.first().copied());
+            regions.set(Some((revision.get_value(), request.parts.clone())));
+            if mode.get_untracked() == Mode::Map {
+                mode.set(Mode::Split);
+            }
+        });
+        // Wait for Map→Split layout before scrolling the existing sequence pane.
+        // No molecule, renderer, camera or scientific computation is replaced.
+        let alive = alive.clone();
+        let callback = wasm_bindgen::closure::Closure::once_into_js(move || {
+            if !alive.load(Ordering::Relaxed) || !current.get_untracked() {
+                return;
+            }
+            if navigation.and_then(|n| n.get_untracked()).as_ref() != Some(&request) {
+                return;
+            }
+            // A manual feature, Go to, Clear, base selection or Map action is
+            // newer than this queued frame even when the request nonce stayed fixed.
+            if mode.get_untracked() == Mode::Map
+                || selected_feature.get_untracked().is_some()
+                || selection.get_untracked() != request.parts.first().copied()
+                || !regions.with_untracked(|value| {
+                    value.as_ref().is_some_and(|(bound, parts)| {
+                        bound == &request.product_revision && parts == &request.parts
+                    })
+                })
+            {
+                return;
+            }
+            if let Some(pane) = sequence_pane.get() {
+                pane.scroll_into_view();
+            }
+            // Explicit notification also revisits unchanged ranges after manual scrolling.
+            selection.set(request.parts.first().copied());
+        });
+        if let Some(window) = web_sys::window() {
+            let _ = window.request_animation_frame(callback.unchecked_ref());
+        }
+    });
     let start = RwSignal::new(String::new());
     let end = RwSignal::new(String::new());
     let highlighted = Memo::new(move |_| {
@@ -479,7 +597,7 @@ pub(crate) fn ReferenceCanvas(
                 <p class="map-geometry-note" role="status">"Overview simplified; browse annotations for omitted geometry."</p>
             </div>
         </div>
-        <div class="assembly-product-sequence" hidden=move||mode.get()==Mode::Map>
+        <div node_ref=sequence_pane class="assembly-product-sequence" hidden=move||mode.get()==Mode::Map>
             <SequenceView pcr_overlay=Some(visible_pcr_overlay) molecule=molecule selection=selection selected_feature=selected_feature highlighted_spans=highlighted search_regions=regions
                 on_show_features=Callback::new(move|()|features_open.set(true)) identity=view_identity locked=locked read_only=true shared_restrictions=false
                 on_edit=Callback::new(|_|Err("This reference snapshot is read-only; fork or open a separate document copy to edit.".into()))

@@ -3203,3 +3203,17 @@ installation acceptance also remain open. Do not confuse these gaps with already
 implemented general indel/OE primer design, fusion-fidelity ranking or TOPO
 TA/CACC transfer chemistry. BAM/index extensions remain last; excluded ELN,
 inventory, instruments, external aligners and mobile remain outside this work.
+
+### Optional SciLifeLab planning provider investigation — 26 November 2026
+
+The local `btyper_scraper` integration uses SciLifeLab OpenLLM through a native
+OpenAI-compatible HTTP chat API. Reusing the service is technically feasible as
+an optional Rust planning provider, while current model/schema capabilities,
+account entitlement and public-web/Tauri deployment terms remain unconfirmed.
+The scraper does not implement tool calling or server-enforced structured output.
+Use a provider-neutral native boundary and selected exact-event handles; compile
+proposals to the accepted typed DAG and verify them locally against the unchanged
+independent target. No model assertion grants material authority. Keep offline
+analysis independent, service secrets out of WASM/archives, and local binary IPC
+unchanged. This investigation made no inference requests or biological uploads.
+[Evidence and concrete integration proposal](SCILIFELAB_LLM_ASSESSMENT.md).

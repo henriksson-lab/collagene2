@@ -2374,3 +2374,42 @@ API misuse found by compilation is corrected with bounded borrowed serialization
 Native compilation and the final WASM check pass. No browser or
 application HTTP checks were run. These controls await the next batched preview
 publication; public8082 remains the restriction-fanout viewer snapshot.
+
+
+### Edited contributions in whole-assembly overlap primer planning — native and WASM checked
+
+The combined proposal plans ordinary exact-PCR rows and internally edited
+six-oligo preparations in the same overlap recipe. Its outgoing homology uses
+the next retained contribution after literal edits, including reverse and
+last-to-first circular junctions. Literal junction inserts remain independently
+declared. Existing ordinary source-interval primer planning is retained; this
+increment connects it with internal-edit preparation rather than replacing it.
+
+A shared native search/material ledger spans all roles and reserves final
+verification work. Optional exact originating runs remain explicit. The web
+capture binds the original typed intended-reference kind and all historical
+events. Applying suggestions permits only active PCR fields and the requested
+uniform overlaps; active digest/paired/declared-duplex routes and conflicting
+explicit tails require an operator decision. [Workflow contract](EDITED_OVERLAP_PRIMER_DESIGN.md).
+
+Worker85 appends job166/result158; MCP tool178 exposes the same source-bound
+proposal with exact per-origin workspace attestation. Existing science22,
+candidate18, native-plan16 and persisted draft capability floors remain unchanged.
+The proposal compiles existing exact-PCR/OE/FromRun/overlap operations.
+
+Focused validation passes29 cases: eight new core groups, eight existing
+single-contribution primer groups after the shared-ledger refactor, three binary
+groups, two real MCP SDK groups, five captured web proposal groups and three host
+transition groups. These cover edited downstream homology prefixes, literal
+junctions, incoming trims, reverse/origin-wrapping sources, circular closure,
+conditional terminal caps, exact saved origins, wrong targets, stale/mutated
+reports and unchanged original typed reference receipts. Switching only the
+active contribution preserves an in-flight whole proposal and current navigation;
+actual declaration/settings changes still invalidate it. Native compilation
+passes; the final WASM check passes. Comparison work has one100M ledger;
+closed-origin replay and literal/annotation operations retain their separate
+native bounds and are not misreported as part of that comparison count.
+
+Public8082 remains the published restriction-fanout viewer; this UI awaits the
+next batched publication. No browser checks were run. Remaining full-product
+cloning, platform delivery and eventual GUI acceptance work stays active.

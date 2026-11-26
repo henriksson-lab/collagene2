@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 177;
+pub const CURRENT_TOOL_COUNT: usize = 178;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -1068,6 +1068,21 @@ pub struct OverlapExtensionPrimerDesignQuery {
     pub request: collagene_core::overlap_extension_primer_design::Request,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EditedOverlapOriginWorkspace {
+    pub role: String,
+    pub workspace: WorkspaceRef,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EditedOverlapPrimerDesignQuery {
+    pub inputs: Vec<BoundInput>,
+    pub request: collagene_core::assembly_edited_primer_design::Request,
+    /// One exact native workspace attestation for every requested saved-source role.
+    #[serde(default)]
+    pub origin_workspaces: Vec<EditedOverlapOriginWorkspace>,
+}
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SubstitutedAssemblyIntentQuery {
@@ -6067,6 +6082,104 @@ impl CollageneServer {
                 "warnings":report.warnings.iter().take(100).map(|w|w.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),
                 "warnings_truncated":report.warnings.len()>100||report.warnings.iter().take(100).any(|w|w.chars().count()>1024),
                 "artifact_id":artifact,"authority":"Advisory design only. Use the returned recipe with propose_overlap_assembly against the same exact inputs and independent target; method guidance and primer heuristics do not verify a cloning result."}))
+        }).await
+    }
+    #[tool(
+        description = "Propose primers for an entire explicitly edited overlap assembly from immutable original source documents and a typed independent contribution/junction/substitution edit intent. Unedited rows use original-source exact PCR; internally edited rows use actual two-branch overlap-extension PCR. Outgoing tails come from literal junction inserts plus the next edited source-core prefix, never a supplied product sequence. Freshly verifies the whole composed recipe against the separately built edit intent and retains failures/uncertainty. Optional per-role saved origins require exact native workspace attestations and fresh reconstruction. Returns a read-only advisory recipe, ordered oligos and bounded status summaries with full evidence; no source, target document, candidate or material status is installed. Retain the intended target separately with build_contribution_edit_intent using the same intent, then use propose_overlap_assembly and normal review/finalization."
+    )]
+    async fn design_edited_overlap_primers(
+        &self,
+        Parameters(args): Parameters<EditedOverlapPrimerDesignQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.inputs.is_empty()
+            || args.inputs.len() > 32
+            || args.origin_workspaces.len() > 32
+            || args.origin_workspaces.len() != args.request.origins.len()
+        {
+            return Err(bad(
+                "choose1..32 original sources and one exact workspace for each saved-origin role",
+            ));
+        }
+        let mut workspace_roles = BTreeSet::new();
+        for binding in &args.origin_workspaces {
+            if binding.role.is_empty()
+                || binding.role.len() > 128
+                || !workspace_roles.insert(binding.role.as_str())
+                || !args
+                    .request
+                    .origins
+                    .iter()
+                    .any(|origin| origin.role == binding.role)
+            {
+                return Err(bad(
+                    "saved-origin workspace role is invalid, duplicated or unused",
+                ));
+            }
+        }
+        let server = self.clone();
+        self.compute(move || {
+            let inputs = {
+                let store = server.store.lock().unwrap();
+                let mut ids = BTreeSet::new();
+                let mut sources = Vec::with_capacity(args.inputs.len());
+                for input in &args.inputs {
+                    if input.id.trim().is_empty() || input.id.len() > 128 || !ids.insert(input.id.as_str()) {
+                        return Err(bad("invalid or duplicate original source ID"));
+                    }
+                    sources.push((input.id.as_str(), store.document(&input.document)?));
+                }
+                collagene_core::assembly_edited_primer_design::source_preflight(&sources, &args.request).map_err(bad)?;
+                sources.into_iter().map(|(id,molecule)|PlanInput { id:id.into(),revision:molecule.revision(),molecule:molecule.clone() }).collect::<Vec<_>>()
+            };
+            for origin in &args.request.origins {
+                let workspace = args.origin_workspaces.iter().find(|binding|binding.role == origin.role).ok_or_else(||bad("saved origin has no exact workspace binding"))?;
+                let fragment = args.request.intent.base.base.fragments.iter().find(|fragment|fragment.role == origin.role).ok_or_else(||bad("saved origin has no declared source role"))?;
+                let source = inputs.iter().find(|input|input.id == fragment.input_id).ok_or_else(||bad("saved origin source is unavailable"))?;
+                server.attest_run_source(&workspace.workspace, &origin.origin, &source.molecule)?;
+            }
+            let report = collagene_core::assembly_edited_primer_design::design(&inputs, &args.request).map_err(bad)?;
+            let expected = collagene_core::assembly_edited_primer_design::design_revision(&inputs, &args.request).map_err(bad)?;
+            report.validate_binding(&expected).map_err(bad)?;
+            let mut ordered = Vec::new();
+            for fragment in &report.recipe.fragments {
+                use collagene_core::assembly_recipe::{Preparation,RunPreparation};
+                let pairs:Vec<(&str,&Primer,&Primer)> = match &fragment.preparation {
+                    Preparation::ExactPcr {forward,reverse} => vec![("exact_pcr",forward,reverse)],
+                    Preparation::OverlapExtensionPcr {request} => vec![("left_pcr",&request.left.forward,&request.left.reverse),("right_pcr",&request.right.forward,&request.right.reverse),("outer_pcr",&request.outer.forward,&request.outer.reverse)],
+                    Preparation::FromRun {preparation:RunPreparation::ExactPcr {forward,reverse},..} => vec![("exact_pcr",forward,reverse)],
+                    Preparation::FromRun {preparation:RunPreparation::OverlapExtensionPcr {request},..} => vec![("left_pcr",&request.left.forward,&request.left.reverse),("right_pcr",&request.right.forward,&request.right.reverse),("outer_pcr",&request.outer.forward,&request.outer.reverse)],
+                    _ => return Err(bad("edited assembly primer proposal lost its explicit exact/OE PCR preparation")),
+                };
+                for (stage,forward,reverse) in pairs {
+                    for (direction,primer) in [("forward",forward),("reverse",reverse)] {
+                        ordered.push(json!({"role":fragment.role,"input_id":fragment.input_id,"reverse_fragment":fragment.reverse,"stage":stage,"direction":direction,"primer":primer,"ordered_sequence":primer.ordered_sequence()}));
+                    }
+                }
+            }
+            #[derive(Serialize)]
+            struct Evidence<'a> { inputs:&'a [BoundInput],origin_workspaces:&'a [EditedOverlapOriginWorkspace],report:&'a collagene_core::assembly_edited_primer_design::Report,interpretation:&'static str }
+            let evidence = Evidence { inputs:&args.inputs,origin_workspaces:&args.origin_workspaces,report:&report,
+                interpretation:"Read-only whole-construct primer proposal. Independent intended DNA is built only from exact original source contributions and explicit edit declarations. Primer tails and selected native source geometry never select or replace that intended target; whole-recipe reconstruction remains diagnostic until separate review/finalization." };
+            let artifact = server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","edited-overlap-primer-design.json")?;
+            output(json!({
+                "state":"advisory","verified":false,"inputs":args.inputs,
+                "engine_version":report.engine_version,"context_revision":report.context_revision,"source_revisions":report.source_revisions,
+                "intent_context_revision":report.intent.context_revision,
+                "target_summary":{"revision":report.intent.target.revision(),"length":report.intent.target.sequence.len(),"topology":report.intent.target.topology},
+                "recipe":report.recipe,"ordered_oligos":ordered,"tails":report.tails,
+                "verification":{"status":report.preview.verification.status,"plan_revision":report.preview.verification.plan_revision,
+                    "target_revision":report.preview.verification.target_revision,"product_count":report.preview.verification.products.len(),
+                    "findings":report.preview.verification.findings.iter().take(50).map(|s|s.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),
+                    "findings_truncated":report.preview.verification.findings.len()>50||report.preview.verification.findings.iter().take(50).any(|s|s.chars().count()>1024)},
+                "rows":report.rows.iter().take(32).map(|row|json!({"role":row.role,"input_id":row.input_id,"input_revision":row.input_revision,
+                    "edit_count":row.edits.len(),"design_count":row.designs.len(),"verification_status":row.verification_status,
+                    "findings":row.findings.iter().take(20).map(|s|s.chars().take(512).collect::<String>()).collect::<Vec<_>>(),
+                    "findings_truncated":row.findings.len()>20||row.findings.iter().take(20).any(|s|s.chars().count()>512)})).collect::<Vec<_>>(),
+                "warnings":report.warnings.iter().take(100).map(|s|s.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),
+                "warnings_truncated":report.warnings.len()>100||report.warnings.iter().take(100).any(|s|s.chars().count()>1024),
+                "artifact_id":artifact,
+                "authority":"Read-only advisory recipe. Retain the independently declared target with build_contribution_edit_intent using the same inputs/request.intent, then freshly verify this recipe against that target through propose_overlap_assembly. No source, target document, candidate or physical material is installed."
+            }))
         }).await
     }
     #[tool(

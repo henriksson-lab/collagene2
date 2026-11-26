@@ -963,6 +963,25 @@ fn FrozenWorkspace(
             Ok(())
         })
     });
+    let use_assembly_primers = Callback::new(
+        move |(before, next): (Draft, Draft)| -> Result<(), String> {
+            reference_guard.run(())?;
+            let count = draft.with_untracked(|current| {
+                crate::assembly_edited_primer_commit::validate(&before, &next, current)
+            })?;
+            if before.identity() != next.identity() {
+                return Err(
+                    "The proposed PCR oligos changed the independently reviewed construct.".into(),
+                );
+            }
+            batch(|| {
+                methods.set(next.methods.clone());
+                draft.set(next);
+                status.set(format!("Suggested PCR preparations applied to {count} contributions. Reconstruct the complete assembly against the unchanged intended reference."));
+            });
+            Ok(())
+        },
+    );
     let use_extension_primers = Callback::new(
         move |(before, next): (Draft, Draft)| -> Result<(), String> {
             reference_guard.run(())?;
@@ -1023,6 +1042,9 @@ fn FrozenWorkspace(
                 <crate::assembly_inverse_pcr_view::InversePcrPreparationView
                     draft intent=Arc::new(f.intent.clone()) epoch snapshot
                     current=reference_current guard=reference_guard on_review=review on_finalize=finalize/>
+                <crate::assembly_edited_primer_view::EditedAssemblyPrimerView
+                    draft intent=Arc::new(f.intent.clone()) epoch snapshot
+                    current=reference_current guard=reference_guard on_use=use_assembly_primers/>
                 <crate::assembly_extension_primer_view::ExtensionPrimerProposalView
                     draft intent=Arc::new(f.intent.clone()) epoch snapshot
                     current=reference_current guard=reference_guard on_use=use_extension_primers/>

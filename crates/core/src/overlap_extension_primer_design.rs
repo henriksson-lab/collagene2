@@ -16,7 +16,7 @@ const MAX_SOURCE_BASES: usize = 2 << 20;
 const MAX_SOURCE_BYTES: usize = 4 << 20;
 const MAX_REPORT_BYTES: usize = 32 << 20;
 const MAX_EDIT_BASES: usize = 100_000;
-const MAX_WORK: usize = 100_000_000;
+pub(crate) const MAX_WORK: usize = 100_000_000;
 macro_rules! dto {($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
 dto! {pub struct Options {
     pub primer_options:DesignOptions,
@@ -503,7 +503,7 @@ fn derived_options(
     }
     Ok([left, right, outer])
 }
-fn propose(
+pub(crate) fn propose(
     source: &Molecule,
     options: &DesignOptions,
     label: &str,
@@ -526,21 +526,32 @@ fn propose(
     }
     Ok(report)
 }
-struct Budget {
-    used: usize,
-    limit: usize,
-    materialized: usize,
+pub(crate) struct Budget {
+    pub(crate) used: usize,
+    pub(crate) limit: usize,
+    pub(crate) materialized: usize,
 }
 impl Budget {
-    fn reserve(&mut self, n: usize) -> bool {
+    pub(crate) fn reserve(&mut self, n: usize) -> bool {
         let Some(total) = self.used.checked_add(n).filter(|n| *n <= self.limit) else {
             return false;
         };
         self.used = total;
         true
     }
+    pub(crate) fn reserve_material(&mut self, n: usize) -> bool {
+        let Some(total) = self
+            .materialized
+            .checked_add(n)
+            .filter(|n| *n <= 64 * 1024 * 1024)
+        else {
+            return false;
+        };
+        self.materialized = total;
+        true
+    }
 }
-fn select(
+pub(crate) fn select(
     source: &Molecule,
     d: &DesignReport,
     call: &str,
@@ -671,7 +682,40 @@ fn plan(
         steps,
     })
 }
+pub(crate) fn work_preflight(
+    source: &Molecule,
+    request: &Request,
+) -> Result<(usize, usize), Error> {
+    let b = bounds(source, request)?;
+    let derived = derived_options(source, request, &b, "", "", false)?;
+    let reserve = reserved_work(source, request, &b, &derived)?;
+    let material = source
+        .sequence
+        .len()
+        .checked_mul(6)
+        .and_then(|n| n.checked_add(b.insert_length.checked_mul(8)?))
+        .and_then(|n| {
+            n.checked_add(
+                request.options.outer_forward_tail.len() + request.options.outer_reverse_tail.len(),
+            )
+        })
+        .ok_or(Error::TooLarge)?;
+    Ok((reserve, material))
+}
 pub fn design(source: &Molecule, request: &Request) -> Result<Report, Error> {
+    let mut budget = Budget {
+        used: 0,
+        limit: MAX_WORK,
+        materialized: 0,
+    };
+    design_with_budget(source, request, &mut budget)
+}
+/// Shared whole-design ledger; only native source-bound proposal work uses it.
+pub(crate) fn design_with_budget(
+    source: &Molecule,
+    request: &Request,
+    budget: &mut Budget,
+) -> Result<Report, Error> {
     let b = bounds(source, request)?;
     let source_revision = source.revision();
     let context_revision = assembly_recipe::hash(&(ENGINE_VERSION, &source_revision, request))?;
@@ -698,23 +742,32 @@ pub fn design(source: &Molecule, request: &Request) -> Result<Report, Error> {
     );
     right_tail.push_str(&insert);
     let derived = derived_options(source, request, &b, &left_tail, &right_tail, true)?;
+    let reserve = reserved_work(source, request, &b, &derived)?;
+    let material = source
+        .sequence
+        .len()
+        .checked_mul(6)
+        .and_then(|n| n.checked_add(b.insert_length.checked_mul(8)?))
+        .and_then(|n| {
+            n.checked_add(
+                request.options.outer_forward_tail.len() + request.options.outer_reverse_tail.len(),
+            )
+        })
+        .ok_or(Error::TooLarge)?;
+    if !budget.reserve(reserve) || !budget.reserve_material(material) {
+        return Err(Error::TooLarge);
+    }
     let mut designs = Vec::with_capacity(3);
     for (o, label) in derived.iter().zip(["left", "right", "outer"]) {
         designs.push(propose(source, o, label, &request.fragment.role)?);
     }
-    let reserve = reserved_work(source, request, &b, &derived)?;
-    let mut budget = Budget {
-        used: reserve,
-        limit: MAX_WORK,
-        materialized: 0,
-    };
     let (left, left_product) = select(
         source,
         &designs[0],
         "left",
         derived[0].target_start,
         derived[0].target_end - derived[0].target_start,
-        &mut budget,
+        budget,
     );
     let (right, right_product) = select(
         source,
@@ -722,7 +775,7 @@ pub fn design(source: &Molecule, request: &Request) -> Result<Report, Error> {
         "right",
         derived[1].target_start,
         derived[1].target_end - derived[1].target_start,
-        &mut budget,
+        budget,
     );
     let outer = if let (Some(left), Some(right)) = (left_product, right_product) {
         let a = crate::chemistry::Duplex::exact_pcr(&left.product.sequence)?;
@@ -745,7 +798,7 @@ pub fn design(source: &Molecule, request: &Request) -> Result<Report, Error> {
                     "outer",
                     0,
                     actual.sequence.len(),
-                    &mut budget,
+                    budget,
                 )
                 .0
             }

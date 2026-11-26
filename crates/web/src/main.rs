@@ -35,6 +35,12 @@ mod assembly_edit_model;
 #[cfg(target_arch = "wasm32")]
 mod assembly_edit_view;
 #[cfg(any(target_arch = "wasm32", test))]
+mod assembly_edited_primer_commit;
+#[cfg(any(target_arch = "wasm32", test))]
+mod assembly_edited_primer_model;
+#[cfg(target_arch = "wasm32")]
+mod assembly_edited_primer_view;
+#[cfg(any(target_arch = "wasm32", test))]
 mod assembly_extension_primer_commit;
 #[cfg(any(target_arch = "wasm32", test))]
 mod assembly_extension_primer_model;

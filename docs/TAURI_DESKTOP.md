@@ -36,11 +36,17 @@ second durable plasmid database outside the configured root. The separate,
 deferred genome/dataset IndexedDB cache is temporary on desktop until an explicit
 native dataset-storage adapter is added.
 
-The desktop program accepts only:
+The desktop GUI command accepts:
 
 ```text
 collagene-desktop [--storage-root DIRECTORY] [--allow-loopback-http]
 ```
+
+The same executable also accepts `--mcp` for headless stdio operation, with
+optional exact saved-document selections. It does not open a GUI, initialize
+remote credentials or modify the editor's working/recovery slots. See
+[embedded MCP](DESKTOP_MCP.md) for arguments and selection scope. `--help` and
+`--version` also exit before GUI initialization.
 
 Remote databases normally require HTTPS. The explicit per-launch
 `--allow-loopback-http` flag additionally permits literal loopback addresses for

@@ -14,6 +14,9 @@ custom-protocol = ["tauri/custom-protocol"]
 
 [dependencies]
 collagene-desktop-host = { path = "../desktop-host" }
+collagene-desktop-mcp = { path = "../desktop-mcp" }
+collagene-source-gateway = { path = "../source-gateway" }
+blake3.workspace = true
 collagene-desktop-sync-host = { path = "../desktop-sync-host" }
 collagene-desktop-sync-protocol = { path = "../desktop-sync-protocol" }
 collagene-repository = { path = "../repository" }

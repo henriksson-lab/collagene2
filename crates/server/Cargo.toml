@@ -7,6 +7,7 @@ rust-version = "1.88"
 description = "Native same-origin server for an authenticated shared plasmid library"
 
 [dependencies]
+collagene-source-gateway = { path = "../source-gateway" }
 collagene-lab-library = { path = "../lab-library" }
 collagene-library-protocol = { path = "../library-protocol" }
 collagene-library-host = { path = "../library-host" }
@@ -25,3 +26,5 @@ thiserror = "2"
 http-body = "1"
 tower = { version = "0.5", features = ["util"] }
 collagene-core = { path = "../core", default-features = false }
+
+collagene-sources = { path = "../sources" }

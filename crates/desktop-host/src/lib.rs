@@ -39,6 +39,17 @@ pub enum HostError {
     Cancelled,
 }
 pub type HostResult<T> = std::result::Result<T, HostError>;
+
+/// Trusted native operator entry point for a saved-library session. Unlike the
+/// editor host this does not open or initialize working/recovery state.
+/// No IPC/MCP request may supply the root passed here.
+pub fn open_local_repository(
+    configured_root: impl AsRef<Path>,
+) -> HostResult<collagene_repository::Repository> {
+    let root = permissions::root(configured_root.as_ref())?;
+    let path = permissions::database(&root, "repository.sqlite")?;
+    collagene_repository::Repository::open(path).map_err(|_| HostError::Unavailable)
+}
 impl From<rusqlite::Error> for HostError {
     fn from(_: rusqlite::Error) -> Self {
         Self::Unavailable

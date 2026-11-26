@@ -2203,6 +2203,17 @@ impl CollageneServer {
             .ok_or_else(|| bad("unknown workspace"))?
             .restore(&store)
     }
+    /// Trusted native embedding only: import already selected archive bytes into
+    /// this memory-only MCP session. This grants no path or database authority.
+    pub fn preload_archive_bytes(&self, bytes: &[u8]) -> Result<CallToolResult, ErrorData> {
+        self.import_archive_bytes(bytes)
+    }
+    /// Load a literal native .cg2 document without inventing workspace events,
+    /// run receipts, or reusable physical-material authority.
+    pub fn preload_document_bytes(&self, bytes: &[u8]) -> Result<CallToolResult, ErrorData> {
+        let molecule = collagene_core::protocol::load_document(bytes).map_err(bad)?;
+        self.insert_documents(vec![molecule], vec![])
+    }
     fn import_archive_bytes(&self, bytes: &[u8]) -> Result<CallToolResult, ErrorData> {
         let value = workspace::load_workspace(bytes).map_err(bad)?;
         self.commit_workspace(value)
@@ -7183,4 +7194,18 @@ mod finalized_workspace_atomic_capacity {
         assert!(!store.artifacts.contains_key(&native_id));
         assert!(!store.artifacts.contains_key(&report_id));
     }
+}
+
+/// Serve the embedded server in this process. stdout belongs exclusively to MCP;
+/// this helper neither opens a GUI nor starts an external executable.
+pub async fn serve_stdio(
+    server: CollageneServer,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use rmcp::ServiceExt;
+    server
+        .serve(rmcp::transport::stdio())
+        .await?
+        .waiting()
+        .await?;
+    Ok(())
 }

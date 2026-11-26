@@ -14,33 +14,108 @@ struct Settings {
     storage_root: PathBuf,
 }
 
-pub fn command_line() -> Result<Option<PathBuf>> {
-    let mut args = std::env::args_os().skip(1).collect::<Vec<_>>();
-    if args
-        .iter()
-        .filter(|arg| *arg == "--allow-loopback-http")
-        .count()
-        > 1
-    {
-        return Err("Loopback HTTP may be enabled only once".into());
-    }
-    args.retain(|arg| arg != "--allow-loopback-http");
-    match args.as_slice() {
-        [] => Ok(None),
-        [option, path] if option == "--storage-root" && !path.is_empty() => {
-            Ok(Some(PathBuf::from(path)))
-        }
-        _ => Err(
-            "Usage: collagene-desktop [--storage-root DIRECTORY] [--allow-loopback-http]".into(),
-        ),
-    }
+pub const HELP: &str = "Usage: collagene-desktop [--storage-root DIRECTORY] [--allow-loopback-http]\n       collagene-desktop --mcp [--storage-root DIRECTORY] [--mcp-document ID@REVISION ...]\n\nDesktop storage roots are operator configuration. MCP runs over stdio in this same\nexecutable, without opening a window. Saved MCP document selections require an\nexplicit root and exact library revision; MCP results remain session-only.";
+#[derive(Debug)]
+pub struct GuiOptions {
+    pub storage_root: Option<PathBuf>,
+    pub allow_loopback_http: bool,
 }
-/// Explicit per-launch permission for literal loopback HTTP development hosts.
-/// Ordinary remote hosts always require HTTPS in HttpRemoteTransport.
-pub fn allow_loopback_http() -> bool {
-    std::env::args_os()
-        .skip(1)
-        .any(|arg| arg == "--allow-loopback-http")
+#[derive(Debug)]
+pub struct McpOptions {
+    pub storage_root: Option<PathBuf>,
+    pub documents: Vec<String>,
+}
+#[derive(Debug)]
+pub enum Launch {
+    Gui(GuiOptions),
+    Mcp(McpOptions),
+    Help,
+    Version,
+}
+pub fn command_line() -> Result<Launch> {
+    parse(std::env::args_os().skip(1))
+}
+fn parse(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Launch> {
+    let mut args = args.into_iter();
+    let mut root = None;
+    let mut mcp = false;
+    let mut allow_loopback_http = false;
+    let mut documents = Vec::new();
+    while let Some(arg) = args.next() {
+        if arg == "--help" || arg == "-h" {
+            return Ok(Launch::Help);
+        }
+        if arg == "--version" || arg == "-V" {
+            return Ok(Launch::Version);
+        }
+        if arg == "--mcp" {
+            if mcp {
+                return Err("--mcp may be supplied only once".into());
+            }
+            mcp = true;
+        } else if arg == "--allow-loopback-http" {
+            if allow_loopback_http {
+                return Err("Loopback HTTP may be enabled only once".into());
+            }
+            allow_loopback_http = true;
+        } else if arg == "--storage-root"
+            || arg
+                .to_str()
+                .is_some_and(|s| s.starts_with("--storage-root="))
+        {
+            let path = match arg.to_str().and_then(|s| s.strip_prefix("--storage-root=")) {
+                Some(s) if !s.is_empty() => std::ffi::OsString::from(s),
+                Some(_) => return Err("--storage-root requires a nonempty directory".into()),
+                None => args
+                    .next()
+                    .filter(|s| !s.is_empty() && !s.to_string_lossy().starts_with("--"))
+                    .ok_or("--storage-root requires a directory")?,
+            };
+            if root.replace(PathBuf::from(path)).is_some() {
+                return Err("--storage-root may be supplied only once".into());
+            }
+        } else if arg == "--mcp-document"
+            || arg
+                .to_str()
+                .is_some_and(|s| s.starts_with("--mcp-document="))
+        {
+            let selection = match arg.to_str().and_then(|s| s.strip_prefix("--mcp-document=")) {
+                Some(s) => s.to_owned(),
+                None => args
+                    .next()
+                    .and_then(|s| s.into_string().ok())
+                    .ok_or("--mcp-document requires ID@REVISION")?,
+            };
+            if selection.is_empty() || selection.len() > 256 || documents.len() >= 32 {
+                return Err("Select at most32 saved documents as ID@REVISION".into());
+            }
+            documents.push(selection);
+        } else {
+            return Err("Unknown desktop argument; use --help".into());
+        }
+    }
+    if mcp {
+        if allow_loopback_http {
+            return Err(
+                "--allow-loopback-http applies only to desktop database synchronization".into(),
+            );
+        }
+        if !documents.is_empty() && root.is_none() {
+            return Err("Saved MCP selections require --storage-root".into());
+        }
+        Ok(Launch::Mcp(McpOptions {
+            storage_root: root,
+            documents,
+        }))
+    } else {
+        if !documents.is_empty() {
+            return Err("--mcp-document requires --mcp".into());
+        }
+        Ok(Launch::Gui(GuiOptions {
+            storage_root: root,
+            allow_loopback_http,
+        }))
+    }
 }
 pub fn select(
     config_dir: &Path,

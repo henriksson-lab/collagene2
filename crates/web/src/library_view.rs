@@ -7,7 +7,7 @@ use crate::{
 use collagene_library_protocol as wire;
 use leptos::prelude::*;
 use std::{cell::Cell, future::Future, pin::Pin, rc::Rc};
-use wasm_bindgen_futures::spawn_local;
+use wasm_bindgen_futures::{JsFuture, spawn_local};
 
 pub type LocalResult<T> = Pin<Box<dyn Future<Output = Result<T, String>>>>;
 
@@ -134,6 +134,7 @@ pub fn LibraryPane(
     #[prop(optional)] on_folder: Option<Callback<Option<wire::FolderId>>>,
 ) -> impl IntoView {
     let local = client.is_local();
+    let native_local = local && crate::desktop_rpc::is_desktop();
     let initial_context = client.context();
     let server_key = client.remote_key();
     let session = StoredValue::new_local(client);
@@ -142,6 +143,41 @@ pub fn LibraryPane(
     let connected = RwSignal::new(initial_context);
     let key = RwSignal::new(String::new());
     let status = RwSignal::new(String::new());
+    let copy_mcp = Callback::new(move |document: wire::Document| {
+        if !native_local {
+            return;
+        }
+        let Some(window) = web_sys::window() else {
+            status.set("System clipboard is unavailable.".into());
+            return;
+        };
+        if !window.is_secure_context() {
+            status.set("System clipboard access requires a secure application window.".into());
+            return;
+        }
+        let clipboard = window.navigator().clipboard();
+        if clipboard.is_undefined() || clipboard.is_null() {
+            status.set("System clipboard is unavailable in this application window.".into());
+            return;
+        }
+        let reference = format!("{}@{}", document.id.as_str(), document.head.id.as_str());
+        // As in ClipboardTools, start clipboard access synchronously in the
+        // actual click gesture, then await its result without retaining DNA.
+        let promise = clipboard.write_text(&reference);
+        let life = life.get_value();
+        let epoch = life.get();
+        spawn_local(async move {
+            let result = JsFuture::from(promise).await;
+            if life.get() != epoch {
+                return;
+            }
+            status.set(if result.is_ok() {
+                "MCP reference copied.".into()
+            } else {
+                "System clipboard access failed; the MCP reference was not copied.".into()
+            });
+        });
+    });
     let navigation = RwSignal::new(Navigation::default());
     let entries = RwSignal::new(Vec::<wire::Entry>::new());
     let next_offset = RwSignal::new(None::<u32>);
@@ -523,12 +559,13 @@ pub fn LibraryPane(
                 {move||editor.get().map(|_|view!{<form class="library-name-editor" on:submit=move|event|{event.prevent_default();submit_name();}><label>"Name"<input autofocus=true prop:value=move||name.get() on:input=move|event|name.set(event_target_value(&event))/></label><button class="text-tool" disabled=move||busy.get()||locked.get() type="submit">"Save"</button><button class="text-tool" type="button" on:click=move|_|editor.set(None)>"Cancel"</button></form>})}
                 {move||moving.get().map(|entry|view!{<div class="library-move"><p>{format!("Choose a destination for {}.",entry.name())}</p><button class="text-tool" disabled=move||busy.get()||locked.get() on:click=move|_|{let parent=navigation.get_untracked().parent();let request=match entry.clone(){wire::Entry::Folder(folder)=>wire::Request::MoveFolder{id:folder.id,expected_generation:folder.generation,parent},wire::Entry::Document(document)=>wire::Request::MoveDocument{id:document.id,expected_generation:document.generation,folder:parent}};send.run(Command::Request(request,"Item moved.".into()));}>"Move here"</button><button class="text-tool" on:click=move|_|moving.set(None)>"Cancel move"</button></div>})}
                 <ul class="lab-library-entries" aria-label={if local { "Local plasmids and folders" } else { "Shared plasmids and folders" }}>{move||entries.get().into_iter().map(|entry|{
-                    let open=entry.clone();let rename=entry.clone();let move_entry=entry.clone();let history_entry=entry.clone();let delete=entry.clone();let is_folder=matches!(entry,wire::Entry::Folder(_));let label=entry.name().to_owned();
+                    let open=entry.clone();let rename=entry.clone();let move_entry=entry.clone();let history_entry=entry.clone();let mcp_entry=entry.clone();let delete=entry.clone();let is_folder=matches!(entry,wire::Entry::Folder(_));let label=entry.name().to_owned();
                     view!{<li class:library-folder=is_folder><button class="library-entry-name" disabled=move||busy.get()||locked.get() on:click=move|_|match &open{wire::Entry::Folder(folder)=>{let mut path=if navigation.with_untracked(|nav|nav.query.is_empty()){navigation.get_untracked().path}else{vec![]};path.push(folder.clone());search.set(String::new());send.run(Command::Browse(Navigation{path,..Default::default()}));},wire::Entry::Document(document)=>send.run(Command::Open(document.clone(),None))}><span aria-hidden="true">{if is_folder{"▸"}else{"○"}}</span>{label}</button>
                         <details class="library-entry-menu" data-transient-menu=""><summary aria-label="Item actions">"⋯"</summary><div>
                             <button class="text-tool" disabled=move||busy.get()||locked.get() on:click=move|_|{name.set(rename.name().to_owned());editor.set(Some(NameEditor::Rename(rename.clone())));}>"Rename"</button>
                             <button class="text-tool" disabled=move||busy.get()||locked.get() on:click=move|_|moving.set(Some(move_entry.clone()))>"Move…"</button>
                             {(!is_folder).then(||view!{<button class="text-tool" disabled=move||busy.get() on:click=move|_|if let wire::Entry::Document(document)=&history_entry{send.run(Command::Request(wire::Request::ListRevisions{id:document.id.clone(),page:Default::default()},String::new()));}>"Revision history"</button>})}
+                            {(native_local&&!is_folder).then(||view!{<button class="text-tool" disabled=move||busy.get()||locked.get() on:click=move|_|if let wire::Entry::Document(document)=&mcp_entry{copy_mcp.run(document.clone());}>"Copy MCP reference"</button>})}
                             {is_folder.then(||view!{<button class="text-tool" disabled=move||busy.get()||locked.get() on:click=move|_|if let wire::Entry::Folder(folder)=&delete{send.run(Command::Request(wire::Request::DeleteEmptyFolder{id:folder.id.clone(),expected_generation:folder.generation},"Empty folder removed.".into()));}>"Delete empty folder"</button>})}
                         </div></details>
                     </li>}

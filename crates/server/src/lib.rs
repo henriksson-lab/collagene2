@@ -17,7 +17,10 @@ use collagene_lab_library::{LabAccess, Library};
 use collagene_library_host as host;
 use collagene_library_protocol as wire;
 use collagene_library_sync as sync;
+use collagene_source_gateway::{self as sources, wire as source_wire};
 use std::{
+    future::Future,
+    pin::Pin,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -120,7 +123,12 @@ impl CanonicalOrigin {
         true
     }
 }
+type SourceFuture = Pin<Box<dyn Future<Output = source_wire::Response> + Send>>;
+type SourceExecute =
+    dyn Fn(source_wire::Request, sources::Cancellation) -> SourceFuture + Send + Sync;
 struct Inner {
+    source: Box<SourceExecute>,
+    source_ingress: Arc<Semaphore>,
     database: Mutex<Library>,
     access: LabAccess,
     key: AccessKey,
@@ -142,9 +150,37 @@ impl ServerState {
         assets: AssetSnapshot,
         limits: Limits,
     ) -> Result<Self> {
+        Self::with_source_backend(
+            database,
+            access,
+            key,
+            origin,
+            assets,
+            limits,
+            sources::NativeBackend,
+        )
+    }
+    /// Injection is a trusted native host decision, never a request parameter.
+    pub fn with_source_backend<B: sources::Backend>(
+        database: Library,
+        access: LabAccess,
+        key: AccessKey,
+        origin: &str,
+        assets: AssetSnapshot,
+        limits: Limits,
+        backend: B,
+    ) -> Result<Self> {
         limits.validate()?;
         database.lab(&access)?;
+        // Only execute() is exposed: this config never creates another listener
+        // or authorizes requests; the owning server enforces its lab policy.
+        let gateway = sources::Gateway::with_backend(sources::Config::default(), backend);
         Ok(Self(Arc::new(Inner {
+            source_ingress: Arc::new(Semaphore::new(4)),
+            source: Box::new(move |request, cancellation| {
+                let gateway = gateway.clone();
+                Box::pin(async move { gateway.execute(request, cancellation).await })
+            }),
             database: Mutex::new(database),
             access,
             key,
@@ -159,6 +195,7 @@ pub fn router(state: ServerState) -> Router {
     Router::new()
         .route("/api/library", post(library))
         .route("/api/library/sync", post(reliable_library))
+        .route(sources::PATH, post(source_import))
         .fallback(static_asset)
         .layer(middleware::from_fn(response_headers))
         .with_state(state)
@@ -198,12 +235,14 @@ fn rejection(status: StatusCode) -> Response {
 enum Endpoint {
     Library,
     Reliable,
+    Source,
 }
 impl Endpoint {
     fn media_type(self) -> &'static str {
         match self {
             Self::Library => wire::MEDIA_TYPE,
             Self::Reliable => sync::MEDIA_TYPE,
+            Self::Source => sources::CONTENT_TYPE,
         }
     }
 }
@@ -212,6 +251,9 @@ async fn library(State(state): State<ServerState>, request: Request<Body>) -> Re
 }
 async fn reliable_library(State(state): State<ServerState>, request: Request<Body>) -> Response {
     binary_library(state, request, Endpoint::Reliable).await
+}
+async fn source_import(State(state): State<ServerState>, request: Request<Body>) -> Response {
+    binary_library(state, request, Endpoint::Source).await
 }
 pub const EXPECTED_LAB_HEADER: &str = "x-collagene-expected-lab";
 fn expected_lab_pin(
@@ -274,12 +316,15 @@ async fn binary_library(
     let lab_pinned = match expected_lab_pin(
         headers,
         state.0.access.lab_id().as_str(),
-        matches!(endpoint, Endpoint::Reliable),
+        matches!(endpoint, Endpoint::Reliable | Endpoint::Source),
     ) {
         Ok(present) => present,
         Err(status) => return rejection(status),
     };
-    if request.uri().query().is_some() {
+    if request.uri().query().is_some()
+        || request.uri().authority().is_some()
+        || request.uri().scheme().is_some()
+    {
         return rejection(StatusCode::BAD_REQUEST);
     }
     if headers
@@ -295,24 +340,38 @@ async fn binary_library(
     {
         return rejection(StatusCode::UNSUPPORTED_MEDIA_TYPE);
     }
-    if headers.get_all(header::CONTENT_LENGTH).iter().count() > 1 {
+    if headers.get_all(header::CONTENT_LENGTH).iter().count() > 1
+        || headers.get_all(header::CONTENT_ENCODING).iter().count() > 1
+    {
         return rejection(StatusCode::BAD_REQUEST);
     }
+    let max_body = if matches!(endpoint, Endpoint::Source) {
+        state.0.limits.max_body_bytes.min(source_wire::MAX_REQUEST)
+    } else {
+        state.0.limits.max_body_bytes
+    };
     if let Some(length) = headers.get(header::CONTENT_LENGTH) {
         let Ok(length) = length.to_str().unwrap_or("").parse::<u64>() else {
             return rejection(StatusCode::BAD_REQUEST);
         };
-        if length > state.0.limits.max_body_bytes as u64 {
+        if length > max_body as u64 {
             return rejection(StatusCode::PAYLOAD_TOO_LARGE);
         }
     }
-    let Ok(permit) = state.0.permits.clone().try_acquire_owned() else {
+    // Tiny source frames are admitted separately so Cancel/Dispose can reach
+    // an occupied gateway. Ordinary source work still needs the heavy lease.
+    let admission = if matches!(endpoint, Endpoint::Source) {
+        &state.0.source_ingress
+    } else {
+        &state.0.permits
+    };
+    let Ok(permit) = admission.clone().try_acquire_owned() else {
         return rejection(StatusCode::TOO_MANY_REQUESTS);
     };
     let permit = Arc::new(permit);
     let bytes = match tokio::time::timeout(
         state.0.limits.body_timeout,
-        to_bytes(request.into_body(), state.0.limits.max_body_bytes),
+        to_bytes(request.into_body(), max_body),
     )
     .await
     {
@@ -320,6 +379,9 @@ async fn binary_library(
         Ok(Err(_)) => return rejection(StatusCode::PAYLOAD_TOO_LARGE),
         Err(_) => return rejection(StatusCode::REQUEST_TIMEOUT),
     };
+    if matches!(endpoint, Endpoint::Source) {
+        return execute_source(state, bytes, permit).await;
+    }
     // Cancellation cannot release admission while native work is still running.
     // The same lease also follows encoded response bytes through transport frames.
     let work_permit = permit.clone();
@@ -330,6 +392,7 @@ async fn binary_library(
             Reliable(sync::RequestEnvelope),
         }
         let decoded = match endpoint {
+            Endpoint::Source => return Err(StatusCode::BAD_REQUEST),
             Endpoint::Library => {
                 let request = wire::decode_request(&bytes).map_err(|_| StatusCode::BAD_REQUEST)?;
                 if !lab_pinned && is_v1_mutation(&request.request) {
@@ -387,24 +450,86 @@ async fn binary_library(
     })
     .await;
     match result {
-        Ok(Ok(bytes)) => {
-            let leased = Bytes::from_owner(LeaseBytes {
-                data: bytes,
-                _lease: permit,
-            });
-            let mut response = Response::new(Body::from(leased));
-            response.headers_mut().insert(
-                header::CONTENT_TYPE,
-                HeaderValue::from_static(endpoint.media_type()),
-            );
-            response
-                .headers_mut()
-                .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-            response
-        }
+        Ok(Ok(bytes)) => leased_response(bytes, permit, endpoint.media_type()),
         Ok(Err(status)) => rejection(status),
         Err(_) => rejection(StatusCode::SERVICE_UNAVAILABLE),
     }
+}
+// Dropping an HTTP caller cancels provider work and its active nonce entry.
+struct CancelSource(sources::Cancellation);
+impl Drop for CancelSource {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+async fn execute_source(
+    state: ServerState,
+    bytes: Bytes,
+    permit: Arc<OwnedSemaphorePermit>,
+) -> Response {
+    let request = match source_wire::decode_request(&bytes) {
+        Ok(request) => request,
+        Err(_) => return rejection(StatusCode::BAD_REQUEST),
+    };
+    let control = matches!(
+        &request.operation,
+        source_wire::Operation::Cancel { .. } | source_wire::Operation::DisposeCatalog { .. }
+    );
+    let permit = if control {
+        // Control replies retain the bounded small ingress slot, never a large
+        // response slot. Four slow bodies/replies cannot grow this lane.
+        permit
+    } else {
+        let Ok(heavy) = state.0.permits.clone().try_acquire_owned() else {
+            return rejection(StatusCode::TOO_MANY_REQUESTS);
+        };
+        drop(permit);
+        Arc::new(heavy)
+    };
+    let cancellation = CancelSource(sources::Cancellation::default());
+    // The gateway also enforces its shorter provider deadline and retains its
+    // own native admission until an already-running bounded parser finishes.
+    let response = match tokio::time::timeout(
+        Duration::from_secs(90),
+        (state.0.source)(request, cancellation.0.clone()),
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(_) => return rejection(StatusCode::GATEWAY_TIMEOUT),
+    };
+    let lease = permit.clone();
+    let encoded = tokio::task::spawn_blocking(move || {
+        let _lease = lease;
+        let bytes = source_wire::encode_response(&response)?;
+        if control && bytes.len() > 4096 {
+            return Err(source_wire::WireError::TooLarge);
+        }
+        Ok(bytes)
+    })
+    .await;
+    match encoded {
+        Ok(Ok(bytes)) => leased_response(bytes, permit, sources::CONTENT_TYPE),
+        _ => rejection(StatusCode::SERVICE_UNAVAILABLE),
+    }
+}
+fn leased_response(
+    bytes: Vec<u8>,
+    permit: Arc<OwnedSemaphorePermit>,
+    media: &'static str,
+) -> Response {
+    let leased = Bytes::from_owner(LeaseBytes {
+        data: bytes,
+        _lease: permit,
+    });
+    let mut response = Response::new(Body::from(leased));
+    response
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static(media));
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
 }
 // The lease belongs to the Bytes backing allocation, rather than just Body:
 // Hyper can retain a data frame after polling/dropping its response Body. Clones

@@ -778,10 +778,13 @@ dependencies = [
 name = "collagene-desktop"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "collagene-desktop-host",
+ "collagene-desktop-mcp",
  "collagene-desktop-sync-host",
  "collagene-desktop-sync-protocol",
  "collagene-repository",
+ "collagene-source-gateway",
  "getrandom 0.4.3",
  "serde",
  "serde_json",
@@ -826,6 +829,23 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "collagene-desktop-mcp"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "collagene-core",
+ "collagene-desktop-host",
+ "collagene-lab-library",
+ "collagene-library-sharing",
+ "collagene-mcp",
+ "collagene-repository",
+ "rmcp",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
 ]
 
 [[package]]
@@ -1045,6 +1065,8 @@ dependencies = [
  "collagene-library-host",
  "collagene-library-protocol",
  "collagene-library-sync",
+ "collagene-source-gateway",
+ "collagene-sources",
  "getrandom 0.4.3",
  "http-body",
  "subtle",
@@ -1128,6 +1150,7 @@ dependencies = [
  "collagene-library-protocol",
  "collagene-library-sharing",
  "collagene-map-label-layout",
+ "collagene-source-gateway",
  "collagene-sources",
  "collagene-view-layout",
  "futures-channel",

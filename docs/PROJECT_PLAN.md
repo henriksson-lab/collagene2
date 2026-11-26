@@ -2772,3 +2772,33 @@ that artifact to build Windows/macOS/Linux binaries independently. It performs n
 GUI, browser, live-vault or application HTTP checks. Full native packaging, actual
 installation/GUI/vault acceptance, embedded MCP/import-host integration and other
 remaining project milestones are still required. The full objective remains active.
+
+### Embedded native MCP and URL-import host integration — 26 November 2026
+
+The desktop local-library/sync checkpoint `ae3c207` now passes all four scientific/
+web CI jobs and builds the actual embedded-frontend desktop executable on Windows,
+macOS and Linux. These are compile/build results, not installation or graphical
+acceptance. The local-first requirement above remains mandatory: ordinary cloning
+workflows must operate without a login, remote database, or credential service.
+
+Native and authenticated hosted source-import clients now use the existing Rust
+provider gateway through bounded binary messages. Native source requests have a
+separate admission lane from local saves and synchronization. Hosted imports reuse
+the existing lab login and require its database identity before reading a request
+body. Bounded cancellation/catalog disposal can proceed while a provider request
+occupies ordinary admission. Ordinary standalone browser imports retain their
+existing direct-provider behavior.
+
+The same desktop executable now has a `--mcp` stdio mode, selected before GUI
+initialization. Optional `--mcp-document ID@REVISION` arguments preload only exact
+saved local catalog revisions and their selected dependency/history closures.
+MCP opens no working/recovery database, reads no remote credentials and writes no
+local plasmid revisions. AI proposals remain session data until separately
+imported; the deterministic scientific verifier remains the authority. The local
+document menu can copy an exact MCP reference. The tool surface remains179,
+SCI22/worker86 are unchanged, and native/WASM compiler checks pass. Three embedded
+MCP fixture groups and all nineteen in-process server routing groups pass,
+including source cancellation under saturated ordinary admission. CI now checks
+the same desktop executable's stdio initialization and a synthetic virtual digest
+without opening a GUI. Execution of that new command on all three platforms,
+release-mode Windows stdio, full packaging and runtime acceptance remain unfinished.

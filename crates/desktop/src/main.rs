@@ -9,6 +9,7 @@ use collagene_desktop_host::{
 };
 use collagene_desktop_sync_host::{ProductionAdapter, SyncHost};
 use collagene_desktop_sync_protocol as sync;
+use collagene_source_gateway::{self as sources, wire as source_wire};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
@@ -23,6 +24,9 @@ struct NativeState {
     access: WindowAccess,
     local_active: Arc<AtomicUsize>,
     sync_active: Arc<AtomicUsize>,
+    source_active: Arc<AtomicUsize>,
+    sources: Arc<sources::Gateway<sources::NativeBackend>>,
+    source_scope: [u8; 32],
 }
 struct JobLease(Arc<AtomicUsize>);
 impl JobLease {
@@ -119,6 +123,47 @@ fn dispatch_sync(state: &NativeState, bytes: &[u8]) -> Result<Vec<u8>, String> {
     })?;
     Ok(reply)
 }
+struct CancelSourceOnDrop(sources::Cancellation);
+impl Drop for CancelSourceOnDrop {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+async fn dispatch_source(
+    state: &NativeState,
+    bytes: &[u8],
+) -> Result<tauri::ipc::Response, String> {
+    state
+        .control
+        .check_window(&state.access)
+        .map_err(|_| "Native source window access is invalid".to_owned())?;
+    let mut request =
+        source_wire::decode_request(bytes).map_err(|_| "Invalid native source frame".to_owned())?;
+    if request.client == [0; 32] {
+        return Err("A private source session is required".into());
+    }
+    let control = matches!(
+        request.operation,
+        source_wire::Operation::Cancel { .. } | source_wire::Operation::DisposeCatalog { .. }
+    );
+    let _lease = if control {
+        None
+    } else {
+        Some(JobLease::acquire(&state.source_active)?)
+    };
+    // A client nonce is correlation, never authority. Bind it to this native
+    // host instance so catalogs cannot be replayed into a different instance.
+    request.client = *blake3::keyed_hash(&state.source_scope, &request.client).as_bytes();
+    let cancellation = sources::Cancellation::default();
+    let _cancel_on_drop = CancelSourceOnDrop(cancellation.clone());
+    let response = state.sources.execute(request, cancellation).await;
+    let frame =
+        tauri::async_runtime::spawn_blocking(move || source_wire::encode_response(&response))
+            .await
+            .map_err(|_| "Native source response was interrupted".to_owned())?
+            .map_err(|_| "Native source response exceeds its format limit".to_owned())?;
+    bounded_response(frame, source_wire::MAX_RESPONSE)
+}
 #[tauri::command]
 async fn collagene_rpc(
     request: tauri::ipc::Request<'_>,
@@ -131,6 +176,12 @@ async fn collagene_rpc(
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
         return Err("Native requests must use the binary repository protocol.".into());
     };
+    if bytes.get(..4) == Some(b"CGSQ".as_slice()) {
+        if bytes.len() > source_wire::MAX_REQUEST {
+            return Err("Native source request exceeds its limit".into());
+        }
+        return dispatch_source(state.inner(), bytes).await;
+    }
     let syncing = match bytes.get(..4) {
         Some(b"DSQ\0") => true,
         Some(b"DTQ\0") => false,
@@ -185,9 +236,9 @@ async fn collagene_rpc(
     .map_err(|_| "Native task could not complete; review its durable status.".to_string())??;
     bounded_response(response, response_limit)
 }
-fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let allow_loopback_http = settings::allow_loopback_http();
-    let storage_override = settings::command_line()?;
+fn run(options: settings::GuiOptions) -> Result<(), Box<dyn std::error::Error>> {
+    let allow_loopback_http = options.allow_loopback_http;
+    let storage_override = options.storage_root;
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![collagene_rpc])
         .setup(move |app| {
@@ -205,6 +256,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     ..Default::default()
                 },
             )?;
+            let mut source_scope = [0; 32];
+            getrandom::fill(&mut source_scope)
+                .map_err(|_| "Cannot initialize private source scope")?;
             settings::persist(&configuration, &root)?;
             app.manage(NativeState {
                 host: Arc::new(Mutex::new(host)),
@@ -213,6 +267,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 access,
                 local_active: Arc::new(AtomicUsize::new(0)),
                 sync_active: Arc::new(AtomicUsize::new(0)),
+                source_active: Arc::new(AtomicUsize::new(0)),
+                sources: Arc::new(sources::Gateway::native(sources::Config::default())),
+                source_scope,
             });
             tauri::WebviewWindowBuilder::new(
                 app,
@@ -233,17 +290,43 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .run(tauri::generate_context!())?;
     Ok(())
 }
+fn run_mcp(options: settings::McpOptions) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let selections = options
+        .documents
+        .iter()
+        .map(|value| collagene_desktop_mcp::NativeSelection::parse(value))
+        .collect::<Result<Vec<_>, _>>()?;
+    let session = match options.storage_root {
+        Some(root) => collagene_desktop_mcp::create_with_storage(&root, &selections, Some(&root))?,
+        None if selections.is_empty() => collagene_desktop_mcp::Session::empty(),
+        None => return Err("Saved MCP selections require an explicit storage root".into()),
+    };
+    // No Tauri application/event loop, native window, vault or child process is
+    // created in stdio mode. stdout belongs exclusively to the MCP transport.
+    tauri::async_runtime::block_on(collagene_desktop_mcp::serve(session))
+}
 fn main() {
-    if std::env::args_os().skip(1).collect::<Vec<_>>().as_slice()
-        == [std::ffi::OsString::from("--help")]
-    {
-        println!(
-            "Usage: collagene-desktop [--storage-root DIRECTORY] [--allow-loopback-http]\nThe native repository root is persisted privately; frontend requests cannot change it."
-        );
-        return;
-    }
-    if let Err(error) = run() {
-        eprintln!("Collagene desktop could not start: {error}");
-        std::process::exit(1);
+    let launch = match settings::command_line() {
+        Ok(launch) => launch,
+        Err(error) => {
+            eprintln!("Invalid Collagene arguments: {error}");
+            std::process::exit(2);
+        }
+    };
+    match launch {
+        settings::Launch::Help => println!("{}", settings::HELP),
+        settings::Launch::Version => println!("Collagene {}", env!("CARGO_PKG_VERSION")),
+        settings::Launch::Mcp(options) => {
+            if let Err(error) = run_mcp(options) {
+                eprintln!("Collagene MCP could not start: {error}");
+                std::process::exit(1);
+            }
+        }
+        settings::Launch::Gui(options) => {
+            if let Err(error) = run(options) {
+                eprintln!("Collagene desktop could not start: {error}");
+                std::process::exit(1);
+            }
+        }
     }
 }

@@ -210,6 +210,11 @@ pub(crate) enum Begin {
     Cached(Vec<u8>),
 }
 impl HostControl {
+    /// Pure native queries still require this host's live window capability,
+    /// even when they do not allocate a durable operation-registry entry.
+    pub fn check_window(&self, access: &WindowAccess) -> HostResult<()> {
+        self.check(access)
+    }
     pub(crate) fn new() -> Self {
         Self {
             inner: Arc::new(Inner {

@@ -34,7 +34,8 @@ impl AssetSnapshot {
         let index = files
             .get_mut("/index.html")
             .ok_or(Error::Configuration("asset index.html missing"))?;
-        let enabled = enable_library_index(&index.bytes)?;
+        let enabled = enable_index_marker(&index.bytes, "collagene-library")?;
+        let enabled = enable_index_marker(&enabled, "collagene-source-gateway")?;
         let adjusted = total - index.bytes.len() + enabled.len();
         if enabled.len() > MAX_ASSET_FILE_BYTES || adjusted > MAX_ASSET_TOTAL_BYTES {
             return Err(Error::Configuration("asset byte limit"));
@@ -164,13 +165,13 @@ pub(crate) fn asset_path(raw: &str) -> Option<String> {
     })
 }
 
-const LIBRARY_META: &str = "<meta name=\"collagene-library\" content=\"enabled\">";
 const MAX_INDEX_BYTES: usize = 2 * 1024 * 1024;
 /// Transform only the trusted index snapshot. This deliberately accepts a
 /// restricted HTML document structure and fails closed on ambiguous markers;
 /// it does not rewrite script/link text or other asset bytes.
-fn enable_library_index(bytes: &[u8]) -> Result<Vec<u8>> {
-    let bad = || Error::Configuration("ambiguous library marker/index HTML");
+fn enable_index_marker(bytes: &[u8], marker_name: &str) -> Result<Vec<u8>> {
+    let canonical_meta = format!("<meta name=\"{marker_name}\" content=\"enabled\">");
+    let bad = || Error::Configuration("ambiguous capability marker/index HTML");
     if bytes.len() > MAX_INDEX_BYTES {
         return Err(bad());
     }
@@ -227,7 +228,7 @@ fn enable_library_index(bytes: &[u8]) -> Result<Vec<u8>> {
                 .collect::<Vec<_>>();
             let is_marker = names
                 .iter()
-                .any(|(_, value)| value.trim().eq_ignore_ascii_case("collagene-library"));
+                .any(|(_, value)| value.trim().eq_ignore_ascii_case(marker_name));
             if is_marker {
                 let contents = attributes
                     .iter()
@@ -238,7 +239,7 @@ fn enable_library_index(bytes: &[u8]) -> Result<Vec<u8>> {
                     || marker.is_some()
                     || names.len() != 1
                     || contents.len() != 1
-                    || names[0].1 != "collagene-library"
+                    || names[0].1 != marker_name
                     || contents[0].1 != "enabled"
                     || attributes
                         .iter()
@@ -274,15 +275,15 @@ fn enable_library_index(bytes: &[u8]) -> Result<Vec<u8>> {
         }
     }
     let insertion = head.filter(|_| closed_head && !in_head).ok_or_else(bad)?;
-    let mut result = Vec::with_capacity(bytes.len() + LIBRARY_META.len() + 2);
+    let mut result = Vec::with_capacity(bytes.len() + canonical_meta.len() + 2);
     if let Some((start, end)) = marker {
         result.extend_from_slice(&bytes[..start]);
-        result.extend_from_slice(LIBRARY_META.as_bytes());
+        result.extend_from_slice(canonical_meta.as_bytes());
         result.extend_from_slice(&bytes[end..]);
     } else {
         result.extend_from_slice(&bytes[..insertion]);
         result.push(b'\n');
-        result.extend_from_slice(LIBRARY_META.as_bytes());
+        result.extend_from_slice(canonical_meta.as_bytes());
         result.push(b'\n');
         result.extend_from_slice(&bytes[insertion..]);
     }

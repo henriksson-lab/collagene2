@@ -10,4 +10,17 @@ Native jobs run `cargo build --locked -p collagene-desktop` using the coherent T
 
 Compilation uses two Cargo jobs, incremental compilation disabled, and debug information disabled for development/test profiles. Frontend and native build artifacts expire after seven days. Native artifacts are development executables for CI inspection; they are not installers or public releases, and downloading one does not establish its runtime prerequisites or executable permissions.
 
-This workflow does not launch the application, a browser, a listener, or a credential vault, and does not invoke external scientific programs. Packaging, signing/notarization, installation, graphical acceptance, live platform credential-store acceptance, and offline restart acceptance on each supported OS remain separate unfinished deliverables. A passing build demonstrates compilation and asset embedding, not those runtime properties. Native repository, protocol, and scientific fixtures remain in the existing checks.
+After compilation, `scripts/desktop_mcp_smoke.py` launches that same executable
+with `--mcp`. It initializes the stdio protocol, checks cloning-tool availability,
+imports synthetic FASTA and verifies an EcoRI virtual digest. The command exits
+without entering the GUI builder or opening the local repository or vault.
+The development build check does not exercise the Windows release GUI subsystem.
+Release acceptance must repeat stdio checks with explicit inherited pipes:
+Windows GUI-subsystem programs can receive those handles through
+[`STARTF_USESTDHANDLES`](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/ns-processthreadsapi-startupinfow),
+as described by
+[`GetStdHandle`](https://learn.microsoft.com/en-us/windows/console/getstdhandle).
+Do not attach a console during MCP startup, since that can replace redirected
+handles. A release-mode execution check remains outstanding.
+
+This workflow does not launch a GUI, browser, listener, or credential vault, and does not invoke external scientific programs. Packaging, signing/notarization, installation, graphical acceptance, live platform credential-store acceptance, and offline restart acceptance on each supported OS remain separate unfinished deliverables. A passing build demonstrates compilation and asset embedding, and the headless check covers the embedded MCP command; neither establishes those remaining runtime properties. Native repository, protocol, and scientific fixtures remain in the existing checks.

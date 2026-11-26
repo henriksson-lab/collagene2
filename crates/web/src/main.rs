@@ -314,6 +314,8 @@ mod remote_library_view;
 #[cfg(target_arch = "wasm32")]
 mod renderer;
 #[cfg(target_arch = "wasm32")]
+mod source_gateway_client;
+#[cfg(target_arch = "wasm32")]
 mod source_import;
 #[cfg(target_arch = "wasm32")]
 mod storage;

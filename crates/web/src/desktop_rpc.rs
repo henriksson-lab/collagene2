@@ -5,6 +5,8 @@ use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 thread_local! { static NEXT: Cell<u64> = const { Cell::new(0) }; }
 thread_local! {
+    static SOURCE_LANE: std::rc::Rc<futures_util::lock::Mutex<()>> =
+        std::rc::Rc::new(futures_util::lock::Mutex::new(()));
     static SYNC_LANE: std::rc::Rc<futures_util::lock::Mutex<()>> =
         std::rc::Rc::new(futures_util::lock::Mutex::new(()));
     static LANE: std::rc::Rc<futures_util::lock::Mutex<()>> =
@@ -169,4 +171,34 @@ pub fn failure(error: &wire::Failure) -> String {
         wire::Failure::Unavailable => "Local repository is unavailable".into(),
         wire::Failure::Library(failure) => failure.message.to_string(),
     }
+}
+
+/// Source controls must be able to cancel an active fetch while ordinary source
+/// requests serialize. An aborted queued request is never sent to the native host.
+pub async fn source_raw(
+    bytes: Vec<u8>,
+    before_dispatch: Option<web_sys::AbortSignal>,
+) -> Result<Vec<u8>, String> {
+    use collagene_source_gateway::wire as source;
+    if !is_desktop() || bytes.len() > source::MAX_REQUEST {
+        return Err("Native source import is unavailable".into());
+    }
+    let request = source::decode_request(&bytes).map_err(|_| "Invalid source request")?;
+    let control = matches!(
+        request.operation,
+        source::Operation::Cancel { .. } | source::Operation::DisposeCatalog { .. }
+    );
+    let lane = SOURCE_LANE.with(Clone::clone);
+    let _guard = if control {
+        None
+    } else {
+        Some(lane.lock().await)
+    };
+    if before_dispatch
+        .as_ref()
+        .is_some_and(web_sys::AbortSignal::aborted)
+    {
+        return Err("Source request cancelled before dispatch".into());
+    }
+    invoke_frame(&bytes, source::MAX_RESPONSE).await
 }

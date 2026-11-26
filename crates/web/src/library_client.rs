@@ -27,11 +27,19 @@ pub trait LibraryClient {
 }
 
 pub type Client = Rc<dyn LibraryClient>;
+thread_local! {
+    // One app-scoped login; source import borrows this session without ever
+    // receiving its bearer value. Library panes created by browser() share it.
+    static BROWSER_SESSION: Rc<Session> = Rc::new(Session::default());
+}
+pub(crate) fn browser_session() -> Rc<Session> {
+    BROWSER_SESSION.with(Clone::clone)
+}
 pub fn browser() -> Client {
     if crate::desktop_rpc::is_desktop() {
         Rc::new(DesktopSession::default())
     } else {
-        Rc::new(Session::default())
+        browser_session()
     }
 }
 
@@ -94,6 +102,132 @@ impl Session {
 
     pub fn context(&self) -> Option<wire::LabContext> {
         self.0.borrow().context.clone()
+    }
+
+    /// Authenticated same-origin source gateway. The caller owns a dialog abort
+    /// signal; signing out also aborts this fetch through the shared pending map.
+    pub async fn source_request(
+        &self,
+        bytes: &[u8],
+        external: &web_sys::AbortSignal,
+    ) -> Result<Vec<u8>, String> {
+        use collagene_source_gateway::wire as source;
+        const MEDIA: &str = "application/vnd.collagene.source+postcard";
+        if bytes.len() > source::MAX_REQUEST || bytes.get(..4) != Some(b"CGSQ".as_slice()) {
+            return Err("Invalid bounded source request.".into());
+        }
+        if external.aborted() {
+            return Err("Source request cancelled.".into());
+        }
+        let controller =
+            web_sys::AbortController::new().map_err(|_| "Cannot start source request")?;
+        let (id, epoch, key, context) = {
+            let mut state = self.0.borrow_mut();
+            let context = state
+                .context
+                .clone()
+                .ok_or("Connect to the lab library first, then retry source import.")?;
+            if state.key.is_empty() {
+                return Err("Connect to the lab library first, then retry source import.".into());
+            }
+            state.next_request = state
+                .next_request
+                .checked_add(1)
+                .ok_or("Library request IDs exhausted; reload the app.")?;
+            let id = state.next_request;
+            state.pending.insert(id, controller.clone());
+            (id, state.epoch, state.key.clone(), context)
+        };
+        let mut lifetime = RequestLifetime {
+            state: self.0.clone(),
+            request_id: id,
+            controller: controller.clone(),
+            timeout: None,
+        };
+        let abort = controller.clone();
+        let listener = Closure::<dyn FnMut()>::new(move || abort.abort());
+        external
+            .add_event_listener_with_callback("abort", listener.as_ref().unchecked_ref())
+            .map_err(|_| "Cannot attach source cancellation")?;
+        let _external = ExternalAbort {
+            signal: external.clone(),
+            listener,
+        };
+        if external.aborted() {
+            controller.abort();
+        }
+        let abort = controller.clone();
+        let timeout = Closure::<dyn FnMut()>::new(move || abort.abort());
+        let window = web_sys::window().ok_or("No browser window")?;
+        let timer = window
+            .set_timeout_with_callback_and_timeout_and_arguments_0(
+                timeout.as_ref().unchecked_ref(),
+                90_000,
+            )
+            .map_err(|_| "Cannot bound source request duration")?;
+        lifetime.timeout = Some((timer, timeout));
+        let init = web_sys::RequestInit::new();
+        init.set_method("POST");
+        init.set_mode(web_sys::RequestMode::SameOrigin);
+        init.set_credentials(web_sys::RequestCredentials::Omit);
+        init.set_redirect(web_sys::RequestRedirect::Error);
+        init.set_signal(Some(&controller.signal()));
+        init.set_body(&js_sys::Uint8Array::from(bytes));
+        let http = web_sys::Request::new_with_str_and_init("/api/source-import/v1", &init)
+            .map_err(|_| "Cannot prepare source gateway request")?;
+        http.headers()
+            .set("Content-Type", MEDIA)
+            .map_err(|_| "Cannot set source content type")?;
+        http.headers()
+            .set("Accept", MEDIA)
+            .map_err(|_| "Cannot set source response type")?;
+        http.headers()
+            .set("Authorization", &format!("Bearer {key}"))
+            .map_err(|_| "Cannot authorize source request")?;
+        http.headers()
+            .set(wire::EXPECTED_LAB_HEADER, context.lab_id.as_str())
+            .map_err(|_| "Cannot pin source gateway lab")?;
+        drop(key);
+        let response = JsFuture::from(window.fetch_with_request(&http))
+            .await
+            .map_err(|_| "Source request interrupted or timed out.")?
+            .dyn_into::<web_sys::Response>()
+            .map_err(|_| "Invalid source gateway response")?;
+        if self.0.borrow().epoch != epoch {
+            return Err("The library login changed; source response discarded.".into());
+        }
+        match response.status() {
+            401 | 412 => {
+                self.disconnect();
+                return Err(
+                    "The lab login or database changed. Reconnect to the lab library first.".into(),
+                );
+            }
+            403 => return Err("Source import is not permitted by this lab server.".into()),
+            404 | 405 => return Err("Source import is not enabled on this server.".into()),
+            413 => return Err("Source gateway request exceeds its limit.".into()),
+            429 | 503 => return Err("Source gateway is busy; wait briefly before retrying.".into()),
+            _ if !response.ok() => {
+                return Err("Source gateway request failed; no document was imported.".into());
+            }
+            _ => {}
+        }
+        if response
+            .headers()
+            .get("content-type")
+            .ok()
+            .flatten()
+            .is_none_or(|s| s.split(';').next().unwrap_or("").trim() != MEDIA)
+        {
+            return Err("Unexpected source gateway response type.".into());
+        }
+        let bytes = read_bounded_limit(&response, source::MAX_RESPONSE)
+            .await
+            .map_err(|_| "Source response was interrupted or exceeded its 64 MiB bound.")?;
+        if self.0.borrow().epoch != epoch || external.aborted() {
+            return Err("Source response discarded after cancellation or login change.".into());
+        }
+        Ok(bytes)
     }
 
     pub async fn request(
@@ -254,6 +388,17 @@ struct RequestLifetime {
     controller: web_sys::AbortController,
     timeout: Option<(i32, Closure<dyn FnMut()>)>,
 }
+struct ExternalAbort {
+    signal: web_sys::AbortSignal,
+    listener: Closure<dyn FnMut()>,
+}
+impl Drop for ExternalAbort {
+    fn drop(&mut self) {
+        let _ = self
+            .signal
+            .remove_event_listener_with_callback("abort", self.listener.as_ref().unchecked_ref());
+    }
+}
 impl Drop for RequestLifetime {
     fn drop(&mut self) {
         self.controller.abort();
@@ -267,13 +412,16 @@ impl Drop for RequestLifetime {
 }
 
 async fn read_bounded(response: &web_sys::Response) -> Result<Vec<u8>, String> {
+    read_bounded_limit(response, MAX_FRAME_BYTES).await
+}
+async fn read_bounded_limit(response: &web_sys::Response, limit: usize) -> Result<Vec<u8>, String> {
     if response
         .headers()
         .get("content-length")
         .ok()
         .flatten()
         .and_then(|value| value.parse::<usize>().ok())
-        .is_some_and(|size| size > MAX_FRAME_BYTES)
+        .is_some_and(|size| size > limit)
     {
         return Err("The library response exceeds its size bound.".into());
     }
@@ -298,7 +446,7 @@ async fn read_bounded(response: &web_sys::Response) -> Result<Vec<u8>, String> {
         let value = js_sys::Reflect::get(&result, &"value".into())
             .map_err(|_| "Invalid library response chunk")?;
         let chunk = js_sys::Uint8Array::new(&value);
-        if chunk.length() as usize > MAX_FRAME_BYTES.saturating_sub(bytes.len()) {
+        if chunk.length() as usize > limit.saturating_sub(bytes.len()) {
             let _ = reader.cancel();
             return Err("The library response exceeds its size bound.".into());
         }

@@ -8,6 +8,7 @@ on:
       - "Cargo.lock"
       - "Trunk.toml"
       - "crates/**"
+      - "scripts/desktop_mcp_smoke.py"
       - ".github/workflows/desktop.yml"
   pull_request:
     paths:
@@ -15,6 +16,7 @@ on:
       - "Cargo.lock"
       - "Trunk.toml"
       - "crates/**"
+      - "scripts/desktop_mcp_smoke.py"
       - ".github/workflows/desktop.yml"
 
 permissions:
@@ -133,6 +135,8 @@ jobs:
       # build.rs checks the actual referenced main WASM for its native bridge,
       # confined snapshot bounds, and absence of historical worker bundles.
       - run: cargo build --locked -p collagene-desktop
+      - name: Check embedded MCP without opening the GUI
+        run: python scripts/desktop_mcp_smoke.py target/debug/${{ matrix.executable }}
       - name: Retain native build output for inspection
         uses: actions/upload-artifact@v7
         with:

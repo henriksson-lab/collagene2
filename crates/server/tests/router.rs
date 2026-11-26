@@ -46,6 +46,12 @@ struct TestSession {
     lab: wire::LabId,
 }
 fn fixture(limits: Limits) -> (Router, TestSession) {
+    source_fixture(limits, collagene_source_gateway::NativeBackend)
+}
+fn source_fixture<B: collagene_source_gateway::Backend>(
+    limits: Limits,
+    backend: B,
+) -> (Router, TestSession) {
     let temp = Temp::new();
     let assets = temp.0.join("assets");
     std::fs::create_dir(&assets).unwrap();
@@ -70,7 +76,16 @@ fn fixture(limits: Limits) -> (Router, TestSession) {
     let mut db = Library::open_in_memory().unwrap();
     let lab = db.create_lab("Trusted startup lab").unwrap();
     let access = db.trusted_host_access(&lab.id).unwrap();
-    let state = ServerState::new(db, access, key, "https://lab.example", snapshot, limits).unwrap();
+    let state = ServerState::with_source_backend(
+        db,
+        access,
+        key,
+        "https://lab.example",
+        snapshot,
+        limits,
+        backend,
+    )
+    .unwrap();
     // Startup files may disappear: all HTTP static reads are immutable snapshots.
     drop(temp);
     (
@@ -605,7 +620,12 @@ async fn server_capability_marker_is_in_memory_exact_and_does_not_mutate_integri
         )
         .unwrap(),
     );
-    let expected = original.replacen("<head>", &format!("<head>\n{MARKER}\n"), 1);
+    let source_marker = "<meta name=\"collagene-source-gateway\" content=\"enabled\">";
+    let expected = original.replacen(
+        "<head>",
+        &format!("<head>\n{source_marker}\n\n{MARKER}\n"),
+        1,
+    );
     let response = app
         .clone()
         .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
@@ -639,7 +659,7 @@ async fn server_capability_marker_is_in_memory_exact_and_does_not_mutate_integri
             bytes
         );
     }
-    let valid = format!("<html><head>{MARKER}</head><body></body></html>");
+    let valid = format!("<html><head>{MARKER}{source_marker}</head><body></body></html>");
     std::fs::write(root.join("index.html"), &valid).unwrap();
     AssetSnapshot::load(&root).unwrap();
     AssetSnapshot::load(&root).unwrap();
@@ -655,6 +675,11 @@ async fn server_capability_marker_is_in_memory_exact_and_does_not_mutate_integri
         "<html><head><meta name='collagene-library'></head></html>".into(),
         format!("<html><head></head><body>{MARKER}</body></html>"),
         "<html><body>No explicit head</body></html>".into(),
+        "<html><head><meta name='collagene-source-gateway' content='disabled'></head></html>".into(),
+        format!("<html><head>{source_marker}{source_marker}</head></html>"),
+        "<html><head><meta name='collagene-source-gateway' name='other' content='enabled'></head></html>".into(),
+        "<html><head><meta name='collagene-source-gateway' content='enabled' content='disabled'></head></html>".into(),
+        format!("<html><head></head><body>{source_marker}</body></html>"),
     ] {
         std::fs::write(root.join("index.html"),&invalid).unwrap();assert!(AssetSnapshot::load(&root).is_err(),"accepted {invalid}");assert_eq!(std::fs::read_to_string(root.join("index.html")).unwrap(),invalid);
     }
@@ -1525,5 +1550,368 @@ async fn expected_lab_is_a_prewrite_precondition_even_when_an_access_key_is_reus
             outcome: sync::MutationOutcome::Applied(sync::Applied::CreatedFolder(_)),
             ..
         })
+    ));
+}
+
+struct FixtureSource {
+    calls: Arc<AtomicUsize>,
+    pending: bool,
+    started: Arc<tokio::sync::Notify>,
+    dropped: Arc<tokio::sync::Notify>,
+}
+struct SourceDrop(Arc<tokio::sync::Notify>);
+impl Drop for SourceDrop {
+    fn drop(&mut self) {
+        self.0.notify_one();
+    }
+}
+impl collagene_source_gateway::Backend for FixtureSource {
+    async fn import(
+        &self,
+        _: String,
+        _: Option<String>,
+    ) -> Result<collagene_core::formats::ImportReport, collagene_sources::SourceError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let _drop = SourceDrop(self.dropped.clone());
+        self.started.notify_one();
+        if self.pending {
+            std::future::pending::<()>().await;
+        }
+        Ok(collagene_core::formats::ImportReport {
+            molecules: vec![
+                collagene_core::Molecule::dna(
+                    "Fixture only",
+                    &"ACGT".repeat(300_000),
+                    collagene_core::Topology::Circular,
+                )
+                .unwrap(),
+            ],
+            warnings: vec![],
+        })
+    }
+    async fn catalog(
+        &self,
+        _: String,
+        _: Option<String>,
+    ) -> Result<collagene_sources::AddgeneCatalog, collagene_sources::SourceError> {
+        panic!("unexpected catalog backend call")
+    }
+    async fn selection(
+        &self,
+        _: Arc<collagene_sources::AddgeneCatalog>,
+        _: u64,
+        _: Option<String>,
+    ) -> Result<collagene_core::formats::ImportReport, collagene_sources::SourceError> {
+        panic!("unexpected selection backend call")
+    }
+}
+fn fake_source(pending: bool) -> FixtureSource {
+    FixtureSource {
+        calls: Arc::new(AtomicUsize::new(0)),
+        pending,
+        started: Arc::new(tokio::sync::Notify::new()),
+        dropped: Arc::new(tokio::sync::Notify::new()),
+    }
+}
+fn source_request(auth: &TestSession, body: Body) -> Request<Body> {
+    let mut req = request(auth, body);
+    *req.uri_mut() = collagene_source_gateway::PATH.parse().unwrap();
+    req.headers_mut().insert(
+        header::CONTENT_TYPE,
+        collagene_source_gateway::CONTENT_TYPE.parse().unwrap(),
+    );
+    req
+}
+fn source_frame() -> Vec<u8> {
+    use collagene_source_gateway::wire as source;
+    source::encode_request(&source::Request {
+        id: 51,
+        client: [17; 32],
+        operation: source::Operation::Import {
+            source: "https://www.ncbi.nlm.nih.gov/nuccore/NC_001416.1".into(),
+            addgene_token: None,
+        },
+    })
+    .unwrap()
+}
+#[tokio::test]
+async fn source_route_auth_lab_origin_media_and_bounds_reject_before_body_poll() {
+    let backend = fake_source(false);
+    let calls = backend.calls.clone();
+    let (app, auth) = source_fixture(Limits::default(), backend);
+    let polled = Arc::new(AtomicUsize::new(0));
+    for case in 0..8 {
+        let mut req = source_request(&auth, Body::new(PendingBody(polled.clone())));
+        let expected = match case {
+            0 => {
+                req.headers_mut().remove(header::AUTHORIZATION);
+                StatusCode::UNAUTHORIZED
+            }
+            1 => {
+                req.headers_mut()
+                    .insert(header::HOST, "evil.example".parse().unwrap());
+                StatusCode::FORBIDDEN
+            }
+            2 => {
+                req.headers_mut()
+                    .insert(header::ORIGIN, "https://evil.example".parse().unwrap());
+                StatusCode::FORBIDDEN
+            }
+            3 => {
+                req.headers_mut()
+                    .remove(collagene_server::EXPECTED_LAB_HEADER);
+                StatusCode::PRECONDITION_REQUIRED
+            }
+            4 => {
+                req.headers_mut().insert(
+                    collagene_server::EXPECTED_LAB_HEADER,
+                    "lab-00000000000000000000000000000000".parse().unwrap(),
+                );
+                StatusCode::PRECONDITION_FAILED
+            }
+            5 => {
+                req.headers_mut().append(
+                    collagene_server::EXPECTED_LAB_HEADER,
+                    auth.lab.as_str().parse().unwrap(),
+                );
+                StatusCode::BAD_REQUEST
+            }
+            6 => {
+                req.headers_mut()
+                    .insert(header::CONTENT_TYPE, wire::MEDIA_TYPE.parse().unwrap());
+                StatusCode::UNSUPPORTED_MEDIA_TYPE
+            }
+            _ => {
+                req.headers_mut()
+                    .insert(header::CONTENT_LENGTH, "16385".parse().unwrap());
+                StatusCode::PAYLOAD_TOO_LARGE
+            }
+        };
+        assert_eq!(app.clone().oneshot(req).await.unwrap().status(), expected);
+    }
+    assert_eq!(polled.load(Ordering::SeqCst), 0);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    let oversized = app
+        .clone()
+        .oneshot(source_request(&auth, Body::from(vec![0; 16385])))
+        .await
+        .unwrap();
+    assert_eq!(oversized.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    let wrong_namespace = app
+        .oneshot(source_request(
+            &auth,
+            Body::from(wire::encode_request(&browse()).unwrap()),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(wrong_namespace.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+#[tokio::test]
+async fn source_reply_uses_shared_frame_lease_and_keeps_v1_available_after_release() {
+    use collagene_source_gateway::wire as source;
+    let backend = fake_source(false);
+    let calls = backend.calls.clone();
+    let (app, auth) = source_fixture(
+        Limits {
+            max_concurrent_library_requests: 1,
+            ..Limits::default()
+        },
+        backend,
+    );
+    let response = app
+        .clone()
+        .oneshot(source_request(&auth, Body::from(source_frame())))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        collagene_source_gateway::CONTENT_TYPE
+    );
+    let mut body = response.into_body();
+    let frame = std::future::poll_fn(|cx| http_body::Body::poll_frame(Pin::new(&mut body), cx))
+        .await
+        .unwrap()
+        .unwrap()
+        .into_data()
+        .unwrap();
+    drop(body);
+    assert!(frame.len() > 1024 * 1024);
+    let decoded = source::decode_response(&frame).unwrap();
+    assert_eq!(decoded.id, 51);
+    assert!(matches!(decoded.result, Ok(source::Output::Imported(_))));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    let slice = frame.slice(0..1);
+    drop(frame);
+    let blocked = app
+        .clone()
+        .oneshot(request(
+            &auth,
+            Body::from(wire::encode_request(&browse()).unwrap()),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(blocked.status(), StatusCode::TOO_MANY_REQUESTS);
+    drop(slice);
+    assert!(matches!(
+        call(&app, &auth, &browse()).await.outcome,
+        wire::Outcome::Success(_)
+    ));
+    // An authenticated generic URL cannot invoke even the injected backend.
+    let invalid = source::encode_request(&source::Request {
+        id: 52,
+        client: [17; 32],
+        operation: source::Operation::Import {
+            source: "https://evil.example/arbitrary.gb".into(),
+            addgene_token: None,
+        },
+    })
+    .unwrap();
+    let response = app
+        .oneshot(source_request(&auth, Body::from(invalid)))
+        .await
+        .unwrap();
+    let bytes = to_bytes(response.into_body(), source::MAX_RESPONSE)
+        .await
+        .unwrap();
+    assert!(source::decode_response(&bytes).unwrap().result.is_err());
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+#[tokio::test]
+async fn dropping_source_caller_cleans_up_provider_future_and_active_nonce() {
+    let backend = fake_source(true);
+    let started = backend.started.clone();
+    let dropped = backend.dropped.clone();
+    let calls = backend.calls.clone();
+    let (app, auth) = source_fixture(
+        Limits {
+            max_concurrent_library_requests: 1,
+            ..Limits::default()
+        },
+        backend,
+    );
+    for _ in 0..2 {
+        let req = source_request(&auth, Body::from(source_frame()));
+        let app = app.clone();
+        let task = tokio::spawn(async move { app.oneshot(req).await });
+        tokio::time::timeout(Duration::from_secs(2), started.notified())
+            .await
+            .unwrap();
+        task.abort();
+        let _ = task.await;
+        tokio::time::timeout(Duration::from_secs(2), dropped.notified())
+            .await
+            .unwrap();
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert!(matches!(
+        call(&app, &auth, &browse()).await.outcome,
+        wire::Outcome::Success(_)
+    ));
+}
+
+#[tokio::test]
+async fn source_cancel_bypasses_occupied_heavy_lane_without_releasing_reply_leases() {
+    use collagene_source_gateway::wire as source;
+    let backend = fake_source(true);
+    let started = backend.started.clone();
+    let dropped = backend.dropped.clone();
+    let (app, auth) = source_fixture(
+        Limits {
+            max_concurrent_library_requests: 1,
+            ..Limits::default()
+        },
+        backend,
+    );
+    let req = source_request(&auth, Body::from(source_frame()));
+    let provider_app = app.clone();
+    let task = tokio::spawn(async move { provider_app.oneshot(req).await });
+    tokio::time::timeout(Duration::from_secs(2), started.notified())
+        .await
+        .unwrap();
+    let blocked = app
+        .clone()
+        .oneshot(request(
+            &auth,
+            Body::from(wire::encode_request(&browse()).unwrap()),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(blocked.status(), StatusCode::TOO_MANY_REQUESTS);
+    let cancel = source::encode_request(&source::Request {
+        id: 52,
+        client: [17; 32],
+        operation: source::Operation::Cancel { request_id: 51 },
+    })
+    .unwrap();
+    let cancel_reply = tokio::time::timeout(
+        Duration::from_secs(2),
+        app.clone()
+            .oneshot(source_request(&auth, Body::from(cancel))),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(cancel_reply.status(), StatusCode::OK);
+    let cancel_bytes = to_bytes(cancel_reply.into_body(), 4096).await.unwrap();
+    assert!(matches!(
+        source::decode_response(&cancel_bytes).unwrap().result,
+        Ok(source::Output::Canceled { found: true })
+    ));
+    // Cancellation is delivered through the gateway, without aborting the caller.
+    tokio::time::timeout(Duration::from_secs(2), dropped.notified())
+        .await
+        .unwrap();
+    let reply = tokio::time::timeout(Duration::from_secs(2), task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let mut body = reply.into_body();
+    let frame = std::future::poll_fn(|cx| http_body::Body::poll_frame(Pin::new(&mut body), cx))
+        .await
+        .unwrap()
+        .unwrap()
+        .into_data()
+        .unwrap();
+    assert!(matches!(
+        source::decode_response(&frame).unwrap().result,
+        Err(source::Failure {
+            code: source::ErrorCode::Canceled,
+            ..
+        })
+    ));
+    let slice = frame.slice(0..1);
+    drop(frame);
+    drop(body);
+    let blocked = app
+        .clone()
+        .oneshot(request(
+            &auth,
+            Body::from(wire::encode_request(&browse()).unwrap()),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(blocked.status(), StatusCode::TOO_MANY_REQUESTS);
+    // Dispose also works while the large-response admission is retained. Its
+    // bounded reply owns a separate ingress slot, not the heavy lease.
+    let dispose = source::encode_request(&source::Request {
+        id: 53,
+        client: [17; 32],
+        operation: source::Operation::DisposeCatalog { handle: [0; 32] },
+    })
+    .unwrap();
+    let response = app
+        .clone()
+        .oneshot(source_request(&auth, Body::from(dispose)))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    drop(response);
+    drop(slice);
+    assert!(matches!(
+        call(&app, &auth, &browse()).await.outcome,
+        wire::Outcome::Success(_)
     ));
 }

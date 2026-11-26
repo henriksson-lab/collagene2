@@ -1,4 +1,5 @@
-//! Explicit browser URL import. Provider authentication and CORS are not bypassed.
+//! URL import selects the native/authenticated host gateway when available.
+//! The direct CORS importer remains only for the static preview.
 use collagene_core::formats::{ImportReport, MAX_IMPORT_BYTES};
 use collagene_sources::{
     AddgeneCatalog, Config, Source, SourceError, addgene_catalog_url, import_download,
@@ -113,7 +114,7 @@ fn provider_description(input: &str) -> String {
 }
 
 #[component]
-pub fn SourceImport(on_import: Callback<ImportReport, Result<(), String>>) -> impl IntoView {
+pub fn DirectSourceImport(on_import: Callback<ImportReport, Result<(), String>>) -> impl IntoView {
     let input = RwSignal::new(String::new());
     let token = RwSignal::new(String::new());
     let catalog = RwSignal::new(None::<AddgeneCatalog>);
@@ -314,5 +315,176 @@ pub fn SourceImport(on_import: Callback<ImportReport, Result<(), String>>) -> im
         <p class="helper">"Downloads are limited to 32 MiB and 45 seconds. Browser CORS restrictions may require a native/MCP import. No website login cookies are sent."</p>
         <p class="source-import-status" role="status">{move||status.get()}</p>
         <button class="button primary" disabled=move||busy.get() on:click=import>"Import source"</button>
+    }
+}
+
+/// Do not fall back to direct fetch after a hosted/native failure. A broken native
+/// bridge or missing lab login must stay explicit rather than change authority.
+#[component]
+pub fn SourceImport(on_import: Callback<ImportReport, Result<(), String>>) -> impl IntoView {
+    if crate::source_gateway_client::enabled() {
+        view! { <HostedSourceImport on_import=on_import/> }.into_any()
+    } else {
+        view! { <DirectSourceImport on_import=on_import/> }.into_any()
+    }
+}
+
+#[component]
+fn HostedSourceImport(on_import: Callback<ImportReport, Result<(), String>>) -> impl IntoView {
+    use collagene_source_gateway::wire;
+    let client = StoredValue::new_local(crate::source_gateway_client::Client::new());
+    let input = RwSignal::new(String::new());
+    let token = RwSignal::new(String::new());
+    let catalog = RwSignal::new(None::<wire::Catalog>);
+    let selected = RwSignal::new(String::new());
+    let generation = RwSignal::new(0u64);
+    let status = RwSignal::new(String::new());
+    let busy = RwSignal::new(false);
+    let alive = StoredValue::new_local(Rc::new(Cell::new(true)));
+    let invalidate = Callback::new(move |()| {
+        generation.update(|n| *n = n.wrapping_add(1));
+        client.with_value(|c| {
+            if let Ok(c) = c {
+                c.reset();
+            }
+        });
+        catalog.set(None);
+        selected.set(String::new());
+        busy.set(false);
+        status.set(String::new());
+    });
+    on_cleanup(move || {
+        alive.with_value(|a| a.set(false));
+        client.with_value(|c| {
+            if let Ok(c) = c {
+                c.close();
+            }
+        });
+    });
+    let import = Callback::new(move |()| {
+        if busy.get_untracked() {
+            return;
+        }
+        let client = match client.get_value() {
+            Ok(c) => c,
+            Err(error) => {
+                status.set(error);
+                return;
+            }
+        };
+        let source = match parse_source(&input.get_untracked()) {
+            Ok(s) => s,
+            Err(_) => {
+                status.set("Enter a supported provider identifier or HTTPS sequence URL.".into());
+                return;
+            }
+        };
+        let operation = match source {
+            Source::Addgene { plasmid_id: _ } => {
+                let password = token.get_untracked();
+                if password.is_empty() {
+                    status.set("Enter an approved Addgene API token, or import a sequence file downloaded through your Addgene account.".into());
+                    return;
+                }
+                if !password.is_empty()
+                    && Config::default().with_addgene_api_token(&password).is_err()
+                {
+                    status.set("Enter a valid Addgene API token.".into());
+                    return;
+                }
+                let addgene_token = if password.is_empty() {
+                    None
+                } else {
+                    Some(password)
+                };
+                if let Some(found) = catalog.get_untracked() {
+                    let id = match selected.get_untracked().parse::<u64>() {
+                        Ok(id) if found.choices.iter().any(|v| v.sequence_id == id) => id,
+                        _ => {
+                            status
+                                .set("Choose the exact Addgene sequence record to import.".into());
+                            return;
+                        }
+                    };
+                    wire::Operation::Select {
+                        handle: found.handle,
+                        response_blake3: found.response_blake3,
+                        sequence_id: id,
+                        addgene_token,
+                    }
+                } else {
+                    wire::Operation::Catalog {
+                        source: input.get_untracked(),
+                        addgene_token,
+                    }
+                }
+            }
+            _ => wire::Operation::Import {
+                source: input.get_untracked(),
+                addgene_token: None,
+            },
+        };
+        busy.set(true);
+        status.set("Retrieving and validating source…".into());
+        let expected_generation = generation.get_untracked();
+        let alive = alive.get_value();
+        spawn_local(async move {
+            let result = client.request(operation).await;
+            if !alive.get() || generation.get_untracked() != expected_generation {
+                if let Ok(wire::Output::Catalog(found)) = result {
+                    client.dispose_catalog(found.handle);
+                }
+                return;
+            }
+            busy.set(false);
+            match result {
+                Ok(wire::Output::Catalog(found)) => {
+                    status.set(if found.choices.is_empty(){"No available sequence records were returned. Try an authorized downloaded sequence file.".into()}else{format!("Found {} records. Review their scope and explicitly choose one to import.",found.choices.len())});
+                    catalog.set(Some(found));
+                    selected.set(String::new());
+                }
+                Ok(wire::Output::Imported(report)) => {
+                    // App's original epoch-capturing callback remains the final
+                    // workspace commit guard. The host response grants no bypass.
+                    client.reset();
+                    catalog.set(None);
+                    selected.set(String::new());
+                    if let Err(error) = on_import.run(report) {
+                        status.set(error);
+                    }
+                }
+                Ok(_) => {
+                    status.set("Source gateway returned an unexpected operation result.".into())
+                }
+                Err(error) => status.set(error),
+            }
+        });
+    });
+    view! {
+        <p>"Import an annotated nucleotide record from NCBI, ENA or DDBJ, an Addgene sequence, or a direct HTTPS sequence file. The host retrieves and validates the original source evidence."</p>
+        <label>"Sequence URL or provider identifier"<input class="source-url-input" type="text" maxlength="8192" aria-label="Sequence source URL or accession" prop:value=move||input.get() on:input=move|e|{invalidate.run(());input.set(event_target_value(&e));} placeholder="ena:AB000263.1 or addgene:12345"/></label>
+        <p class="helper source-provider-status">{move||provider_description(&input.get())}</p>
+        <p class="helper">{if crate::desktop_rpc::is_desktop(){"Retrieved by the native application; no lab login is needed."}else{"Uses the same authenticated lab session as the Lab library. Connect there first. Your lab key is never shared with a sequence provider."}}</p>
+        <Show when=move||matches!(parse_source(&input.get()),Ok(Source::Addgene{..}))>
+            <label>"Addgene API token (dialog memory only)"<input aria-label="Addgene API token" type="password" autocomplete="off" maxlength="4096" prop:value=move||token.get() on:input=move|e|{invalidate.run(());token.set(event_target_value(&e));}/></label>
+            <p class="helper">"Requires approved Addgene catalog access. This token is sent to the host for this request and only used for Addgene; it is never saved in the library or native vault. You can also open a sequence file downloaded through your Addgene account."</p>
+        </Show>
+        {move||catalog.get().map(|found|view!{
+            <div class="addgene-choices"><h3>{found.name}</h3>
+                <label>"Sequence record"<select aria-label="Addgene sequence record" prop:value=move||selected.get() on:change=move|e|{
+                    generation.update(|n|*n=n.wrapping_add(1));
+                    client.with_value(|c|if let Ok(c)=c{c.cancel_active();});
+                    busy.set(false);status.set(String::new());selected.set(event_target_value(&e));
+                }><option value="">"Choose a sequence…"</option>
+                    {found.choices.into_iter().map(|choice|view!{<option value=choice.sequence_id.to_string()>{format!("{} · {:?} · {:?} · {} bases · {}",choice.sequence_id,choice.origin,choice.completeness,choice.length.map(|n|n.to_string()).unwrap_or_else(||"unknown length".into()),choice.description)}</option>}).collect_view()}
+                </select></label>
+                <p class="helper">"Partial records are not complete plasmids. Provider categories and original source evidence are retained. The catalog expires; refresh if it is no longer available."</p>
+            </div>
+        })}
+        <p class="helper">"Downloads remain bounded to 32 MiB; the host enforces provider and timeout limits. Changing the source cancels retrieval and disposes its catalog."</p>
+        <p class="source-import-status" role="status" aria-live="polite">{move||status.get()}</p>
+        <button class="button secondary" disabled=move||!busy.get() on:click=move|_|{invalidate.run(());status.set("Source retrieval cancelled.".into());}>"Cancel retrieval"</button>
+        <button class="button secondary" disabled=move||busy.get()||catalog.with(Option::is_none) on:click=move|_|{invalidate.run(());import.run(());}>"Refresh catalog"</button>
+        <button class="button primary" disabled=move||busy.get() on:click=move|_|import.run(())>{move||if catalog.with(Option::is_some){"Import selected sequence"}else{"Import source"}}</button>
     }
 }

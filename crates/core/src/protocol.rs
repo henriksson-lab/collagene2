@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 76;
+pub const WORKER_SCHEMA_VERSION: u16 = 77;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 17;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -916,6 +916,10 @@ pub enum AnalysisJob {
         selection: crate::catalog_digest::CatalogSelection,
         options: crate::restriction_inspection::InspectionOptions,
     },
+    BuildSubstitutedAssemblyIntent {
+        inputs: Vec<crate::verification::PlanInput>,
+        request: crate::assembly_substitution_intent::Request,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1081,6 +1085,7 @@ pub enum AnalysisResult {
     RunMaterialInspection(crate::run_material::Inspection),
     RunPcrDigestInspection(crate::pcr_digest_inspection::RunPreview),
     RunCatalogRestrictionInspection(crate::run_catalog_digest::Inspection),
+    SubstitutedAssemblyIntent(crate::assembly_substitution_intent::Report),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1310,6 +1315,16 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         crate::pairwise_context::preflight(report, reference, query, *translate)?;
     }
     match &r.job {
+        AnalysisJob::BuildSubstitutedAssemblyIntent { inputs, request } => {
+            if inputs.len() > 32 {
+                return Err(Error::TooLarge);
+            }
+            let sources = inputs
+                .iter()
+                .map(|i| (i.id.as_str(), &i.molecule))
+                .collect::<Vec<_>>();
+            crate::assembly_substitution_intent::source_preflight(&sources, request)?;
+        }
         AnalysisJob::InspectRunCatalogRestriction {
             source_role,
             molecule,
@@ -1564,6 +1579,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_pcr_digest_tag(bytes, &[149])?;
     preflight_run_material_tag(bytes, &[150, 151])?;
     preflight_run_catalog_tag(bytes, &[152])?;
+    preflight_substitution_intent_tag(bytes, &[153])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1620,6 +1636,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         },
     };
     let required = match &response.result {
+        AnalysisResult::SubstitutedAssemblyIntent(_) => 77,
         AnalysisResult::RunCatalogRestrictionInspection(_) => 75,
         AnalysisResult::RunMaterialInspection(_) | AnalysisResult::RunPcrDigestInspection(_) => 74,
         AnalysisResult::PcrDigestInspection(_) => 72,
@@ -2054,6 +2071,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
                 check_variant_version(bytes, 48)?;
             }
             report.validate_binding(&response.revision)?
+        }
+        AnalysisResult::SubstitutedAssemblyIntent(report) => {
+            report.validate_binding(&response.revision)?;
         }
         AnalysisResult::RunCatalogRestrictionInspection(report) => {
             report.validate_binding(&response.revision)?;
@@ -2770,6 +2790,14 @@ fn preflight_assembly_junctions_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Er
     }
     Ok(())
 }
+fn preflight_substitution_intent_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 77)?;
+    }
+    Ok(())
+}
 fn preflight_run_catalog_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -3294,7 +3322,9 @@ fn check_workspace_version(
         check_variant_version(bytes, plan_worker_version(&candidate.plan))?;
     }
     for attachment in workspace.attachments.values() {
-        if attachment.kind == "assembly-draft-v5" {
+        if attachment.kind == "assembly-draft-v6" {
+            check_variant_version(bytes, 77)?;
+        } else if attachment.kind == "assembly-draft-v5" {
             check_variant_version(bytes, 74)?;
         } else if attachment.kind == "assembly-draft-v4" {
             check_variant_version(bytes, 71)?;
@@ -3531,6 +3561,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_pcr_digest_tag(bytes, &[157])?;
     preflight_run_material_tag(bytes, &[158, 159])?;
     preflight_run_catalog_tag(bytes, &[160])?;
+    preflight_substitution_intent_tag(bytes, &[161])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -3538,6 +3569,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::BuildSubstitutedAssemblyIntent { .. } => 77,
         AnalysisJob::InspectRunCatalogRestriction { .. } => 75,
         AnalysisJob::InspectRunMaterial { .. } | AnalysisJob::InspectRunPcrDigest { .. } => 74,
         AnalysisJob::InspectPcrDigest { .. } => 72,
@@ -3958,6 +3990,15 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             if crate::plan_oligos::export_revision(plan, target, options, *delimiter)? != r.revision
             {
                 return Err(Error::Format("Plan oligo export context changed".into()));
+            }
+            None
+        }
+        AnalysisJob::BuildSubstitutedAssemblyIntent { inputs, request } => {
+            if crate::assembly_substitution_intent::intent_revision(inputs, request)? != r.revision
+            {
+                return Err(Error::Format(
+                    "Substituted assembly original source/declaration changed".into(),
+                ));
             }
             None
         }
@@ -5162,6 +5203,10 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         AnalysisJob::ExportProtocolHtml { plan, target } => Ok(AnalysisResult::ProtocolHtml(
             crate::verification::export_protocol_html(&plan, &target),
         )),
+        AnalysisJob::BuildSubstitutedAssemblyIntent { inputs, request } => {
+            crate::assembly_substitution_intent::build(&inputs, &request)
+                .map(AnalysisResult::SubstitutedAssemblyIntent)
+        }
         AnalysisJob::BuildAssemblyIntent { inputs, request } => {
             crate::assembly_intent::build(&inputs, &request).map(AnalysisResult::AssemblyIntent)
         }

@@ -79,8 +79,42 @@ pub struct Draft {
     pub methods: MethodsState,
     #[serde(default, deserialize_with = "deserialize_junction_edits")]
     pub junction_edits: Vec<assembly_junction_edit::Edit>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_substitutions",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub substitutions: Vec<collagene_core::assembly_substitution_intent::Substitution>,
     #[serde(default)]
     pub alternatives: Option<crate::assembly_alternatives::Library>,
+}
+fn deserialize_substitutions<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<collagene_core::assembly_substitution_intent::Substitution>, D::Error> {
+    struct Visitor;
+    impl<'de> serde::de::Visitor<'de> for Visitor {
+        type Value = Vec<collagene_core::assembly_substitution_intent::Substitution>;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("at most256 literal substitutions")
+        }
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(
+            self,
+            mut seq: A,
+        ) -> Result<Self::Value, A::Error> {
+            if seq.size_hint().is_some_and(|n| n > 256) {
+                return Err(serde::de::Error::custom("at most256 substitutions"));
+            }
+            let mut result = Vec::new();
+            while let Some(value) = seq.next_element()? {
+                if result.len() == 256 {
+                    return Err(serde::de::Error::custom("at most256 substitutions"));
+                }
+                result.push(value);
+            }
+            Ok(result)
+        }
+    }
+    deserializer.deserialize_seq(Visitor)
 }
 fn deserialize_junction_edits<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
@@ -154,6 +188,7 @@ impl Default for Draft {
             active_slot: 0,
             methods: MethodsState::default(),
             junction_edits: Vec::new(),
+            substitutions: Vec::new(),
             alternatives: None,
         };
         value.sync_rows();
@@ -485,6 +520,12 @@ fn validate_oligo_capture(captured: &CapturedSource) -> Result<(), String> {
     Ok(())
 }
 impl Draft {
+    pub(crate) fn clear_slot_substitutions(&mut self, index: usize) -> Result<(), String> {
+        let roles = self.methods.role_ids(self.slots.len())?;
+        let role = roles.get(index).ok_or("The source slot is unavailable.")?;
+        self.substitutions.retain(|edit| edit.role != role.role);
+        Ok(())
+    }
     /// Explicitly reverse the declared pair by swapping its ordered originals.
     /// This changes independent intent; it does not choose an annealing result.
     /// Only the swapped row's incoming/outgoing boundary declarations are reset;
@@ -512,6 +553,7 @@ impl Draft {
             );
         }
         let mut next = self.clone();
+        next.clear_slot_substitutions(index)?;
         let slot = &mut next.slots[index];
         std::mem::swap(&mut slot.captured, &mut slot.anneal_bottom);
         slot.start = 0;
@@ -610,12 +652,52 @@ impl Draft {
     /// Structural/bounded source consistency only. Historical event IDs require
     /// the host workspace to attest them before installing any candidate.
     pub fn validate(&self) -> Result<(), String> {
-        if !matches!(self.version, 1 | 2 | 3 | 4 | 5)
+        if !matches!(self.version, 1 | 2 | 3 | 4 | 5 | 6)
             || self.version == 1 && self.alternatives.is_some()
         {
             return Err(
                 "Unsupported assembly draft version or alternatives in a legacy draft.".into(),
             );
+        }
+        if self.substitutions.len() > 256 {
+            return Err("At most256 explicit substitutions are supported.".into());
+        }
+        if !self.substitutions.is_empty() {
+            if self.version < 6 {
+                return Err(
+                    "Literal internal substitutions require assembly draft version6.".into(),
+                );
+            }
+            if self.alternatives.is_some() {
+                return Err(
+                    "Internal substitutions are currently supported only in ordinary assemblies."
+                        .into(),
+                );
+            }
+            if self.methods.source_roles.is_none() {
+                return Err(
+                    "Pin stable source roles before declaring internal substitutions.".into(),
+                );
+            }
+            let roles = self.methods.role_ids(self.slots.len())?;
+            let mut seen = std::collections::BTreeSet::new();
+            for edit in &self.substitutions {
+                if !roles.iter().any(|role| role.role == edit.role)
+                    || !token(&edit.role, 128)
+                    || edit.offset >= collagene_core::model::MAX_SEQUENCE_LEN
+                    || edit.expected.len() != 1
+                    || edit.replacement.len() != 1
+                    || !edit
+                        .expected
+                        .bytes()
+                        .chain(edit.replacement.bytes())
+                        .all(|base| b"ACGT".contains(&base))
+                    || edit.expected == edit.replacement
+                    || !seen.insert((&edit.role, edit.offset))
+                {
+                    return Err("Internal substitutions require distinct concrete single-base edits on stable source roles.".into());
+                }
+            }
         }
         let has_origin = self.methods.rows.iter().any(|row| row.run_origin.is_some());
         if has_origin && self.version < 5 {
@@ -789,6 +871,9 @@ impl Draft {
         if self.methods.rows.iter().any(|row| row.run_origin.is_some()) {
             self.version = self.version.max(5);
         }
+        if !self.substitutions.is_empty() {
+            self.version = self.version.max(6);
+        }
     }
 }
 
@@ -799,8 +884,8 @@ pub fn encode(draft: &Draft) -> Result<Vec<u8>, String> {
 }
 /// Encode current editable state without promoting working fields into saved rows.
 pub fn encode_raw(draft: &Draft) -> Result<Vec<u8>, String> {
-    if !matches!(draft.version, 3 | 4 | 5) {
-        return Err("Raw assembly persistence requires draft version 3, 4 or 5.".into());
+    if !matches!(draft.version, 3 | 4 | 5 | 6) {
+        return Err("Raw assembly persistence requires draft version3–6.".into());
     }
     draft.validate()?;
     let mut writer = Bounded { bytes: Vec::new() };
@@ -1901,6 +1986,7 @@ pub fn set_digest_fragment(
         .checked_add(1)
         .ok_or("Digest fragment index overflow")?;
     let mut next = draft.clone();
+    next.clear_slot_substitutions(index)?;
     next.slots[index].captured = Some(Arc::new(CapturedSource {
         source: fragment.source,
         molecule: fragment.molecule.as_ref().clone(),
@@ -1986,5 +2072,73 @@ mod mismatch_draft_tests {
         draft.methods.rows[0].preparation = OverlapPreparation::ExactPcr;
         draft.methods.rows[0].mismatch_max_mismatches = "x".repeat(21);
         assert!(draft.validate().is_err());
+    }
+}
+
+#[cfg(test)]
+mod substitution_tests {
+    use super::*;
+    use collagene_core::assembly_substitution_intent::Substitution;
+    #[test]
+    fn literal_substitutions_require_v6_stable_roles_and_survive_navigation_and_roundtrip() {
+        let mut draft = Draft::default();
+        let roles = draft.methods.role_ids(draft.slots.len()).unwrap();
+        draft.methods.source_roles = Some(roles.clone());
+        draft.substitutions = vec![Substitution {
+            role: roles[0].role.clone(),
+            offset: 2,
+            expected: "G".into(),
+            replacement: "T".into(),
+        }];
+        draft.sync_rows();
+        assert_eq!(draft.version, 6);
+        draft.active_slot = 1;
+        draft.sync_rows();
+        assert!(decode_version(&encode_raw(&draft).unwrap(), 6).unwrap() == draft);
+        assert!(crate::assembly_alternatives::enable(&draft, "patch-library").is_err());
+        let mut old = draft.clone();
+        old.version = 5;
+        assert!(old.validate().is_err());
+        old = draft.clone();
+        old.methods.source_roles = None;
+        assert!(old.validate().is_err());
+        let original = draft.substitutions.clone();
+        draft.slots.swap(0, 1);
+        draft.methods.swap_rows(0, 1);
+        draft.sync_rows();
+        assert!(draft.substitutions == original);
+        assert_eq!(draft.methods.role_ids(2).unwrap()[1].role, original[0].role);
+        draft.clear_slot_substitutions(0).unwrap();
+        assert!(draft.substitutions == original);
+        draft.clear_slot_substitutions(1).unwrap();
+        assert!(draft.substitutions.is_empty());
+    }
+    #[test]
+    fn legacy_defaults_and_bounded_substitution_deserialization_preserve_documentary_shape() {
+        let old = serde_json::to_value(Draft::default()).unwrap();
+        assert!(old.get("substitutions").is_none());
+        assert!(
+            decode(&serde_json::to_vec(&old).unwrap())
+                .unwrap()
+                .substitutions
+                .is_empty()
+        );
+        let mut draft = Draft::default();
+        let roles = draft.methods.role_ids(2).unwrap();
+        draft.methods.source_roles = Some(roles.clone());
+        let edit = Substitution {
+            role: roles[0].role.clone(),
+            offset: 0,
+            expected: "A".into(),
+            replacement: "T".into(),
+        };
+        draft.substitutions = vec![edit.clone()];
+        draft.sync_rows();
+        draft.substitutions.push(edit.clone());
+        assert!(draft.validate().is_err());
+        let mut oversized = serde_json::to_value(Draft::default()).unwrap();
+        oversized["version"] = 6.into();
+        oversized["substitutions"] = serde_json::to_value(vec![edit; 257]).unwrap();
+        assert!(decode(&serde_json::to_vec(&oversized).unwrap()).is_err());
     }
 }

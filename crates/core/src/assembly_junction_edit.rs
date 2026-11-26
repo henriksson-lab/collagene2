@@ -97,7 +97,7 @@ pub(crate) fn adjustment(
 ) -> Result<assembly_intent::Request, Error> {
     adjusted_sources(base, edits, lengths, false)
 }
-fn intent_adjustment(
+pub(crate) fn intent_adjustment(
     base: &assembly_intent::Request,
     edits: &[Edit],
     lengths: &[usize],

@@ -1775,3 +1775,53 @@ layouts with additive jobs/results. Same-length edits retain annotation position
 but flag affected features and invalidate stale translations. Add explicit draft
 and finalization bindings before offering this internal-edit UI. This is the next
 workflow integration, not a relaxation of the original project scope.
+
+
+### Independent internal substitutions in ordinary assembly intent
+
+The ordinary dock now declares internal single-base substitutions independently
+of preparation. An edit pins the fragment's stable role, original contribution
+offset in construct orientation, expected base and replacement. It can use exact
+single-base selection in the left sequence pane. Reordering keeps edits with the
+source; source replacement, reversal and ordered-oligo swaps clear affected edits.
+The right plasmid map remains rotation-first and does not provide approximate
+range selection. Named roles can still gain additional ordinary source slots.
+
+A new native reference-only builder composes the existing junction intent with
+these literal substitutions, including reverse and circular contributions and
+trims crossing the origin. Stale/ambiguous expected letters, duplicate positions,
+unknown roles and trimmed-away edits fail. Original inputs and preparation remain
+unchanged. Affected projected annotations need review and stale translations are
+removed; complete original evidence remains in source documents/candidate inputs.
+Finalization freshly reconstructs the full intended reference and attests its
+complete target revision and all exact original workspace events before staging.
+
+Worker77 appends job161/result153. Draftv6 persists these declarations, preserving
+legacyv1–5 meaning. Candidate17, native plan15 and science20 are unchanged. MCP now
+has174 tools: `build_substituted_assembly_intent` follows the existing standalone
+immutable DocumentRef contract, creates an independent target and full artifact,
+and explicitly claims no native workspace event ancestry. The native GUI staging
+path separately checks those event parents. General internal indels, library-row
+internal edits and automatic mutation-aware primer proposals remain required
+future integrations. Existing explicit mismatch-PCR preparation handles manually
+entered primers; primer changes never rewrite the declared target.
+
+Validation:49 targeted native checks passed, including circular-trim literal
+oracles, independent mismatch-PCR comparison, source-event staging, legacy draft
+persistence and actual MCP planning. The full offline frontend/worker build passed. Port8082 now serves its immutable
+worker77 snapshot, bundling saved-material digestion, mismatch-PCR preparation
+and this intent editor. Static integrity checks passed for39 assets, including
+all retained previous worker files; exact server process/socket metadata was
+verified. Browser/HTTP application checks remain prohibited until implementation
+is complete; no visual acceptance is claimed.
+The full original project objective and all exclusions/deferrals remain active.
+
+
+The next shared preparation gap is intentional-mismatch PCR followed by a pinned
+catalog digest, including its actual amplicon inspection and fragment picker.
+Append preparation variants and an additive inspection request/report rather
+than changing positional wire DTOs. Reuse the same mismatch-PCR geometry,
+annotation projection and tracked digest, preserve conditional incomplete-search
+semantics, and keep the independently declared substitutions separate from the
+amplicon. A common catalog-selection accessor must cover ordinary and saved-run
+preparations in both GUI and combinatorial Golden Gate filters.

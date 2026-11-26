@@ -12,18 +12,21 @@ use collagene_core::{
 pub enum IntendedReference {
     Regions(assembly_intent::Report),
     Junctions(collagene_core::assembly_junction_edit::Intent),
+    Substitutions(collagene_core::assembly_substitution_intent::Report),
 }
 impl IntendedReference {
     pub fn target(&self) -> &collagene_core::Molecule {
         match self {
             Self::Regions(intent) => &intent.target,
             Self::Junctions(intent) => &intent.target,
+            Self::Substitutions(intent) => &intent.target,
         }
     }
     pub fn fragments(&self) -> &[assembly_intent::PlacedFragment] {
         match self {
             Self::Regions(intent) => &intent.fragments,
             Self::Junctions(intent) => &intent.fragments,
+            Self::Substitutions(intent) => &intent.fragments,
         }
     }
 }
@@ -36,6 +39,9 @@ pub fn stage_any(
     match intent {
         IntendedReference::Regions(intent) => stage(frame, intent, sources, candidate),
         IntendedReference::Junctions(intent) => stage_edited(frame, intent, sources, candidate),
+        IntendedReference::Substitutions(intent) => {
+            stage_substituted(frame, intent, sources, candidate)
+        }
     }
 }
 pub struct Staged {
@@ -345,6 +351,125 @@ fn stage_edited(
             .find(|id| !docs.iter().any(|d| d.id == *id))
             .ok_or("No assembly document identity is available.")?;
         let derived=DocumentHistory::derive_from_events(&parents,id,fresh.target,"Declared assembly design intent from pinned source regions and explicit junction edits; synthetic junction bases are design intent, not observed DNA or verified physical preparation").map_err(|e|e.to_string())?;
+        let target = EventBinding {
+            document_id: derived.id.clone(),
+            event_id: derived.head_event().into(),
+            revision: derived.head_revision().into(),
+        };
+        derived.contribute(&mut staged).map_err(|e| e.to_string())?;
+        target
+    };
+    staged.active_document = target.document_id.clone();
+    if !staged
+        .candidates
+        .iter()
+        .any(|c| c.plan_revision == candidate.plan_revision)
+    {
+        staged.candidates.push(candidate.clone());
+    }
+    staged.active_candidate = Some(candidate.plan_revision.clone());
+    staged.validate().map_err(|e| e.to_string())?;
+    Ok(Staged {
+        workspace: staged,
+        target,
+        sources: sources
+            .iter()
+            .zip(&candidate.plan.inputs)
+            .map(|(event, input)| InputEventBinding {
+                input_id: input.id.clone(),
+                event: event.clone(),
+            })
+            .collect(),
+    })
+}
+
+pub fn stage_substituted(
+    frame: &Workspace,
+    intent: &collagene_core::assembly_substitution_intent::Report,
+    sources: &[EventBinding],
+    candidate: &Candidate,
+) -> Result<Staged, String> {
+    if candidate.plan.inputs.is_empty() || candidate.plan.inputs.len() > 32 {
+        return Err("Edited assembly inputs exceed the bounded staging profile.".into());
+    }
+    frame.validate().map_err(|e| e.to_string())?;
+    candidate.validate().map_err(|e| e.to_string())?;
+    if sources.len() != candidate.plan.inputs.len() || sources.is_empty() || sources.len() > 32 {
+        return Err("Assembly source bindings do not match the candidate.".into());
+    }
+    let docs = DocumentHistory::restore_all(frame).map_err(|e| e.to_string())?;
+    let mut parents = Vec::with_capacity(sources.len());
+    for (binding, input) in sources.iter().zip(&candidate.plan.inputs) {
+        let doc = docs
+            .iter()
+            .find(|d| d.id == binding.document_id)
+            .ok_or("An assembly source document is unavailable.")?;
+        let exact = doc
+            .revision_molecule(&binding.event_id)
+            .map_err(|e| e.to_string())?;
+        if exact.revision() != binding.revision
+            || binding.revision != input.revision
+            || exact.revision() != input.molecule.revision()
+        {
+            return Err("A pinned assembly source does not match its preparation input.".into());
+        }
+        parents.push((doc, binding.event_id.as_str()));
+    }
+    let fresh = collagene_core::assembly_substitution_intent::build(
+        &candidate.plan.inputs,
+        &intent.request,
+    )
+    .map_err(|e| e.to_string())?;
+    intent
+        .validate_binding(&fresh.context_revision)
+        .map_err(|e| e.to_string())?;
+    if intent.target.revision() != fresh.target.revision()
+        || candidate.plan.target_revision != fresh.target.revision()
+    {
+        return Err(
+            "The candidate does not target the independently declared source regions, junction edits and internal substitutions.".into(),
+        );
+    }
+    let expected_target_revision = fresh.target.revision();
+    let expected_parents = sources
+        .iter()
+        .map(|s| s.event_id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    let existing = docs.iter().find(|doc| {
+        doc.head_revision() == expected_target_revision
+            && doc
+                .summaries()
+                .iter()
+                .find(|event| event.current)
+                .is_some_and(|event| {
+                    event
+                        .parents
+                        .iter()
+                        .map(String::as_str)
+                        .collect::<std::collections::BTreeSet<_>>()
+                        == expected_parents
+                })
+    });
+    let mut staged = frame.clone();
+    let target = if let Some(existing) = existing {
+        EventBinding {
+            document_id: existing.id.clone(),
+            event_id: existing.head_event().into(),
+            revision: existing.head_revision().into(),
+        }
+    } else {
+        if docs.len() >= 1000 {
+            return Err("The workspace document limit has been reached.".into());
+        }
+        let prefix = format!(
+            "assembly-substitution-intent-{}",
+            &fresh.context_revision[..16]
+        );
+        let id = (1..=1001)
+            .map(|n| format!("{prefix}-{n}"))
+            .find(|id| !docs.iter().any(|d| d.id == *id))
+            .ok_or("No assembly document identity is available.")?;
+        let derived=DocumentHistory::derive_from_events(&parents,id,fresh.target,"Declared assembly design intent from pinned source regions and explicit junction edits and literal internal substitutions; declared bases are design intent, not observed DNA or verified physical preparation").map_err(|e|e.to_string())?;
         let target = EventBinding {
             document_id: derived.id.clone(),
             event_id: derived.head_event().into(),
@@ -1338,6 +1463,121 @@ mod tests {
                 &candidate
             )
             .is_err()
+        );
+        assert_eq!(serde_json::to_value(&frame).unwrap(), before);
+    }
+    #[test]
+    fn substituted_intent_stages_actual_mismatch_pcr_and_rejects_stale_sources_or_forged_target() {
+        use collagene_core::{
+            analysis::Primer, assembly_substitution_intent as substitutions, verification,
+        };
+        let source =
+            Molecule::dna("Original parent", "ACGACCCCGGGGTAAC", Topology::Linear).unwrap();
+        let frame =
+            Workspace::from_documents("Explicit mutation", vec![source.clone()], 0).unwrap();
+        let doc = &frame.documents[0];
+        let event = EventBinding {
+            document_id: doc.id.clone(),
+            event_id: doc.head_event.clone().unwrap(),
+            revision: doc.head.clone(),
+        };
+        let inputs = vec![PlanInput {
+            id: "original".into(),
+            revision: source.revision(),
+            molecule: source,
+        }];
+        let request = substitutions::Request {
+            base: assembly_intent::Request {
+                name: "Independent internal substitution".into(),
+                circular: false,
+                fragments: vec![Fragment {
+                    role: "backbone".into(),
+                    input_id: "original".into(),
+                    start: 0,
+                    end: 16,
+                    reverse: false,
+                }],
+            },
+            junction_edits: vec![],
+            substitutions: vec![substitutions::Substitution {
+                role: "backbone".into(),
+                offset: 2,
+                expected: "G".into(),
+                replacement: "T".into(),
+            }],
+        };
+        let intent = substitutions::build(&inputs, &request).unwrap();
+        assert_eq!(intent.target.sequence.as_str(), "ACTACCCCGGGGTAAC");
+        let candidate = Candidate::new(DesignPlan {
+            name: "Explicit mismatch PCR".into(),
+            target_revision: intent.target.revision(),
+            inputs,
+            steps: vec![Operation::PcrWithMismatches {
+                template: Source::Input("original".into()),
+                forward: Primer::new("Mutation F", "ACTACCCC", "").unwrap(),
+                reverse: Primer::new("Mutation R", "GTTACCCC", "").unwrap(),
+                options: Default::default(),
+            }],
+        });
+        let checked = verification::verify(&candidate.plan, &intent.target);
+        assert_eq!(
+            checked.status,
+            verification::Status::ConsistentUnderAssumptions,
+            "{:?}",
+            checked.findings
+        );
+        assert_eq!(
+            checked.products.last().unwrap().sequence.as_str(),
+            "ACTACCCCGGGGTAAC"
+        );
+        let before = serde_json::to_value(&frame).unwrap();
+        let staged = stage_any(
+            &frame,
+            &IntendedReference::Substitutions(intent.clone()),
+            std::slice::from_ref(&event),
+            &candidate,
+        )
+        .unwrap();
+        assert_eq!(staged.sources[0].event, event);
+        let target = DocumentHistory::restore_all(&staged.workspace)
+            .unwrap()
+            .into_iter()
+            .find(|doc| doc.id == staged.target.document_id)
+            .unwrap();
+        assert_eq!(
+            target
+                .summaries()
+                .iter()
+                .find(|event| event.current)
+                .unwrap()
+                .parents,
+            vec![event.event_id.clone()]
+        );
+        let mut changed = intent.clone();
+        changed
+            .target
+            .metadata
+            .insert("tampered".into(), "yes".into());
+        assert!(
+            stage_substituted(&frame, &changed, std::slice::from_ref(&event), &candidate).is_err()
+        );
+        let mut stale = candidate.plan.clone();
+        stale.inputs[0].molecule.sequence =
+            collagene_core::Sequence::dna("TTTTTTTTTTTTTTTT").unwrap();
+        stale.inputs[0].revision = stale.inputs[0].molecule.revision();
+        assert!(
+            stage_substituted(
+                &frame,
+                &intent,
+                std::slice::from_ref(&event),
+                &Candidate::new(stale)
+            )
+            .is_err()
+        );
+        let mut changed = intent;
+        changed.request.substitutions[0].replacement = "C".into();
+        assert!(
+            stage_substituted(&frame, &changed, std::slice::from_ref(&event), &candidate).is_err()
         );
         assert_eq!(serde_json::to_value(&frame).unwrap(), before);
     }

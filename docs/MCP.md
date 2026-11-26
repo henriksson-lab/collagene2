@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current registry has 173 tools. Selected-construct design and batch operations
+The current registry has 174 tools. Selected-construct design and batch operations
 add exact-version matrix paging, native inspection, historical capture/list/open
 and explicit fresh replay. [Batch contracts](COMBINATORIAL_BATCHES.md).
 Reference recombination retains explicit profile discovery, source inspection,
@@ -848,13 +848,13 @@ The existing overlap, ligation and tailing recipe tools also accept `Preparation
 
 ## PCR-product digest fragment inspection
 
-`inspect_pcr_digest` accepts `{document, request, fragment_start, max_fragments}`. `document` is an exact immutable original-source reference; `request` is `{source_role, forward, reverse, selection, options}`, using typed primers (annealing domains and 5′ extensions separately), a full exact catalog pin and restriction-inspection limits. Pagination defaults to the first100 fragments and permits1–100 per call. The registry currently has173 tools.
+`inspect_pcr_digest` accepts `{document, request, fragment_start, max_fragments}`. `document` is an exact immutable original-source reference; `request` is `{source_role, forward, reverse, selection, options}`, using typed primers (annealing domains and 5′ extensions separately), a full exact catalog pin and restriction-inspection limits. Pagination defaults to the first100 fragments and permits1–100 per call. The registry currently has174 tools.
 
 The backend freshly reconstructs actual unique PCR geometry and then inspects the resulting catalog digest. The response includes geometry count, bounded geometry preview, amplicon length, scan/product status, actual fragment/terminus summaries, findings and an immutable complete `pcr-digest-inspection.json` artifact. The fragment page retains its source/request context, and repeated identical inspection reuses the artifact. Competing PCR geometries withhold digest products; outer PCR5′OH and cut-derived5′P termini remain distinct. This tool creates no plan, target or product document and selects no fragment. Existing `propose_ligation_assembly`/`propose_overlap_assembly` recipes can subsequently bind a deliberately selected PCR/catalog fragment to the same original source and independent target.
 
 ## Saved-run material origins
 
-`list_run_material_origins {workspace, event}` discovers exact retained run/step choices in an explicitly supplied immutable `WorkspaceRef`. It returns documentary selections and an immutable `run-material-origins.json` inspection artifact, without automatically choosing even a sole match. `prepare_run_material {workspace, selection}` deliberately chooses one run/step/exact event and freshly builds its bounded `Capsule`; retrieve it from the complete `run-material-preparation.json` artifact's `selected` field. Both tools check the exact source workspace and event ownership. Equal sequence letters in another document or event do not substitute for the requested source. The registry has173 tools.
+`list_run_material_origins {workspace, event}` discovers exact retained run/step choices in an explicitly supplied immutable `WorkspaceRef`. It returns documentary selections and an immutable `run-material-origins.json` inspection artifact, without automatically choosing even a sole match. `prepare_run_material {workspace, selection}` deliberately chooses one run/step/exact event and freshly builds its bounded `Capsule`; retrieve it from the complete `run-material-preparation.json` artifact's `selected` field. Both tools check the exact source workspace and event ownership. Equal sequence letters in another document or event do not substitute for the requested source. The registry has174 tools.
 
 The capsule is a reproducible documentary request, not serialized live material. Existing recipe tools accept `Preparation::FromRun {origin: Capsule, preparation: RunPreparation}` with one flat explicit WholeLinear, Digest, CatalogDigest, ExactPcr, PcrCatalogDigest or MismatchPcr downstream preparation. They freshly reconstruct the original run again before preparing its actual material and comparing the separately chosen target. Discovery/preparation tools create no documents, candidates or targets, and an imported artifact alone grants no scientific authority.
 
@@ -877,4 +877,10 @@ and freshly verify against it; they never replace the target with a simulated
 mutant product. Complete-amplicon reaction substrates preserve the mismatch
 policy. Existing protocol HTML/PDF export describes the original mismatch-PCR
 operation and explicit oligo sequences. No tool or scientific operation was
-added; the registry remains173 tools.
+added; the registry remains174 tools.
+
+## Independently declared internal substitutions
+
+`build_substituted_assembly_intent {inputs, request}` accepts1–32 exact immutable `BoundInput {id, document: DocumentRef}` snapshots and the native request `{base, junction_edits, substitutions}`. Each substitution is `{role, offset, expected, replacement}` with a zero-based offset in the original contribution's construct orientation and single concrete DNA bases. Expected source bases, retained-core placement, role identities and bounds are checked before copying/building. Junction trims/inserts and substitutions define the intended reference independently; primers and simulated products never supply its DNA. Repeated contributions of the same original source retain distinct roles and may carry separate declared changes. The registry now has174 tools.
+
+The tool atomically returns an unverified intended-reference session target and complete `substituted-assembly-intent.json` artifact, including exact source refs, the native report and applied source/output coordinates. `verified` and `preparation_simulated` are false. Source snapshots, including historical imported revisions, stay immutable; stale expected bases or source refs reject without publishing a partial target. As with existing standalone assembly-intent tools, bindings cover MCP document roles/revisions only. This tool creates no native workspace/event ancestry, physical material, primer proposal or scientific acceptance; explicit native adoption establishes actual event parents separately.

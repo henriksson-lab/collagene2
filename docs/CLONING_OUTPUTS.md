@@ -179,14 +179,42 @@ reaction option retains this policy rather than converting it to exact PCR.
 
 The intended reference remains independent. Primer changes never rewrite the
 selected target to make a result pass. The standalone method inspector can use
-an independently edited/imported target. The ordinary dock still declares its
-reference from chosen source intervals and explicit junction edits; it does not
-yet offer arbitrary internal intended substitutions. An internal primer mutation
-which is absent from that declaration must fail target comparison. Adding
-source-bound internal edit intent to that dock remains required work.
+an independently edited/imported target. The ordinary dock declares its reference from chosen source intervals, explicit
+junction edits and independently entered internal substitutions. An internal
+primer mutation absent from that declaration must fail target comparison.
 
 Unique concrete binding geometry, search completeness and strand compatibility
 are checked by the existing verifier. Truncated searches cannot establish a
 complete result. Reconstructed PCR products have newly synthesized unphosphorylated
 5′ ends; ordered ligation still requires an explicit terminal treatment where
 necessary. Binding compatibility does not establish amplification efficiency.
+
+
+## Internal substitutions in ordinary assembly intent
+
+Open Internal substitutions in the assembly dock. Select one source base in the
+sequence pane, or enter a one-based position within the active contribution in
+construct orientation, then choose its replacement. Each declaration stores its
+stable fragment role, zero-based original contribution offset, expected base and
+replacement. Forward/reverse and origin-crossing contributions use the original
+source coordinates; edits remain with their source when fragments are reordered.
+Replacing a source, reversing a contribution or swapping oligo roles clears the
+affected contribution's edits. Unrelated substitutions are retained.
+
+The native builder first applies explicit junction trims/insertions, then maps
+the substitutions into retained original cores. A trimmed-away, duplicate,
+unknown-role, ambiguous or stale-expected-base edit fails. Original documents,
+primers and physical preparations remain untouched. Affected projected features
+need review and lose stale translations; full original annotations remain in
+source documents. Unsupported affected coordinate-bearing qualifiers fail with
+an explicit diagnostic. This interface supports up to256 single concrete-base
+substitutions; general indels and per-library-row internal edit intent remain
+separate required integrations.
+
+Review intended construct freezes the complete declaration. Finalization rebuilds
+it from the candidate's original inputs and checks all exact workspace source
+events and the complete target revision. Editing primers cannot rewrite that
+target. Exact-PCR primer proposals currently exclude internal substitutions;
+enter intentional-mismatch primers explicitly while retaining literal junction
+editing. Draftv6 persists declarations, while legacyv1–5 drafts keep their prior
+meaning. No saved draft or reference report restores scientific verification.

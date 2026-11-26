@@ -205,3 +205,5 @@ pub mod tailing_recipe;
 pub mod pcr_digest_inspection;
 
 pub mod run_catalog_digest;
+
+pub mod assembly_substitution_intent;

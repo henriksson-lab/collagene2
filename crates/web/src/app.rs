@@ -36,7 +36,8 @@ use web_sys::{HtmlCanvasElement, HtmlInputElement};
 
 type OpenDocument = collagene_core::history::DocumentHistory;
 const MAX_WORKSPACE_BYTES: usize = 64 * 1024 * 1024;
-const ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v5";
+const ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v6";
+const RECENT_ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v5";
 const PREVIOUS_ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v4";
 const OLDER_ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v3";
 const ANCIENT_ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v2";
@@ -45,6 +46,7 @@ fn assembly_draft_kind(kind: &str) -> bool {
     matches!(
         kind,
         ASSEMBLY_DRAFT_KIND
+            | RECENT_ASSEMBLY_DRAFT_KIND
             | PREVIOUS_ASSEMBLY_DRAFT_KIND
             | OLDER_ASSEMBLY_DRAFT_KIND
             | ANCIENT_ASSEMBLY_DRAFT_KIND
@@ -253,8 +255,10 @@ fn restore_workspace_state(
                     3
                 } else if asset.kind == PREVIOUS_ASSEMBLY_DRAFT_KIND {
                     4
-                } else {
+                } else if asset.kind == RECENT_ASSEMBLY_DRAFT_KIND {
                     5
+                } else {
+                    6
                 },
             )?
         }
@@ -1838,8 +1842,10 @@ pub fn App() -> impl IntoView {
         }
         match crate::assembly_draft_model::encode_raw(&draft) {
             Ok(bytes) => {
-                let draft_kind = if draft.version >= 5 {
+                let draft_kind = if draft.version >= 6 {
                     ASSEMBLY_DRAFT_KIND
+                } else if draft.version >= 5 {
+                    RECENT_ASSEMBLY_DRAFT_KIND
                 } else if draft.version >= 4 {
                     PREVIOUS_ASSEMBLY_DRAFT_KIND
                 } else {

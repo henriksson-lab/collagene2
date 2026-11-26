@@ -47,3 +47,53 @@ A failed final operation still permits exporting its diagnostic HTML/PDF protoco
 from a correctly bound fresh receipt. It does not permit opening a preceding
 preparation as the final product or enabling construct finalization. Product
 availability and receipt identity are separate checks.
+
+## Reusing a saved product as material
+
+`run_material::originating_products` discovers documentary run/step choices for an
+exact retained event. It follows an unambiguous chain whose reference content is
+unchanged except for its name; equal letters in an unrelated document do not
+establish ancestry. An intervening sequence, annotation or metadata edit stops
+that chain even if a later edit restores the original content. A discovered origin
+is a reconstruction request, not a statement that reusable material exists.
+
+`run_material::reconstruct` resolves the original run, exact original input events
+and independent target, then reruns the verifier. The entire recorded product set
+must match the current reconstruction. The selected output must have actual
+private `TrackedDuplex` state. Reference-only products, withheld graph bridges and
+other outputs without established strands remain unavailable as material.
+
+The returned `FreshProduct` has private fields and no serialization/deserialization
+implementation. Its actual strands, nicks, termini, positional modifications and
+generation records come from that same verifier pass. The complete report remains
+available so assumptions, incomplete findings and unselected components are not
+erased. Its selected reference retains a checked presentation name. Returning a
+summary over MCP or the worker protocol cannot restore this in-process receipt.
+
+This native foundation does not yet change ordinary source selection or enable a
+saved product in the assembly dock. The next handoff must persist executable
+origin declarations, retain source-event bindings and independently verify the
+downstream target. Simply concatenating plans is insufficient: changing a plan
+changes intermediate reference revisions, invalidating revision-pinned TOPO and
+reference-network selections. Preserve their originating reconstruction boundary.
+Never turn a saved duplex summary into an original-input declaration, reapply
+source-generation assumptions to descendants, or infer nick repair from a matching
+reference sequence. Existing PCR restrictions for staggered/nicked templates still
+apply. No external scientific executable is involved.
+
+For the durable continuation, use the existing candidate/typed-plan encoding for
+the unchanged origin, with an appended explicit reconstruction operation. Check
+aggregate nesting depth, decoded steps, source bases, bytes and work before
+reconstruction. Retain the original target and exact source/run/product events.
+The outer operation consumes the selected saved source event; origin targets are
+acceptance evidence, not nucleotide parents. Preserve incomplete inner findings
+in the enclosing verdict. Candidate verification reconstructs declared science;
+workspace adoption must separately attest every retained origin event. This is
+planned continuation work, not a new supported serialized operation in this
+increment.
+
+Validation includes a named 40 bp circle assembled from two PCR fragments, with
+phosphorylation explicitly applied to one. Fresh reconstruction retains the top
+nick at 20 and bottom nick at 0; it never upgrades the circular reference to a
+covalently closed molecule. Circular outer-end fields remain non-terminal
+placeholders, not evidence of nick chemistry.

@@ -1070,6 +1070,16 @@ pub(crate) fn verify_with_physical(
     )
 }
 
+/// Keep the full freshly reconstructed strand-local state for serial cloning.
+/// This is deliberately private to the native core: a saved report, metadata or
+/// deserialized tracked state cannot substitute for this reconstruction pass.
+pub(crate) fn verify_with_tracked(
+    plan: &DesignPlan,
+    target: &Molecule,
+) -> (VerificationReport, Vec<Option<TrackedDuplex>>) {
+    evaluate(plan, target)
+}
+
 /// Capture the actual final Golden Gate enumeration from the same native pass.
 /// Serialized reports cannot provide this private reconstruction receipt.
 pub(crate) fn verify_with_golden_gate_trace(

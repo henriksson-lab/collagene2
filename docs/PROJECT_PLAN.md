@@ -1619,3 +1619,29 @@ the full offline worker/frontend Trunk build completed successfully. Formatting
 and whitespace checks passed. No browser or HTTP application checks were run.
 The right-hand circular overview remains rotation-first; precise base ranges
 are selected in the left-hand sequence pane.
+
+### Saved-product material reconstruction foundation
+
+The next ordinary cloning gap is serial reuse of a named finalized product in a
+new PCR/digest/assembly. `run_material` now discovers exact documentary origin
+choices and reconstructs a selected run against its original independent target.
+Only the newly reconstructed private tracked material supplies chemistry; original
+inputs/outputs and the complete name-only event path are checked. Actual strand
+modifications and generation provenance are retained rather than dropped by the
+older duplex-only replay adapter. No report or imported metadata restores state.
+
+The native handoff is intentionally not serializable. Ordinary web source
+selection, persisted continuation declarations and worker/MCP integration remain
+to be connected; this increment does not claim that serial cloning works in the
+GUI yet. Preserve origin reconstruction boundaries for revision-pinned physical
+graph operations instead of blindly concatenating plans. Full project scope,
+existing binary schemas and the public preview remain unchanged by this foundation.
+
+Validation: 6 new saved-material integration tests passed, plus 13 existing output
+and positional-modification regression tests. Literal fixtures cover PCR hydroxyl
+ends, four retained modified CpG positions, both unsealed nicks in a 40 bp circle,
+exact event/name-only ancestry and rejection of reference-only or forged-summary
+material. The initial all-hydroxyl circularization fixture correctly failed for
+lack of any sealable bond and was corrected to explicit partial phosphorylation;
+production chemistry was unchanged. The WASM core check with JSON schemas passed.
+No frontend rebuild, browser check or HTTP application check was performed.

@@ -259,7 +259,7 @@ fn imported_projection_metadata_is_not_reinterpreted_as_an_original_physical_tem
 }
 
 #[test]
-fn known_staggered_physical_templates_remain_unsupported_for_both_pcr_operations() {
+fn exact_pcr_uses_covered_staggered_template_but_mismatch_profile_remains_unsupported() {
     let target = Molecule::dna("Independent PCR target", EXPECTED, Topology::Linear).unwrap();
     for mismatches in [false, true] {
         let plan = plan(
@@ -275,12 +275,37 @@ fn known_staggered_physical_templates_remain_unsupported_for_both_pcr_operations
             ],
         );
         let report = verification::verify(&plan, &target);
-        assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
-        assert_eq!(report.products.len(), 2);
-        assert!(
-            report.findings.iter().any(|f| f.contains("staggered")),
-            "{:?}",
-            report.findings
-        );
+        // Tailing changes the actual template; subsequent PCR must neither
+        // overwrite that parent nor inherit its unpaired enzymatic tails.
+        assert_eq!(report.products[1].sequence.as_str(), format!("{EXPECTED}A"));
+        let template: DuplexSummary =
+            serde_json::from_str(&report.products[1].metadata["duplex_model"]).unwrap();
+        assert_eq!(template.top_length, EXPECTED.len() + 1);
+        assert_eq!(template.bottom_length, EXPECTED.len() + 1);
+        assert_eq!(template.bottom_start, -1);
+        if mismatches {
+            assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
+            assert_eq!(report.products.len(), 2);
+            assert!(
+                report.findings.iter().any(|f| f.contains("staggered")),
+                "{:?}",
+                report.findings
+            );
+        } else {
+            assert_eq!(
+                report.status,
+                Status::ConsistentUnderAssumptions,
+                "{:?}",
+                report.findings
+            );
+            assert_eq!(report.products.len(), 3);
+            assert_eq!(report.products[2].sequence.as_str(), EXPECTED);
+            let product: DuplexSummary =
+                serde_json::from_str(&report.products[2].metadata["duplex_model"]).unwrap();
+            assert_eq!(product.top_length, EXPECTED.len());
+            assert_eq!(product.bottom_length, EXPECTED.len());
+            assert_eq!(product.bottom_start, 0);
+            assert!(product.nicks.is_empty());
+        }
     }
 }

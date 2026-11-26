@@ -1,0 +1,16 @@
+[package]
+name = "collagene-library-sharing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Exact selected-document publication closure for native Collagene workspaces"
+
+[dependencies]
+collagene-core = { path = "../core" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+blake3.workspace = true

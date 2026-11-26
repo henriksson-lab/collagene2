@@ -128,7 +128,9 @@ server.
 - Support explicit clone/import, pull and push, with visible local modifications,
   pending uploads and remote updates. Connection loss must leave local editing,
   analysis, design verification, exports and history usable. Failed synchronization
-  must preserve unsent local revisions for retry.
+  must preserve unsent local revisions for retry. Creation retries also require
+  durable mutation receipts or stable client creation identities: a correlation
+  ID alone cannot safely deduplicate an import whose response was lost.
 - Retain stable native identities, immutable revisions, ancestry and all selected
   dependency/run-capsule evidence. Distinguish a local document from its bindings
   to each remote library/document and last common synchronized revision. Matching
@@ -2603,3 +2605,43 @@ increased414→441MiB based on measured total plus oneMiB margin; no preallocati
 path/per-file restrictions or filesystem access changed. The previous combined
 cloning snapshot remains available for rollback. Four offline staging tests pass.
 This is publication evidence, not GUI acceptance; the full product goal remains active.
+
+
+### Shared plasmid library — native server and Leptos integration checkpoint
+
+Five registered crates now separate SQLite storage, binary DTOs, exact native
+publication scope, trusted document dispatch and the HTTP/static host. All lab
+members initially share a startup-selected lab and access key; individual accounts
+and membership/review remain F30 work. Credentials stay in a private operator file
+and browser memory, not plasmid data. [Server](SERVER_LIBRARY.md),
+[storage](LAB_LIBRARY_STORAGE.md), [protocol](LAB_LIBRARY_PROTOCOL.md),
+[host](LAB_LIBRARY_HOST.md), [publication closure](LAB_LIBRARY_SHARING.md), and
+[atomic native import](LAB_LIBRARY_IMPORT.md) record the contracts.
+
+Browser sources now connect the server-enabled folder pane to local documents,
+with search, create/rename/move, safe empty-folder deletion, revision pages, native
+history open, and captured share/push using remote expected-head CAS. Only a
+validated native dependency closure is uploaded. Existing local dependency heads
+and unrelated documents remain; clean copies can fast-forward, dirty branches
+conflict explicitly, and explicit historical checkout retains its old navigation
+bookmark. Imports persist both the merged graph and remote binding transactionally
+before applying App state. Remote-save receipt bookkeeping still relies on local
+autosave; the durable outbox/idempotent-creation/reconnect and explicit divergent
+branch resolution required for full Tauri sync are unfinished.
+
+37 distinct focused native cases pass, including genuine nested PCR/FromRun
+publication/reopen/reuse, local private-branch preservation, independent server
+scope checks, archive corruption and lab isolation, DB restart and stale CAS,
+protocol bounds, and in-process authenticated router checks. No actual HTTP,
+listener or browser smoke tests were used. The index capability marker is injected
+only in memory, without changing disk/SRI/worker assets. Independent review found
+and fixed a response admission gap: a shared permit now follows both blocking work
+and outgoing Bytes owners, including retained frames/clones/slices; its regression
+case passes. The integrated WASM check passes with three existing warnings and one
+unused unlink method; a small subsequent historical-checkout policy change is
+included in the next full asset build.
+
+Public8082 still serves the curved-map/menu snapshot e128dc1 and worker86. The new
+shared-library code is not yet published there; no access key or database has
+been created for public deployment. Browser acceptance remains deferred under
+the user's instruction, and the complete original product goal remains active.

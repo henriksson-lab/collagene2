@@ -6,6 +6,14 @@ The implementation goal is active. This repository contains an initial working f
 
 The interface targets desktop use first. Mobile scope and controls will be decided after the finished desktop product has been reviewed and edited; mobile acceptance testing is deferred.
 
+Server mode now has a shared plasmid database and folder library, with native
+revision storage, binary requests and authenticated access. The Leptos source
+includes browsing, search, history, and guarded share/push/import controls.
+[Server setup and deployment boundaries](docs/SERVER_LIBRARY.md) ·
+[Storage](docs/LAB_LIBRARY_STORAGE.md) · [History-preserving sharing](docs/LAB_LIBRARY_SHARING.md).
+Tauri's full offline local library and synchronization to chosen remotes remain
+active work; this server does not replace those requirements.
+
 The immediate desktop MVP focuses on the sequence/plasmid viewer, GenBank import and virtual restriction digest. Features and Digest are primary; More tools retains the advanced modules. The shared [molecular model](crates/model/README.md), format adapters, worker API and renderer remain foundations for the full product. [MVP model and acceptance](docs/MVP_DESKTOP.md).
 
 ## Run the web application

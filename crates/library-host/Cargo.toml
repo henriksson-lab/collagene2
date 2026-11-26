@@ -1,0 +1,16 @@
+[package]
+name = "collagene-library-host"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.88"
+description = "Native validation and dispatch boundary for a host-authenticated lab library"
+
+[dependencies]
+collagene-core = { path = "../core", default-features = false }
+collagene-lab-library = { path = "../lab-library" }
+collagene-library-protocol = { path = "../library-protocol" }
+collagene-library-sharing = { path = "../library-sharing" }
+serde = "1"
+serde_json = "1"
+thiserror = "2"

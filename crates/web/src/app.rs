@@ -1881,6 +1881,143 @@ pub fn App() -> impl IntoView {
                 Err(error) => message.set(error),
             }
         });
+    let library_current = Memo::new(move |_| {
+        let epoch = workspace_epoch.get();
+        documents.with(|docs| {
+            let document = docs.get(active.get())?;
+            Some(crate::library_view::LocalDocument {
+                id: document.id.clone(),
+                name: document.molecule.name.clone(),
+                revision: collagene_library_protocol::Digest::new(document.head_revision()).ok()?,
+                head_event: Some(document.head_event().into()),
+                workspace_epoch: epoch,
+            })
+        })
+    });
+    let library_bindings = Memo::new(move |_| {
+        attachments.with(|assets| crate::library_documents::bindings(assets).unwrap_or_default())
+    });
+    let library_snapshot = Callback::new(move |()| {
+        documents.with_untracked(|docs| {
+            workspace_snapshot(
+                docs,
+                active.get_untracked(),
+                candidate.get_untracked().as_ref(),
+                &stored_candidates.get_untracked(),
+                &attachments.get_untracked(),
+                &workspace_name.get_untracked(),
+            )
+        })
+    });
+    let library_capture = Callback::new(
+        move |()| -> crate::library_view::LocalResult<crate::library_view::Captured> {
+            let prepared = (|| {
+                if workspace_restoring.get_untracked() || !loaded.get_untracked() {
+                    return Err("Wait for local workspace storage to finish opening.".to_string());
+                }
+                Ok((library_snapshot.run(())?, workspace_epoch.get_untracked()))
+            })();
+            Box::pin(async move {
+                let (frame, epoch) = prepared?;
+                let captured = crate::library_documents::capture(frame, epoch).await?;
+                if workspace_epoch.try_get_untracked() != Some(epoch)
+                    || workspace_restoring.try_get_untracked().unwrap_or(true)
+                {
+                    return Err(
+                        "Workspace changed while preparing the shared plasmid; nothing was sent."
+                            .into(),
+                    );
+                }
+                Ok(captured)
+            })
+        },
+    );
+    let library_record_binding = Callback::new(
+        move |(epoch, binding): (u64, crate::library_bindings::Binding)| {
+            if workspace_epoch.get_untracked() != epoch || workspace_restoring.get_untracked() {
+                return Err("The server saved its revision, but the local workspace changed; no local link was overwritten.".to_string());
+            }
+            let retained = documents.with_untracked(|docs| {
+                docs.iter()
+                    .find(|document| document.id == binding.local_document)
+                    .is_some_and(|document| {
+                        document.summaries().iter().any(|event| {
+                            event.revision == binding.local_revision.as_str()
+                                && binding.local_head_event.as_deref()
+                                    == Some(event.event_id.as_str())
+                        })
+                    })
+            });
+            if !retained {
+                return Err("The remote revision is saved, but its captured local history is no longer present; reopen it from the lab library.".into());
+            }
+            let unchanged = attachments.with_untracked(|assets| {
+                crate::library_documents::bindings(assets).map(|links| {
+                    links.get(&binding.remote, &binding.local_document) == Some(&binding)
+                })
+            })?;
+            if unchanged {
+                return Ok(());
+            }
+            attachments
+                .try_update(|assets| crate::library_documents::record_binding(assets, binding))
+                .ok_or_else(|| {
+                    "Workspace closed before its remote link could be recorded.".to_string()
+                })?
+        },
+    );
+    let library_open = Callback::new(move |opened:crate::library_view::Opened| -> crate::library_view::LocalResult<crate::library_view::LocalDocument> {
+        let prepared = (|| {
+            if workspace_restoring.get_untracked() || !loaded.get_untracked() || !opened.guard.is_current() {
+                return Err("Wait for the current workspace operation to finish, then open the library revision again.".to_string());
+            }
+            let database=db.get_value().ok_or("Local browser storage is unavailable; the library revision was not imported.")?;
+            let backup=library_snapshot.run(())?;
+            let fingerprint=collagene_core::run_lineage::workspace_fingerprint(&backup).map_err(|error|error.to_string())?;
+            let epoch=workspace_epoch.get_untracked();
+            workspace_restoring.set(true);
+            save_generation.update(|generation|*generation=generation.wrapping_add(1));
+            Ok((database,backup,fingerprint,epoch))
+        })();
+        Box::pin(async move {
+            let (database,backup,fingerprint,epoch)=prepared?;
+            let result=async {
+                let decoded=crate::library_documents::decode(&opened).await?;
+                let guard=||->Result<(),String>{
+                    if !opened.guard.is_current() || workspace_epoch.get_untracked()!=epoch
+                        || collagene_core::run_lineage::workspace_fingerprint(&library_snapshot.run(())?).map_err(|error|error.to_string())?!=fingerprint
+                    {return Err("Local workspace or library session changed; the import was not committed.".into());}
+                    Ok(())
+                };
+                guard()?;
+                let mut next=crate::library_documents::merge(&backup,&decoded,&opened)?;
+                let mut state=restore_workspace_state(&next)?;
+                let document=state.documents.get(state.active).ok_or("Imported document is unavailable")?;
+                let mut info=crate::library_view::LocalDocument{
+                    id:document.id.clone(),name:document.molecule.name.clone(),
+                    revision:collagene_library_protocol::Digest::new(document.head_revision()).map_err(|error|error.to_string())?,
+                    head_event:Some(document.head_event().into()),workspace_epoch:epoch.wrapping_add(1),
+                };
+                crate::library_documents::record_binding(&mut next.attachments,crate::library_bindings::Binding{
+                    remote:opened.remote.clone(),local_document:info.id.clone(),local_revision:info.revision.clone(),
+                    local_head_event:info.head_event.clone(),remote_document:opened.document.id.clone(),remote_revision:opened.revision.id.clone(),
+                })?;
+                state.attachments=next.attachments.clone();
+                let current=encode_workspace(next,u32::MAX-303).await?;
+                let previous=encode_workspace(backup,u32::MAX-304).await?;
+                guard()?;
+                crate::storage::replace_workspace(&database,&current,&previous).await?;
+                // A committed storage transaction reaches App even if its sidebar
+                // has closed; a late view cancellation must not undo durable work.
+                let visible=assembly_visible.get_untracked();
+                batch(||{apply_restored.run(state);assembly_visible.set(visible);});
+                info.workspace_epoch=workspace_epoch.get_untracked();
+                Ok(info)
+            }.await;
+            workspace_restoring.set(false);
+            result
+        })
+    });
     Effect::new(move |_| {
         let draft = assembly_draft.get();
         if workspace_restoring.get() {
@@ -5674,7 +5811,7 @@ pub fn App() -> impl IntoView {
                                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/></svg>
                             </button>
                         </nav>
-                        <div class="explorer-frame" id="document-explorer-pane"><crate::document_explorer::DocumentExplorer documents=explorer_documents active_document=explorer_active locked=explorer_locked on_activate=explorer_activate on_open=Callback::new(move|()|if let Some(input)=file_input.get(){input.click();})/><Show when=move||!hidden_products.with(|ids|ids.is_empty())><label class="preparation-visibility"><input type="checkbox" prop:checked=move||show_prepared_history.get() on:change=move|e|show_prepared_history.set(event_target::<HtmlInputElement>(&e).checked())/>{move||format!("Show preparation history ({})",hidden_products.with(|ids|ids.len()))}</label></Show><crate::workspace_layout::PaneResize layout=layout pane=crate::workspace_layout::Pane::Documents/></div>
+                        <div class="explorer-frame" id="document-explorer-pane"><Show when=crate::library_view::enabled><crate::library_view::LibraryPane client=crate::library_client::browser() current=library_current bindings=library_bindings capture=library_capture on_open=library_open on_binding=library_record_binding locked=explorer_locked/></Show><crate::document_explorer::DocumentExplorer documents=explorer_documents active_document=explorer_active locked=explorer_locked on_activate=explorer_activate on_open=Callback::new(move|()|if let Some(input)=file_input.get(){input.click();})/><Show when=move||!hidden_products.with(|ids|ids.is_empty())><label class="preparation-visibility"><input type="checkbox" prop:checked=move||show_prepared_history.get() on:change=move|e|show_prepared_history.set(event_target::<HtmlInputElement>(&e).checked())/>{move||format!("Show preparation history ({})",hidden_products.with(|ids|ids.len()))}</label></Show><crate::workspace_layout::PaneResize layout=layout pane=crate::workspace_layout::Pane::Documents/></div>
                         <main>
                             <crate::document_explorer::DocumentTabs documents=tab_items active_document=explorer_active locked=explorer_locked on_activate=explorer_activate on_close=close_document_tab/>
                             <Show when=move||!has_open_document.get()><section class="empty-document-view" id="no-open-documents" tabindex="-1" aria-label="No open documents"><h2>"No documents open"</h2><p>"Choose a sequence from Documents, or import a file. Closing a tab keeps its document and history in the workspace."</p><div class="empty-document-actions"><button class="button primary" disabled=move||workspace_restoring.get() on:click=move|_|if let Some(input)=file_input.get(){input.click();}>"Open sequence…"</button><button class="button secondary" disabled=move||workspace_restoring.get() on:click=move|_|{modal_error.set(String::new());modal.set("url");}>"Import from URL…"</button></div></section></Show>

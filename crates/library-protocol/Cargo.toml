@@ -1,0 +1,13 @@
+[package]
+name = "collagene-library-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Bounded binary messages for a host-authenticated shared plasmid library"
+
+[dependencies]
+serde.workspace = true
+postcard.workspace = true
+blake3.workspace = true
+thiserror.workspace = true

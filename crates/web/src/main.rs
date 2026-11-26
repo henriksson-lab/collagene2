@@ -350,3 +350,12 @@ mod digest_fragment_model;
 
 #[cfg(target_arch = "wasm32")]
 mod transient_menus;
+
+#[cfg(target_arch = "wasm32")]
+mod library_bindings;
+#[cfg(target_arch = "wasm32")]
+mod library_client;
+#[cfg(target_arch = "wasm32")]
+mod library_documents;
+#[cfg(target_arch = "wasm32")]
+mod library_view;

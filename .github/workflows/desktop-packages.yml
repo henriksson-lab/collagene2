@@ -116,12 +116,7 @@ jobs:
           shared-key: desktop-packages-${{ inputs.build_profile }}
       - name: Install Linux build and packaging prerequisites
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y \
-            libwebkit2gtk-4.1-dev build-essential curl wget file \
-            libxdo-dev libssl-dev libayatana-appindicator3-dev \
-            librsvg2-dev pkg-config patchelf xdg-utils libfuse2
+        run: bash scripts/install_linux_desktop_deps.sh package
       - name: Install pinned upstream cargo-tauri binary (no source fallback)
         shell: python
         env:

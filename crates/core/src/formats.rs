@@ -454,6 +454,8 @@ pub enum TextFormat {
     GenBank,
     Embl,
     Fasta,
+    GenPept,
+    UniProt,
 }
 #[derive(Debug, Clone)]
 pub struct ExportReport {
@@ -461,12 +463,28 @@ pub struct ExportReport {
     pub warnings: Vec<String>,
 }
 pub fn export_with_report(molecule: &Molecule, format: TextFormat) -> Result<ExportReport, Error> {
+    let mut warnings = vec![];
     let text = match format {
+        TextFormat::GenPept => {
+            let report = crate::protein_formats::export(
+                std::slice::from_ref(molecule),
+                crate::protein_formats::Profile::GenPept,
+            )?;
+            warnings.extend(report.warnings);
+            report.text
+        }
+        TextFormat::UniProt => {
+            let report = crate::protein_formats::export(
+                std::slice::from_ref(molecule),
+                crate::protein_formats::Profile::UniProt,
+            )?;
+            warnings.extend(report.warnings);
+            report.text
+        }
         TextFormat::GenBank => export_genbank(molecule)?,
         TextFormat::Embl => crate::embl::export_embl(molecule)?,
         TextFormat::Fasta => export_fasta(molecule),
     };
-    let mut warnings = vec![];
     if matches!(format, TextFormat::Fasta) {
         warnings.push("FASTA exports sequence only; features, topology, source provenance and attachments require the native or annotated source format.".into());
     }
@@ -593,6 +611,9 @@ pub fn import_text(text: &str) -> Result<ImportReport, Error> {
 
     if text.len() > MAX_IMPORT_BYTES {
         return Err(Error::TooLarge);
+    }
+    if let Some(profile) = crate::protein_formats::detect(text.as_bytes()) {
+        return crate::protein_formats::import_bytes(text.as_bytes(), profile);
     }
     let text = text.trim_start_matches('\u{feff}').trim_start();
     if text.starts_with("LOCUS") {
@@ -987,7 +1008,7 @@ pub fn export_genbank(mol: &Molecule) -> Result<String, Error> {
     mol.validate()?;
     if mol.sequence.alphabet() == Alphabet::Protein {
         return Err(Error::Unsupported(
-            "protein GenPept export is not implemented; use FASTA or the native format".into(),
+            "protein documents require the explicit GenPept or UniProt export profile; FASTA and native exports are also available".into(),
         ));
     }
     let mut record = if let Some(original) = &mol.original_genbank {

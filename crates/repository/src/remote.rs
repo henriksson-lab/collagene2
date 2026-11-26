@@ -685,7 +685,7 @@ impl Repository {
                     let remote_frame =
                         workspace::load_workspace(&incoming.bytes).map_err(|_| Error::Native)?;
                     let narrow = sharing::project_document_closure(&remote_frame, &remote_pin)
-                        .map_err(|_| Error::Native)?
+                        .map_err(publication_error)?
                         .workspace;
                     (local_frame, narrow, remote_pin)
                 }

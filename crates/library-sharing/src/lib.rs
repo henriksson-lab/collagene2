@@ -2,6 +2,8 @@
 //! Native immutable events, run declarations and origin capsules remain exact.
 //! This module computes documentary dependency scope, not scientific authority.
 pub mod import;
+mod sbol_source;
+pub use sbol_source::KIND as SBOL_SOURCE_ATTACHMENT_KIND;
 
 use collagene_core::{
     run_lineage::{self, EventBinding, ProductBinding},
@@ -21,6 +23,8 @@ pub enum Error {
     Selection,
     #[error("unsupported attachment reference contract: {0}")]
     UnsupportedAttachment(String),
+    #[error("selected SBOL source cannot be safely published: {0}")]
+    SbolSource(&'static str),
     #[error("unresolved native publication dependency: {0}")]
     Unresolved(&'static str),
     #[error("publication dependency limits exceeded")]
@@ -182,6 +186,9 @@ impl<'a> Graph<'a> {
                     .entry(owner.run_id)
                     .or_default()
                     .push(hash.clone());
+            } else if a.kind == sbol_source::KIND {
+                // Ownership is derived later from retained native revisions.
+                // An unrelated documentary original must not block publication.
             } else if !presentation(&a.kind) {
                 // The attachment extension point has no generic foreign-key
                 // contract. Do not guess ownership by matching arbitrary text,
@@ -320,6 +327,17 @@ impl<'a> Graph<'a> {
             self.event(event)?;
         }
         self.resolve()?;
+        let (sbol_assets, used) = sbol_source::required_assets(
+            self.source,
+            &self.kept_revisions,
+            MAX_REFERENCE_EDGES.saturating_sub(self.edges),
+        )?;
+        self.edges = self
+            .edges
+            .checked_add(used)
+            .filter(|n| *n <= MAX_REFERENCE_EDGES)
+            .ok_or(Error::TooLarge)?;
+        self.kept_assets.extend(sbol_assets);
         let mut document_heads: BTreeMap<String, HeadPin> = BTreeMap::new();
         // Choose a stable retained head, rather than a dependency document's
         // possibly unrelated current/private branch. Keep all required events.

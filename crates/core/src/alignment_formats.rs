@@ -18,6 +18,15 @@ pub enum AlignmentFormat {
     AlignedFasta,
     Clustal,
     Stockholm,
+    PhylipSequential,
+    PhylipInterleaved,
+    PhylipRelaxedSequential,
+    PhylipRelaxedInterleaved,
+    Msf,
+    Nexus,
+    Pir,
+    Gde,
+    Selex,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -154,7 +163,26 @@ pub fn import_alignment(
         AlignmentFormat::AlignedFasta => parse_fasta(text, alphabet)?,
         AlignmentFormat::Clustal => parse_blocks(text, alphabet, false)?,
         AlignmentFormat::Stockholm => parse_blocks(text, alphabet, true)?,
+        AlignmentFormat::Pir | AlignmentFormat::Gde | AlignmentFormat::Selex => {
+            return crate::alignment_exchange_more::import_alignment(bytes, format, alphabet, name);
+        }
+        _ => return crate::alignment_exchange::import_alignment(bytes, format, alphabet, name),
     };
+    import_parsed(bytes, format, alphabet, name, raw_rows, metadata)
+}
+
+/// Shared native provenance constructor for independently parsed exchange rows.
+pub(crate) fn import_parsed(
+    bytes: &[u8],
+    format: AlignmentFormat,
+    alphabet: Alphabet,
+    name: &str,
+    raw_rows: Vec<(String, String, String)>,
+    metadata: AlignmentMetadata,
+) -> Result<AlignmentDocument, Error> {
+    if bytes.len() > MAX_ALIGNMENT_BYTES {
+        return Err(Error::TooLarge);
+    }
     let hash = blake3::hash(bytes).to_hex().to_string();
     let rows = raw_rows
         .into_iter()
@@ -535,7 +563,7 @@ fn parse_blocks(
     Ok((rows, meta))
 }
 
-fn validate_export_content(
+pub(crate) fn validate_export_content(
     alphabet: Alphabet,
     rows: &[AlignmentRow],
     metadata: &AlignmentMetadata,
@@ -551,7 +579,9 @@ fn validate_export_content(
     let mut labels = BTreeSet::new();
     let mut origins = BTreeSet::new();
     for row in rows {
-        if !token(&row.identifier)
+        if row.identifier.trim().is_empty()
+            || !row.identifier.is_ascii()
+            || row.identifier.chars().any(char::is_control)
             || row.identifier.len() > 4096
             || !ids.insert(&row.id)
             || !labels.insert(&row.identifier)
@@ -840,7 +870,12 @@ pub fn export_alignment(
 ) -> Result<AlignmentExport, Error> {
     doc.validate()?;
     let mut result = export_rows(&doc.rows, &doc.metadata, doc.alphabet, format)?;
-    result.losses.insert(0, "Canonical export does not preserve original byte layout, letter case, Stockholm dot gaps, header text, or document name; use original_bytes for exact evidence.".into());
+    if matches!(
+        format,
+        AlignmentFormat::AlignedFasta | AlignmentFormat::Clustal | AlignmentFormat::Stockholm
+    ) {
+        result.losses.insert(0, "Canonical export does not preserve original byte layout, letter case, Stockholm dot gaps, header text, or document name; use original_bytes for exact evidence.".into());
+    }
     Ok(result)
 }
 
@@ -852,7 +887,36 @@ pub(crate) fn export_rows(
     alphabet: Alphabet,
     format: AlignmentFormat,
 ) -> Result<AlignmentExport, Error> {
+    if matches!(
+        format,
+        AlignmentFormat::Pir | AlignmentFormat::Gde | AlignmentFormat::Selex
+    ) {
+        return crate::alignment_exchange_more::export_rows(
+            rows,
+            metadata,
+            alphabet,
+            format,
+            &Default::default(),
+        );
+    }
+    if !matches!(
+        format,
+        AlignmentFormat::AlignedFasta | AlignmentFormat::Clustal | AlignmentFormat::Stockholm
+    ) {
+        return crate::alignment_exchange::export_rows(
+            rows,
+            metadata,
+            alphabet,
+            format,
+            &Default::default(),
+        );
+    }
     validate_export_content(alphabet, rows, metadata)?;
+    if rows.iter().any(|row| !token(&row.identifier)) {
+        return Err(bad(
+            "this unquoted alignment format cannot preserve whitespace in row identifiers; rename explicitly or choose NEXUS/strict PHYLIP",
+        ));
+    }
     let mut text = String::new();
     let mut losses = Vec::new();
     match format {
@@ -964,6 +1028,7 @@ pub(crate) fn export_rows(
                 losses.push("Stockholm omits imported CLUSTAL consensus; no biological annotation is inferred.".into());
             }
         }
+        _ => return Err(bad("unsupported alignment output profile")),
     }
     if text.len() > MAX_ALIGNMENT_BYTES || text.lines().any(|line| line.len() > MAX_ALIGNMENT_LINE)
     {

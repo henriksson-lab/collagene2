@@ -183,6 +183,8 @@ mod pcr_digest_model;
 #[cfg(target_arch = "wasm32")]
 mod pcr_digest_view;
 #[cfg(target_arch = "wasm32")]
+mod protein_export;
+#[cfg(target_arch = "wasm32")]
 mod protein_properties;
 #[cfg(target_arch = "wasm32")]
 mod read_alignments_view;
@@ -210,6 +212,8 @@ mod run_capture;
 mod run_event_model;
 #[cfg(target_arch = "wasm32")]
 mod run_event_view;
+#[cfg(target_arch = "wasm32")]
+mod sbol_exchange;
 #[cfg(target_arch = "wasm32")]
 mod search_view;
 #[cfg(any(target_arch = "wasm32", test))]

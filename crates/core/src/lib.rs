@@ -63,10 +63,13 @@ pub mod legacy_formats;
 
 pub mod search;
 
+pub mod alignment_exchange;
+pub mod alignment_exchange_more;
 pub mod alignment_formats;
 
 pub mod view_tracks;
 
+pub mod protein_formats;
 pub mod protein_properties;
 
 pub mod tailing;

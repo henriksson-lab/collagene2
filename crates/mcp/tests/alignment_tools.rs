@@ -85,6 +85,58 @@ async fn artifact_text(c: &Client, id: &Value) -> String {
         start = r["next_start"].as_u64().unwrap();
     }
 }
+
+#[tokio::test]
+async fn nexus_and_phylip_exchange_preserve_gaps_and_require_explicit_name_loss() {
+    let (client, server) = setup().await;
+    let source=b"#NEXUS\nBEGIN DATA;\nDIMENSIONS NTAX=2 NCHAR=6;\nFORMAT DATATYPE=DNA GAP=-;\nMATRIX\n'alpha_long_identifier' AC-GT-\n'beta_long_identifier' A-TGT-\n;\nEND;\n";
+    let imported=call(&client,"import_alignment",json!({"data_base64":STANDARD.encode(source),"format":"Nexus","alphabet":"Dna","name":"exchange"})).await;
+    let reference = &imported["alignment"];
+    let original = call(
+        &client,
+        "export_alignment",
+        json!({"alignment":reference,"format":"Original"}),
+    )
+    .await;
+    assert_eq!(
+        artifact_text(&client, &original["artifact_id"])
+            .await
+            .as_bytes(),
+        source
+    );
+    reject(
+        &client,
+        "export_alignment",
+        json!({"alignment":reference,"format":"PhylipSequential"}),
+    )
+    .await;
+    let exported=call(&client,"export_alignment",json!({"alignment":reference,"format":"PhylipSequential","options":{"truncate_phylip_identifiers":true,"block_width":4}})).await;
+    assert_eq!(exported["renamings"]["alpha_long_identifier"], "alpha_long");
+    assert_eq!(exported["renamings"]["beta_long_identifier"], "beta_long_");
+    assert!(!exported["losses"].as_array().unwrap().is_empty());
+    let text = artifact_text(&client, &exported["artifact_id"]).await;
+    let reimported=call(&client,"import_alignment",json!({"data_base64":STANDARD.encode(text.as_bytes()),"format":"PhylipSequential","alphabet":"Dna","name":"reimported"})).await;
+    let page=call(&client,"read_alignment",json!({"alignment":reimported["alignment"],"row_start":0,"max_rows":2,"column_start":0,"max_columns":6})).await;
+    assert_eq!(page["rows"][0]["aligned"], "AC-GT-");
+    assert_eq!(page["rows"][1]["aligned"], "A-TGT-");
+    reject(&client,"export_alignment",json!({"alignment":reference,"format":"Native","options":{"truncate_phylip_identifiers":true,"block_width":4}})).await;
+    let native = call(
+        &client,
+        "export_alignment",
+        json!({"alignment":reference,"format":"Native"}),
+    )
+    .await;
+    let native = artifact_text(&client, &native["artifact_id"]).await;
+    let restored = call(
+        &client,
+        "import_alignment_document",
+        json!({"data_base64":STANDARD.encode(native.as_bytes())}),
+    )
+    .await;
+    assert_eq!(restored["column_count"], 6);
+    client.cancel().await.unwrap();
+    server.await.unwrap();
+}
 #[tokio::test]
 async fn imported_alignment_window_preserves_gaps_original_bytes_and_native_identity() {
     let (c, server) = setup().await;

@@ -331,12 +331,24 @@ pub enum AlignmentExportFormat {
     Stockholm,
     Native,
     Original,
+    PhylipSequential,
+    PhylipInterleaved,
+    PhylipRelaxedSequential,
+    PhylipRelaxedInterleaved,
+    Msf,
+    Nexus,
+    Pir,
+    Gde,
+    Selex,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AlignmentExportQuery {
     pub alignment: EvidenceRef,
     pub format: AlignmentExportFormat,
+    /// Additional exchange profiles only; omission retains lossless defaults.
+    #[serde(default)]
+    pub options: Option<collagene_core::alignment_exchange::ExportOptions>,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -3828,7 +3840,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Import an existing aligned FASTA, CLUSTAL or Stockholm file as exact base64 bytes with explicit DNA/RNA/protein alphabet. Strict bounded parsing retains original bytes, stable rows, gaps and supported metadata; no alignment engine is invoked. Creates immutable session evidence only."
+        description = "Import aligned FASTA, CLUSTAL, Stockholm, strict/relaxed sequential/interleaved PHYLIP, MSF, NEXUS, PIR/NBRF, GDE flat or SELEX as exact base64 bytes with explicit DNA/RNA/protein alphabet. Strict bounded parsing retains original bytes, stable rows, gaps and supported metadata; no alignment engine is invoked. Creates immutable session evidence only."
     )]
     async fn import_alignment(
         &self,
@@ -3897,7 +3909,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Export a complete immutable alignment as aligned FASTA/CLUSTAL/Stockholm with explicit losses, Native validated JSON attachment, or exact Original source bytes. Returns a UTF-8 artifact read with read_artifact chunks. No silent row renaming or external aligner. Native retains all supported evidence."
+        description = "Export a complete immutable alignment as aligned FASTA, CLUSTAL, Stockholm, strict/relaxed sequential/interleaved PHYLIP, MSF, NEXUS, PIR/NBRF, GDE flat or SELEX with explicit losses, Native validated JSON attachment, or exact Original source bytes. PHYLIP identifier truncation requires explicit options and reports renamings; collisions are rejected. Returns a UTF-8 artifact read with read_artifact chunks. No silent row renaming or external aligner. Native retains all supported evidence."
     )]
     async fn export_alignment(
         &self,
@@ -3906,14 +3918,42 @@ impl CollageneServer {
         let server = self.clone();
         self.compute(move||{
             let doc=server.store.lock().unwrap().alignment(&args.alignment)?;
-            let (bytes,losses,filename)=match args.format{
-                AlignmentExportFormat::Native=>(alignment_formats::save_alignment(&doc).map_err(bad)?,vec![],"alignment.cg2alignment"),
-                AlignmentExportFormat::Original=>(doc.original_bytes().map_err(bad)?,vec![],"alignment-original.txt"),
-                format=>{let format=match format{AlignmentExportFormat::AlignedFasta=>alignment_formats::AlignmentFormat::AlignedFasta,AlignmentExportFormat::Clustal=>alignment_formats::AlignmentFormat::Clustal,AlignmentExportFormat::Stockholm=>alignment_formats::AlignmentFormat::Stockholm,_=>unreachable!()};let report=alignment_formats::export_alignment(&doc,format).map_err(bad)?;(report.text.into_bytes(),report.losses,"alignment.txt")}
+            let (bytes,losses,renamings,filename)=match args.format{
+                AlignmentExportFormat::Native=>{
+                    if args.options.is_some(){return Err(bad("Native alignment export has no exchange-layout options"));}
+                    (alignment_formats::save_alignment(&doc).map_err(bad)?,vec![],std::collections::BTreeMap::new(),"alignment.cg2aln")
+                },
+                AlignmentExportFormat::Original=>{
+                    if args.options.is_some(){return Err(bad("Original source export has no exchange-layout options"));}
+                    (doc.original_bytes().map_err(bad)?,vec![],std::collections::BTreeMap::new(),"alignment-original.txt")
+                },
+                format=>{
+                    use alignment_formats::AlignmentFormat as F;
+                    let format=match format{
+                        AlignmentExportFormat::AlignedFasta=>F::AlignedFasta,
+                        AlignmentExportFormat::Clustal=>F::Clustal,
+                        AlignmentExportFormat::Stockholm=>F::Stockholm,
+                        AlignmentExportFormat::PhylipSequential=>F::PhylipSequential,
+                        AlignmentExportFormat::PhylipInterleaved=>F::PhylipInterleaved,
+                        AlignmentExportFormat::PhylipRelaxedSequential=>F::PhylipRelaxedSequential,
+                        AlignmentExportFormat::PhylipRelaxedInterleaved=>F::PhylipRelaxedInterleaved,
+                        AlignmentExportFormat::Msf=>F::Msf,
+                        AlignmentExportFormat::Nexus=>F::Nexus,
+                        AlignmentExportFormat::Pir=>F::Pir,
+                        AlignmentExportFormat::Gde=>F::Gde,
+                        AlignmentExportFormat::Selex=>F::Selex,
+                        _=>unreachable!()
+                    };
+                    let report=if let Some(options)=&args.options{
+                        collagene_core::alignment_exchange::export_alignment_with_options(&doc,format,options).map_err(bad)?
+                    }else{alignment_formats::export_alignment(&doc,format).map_err(bad)?};
+                    let filename=match format{F::AlignedFasta=>"alignment.fasta",F::Clustal=>"alignment.aln",F::Stockholm=>"alignment.sto",F::Msf=>"alignment.msf",F::Nexus=>"alignment.nex",F::Pir=>"alignment.pir",F::Gde=>"alignment.gde",F::Selex=>"alignment.slx",_=>"alignment.phy"};
+                    (report.text.into_bytes(),report.losses,report.renamings,filename)
+                }
             };
             let hash=blake3::hash(&bytes).to_hex().to_string();let size=bytes.len();let text=String::from_utf8(bytes).map_err(bad)?;
             let artifact=server.text_artifact(text,"text/plain",filename)?;
-            output(json!({"alignment":args.alignment,"artifact_id":artifact,"bytes":size,"content_blake3":hash,"losses":losses,"renamings":{},"encoding":"utf-8","source_is_current":doc.source_is_current().map_err(bad)?}))
+            output(json!({"alignment":args.alignment,"artifact_id":artifact,"bytes":size,"content_blake3":hash,"losses":losses,"renamings":renamings,"encoding":"utf-8","source_is_current":doc.source_is_current().map_err(bad)?}))
         }).await
     }
     #[tool(

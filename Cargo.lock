@@ -775,6 +775,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "collagene-design-exchange"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "collagene-model",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "collagene-desktop"
 version = "0.1.0"
 dependencies = [
@@ -946,6 +957,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "collagene-core",
+ "collagene-design-exchange",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -1149,6 +1161,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "collagene-core",
+ "collagene-design-exchange",
  "collagene-desktop-protocol",
  "collagene-desktop-sync-protocol",
  "collagene-library-protocol",

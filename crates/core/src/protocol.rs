@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 86;
+pub const WORKER_SCHEMA_VERSION: u16 = 87;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 19;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -2593,7 +2593,10 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
                 ));
             }
         }
-        AnalysisResult::AlignmentDocument(document) => document.validate()?,
+        AnalysisResult::AlignmentDocument(document) => {
+            check_variant_version(bytes, alignment_document_worker_version(document))?;
+            document.validate()?;
+        }
         AnalysisResult::AlignmentRows(rows) => {
             if rows.len() > crate::alignment_formats::MAX_ALIGNMENT_ROWS {
                 return Err(Error::TooLarge);
@@ -2602,9 +2605,10 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
                 row.validate()?;
             }
         }
-        AnalysisResult::AlignmentSaved(bytes) => {
-            crate::alignment_formats::load_alignment(bytes)?;
-            if blake3::hash(bytes).to_hex().as_str() != response.revision {
+        AnalysisResult::AlignmentSaved(archive) => {
+            let document = crate::alignment_formats::load_alignment(archive)?;
+            check_variant_version(bytes, alignment_document_worker_version(&document))?;
+            if blake3::hash(archive).to_hex().as_str() != response.revision {
                 return Err(Error::Format(
                     "saved alignment response revision mismatch".into(),
                 ));
@@ -3573,6 +3577,27 @@ fn check_combinatorial_request_version(
     }
     Ok(())
 }
+fn alignment_format_worker_version(format: &crate::alignment_formats::AlignmentFormat) -> u16 {
+    use crate::alignment_formats::AlignmentFormat::*;
+    if matches!(format, AlignedFasta | Clustal | Stockholm) {
+        10
+    } else {
+        87
+    }
+}
+fn alignment_document_worker_version(
+    document: &crate::alignment_formats::AlignmentDocument,
+) -> u16 {
+    if document
+        .rows
+        .iter()
+        .any(|row| row.identifier.bytes().any(|b| b.is_ascii_whitespace()))
+    {
+        87
+    } else {
+        alignment_format_worker_version(&document.source.format)
+    }
+}
 fn check_workspace_version(
     bytes: &[u8],
     workspace: &crate::workspace::Workspace,
@@ -3585,7 +3610,10 @@ fn check_workspace_version(
         check_preparation_version(bytes, &candidate.plan)?;
     }
     for attachment in workspace.attachments.values() {
-        if attachment.kind == "assembly-draft-v10" {
+        if attachment.kind == crate::alignment_formats::WORKSPACE_ATTACHMENT_KIND {
+            let document = crate::alignment_formats::load_alignment(&attachment.bytes)?;
+            check_variant_version(bytes, alignment_document_worker_version(&document))?;
+        } else if attachment.kind == "assembly-draft-v10" {
             check_variant_version(bytes, 86)?;
         } else if attachment.kind == "assembly-draft-v9" {
             check_variant_version(bytes, 84)?;
@@ -4095,11 +4123,17 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         AnalysisJob::RecordCloningRun { .. } | AnalysisJob::ReplayCloningRun { .. } => 12,
         AnalysisJob::TailPreview { .. } | AnalysisJob::CheckOverlapProfile { .. } => 11,
         AnalysisJob::ProteinProperties { .. } => 10,
-        AnalysisJob::ImportAlignment { .. }
-        | AnalysisJob::ExportAlignment { .. }
-        | AnalysisJob::ExtractAlignmentRows { .. }
-        | AnalysisJob::SaveAlignment { .. }
-        | AnalysisJob::LoadAlignment { .. } => 10,
+        AnalysisJob::ImportAlignment { format, .. } => alignment_format_worker_version(format),
+        AnalysisJob::ExportAlignment { document, format } => {
+            alignment_document_worker_version(document).max(alignment_format_worker_version(format))
+        }
+        AnalysisJob::ExtractAlignmentRows { document, .. }
+        | AnalysisJob::SaveAlignment { document } => alignment_document_worker_version(document),
+        AnalysisJob::LoadAlignment { bytes: archive } => {
+            crate::alignment_formats::load_alignment(archive)
+                .map(|document| alignment_document_worker_version(&document))
+                .unwrap_or(10)
+        }
         AnalysisJob::ViewTracks { .. }
         | AnalysisJob::SearchDocument { .. }
         | AnalysisJob::PrepareTracks { .. }

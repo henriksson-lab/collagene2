@@ -88,6 +88,9 @@ fn repository_error(error: repository::Error) -> Fault {
             wire::ErrorCode::HistoryConflict,
             "Saved native histories diverge; review an explicit checkout.",
         ),
+        E::SbolSource => Fault::invalid(
+            "SBOL source evidence cannot be shared in its current scope. Keep the complete native archive and review the original design.",
+        ),
         E::Storage(store::Error::NotFound) => Fault::error(
             wire::ErrorCode::NotFound,
             "Item not found in this native repository.",

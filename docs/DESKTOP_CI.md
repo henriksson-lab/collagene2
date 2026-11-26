@@ -29,3 +29,5 @@ Do not attach a console during MCP startup, since that can replace redirected
 handles. A release-mode execution check remains outstanding.
 
 This workflow does not launch a GUI, browser, listener, or credential vault, and does not invoke external scientific programs. Packaging, signing/notarization, installation, graphical acceptance, live platform credential-store acceptance, and offline restart acceptance on each supported OS remain separate unfinished deliverables. A passing build demonstrates compilation and asset embedding, and the headless check covers the embedded MCP command; neither establishes those remaining runtime properties. Native repository, protocol, and scientific fixtures remain in the existing checks.
+
+Linux prerequisite setup uses the runner's Ubuntu source list through `scripts/install_linux_desktop_deps.sh`. This avoids unrelated preinstalled feeds blocking WebView SDK resolution; Ubuntu TLS and package-signature verification remain enabled. The observed `3020c0a` Linux desktop job failed on a Microsoft feed HTTP403 before compiling, while its scientific Linux and Windows/macOS desktop jobs passed.

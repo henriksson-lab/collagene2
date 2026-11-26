@@ -1,6 +1,6 @@
 # Collagene 2
 
-A molecular cloning workspace built with Rust, WebAssembly and Leptos, with WebGL2 maps and deterministic design verification. MIT licensed. Web first; Tauri for Windows, macOS and Linux follows later.
+A molecular cloning workspace built with Rust, WebAssembly and Leptos, with WebGL2 maps and deterministic design verification. MIT licensed, with a Tauri desktop shell for Windows, macOS and Linux in development.
 
 The implementation goal is active. This repository contains an initial working foundation, not complete Benchling/SnapGene parity. See [implementation status](docs/IMPLEMENTATION_STATUS.md) and the [product plan](docs/PROJECT_PLAN.md).
 
@@ -23,6 +23,16 @@ Installation and graphical offline acceptance remain unfinished.
 
 The immediate desktop MVP focuses on the sequence/plasmid viewer, GenBank import and virtual restriction digest. Features and Digest are primary; More tools retains the advanced modules. The shared [molecular model](crates/model/README.md), format adapters, worker API and renderer remain foundations for the full product. [MVP model and acceptance](docs/MVP_DESKTOP.md).
 
+Annotated protein exchange supports GenPept and UniProt with explicit identifiers,
+source retention and export-loss review. Alignment exchange supports aligned FASTA,
+CLUSTAL, Stockholm, strict/relaxed PHYLIP, MSF, NEXUS, PIR/NBRF, GDE flat and SELEX;
+these adapters do not run an alignment engine. SBOL3.1 JSON-LD has a separate
+component/sequence and topology review before native projection, with original
+hierarchy retained. See [protein formats](docs/PROTEIN_FORMATS.md),
+[alignment profiles](docs/ALIGNMENT_EXCHANGE.md),
+[additional alignment profiles](docs/ALIGNMENT_EXCHANGE_MORE.md), and
+[SBOL exchange](docs/SBOL_EXCHANGE.md) for the supported profiles and losses.
+
 ## Run the web application
 
 Install Rust with the `wasm32-unknown-unknown` target and [Trunk](https://github.com/trunk-rs/trunk), then run from this directory:
@@ -37,7 +47,7 @@ Open `http://127.0.0.1:8080`. If your environment sets `NO_COLOR=1` and Trunk re
 
 For a review preview on a public port, run `python3 scripts/serve_preview.py --root dist --bind 0.0.0.0 --port 8082`. This development server snapshots only regular assets inside the explicit root, blocks symlinks/hidden paths/directory listings and accepts no uploads or writes. Requests never open host paths. It exposes no native filesystem or MCP API; selected documents and browser storage remain with each visitor. Restart the preview to load a different build. To preserve versioned analysis workers for already open tabs, stage a new directory with `python3 scripts/stage_preview.py --build dist --previous /path/to/old-preview --output /path/to/new-preview` before restarting. This retains validated worker files and drops obsolete main bundles, within the same immutable asset budget.
 
-Open GenBank, EMBL, FASTA, supported SnapGene `.dna`, ABIF/SCF traces, plain DNA or a saved `.cg2` file, or paste a sequence. The initial plasmid is a labeled synthetic demonstration. Documents and revision history autosave in this browser's IndexedDB. Use **Workspace → Save workspace file** for a portable `.cg2workspace` archive with all documents, branches, undo/redo, candidates and original evidence; `.cg2` remains a single-document copy. **Restore previous workspace** recovers the workspace retained before the last explicit replacement. Browser storage can be cleared by the browser and is not a backup.
+Open GenBank, EMBL, GenPept, UniProt, FASTA, supported SnapGene `.dna`, ABIF/SCF traces, plain DNA or a saved `.cg2` file, or paste a sequence. The initial plasmid is a labeled synthetic demonstration. Documents and revision history autosave in this browser's IndexedDB. Use **Workspace → Save workspace file** for a portable `.cg2workspace` archive with all documents, branches, undo/redo, candidates and original evidence; `.cg2` remains a single-document copy. **Restore previous workspace** recovers the workspace retained before the last explicit replacement. Browser storage can be cleared by the browser and is not a backup.
 
 The **Documents** explorer searches names, source labels, molecule types and document IDs, with sorting and pages of up to 100 documents. Tabs follow workspace order and support arrow keys, Home and End. Use the Documents button in the left navigation to toggle the explorer; the other buttons open file import, Addgene/NCBI import and workspace settings. Document organization stays within one simple workspace.
 

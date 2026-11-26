@@ -1,0 +1,17 @@
+{
+  "@context": {"sbol":"http://sbols.org/v3#","prov":"http://www.w3.org/ns/prov#"},
+  "@graph": [
+    {"@id":"https://example.org/lab/plasmid","@type":"sbol:Component","sbol:hasNamespace":{"@id":"https://example.org/lab"},"sbol:name":"Literal circular design","sbol:type":[{"@id":"https://identifiers.org/SBO:0000251"},{"@id":"http://identifiers.org/SO:0000988"}],"sbol:hasSequence":{"@id":"https://example.org/lab/plasmid_sequence"},"sbol:hasFeature":[{"@id":"https://example.org/lab/insert"},{"@id":"https://example.org/lab/wrapped"}],"sbol:hasConstraint":{"@id":"https://example.org/lab/ordering"}},
+    {"@id":"https://example.org/lab/plasmid_sequence","@type":"sbol:Sequence","sbol:hasNamespace":{"@id":"https://example.org/lab"},"sbol:elements":"AAAACCCCGGGGTTTT","sbol:encoding":{"@id":"https://identifiers.org/edam:format_1207"}},
+    {"@id":"https://example.org/lab/part","@type":"sbol:Component","sbol:hasNamespace":{"@id":"https://example.org/lab"},"sbol:type":{"@id":"https://identifiers.org/SBO:0000251"},"sbol:hasSequence":{"@id":"https://example.org/lab/part_sequence"}},
+    {"@id":"https://example.org/lab/part_sequence","@type":"sbol:Sequence","sbol:hasNamespace":{"@id":"https://example.org/lab"},"sbol:elements":"CCCC","sbol:encoding":{"@id":"https://identifiers.org/edam:format_1207"}},
+    {"@id":"https://example.org/lab/insert","@type":"sbol:SubComponent","sbol:name":"Actual child instance","sbol:instanceOf":{"@id":"https://example.org/lab/part"},"sbol:hasLocation":{"@id":"https://example.org/lab/insert_range"},"sbol:sourceLocation":{"@id":"https://example.org/lab/child_range"},"sbol:orientation":{"@id":"https://identifiers.org/SO:0001030"}},
+    {"@id":"https://example.org/lab/insert_range","@type":"sbol:Range","sbol:start":5,"sbol:end":8,"sbol:hasSequence":{"@id":"https://example.org/lab/plasmid_sequence"}},
+    {"@id":"https://example.org/lab/child_range","@type":"sbol:Range","sbol:start":1,"sbol:end":4,"sbol:hasSequence":{"@id":"https://example.org/lab/part_sequence"}},
+    {"@id":"https://example.org/lab/wrapped","@type":"sbol:SequenceFeature","sbol:name":"Origin-spanning annotation","sbol:hasLocation":[{"@id":"https://example.org/lab/origin_right"},{"@id":"https://example.org/lab/origin_left"}],"sbol:orientation":{"@id":"https://identifiers.org/SO:0001030"}},
+    {"@id":"https://example.org/lab/origin_right","@type":"sbol:Range","sbol:start":13,"sbol:end":16,"sbol:order":-10,"sbol:hasSequence":{"@id":"https://example.org/lab/plasmid_sequence"}},
+    {"@id":"https://example.org/lab/origin_left","@type":"sbol:Range","sbol:start":1,"sbol:end":4,"sbol:order":20,"sbol:hasSequence":{"@id":"https://example.org/lab/plasmid_sequence"}},
+    {"@id":"https://example.org/lab/ordering","@type":"sbol:Constraint","sbol:subject":{"@id":"https://example.org/lab/insert"},"sbol:object":{"@id":"https://example.org/lab/wrapped"},"sbol:restriction":{"@id":"sbol:precedes"}},
+    {"@id":"https://example.org/lab/activity","@type":"prov:Activity","https://example.org/foreign/status":"verified","prov:generated":{"@id":"https://example.org/lab/plasmid"}}
+  ]
+}

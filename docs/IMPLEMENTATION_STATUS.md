@@ -4,7 +4,7 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-Current source uses worker86, candidate19, native plan17, science22 and179 MCP
+Current source uses worker87, candidate19, native plan17, science22 and179 MCP
 tools. The Tauri shell has a durable offline local library, explicit multi-remote
 synchronization, scoped native credentials, saved-branch review, embedded stdio
 MCP and authenticated URL-import adapters. All export controls now await native
@@ -13,9 +13,21 @@ service. Native SDK and UI WASM checks pass; focused backend/scientific fixtures
 pass. Installer workflow sources are present, but packaging, installation and
 graphical/offline acceptance remain unfinished.
 
-The `bf1ff47` checkpoint passes scientific/web CI and actual desktop builds plus
-headless embedded MCP execution on Windows, macOS and Linux. This proves those
-checks, not the later export code or GUI behavior. New kernel APIs model explicit
+The native export checkpoint `3020c0a` passes all scientific/web CI jobs on
+Windows/macOS/Linux, and its desktop build/MCP jobs pass on Windows and macOS.
+Linux desktop setup failed when an unrelated preinstalled Microsoft apt feed
+returned403; the prerequisite script now selects the runner's Ubuntu sources.
+Unsigned package builds compiled all three native binaries but found an invalid
+bundle category. The configuration now uses the documented `Education` category;
+actual package creation still needs a fresh successful run.
+
+The parallel format batch adds annotated GenPept/UniProt, PHYLIP/MSF/NEXUS and
+PIR/GDE/SELEX alignment exchange, plus an independent SBOL3.1 structural JSON-LD
+crate and component/sequence review. Source data, exact labels/coordinates,
+explicit losses and native history remain separate from physical authority.
+Known profiles have focused fixtures and native/worker/WASM checks; original-SBOL
+publication refuses unselected or unsupported graph content. Subset sharing with
+reviewed omission receipts remains unfinished. New kernel APIs also model explicit
 3′ shortening and unsealed homology annealing; verifier/recipe/UI integration is
 still required. The full product goal remains active.
 

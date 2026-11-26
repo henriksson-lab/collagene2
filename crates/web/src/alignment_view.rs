@@ -64,6 +64,15 @@ fn format_name(format: AlignmentFormat) -> &'static str {
         AlignmentFormat::AlignedFasta => "Aligned FASTA",
         AlignmentFormat::Clustal => "CLUSTAL",
         AlignmentFormat::Stockholm => "Stockholm",
+        AlignmentFormat::PhylipSequential => "PHYLIP sequential (strict IDs)",
+        AlignmentFormat::PhylipInterleaved => "PHYLIP interleaved (strict IDs)",
+        AlignmentFormat::PhylipRelaxedSequential => "PHYLIP sequential (relaxed IDs)",
+        AlignmentFormat::PhylipRelaxedInterleaved => "PHYLIP interleaved (relaxed IDs)",
+        AlignmentFormat::Msf => "MSF",
+        AlignmentFormat::Nexus => "NEXUS",
+        AlignmentFormat::Pir => "PIR / NBRF",
+        AlignmentFormat::Gde => "GDE flat",
+        AlignmentFormat::Selex => "SELEX",
     }
 }
 fn extension(format: AlignmentFormat) -> &'static str {
@@ -71,12 +80,30 @@ fn extension(format: AlignmentFormat) -> &'static str {
         AlignmentFormat::AlignedFasta => "fasta",
         AlignmentFormat::Clustal => "aln",
         AlignmentFormat::Stockholm => "sto",
+        AlignmentFormat::PhylipSequential
+        | AlignmentFormat::PhylipInterleaved
+        | AlignmentFormat::PhylipRelaxedSequential
+        | AlignmentFormat::PhylipRelaxedInterleaved => "phy",
+        AlignmentFormat::Msf => "msf",
+        AlignmentFormat::Nexus => "nex",
+        AlignmentFormat::Pir => "pir",
+        AlignmentFormat::Gde => "gde",
+        AlignmentFormat::Selex => "slx",
     }
 }
 fn parse_format(value: &str) -> AlignmentFormat {
     match value {
         "Clustal" => AlignmentFormat::Clustal,
         "Stockholm" => AlignmentFormat::Stockholm,
+        "PhylipSequential" => AlignmentFormat::PhylipSequential,
+        "PhylipInterleaved" => AlignmentFormat::PhylipInterleaved,
+        "PhylipRelaxedSequential" => AlignmentFormat::PhylipRelaxedSequential,
+        "PhylipRelaxedInterleaved" => AlignmentFormat::PhylipRelaxedInterleaved,
+        "Msf" => AlignmentFormat::Msf,
+        "Nexus" => AlignmentFormat::Nexus,
+        "Pir" => AlignmentFormat::Pir,
+        "Gde" => AlignmentFormat::Gde,
+        "Selex" => AlignmentFormat::Selex,
         _ => AlignmentFormat::AlignedFasta,
     }
 }
@@ -309,6 +336,25 @@ pub fn AlignmentPanel(
                         Some(AlignmentFormat::Clustal)
                     } else if bytes.starts_with(b"# STOCKHOLM") {
                         Some(AlignmentFormat::Stockholm)
+                    } else if bytes.starts_with(b"!!AA_MULTIPLE_ALIGNMENT")
+                        || bytes.starts_with(b"!!NA_MULTIPLE_ALIGNMENT")
+                    {
+                        Some(AlignmentFormat::Msf)
+                    } else if bytes
+                        .get(..6)
+                        .is_some_and(|header| header.eq_ignore_ascii_case(b"#NEXUS"))
+                    {
+                        Some(AlignmentFormat::Nexus)
+                    } else if matches!(ext.as_str(), "pir" | "nbrf")
+                        || [b">P1;", b">F1;", b">DL;", b">RL;", b">DC;", b">RC;"]
+                            .iter()
+                            .any(|header| bytes.starts_with(*header))
+                    {
+                        Some(AlignmentFormat::Pir)
+                    } else if ext == "gde" {
+                        Some(AlignmentFormat::Gde)
+                    } else if matches!(ext.as_str(), "slx" | "selex" | "sel") {
+                        Some(AlignmentFormat::Selex)
                     } else if matches!(
                         ext.as_str(),
                         "afa" | "afasta" | "fa" | "fasta" | "faa" | "fna"
@@ -446,12 +492,12 @@ pub fn AlignmentPanel(
         <div class="alignment-panel">
             <p class="helper">"Open an existing alignment as a separate collection. Alignment columns are not external reference coordinates. No multiple-alignment engine or confidence score is inferred."</p>
             <details class="alignment-import" open=move||alignment.get().is_none()><summary>"Import an alignment"</summary>
-                <input node_ref=file type="file" accept=".aln,.clustal,.sto,.stockholm,.afa,.afasta,.fa,.fasta,.fna,.faa,.cg2aln" style="display:none" on:change=open_file/>
+                <input node_ref=file type="file" accept=".aln,.clustal,.sto,.stockholm,.afa,.afasta,.fa,.fasta,.fna,.faa,.phy,.phylip,.msf,.nex,.nexus,.pir,.nbrf,.gde,.slx,.selex,.sel,.cg2aln" style="display:none" on:change=open_file/>
                 <button class="button secondary" on:click=move|_|if let Some(input)=file.get(){input.click();}>"Choose alignment file"</button>
                 {move||uploaded.get().map(|source|view!{<p class="helper">{format!("File: {} · {} bytes{}",source.name,source.bytes.len(),if source.native{" · saved alignment; stored alphabet retained"}else{""})}</p><button class="text-tool" on:click=move|_|uploaded.set(None)>"Use pasted alignment instead"</button>})}
                 <Show when=move||uploaded.get().is_none()><textarea aria-label="Aligned sequence input" rows="6" placeholder=">row_a\nAC-GT\n>row_b\nACCGT" prop:value=move||source_text.get() on:input=move|e|source_text.set(event_target_value(&e))></textarea></Show>
                 <div class="alignment-import-fields"><label>"Alignment name"<input aria-label="Alignment name" prop:value=move||name.get() on:input=move|e|name.set(event_target_value(&e))/></label>
-                <label>"Source format"<select aria-label="Alignment source format" prop:value=move||format!("{:?}",import_format.get()) disabled=move||uploaded.with(|p|p.as_ref().is_some_and(|p|p.native)) on:change=move|e|import_format.set(parse_format(&event_target_value(&e)))><option value="AlignedFasta">"Aligned FASTA"</option><option value="Clustal">"CLUSTAL"</option><option value="Stockholm">"Stockholm1.0"</option></select></label>
+                <label>"Source format"<select aria-label="Alignment source format" prop:value=move||format!("{:?}",import_format.get()) disabled=move||uploaded.with(|p|p.as_ref().is_some_and(|p|p.native)) on:change=move|e|import_format.set(parse_format(&event_target_value(&e)))><option value="AlignedFasta">"Aligned FASTA"</option><option value="Clustal">"CLUSTAL"</option><option value="Stockholm">"Stockholm1.0"</option><option value="PhylipSequential">"PHYLIP sequential · strict IDs"</option><option value="PhylipInterleaved">"PHYLIP interleaved · strict IDs"</option><option value="PhylipRelaxedSequential">"PHYLIP sequential · relaxed IDs"</option><option value="PhylipRelaxedInterleaved">"PHYLIP interleaved · relaxed IDs"</option><option value="Msf">"MSF"</option><option value="Nexus">"NEXUS"</option><option value="Pir">"PIR / NBRF"</option><option value="Gde">"GDE flat"</option><option value="Selex">"SELEX"</option></select></label>
                 <label>"Supplied alphabet"<select aria-label="Alignment supplied alphabet" prop:value=move||alphabet.get().map(|a|format!("{a:?}")).unwrap_or_default() disabled=move||uploaded.with(|p|p.as_ref().is_some_and(|p|p.native)) on:change=move|e|alphabet.set(match event_target_value(&e).as_str(){"Dna"=>Some(Alphabet::Dna),"Rna"=>Some(Alphabet::Rna),"Protein"=>Some(Alphabet::Protein),_=>None})><option value="">"Choose supplied alphabet"</option><option value="Dna">"DNA"</option><option value="Rna">"RNA"</option><option value="Protein">"Protein"</option></select></label></div>
                 <button class="button primary" disabled=move||busy.get() on:click=move|_|import()>"Import alignment"</button>
             </details>
@@ -468,7 +514,7 @@ pub fn AlignmentPanel(
                     <div class="alignment-pages"><button class="button secondary" disabled=move||row_page.get()==0 on:click=move|_|row_page.update(|p|*p=p.saturating_sub(1))>"Previous alignment rows"</button><button class="button secondary" disabled=move||{alignment.with(|a|a.as_ref().is_none_or(|a|(row_page.get()+1)*50>=a.doc().rows.len()))} on:click=move|_|row_page.update(|p|*p+=1)>"Next alignment rows"</button></div>
                 </details>
                 <details class="alignment-metadata"><summary>"Imported alignment annotations"</summary><p class="helper">"Symbols and free-text tags are imported evidence. They are not recalculated confidence, conservation or structure predictions."</p>{move||alignment.get().map(|a|{let doc=a.doc();let consensus=doc.metadata.clustal_consensus.as_ref().map(|s|format!("CLUSTAL consensus (first500 columns): {}",s.chars().take(500).collect::<String>()));let annotations=doc.metadata.annotations.iter().skip(annotation_page.get()*100).take(100).map(|a|format!("{} {} {}: {}{}",a.scope,a.row_identifier.as_deref().unwrap_or(""),a.tag,a.value.chars().take(500).collect::<String>(),if a.value.len()>500{"… (full value retained in saved alignment)"}else{""})).collect::<Vec<_>>();view!{<pre>{consensus}</pre>{annotations.into_iter().map(|line|view!{<p>{line}</p>}).collect_view()}<div class="alignment-pages"><button class="button secondary" disabled=move||annotation_page.get()==0 on:click=move|_|annotation_page.update(|p|*p=p.saturating_sub(1))>"Previous alignment annotations"</button><button class="button secondary" disabled=move||{alignment.with(|a|a.as_ref().is_none_or(|a|(annotation_page.get()+1)*100>=a.doc().metadata.annotations.len()))} on:click=move|_|annotation_page.update(|p|*p+=1)>"Next alignment annotations"</button></div>}})}</details>
-                <div class="alignment-export"><label>"Export format"<select aria-label="Alignment export format" prop:value=move||format!("{:?}",export_format.get()) on:change=move|e|export_format.set(parse_format(&event_target_value(&e)))><option value="AlignedFasta">"Aligned FASTA"</option><option value="Clustal">"CLUSTAL"</option><option value="Stockholm">"Stockholm1.0"</option></select></label><button class="button secondary" disabled=move||busy.get() on:click=move|_|prepare_export.run(())>"Prepare alignment export"</button></div>
+                <div class="alignment-export"><label>"Export format"<select aria-label="Alignment export format" prop:value=move||format!("{:?}",export_format.get()) on:change=move|e|export_format.set(parse_format(&event_target_value(&e)))><option value="AlignedFasta">"Aligned FASTA"</option><option value="Clustal">"CLUSTAL"</option><option value="Stockholm">"Stockholm1.0"</option><option value="PhylipSequential">"PHYLIP sequential · strict IDs"</option><option value="PhylipInterleaved">"PHYLIP interleaved · strict IDs"</option><option value="PhylipRelaxedSequential">"PHYLIP sequential · relaxed IDs"</option><option value="PhylipRelaxedInterleaved">"PHYLIP interleaved · relaxed IDs"</option><option value="Msf">"MSF"</option><option value="Nexus">"NEXUS"</option><option value="Pir">"PIR / NBRF"</option><option value="Gde">"GDE flat"</option><option value="Selex">"SELEX"</option></select></label><button class="button secondary" disabled=move||busy.get() on:click=move|_|prepare_export.run(())>"Prepare alignment export"</button></div>
                 {move||exported.get().filter(|(key,format,_)|*key==current.get()&&*format==export_format.get()).map(|(_,_,report)|view!{<div class="alignment-export-review"><h4>"Export fidelity"</h4>{report.losses.iter().map(|loss|view!{<p class="helper">{loss.clone()}</p>}).collect_view()}<button class="button primary" on:click=move|_|if let Some((key,format,report))=exported.get_untracked(){if key==current.get_untracked()&&format==export_format.get_untracked(){crate::app::download_with_completion(&format!("alignment.{}",extension(format)),"text/plain",report.text.as_bytes(),move|result|{if status.try_get_untracked().is_none(){return;}if let Err(e)=result {status.set(e);}})}}>"Download alignment export"</button></div>})}
             }})}
         </div>

@@ -1,0 +1,6 @@
+[
+ {"@id":"urn:example:rna","@type":["http://sbols.org/v3#Component"],"http://sbols.org/v3#hasNamespace":[{"@id":"https://example.org/lab"}],"http://sbols.org/v3#type":[{"@id":"https://identifiers.org/SBO:0000250"}],"http://sbols.org/v3#hasSequence":[{"@id":"urn:example:rna_sequence"}]},
+ {"@id":"urn:example:rna_sequence","@type":["http://sbols.org/v3#Sequence"],"http://sbols.org/v3#hasNamespace":[{"@id":"https://example.org/lab"}],"http://sbols.org/v3#encoding":[{"@id":"https://identifiers.org/edam:format_1207"}],"http://sbols.org/v3#elements":[{"@value":"acgu"}]},
+ {"@id":"urn:example:protein","@type":["http://sbols.org/v3#Component"],"http://sbols.org/v3#hasNamespace":[{"@id":"https://example.org/lab"}],"http://sbols.org/v3#type":[{"@id":"https://identifiers.org/SBO:0000252"}],"http://sbols.org/v3#hasSequence":[{"@id":"urn:example:protein_sequence"}]},
+ {"@id":"urn:example:protein_sequence","@type":["http://sbols.org/v3#Sequence"],"http://sbols.org/v3#hasNamespace":[{"@id":"https://example.org/lab"}],"http://sbols.org/v3#encoding":[{"@id":"https://identifiers.org/edam:format_1208"}],"http://sbols.org/v3#elements":[{"@value":"MKWVTFISLL"}]}
+]

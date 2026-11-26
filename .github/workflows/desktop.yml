@@ -9,6 +9,7 @@ on:
       - "Trunk.toml"
       - "crates/**"
       - "scripts/desktop_mcp_smoke.py"
+      - "scripts/install_linux_desktop_deps.sh"
       - ".github/workflows/desktop.yml"
   pull_request:
     paths:
@@ -17,6 +18,7 @@ on:
       - "Trunk.toml"
       - "crates/**"
       - "scripts/desktop_mcp_smoke.py"
+      - "scripts/install_linux_desktop_deps.sh"
       - ".github/workflows/desktop.yml"
 
 permissions:
@@ -122,12 +124,7 @@ jobs:
           shared-key: desktop-native
       - name: Install Linux native WebView SDK prerequisites
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y \
-            libwebkit2gtk-4.1-dev build-essential curl wget file \
-            libxdo-dev libssl-dev libayatana-appindicator3-dev \
-            librsvg2-dev pkg-config
+        run: bash scripts/install_linux_desktop_deps.sh build
       - uses: actions/download-artifact@v8
         with:
           name: desktop-frontend-${{ github.sha }}

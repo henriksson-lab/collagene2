@@ -1,0 +1,11 @@
+{
+ "@context":{"sbol":"http://sbols.org/v3#"},
+ "@graph":[
+  {"@id":"https://example.org/aliases/component","@type":"sbol:Component","sbol:hasNamespace":{"@id":"https://example.org/aliases"},"sbol:type":[{"@id":"https://identifiers.org/SBO:0000251"},{"@id":"https://identifiers.org/SO:0000988"},{"@id":"https://identifiers.org/SO:0000985"}],"sbol:hasSequence":{"@id":"https://example.org/aliases/sequence"},"sbol:hasFeature":[{"@id":"https://example.org/aliases/forward"},{"@id":"https://example.org/aliases/reverse"}]},
+  {"@id":"https://example.org/aliases/sequence","@type":"sbol:Sequence","sbol:hasNamespace":{"@id":"https://example.org/aliases"},"sbol:elements":"AAAACCCC","sbol:encoding":{"@id":"https://identifiers.org/edam:format_1207"}},
+  {"@id":"https://example.org/aliases/forward","@type":"sbol:SequenceFeature","sbol:orientation":{"@id":"http://sbols.org/v3#inline"},"sbol:hasLocation":{"@id":"https://example.org/aliases/forward_range"}},
+  {"@id":"https://example.org/aliases/forward_range","@type":"sbol:Range","sbol:start":1,"sbol:end":4,"sbol:orientation":{"@id":"https://identifiers.org/SO:0001030"},"sbol:hasSequence":{"@id":"https://example.org/aliases/sequence"}},
+  {"@id":"https://example.org/aliases/reverse","@type":"sbol:SequenceFeature","sbol:orientation":{"@id":"http://sbols.org/v3#reverseComplement"},"sbol:hasLocation":{"@id":"https://example.org/aliases/reverse_range"}},
+  {"@id":"https://example.org/aliases/reverse_range","@type":"sbol:Range","sbol:start":5,"sbol:end":8,"sbol:orientation":{"@id":"https://identifiers.org/SO:0001031"},"sbol:hasSequence":{"@id":"https://example.org/aliases/sequence"}}
+ ]
+}

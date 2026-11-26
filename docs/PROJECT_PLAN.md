@@ -429,13 +429,13 @@ Import and export must be tracked separately. A format parser is only one part o
 | DNA Strider/Serial Cloner `.xdna`, `.xdgn`, `.xprt` variants | P1 | Yes | Later | Legacy migration; sniff content and validate exact variants against original parsers |
 | ABI/ABIF `.ab1`, `.abi`; SCF `.scf` | P1 | Yes | Original attachment; derived FASTA/FASTQ | Four channels, calls, qualities, peak positions, orientation and trimming; SCF required for legacy parity |
 | FASTQ `.fq`, `.fastq` | P1 small data; P2 scale | Yes | Yes | Preserve quality encoding; stream larger datasets and keep import limits visible |
-| EMBL/ENA `.embl`, `.emb`; GenPept/UniProt text | P1/P2 | Yes | Target | Map feature/translation semantics; GenBank parser alone does not supply these adapters |
+| EMBL/ENA `.embl`, `.emb`; GenPept/UniProt text | P1/P2 | Yes | Yes, explicit profiles | Independent annotated protein adapters retain source records and coordinate uncertainty; synthetic export requires declared identifiers/date where needed |
 | Aligned FASTA, CLUSTAL `.aln`, Stockholm; native `.cg2aln` | P1/P2 | Yes | Yes | Preserve gaps, identifiers and alignment metadata where expressible; explicit alphabet, original bytes, typed retained collections and export-loss review; no alignment engine |
-| PHYLIP, MSF, NEXUS, PIR, GDE, Selex | P2 | Target | Selected formats | Add by migration demand; document truncation or loss of names/metadata |
+| PHYLIP, MSF, NEXUS, PIR, GDE, SELEX | P2 | Yes, explicit profiles | Yes, explicit profiles | Exact identifiers/gaps and native originals; opt-in PHYLIP truncation; unsupported missing/topology/tagged variants are refused; see alignment profile contracts |
 | GFF3, GTF, BED | P2 | Yes | Yes | Independent GFF3/GTF/BED profiles implemented; explicit reference identity and coordinate conversion are mandatory; GTF rows retain attributes without inferred transcript assembly |
 | Large reference `.cgref` | P2 foundation | Yes | Yes | Separate streamed packed IUPAC blocks and bounded hash manifest; canonical DNA/readback verification, global coordinates and portable links; no imported coverage authority |
 | SAM/BAM/CRAM, VCF/BCF and their indexes | P2 | Yes | Selected/derived | Independent bounded SAM/BAM exchange and source-bound inspection implemented; VCF/BCF exchange, bounded browser/MCP inspection and explicit REF/ALT-to-DNA design checking implemented; bounded BAI/CSI readers and source-bound retained-BAM selection are implemented; CRAM and streamed indexed browsing remain pending; [workflow](READ_ALIGNMENT_WORKFLOW.md) |
-| SBOL | P2 | Target | Target | Select a specific SBOL version/profile; components and design relationships exceed GenBank semantics |
+| SBOL3.1 structural JSON-LD | P2 | Yes, selected profile | Yes, selected profile | Typed component/sequence/feature/constraint graph and original evidence; explicit native projection and omissions, no hierarchy-to-DNA synthesis; broader RDF profiles and subset sharing remain active work |
 | Benchling sequence exports and API data | P1 files; P2 connector | Yes | Standard exchange/API later | GenBank/FASTA for sequence transfer; permissioned API adapter for richer records; do not assume a complete workspace export |
 | Clone Manager, Vector NTI, Geneious, CLC, Lasergene, MacVector and other legacy containers | P2 migration backlog | Target by demand | Usually standard exchange | Classify exact format/version; accept intermediate GenBank/FASTA when native fidelity is unavailable |
 | HTML, PDF | P0 HTML/print; P1 native PDF | Attachments | Yes | Human-readable cloning plans, evidence, step sheets and material lists |
@@ -2878,3 +2878,46 @@ use `O_PATH`, which cannot be fsynced. The service now opens a readable director
 descriptor relative to the capability before syncing; persistence assertions
 remain unchanged. Actual Windows/macOS execution and graphical export acceptance
 remain to be checked. [Export contract](DESKTOP_EXPORTS.md).
+
+
+### Parallel format exchange delivery — 26 November 2026
+
+Following the user's instruction to resume file formats in parallel, the source
+now supports GenPept and UniProt annotated protein exchange, strict/relaxed
+sequential/interleaved PHYLIP, MSF, NEXUS, PIR/NBRF, GDE flat and SELEX. Existing
+alignment documents, immutable original bytes, gap coordinates and native archives
+are shared by the new profiles. Core, worker, UI and MCP paths use the same
+adapters. Strict PHYLIP name truncation is explicitly optional, reports every
+renaming and refuses collisions. Unsupported circular PIR rows, complex GDE/NEXUS
+semantics and missing-value representations are explicit profile refusals.
+
+The independent `collagene-design-exchange` crate implements the selected SBOL3.1
+structural JSON-LD profile: actual Components, Sequences, features, locations,
+hierarchies and constraints, with exact original graphs retained. The web dialog
+requires an explicit component/sequence/topology and loss review; it never invents
+DNA from a hierarchy or imports chemical/verification authority. Canonical native
+export refuses unsupported physical/reference-only products. Known SO term aliases
+are interpreted explicitly without rewriting original IRIs.
+
+Selected native publication can retain an exact SBOL original only when the entire
+graph belongs to the selected structural scope. Unrelated SBOL attachments do not
+block ordinary publication. Alternative sequences need explicit retained native
+selections; unsupported graph content is not silently published. Native revision,
+event and capsule identities remain unchanged. A broader canonical subset or
+reviewed omission-receipt contract is still required for other multi-component
+source files. Safe scope failures remain distinguishable from network failures.
+
+Worker87 gates the new alignment profiles, spaced display labels, native alignment
+files and workspace attachments. Old format discriminants and compatible worker10
+paths remain valid. Candidate19, native plan17, science22 and179 MCP tools are
+unchanged. Fifty-nine focused fixture groups pass across new/legacy alignment
+profiles, protein exchange, SBOL graph/alias semantics, exact native sharing,
+worker compatibility and real MCP exchange. Integrated worker/web WASM checking
+passes. Browser acceptance stays deferred.
+
+The batch also fixes two actual delivery problems from the previous checkpoint:
+Linux SDK setup now uses Ubuntu sources after a third-party apt feed returned403;
+the unsigned package overlay uses the supported `Education` bundle category after
+all three real native builds reached bundling and rejected `Science`. Neither fix
+weakens package signature checks or scientific criteria. Hosted package creation
+and installation still need verification.

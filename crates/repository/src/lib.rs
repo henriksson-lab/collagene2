@@ -27,6 +27,8 @@ pub enum Error {
     Transaction(#[from] durable::MutationError),
     #[error("invalid native archive or exact selection")]
     Native,
+    #[error("SBOL source evidence is outside the supported publication scope")]
+    SbolSource,
     #[error("invalid repository state or field: {0}")]
     Invalid(&'static str),
     #[error("local mutation cancelled before commit")]
@@ -288,6 +290,12 @@ fn stored_payload(payload: wire::Payload) -> Result<store::Payload> {
         sharing: payload.sharing.as_ref().map(convert).transpose()?,
     })
 }
+fn publication_error(error: sharing::Error) -> Error {
+    match error {
+        sharing::Error::SbolSource(_) => Error::SbolSource,
+        _ => Error::Native,
+    }
+}
 fn publish(payload: store::Payload) -> Result<(wire::Payload, NativePin)> {
     let pin = selected(&payload)?;
     match &pin {
@@ -295,7 +303,7 @@ fn publish(payload: store::Payload) -> Result<(wire::Payload, NativePin)> {
         NativePin::Workspace(selection) => {
             let frame = workspace::load_workspace(&payload.bytes).map_err(|_| Error::Native)?;
             let closure =
-                sharing::document_closure(&frame, selection).map_err(|_| Error::Native)?;
+                sharing::document_closure(&frame, selection).map_err(publication_error)?;
             Ok((
                 wire::Payload {
                     kind: wire::PayloadKind::WorkspaceArchive,

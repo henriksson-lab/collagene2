@@ -8,6 +8,7 @@ description = "Exact selected-document publication closure for native Collagene 
 
 [dependencies]
 collagene-core = { path = "../core" }
+collagene-design-exchange = { path = "../design-exchange" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

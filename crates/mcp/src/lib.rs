@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 171;
+pub const CURRENT_TOOL_COUNT: usize = 173;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -836,6 +836,18 @@ pub struct WorkspaceRef {
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct RunMaterialOriginsQuery {
+    pub workspace: WorkspaceRef,
+    pub event: collagene_core::run_lineage::EventBinding,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RunMaterialPreparationQuery {
+    pub workspace: WorkspaceRef,
+    pub selection: collagene_core::run_material::Selection,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct RecordWorkspaceRun {
     pub workspace: WorkspaceRef,
     pub plan_revision: String,
@@ -892,6 +904,12 @@ pub struct Restriction {
 pub struct PcrDigestInspectionQuery {
     pub document: DocumentRef,
     pub request: collagene_core::pcr_digest_inspection::Request,
+    /// Explicit documentary origin for a saved-run source; never inferred from metadata.
+    #[serde(default)]
+    pub origin: Option<collagene_core::run_material::Capsule>,
+    /// Required exact retained native workspace when a saved-run origin is supplied.
+    #[serde(default)]
+    pub workspace: Option<WorkspaceRef>,
     #[serde(default)]
     pub fragment_start: usize,
     #[serde(default = "default_methylation_page")]
@@ -5198,7 +5216,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Inspect actual restriction fragments of a freshly reconstructed unique exact PCR product from an immutable original source, explicit ordered primers and a full catalog pin. Primer 5′ extensions participate in the actual product and catalog scan. Ambiguous/no PCR geometry withholds physical fragment inspection; uncertain or partial cleavage retains diagnostics. Returns a paged actual end-chemistry summary and immutable full JSON evidence. It never chooses a fragment, creates a plan, copies a result into an independent target, publishes a product document or infers amplification/cleavage success."
+        description = "Inspect actual restriction fragments of a freshly reconstructed unique exact PCR product from an immutable original source, explicit ordered primers and a full catalog pin. Primer 5′ extensions participate in the actual product and catalog scan. Ambiguous/no PCR geometry withholds physical fragment inspection; uncertain or partial cleavage retains diagnostics. Returns a paged actual end-chemistry summary and immutable full JSON evidence. Optional saved-run origin requires an explicit native workspace proving exact original run/source/target events before fresh reconstruction. It never chooses a fragment, creates a plan, copies a result into an independent target, publishes a product document or infers amplification/cleavage success."
     )]
     async fn inspect_pcr_digest(
         &self,
@@ -5207,16 +5225,45 @@ impl CollageneServer {
         if !(1..=100).contains(&args.max_fragments) {
             return Err(bad("PCR digest fragment page size must be1..100"));
         }
+        if args.origin.is_some() && args.workspace.is_none() {
+            return Err(bad(
+                "saved-run PCR digest inspection requires its exact native workspace reference",
+            ));
+        }
         let server = self.clone();
         self.compute(move||{
-            let source={let store=server.store.lock().unwrap();let source=store.document(&args.document)?;collagene_core::pcr_digest_inspection::source_preflight(source,&args.request).map_err(bad)?;source.clone()};
-            let expected=collagene_core::pcr_digest_inspection::inspection_revision(&source,&args.request).map_err(bad)?;
-            let preview=collagene_core::pcr_digest_inspection::inspect(&source,&args.request).map_err(bad)?;
-            preview.validate_binding(&expected).map_err(bad)?;
+            let source={let store=server.store.lock().unwrap();let source=store.document(&args.document)?;if let Some(origin)=&args.origin{collagene_core::pcr_digest_inspection::preflight_from_run(source,origin,&args.request).map_err(bad)?;}else{collagene_core::pcr_digest_inspection::source_preflight(source,&args.request).map_err(bad)?;}source.clone()};
+            let (ordinary,from_run)=if let Some(origin)=&args.origin {
+                let reference=args.workspace.as_ref().ok_or_else(||bad("saved-run source workspace is unavailable"))?;
+                let frame=server.restore_workspace(reference)?;
+                // Documentary ownership checks precede the one fresh inspect pass.
+                // A self-consistent imported capsule cannot invent an event owner
+                // or substitute a different stored run with equal DNA letters.
+                let recorded=collagene_core::run_lineage::load_run(&frame,&origin.selection.run_id).map_err(bad)?;
+                let candidate=transfer::load_candidate(&origin.candidate).map_err(bad)?;
+                if candidate.plan_revision!=recorded.plan_revision
+                    || origin.target_event!=recorded.target || origin.inputs!=recorded.inputs
+                    || origin.products!=recorded.products
+                    || frame.revisions.get(&recorded.target.revision)!=Some(&origin.target)
+                    || frame.revisions.get(&origin.selection.event.revision)!=Some(&source)
+                {return Err(bad("saved-run capsule differs from the exact retained run/source/target events"));}
+                let origins=collagene_core::run_material::originating_products(&frame,&origin.selection.event).map_err(bad)?;
+                if !origins.contains(&origin.selection){return Err(bad("saved-run origin selection is not retained for this exact source event"));}
+                let expected=collagene_core::pcr_digest_inspection::inspection_revision_from_run(&source,origin,&args.request).map_err(bad)?;
+                let preview=collagene_core::pcr_digest_inspection::inspect_from_run(&source,origin,&args.request).map_err(bad)?;
+                preview.validate_binding(&expected).map_err(bad)?;(None,Some(preview))
+            }else{
+                let expected=collagene_core::pcr_digest_inspection::inspection_revision(&source,&args.request).map_err(bad)?;
+                let preview=collagene_core::pcr_digest_inspection::inspect(&source,&args.request).map_err(bad)?;
+                preview.validate_binding(&expected).map_err(bad)?;(Some(preview),None)
+            };
+            let preview=from_run.as_ref().map(|r|&r.preview).or(ordinary.as_ref()).ok_or_else(||bad("PCR digest inspection unavailable"))?;
+            let context=from_run.as_ref().map(|r|r.context_revision.as_str()).unwrap_or(&preview.context_revision);
+            let origin_revision=from_run.as_ref().map(|r|&r.origin_revision);
             let count=preview.inspection.as_ref().map_or(0,|i|i.fragments.len());
             if args.fragment_start>count{return Err(bad("PCR digest fragment offset exceeds retained evidence"));}
             let end=args.fragment_start.saturating_add(args.max_fragments).min(count);
-            let result=json!({"document":args.document,"engine_version":preview.engine_version,"context_revision":preview.context_revision,"source_revision":preview.source_revision,
+            let result=json!({"document":args.document,"engine_version":preview.engine_version,"context_revision":context,"origin_revision":origin_revision,"source_revision":preview.source_revision,
                 "pcr_geometry_count":preview.pcr_geometries.len(),"pcr_geometries":preview.pcr_geometries.iter().take(100).collect::<Vec<_>>(),"pcr_geometries_truncated":preview.pcr_geometries.len()>100,
                 "amplicon_length":preview.amplicon.as_ref().map(|m|m.sequence.len()),"products_determined":preview.inspection.as_ref().is_some_and(|i|i.products_determined),
                 "scan_complete":preview.inspection.as_ref().map(|i|i.scan_complete),"limits":preview.inspection.as_ref().map(|i|&i.limits),
@@ -5224,8 +5271,47 @@ impl CollageneServer {
                 "fragments":preview.inspection.as_ref().map(|i|&i.fragments[args.fragment_start..end]),
                 "findings":preview.findings.iter().take(100).collect::<Vec<_>>(),"findings_truncated":preview.findings.len()>100,
                 "authority":"Fresh original-source PCR and assumed-complete catalog digestion evidence only. Inspect actual outer PCR and cut-derived termini; no selected product, target acceptance, reaction yield or imported physical authority is created."});
-            let artifact=server.text_artifact(bounded_json_limit(&preview,32*1024*1024)?,"application/json","pcr-digest-inspection.json")?;
+            let (text,filename)=if let Some(run)=&from_run{(bounded_json_limit(run,32*1024*1024)?,"run-pcr-digest-inspection.json")}else{(bounded_json_limit(preview,32*1024*1024)?,"pcr-digest-inspection.json")};
+            let artifact=server.text_artifact(text,"application/json",filename)?;
             let mut result=result;result["artifact_id"]=json!(artifact);output(result)
+        }).await
+    }
+    #[tool(
+        description = "Discover documentary originating run/step choices for an exact saved DNA event in an explicitly supplied immutable native workspace. Returns every bounded origin selection and immutable full inspection JSON. No origin is automatically selected, no chemistry is restored and no document, candidate or target is created. Equal DNA content is not an event identity."
+    )]
+    async fn list_run_material_origins(
+        &self,
+        Parameters(args): Parameters<RunMaterialOriginsQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move||{
+            let workspace=server.restore_workspace(&args.workspace)?;
+            let expected=collagene_core::run_material::inspection_revision(&workspace,&args.event,&None).map_err(bad)?;
+            let inspection=collagene_core::run_material::inspect(&workspace,&args.event,&None).map_err(bad)?;
+            inspection.validate_binding(&expected).map_err(bad)?;
+            let text=bounded_json_limit(&inspection,32*1024*1024)?;
+            let artifact=server.text_artifact(text,"application/json","run-material-origins.json")?;
+            output(json!({"workspace":args.workspace,"event":inspection.event,"context_revision":inspection.context_revision,"engine_version":inspection.engine_version,"origins":inspection.origins,"selected":false,"findings":inspection.findings,"artifact_id":artifact,"authority":"Documentary origin discovery only. No private material, successful replay or independent target acceptance is imported."}))
+        }).await
+    }
+    #[tool(
+        description = "Explicitly select an exact originating run/step/event in an immutable native workspace and freshly build its bounded durable reconstruction capsule. Rechecks original source/target/product event ownership and current deterministic replay. Returns documentary capsule JSON, not transferable private tracked material or scientific authority. Creates no document/candidate/target and performs no automatic origin choice. Existing source-bound recipes can consume the capsule through explicit FromRun preparation and freshly verify again."
+    )]
+    async fn prepare_run_material(
+        &self,
+        Parameters(args): Parameters<RunMaterialPreparationQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move||{
+            let workspace=server.restore_workspace(&args.workspace)?;
+            let selected=Some(args.selection.clone());
+            let expected=collagene_core::run_material::inspection_revision(&workspace,&args.selection.event,&selected).map_err(bad)?;
+            let inspection=collagene_core::run_material::inspect(&workspace,&args.selection.event,&selected).map_err(bad)?;
+            inspection.validate_binding(&expected).map_err(bad)?;
+            if inspection.selected.as_ref().is_none_or(|capsule|capsule.selection!=args.selection){return Err(bad("explicit selected origin produced no matching reconstruction capsule"));}
+            let text=bounded_json_limit(&inspection,32*1024*1024)?;
+            let artifact=server.text_artifact(text,"application/json","run-material-preparation.json")?;
+            output(json!({"workspace":args.workspace,"event":inspection.event,"context_revision":inspection.context_revision,"engine_version":inspection.engine_version,"selection":args.selection,"capsule_available":true,"findings":inspection.findings,"artifact_id":artifact,"authority":"Freshly built documentary reconstruction request only; the JSON capsule does not carry private tracked material. Every later recipe independently reconstructs from the exact retained original run inputs and compares its separate target."}))
         }).await
     }
     #[tool(

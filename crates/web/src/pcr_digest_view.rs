@@ -24,6 +24,7 @@ struct Context {
     document: usize,
     request_key: String,
     epoch: u64,
+    origin: Option<crate::run_origin_model::PinnedOrigin>,
 }
 struct Saved {
     context: Context,
@@ -68,6 +69,7 @@ pub fn PcrDigestPicker(
             document: row.document,
             request_key: request_key(&request).ok()?,
             epoch: epoch.get(),
+            origin: row.run_origin.clone(),
         })
     });
     Effect::new(move |_| {
@@ -139,7 +141,24 @@ pub fn PcrDigestPicker(
             status.set("The original source or PCR request changed; inspect again.".into());
             return;
         }
-        let revision = match pcr_digest_inspection::inspection_revision(&source, &request) {
+        if bound
+            .origin
+            .as_ref()
+            .is_some_and(|origin| origin.selection.event != bound.source.binding)
+        {
+            status.set("The saved-material origin belongs to a different source event.".into());
+            return;
+        }
+        let revision = match bound.origin.as_ref().map_or_else(
+            || pcr_digest_inspection::inspection_revision(&source, &request),
+            |origin| {
+                pcr_digest_inspection::inspection_revision_from_run(
+                    &source,
+                    origin.as_ref(),
+                    &request,
+                )
+            },
+        ) {
             Ok(revision) => revision,
             Err(error) => {
                 status.set(error.to_string());
@@ -164,14 +183,23 @@ pub fn PcrDigestPicker(
         status.set("Reconstructing exact PCR and the selected catalog digest…".into());
         let alive = alive.clone();
         spawn_local(async move {
+            let job = if let Some(origin) = &bound.origin {
+                AnalysisJob::InspectRunPcrDigest {
+                    molecule: source,
+                    origin: origin.as_ref().clone(),
+                    request,
+                }
+            } else {
+                AnalysisJob::InspectPcrDigest {
+                    molecule: source,
+                    request,
+                }
+            };
             let response = worker
                 .ask(Request {
                     id: token,
                     revision: revision.clone(),
-                    job: AnalysisJob::InspectPcrDigest {
-                        molecule: source,
-                        request,
-                    },
+                    job,
                 })
                 .await;
             worker.close();
@@ -186,7 +214,17 @@ pub fn PcrDigestPicker(
             let result = match response {
                 Ok(response) if response.id == token && response.revision == revision => {
                     match response.result {
-                        AnalysisResult::PcrDigestInspection(preview) => Ok(preview),
+                        AnalysisResult::PcrDigestInspection(preview) if bound.origin.is_none() => {
+                            Ok(preview)
+                        }
+                        AnalysisResult::RunPcrDigestInspection(report)
+                            if bound.origin.is_some() =>
+                        {
+                            report
+                                .validate_binding(&revision)
+                                .map(|()| report.preview)
+                                .map_err(|e| e.to_string())
+                        }
                         AnalysisResult::Error(error) => Err(error),
                         _ => Err("Unexpected PCR digest response.".into()),
                     }
@@ -196,7 +234,12 @@ pub fn PcrDigestPicker(
             };
             match result {
                 Ok(preview) => {
-                    if let Err(error) = preview.validate_binding(&revision) {
+                    let preview_revision = if bound.origin.is_some() {
+                        preview.context_revision.clone()
+                    } else {
+                        revision.clone()
+                    };
+                    if let Err(error) = preview.validate_binding(&preview_revision) {
                         status.set(error.to_string());
                         return;
                     }
@@ -214,7 +257,7 @@ pub fn PcrDigestPicker(
                     status.set(if selectable{"Choose a reconstructed digest fragment below. The complete assembly will independently reconstruct it again."}else{"Fragment selection is withheld. Review PCR alternatives and the reported limits or unavailable chemistry."}.into());
                     proof.set(Some(Arc::new(Saved {
                         context: bound,
-                        revision,
+                        revision: preview_revision,
                         preview,
                     })));
                 }

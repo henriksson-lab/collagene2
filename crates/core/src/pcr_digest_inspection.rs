@@ -57,9 +57,12 @@ fn shape(request: &Request) -> Result<(), Error> {
     Ok(())
 }
 pub fn source_preflight(source: &Molecule, request: &Request) -> Result<(), Error> {
+    preflight(source, request, true)
+}
+fn preflight(source: &Molecule, request: &Request, reject_imported: bool) -> Result<(), Error> {
     shape(request)?;
     crate::model::bounds::model_preflight(&[source])?;
-    if chemistry::has_unmapped_physical_evidence(source) {
+    if reject_imported && chemistry::has_unmapped_physical_evidence(source) {
         return Err(bad(
             "imported physical intermediates require reconstruction of their original graph",
         ));
@@ -111,6 +114,14 @@ pub fn inspect(source: &Molecule, request: &Request) -> Result<Preview, Error> {
     let context_revision = inspection_revision(source, request)?;
     let documents =
         verification::simulate_pcr_documents(source, &request.forward, &request.reverse)?;
+    finish(source, request, context_revision, documents)
+}
+fn finish(
+    source: &Molecule,
+    request: &Request,
+    context_revision: String,
+    documents: Vec<verification::PcrDocument>,
+) -> Result<Preview, Error> {
     if documents.len() > MAX_GEOMETRIES {
         return Err(Error::TooLarge);
     }
@@ -216,6 +227,86 @@ impl Preview {
         self.validate()?;
         if self.context_revision != expected {
             return Err(bad("stale source/primer/catalog/options context"));
+        }
+        Ok(())
+    }
+}
+
+// Saved material context surrounds the unchanged ordinary PCR/digest preview.
+// Serialized previews remain documentary; inspect_from_run always replays.
+dto! {pub struct RunPreview {pub context_revision:String,pub origin_revision:String,pub preview:Preview}}
+fn run_context(origin_revision: &str, preview_revision: &str) -> Result<String, Error> {
+    assembly_recipe::hash(&(
+        "saved-run-pcr-digest-inspection-1",
+        ENGINE_VERSION,
+        verification::ENGINE_VERSION,
+        origin_revision,
+        preview_revision,
+    ))
+}
+pub fn preflight_from_run(
+    source: &Molecule,
+    origin: &crate::run_material::Capsule,
+    request: &Request,
+) -> Result<(), Error> {
+    origin.validate_documentary()?;
+    preflight(source, request, false)?;
+    if source.revision() != origin.selection.event.revision {
+        return Err(bad("saved source differs from the pinned origin event"));
+    }
+    Ok(())
+}
+pub fn inspection_revision_from_run(
+    source: &Molecule,
+    origin: &crate::run_material::Capsule,
+    request: &Request,
+) -> Result<String, Error> {
+    preflight_from_run(source, origin, request)?;
+    run_context(
+        &assembly_recipe::hash(origin)?,
+        &context(&source.revision(), request)?,
+    )
+}
+pub fn inspect_from_run(
+    source: &Molecule,
+    origin: &crate::run_material::Capsule,
+    request: &Request,
+) -> Result<RunPreview, Error> {
+    let context_revision = inspection_revision_from_run(source, origin, request)?;
+    let material = crate::run_material_capsule::replay(origin, source)?;
+    let documents = verification::simulate_pcr_documents_from_fresh(
+        source,
+        &request.forward,
+        &request.reverse,
+        &material.tracked,
+    )?;
+    let mut preview = finish(
+        source,
+        request,
+        context(&source.revision(), request)?,
+        documents,
+    )?;
+    preview.findings.push("Template material was freshly reconstructed from its complete original saved run against its unchanged independent target; historical assumptions remain applicable.".into());
+    if material.incomplete {
+        preview.findings.push("The original saved run remains incomplete; fresh template reconstruction does not establish experimental success or resolve its retained limitations.".into());
+    }
+    let report = RunPreview {
+        context_revision,
+        origin_revision: assembly_recipe::hash(origin)?,
+        preview,
+    };
+    report.validate_binding(&report.context_revision)?;
+    Ok(report)
+}
+impl RunPreview {
+    pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
+        self.preview.validate()?;
+        if !hex(&self.origin_revision)
+            || self.context_revision != expected
+            || self.context_revision
+                != run_context(&self.origin_revision, &self.preview.context_revision)?
+        {
+            return Err(bad("stale saved-origin/source/primer/catalog context"));
         }
         Ok(())
     }

@@ -13,10 +13,118 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use crate::run_material_capsule::{
-    Capsule, ReplayEvidence, capsule, plan_preflight, validate_input_origins, validate_plan_origins,
+    Capsule, ReplayEvidence, capsule, capsules_preflight, plan_preflight, validate_input_origins,
+    validate_plan_origins,
 };
 
 pub const ENGINE_VERSION: &str = "run-material-1";
+pub const INSPECTION_ENGINE_VERSION: &str = "run-material-inspection-1";
+
+/// Documentary origin discovery, or a freshly built executable recipe after an
+/// explicit selection. This serializable reply never carries live material.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct Inspection {
+    pub engine_version: String,
+    pub context_revision: String,
+    pub event: EventBinding,
+    pub origins: Vec<Selection>,
+    pub selected: Option<Capsule>,
+    pub findings: Vec<String>,
+}
+
+pub fn inspection_revision(
+    workspace: &Workspace,
+    event: &EventBinding,
+    selection: &Option<Selection>,
+) -> Result<String, Error> {
+    event_shape(event)?;
+    if let Some(selection) = selection {
+        shape(selection)?;
+        if &selection.event != event {
+            return Err(bad("origin selection names a different saved event"));
+        }
+    }
+    let fingerprint = run_lineage::workspace_fingerprint(workspace)?;
+    resolve(workspace, event)?;
+    crate::assembly_recipe::hash(&(INSPECTION_ENGINE_VERSION, fingerprint, event, selection))
+}
+
+pub fn inspect(
+    workspace: &Workspace,
+    event: &EventBinding,
+    selection: &Option<Selection>,
+) -> Result<Inspection, Error> {
+    let context_revision = inspection_revision(workspace, event, selection)?;
+    let origins = originating_products(workspace, event)?;
+    let mut findings = Vec::new();
+    let selected = if let Some(selection) = selection {
+        if !origins.contains(selection) {
+            return Err(bad(
+                "explicit origin is not in this exact event's documentary lineage",
+            ));
+        }
+        match capsule(workspace, selection) {
+            Ok(origin) => {
+                findings.push("The originating recipe was freshly reconstructed. It remains a declaration under its recorded assumptions; reuse does not establish isolation or experimental success. Every downstream preview reconstructs it again.".into());
+                Some(origin)
+            }
+            Err(error) => {
+                findings.push(error.to_string().chars().take(4096).collect());
+                None
+            }
+        }
+    } else {
+        findings.push(if origins.is_empty() {
+            "This exact event has no retained name-only cloning-run origin. Imported or edited reference metadata cannot restore physical material.".into()
+        } else {
+            "Choose an originating run explicitly to reconstruct its saved material. Documentary lineage alone is not a current material assessment.".into()
+        });
+        None
+    };
+    let result = Inspection {
+        engine_version: INSPECTION_ENGINE_VERSION.into(),
+        context_revision,
+        event: event.clone(),
+        origins,
+        selected,
+        findings,
+    };
+    result.validate_binding(&result.context_revision)?;
+    Ok(result)
+}
+impl Inspection {
+    /// Readonly shape/binding validation; never supplies physical authority.
+    pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
+        if !digest(expected)
+            || self.context_revision != expected
+            || self.engine_version != INSPECTION_ENGINE_VERSION
+            || self.origins.len() > 1000
+            || self.findings.len() > 128
+            || self.findings.iter().any(|s| s.len() > 16384)
+        {
+            return Err(bad("origin inspection context or bounds changed"));
+        }
+        event_shape(&self.event)?;
+        let mut seen = BTreeSet::new();
+        for origin in &self.origins {
+            shape(origin)?;
+            if origin.event != self.event
+                || !seen.insert((origin.run_id.as_str(), origin.step_index))
+            {
+                return Err(bad("origin inspection event or choices changed"));
+            }
+        }
+        if let Some(origin) = &self.selected {
+            origin.validate_documentary()?;
+            if origin.selection.event != self.event || !self.origins.contains(&origin.selection) {
+                return Err(bad("prepared origin is not an offered exact-event choice"));
+            }
+        }
+        Ok(())
+    }
+}
 
 /// An exact saved event and its explicitly selected originating run step.
 /// This is a request for reconstruction, not proof of material identity.

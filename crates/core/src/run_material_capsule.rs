@@ -114,7 +114,7 @@ macro_rules! bounded_bytes {
 bounded_bytes!(candidate_bytes, super::MAX_CAPSULE_BYTES);
 bounded_bytes!(report_bytes, super::MAX_REPORT_BYTES);
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Capsule {
@@ -345,6 +345,12 @@ pub fn plan_preflight(plan: &DesignPlan) -> Result<(), Error> {
     let mut budget = Budget::default();
     budget.plan(plan)?;
     walk(origins(plan), budget, |_, _| Ok(()))
+}
+
+/// Aggregate borrowed recipe origins before a row compiler clones or executes
+/// them. Distinct uses are charged separately because each will be reconstructed.
+pub fn capsules_preflight<'a>(origins: impl IntoIterator<Item = &'a Capsule>) -> Result<(), Error> {
+    walk(origins.into_iter(), Budget::default(), |_, _| Ok(()))
 }
 
 /// Build a durable declaration only after the actual saved event has been freshly

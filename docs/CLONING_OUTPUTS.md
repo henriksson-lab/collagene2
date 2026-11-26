@@ -103,9 +103,28 @@ unrelated equal-content alias is rejected. No serialized graph or tracked summar
 is used to supply material. Replayed origin primers belong to already-prepared
 material and are excluded from new primer orders; explicit downstream PCR primers
 remain orderable. HTML/PDF protocols identify the origin and retain its limitations.
-Manual plan review exposes the reconstruction dependency and immutable origin;
-the ordinary preparation picker and dedicated MCP origin-discovery/creation tools
-remain subsequent integration work.
+Manual plan review exposes the reconstruction dependency and immutable origin.
+The ordinary preparation editor now also provides **Reuse a saved cloning
+product…** beneath the row's preparation selector. Find retained origins, choose
+one explicitly, and let the worker reconstruct it. The selection changes only
+that row's material origin; primer domains, enzyme pins, repair/treatment,
+orientation and independent intended target remain explicit settings. A changed
+source event clears the pin. Original-only duplex declarations and ssDNA annealing
+cannot consume reconstructed duplex material. Removing the origin is explicit.
+
+`Preparation::FromRun` is a flat preparation wrapper around the same origin and
+one supported WholeLinear, Digest, CatalogDigest, ExactPcr or PcrCatalogDigest
+preparation. Actual ends and modifications feed the existing operation chain.
+PCR/digest fragment inspection has an origin-bound worker route, so saved sources
+use fresh native reconstruction without deleting physical-marker metadata. Draft
+v5 persists the cheap shared documentary pin; opening a draft restores no verdict.
+Older ordinary/paired drafts retain their existing v1–v4 layouts. Library-choice
+projection of material origins remains deferred until per-choice bindings exist.
+
+MCP clients use `list_run_material_origins` and `prepare_run_material` with an
+explicit immutable workspace reference and exact source event. The resulting
+artifact contains a recipe, not material authority; normal recipe proposals and
+verification reconstruct it again. Neither tool publishes documents or a target.
 
 Validation includes a named 40 bp circle assembled from two PCR fragments, with
 phosphorylation explicitly applied to one. Fresh reconstruction retains the top

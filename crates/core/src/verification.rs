@@ -301,6 +301,35 @@ pub fn simulate_pcr_documents(
     if chemistry::has_unmapped_physical_evidence(source) {
         return Err(Error::Unsupported("PCR of imported physical-intermediate evidence requires reconstruction of its originating graph".into()));
     }
+    build_pcr_documents(source, forward, reverse)
+}
+
+/// Only fresh native run reconstruction may bypass the imported-marker guard.
+pub(crate) fn simulate_pcr_documents_from_fresh(
+    source: &Molecule,
+    forward: &Primer,
+    reverse: &Primer,
+    tracked: &modified_duplex::TrackedDuplex,
+) -> Result<Vec<PcrDocument>, Error> {
+    source.validate()?;
+    tracked.validate()?;
+    let duplex = &tracked.duplex;
+    if duplex.top != source.sequence
+        || duplex.topology != source.topology
+        || duplex.bottom_start != 0
+        || duplex.bottom.len() != duplex.top.len()
+        || !duplex.nicks.is_empty()
+    {
+        return Err(Error::Unsupported("Fresh PCR template requires reference-matching, fully aligned intact strands without nicks".into()));
+    }
+    build_pcr_documents(source, forward, reverse)
+}
+
+fn build_pcr_documents(
+    source: &Molecule,
+    forward: &Primer,
+    reverse: &Primer,
+) -> Result<Vec<PcrDocument>, Error> {
     let geometries = analysis::simulate_pcr_geometry(source, forward, reverse)?;
     let mut total = 0usize;
     let mut documents = Vec::new();

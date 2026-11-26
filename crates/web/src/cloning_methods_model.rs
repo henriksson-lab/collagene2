@@ -113,6 +113,8 @@ pub enum OverlapPreparation {
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OverlapInput {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_origin: Option<crate::run_origin_model::PinnedOrigin>,
     pub document: usize,
     pub interval_start: String,
     pub interval_end: String,
@@ -150,6 +152,7 @@ fn default_anneal_options(options: &AnnealOptions) -> bool {
 impl Default for OverlapInput {
     fn default() -> Self {
         Self {
+            run_origin: None,
             document: 0,
             interval_start: "1".into(),
             interval_end: String::new(),

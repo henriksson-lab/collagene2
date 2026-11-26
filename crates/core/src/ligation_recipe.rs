@@ -33,6 +33,12 @@ fn sources(recipe: &Recipe) -> Result<Vec<FragmentSpec>, Error> {
     if recipe.fragments.is_empty() || recipe.fragments.len() > preparation::MAX_ROWS {
         return Err(Error::TooLarge);
     }
+    crate::run_material::capsules_preflight(recipe.fragments.iter().filter_map(|row| {
+        match &row.source.preparation {
+            preparation::Preparation::FromRun { origin, .. } => Some(origin),
+            _ => None,
+        }
+    }))?;
     Ok(recipe.fragments.iter().map(|f| f.source.clone()).collect())
 }
 /// Borrowed host guard before document copies, hashing or scientific work.
@@ -68,6 +74,10 @@ pub fn source_preflight(
                     }
                 }
             }
+            preparation::Preparation::FromRun {
+                origin,
+                preparation: child,
+            } => preparation::from_run_shape(origin, child)?,
             preparation::Preparation::AnnealedOligos {
                 bottom_input_id,
                 options,
@@ -86,8 +96,8 @@ pub fn source_preflight(
             _ => {}
         }
     }
-    preparation::preparation_source_preflight(inputs, target, &recipe.name, &sources(recipe)?)?;
     preparation::hash(recipe)?;
+    preparation::preparation_source_preflight(inputs, target, &recipe.name, &sources(recipe)?)?;
     Ok(())
 }
 pub fn preflight(inputs: &[PlanInput], target: &Molecule, recipe: &Recipe) -> Result<(), Error> {
@@ -307,7 +317,7 @@ impl Preview {
         if !hex(&self.context_revision)
             || rows == 0
             || rows > preparation::MAX_ROWS
-            || steps > 4 * preparation::MAX_ROWS + 1
+            || steps > 5 * preparation::MAX_ROWS + 1
             || self.compiled.ligation_step.checked_add(1) != Some(steps)
             || self.compiled.plan.inputs.len() > preparation::MAX_ROWS
             || self.verification.products.len() > steps
@@ -369,6 +379,7 @@ impl Preview {
                     !matches!(
                         s,
                         Operation::Pcr { .. }
+                            | Operation::ReconstructRunProduct { .. }
                             | Operation::AnnealOligos { .. }
                             | Operation::DeclareSourceTermini { .. }
                             | Operation::Digest { .. }
@@ -380,6 +391,24 @@ impl Preview {
         {
             return Err(bad("preview operation shape changed"));
         }
+        let preparation_boundary = self
+            .compiled
+            .rows
+            .iter()
+            .filter_map(|row| row.treatment_step)
+            .min()
+            .unwrap_or(self.compiled.ligation_step);
+        let preparations = self
+            .compiled
+            .rows
+            .iter()
+            .map(|row| row.preparation.clone())
+            .collect::<Vec<_>>();
+        preparation::validate_preparation_rows(
+            &self.compiled.plan,
+            &preparations,
+            preparation_boundary,
+        )?;
         for (index, (row, fragment)) in self.compiled.rows.iter().zip(fragments).enumerate() {
             let p = &row.preparation;
             preparation::validate_annealed_row(p, &self.compiled.plan.steps)?;

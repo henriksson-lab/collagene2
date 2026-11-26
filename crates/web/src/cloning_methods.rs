@@ -216,6 +216,9 @@ pub fn CloningMethodsPanel(
         crate::primer_picker::ResolveRequest,
         Result<collagene_core::primer_reuse::Resolved, String>,
     >,
+    #[prop(optional_no_strip)] get_workspace: Option<
+        Callback<(), Result<collagene_core::workspace::Workspace, String>>,
+    >,
     #[prop(optional_no_strip)] on_finalize: Option<Callback<Candidate, Result<(), String>>>,
     #[prop(optional_no_strip)] on_source: Option<Callback<(usize, usize), Result<(), String>>>,
     // View state is separate from preparation/verification identity.
@@ -738,6 +741,16 @@ pub fn CloningMethodsPanel(
             status.set("Choose original source events before computing method evidence.".into());
             return;
         };
+        if state.rows.iter().enumerate().any(|(index, row)| {
+            row.run_origin.as_ref().is_some_and(|pin| {
+                bound_context
+                    .get(index)
+                    .is_none_or(|source| source.binding != pin.selection.event)
+            })
+        }) {
+            status.set("A saved-material origin no longer matches its exact source event. Select it again before preparing fragments.".into());
+            return;
+        }
         let bound_target_context = target_info.get_untracked();
         if source_revisions.get_untracked()
             != Some(
@@ -1153,7 +1166,7 @@ pub fn CloningMethodsPanel(
         <Show when=move||config.get().mode!=Mode::Tailing||fixed_sources><Show when=move||config.get().mode==Mode::Overlap><label>"Overlap profile"<select aria-label="Overlap profile method" prop:value=move||format!("{:?}",config.get().method) on:change=move|e|config.update(|c|c.method=match event_target_value(&e).as_str(){"Gibson"=>OverlapMethod::Gibson,"InFusion"=>OverlapMethod::InFusion,_=>OverlapMethod::HiFi})><option value="Gibson">"Gibson"</option><option value="HiFi">"HiFi"</option><option value="InFusion">"In-Fusion"</option></select></label><p class="helper">"Fragments are listed in product order with explicit orientation. Homology geometry is checked exactly; published length guidance is advisory. No reaction completion or unique mixture product is established."</p></Show>
             <Show when=move||matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate)><p class="helper">"List fragments in intended ligation order. Preparation, end repair and terminal treatment are explicit source-bound operations. Whole linear DNA retains unknown terminal chemistry; its sequence alone does not imply cleaved or PCR ends. Unknown ends can withhold ligation even after phosphorylation."</p><label class="checkbox-label"><input type="checkbox" aria-label="Allow retained ordered ligation nicks" prop:checked=move||config.get().allow_nicked on:change=move|e|config.update(|c|c.allow_nicked=event_target_checked(&e))/>"Allow explicitly retained nicks"</label></Show>
             <h3>{if fixed_sources{"Prepare active fragment"}else{"1. Choose source fragments and regions"}}</h3>
-            <Show when=move||config.with(|c|c.rows.len()>12)><p role="alert">"This preparation exceeds the supported 12 rows. No partial row list is shown."</p></Show><For each=move||config.with(|c|if c.rows.len()<=12{(0..c.rows.len()).collect::<Vec<_>>()}else{Vec::new()}) key=|i|*i children=move|i|view!{<Show when=move||active_row.is_none_or(|row|row.get()==i)><div node_ref=row_nodes.with_value(|nodes|nodes[i]) tabindex="-1" class="method-preparation-focus"><OverlapFields config index=i query_options primer_sources list_primers resolve_primer epoch selected_region fixed_sources edited_junctions=disable_plain_primer_design get_query source_info/></div></Show>}/>
+            <Show when=move||config.with(|c|c.rows.len()>12)><p role="alert">"This preparation exceeds the supported 12 rows. No partial row list is shown."</p></Show><For each=move||config.with(|c|if c.rows.len()<=12{(0..c.rows.len()).collect::<Vec<_>>()}else{Vec::new()}) key=|i|*i children=move|i|view!{<Show when=move||active_row.is_none_or(|row|row.get()==i)><div node_ref=row_nodes.with_value(|nodes|nodes[i]) tabindex="-1" class="method-preparation-focus"><OverlapFields config index=i query_options primer_sources list_primers resolve_primer epoch selected_region fixed_sources edited_junctions=disable_plain_primer_design get_query source_info get_workspace/></div></Show>}/>
             <Show when=move||!fixed_sources><button class="button secondary full" disabled=move||{fixed_sources||config.with(|c|c.rows.len()>=12)} on:click=move|_|{let mut result=Ok(());config.update(|c|result=c.push_row(OverlapInput::default()));if let Err(error)=result{status.set(error);}}>{move||if matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate){"Add ligation fragment"}else{"Add overlap fragment"}}</button><p class="helper">"This panel supports up to 12 ordered fragments; the typed core has its separate documented work bounds."</p></Show><Show when=move||config.get().mode==Mode::Overlap><label>"Overlap lengths in junction order (bp)"<input aria-label="Profile overlap lengths" prop:value=move||config.get().overlaps on:input=move|e|config.update(|c|c.overlaps=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label="Scan repeated overlap words" prop:checked=move||config.get().scan_repeats on:change=move|e|config.update(|c|c.scan_repeats=event_target_checked(&e))/>"Search supplied fragments for repeated homology words"</label><label>"Repeat comparison budget"<input type="number" min="1" aria-label="Overlap repeat budget" prop:value=move||config.get().comparisons on:input=move|e|config.update(|c|c.comparisons=event_target_value(&e))/></label><label>"Maximum reported homology occurrences"<input type="number" min="1" aria-label="Overlap occurrence limit" prop:value=move||config.get().occurrences on:input=move|e|config.update(|c|c.occurrences=event_target_value(&e))/></label></Show>
         </Show>
         <Show when=move||config.get().mode==Mode::GoldenGate&&!disable_plain_primer_design><section class="golden-gate-primer-planner"><h3>"2. Prepare Type IIS fragments"</h3>
@@ -1362,6 +1375,7 @@ fn OverlapFields(
     edited_junctions: bool,
     get_query: Callback<usize, Option<Molecule>>,
     source_info: Callback<usize, Option<crate::digest::SourceInfo>>,
+    get_workspace: Option<Callback<(), Result<collagene_core::workspace::Workspace, String>>>,
 ) -> impl IntoView {
     let row = move || config.with(|c| c.rows.get(index).cloned().unwrap_or_default());
     let region_status = RwSignal::new(String::new());
@@ -1378,7 +1392,8 @@ fn OverlapFields(
         </Show>
         <p class="helper preparation-region-status" role="status">{move||region_status.get()}</p>
         <Show when=move||config.get().mode==Mode::GoldenGate&&!edited_junctions><label>"Right fusion end (assembly direction, 5′→3′)"<input maxlength="4" aria-label=format!("Golden Gate right fusion {}",index+1) prop:value=move||row().right_fusion on:input=move|e|config.update(|c|if let Some(row)=c.rows.get_mut(index){row.right_fusion=event_target_value(&e)})/></label><p class="helper">{move||format!("Enter {} concrete bases explicitly. The left fusion comes from this oriented source region; enter the next fragment’s first fusion bases explicitly for a matching junction. The right fusion is added design DNA. Existing-site compatibility is checked from its actual ends.",if config.with(|c|c.golden_gate.enzyme)==collagene_core::golden_gate::GoldenGateEnzyme::SapI{3}else{4})}</p></Show>
-        <label>"Prepare fragment"<select aria-label=move||format!("{} preparation {}",preparation_label(config.get().mode),index+1) prop:value=move||match row().preparation{OverlapPreparation::WholeLinear=>"whole",OverlapPreparation::DeclaredDuplex=>"declared",OverlapPreparation::Digest=>"digest",OverlapPreparation::CatalogDigest=>"catalog",OverlapPreparation::ExactPcr=>"pcr",OverlapPreparation::PcrCatalogDigest=>"pcr_catalog",OverlapPreparation::AnnealedOligos=>"anneal"} on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.preparation=match event_target_value(&e).as_str(){"declared"=>OverlapPreparation::DeclaredDuplex,"digest"=>OverlapPreparation::Digest,"catalog"=>OverlapPreparation::CatalogDigest,"pcr"=>OverlapPreparation::ExactPcr,"pcr_catalog"=>OverlapPreparation::PcrCatalogDigest,"anneal"=>OverlapPreparation::AnnealedOligos,_=>OverlapPreparation::WholeLinear}})><option value="anneal" disabled=move||config.get().mode!=Mode::Ligation||(fixed_sources&&row().anneal_bottom_document.is_none())>"Annealed oligo pair"</option><option value="whole">"Whole linear DNA"</option><option value="declared">"Declare intact linear duplex"</option><option value="digest">"Manual starter-enzyme digest"</option><option value="catalog">"Pinned catalog digest fragment"</option><option value="pcr">"Exact PCR product"</option><option value="pcr_catalog">"Exact PCR → pinned catalog digest"</option></select></label>
+        <label>"Prepare fragment"<select aria-label=move||format!("{} preparation {}",preparation_label(config.get().mode),index+1) prop:value=move||match row().preparation{OverlapPreparation::WholeLinear=>"whole",OverlapPreparation::DeclaredDuplex=>"declared",OverlapPreparation::Digest=>"digest",OverlapPreparation::CatalogDigest=>"catalog",OverlapPreparation::ExactPcr=>"pcr",OverlapPreparation::PcrCatalogDigest=>"pcr_catalog",OverlapPreparation::AnnealedOligos=>"anneal"} on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.preparation=match event_target_value(&e).as_str(){"declared"=>OverlapPreparation::DeclaredDuplex,"digest"=>OverlapPreparation::Digest,"catalog"=>OverlapPreparation::CatalogDigest,"pcr"=>OverlapPreparation::ExactPcr,"pcr_catalog"=>OverlapPreparation::PcrCatalogDigest,"anneal"=>OverlapPreparation::AnnealedOligos,_=>OverlapPreparation::WholeLinear}})><option value="anneal" disabled=move||row().run_origin.is_some()||config.get().mode!=Mode::Ligation||(fixed_sources&&row().anneal_bottom_document.is_none())>"Annealed oligo pair"</option><option value="whole">"Whole linear DNA"</option><option value="declared" disabled=move||row().run_origin.is_some()>"Declare intact linear duplex"</option><option value="digest">"Manual starter-enzyme digest"</option><option value="catalog">"Pinned catalog digest fragment"</option><option value="pcr">"Exact PCR product"</option><option value="pcr_catalog">"Exact PCR → pinned catalog digest"</option></select></label>
+        {get_workspace.map(|snapshot|view!{<Show when=move||row().run_origin.is_some()||!matches!(row().preparation,OverlapPreparation::DeclaredDuplex|OverlapPreparation::AnnealedOligos)><crate::run_origin_view::RunOriginPicker config index source_info epoch get_workspace=snapshot/></Show>})}
         <Show when=move||row().preparation==OverlapPreparation::WholeLinear><p class="helper">"Use an already linear source. Circular DNA must first be prepared by restriction digest or exact PCR; its origin is not an assumed cut."</p></Show>
         <Show when=move||row().preparation==OverlapPreparation::AnnealedOligos><crate::anneal_preparation_view::AnnealPreparationFields config index query_options get_query source_info epoch fixed_sources/></Show>
         <Show when=move||row().preparation==OverlapPreparation::DeclaredDuplex><p class="helper">"Operator assumption for an original, intact linear duplex: declare its two terminal groups explicitly. This does not measure chemistry, cut or repair DNA, change its reference sequence, or reuse producer metadata. Circular, single-stranded and imported physical/reference-only intermediate sources are rejected by the core."</p><DeclaredEndFields config index left=true/><DeclaredEndFields config index left=false/><p class="helper">"All groups initially remain unknown. Orientation is applied after this declaration; any ligation terminal treatment remains a separate explicit step."</p></Show>
@@ -1822,6 +1837,7 @@ fn MethodDiagnostics(
         Stage::EndTreatment => "terminal treatment",
         Stage::SourceDeclaration => "source assumption",
         Stage::Annealing => "oligo annealing",
+        Stage::MaterialReconstruction => "saved material reconstruction",
         Stage::OverlapAssembly => "overlap assembly",
         Stage::LigationAssembly => "ligation",
         Stage::TargetComparison => "independent-target comparison",

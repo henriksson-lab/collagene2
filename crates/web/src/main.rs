@@ -291,3 +291,8 @@ mod plan_editing_sources;
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod sequence_geometry;
+
+#[cfg(any(target_arch = "wasm32", test))]
+mod run_origin_model;
+#[cfg(target_arch = "wasm32")]
+mod run_origin_view;

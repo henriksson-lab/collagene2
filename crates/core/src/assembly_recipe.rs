@@ -21,7 +21,87 @@ const MAX_INPUT_BASES: usize = 8 << 20;
 pub(crate) const MAX_ROLE_BASES: usize = 16 << 20;
 const MAX_PREPARATION_WORK: usize = 100_000_000;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
-dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},AnnealedOligos{bottom_input_id:String,options:crate::chemistry::AnnealOptions,candidate_index:usize}}}
+dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},AnnealedOligos{bottom_input_id:String,options:crate::chemistry::AnnealOptions,candidate_index:usize},FromRun{origin:crate::run_material::Capsule,preparation:RunPreparation}}}
+dto! {pub enum RunPreparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>}}}
+impl RunPreparation {
+    /// Bounded conversion to the existing preparation vocabulary; no recursion,
+    /// chemistry restoration, or scientific computation.
+    pub(crate) fn preparation(&self) -> Result<Preparation, Error> {
+        match self {
+            Self::WholeLinear => Ok(Preparation::WholeLinear),
+            Self::Digest {
+                enzymes,
+                fragment_index,
+                repair,
+            } => {
+                if enzymes.is_empty()
+                    || enzymes.len() > 32
+                    || enzymes.iter().any(|e| e.is_empty() || e.len() > 128)
+                    || *fragment_index > 100_000
+                {
+                    return Err(Error::TooLarge);
+                }
+                Ok(Preparation::Digest {
+                    enzymes: enzymes.clone(),
+                    fragment_index: *fragment_index,
+                    repair: *repair,
+                })
+            }
+            Self::CatalogDigest {
+                selection,
+                fragment_index,
+                repair,
+            } => {
+                selection.validate()?;
+                if *fragment_index > 100_000 {
+                    return Err(Error::TooLarge);
+                }
+                Ok(Preparation::CatalogDigest {
+                    selection: selection.clone(),
+                    fragment_index: *fragment_index,
+                    repair: *repair,
+                })
+            }
+            Self::ExactPcr { forward, reverse } => {
+                primer(forward)?;
+                primer(reverse)?;
+                Ok(Preparation::ExactPcr {
+                    forward: forward.clone(),
+                    reverse: reverse.clone(),
+                })
+            }
+            Self::PcrCatalogDigest {
+                forward,
+                reverse,
+                selection,
+                fragment_index,
+                repair,
+            } => {
+                primer(forward)?;
+                primer(reverse)?;
+                selection.validate()?;
+                if *fragment_index > 100_000 {
+                    return Err(Error::TooLarge);
+                }
+                Ok(Preparation::PcrCatalogDigest {
+                    forward: forward.clone(),
+                    reverse: reverse.clone(),
+                    selection: selection.clone(),
+                    fragment_index: *fragment_index,
+                    repair: *repair,
+                })
+            }
+        }
+    }
+}
+pub(crate) fn from_run_shape(
+    origin: &crate::run_material::Capsule,
+    preparation: &RunPreparation,
+) -> Result<(), Error> {
+    origin.validate_documentary()?;
+    preparation.preparation()?;
+    Ok(())
+}
 dto! {pub struct FragmentSpec {pub role:String,pub input_id:String,pub preparation:Preparation,pub reverse:bool}}
 dto! {pub struct Recipe {pub name:String,pub fragments:Vec<FragmentSpec>,pub overlaps:Vec<usize>,pub circular:bool,pub options:ProfileOptions}}
 dto! {pub struct PreparedRow {pub row_index:usize,pub role:String,pub input_id:String,pub input_revision:String,pub preparation_step:Option<usize>,pub repair_step:Option<usize>,pub prepared_source:Source,pub reverse:bool}}
@@ -118,6 +198,10 @@ pub(crate) fn validate_prepared_inputs(
     if inputs.is_empty() || inputs.len() > MAX_ROWS {
         return Err(Error::TooLarge);
     }
+    crate::run_material::capsules_preflight(steps.iter().filter_map(|step| match step {
+        Operation::ReconstructRunProduct { origin, .. } => Some(origin),
+        _ => None,
+    }))?;
     let mut ids = BTreeSet::new();
     for input in inputs {
         token(&input.id, 128)?;
@@ -127,6 +211,21 @@ pub(crate) fn validate_prepared_inputs(
         }
     }
     for step in steps {
+        if let Operation::ReconstructRunProduct { template, origin } = step {
+            origin.validate_documentary()?;
+            let Source::Input(id) = template else {
+                return Err(bad(
+                    "material reconstruction must consume the exact saved original input",
+                ));
+            };
+            let input = inputs
+                .iter()
+                .find(|i| &i.id == id)
+                .ok_or_else(|| bad("missing saved material source"))?;
+            if input.revision != origin.selection.event.revision {
+                return Err(bad("saved material source revision changed"));
+            }
+        }
         if let Operation::AnnealOligos {
             top,
             bottom,
@@ -167,6 +266,147 @@ pub(crate) fn validate_annealed_row(row: &PreparedRow, steps: &[Operation]) -> R
                 ));
             }
         }
+    }
+    Ok(())
+}
+fn preparation_template(op: &Operation) -> Option<&Source> {
+    match op {
+        Operation::Pcr { template, .. }
+        | Operation::Digest { template, .. }
+        | Operation::CatalogDigest { template, .. }
+        | Operation::DeclareSourceTermini { template, .. }
+        | Operation::ReconstructRunProduct { template, .. } => Some(template),
+        _ => None,
+    }
+}
+fn same_source(a: &Source, b: &Source) -> bool {
+    match (a, b) {
+        (Source::Input(a), Source::Input(b)) => a == b,
+        (Source::Step(a), Source::Step(b)) => a == b,
+        _ => false,
+    }
+}
+pub(crate) fn prepared_chain(
+    plan: &DesignPlan,
+    row: &PreparedRow,
+    index: usize,
+    cursor: &mut usize,
+    assembly: usize,
+    owners: &mut [Option<usize>],
+) -> Result<Vec<usize>, Error> {
+    if row.row_index != index
+        || row.role.trim().is_empty()
+        || row.role.len() > 128
+        || row.input_id.is_empty()
+        || row.input_id.len() > 128
+        || !plan
+            .inputs
+            .iter()
+            .any(|i| i.id == row.input_id && i.revision == row.input_revision)
+    {
+        return Err(bad("row identity/source binding changed"));
+    }
+    let input = Source::Input(row.input_id.clone());
+    let mut steps = Vec::new();
+    if let Some(first) = row.preparation_step {
+        if first != *cursor || first >= assembly {
+            return Err(bad("preparation chain is not in compiler order"));
+        }
+        let op = &plan.steps[first];
+        let initial_bound = match op {
+            Operation::AnnealOligos {
+                top,
+                bottom: Source::Input(bottom),
+                ..
+            } => {
+                same_source(top, &input)
+                    && bottom != &row.input_id
+                    && plan.inputs.iter().any(|i| &i.id == bottom)
+            }
+            Operation::ReconstructRunProduct { .. }
+            | Operation::Pcr { .. }
+            | Operation::Digest { .. }
+            | Operation::CatalogDigest { .. }
+            | Operation::DeclareSourceTermini { .. } => {
+                preparation_template(op).is_some_and(|s| same_source(s, &input))
+            }
+            _ => false,
+        };
+        if !initial_bound {
+            return Err(bad(
+                "initial preparation must consume its own original input",
+            ));
+        }
+        steps.push(first);
+        *cursor += 1;
+        if matches!(op, Operation::ReconstructRunProduct { .. })
+            && *cursor < assembly
+            && matches!(plan.steps.get(*cursor),Some(Operation::Pcr{template:Source::Step(n),..}|Operation::Digest{template:Source::Step(n),..}|Operation::CatalogDigest{template:Source::Step(n),..}) if *n==first)
+        {
+            steps.push(*cursor);
+            *cursor += 1;
+        }
+        let preceding = *steps.last().ok_or_else(|| bad("empty preparation chain"))?;
+        if matches!(plan.steps[preceding], Operation::Pcr { .. })
+            && *cursor < assembly
+            && matches!(plan.steps.get(*cursor),Some(Operation::CatalogDigest{template:Source::Step(n),..})if *n==preceding)
+        {
+            steps.push(*cursor);
+            *cursor += 1;
+        }
+        if let Some(repair) = row.repair_step {
+            let last = *steps
+                .last()
+                .ok_or_else(|| bad("repair has no preparation"))?;
+            if repair != *cursor
+                || repair >= assembly
+                || !matches!(
+                    plan.steps[last],
+                    Operation::Digest { .. } | Operation::CatalogDigest { .. }
+                )
+                || !matches!(plan.steps.get(repair),Some(Operation::RepairEnds{template:Source::Step(n),..})if *n==last)
+            {
+                return Err(bad("repair lost its exact digest source"));
+            }
+            steps.push(repair);
+            *cursor += 1;
+        }
+        if !same_source(
+            &row.prepared_source,
+            &Source::Step(*steps.last().ok_or_else(|| bad("empty preparation chain"))?),
+        ) {
+            return Err(bad("prepared source is not the chain's final step"));
+        }
+    } else if row.repair_step.is_some() || !same_source(&row.prepared_source, &input) {
+        return Err(bad("unprepared row must retain its own original reference"));
+    }
+    for &i in &steps {
+        if owners
+            .get_mut(i)
+            .ok_or_else(|| bad("preparation exceeds assembly boundary"))?
+            .replace(index)
+            .is_some()
+        {
+            return Err(bad("operation assigned to multiple rows"));
+        }
+    }
+    Ok(steps)
+}
+pub(crate) fn validate_preparation_rows(
+    plan: &DesignPlan,
+    rows: &[PreparedRow],
+    boundary: usize,
+) -> Result<(), Error> {
+    if boundary > plan.steps.len() || boundary > 4 * MAX_ROWS {
+        return Err(Error::TooLarge);
+    }
+    let mut owners = vec![None; boundary];
+    let mut cursor = 0;
+    for (i, row) in rows.iter().enumerate() {
+        prepared_chain(plan, row, i, &mut cursor, boundary, &mut owners)?;
+    }
+    if cursor != boundary || owners.iter().any(Option::is_none) {
+        return Err(bad("unassigned or skipped preparation operation"));
     }
     Ok(())
 }
@@ -251,6 +491,12 @@ fn preparation_preflight_inner(
         return Err(Error::TooLarge);
     }
     token(name, 1024)?;
+    crate::run_material::capsules_preflight(fragments.iter().filter_map(
+        |row| match &row.preparation {
+            Preparation::FromRun { origin, .. } => Some(origin),
+            _ => None,
+        },
+    ))?;
     let mut models = inputs.iter().map(|(_, m)| *m).collect::<Vec<_>>();
     if let Some(target) = target {
         models.push(target);
@@ -285,7 +531,13 @@ fn preparation_preflight_inner(
     let pinned_catalog = if fragments.iter().any(|f| {
         matches!(
             f.preparation,
-            Preparation::CatalogDigest { .. } | Preparation::PcrCatalogDigest { .. }
+            Preparation::CatalogDigest { .. }
+                | Preparation::PcrCatalogDigest { .. }
+                | Preparation::FromRun {
+                    preparation: RunPreparation::CatalogDigest { .. }
+                        | RunPreparation::PcrCatalogDigest { .. },
+                    ..
+                }
         )
     }) {
         Some(crate::catalog_digest::builtin_catalog()?)
@@ -308,7 +560,25 @@ fn preparation_preflight_inner(
             .checked_add(m.sequence.len())
             .filter(|n| *n <= MAX_ROLE_BASES)
             .ok_or(Error::TooLarge)?;
-        let units = match &row.preparation {
+        let effective;
+        let preparation = if let Preparation::FromRun {
+            origin,
+            preparation,
+        } = &row.preparation
+        {
+            from_run_shape(origin, preparation)?;
+            if origin.selection.event.revision != m.revision() {
+                return Err(bad("saved material origin source revision changed"));
+            }
+            effective = preparation.preparation()?;
+            &effective
+        } else {
+            &row.preparation
+        };
+        let units = match preparation {
+            Preparation::FromRun { .. } => {
+                return Err(bad("nested material preparation is unsupported"));
+            }
             Preparation::AnnealedOligos {
                 bottom_input_id,
                 options,
@@ -511,6 +781,20 @@ pub fn compile_preparations(
         return Err(bad("source revisions must be explicit canonical hashes"));
     }
     let target_revision = bound_revisions(inputs, target)?;
+    let (steps, rows) = preparation_steps(inputs, fragments)?;
+    Ok(PreparedCompilation {
+        inputs: inputs.to_vec(),
+        target_revision,
+        steps,
+        rows,
+    })
+}
+/// Pure compiler shared by readonly recipe correspondence checks. Callers must
+/// perform borrowed source/recipe bounds first; no molecular operation runs.
+pub(crate) fn preparation_steps(
+    inputs: &[PlanInput],
+    fragments: &[FragmentSpec],
+) -> Result<(Vec<Operation>, Vec<PreparedRow>), Error> {
     let mut steps = Vec::new();
     let mut rows = Vec::with_capacity(fragments.len());
     for (index, row) in fragments.iter().enumerate() {
@@ -518,8 +802,27 @@ pub fn compile_preparations(
             .iter()
             .find(|i| i.id == row.input_id)
             .ok_or_else(|| bad("missing original"))?;
-        let input = Source::Input(row.input_id.clone());
-        let operation = match &row.preparation {
+        let original_input = Source::Input(row.input_id.clone());
+        let effective;
+        let (input, first_step, preparation) = if let Preparation::FromRun {
+            origin,
+            preparation,
+        } = &row.preparation
+        {
+            let first = steps.len();
+            steps.push(Operation::ReconstructRunProduct {
+                template: original_input,
+                origin: origin.clone(),
+            });
+            effective = preparation.preparation()?;
+            (Source::Step(first), Some(first), &effective)
+        } else {
+            (original_input, None, &row.preparation)
+        };
+        let operation = match preparation {
+            Preparation::FromRun { .. } => {
+                return Err(bad("nested material preparation is unsupported"));
+            }
             Preparation::WholeLinear => None,
             Preparation::AnnealedOligos {
                 bottom_input_id,
@@ -563,7 +866,7 @@ pub fn compile_preparations(
                 reverse: reverse.clone(),
             }),
         };
-        let preparation_step = operation.as_ref().map(|_| steps.len());
+        let preparation_step = first_step.or_else(|| operation.as_ref().map(|_| steps.len()));
         let mut prepared_source = if let Some(operation) = operation {
             let step = steps.len();
             steps.push(operation);
@@ -575,7 +878,7 @@ pub fn compile_preparations(
             selection,
             fragment_index,
             ..
-        } = &row.preparation
+        } = preparation
         {
             let index = steps.len();
             steps.push(Operation::CatalogDigest {
@@ -596,7 +899,7 @@ pub fn compile_preparations(
         | Preparation::PcrCatalogDigest {
             repair: Some(method),
             ..
-        } = &row.preparation
+        } = preparation
         {
             let index = steps.len();
             steps.push(Operation::RepairEnds {
@@ -619,13 +922,9 @@ pub fn compile_preparations(
             reverse: row.reverse,
         });
     }
-    Ok(PreparedCompilation {
-        inputs: inputs.to_vec(),
-        target_revision,
-        steps,
-        rows,
-    })
+    Ok((steps, rows))
 }
+
 pub fn compile(
     inputs: &[PlanInput],
     target: &Molecule,
@@ -736,10 +1035,10 @@ impl Preview {
             || self.compiled.rows.len() > MAX_ROWS
             || self.prepared.len() > self.compiled.rows.len()
             || self.compiled.plan.inputs.len() > MAX_ROWS
-            || self.verification.products.len() > 3 * MAX_ROWS + 1
-            || self.verification.step_reports.len() > 3 * MAX_ROWS + 1
-            || self.verification.annotation_reports.len() > 3 * MAX_ROWS + 1
-            || self.compiled.plan.steps.len() > 3 * MAX_ROWS + 1
+            || self.verification.products.len() > 4 * MAX_ROWS + 1
+            || self.verification.step_reports.len() > 4 * MAX_ROWS + 1
+            || self.verification.annotation_reports.len() > 4 * MAX_ROWS + 1
+            || self.compiled.plan.steps.len() > 4 * MAX_ROWS + 1
             || self.compiled.assembly_step.checked_add(1) != Some(self.compiled.plan.steps.len())
         {
             return Err(bad("invalid preview shape"));
@@ -800,25 +1099,12 @@ impl Preview {
             if input.revision != row.input_revision {
                 return Err(bad("preview row revision mismatch"));
             }
-            match (
-                &row.prepared_source,
-                row.repair_step.or(row.preparation_step),
-            ) {
-                (Source::Input(id), None) if id == &row.input_id => {}
-                (Source::Step(i), Some(j)) if *i == j && j < self.compiled.assembly_step => {}
-                (Source::Step(i), Some(j))
-                    if row.repair_step.is_none()
-                        && j.checked_add(1) == Some(*i)
-                        && *i < self.compiled.assembly_step
-                        && matches!(
-                            self.compiled.plan.steps.get(j),
-                            Some(Operation::Pcr { .. })
-                        )
-                        && matches!(self.compiled.plan.steps.get(*i),Some(Operation::CatalogDigest{template:Source::Step(k),..}) if *k==j) =>
-                    {}
-                _ => return Err(bad("invalid prepared-source mapping")),
-            }
         }
+        validate_preparation_rows(
+            &self.compiled.plan,
+            &self.compiled.rows,
+            self.compiled.assembly_step,
+        )?;
         let Some(Operation::ProfiledOverlap {
             fragments,
             overlaps,
@@ -835,6 +1121,7 @@ impl Preview {
                     !matches!(
                         step,
                         Operation::Pcr { .. }
+                            | Operation::ReconstructRunProduct { .. }
                             | Operation::AnnealOligos { .. }
                             | Operation::Digest { .. }
                             | Operation::CatalogDigest { .. }

@@ -34,6 +34,12 @@ fn sources(recipe: &Recipe) -> Result<Vec<FragmentSpec>, Error> {
     if recipe.fragments.is_empty() || recipe.fragments.len() > preparation::MAX_ROWS {
         return Err(Error::TooLarge);
     }
+    crate::run_material::capsules_preflight(recipe.fragments.iter().filter_map(|row| {
+        match &row.source.preparation {
+            preparation::Preparation::FromRun { origin, .. } => Some(origin),
+            _ => None,
+        }
+    }))?;
     Ok(recipe.fragments.iter().map(|f| f.source.clone()).collect())
 }
 fn recipe_shape(recipe: &Recipe) -> Result<(), Error> {
@@ -64,6 +70,10 @@ fn recipe_shape(recipe: &Recipe) -> Result<(), Error> {
                     }
                 }
             }
+            preparation::Preparation::FromRun {
+                origin,
+                preparation: child,
+            } => preparation::from_run_shape(origin, child)?,
             preparation::Preparation::AnnealedOligos {
                 bottom_input_id,
                 options,
@@ -309,131 +319,25 @@ fn validate_preparation_prefix(
     recipe: &Recipe,
     tail_start: usize,
 ) -> Result<(), Error> {
-    use preparation::Preparation;
-    let mut next = 0usize;
-    let mut check = |expected: Operation| -> Result<usize, Error> {
-        let index = next;
-        if index >= tail_start
-            || preparation::hash(
-                compiled
-                    .plan
-                    .steps
-                    .get(index)
-                    .ok_or_else(|| bad("missing preparation operation"))?,
-            )? != preparation::hash(&expected)?
-        {
-            return Err(bad(
-                "preparation operation differs from declared original-source recipe",
-            ));
-        }
-        next += 1;
-        Ok(index)
-    };
-    for (i, (row, request)) in compiled.rows.iter().zip(&recipe.fragments).enumerate() {
-        let spec = &request.source;
-        let original = Source::Input(spec.input_id.clone());
-        let operation = match &spec.preparation {
-            Preparation::WholeLinear => None,
-            Preparation::AnnealedOligos {
-                bottom_input_id,
-                options,
-                candidate_index,
-            } => Some(Operation::AnnealOligos {
-                top: original.clone(),
-                bottom: Source::Input(bottom_input_id.clone()),
-                options: options.clone(),
-                candidate_index: *candidate_index,
-            }),
-            Preparation::DeclaredDuplex { left, right } => Some(Operation::DeclareSourceTermini {
-                template: original.clone(),
-                left: *left,
-                right: *right,
-            }),
-            Preparation::Digest {
-                enzymes,
-                fragment_index,
-                ..
-            } => Some(Operation::Digest {
-                template: original.clone(),
-                enzymes: enzymes.clone(),
-                fragment_index: *fragment_index,
-            }),
-            Preparation::CatalogDigest {
-                selection,
-                fragment_index,
-                ..
-            } => Some(Operation::CatalogDigest {
-                template: original.clone(),
-                selection: selection.clone(),
-                fragment_index: *fragment_index,
-            }),
-            Preparation::ExactPcr { forward, reverse }
-            | Preparation::PcrCatalogDigest {
-                forward, reverse, ..
-            } => Some(Operation::Pcr {
-                template: original.clone(),
-                forward: forward.clone(),
-                reverse: reverse.clone(),
-            }),
-        };
-        let preparation_step = operation.map(&mut check).transpose()?;
-        let mut source = preparation_step.map(Source::Step).unwrap_or(original);
-        if let Preparation::PcrCatalogDigest {
-            selection,
-            fragment_index,
-            ..
-        } = &spec.preparation
-        {
-            source = Source::Step(check(Operation::CatalogDigest {
-                template: source,
-                selection: selection.clone(),
-                fragment_index: *fragment_index,
-            })?);
-        }
-        let repair = match &spec.preparation {
-            Preparation::Digest { repair, .. }
-            | Preparation::CatalogDigest { repair, .. }
-            | Preparation::PcrCatalogDigest { repair, .. } => *repair,
-            _ => None,
-        };
-        let repair_step = repair
-            .map(|method| {
-                check(Operation::RepairEnds {
-                    template: source.clone(),
-                    method,
-                })
-            })
-            .transpose()?;
-        if let Some(index) = repair_step {
-            source = Source::Step(index);
-        }
-        let input = compiled
-            .plan
-            .inputs
-            .iter()
-            .find(|p| p.id == spec.input_id)
-            .ok_or_else(|| bad("preparation input missing"))?;
-        let expected = PreparedRow {
-            row_index: i,
-            role: spec.role.clone(),
-            input_id: spec.input_id.clone(),
-            input_revision: input.revision.clone(),
-            preparation_step,
-            repair_step,
-            prepared_source: source,
-            reverse: spec.reverse,
-        };
-        if preparation::hash(&expected)? != preparation::hash(&row.preparation)? {
-            return Err(bad(
-                "prepared row metadata differs from its declared operations",
-            ));
-        }
+    let fragments = sources(recipe)?;
+    let (steps, rows) = preparation::preparation_steps(&compiled.plan.inputs, &fragments)?;
+    if steps.len() != tail_start
+        || tail_start > compiled.plan.steps.len()
+        || preparation::hash(&steps)? != preparation::hash(&&compiled.plan.steps[..tail_start])?
+        || rows.len() != compiled.rows.len()
+    {
+        return Err(bad(
+            "preparation prefix differs from the declared original-source recipe",
+        ));
     }
-    if next != tail_start {
-        return Err(bad("unclaimed preparation operations"));
+    for (expected, row) in rows.iter().zip(&compiled.rows) {
+        if preparation::hash(expected)? != preparation::hash(&row.preparation)? {
+            return Err(bad("preparation row differs from declared source chain"));
+        }
     }
     Ok(())
 }
+
 fn same(a: &Source, b: &Source) -> bool {
     match (a, b) {
         (Source::Input(a), Source::Input(b)) => a == b,
@@ -467,7 +371,7 @@ impl Preview {
         if !hex(&self.context_revision)
             || rows == 0
             || rows > preparation::MAX_ROWS
-            || steps > 5 * preparation::MAX_ROWS + 1
+            || steps > 6 * preparation::MAX_ROWS + 1
             || self.compiled.ligation_step.checked_add(1) != Some(steps)
             || self.compiled.plan.inputs.len() > preparation::MAX_ROWS
             || self.verification.products.len() > steps
@@ -546,6 +450,7 @@ impl Preview {
                     !matches!(
                         s,
                         Operation::Pcr { .. }
+                            | Operation::ReconstructRunProduct { .. }
                             | Operation::AnnealOligos { .. }
                             | Operation::DeclareSourceTermini { .. }
                             | Operation::Digest { .. }

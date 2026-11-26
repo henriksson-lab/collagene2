@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 73;
+pub const WORKER_SCHEMA_VERSION: u16 = 74;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 17;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -899,6 +899,16 @@ pub enum AnalysisJob {
         molecule: Molecule,
         request: crate::pcr_digest_inspection::Request,
     },
+    InspectRunMaterial {
+        workspace: crate::workspace::Workspace,
+        event: crate::run_lineage::EventBinding,
+        selection: Option<crate::run_material::Selection>,
+    },
+    InspectRunPcrDigest {
+        molecule: Molecule,
+        origin: crate::run_material::Capsule,
+        request: crate::pcr_digest_inspection::Request,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1061,6 +1071,8 @@ pub enum AnalysisResult {
     CombinatorialMultiSiteInspection(crate::combinatorial_design::MultiSiteInspection),
     TailingRecipePreview(crate::tailing_recipe::Preview),
     PcrDigestInspection(crate::pcr_digest_inspection::Preview),
+    RunMaterialInspection(crate::run_material::Inspection),
+    RunPcrDigestInspection(crate::pcr_digest_inspection::RunPreview),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1290,6 +1302,20 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         crate::pairwise_context::preflight(report, reference, query, *translate)?;
     }
     match &r.job {
+        AnalysisJob::InspectRunPcrDigest {
+            molecule,
+            origin,
+            request,
+        } => {
+            crate::pcr_digest_inspection::preflight_from_run(molecule, origin, request)?;
+        }
+        AnalysisJob::InspectRunMaterial {
+            workspace,
+            event,
+            selection,
+        } => {
+            crate::run_material::inspection_revision(workspace, event, selection)?;
+        }
         AnalysisJob::InspectPcrDigest { molecule, request } => {
             crate::pcr_digest_inspection::source_preflight(molecule, request)?;
         }
@@ -1433,6 +1459,7 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::FinishCombinatorialRelease { .. }
             | AnalysisJob::ExportCombinatorialOutputs { .. }
             | AnalysisJob::InspectCombinatorialMultiSite { .. }
+            | AnalysisJob::InspectRunMaterial { .. }
     ) {
         MAX_WORKSPACE_MESSAGE_BYTES
     } else {
@@ -1510,6 +1537,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_combinatorial_multisite_tag(bytes, &[147])?;
     preflight_tailing_recipe_tag(bytes, &[148])?;
     preflight_pcr_digest_tag(bytes, &[149])?;
+    preflight_run_material_tag(bytes, &[150, 151])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1566,6 +1594,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         },
     };
     let required = match &response.result {
+        AnalysisResult::RunMaterialInspection(_) | AnalysisResult::RunPcrDigestInspection(_) => 74,
         AnalysisResult::PcrDigestInspection(_) => 72,
         AnalysisResult::TailingRecipePreview(report) => {
             check_variant_version(bytes, plan_worker_version(&report.compiled.plan))?;
@@ -1742,6 +1771,22 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             check_variant_version(bytes, 71)?
         }
         _ => {}
+    }
+    let recipe_plan = match &response.result {
+        AnalysisResult::OverlapRecipePreview(p) => Some(&p.compiled.plan),
+        AnalysisResult::LigationRecipePreview(p) => Some(&p.compiled.plan),
+        AnalysisResult::TailingRecipePreview(p) => Some(&p.compiled.plan),
+        _ => None,
+    };
+    if recipe_plan.is_some_and(|p| {
+        p.steps.iter().any(|op| {
+            matches!(
+                op,
+                crate::verification::Operation::ReconstructRunProduct { .. }
+            )
+        })
+    }) {
+        check_variant_version(bytes, 74)?;
     }
     if let AnalysisResult::AnnotationImport(report) = &response.result {
         check_annotation_format_version(bytes, report.format)?;
@@ -1975,6 +2020,12 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
                 check_variant_version(bytes, 48)?;
             }
             report.validate_binding(&response.revision)?
+        }
+        AnalysisResult::RunPcrDigestInspection(report) => {
+            report.validate_binding(&response.revision)?;
+        }
+        AnalysisResult::RunMaterialInspection(report) => {
+            report.validate_binding(&response.revision)?;
         }
         AnalysisResult::PcrDigestInspection(report) => {
             report.validate_binding(&response.revision)?;
@@ -2682,6 +2733,14 @@ fn preflight_assembly_junctions_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Er
     }
     Ok(())
 }
+fn preflight_run_material_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 74)?;
+    }
+    Ok(())
+}
 fn preflight_pcr_digest_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -2929,22 +2988,33 @@ mod preparation_shape {
         SerializeTupleStruct, SerializeTupleVariant,
     };
     #[derive(Debug)]
-    pub struct Found;
+    pub struct Found(u16);
     impl std::fmt::Display for Found {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.write_str("annealed-oligo recipe capability requires worker schema 71")
+            write!(
+                f,
+                "recipe preparation capability requires worker schema {}",
+                self.0
+            )
         }
     }
     impl std::error::Error for Found {}
     impl ser::Error for Found {
         fn custom<T: std::fmt::Display>(_: T) -> Self {
-            Self
+            Self(74)
         }
     }
-    pub struct Visitor;
-    fn variant(name: &str, variant: &str) -> Result<(), Found> {
-        if name == "Preparation" && variant == "AnnealedOligos" {
-            Err(Found)
+    pub struct Visitor {
+        pub worker: u16,
+    }
+    fn variant(worker: u16, name: &str, variant: &str) -> Result<(), Found> {
+        let minimum = match (name, variant) {
+            ("Preparation", "AnnealedOligos") => 71,
+            ("Preparation", "FromRun") => 74,
+            _ => 0,
+        };
+        if worker < minimum {
+            Err(Found(minimum))
         } else {
             Ok(())
         }
@@ -2984,7 +3054,9 @@ mod preparation_shape {
             Ok(())
         }
         fn serialize_some<T: ?Sized + Serialize>(self, v: &T) -> Result<(), Found> {
-            v.serialize(Self)
+            v.serialize(Self {
+                worker: self.worker,
+            })
         }
         fn serialize_unit(self) -> Result<(), Found> {
             Ok(())
@@ -2998,14 +3070,16 @@ mod preparation_shape {
             _: u32,
             v: &'static str,
         ) -> Result<(), Found> {
-            variant(n, v)
+            variant(self.worker, n, v)
         }
         fn serialize_newtype_struct<T: ?Sized + Serialize>(
             self,
             _: &'static str,
             v: &T,
         ) -> Result<(), Found> {
-            v.serialize(Self)
+            v.serialize(Self {
+                worker: self.worker,
+            })
         }
         fn serialize_newtype_variant<T: ?Sized + Serialize>(
             self,
@@ -3014,13 +3088,15 @@ mod preparation_shape {
             v: &'static str,
             value: &T,
         ) -> Result<(), Found> {
-            variant(n, v)?;
+            variant(self.worker, n, v)?;
             // Native archive bytes are inspected through check_workspace_version,
             // not traversed one scalar byte at a time by this shape-only visitor.
             if n == "AnalysisResult" && v == "WorkspaceSaved" {
                 return Ok(());
             }
-            value.serialize(Self)
+            value.serialize(Self {
+                worker: self.worker,
+            })
         }
         fn serialize_seq(self, _: Option<usize>) -> Result<Self, Found> {
             Ok(self)
@@ -3038,7 +3114,7 @@ mod preparation_shape {
             v: &'static str,
             _: usize,
         ) -> Result<Self, Found> {
-            variant(n, v)?;
+            variant(self.worker, n, v)?;
             Ok(self)
         }
         fn serialize_map(self, _: Option<usize>) -> Result<Self, Found> {
@@ -3054,7 +3130,7 @@ mod preparation_shape {
             v: &'static str,
             _: usize,
         ) -> Result<Self, Found> {
-            variant(n, v)?;
+            variant(self.worker, n, v)?;
             Ok(self)
         }
         fn collect_str<T: ?Sized + std::fmt::Display>(self, _: &T) -> Result<(), Found> {
@@ -3067,7 +3143,9 @@ mod preparation_shape {
                 type Ok = ();
                 type Error = Found;
                 fn $method<T: ?Sized + Serialize>(&mut self, v: &T) -> Result<(), Found> {
-                    v.serialize(Visitor)
+                    v.serialize(Visitor {
+                        worker: self.worker,
+                    })
                 }
                 fn end(self) -> Result<(), Found> {
                     Ok(())
@@ -3083,10 +3161,14 @@ mod preparation_shape {
         type Ok = ();
         type Error = Found;
         fn serialize_key<T: ?Sized + Serialize>(&mut self, v: &T) -> Result<(), Found> {
-            v.serialize(Visitor)
+            v.serialize(Visitor {
+                worker: self.worker,
+            })
         }
         fn serialize_value<T: ?Sized + Serialize>(&mut self, v: &T) -> Result<(), Found> {
-            v.serialize(Visitor)
+            v.serialize(Visitor {
+                worker: self.worker,
+            })
         }
         fn end(self) -> Result<(), Found> {
             Ok(())
@@ -3105,7 +3187,9 @@ mod preparation_shape {
                     if key == "bytes" {
                         Ok(())
                     } else {
-                        v.serialize(Visitor)
+                        v.serialize(Visitor {
+                            worker: self.worker,
+                        })
                     }
                 }
                 fn end(self) -> Result<(), Found> {
@@ -3118,9 +3202,10 @@ mod preparation_shape {
     structure!(SerializeStructVariant);
 }
 fn check_preparation_version(bytes: &[u8], value: &impl Serialize) -> Result<(), Error> {
-    if u16::from_le_bytes([bytes[4], bytes[5]]) < 71 {
+    let worker = u16::from_le_bytes([bytes[4], bytes[5]]);
+    if worker < 74 {
         value
-            .serialize(preparation_shape::Visitor)
+            .serialize(preparation_shape::Visitor { worker })
             .map_err(|e| Error::Format(e.to_string()))?;
     }
     Ok(())
@@ -3160,7 +3245,9 @@ fn check_workspace_version(
         check_variant_version(bytes, plan_worker_version(&candidate.plan))?;
     }
     for attachment in workspace.attachments.values() {
-        if attachment.kind == "assembly-draft-v4" {
+        if attachment.kind == "assembly-draft-v5" {
+            check_variant_version(bytes, 74)?;
+        } else if attachment.kind == "assembly-draft-v4" {
             check_variant_version(bytes, 71)?;
         } else if attachment.kind == crate::run_lineage::WORKSPACE_ATTACHMENT_KIND {
             check_variant_version(bytes, 12)?;
@@ -3338,6 +3425,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             (135, 58),
             (149, 65),
             (155, 69),
+            (158, 74),
         ],
     )?;
     preflight_codon_tag(bytes, &[44, 45])?;
@@ -3392,6 +3480,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_combinatorial_multisite_tag(bytes, &[155])?;
     preflight_tailing_recipe_tag(bytes, &[156])?;
     preflight_pcr_digest_tag(bytes, &[157])?;
+    preflight_run_material_tag(bytes, &[158, 159])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -3399,6 +3488,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::InspectRunMaterial { .. } | AnalysisJob::InspectRunPcrDigest { .. } => 74,
         AnalysisJob::InspectPcrDigest { .. } => 72,
         AnalysisJob::PreviewTailingRecipe { .. } => 70,
         AnalysisJob::InspectCombinatorialMultiSite { .. } => 69,
@@ -4252,6 +4342,35 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             }
             None
         }
+        AnalysisJob::InspectRunMaterial {
+            workspace,
+            event,
+            selection,
+        } => {
+            check_workspace_version(bytes, workspace)?;
+            if crate::run_material::inspection_revision(workspace, event, selection)? != r.revision
+            {
+                return Err(Error::Format(
+                    "Run material workspace/event/origin selection changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::InspectRunPcrDigest {
+            molecule,
+            origin,
+            request,
+        } => {
+            if crate::pcr_digest_inspection::inspection_revision_from_run(
+                molecule, origin, request,
+            )? != r.revision
+            {
+                return Err(Error::Format(
+                    "Saved-run PCR digest origin/source/primer/catalog context changed".into(),
+                ));
+            }
+            None
+        }
         AnalysisJob::InspectPcrDigest { molecule, request } => {
             if crate::pcr_digest_inspection::inspection_revision(molecule, request)? != r.revision {
                 return Err(Error::Format(
@@ -5096,6 +5215,18 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             options,
         } => crate::assembly_junctions::inspect_plan(&plan, &target, &options)
             .map(AnalysisResult::AssemblyJunctionInspection),
+        AnalysisJob::InspectRunMaterial {
+            workspace,
+            event,
+            selection,
+        } => crate::run_material::inspect(&workspace, &event, &selection)
+            .map(AnalysisResult::RunMaterialInspection),
+        AnalysisJob::InspectRunPcrDigest {
+            molecule,
+            origin,
+            request,
+        } => crate::pcr_digest_inspection::inspect_from_run(&molecule, &origin, &request)
+            .map(AnalysisResult::RunPcrDigestInspection),
         AnalysisJob::InspectPcrDigest { molecule, request } => {
             crate::pcr_digest_inspection::inspect(&molecule, &request)
                 .map(AnalysisResult::PcrDigestInspection)
@@ -5685,6 +5816,7 @@ impl AnalysisSession {
                 (135, 58),
                 (149, 65),
                 (155, 69),
+                (158, 74),
             ],
         )?;
         // Route by a borrowed prefix so ordinary jobs are not fully decoded twice.

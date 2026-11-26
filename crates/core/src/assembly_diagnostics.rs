@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
 dto! {#[derive(Copy,PartialEq,Eq)] pub enum RowState {InputReference,Reconstructed,Failed,Blocked}}
-dto! {#[derive(Copy,PartialEq,Eq)] pub enum Stage {Pcr,Digest,Repair,EndTreatment,SourceDeclaration,OverlapAssembly,LigationAssembly,TargetComparison,Annealing}}
+dto! {#[derive(Copy,PartialEq,Eq)] pub enum Stage {Pcr,Digest,Repair,EndTreatment,SourceDeclaration,OverlapAssembly,LigationAssembly,TargetComparison,Annealing,MaterialReconstruction}}
 dto! {#[derive(Copy,PartialEq,Eq)] pub enum JunctionState {ExactHomology,HomologyMismatch,HomologyUnavailable,EndpointsAvailable,EndpointsUnavailable}}
 dto! {pub struct Row {pub index:usize,pub role:String,pub input_id:String,pub reverse:bool,pub state:RowState,pub preparation_step:Option<usize>,pub repair_step:Option<usize>,pub completed_steps:usize,pub total_steps:usize}}
 dto! {pub struct Failure {pub step:usize,pub stage:Stage,pub row:Option<usize>,pub upstream:Option<usize>,pub downstream:Option<usize>,pub message:String,pub recovery:String}}
@@ -31,19 +31,10 @@ fn same(a: &Source, b: &Source) -> bool {
         _ => false,
     }
 }
-fn template(op: &Operation) -> Option<&Source> {
-    match op {
-        Operation::Pcr { template, .. }
-        | Operation::Digest { template, .. }
-        | Operation::CatalogDigest { template, .. }
-        | Operation::RepairEnds { template, .. }
-        | Operation::TreatEnds { template, .. }
-        | Operation::DeclareSourceTermini { template, .. } => Some(template),
-        _ => None,
-    }
-}
+
 fn stage(op: &Operation) -> Result<Stage, Error> {
     Ok(match op {
+        Operation::ReconstructRunProduct { .. } => Stage::MaterialReconstruction,
         Operation::Pcr { .. } => Stage::Pcr,
         Operation::AnnealOligos { .. } => Stage::Annealing,
         Operation::Digest { .. } | Operation::CatalogDigest { .. } => Stage::Digest,
@@ -116,95 +107,9 @@ fn preparation(
     assembly: usize,
     owners: &mut [Option<usize>],
 ) -> Result<Vec<usize>, Error> {
-    if row.row_index != index
-        || row.role.trim().is_empty()
-        || row.role.len() > 128
-        || row.input_id.is_empty()
-        || row.input_id.len() > 128
-        || !plan
-            .inputs
-            .iter()
-            .any(|i| i.id == row.input_id && i.revision == row.input_revision)
-    {
-        return Err(bad("row identity/source binding changed"));
-    }
-    let input = Source::Input(row.input_id.clone());
-    let mut steps = Vec::new();
-    if let Some(first) = row.preparation_step {
-        if first != *cursor || first >= assembly {
-            return Err(bad("preparation chain is not in compiler order"));
-        }
-        let op = &plan.steps[first];
-        let initial_bound = match op {
-            Operation::AnnealOligos {
-                top,
-                bottom: Source::Input(bottom),
-                ..
-            } => {
-                same(top, &input)
-                    && bottom != &row.input_id
-                    && plan.inputs.iter().any(|i| &i.id == bottom)
-            }
-            Operation::Pcr { .. }
-            | Operation::Digest { .. }
-            | Operation::CatalogDigest { .. }
-            | Operation::DeclareSourceTermini { .. } => {
-                template(op).is_some_and(|s| same(s, &input))
-            }
-            _ => false,
-        };
-        if !initial_bound {
-            return Err(bad(
-                "initial preparation must consume its own original input",
-            ));
-        }
-        steps.push(first);
-        *cursor += 1;
-        if matches!(op, Operation::Pcr { .. })
-            && *cursor < assembly
-            && matches!(plan.steps.get(*cursor),Some(Operation::CatalogDigest{template:Source::Step(n),..})if *n==first)
-        {
-            steps.push(*cursor);
-            *cursor += 1;
-        }
-        if let Some(repair) = row.repair_step {
-            let last = *steps
-                .last()
-                .ok_or_else(|| bad("repair has no preparation"))?;
-            if repair != *cursor
-                || repair >= assembly
-                || !matches!(
-                    plan.steps[last],
-                    Operation::Digest { .. } | Operation::CatalogDigest { .. }
-                )
-                || !matches!(plan.steps.get(repair),Some(Operation::RepairEnds{template:Source::Step(n),..})if *n==last)
-            {
-                return Err(bad("repair lost its exact digest source"));
-            }
-            steps.push(repair);
-            *cursor += 1;
-        }
-        if !same(
-            &row.prepared_source,
-            &Source::Step(*steps.last().ok_or_else(|| bad("empty preparation chain"))?),
-        ) {
-            return Err(bad("prepared source is not the chain's final step"));
-        }
-    } else if row.repair_step.is_some() || !same(&row.prepared_source, &input) {
-        return Err(bad("unprepared row must retain its own original reference"));
-    }
-    for &i in &steps {
-        if owners
-            .get_mut(i)
-            .ok_or_else(|| bad("preparation exceeds assembly boundary"))?
-            .replace(index)
-            .is_some()
-        {
-            return Err(bad("operation assigned to multiple rows"));
-        }
-    }
-    Ok(steps)
+    assembly_recipe::prepared_chain(plan, row, index, cursor, assembly, owners)
 }
+
 fn resolve<'a>(
     plan: &'a DesignPlan,
     report: &'a VerificationReport,
@@ -246,6 +151,10 @@ fn prepared_binding(
 }
 fn failure(step: usize, stage: Stage, row: Option<usize>) -> Failure {
     let (message, recovery) = match stage {
+        Stage::MaterialReconstruction => (
+            "No reusable material was retained from the saved origin reconstruction.",
+            "Review the exact saved source event and unchanged originating plan, target and inputs. Reconstruct the complete origin; imported physical summaries do not supply material authority.",
+        ),
         Stage::Annealing => (
             "No product was retained for this oligo-annealing step.",
             "Review both independently bound original oligos, explicit terminal assumptions, selected placement and search limits; no stock duplex is substituted.",

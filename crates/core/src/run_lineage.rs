@@ -16,11 +16,11 @@ dto! {
 #[cfg_attr(feature="json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct EventBinding { pub document_id:String, pub event_id:String, pub revision:String }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature="json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct InputEventBinding { pub input_id:String, pub event:EventBinding }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature="json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ProductBinding { pub step_index:usize, pub document_id:String, pub event_id:String, pub revision:String }

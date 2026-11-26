@@ -1672,3 +1672,44 @@ evidence. Web/worker WASM checks and the native MCP compiler check passed.
 Formatting and whitespace checks passed. Existing unsupported nicked-substrate
 PCR/digest paths withhold downstream products; no repair is inferred. No browser
 or HTTP application checks, full frontend build or preview update were performed.
+
+### Saved material in ordinary preparation controls
+
+The ordinary row editor now discovers exact retained run origins and explicitly
+selects one through the worker. A flat `Preparation::FromRun` wrapper compiles a
+reconstruction prefix followed by the existing PCR/digest/repair/tailing/treatment
+chain. Shared readonly row diagnostics account for the complete chain and retain
+actual physical ends. Source events remain exact, the independent target remains
+separate, and original-only declarations/annealing cannot replace material state.
+
+Draft v5 persists an Arc-backed documentary recipe pin without copying its bytes
+on each row edit; stale source-event pins clear on capture/sync/restore. Older
+drafts remain readable. Worker 74 adds origin inspection and saved-template
+PCR/digest inspection; the latter uses the same PCR document and restriction
+engines after fresh tracked-template checks. Candidate 17/plan 15/science 20 remain
+unchanged. MCP now has 173 tools with explicit workspace/event origin discovery
+and preparation, and the existing PCR-digest inspector accepts an optional origin.
+Library-choice origin projection remains deferred until per-choice bindings are
+modeled; no caller-supplied summary supplies physical material.
+
+The next ordinary-cloning handoff is direct VirtualDigest on a saved run product.
+Its recognition map works, but physical fragments and both assembly handoffs still
+use the ordinary-source route. Carry the origin into the exact saved-source
+`FromRun::CatalogDigest` request, retaining modification/nick restrictions and
+source-bound cut geometry. Existing cut-defined selection for original references
+is already connected and should be reused, not rewritten. Subsequent dock gaps
+include explicit mismatch-PCR row preparation and an initial TOPO setup entry;
+both should reuse existing native/standalone workflows. These priorities precede
+further BAM/BAI or unrelated infrastructure work.
+
+Validation: 37 distinct targeted checks passed across native preparation/diagnostic
+regressions, actual saved-source chemistry, origin-bound worker messages, two draft
+persistence/source-reset fixtures and a real MCP SDK workflow. The SDK negative
+case identified and closed an ownership gap: saved-run PCR inspection now requires
+the exact immutable workspace and checks retained source/run/target events before
+one fresh inspection. Web/worker WASM checks and the full offline Trunk build
+passed. No browser or HTTP application checks were run.
+
+The compiled preview retains earlier immutable workers for open tabs. Its bounded
+static asset budget is now 384 MiB to accommodate those retained workers; it still
+serves only a validated read-only asset snapshot with no host filesystem API.

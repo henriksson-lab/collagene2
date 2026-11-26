@@ -36,6 +36,10 @@ fn raw_preparation(f: &FragmentSpec) -> Result<(), Error> {
         Ok(())
     };
     match &f.preparation {
+        Preparation::FromRun {
+            origin,
+            preparation,
+        } => assembly_recipe::from_run_shape(origin, preparation)?,
         Preparation::AnnealedOligos {
             bottom_input_id,
             options,

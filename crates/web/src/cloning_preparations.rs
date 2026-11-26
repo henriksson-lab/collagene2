@@ -12,7 +12,7 @@ pub(crate) fn prepared_rows(
     ),
     String,
 > {
-    use collagene_core::assembly_recipe::{FragmentSpec, Preparation};
+    use collagene_core::assembly_recipe::{FragmentSpec, Preparation, RunPreparation};
     if state.rows.is_empty() || state.rows.len() > 12 || input_count > 24 {
         return Err("Choose 1–12 ordered preparation rows and their exact original sources".into());
     }
@@ -114,6 +114,23 @@ pub(crate) fn prepared_rows(
                 reverse: Primer::new(&row.reverse_name, &row.reverse_primer, &row.reverse_tail)
                     .map_err(|e| e.to_string())?,
             },
+        };
+        let preparation = if let Some(origin) = &row.run_origin {
+            origin.validate_documentary().map_err(|e| e.to_string())?;
+            let preparation = match preparation {
+                Preparation::WholeLinear => RunPreparation::WholeLinear,
+                Preparation::Digest { enzymes, fragment_index, repair } => RunPreparation::Digest { enzymes, fragment_index, repair },
+                Preparation::CatalogDigest { selection, fragment_index, repair } => RunPreparation::CatalogDigest { selection, fragment_index, repair },
+                Preparation::ExactPcr { forward, reverse } => RunPreparation::ExactPcr { forward, reverse },
+                Preparation::PcrCatalogDigest { forward, reverse, selection, fragment_index, repair } => RunPreparation::PcrCatalogDigest { forward, reverse, selection, fragment_index, repair },
+                Preparation::DeclaredDuplex { .. } | Preparation::AnnealedOligos { .. } | Preparation::FromRun { .. } => return Err("Saved-run material supports whole material, digest or exact PCR preparation; declared duplex and paired-oligo substitution are unsupported.".into()),
+            };
+            Preparation::FromRun {
+                origin: origin.as_ref().clone(),
+                preparation,
+            }
+        } else {
+            preparation
         };
         fragments.push(FragmentSpec {
             role: roles[i].role.clone(),

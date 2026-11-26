@@ -396,6 +396,24 @@ pub(crate) fn validate_slot(slot: &Slot, row: &OverlapInput, index: usize) -> Re
     }
     validate_preparation_input(row)?;
     validate_slot_link(slot, row, index)?;
+    if let Some(origin) = &row.run_origin {
+        origin.validate_documentary().map_err(|e| e.to_string())?;
+        let capture = slot
+            .captured
+            .as_ref()
+            .ok_or("Saved-run material needs its exact captured source.")?;
+        if origin.selection.event != capture.source.binding
+            || capture.molecule.revision() != origin.selection.event.revision
+        {
+            return Err("Saved-run material differs from the exact captured source event.".into());
+        }
+        if matches!(
+            row.preparation,
+            OverlapPreparation::DeclaredDuplex | OverlapPreparation::AnnealedOligos
+        ) {
+            return Err("Saved-run material cannot be replaced by declared duplex or paired-oligo preparation.".into());
+        }
+    }
     if let Some(bottom) = slot.anneal_bottom.as_deref() {
         validate_oligo_capture(bottom)?;
     }
@@ -590,11 +608,34 @@ impl Draft {
     /// Structural/bounded source consistency only. Historical event IDs require
     /// the host workspace to attest them before installing any candidate.
     pub fn validate(&self) -> Result<(), String> {
-        if !matches!(self.version, 1 | 2 | 3 | 4)
+        if !matches!(self.version, 1 | 2 | 3 | 4 | 5)
             || self.version == 1 && self.alternatives.is_some()
         {
             return Err(
                 "Unsupported assembly draft version or alternatives in a legacy draft.".into(),
+            );
+        }
+        let has_origin = self.methods.rows.iter().any(|row| row.run_origin.is_some());
+        if has_origin && self.version < 5 {
+            return Err("Saved-run material requires assembly draft version 5.".into());
+        }
+        if self.alternatives.as_ref().is_some_and(|library| {
+            has_origin
+                || library
+                    .bins
+                    .iter()
+                    .flat_map(|bin| &bin.choices)
+                    .any(|choice| choice.row.run_origin.is_some())
+                || library.rows.iter().any(|row| {
+                    row.edits
+                        .methods
+                        .rows
+                        .iter()
+                        .any(|row| row.run_origin.is_some())
+                })
+        }) {
+            return Err(
+                "Saved-run material is currently supported only in ordinary assemblies.".into(),
             );
         }
         if self.uses_paired_fields() && self.version < 4 {
@@ -696,6 +737,14 @@ impl Draft {
             .rows
             .resize_with(self.slots.len(), OverlapInput::default);
         for (i, (slot, row)) in self.slots.iter().zip(&mut self.methods.rows).enumerate() {
+            if row.run_origin.as_ref().is_some_and(|origin| {
+                slot.captured.as_ref().is_none_or(|capture| {
+                    origin.selection.event != capture.source.binding
+                        || origin.selection.event.revision != capture.molecule.revision()
+                })
+            }) {
+                row.run_origin = None;
+            }
             row.document = i;
             row.reverse = slot.reverse;
             row.interval_start = slot.start.saturating_add(1).to_string();
@@ -735,6 +784,9 @@ impl Draft {
         if self.uses_paired_fields() {
             self.version = self.version.max(4);
         }
+        if self.methods.rows.iter().any(|row| row.run_origin.is_some()) {
+            self.version = self.version.max(5);
+        }
     }
 }
 
@@ -745,8 +797,8 @@ pub fn encode(draft: &Draft) -> Result<Vec<u8>, String> {
 }
 /// Encode current editable state without promoting working fields into saved rows.
 pub fn encode_raw(draft: &Draft) -> Result<Vec<u8>, String> {
-    if !matches!(draft.version, 3 | 4) {
-        return Err("Raw assembly persistence requires draft version 3 or 4.".into());
+    if !matches!(draft.version, 3 | 4 | 5) {
+        return Err("Raw assembly persistence requires draft version 3, 4 or 5.".into());
     }
     draft.validate()?;
     let mut writer = Bounded { bytes: Vec::new() };
@@ -766,6 +818,16 @@ fn decode_expected(bytes: &[u8], expected: Option<u32>) -> Result<Draft, String>
     let mut draft: Draft = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
     if expected.is_some_and(|version| version != draft.version) {
         return Err("Assembly attachment kind disagrees with its draft version.".into());
+    }
+    for (slot, row) in draft.slots.iter().zip(&mut draft.methods.rows) {
+        if row.run_origin.as_ref().is_some_and(|origin| {
+            slot.captured.as_ref().is_none_or(|capture| {
+                origin.selection.event != capture.source.binding
+                    || origin.selection.event.revision != capture.molecule.revision()
+            })
+        }) {
+            row.run_origin = None;
+        }
     }
     draft.validate()?;
     draft.version = draft.version.max(3);
@@ -1509,5 +1571,156 @@ mod paired_oligo_tests {
         ));
         too_long.sync_rows();
         assert!(too_long.validate().is_err());
+    }
+}
+
+#[cfg(test)]
+mod run_origin_tests {
+    use super::*;
+    use collagene_core::{
+        analysis::Primer,
+        cloning_outputs,
+        run_lineage::{EventBinding, InputEventBinding},
+        run_material,
+        verification::{DesignPlan, Operation, PlanInput, Source},
+        workspace::Workspace,
+    };
+
+    fn saved_pcr() -> Draft {
+        let source = Molecule::dna("Original", "ACGACCCCGGGGTAAC", Topology::Linear).unwrap();
+        let target = Molecule::dna("Independent", "ACGACCCCGGGGTAAC", Topology::Linear).unwrap();
+        let workspace =
+            Workspace::from_documents("origin", vec![source.clone(), target.clone()], 0).unwrap();
+        let event = |index: usize| {
+            let doc = &workspace.documents[index];
+            EventBinding {
+                document_id: doc.id.clone(),
+                event_id: doc.head_event.clone().unwrap(),
+                revision: doc.head.clone(),
+            }
+        };
+        let plan = DesignPlan {
+            name: "Original PCR".into(),
+            target_revision: target.revision(),
+            inputs: vec![PlanInput {
+                id: "original".into(),
+                revision: source.revision(),
+                molecule: source,
+            }],
+            steps: vec![Operation::Pcr {
+                template: Source::Input("original".into()),
+                forward: Primer::new("Original forward", "ACGACCCC", "").unwrap(),
+                reverse: Primer::new("Original reverse", "GTTACCCC", "").unwrap(),
+            }],
+        };
+        let commit = cloning_outputs::finalize(
+            &workspace,
+            &plan,
+            event(1),
+            vec![InputEventBinding {
+                input_id: "original".into(),
+                event: event(0),
+            }],
+            &cloning_outputs::Options {
+                name: "Actual saved PCR".into(),
+                save_primers: false,
+                show_prepared: false,
+                allow_incomplete: false,
+            },
+        )
+        .unwrap();
+        let selection = run_material::Selection {
+            run_id: commit.receipt.run.run_id.clone(),
+            step_index: 0,
+            event: commit.receipt.construct.clone(),
+        };
+        let molecule = commit
+            .workspace
+            .head(&selection.event.document_id)
+            .unwrap()
+            .clone();
+        let captured = Arc::new(CapturedSource {
+            source: SourceInfo {
+                binding: selection.event.clone(),
+                name: molecule.name.clone(),
+                length: molecule.sequence.len(),
+                alphabet: Alphabet::Dna,
+                topology: molecule.topology,
+            },
+            molecule,
+        });
+        let mut draft = Draft::default();
+        draft.methods.mode = Mode::Ligation;
+        draft.circular = false;
+        draft.slots.truncate(1);
+        draft.slots[0].end = captured.molecule.sequence.len();
+        draft.slots[0].captured = Some(captured);
+        draft.methods.rows.truncate(1);
+        draft.methods.rows[0].preparation = OverlapPreparation::WholeLinear;
+        draft.methods.rows[0].run_origin = Some(
+            crate::run_origin_model::PinnedOrigin::new(
+                run_material::capsule(&commit.workspace, &selection).unwrap(),
+            )
+            .unwrap(),
+        );
+        draft.sync_rows();
+        draft.validate().unwrap();
+        draft
+    }
+
+    #[test]
+    fn exact_saved_source_survives_v5_roundtrip_and_compiles_explicit_reconstruction() {
+        let mut draft = saved_pcr();
+        assert_eq!(draft.version, 5);
+        let pin = draft.methods.rows[0].run_origin.clone();
+        draft.sync_rows();
+        assert!(draft.methods.rows[0].run_origin == pin);
+        let restored = decode_version(&encode_raw(&draft).unwrap(), 5).unwrap();
+        assert!(restored == draft);
+        let (_, rows) = crate::cloning_preparations::prepared_rows(&restored.methods, 1).unwrap();
+        let collagene_core::assembly_recipe::Preparation::FromRun {
+            origin,
+            preparation,
+        } = &rows[0].preparation
+        else {
+            panic!("saved material must remain explicit")
+        };
+        assert_eq!(
+            origin.selection.event,
+            restored.slots[0].captured.as_ref().unwrap().source.binding
+        );
+        assert!(matches!(
+            preparation,
+            collagene_core::assembly_recipe::RunPreparation::WholeLinear
+        ));
+        let mut old = draft.clone();
+        old.version = 4;
+        assert!(old.validate().is_err());
+        draft.methods.rows[0].preparation = OverlapPreparation::DeclaredDuplex;
+        assert!(crate::cloning_preparations::prepared_rows(&draft.methods, 1).is_err());
+    }
+
+    #[test]
+    fn equal_reference_event_change_clears_only_material_authority_on_sync_and_restore() {
+        let mut draft = saved_pcr();
+        draft.slots[0].start = 2;
+        draft.slots[0].end = 14;
+        draft.methods.rows[0].treatment = crate::cloning_methods_model::Treatment::Phosphorylate;
+        draft.sync_rows();
+        let mut changed = draft.clone();
+        Arc::make_mut(changed.slots[0].captured.as_mut().unwrap())
+            .source
+            .binding
+            .document_id = "unrelated-source".into();
+        let restored = decode(&serde_json::to_vec(&changed).unwrap()).unwrap();
+        assert!(restored.methods.rows[0].run_origin.is_none());
+        changed.sync_rows();
+        assert!(changed.methods.rows[0].run_origin.is_none());
+        assert_eq!((changed.slots[0].start, changed.slots[0].end), (2, 14));
+        assert!(changed.methods.rows[0].treatment == draft.methods.rows[0].treatment);
+        assert_eq!(changed.name, draft.name);
+        assert_eq!(changed.circular, draft.circular);
+        assert!(changed.junction_edits == draft.junction_edits);
+        assert!(restored == changed);
     }
 }

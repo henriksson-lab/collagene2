@@ -612,6 +612,9 @@ pub fn import_text(text: &str) -> Result<ImportReport, Error> {
     if text.len() > MAX_IMPORT_BYTES {
         return Err(Error::TooLarge);
     }
+    if crate::gcg_sequence::is_gcg(text.as_bytes()) {
+        return Err(Error::Unsupported("GCG single-sequence import requires an explicit DNA, RNA or protein alphabet; use the GCG import profile.".into()));
+    }
     if let Some(profile) = crate::protein_formats::detect(text.as_bytes()) {
         return crate::protein_formats::import_bytes(text.as_bytes(), profile);
     }

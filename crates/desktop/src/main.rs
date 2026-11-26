@@ -21,6 +21,8 @@ struct NativeState {
     host: Arc<Mutex<DesktopHost>>,
     sync: Arc<Mutex<SyncHost<ProductionAdapter>>>,
     exports: Arc<DesktopExports>,
+    catalog_backups: Arc<collagene_desktop_host::catalog_backup::DesktopCatalogBackups>,
+    backup_active: Arc<AtomicUsize>,
     export_active: Arc<AtomicUsize>,
     control: HostControl,
     access: WindowAccess,
@@ -189,12 +191,17 @@ async fn collagene_rpc(
         Some(b"DTQ\0") => false,
         _ => return Err("Unknown native binary protocol.".into()),
     };
-    let limit = if syncing {
+    let backing_up = !syncing && collagene_desktop_protocol::catalog_backup_request_hint(bytes);
+    let limit = if backing_up {
+        collagene_desktop_protocol::MAX_CATALOG_BACKUP_REQUEST_BYTES
+    } else if syncing {
         sync::MAX_REQUEST_BYTES
     } else {
         MAX_REQUEST_BYTES
     };
-    let response_limit = if syncing {
+    let response_limit = if backing_up {
+        collagene_desktop_protocol::MAX_CATALOG_BACKUP_RESPONSE_BYTES
+    } else if syncing {
         sync::MAX_RESPONSE_BYTES
     } else {
         MAX_RESPONSE_BYTES
@@ -215,7 +222,9 @@ async fn collagene_rpc(
     // and separate host mutexes. Their shared catalog uses immutable-head and
     // checkpoint CAS, so network latency cannot stop local working-file saves.
     let exporting = !syncing && collagene_desktop_protocol::export_request_hint(bytes);
-    let lease = JobLease::acquire(if exporting {
+    let lease = JobLease::acquire(if backing_up {
+        &state.backup_active
+    } else if exporting {
         &state.export_active
     } else if syncing {
         &state.sync_active
@@ -228,6 +237,9 @@ async fn collagene_rpc(
         let _lease = lease;
         if syncing {
             return dispatch_sync(&state, &bytes);
+        }
+        if backing_up {
+            return state.catalog_backups.dispatch_raw(&state.access,&bytes).map_err(|_|"Catalog backup could not complete; retain its operation ID and inspect known backup records before retrying.".to_owned());
         }
         if exporting {
             return state
@@ -264,6 +276,7 @@ fn run(options: settings::GuiOptions) -> Result<(), Box<dyn std::error::Error>> 
             let access = host.authorize_window()?;
             let control = host.control();
             let exports = host.open_exports()?;
+            let catalog_backups = host.open_catalog_backup()?;
             let sync = SyncHost::production(
                 host.open_repository_connection()?,
                 collagene_repository::http::HttpOptions {
@@ -279,6 +292,8 @@ fn run(options: settings::GuiOptions) -> Result<(), Box<dyn std::error::Error>> 
                 host: Arc::new(Mutex::new(host)),
                 sync: Arc::new(Mutex::new(sync)),
                 exports: Arc::new(exports),
+                catalog_backups: Arc::new(catalog_backups),
+                backup_active: Arc::new(AtomicUsize::new(0)),
                 export_active: Arc::new(AtomicUsize::new(0)),
                 control,
                 access,

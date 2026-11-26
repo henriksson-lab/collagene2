@@ -227,3 +227,9 @@ pub mod assembly_edited_primer_design;
 
 pub mod homology_annealing;
 pub mod three_prime_resection;
+
+pub mod collagene_xml_compat;
+pub mod gcg_sequence;
+pub mod snapgene_export;
+
+mod format_fidelity;

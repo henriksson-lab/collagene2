@@ -23,6 +23,17 @@ impl Reviews {
         self.items.clear();
         self.order.clear();
     }
+    pub(crate) fn clear_remote(&mut self, remote: &str) {
+        let ids: Vec<_> = self
+            .items
+            .iter()
+            .filter(|(_, review)| review.remote().id == remote)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in ids {
+            self.remove(&id);
+        }
+    }
     fn remove(&mut self, id: &wire::ReviewId) {
         self.items.remove(id);
         self.order.retain(|held| held != id);

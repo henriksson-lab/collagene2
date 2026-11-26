@@ -523,6 +523,28 @@ impl Library {
         tx.commit()?;
         Ok(value)
     }
+    /// Native metadata retirement transaction: at most 128 checkpoint deletions
+    /// and three replacement records. Ordinary callers retain the eight-write
+    /// limit. Every key, byte quota and expected digest uses the same validator.
+    pub fn commit_checkpoint_retirements(
+        &mut self,
+        access: &LabAccess,
+        writes: &[CheckpointWrite],
+    ) -> Result<()> {
+        let replacements = writes.iter().filter(|write| write.value.is_some()).count();
+        if replacements > 3 || writes.len().saturating_sub(replacements) > 128 {
+            return Err(MutationError::Limit("checkpoint retirement batch"));
+        }
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        ensure_lab(&tx, &access.lab)?;
+        extension(&tx)?;
+        usage(&tx, &access.lab)?;
+        checkpoints_bounded(&tx, &access.lab, writes, 131)?;
+        tx.commit()?;
+        Ok(())
+    }
     /// Atomic native-only acknowledgments/remote bookkeeping, without a DNA mutation.
     pub fn commit_checkpoints(
         &mut self,
@@ -854,7 +876,15 @@ fn read_checkpoint(
     }))
 }
 fn checkpoints(tx: &Transaction<'_>, lab: &LabId, writes: &[CheckpointWrite]) -> Result<()> {
-    if writes.len() > MAX_CHECKPOINT_WRITES {
+    checkpoints_bounded(tx, lab, writes, MAX_CHECKPOINT_WRITES)
+}
+fn checkpoints_bounded(
+    tx: &Transaction<'_>,
+    lab: &LabId,
+    writes: &[CheckpointWrite],
+    limit: usize,
+) -> Result<()> {
+    if writes.len() > limit {
         return Err(MutationError::Limit("checkpoint batch"));
     }
     let mut seen = std::collections::BTreeSet::new();

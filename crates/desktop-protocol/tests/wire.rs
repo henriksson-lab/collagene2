@@ -52,8 +52,9 @@ fn desktop_frames_reject_wrong_namespace_versions_corruption_and_length_before_d
     *bad.last_mut().unwrap() ^= 1;
     assert_eq!(decode_request(&bad), Err(Error::Integrity));
     let mut newer = b.clone();
-    newer[4..6].copy_from_slice(&2u16.to_le_bytes());
-    assert_eq!(decode_request(&newer), Err(Error::Version(2)));
+    let unsupported = SCHEMA_VERSION + 1;
+    newer[4..6].copy_from_slice(&unsupported.to_le_bytes());
+    assert_eq!(decode_request(&newer), Err(Error::Version(unsupported)));
     let mut trailing = b[HEADER_BYTES..].to_vec();
     trailing.push(0);
     assert_eq!(decode_request(&frame(&trailing)), Err(Error::Malformed));

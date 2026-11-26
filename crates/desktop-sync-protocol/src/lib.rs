@@ -6,9 +6,11 @@ use library::{Digest, DocumentId, FolderId, LabId, Rows, Text};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-pub const SCHEMA_VERSION: u16 = 2;
+pub const SCHEMA_VERSION: u16 = 3;
 mod publication;
+mod removal;
 pub use publication::*;
+pub use removal::*;
 pub const HEADER_BYTES: usize = 42;
 /// Limits include the complete frame header.
 pub const MAX_REQUEST_BYTES: usize = 64 << 10;
@@ -168,6 +170,10 @@ dto! {pub enum Command {
     QueueReviewedPush{local_document:DocumentId,expected_local_revision:library::RevisionId,remote:RemoteId,review:ReviewId},
     DiscardPushReview{review:ReviewId},
     ListDeletedFolderPublications{remote:RemoteId,page:LocalPageRequest,expected_checkpoint:Option<Digest>},
+    PrepareRemoteRemoval{remote:RemoteId},
+    ConfirmRemoteRemoval{remote:RemoteId,review:ReviewId},
+    DiscardRemoteRemovalReview{review:ReviewId},
+    CheckRemoteRemovalOutcome{remote:RemoteId},
 }}
 dto! {pub struct RequestEnvelope {pub request_id:u64,pub operation_id:OperationId,pub command:Command}}
 dto! {pub enum LocalTarget {Document(DocumentId),Folder(FolderId),DeletedFolder(FolderId)}}
@@ -218,6 +224,7 @@ dto! {pub enum Success {
     Pulled{local:library::Document},TreeStarted(TreeStatus),TreeUpdated(TreeStatus),TreeJobs(TreePage),
     Bookmarks(BookmarkPage),
     MetadataPrepared(MetadataReview),PushChoices(PushChoices),PushPrepared(PushPublicationReview),PushReviewDiscarded{review:ReviewId},DeletedFolderPublications(DeletedFolderPage),
+    RemoteRemovalPrepared{review:RemoteRemovalReview},RemoteRemoved(RemovalReceipt),RemoteRemovalReviewDiscarded{review:ReviewId},RemoteRemovalOutcome{remote:RemoteId,receipt:Option<RemovalReceipt>},
 }}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ErrorCode {
@@ -234,6 +241,8 @@ pub enum ErrorCode {
     TooLarge,
     BookmarkChanged,
     ReviewChanged,
+    CredentialForgetFailed,
+    RemovalChangedAfterForget,
 }
 dto! {pub enum Failure {
     Error{code:ErrorCode,message:Text<1024>},
@@ -319,6 +328,9 @@ impl Command {
             | Self::ListRevisions { remote, .. }
             | Self::CloneDocument { remote, .. }
             | Self::QueuePush { remote, .. }
+            | Self::PrepareRemoteRemoval { remote }
+            | Self::ConfirmRemoteRemoval { remote, .. }
+            | Self::CheckRemoteRemovalOutcome { remote }
             | Self::PrepareMetadataPublication { remote, .. }
             | Self::ListDeletedFolderPublications { remote, .. }
             | Self::InspectPushChoices { remote, .. }
@@ -494,6 +506,16 @@ impl ResponseEnvelope {
                 }
                 Success::AddedRemote(r) => r.validate()?,
                 Success::MetadataPrepared(r) => r.description.validate()?,
+                Success::RemoteRemovalPrepared { review } => review.description.validate()?,
+                Success::RemoteRemoved(receipt) => receipt.validate()?,
+                Success::RemoteRemovalOutcome { remote, receipt } => {
+                    if let Some(receipt) = receipt {
+                        receipt.validate()?;
+                        if &receipt.remote.id != remote {
+                            return Err(Error::Mismatch);
+                        }
+                    }
+                }
                 Success::DeletedFolderPublications(p) => {
                     for f in p.items.iter() {
                         f.remote_folder.validate()?;
@@ -639,6 +661,25 @@ impl ResponseEnvelope {
                     && (page.offset == 0 || expected_checkpoint == &v.checkpoint)
                     && v.next_offset.is_none_or(|next| next > page.offset)
             }
+            (
+                Command::PrepareRemoteRemoval { remote },
+                Outcome::Success(Success::RemoteRemovalPrepared { review }),
+            ) => remote == &review.description.remote.id,
+            (
+                Command::ConfirmRemoteRemoval { remote, .. },
+                Outcome::Success(Success::RemoteRemoved(receipt)),
+            ) => remote == &receipt.remote.id,
+            (
+                Command::DiscardRemoteRemovalReview { review },
+                Outcome::Success(Success::RemoteRemovalReviewDiscarded { review: actual }),
+            ) => review == actual,
+            (
+                Command::CheckRemoteRemovalOutcome { remote },
+                Outcome::Success(Success::RemoteRemovalOutcome {
+                    remote: actual,
+                    receipt,
+                }),
+            ) => remote == actual && receipt.as_ref().is_none_or(|r| &r.remote.id == remote),
             (
                 Command::PrepareMetadataPublication { target, remote },
                 Outcome::Success(Success::MetadataPrepared(v)),
@@ -980,6 +1021,15 @@ pub fn decode_response_for(
 fn request_version(c: &Command) -> u16 {
     if matches!(
         c,
+        Command::PrepareRemoteRemoval { .. }
+            | Command::ConfirmRemoteRemoval { .. }
+            | Command::DiscardRemoteRemovalReview { .. }
+            | Command::CheckRemoteRemovalOutcome { .. }
+    ) {
+        return 3;
+    }
+    if matches!(
+        c,
         Command::PrepareMetadataPublication { .. }
             | Command::QueueMetadataPublication { .. }
             | Command::InspectPushChoices { .. }
@@ -994,6 +1044,20 @@ fn request_version(c: &Command) -> u16 {
     }
 }
 fn response_version(o: &Outcome) -> u16 {
+    if matches!(
+        o,
+        Outcome::Success(
+            Success::RemoteRemovalPrepared { .. }
+                | Success::RemoteRemoved(_)
+                | Success::RemoteRemovalReviewDiscarded { .. }
+                | Success::RemoteRemovalOutcome { .. }
+        ) | Outcome::Failure(Failure::Error {
+            code: ErrorCode::CredentialForgetFailed | ErrorCode::RemovalChangedAfterForget,
+            ..
+        })
+    ) {
+        return 3;
+    }
     if matches!(
         o,
         Outcome::Success(

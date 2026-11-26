@@ -313,7 +313,7 @@ fn source_preflight(m: &Molecule) -> Result<(), Error> {
     }
     Ok(())
 }
-fn has_modification_evidence(m: &Molecule) -> bool {
+pub(crate) fn has_modification_evidence(m: &Molecule) -> bool {
     m.metadata.keys().any(|key| {
         key.eq_ignore_ascii_case("protein:modifications")
             || key.eq_ignore_ascii_case("protein:modified")

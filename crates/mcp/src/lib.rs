@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 181;
+pub const CURRENT_TOOL_COUNT: usize = 184;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -5258,6 +5258,70 @@ impl CollageneServer {
         }).await
     }
     #[tool(
+        description = "Import explicit GCG/Wisconsin single-sequence or original Collagene XML profiles, at most 4 MiB of text. GCG requires a caller-selected alphabet and verifies the declared type, length and checksum. XML lower-only migration requires AllowLowerOnly, retains exact original rows/bytes and never reconstructs physical cloning chemistry. Imports the entire selected project atomically as immutable session documents; no paths or external programs."
+    )]
+    async fn import_compat_sequence(
+        &self,
+        Parameters(args): Parameters<sequence_exchange_tools::ImportQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || {
+            if args.text.len() > 4 * 1024 * 1024 {
+                return Err(bad("Compatibility text imports are limited to 4 MiB"));
+            }
+            let report = match args.profile {
+                sequence_exchange_tools::ImportProfile::Gcg(options) => {
+                    collagene_core::gcg_sequence::import_gcg(args.text.as_bytes(), &options)
+                }
+                sequence_exchange_tools::ImportProfile::CollageneXml { policy } => {
+                    collagene_core::collagene_xml_compat::import_with_policy(
+                        args.text.as_bytes(),
+                        policy,
+                    )
+                }
+            }
+            .map_err(bad)?;
+            server.insert_documents(report.molecules, report.warnings)
+        })
+        .await
+    }
+    #[tool(
+        description = "Review/export an exact immutable document revision under the independently implemented SnapGene revision-15 reference profile (.dna or .prot). Returns structured omissions and no artifact until accept_omissions=true when loss exists. Refuses unsupported physical/reference-only material under both policies. Emits fresh supported packets, never stale original opaque chunks or cloned experimental history; artifact is session-only and source remains unchanged."
+    )]
+    async fn export_snapgene(
+        &self,
+        Parameters(args): Parameters<sequence_exchange_tools::SnapGeneExportQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move||{
+            use collagene_core::snapgene_export::{self,Policy};
+            let molecule=server.store.lock().unwrap().document(&args.document)?.clone();
+            let review=snapgene_export::review(&molecule).map_err(bad)?;
+            if !review.losses.is_empty()&&!args.accept_omissions{return output(json!({"document":args.document,"state":"review_required","review":review,"artifact_id":null}));}
+            let report=snapgene_export::export_snapgene(&molecule,if args.accept_omissions{Policy::AllowOmissions}else{Policy::Strict}).map_err(bad)?;
+            let filename=match report.extension.as_str(){".dna"=>"sequence.dna",".prot"=>"sequence.prot",_=>return Err(bad("Unsupported SnapGene artifact extension"))};let size=report.bytes.len();
+            let artifact=server.binary_artifact(report.bytes,"application/octet-stream",filename)?;
+            output(json!({"document":args.document,"state":"prepared","profile":report.profile,"source_revision":report.source_revision,"losses":report.losses,"warnings":report.warnings,"artifact_id":artifact,"bytes":size,"filename":filename,"mime_type":report.mime,"encoding":"base64","persistence":"session only"}))
+        }).await
+    }
+    #[tool(
+        description = "Review/export an exact immutable DNA, RNA or protein revision as a GCG/Wisconsin single-sequence artifact with checksum. Requires explicit record ID/date for synthetic records; retained IDs/dates may be reused as documentary source data. Returns omission warnings without an artifact until accept_omissions=true when loss exists. GCG cannot carry annotations, circular topology, source attachments or cloning history. Unsupported physical/reference-only material is refused; no source mutation or host path."
+    )]
+    async fn export_gcg(
+        &self,
+        Parameters(args): Parameters<sequence_exchange_tools::GcgExportQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move||{
+            let molecule=server.store.lock().unwrap().document(&args.document)?.clone();
+            let report=collagene_core::gcg_sequence::export_gcg(&molecule,&args.options).map_err(bad)?;
+            if !report.warnings.is_empty()&&!args.accept_omissions{return output(json!({"document":args.document,"state":"review_required","warnings":report.warnings,"artifact_id":null}));}
+            let bytes=report.text.into_bytes();let size=bytes.len();
+            let artifact=server.binary_artifact(bytes,"text/plain","sequence.gcg")?;
+            output(json!({"document":args.document,"state":"prepared","warnings":report.warnings,"artifact_id":artifact,"bytes":size,"filename":"sequence.gcg","mime_type":"text/plain","encoding":"base64","persistence":"session only"}))
+        }).await
+    }
+    #[tool(
         description = "Import GenBank/EMBL/FASTA/Collagene XML or plain sequence text as immutable session documents. Atomic and deduplicated; returns IDs and exact revisions, without bulk sequence output."
     )]
     fn import_document(
@@ -7498,3 +7562,5 @@ pub async fn serve_stdio(
         .await?;
     Ok(())
 }
+
+mod sequence_exchange_tools;

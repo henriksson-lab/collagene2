@@ -587,6 +587,9 @@ impl Repository {
         self.db.commit_checkpoints(
             &self.access,
             &[
+                // A retiring/reconfigured remote must invalidate a previously
+                // validated tree creation, even when the job index was unchanged.
+                state_write(&self.state, self.checkpoint.clone())?,
                 job_write(&job, None)?,
                 durable::CheckpointWrite {
                     key,

@@ -75,7 +75,12 @@ in the background while coding continues.
 26 November update: resume the remaining file-format adapters in parallel with
 cloning and desktop delivery, as explicitly requested. Independent workers can
 implement annotated protein exchange, additional alignment exchange and the
-selected SBOL design profile while integration continues. Format support still
+selected SBOL design profile while integration continues. The next independent
+batch adds reviewed SnapGene DNA/protein export, explicit GCG/Wisconsin
+single-sequence exchange, and an opt-in original Collagene lower-strand-only XML
+migration profile. Keep core adapters, application integration and observed
+interoperability separate in the delivery matrix; a parser alone is not full
+format support. Format support still
 requires explicit read/write fidelity, original evidence, loss reporting and
 portable Rust adapters. BAM/BAI, OpenGel and external alignment engines remain
 deferred/excluded as above.
@@ -424,13 +429,14 @@ Import and export must be tracked separately. A format parser is only one part o
 | FASTA `.fa`, `.fasta`, `.fna`, `.faa` and plain sequence | P0 | Yes | Yes | DNA/RNA/protein and multiple records; no claim to preserve annotations or history |
 | Native Collagene 2 `.cg2workspace` archive; `.cg2` single document | P0 | Yes | Yes | Versioned archive of sequences, metadata, plans, revisions and original attachments; single-document export is distinct from the full workspace |
 | Oligo/primer CSV and TSV | P0 | Yes | Yes | Column mapping, units, modifications, names, 5′→3′ sequence and order sheets |
-| SnapGene `.dna`, later `.prot` | P0 import spike; P1 robust import | Target | Later | Evaluate `bio_files`; retain original bytes and report unsupported chunks/history; do not equate partial parsing with full fidelity |
+| SnapGene `.dna`, `.prot` | P1 selected profiles | Yes, selected profile | Yes, reviewed reference profile | Independent packet/XML adapters retain original input; fresh reference export reports unsupported feature/metadata loss and refuses physical-state laundering; compressed data/history and broad application parity are not implied |
 | Original Collagene native XML | P1 | Yes | Optional | Audit Java serializers and real documents; convert chemistry, annotations and retained workflow data |
 | DNA Strider/Serial Cloner `.xdna`, `.xdgn`, `.xprt` variants | P1 | Yes | Later | Legacy migration; sniff content and validate exact variants against original parsers |
 | ABI/ABIF `.ab1`, `.abi`; SCF `.scf` | P1 | Yes | Original attachment; derived FASTA/FASTQ | Four channels, calls, qualities, peak positions, orientation and trimming; SCF required for legacy parity |
 | FASTQ `.fq`, `.fastq` | P1 small data; P2 scale | Yes | Yes | Preserve quality encoding; stream larger datasets and keep import limits visible |
 | EMBL/ENA `.embl`, `.emb`; GenPept/UniProt text | P1/P2 | Yes | Yes, explicit profiles | Independent annotated protein adapters retain source records and coordinate uncertainty; synthetic export requires declared identifiers/date where needed |
 | Aligned FASTA, CLUSTAL `.aln`, Stockholm; native `.cg2aln` | P1/P2 | Yes | Yes | Preserve gaps, identifiers and alignment metadata where expressible; explicit alphabet, original bytes, typed retained collections and export-loss review; no alignment engine |
+| GCG/Wisconsin single sequence `.gcg`, `.seq`, `.pep` | P2 selected profile | Yes, explicit alphabet | Yes, explicit ID/date and loss review | Validate declared type, length, checksum and numbered rows; preserve original bytes; no annotation/topology/history fidelity claim |
 | PHYLIP, MSF, NEXUS, PIR, GDE, SELEX | P2 | Yes, explicit profiles | Yes, explicit profiles | Exact identifiers/gaps and native originals; opt-in PHYLIP truncation; unsupported missing/topology/tagged variants are refused; see alignment profile contracts |
 | GFF3, GTF, BED | P2 | Yes | Yes | Independent GFF3/GTF/BED profiles implemented; explicit reference identity and coordinate conversion are mandatory; GTF rows retain attributes without inferred transcript assembly |
 | Large reference `.cgref` | P2 foundation | Yes | Yes | Separate streamed packed IUPAC blocks and bounded hash manifest; canonical DNA/readback verification, global coordinates and portable links; no imported coverage authority |
@@ -2992,9 +2998,47 @@ verification and new-destination restore. It preserves exact archived bytes,
 immutable histories, reliable receipts and repository checkpoints, and rejects
 foreign lab sets, unsupported schemas and corruption before publication or restore.
 It does not overwrite existing/live databases or switch a running server. Native
-SDK and UI/worker WASM checks and37 focused cases pass; cross-platform CI for this
-source remains required. Desktop backup controls, controlled service cutover,
-remote removal policy and the agreed F30 identities/comments/review model remain
-unfinished. Earlier audit lists are historical, not evidence these new controls
+SDK and UI/worker WASM checks and37 focused cases pass. Committed `3077971`
+also passes scientific, WASM and desktop build/MCP CI on Windows/macOS/Linux.
+Desktop backup and remote-removal controls are connected in the subsequent source
+batch below; controlled service cutover and the agreed F30 identities/comments/
+review model remain unfinished. Earlier audit lists are historical, not evidence these new controls
 are still absent. [Backups](LAB_LIBRARY_BACKUP.md) ·
 [Metadata publication](REPOSITORY_METADATA_PUBLICATION.md).
+
+
+### Resumed format exchange and native recovery controls — 26 November 2026
+
+Parallel adapter work now connects selected SnapGene DNA/protein read/write,
+explicit-alphabet GCG/Wisconsin sequence exchange and opt-in lower-only original
+Collagene XML migration to guarded frontend controls and three MCP tools. Fresh
+export packets, original source retention, typed omissions and restrictive
+physical/protein-state guards remain distinct. The format delivery matrix
+separates core read/write, UI/MCP integration and actual proprietary-container
+gaps. Native Clone Manager, Vector NTI, Lasergene, Geneious, CLC and MacVector
+containers are not inferred from standard GenBank/FASTA/GCG exchange support.
+BAM/BAI, indexed alignment expansion, OpenGel and external alignment engines
+retain their deferrals. [Matrix](FORMAT_DELIVERY_MATRIX.md) ·
+[Controls](SEQUENCE_COMPATIBILITY_CONTROLS.md).
+
+The native Databases pane now offers reviewed local remote removal. Pending
+outbox entries and unfinished clone jobs block unlinking. Scoped credentials are
+forgotten before an atomic metadata-only retirement; failure after either boundary
+is reported honestly. Local designs, immutable histories, folders, bookmarks and
+other remotes remain. DSQ/DSR3 adds only the new removal semantics, retaining the
+old version1/2 feature floors. [Lifecycle](REMOTE_REMOVAL.md).
+
+Saved local catalogs have a separate native backup service and frontend controls
+for create/list/verify and exact-hash restore to a new managed recovery copy.
+DTQ/DTR2 carries bounded metadata, never archive bytes or paths. Durable immutable
+intents and receipts preserve retry identity; caches recheck selected disk
+evidence. Editor working autosaves are a separate scope. Controlled active-catalog
+cutover, combined catalog/editor backup and broader F30 collaboration remain
+delivery work. Existing two-slot editor recovery remains available; creating a
+saved-catalog recovery copy does not cover that separate working state.
+[Service](DESKTOP_CATALOG_BACKUP.md) · [Controls](NATIVE_CATALOG_BACKUP_CONTROLS.md).
+
+All64 focused format, MCP, protocol, repository, native-host and UI-model cases
+pass. Native SDK and web/worker WASM compiler checks pass. Cross-platform CI for
+this source remains pending; browser acceptance remains deferred and the full
+implementation goal remains active.

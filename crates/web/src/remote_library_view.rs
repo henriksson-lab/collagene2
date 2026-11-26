@@ -516,6 +516,16 @@ pub fn RemoteLibraryPane(
                 <label>"Expected lab ID"<input placeholder="lab-…" maxlength="36" prop:value=move||expected_lab.get() on:input=move|e|expected_lab.set(event_target_value(&e))/></label>
                 <button class="button secondary" type="submit" disabled=move||busy.get()||locked.get()>"Add database"</button>
             </form></details>
+            <crate::remote_removal_view::RemoteRemovalView
+                client=client.get_value() selected busy locked
+                on_removed=Callback::new(move |id: wire::RemoteId| {
+                    remotes.update(|items|items.retain(|remote|remote.id!=id));
+                    if selected.with_untracked(|remote|remote.as_ref().is_some_and(|remote|remote.id==id)) {
+                        selected.set(None); navigation.set(Navigation::default()); entries.set(vec![]); history.set(None);
+                    }
+                    status.set("Database unlinked from this device. All local designs and history remain.".into());
+                })
+            />
             <Show when=move||selected.with(Option::is_some)>
                 <p class="helper">{move||selected.get().map(|r|format!("{} · {}",r.endpoint.as_str(),r.expected_lab.as_str())).unwrap_or_default()}</p>
                 <details><summary>"Access key"</summary>

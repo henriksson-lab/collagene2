@@ -508,11 +508,11 @@ impl HostControl {
         };
         let response = wire::ResponseEnvelope {
             request_id: request.request_id,
-            operation_id: request.operation_id,
+            operation_id: request.operation_id.clone(),
             outcome: wire::Outcome::Success(success),
         };
         Ok(Some(
-            wire::encode_response(&response).map_err(|_| HostError::Wire)?,
+            wire::encode_response_for_frame(&response, bytes).map_err(|_| HostError::Wire)?,
         ))
     }
 }

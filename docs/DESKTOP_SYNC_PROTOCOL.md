@@ -1,7 +1,7 @@
 # Desktop remote-library protocol
 
 `collagene-desktop-sync-protocol` defines a portable Rust/WASM metadata protocol,
-separate from DTQ/DTR v1. It provides DSQ/DSR schema 1 frames for the native
+separate from DTQ/DTR v1. It provides DSQ/DSR schema 1–3 frames for the native
 `collagene_rpc` dispatcher. This crate contains no networking, filesystem access,
 repository execution, native credentials or scientific algorithms. A native
 service must implement those operations over the trusted window's repository.
@@ -116,3 +116,26 @@ and redaction, request/operation/lab/origin/page binding, saved-revision queue p
 and mount/progress semantics. Native adapter and real repository integration tests
 belong to the service crate. Adding this wire crate alone does not enable remote
 management in the current desktop or public web preview.
+
+## Reviewed native remote removal (schema 3)
+
+Append-only PrepareRemoteRemoval, ConfirmRemoteRemoval, DiscardRemoteRemovalReview
+and CheckRemoteRemovalOutcome commands require frame version 3, as do their new
+results and credential-forget/post-forget-conflict failure codes. Existing
+publication commands retain minimum version 2; original commands retain version
+1. Legacy request-prefix decoding and response-for-frame encoding remain usable.
+No credential, arbitrary path, biological archive or remotely supplied authority
+is added to these DTOs. Reviews contain full configured remote scope, trusted
+local lab, checkpoint and exact binding/completed-job counts. Receipt schema 1 is
+a distinct local record format, carried inside the schema-3 transport.
+
+The native host retains at most four opaque unpredictable removal IDs, expiring
+the oldest. A review is re-derived before approval acceptance and key-forget;
+IDs from another native instance, expired/discarded reviews and changed scope
+refuse. A missing vault entry is idempotent success. Other vault failures retain
+configuration/bindings and truthfully report that the session may already have
+been cleared. After successful key-forget, SQLite unlink remains independently
+CAS guarded. A conflict reports key-forgotten/configuration-retained; an uncertain
+I/O outcome is checked against its durable receipt before declaring doubt.
+No remote server delete is performed. CheckOutcome is read-only and binds the
+full old remote configuration to its native local-context receipt.

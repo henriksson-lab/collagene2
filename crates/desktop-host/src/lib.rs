@@ -2,6 +2,7 @@
 //! Shell/window trust and the private storage root are supplied natively, never
 //! accepted from request data. Local operations need no network or login.
 #![cfg(not(target_arch = "wasm32"))]
+pub mod catalog_backup;
 mod control;
 mod exports;
 pub use exports::DesktopExports;
@@ -151,6 +152,13 @@ impl DesktopHost {
     }
     /// A second trusted native connection permits remote I/O to proceed without
     /// owning the working-file host mutex. IPC cannot choose this fixed path.
+    pub fn open_catalog_backup(&self) -> HostResult<catalog_backup::DesktopCatalogBackups> {
+        let lab = self
+            .reads
+            .lab(&self.local_access)
+            .map_err(|_| HostError::Unavailable)?;
+        catalog_backup::DesktopCatalogBackups::open(&self._root, &lab.id, self.control.clone())
+    }
     pub fn open_repository_connection(&self) -> HostResult<collagene_repository::Repository> {
         collagene_repository::Repository::open(self._root.join("repository.sqlite"))
             .map_err(|_| HostError::Unavailable)
@@ -171,6 +179,9 @@ impl DesktopHost {
         let control = self.control.clone();
         use wire::{Command as C, Success as S};
         Ok(match &request.command {
+            C::CatalogBackup(_) => {
+                return Err(HostError::Invalid("Use the catalog backup service lane."));
+            }
             C::Bootstrap => {
                 let lab = self
                     .reads
@@ -282,7 +293,12 @@ impl DesktopHost {
         response
             .validate_for(&request)
             .map_err(|_| HostError::Wire)?;
-        let reply = wire::encode_response(&response).map_err(|_| HostError::Wire)?;
+        let reply = wire::encode_response_for_request(
+            &response,
+            &request,
+            u16::from_le_bytes([bytes[4], bytes[5]]),
+        )
+        .map_err(|_| HostError::Wire)?;
         if started {
             self.control
                 .finish(access, &request.operation_id, state, &reply)?;

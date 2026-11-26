@@ -1,4 +1,4 @@
-//! Independently implemented, deliberately limited SnapGene packet/XML import.
+//! Independently implemented, deliberately limited SnapGene DNA/protein packet/XML import.
 //! See docs/SNAPGENE_FORMAT.md for layout provenance, unsupported semantics and limits.
 use crate::{
     formats::{ImportReport, MAX_IMPORT_BYTES},
@@ -136,6 +136,11 @@ fn parse_features(
             return Err(unsupported(format!(
                 "unknown SnapGene feature directionality {direction}"
             )));
+        }
+        if molecule.sequence.alphabet() == Alphabet::Protein && direction == "2" {
+            return Err(unsupported(
+                "reverse protein feature direction is outside this linear amino-acid import profile",
+            ));
         }
         let mut review = direction == "3";
         let mut qualifiers = vec![("snapgene_directionality".into(), Some(direction.into()))];
@@ -291,6 +296,21 @@ fn parse_features(
         if direction == "2" {
             location = Location::Complement(Box::new(location));
         }
+        if molecule.sequence.alphabet() == Alphabet::Protein
+            && ["DISULFID", "cross-link", "cross_link", "bond"]
+                .iter()
+                .any(|k| kind.eq_ignore_ascii_case(k))
+        {
+            review = true;
+            location = Location::Unresolved(format!(
+                "snapgene-original-protein-crosslink:{}",
+                child.range().start
+            ));
+            warn(
+                warnings,
+                "Protein crosslink/bond segment semantics are not established by this profile. The feature stays unresolved/reviewed with its original source; no contiguous peptide or physical bond is inferred.",
+            );
+        }
         molecule.features.push(Feature {
             kind: kind.into(),
             location,
@@ -362,11 +382,12 @@ pub fn import_snapgene(bytes: &[u8]) -> Result<ImportReport, Error> {
         return Err(malformed("not a supported SnapGene cookie"));
     }
     let sequence_type = u16::from_be_bytes([bytes[13], bytes[14]]);
-    if sequence_type != 1 {
+    if !matches!(sequence_type, 1 | 2) {
         return Err(unsupported(format!(
-            "SnapGene sequence type {sequence_type}; this importer supports DNA only"
+            "SnapGene sequence type {sequence_type}; this profile supports uncompressed DNA and linear protein only"
         )));
     }
+    let protein = sequence_type == 2;
     let export_version = u16::from_be_bytes([bytes[15], bytes[16]]);
     let import_version = u16::from_be_bytes([bytes[17], bytes[18]]);
     if export_version > 15 || import_version > 15 {
@@ -406,41 +427,81 @@ pub fn import_snapgene(bytes: &[u8]) -> Result<ImportReport, Error> {
         *packet_counts.entry(kind).or_default() += 1;
         offset = end;
     }
-    if seen.contains(&1) || seen.contains(&21) || seen.contains(&32) {
+    if seen.contains(&1) || seen.contains(&32) {
         return Err(unsupported(
-            "compressed DNA/protein/RNA sequence packets are not supported by this SnapGene import profile",
+            "compressed sequence or RNA packets are not supported by this SnapGene import profile",
         ));
     }
+    if protein && seen.contains(&0) || !protein && seen.contains(&21) {
+        return Err(malformed(
+            "SnapGene cookie alphabet conflicts with its sequence packet, or mixed DNA/protein packets are present",
+        ));
+    }
+    let sequence_tag = if protein { 21 } else { 0 };
     let data = packets
         .iter()
-        .find(|(kind, _)| *kind == 0)
+        .find(|(kind, _)| *kind == sequence_tag)
         .map(|(_, data)| *data)
-        .ok_or_else(|| malformed("SnapGene file has no DNA packet"))?;
+        .ok_or_else(|| {
+            malformed(if protein {
+                "SnapGene protein file has no uncompressed protein packet21"
+            } else {
+                "SnapGene file has no DNA packet"
+            })
+        })?;
     let (&flags, bases) = data
         .split_first()
-        .ok_or_else(|| malformed("empty SnapGene DNA packet"))?;
-    if flags & 2 == 0 {
-        return Err(unsupported(
-            "single-stranded SnapGene DNA is not representable by this molecule import profile",
-        ));
-    }
-    if flags & !0x1f != 0 {
-        return Err(unsupported("unknown SnapGene DNA property bits"));
+        .ok_or_else(|| malformed("empty SnapGene sequence packet"))?;
+    if protein {
+        if flags & 1 != 0 {
+            return Err(unsupported(
+                "circular SnapGene proteins are not representable",
+            ));
+        }
+        if flags != 0 {
+            return Err(unsupported(
+                "nonzero/unknown protein property flags are outside the selected import profile",
+            ));
+        }
+    } else {
+        if flags & 2 == 0 {
+            return Err(unsupported(
+                "single-stranded SnapGene DNA is not representable by this molecule import profile",
+            ));
+        }
+        if flags & !0x1f != 0 {
+            return Err(unsupported("unknown SnapGene DNA property bits"));
+        }
     }
     if bases.iter().any(|b| b.is_ascii_whitespace()) {
-        return Err(malformed("SnapGene DNA packet contains whitespace"));
+        return Err(malformed("SnapGene sequence packet contains whitespace"));
     }
     let bases = std::str::from_utf8(bases)
-        .map_err(|_| malformed("SnapGene DNA sequence is not ASCII/UTF-8"))?;
-    let mut molecule = Molecule::dna(
-        "SnapGene sequence",
-        bases,
-        if flags & 1 != 0 {
+        .map_err(|_| malformed("SnapGene sequence is not ASCII/UTF-8"))?;
+    let mut molecule = Molecule {
+        name: if protein {
+            "SnapGene protein"
+        } else {
+            "SnapGene sequence"
+        }
+        .into(),
+        sequence: Sequence::new(
+            if protein {
+                Alphabet::Protein
+            } else {
+                Alphabet::Dna
+            },
+            bases,
+        )?,
+        topology: if !protein && flags & 1 != 0 {
             Topology::Circular
         } else {
             Topology::Linear
         },
-    )?;
+        features: vec![],
+        metadata: BTreeMap::new(),
+        original_genbank: None,
+    };
     let mut warnings = BTreeSet::new();
     warn(
         &mut warnings,
@@ -452,25 +513,39 @@ pub fn import_snapgene(bytes: &[u8]) -> Result<ImportReport, Error> {
             "SnapGene sequence case was normalized; exact original case remains in retained source bytes.",
         );
     }
+    if protein {
+        molecule.metadata.insert("protein:authority".into(),"Imported SnapGene amino acids and annotations are documentary reference data, not modeled PTM/disulfide/terminal chemistry, physical material or experimental verification.".into());
+        warn(
+            &mut warnings,
+            "Protein sequence and amino-acid coordinates are reference data only. No PTM, disulfide, terminal processing, folding or material state is inferred from source annotations.",
+        );
+    }
     if flags & 0x1c != 0 || packet_counts.contains_key(&8) {
         molecule
             .metadata
             .insert("source:snapgene:chemistry_unmapped".into(), "true".into());
+        if protein {
+            molecule.metadata.insert("protein:modifications".into(),"Unmapped original SnapGene additional sequence properties; retain original bytes. No unmodified/free-chain chemical state is asserted.".into());
+        }
         warn(
             &mut warnings,
-            "SnapGene methylation/end/overhang properties are not converted to verified chemistry. Cloning checks must not assume those source assertions are modeled.",
+            if protein {
+                "SnapGene additional protein properties remain unmapped source evidence, not PTM/terminal or unmodified free-chain chemistry."
+            } else {
+                "SnapGene methylation/end/overhang properties are not converted to verified chemistry. Cloning checks must not assume those source assertions are modeled."
+            },
         );
     }
     for (kind, payload) in &packets {
         match kind {
-            0 => {}
+            0 | 21 => {}
             6 => parse_notes(payload, &mut molecule, &mut warnings)?,
             10 => parse_features(payload, &mut molecule, &mut warnings)?,
             _ => {}
         }
     }
     for (kind, count) in &packet_counts {
-        if !matches!(kind, 0 | 6 | 10) {
+        if !matches!(kind, 0 | 6 | 10 | 21) {
             let meaning = match kind {
                 5 => "primers and binding predictions",
                 7 | 11 | 29 | 30 => "cloning history",
@@ -489,7 +564,12 @@ pub fn import_snapgene(bytes: &[u8]) -> Result<ImportReport, Error> {
     }
     molecule.metadata.insert(
         "source_format".into(),
-        "SnapGene DNA (experimental import)".into(),
+        if protein {
+            "SnapGene protein (experimental import)"
+        } else {
+            "SnapGene DNA (experimental import)"
+        }
+        .into(),
     );
     molecule.metadata.insert(
         "source:snapgene:export_version".into(),
@@ -499,9 +579,15 @@ pub fn import_snapgene(bytes: &[u8]) -> Result<ImportReport, Error> {
         "source:snapgene:import_version".into(),
         import_version.to_string(),
     );
-    molecule
-        .metadata
-        .insert("source:snapgene:dna_flags".into(), flags.to_string());
+    molecule.metadata.insert(
+        if protein {
+            "source:snapgene:protein_flags"
+        } else {
+            "source:snapgene:dna_flags"
+        }
+        .into(),
+        flags.to_string(),
+    );
     molecule.metadata.insert(
         "source:snapgene:packet_counts".into(),
         serde_json::to_string(&packet_counts).map_err(|e| malformed(e.to_string()))?,

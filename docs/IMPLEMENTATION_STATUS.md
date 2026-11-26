@@ -4,9 +4,11 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-Current source uses worker89, candidate20, native plan18, science23 and181 MCP
-tools. Desktop remote review messages now use DSQ/DSR2, with compatible legacy
-prefix commands/replies and explicit version floors for new review controls. The Tauri shell has a durable offline local library, explicit multi-remote
+Current source uses worker89, candidate20, native plan18, science23 and184 MCP
+tools. Desktop remote review messages now use DSQ/DSR3, with compatible legacy
+prefix commands/replies and explicit version floors for new review controls.
+Saved-catalog backup commands use DTQ/DTR2 with legacy commands retaining their
+version-1 wire floor. The Tauri shell has a durable offline local library, explicit multi-remote
 synchronization, scoped native credentials, saved-branch review, embedded stdio
 MCP and authenticated URL-import adapters. All export controls now await native
 file receipts under the configured root, using a separate capability-based export
@@ -20,8 +22,30 @@ also pass for `ebe44ae`. Its wider scientific run found an outdated web capabili
 fixture still expecting embedded TOPO oligos to be unavailable. That fixture now
 checks the supported collection while retaining independent graph-failure gates;
 all three related model cases pass locally. The prior draft11/unknown-draft12
-boundary correction remains intact. New cross-platform CI is pending. Installation
+boundary correction remains intact. Committed `3077971` now passes scientific tests, WASM and desktop builds/MCP
+on Windows/macOS/Linux. New source requires its own CI. Installation
 and graphical/offline acceptance remain separate unfinished gates.
+
+Native saved-catalog backup controls now create/list/verify and restore an
+exact selected archive to a new managed copy through a separate service lane.
+They preserve durable retry identities and leave the working editor state in
+its existing recovery scope. Reviewed database disconnection resolves pending
+work first, forgets its scoped credentials, then atomically retires only that
+remote's bookkeeping while retaining local designs/history. Controlled active
+catalog cutover and broader collaboration remain unfinished.
+[Backup controls](NATIVE_CATALOG_BACKUP_CONTROLS.md) ·
+[Removal lifecycle](REMOTE_REMOVAL.md).
+
+The resumed format batch adds fresh reviewed SnapGene DNA/protein reference
+export, explicit-alphabet GCG/Wisconsin single-sequence exchange and opt-in
+lower-strand-only original Collagene XML migration. The File menu, guarded import
+reviews and three MCP tools expose these selected profiles. Native originals,
+uncertain geometry, unsupported semantics and actual read/write integration are
+tracked separately in the [delivery matrix](FORMAT_DELIVERY_MATRIX.md) and
+[controls contract](SEQUENCE_COMPATIBILITY_CONTROLS.md). All64 focused format,
+MCP, protocol, native-service and UI-model cases pass, alongside native SDK and
+web/worker WASM compiler checks. New cross-platform CI is pending; browser
+acceptance remains deferred.
 
 The parallel format batch adds annotated GenPept/UniProt, PHYLIP/MSF/NEXUS and
 PIR/GDE/SELEX alignment exchange, plus an independent SBOL3.1 structural JSON-LD

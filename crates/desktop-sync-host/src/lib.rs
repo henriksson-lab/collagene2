@@ -5,6 +5,7 @@
 mod adapter;
 mod projection;
 mod publication;
+mod removal;
 pub use adapter::{ProductionAdapter, SyncAdapter};
 use collagene_desktop_credentials as credentials;
 use collagene_desktop_sync_protocol as wire;
@@ -165,6 +166,7 @@ pub struct SyncHost<A> {
     adapter: A,
     local_lab: library::LabId,
     reviews: publication::Reviews,
+    removals: removal::Reviews,
 }
 impl SyncHost<ProductionAdapter> {
     pub fn production(
@@ -197,6 +199,7 @@ impl<A: SyncAdapter> SyncHost<A> {
             adapter,
             local_lab: local,
             reviews: publication::Reviews::new()?,
+            removals: removal::Reviews::new()?,
         })
     }
     pub fn adapter_mut(&mut self) -> &mut A {
@@ -339,13 +342,21 @@ impl<A: SyncAdapter> SyncHost<A> {
                 | wire::Command::ClearSession { .. }
         ) {
             self.reviews.clear();
+            self.removals.clear();
+        }
+        if let Some(success) = self.execute_removal(&request.command, gate)? {
+            return Ok(success);
         }
         if let Some(success) = self.execute_publication(&request.command, gate)? {
             return Ok(success);
         }
         use wire::{Command as C, Success as S};
         Ok(match &request.command {
-            C::PrepareMetadataPublication { .. }
+            C::PrepareRemoteRemoval { .. }
+            | C::ConfirmRemoteRemoval { .. }
+            | C::DiscardRemoteRemovalReview { .. }
+            | C::CheckRemoteRemovalOutcome { .. }
+            | C::PrepareMetadataPublication { .. }
             | C::QueueMetadataPublication { .. }
             | C::InspectPushChoices { .. }
             | C::PrepareReviewedPush { .. }

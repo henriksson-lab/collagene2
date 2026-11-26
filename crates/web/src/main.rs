@@ -251,6 +251,10 @@ mod biology;
 mod biology_selection;
 #[cfg(target_arch = "wasm32")]
 mod biology_source_view;
+#[cfg(any(target_arch = "wasm32", test))]
+mod catalog_backup_model;
+#[cfg(target_arch = "wasm32")]
+mod catalog_backup_view;
 #[cfg(target_arch = "wasm32")]
 mod compare;
 #[cfg(target_arch = "wasm32")]
@@ -319,6 +323,10 @@ mod primers;
 mod recombination;
 #[cfg(target_arch = "wasm32")]
 mod remote_library_view;
+#[cfg(any(target_arch = "wasm32", test))]
+mod remote_removal_model;
+#[cfg(target_arch = "wasm32")]
+mod remote_removal_view;
 #[cfg(target_arch = "wasm32")]
 mod renderer;
 #[cfg(target_arch = "wasm32")]
@@ -379,3 +387,8 @@ mod library_client;
 mod library_documents;
 #[cfg(target_arch = "wasm32")]
 mod library_view;
+
+#[cfg(target_arch = "wasm32")]
+mod sequence_compat_export;
+#[cfg(target_arch = "wasm32")]
+mod sequence_compat_import;

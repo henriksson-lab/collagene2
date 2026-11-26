@@ -19,10 +19,16 @@ Frames use a separate namespace from browser/server library and sync traffic:
 | Bytes | Meaning |
 | --- | --- |
 | 0–3 | `DTQ\0` request or `DTR\0` response |
-| 4–5 | little-endian exact schema, currently **1** |
+| 4–5 | little-endian schema, supported **1–2** |
 | 6–9 | little-endian payload length |
 | 10–41 | BLAKE3 of postcard payload bytes |
 | 42 onward | postcard payload, with no trailing data |
+
+Version 1 remains the minimum for existing commands/replies. Appended
+`CatalogBackup` commands/results require version 2, including generic failures
+acknowledging those requests. Matched response encoding preserves the incoming
+supported version; low-level generic response encoding uses its minimum feature
+version. Legacy command/result tags and field prefixes remain unchanged.
 
 The request payload limit is 129 MiB, allowing two independently supplied native
 64 MiB workspaces plus bounded metadata. Responses are limited to 65 MiB, working
@@ -125,3 +131,20 @@ adapters. No builds, existing source changes, root manifest or lockfile edits we
 performed by this worker; the parent coordinates native/WASM validation and
 registration. Adding this protocol alone does not enable a Tauri application or
 claim completed offline/remote-sync integration.
+
+## Saved catalog backup lane
+
+`CatalogBackup::{Create,List,Verify,RestoreCopy}` uses only managed operation IDs,
+selected archive hashes and typed receipt/page metadata. No archive bytes or
+paths cross this lane. Requests are capped at 16 KiB and responses at 256 KiB.
+The native shell dispatches it through a separate service/mutex and admission
+lease, preserving priority access to cancellation/status and independent editor
+working-file operations. Admission hints never replace complete frame validation.
+
+Restore creates a new managed recovery copy after an exact archive-hash check;
+it never overwrites the active catalog or editor autosave. Cached success replies
+revalidate selected disk evidence, and durable operation intents preserve exact
+retry identity across process restarts. Listings describe owned records, not a
+new full cryptographic verification of every historical archive. See
+[service and filesystem contract](DESKTOP_CATALOG_BACKUP.md) and
+[controls](NATIVE_CATALOG_BACKUP_CONTROLS.md).

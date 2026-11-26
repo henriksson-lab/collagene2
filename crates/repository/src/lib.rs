@@ -6,6 +6,7 @@ pub mod folder_publication;
 pub mod http;
 pub mod publication_review;
 mod remote;
+pub mod remote_removal;
 use collagene_core::{
     protocol,
     workspace::{self, Workspace},

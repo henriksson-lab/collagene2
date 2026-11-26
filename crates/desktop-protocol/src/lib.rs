@@ -4,7 +4,9 @@
 pub use collagene_library_protocol as library;
 use library::{Blob, Digest, LabContext, Text};
 use serde::{Deserialize, Serialize};
-pub const SCHEMA_VERSION: u16 = 1;
+pub const SCHEMA_VERSION: u16 = 2;
+mod catalog_backup;
+pub use catalog_backup::*;
 pub const HEADER_BYTES: usize = 42;
 pub const MAX_EXPORT_BYTES: usize = 64 << 20;
 pub const MAX_ARCHIVE_BYTES: usize = 64 << 20;
@@ -94,6 +96,7 @@ dto! {pub enum Command{
     Cancel{operation_id:OperationId},
     OperationStatus{operation_id:OperationId},
     ExportFile{suggested_name:Text<256>,bytes:Blob<MAX_EXPORT_BYTES>},
+    CatalogBackup(CatalogBackupCommand),
 }}
 dto! {pub struct RequestEnvelope{pub request_id:u64,pub operation_id:OperationId,pub command:Command}}
 dto! {pub struct SlotMetadata{pub archive_hash:Digest,pub bytes:u64}}
@@ -105,6 +108,7 @@ dto! {pub enum Success{
     WorkingArchive{slot:WorkingSlot,version:Digest,archive:Blob<MAX_ARCHIVE_BYTES>},
     Preferences(Preferences),Cancelled{operation_id:OperationId,status:OperationState},Status{operation_id:OperationId,status:OperationState},
     Exported{name:Text<256>,hash:Digest,bytes:u64},
+    CatalogBackup(CatalogBackupSuccess),
 }}
 dto! {pub enum Conflict{Working(WorkingMetadata),Preferences(Preferences)}}
 dto! {pub enum Failure{Invalid{message:Text<1024>},Conflict{current:Conflict},Cancelled,Unavailable,Library(library::Failure)}}
@@ -182,6 +186,7 @@ impl RequestEnvelope {
             return Err(Error::Invalid("request ID"));
         }
         match &self.command {
+            Command::CatalogBackup(c) => c.validate()?,
             Command::Library(r) => r.validate()?,
             Command::ExportFile { suggested_name, .. } => validate_export_name(suggested_name)?,
             Command::SaveCurrent { archive, .. } => archive_shape(archive)?,
@@ -233,6 +238,8 @@ impl Bootstrap {
 impl Success {
     pub fn validate(&self) -> Result<(), Error> {
         match self {
+            Self::CatalogBackup(s) => s.validate()?,
+
             Self::Exported { name, bytes, .. } => {
                 validate_export_name(name)?;
                 if *bytes > MAX_EXPORT_BYTES as u64 {
@@ -307,6 +314,9 @@ impl ResponseEnvelope {
             return Err(Error::Mismatch);
         }
         let matches = match (&request.command, &self.outcome) {
+            (Command::CatalogBackup(c), Outcome::Success(Success::CatalogBackup(s))) => {
+                s.validate_for(c, &request.operation_id).is_ok()
+            }
             (
                 Command::ExportFile {
                     suggested_name,
@@ -626,7 +636,7 @@ fn payload<'a>(magic: &[u8; 4], bytes: &'a [u8], limit: usize) -> Result<&'a [u8
         return Err(Error::Malformed);
     }
     let version = u16::from_le_bytes([bytes[4], bytes[5]]);
-    if version != SCHEMA_VERSION {
+    if !(1..=SCHEMA_VERSION).contains(&version) {
         return Err(Error::Version(version));
     }
     let length =
@@ -660,20 +670,30 @@ fn decode<T: for<'de> Deserialize<'de>>(
 }
 pub fn encode_request(r: &RequestEnvelope) -> Result<Vec<u8>, Error> {
     r.validate()?;
-    encode(REQUEST_MAGIC, r, MAX_REQUEST_BYTES)
+    let mut bytes = encode(REQUEST_MAGIC, r, MAX_REQUEST_BYTES)?;
+    bytes[4..6].copy_from_slice(&request_version(&r.command).to_le_bytes());
+    Ok(bytes)
 }
 pub fn decode_request(bytes: &[u8]) -> Result<RequestEnvelope, Error> {
     let value: RequestEnvelope = decode(REQUEST_MAGIC, bytes, MAX_REQUEST_BYTES)?;
     value.validate()?;
+    if u16::from_le_bytes([bytes[4], bytes[5]]) < request_version(&value.command) {
+        return Err(Error::Version(1));
+    }
     Ok(value)
 }
 pub fn encode_response(r: &ResponseEnvelope) -> Result<Vec<u8>, Error> {
     r.validate()?;
-    encode(RESPONSE_MAGIC, r, MAX_RESPONSE_BYTES)
+    let mut bytes = encode(RESPONSE_MAGIC, r, MAX_RESPONSE_BYTES)?;
+    bytes[4..6].copy_from_slice(&response_version(&r.outcome).to_le_bytes());
+    Ok(bytes)
 }
 pub fn decode_response(bytes: &[u8]) -> Result<ResponseEnvelope, Error> {
     let value: ResponseEnvelope = decode(RESPONSE_MAGIC, bytes, MAX_RESPONSE_BYTES)?;
     value.validate()?;
+    if u16::from_le_bytes([bytes[4], bytes[5]]) < response_version(&value.outcome) {
+        return Err(Error::Version(1));
+    }
     Ok(value)
 }
 pub fn decode_response_for(
@@ -681,6 +701,9 @@ pub fn decode_response_for(
     request: &RequestEnvelope,
 ) -> Result<ResponseEnvelope, Error> {
     let value = decode_response(bytes)?;
+    if u16::from_le_bytes([bytes[4], bytes[5]]) < request_version(&request.command) {
+        return Err(Error::Version(1));
+    }
     value.validate_for(request)?;
     Ok(value)
 }
@@ -736,4 +759,47 @@ pub fn decode_control(bytes: &[u8]) -> Result<Option<ControlRequest>, Error> {
         operation_id: request.operation_id,
         control,
     }))
+}
+
+fn request_version(c: &Command) -> u16 {
+    if matches!(c, Command::CatalogBackup(_)) {
+        2
+    } else {
+        1
+    }
+}
+fn response_version(o: &Outcome) -> u16 {
+    if matches!(o, Outcome::Success(Success::CatalogBackup(_))) {
+        2
+    } else {
+        1
+    }
+}
+pub fn encode_response_for_request(
+    r: &ResponseEnvelope,
+    q: &RequestEnvelope,
+    version: u16,
+) -> Result<Vec<u8>, Error> {
+    r.validate_for(q)?;
+    if !(1..=SCHEMA_VERSION).contains(&version)
+        || version < request_version(&q.command)
+        || version < response_version(&r.outcome)
+    {
+        return Err(Error::Version(version));
+    }
+    let mut bytes = encode_response(r)?;
+    bytes[4..6].copy_from_slice(&version.to_le_bytes());
+    Ok(bytes)
+}
+pub fn encode_response_for_frame(r: &ResponseEnvelope, request: &[u8]) -> Result<Vec<u8>, Error> {
+    let q = decode_request(request)?;
+    let version = u16::from_le_bytes([request[4], request[5]]);
+    encode_response_for_request(r, &q, version)
+}
+/// Admission hint only. The scoped service still decodes, hashes and validates.
+pub fn catalog_backup_request_hint(bytes: &[u8]) -> bool {
+    let Ok(raw) = payload(REQUEST_MAGIC, bytes, MAX_REQUEST_BYTES) else {
+        return false;
+    };
+    postcard::take_from_bytes::<(u64, &str, u32)>(raw).is_ok_and(|((_, _, tag), _)| tag == 12)
 }

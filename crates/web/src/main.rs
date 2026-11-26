@@ -1,5 +1,7 @@
 #[cfg(target_arch = "wasm32")]
 mod alignment_view;
+#[cfg(target_arch = "wasm32")]
+mod anneal_preparation_view;
 #[cfg(any(target_arch = "wasm32", test))]
 mod annotation_geometry;
 #[cfg(any(target_arch = "wasm32", test))]

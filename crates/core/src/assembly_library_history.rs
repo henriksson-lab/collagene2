@@ -261,7 +261,7 @@ fn active(w: &Workspace) -> Result<(&str, &WorkspaceAttachment), Error> {
     let mut matches = w.attachments.iter().filter(|(_, a)| {
         matches!(
             a.kind.as_str(),
-            "assembly-draft-v1" | "assembly-draft-v2" | ACTIVE_DRAFT_KIND
+            "assembly-draft-v1" | "assembly-draft-v2" | "assembly-draft-v4" | ACTIVE_DRAFT_KIND
         )
     });
     let (hash, a) = matches
@@ -341,7 +341,7 @@ pub fn allocation_highwater(w: &Workspace, library_id: &str) -> Result<u64, Erro
         .filter(|a| {
             matches!(
                 a.kind.as_str(),
-                "assembly-draft-v1" | "assembly-draft-v2" | ACTIVE_DRAFT_KIND
+                "assembly-draft-v1" | "assembly-draft-v2" | "assembly-draft-v4" | ACTIVE_DRAFT_KIND
             )
         })
         .count();
@@ -462,7 +462,12 @@ pub fn install(mut w: Workspace, record: Record, after: Vec<u8>) -> Result<Commi
     }
     // No operation above mutates the frame. History retention cannot be pruned to
     // make an edit succeed; any failure publishes neither replacement nor history.
-    w.attachments.retain(|_, a| a.kind != ACTIVE_DRAFT_KIND);
+    w.attachments.retain(|_, a| {
+        !matches!(
+            a.kind.as_str(),
+            "assembly-draft-v1" | "assembly-draft-v2" | "assembly-draft-v4" | ACTIVE_DRAFT_KIND
+        )
+    });
     w.attachments.insert(
         record.after_hash.clone(),
         WorkspaceAttachment {

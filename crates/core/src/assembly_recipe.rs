@@ -21,7 +21,7 @@ const MAX_INPUT_BASES: usize = 8 << 20;
 pub(crate) const MAX_ROLE_BASES: usize = 16 << 20;
 const MAX_PREPARATION_WORK: usize = 100_000_000;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
-dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>}}}
+dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},AnnealedOligos{bottom_input_id:String,options:crate::chemistry::AnnealOptions,candidate_index:usize}}}
 dto! {pub struct FragmentSpec {pub role:String,pub input_id:String,pub preparation:Preparation,pub reverse:bool}}
 dto! {pub struct Recipe {pub name:String,pub fragments:Vec<FragmentSpec>,pub overlaps:Vec<usize>,pub circular:bool,pub options:ProfileOptions}}
 dto! {pub struct PreparedRow {pub row_index:usize,pub role:String,pub input_id:String,pub input_revision:String,pub preparation_step:Option<usize>,pub repair_step:Option<usize>,pub prepared_source:Source,pub reverse:bool}}
@@ -70,6 +70,105 @@ pub(crate) fn hash(v: &impl Serialize) -> Result<String, Error> {
     };
     serde_json::to_writer(&mut w, v).map_err(|_| Error::TooLarge)?;
     Ok(w.hash.finalize().to_hex().to_string())
+}
+/// Borrowed bounds only: candidate availability is reconstructed by the verifier.
+pub(crate) fn anneal_shape(
+    bottom: &str,
+    options: &crate::chemistry::AnnealOptions,
+    candidate: usize,
+) -> Result<(), Error> {
+    token(bottom, 128)?;
+    if options.min_paired_bases == 0
+        || options.min_paired_bases > crate::chemistry::MAX_ANNEAL_OLIGO_BASES
+        || options.max_comparisons == 0
+        || options.max_comparisons > crate::chemistry::MAX_ANNEAL_COMPARISONS
+        || options.max_candidates == 0
+        || options.max_candidates > crate::chemistry::MAX_ANNEAL_CANDIDATES
+        || candidate >= options.max_candidates
+    {
+        return Err(bad("invalid annealing limits or selected candidate"));
+    }
+    Ok(())
+}
+fn anneal_sources(top: &Molecule, bottom: &Molecule) -> Result<(), Error> {
+    for source in [top, bottom] {
+        if source.sequence.is_empty()
+            || source.sequence.len() > crate::chemistry::MAX_ANNEAL_OLIGO_BASES
+        {
+            return Err(Error::TooLarge);
+        }
+        verification::declared_oligo(source)?;
+        if !source
+            .sequence
+            .as_str()
+            .bytes()
+            .all(|b| b"ACGT".contains(&b))
+        {
+            return Err(bad("annealing requires concrete DNA oligos"));
+        }
+    }
+    Ok(())
+}
+/// Check every original binding, including the secondary strand of a paired preparation.
+/// This is structural validation; it never enumerates annealing placements.
+pub(crate) fn validate_prepared_inputs(
+    inputs: &[PlanInput],
+    steps: &[Operation],
+) -> Result<(), Error> {
+    if inputs.is_empty() || inputs.len() > MAX_ROWS {
+        return Err(Error::TooLarge);
+    }
+    let mut ids = BTreeSet::new();
+    for input in inputs {
+        token(&input.id, 128)?;
+        crate::model::bounds::model_preflight(&[&input.molecule])?;
+        if !ids.insert(input.id.as_str()) || input.revision != input.molecule.revision() {
+            return Err(bad("original input binding changed"));
+        }
+    }
+    for step in steps {
+        if let Operation::AnnealOligos {
+            top,
+            bottom,
+            options,
+            candidate_index,
+        } = step
+        {
+            let (Source::Input(top), Source::Input(bottom)) = (top, bottom) else {
+                return Err(bad("annealing requires original input oligos"));
+            };
+            anneal_shape(bottom, options, *candidate_index)?;
+            if top == bottom {
+                return Err(bad(
+                    "annealing requires two distinct original input identities",
+                ));
+            }
+            let resolve = |id: &str| {
+                inputs
+                    .iter()
+                    .find(|i| i.id == id)
+                    .map(|i| &i.molecule)
+                    .ok_or_else(|| bad("missing annealing original"))
+            };
+            anneal_sources(resolve(top)?, resolve(bottom)?)?;
+        }
+    }
+    Ok(())
+}
+pub(crate) fn validate_annealed_row(row: &PreparedRow, steps: &[Operation]) -> Result<(), Error> {
+    if let Some(i) = row.preparation_step {
+        if let Some(Operation::AnnealOligos { top, .. }) = steps.get(i) {
+            if !matches!(top, Source::Input(id) if id == &row.input_id)
+                || row.repair_step.is_some()
+                || !matches!(row.prepared_source, Source::Step(j) if j == i)
+            {
+                return Err(bad(
+                    "annealed row lost its primary original or prepared step",
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 fn primer(p: &Primer) -> Result<(), Error> {
     token(&p.name, 256)?;
@@ -210,6 +309,34 @@ fn preparation_preflight_inner(
             .filter(|n| *n <= MAX_ROLE_BASES)
             .ok_or(Error::TooLarge)?;
         let units = match &row.preparation {
+            Preparation::AnnealedOligos {
+                bottom_input_id,
+                options,
+                candidate_index,
+            } => {
+                anneal_shape(bottom_input_id, options, *candidate_index)?;
+                if bottom_input_id == &row.input_id {
+                    return Err(bad(
+                        "annealing requires two distinct original input identities",
+                    ));
+                }
+                let bottom = lookup
+                    .get(bottom_input_id.as_str())
+                    .copied()
+                    .ok_or_else(|| bad("unknown bottom oligo original input"))?;
+                anneal_sources(m, bottom)?;
+                role_bases = role_bases
+                    .checked_add(bottom.sequence.len())
+                    .filter(|n| *n <= MAX_ROLE_BASES)
+                    .ok_or(Error::TooLarge)?;
+                // Reserve the actual exhaustive offset upper bound, capped by the recorded search budget.
+                m.sequence
+                    .len()
+                    .checked_add(bottom.sequence.len())
+                    .and_then(|n| n.checked_mul(m.sequence.len().min(bottom.sequence.len())))
+                    .ok_or(Error::TooLarge)?
+                    .min(options.max_comparisons)
+            }
             Preparation::DeclaredDuplex { .. } => {
                 verification::declared_source_termini_preflight(m)?;
                 0
@@ -394,6 +521,16 @@ pub fn compile_preparations(
         let input = Source::Input(row.input_id.clone());
         let operation = match &row.preparation {
             Preparation::WholeLinear => None,
+            Preparation::AnnealedOligos {
+                bottom_input_id,
+                options,
+                candidate_index,
+            } => Some(Operation::AnnealOligos {
+                top: input.clone(),
+                bottom: Source::Input(bottom_input_id.clone()),
+                options: options.clone(),
+                candidate_index: *candidate_index,
+            }),
             Preparation::DeclaredDuplex { left, right } => Some(Operation::DeclareSourceTermini {
                 template: input.clone(),
                 left: *left,
@@ -642,10 +779,12 @@ impl Preview {
                 }
             }
         }
+        validate_prepared_inputs(&self.compiled.plan.inputs, &self.compiled.plan.steps)?;
         if self.verification.plan_revision != hash(&self.compiled.plan)? {
             return Err(bad("preview plan revision changed"));
         }
         for (index, row) in self.compiled.rows.iter().enumerate() {
+            validate_annealed_row(row, &self.compiled.plan.steps)?;
             token(&row.role, 128)?;
             token(&row.input_id, 128)?;
             if row.row_index != index || !hex(&row.input_revision) {
@@ -696,6 +835,7 @@ impl Preview {
                     !matches!(
                         step,
                         Operation::Pcr { .. }
+                            | Operation::AnnealOligos { .. }
                             | Operation::Digest { .. }
                             | Operation::CatalogDigest { .. }
                             | Operation::RepairEnds { .. }

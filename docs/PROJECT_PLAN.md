@@ -1520,3 +1520,41 @@ not execute the app or replace deferred GUI acceptance. The next ordinary workfl
 handoff to connect is annealed oligo pair + digested backbone ligation; existing
 native operations cover the chemistry, while two-original-source slot capture and
 composition still need implementation.
+
+### Annealed oligo inserts in ordinary ligation
+
+An ordinary ordered-ligation slot can now declare an annealed pair of actual
+5′→3′ oligo sources. Capture its top contribution and its separately pinned
+bottom original before freezing intended DNA, then inspect antiparallel offsets
+and choose a geometry explicitly in the active preparation card. The existing
+catalog digest and terminal-treatment controls prepare the backbone and insert.
+The full candidate retains all three original inputs/events while the independent
+reference contains only the declared backbone and top-strand contributions.
+Fresh native reconstruction checks pairing, ends, orientation and ligation;
+reference previews never become physical stock. Shared product review and named
+HTML/PDF outputs retain the original parents.
+
+The shared preparation enum adds `AnnealedOligos`; no new chemistry operation is
+needed. Worker71 gates this preparation and its recipe-preview capability while
+keeping candidate16, plan14 and science19. Paired drafts use attachmentv4; existing
+v1–3 drafts remain readable and ordinaryv3 output omits unused additive fields.
+Exact source/event, annealing-policy and engine changes clear the documentary
+geometry pin. Paired-source library projection remains explicitly unsupported
+until its own bin/preparation model can bind both originals. No browser or HTTP
+application checks are authorized at this checkpoint; GUI acceptance remains
+outstanding and the full original project goal remains active.
+
+Validation:35 targeted core cases,14 native web model/staging cases and2 MCP SDK
+cases pass. Coverage includes two contributions with three original parent events,
+paired-draft save/restore, source/policy changes clearing the geometry choice,
+failed-anneal diagnostics, and actual ordered-oligo HTML plus decoded PDF content.
+A full offline frontend/worker71 Trunk build succeeds. Saving ordinary non-library
+drafts preserves custom source IDs, and workspace restore checks secondary oligo
+captures as well as primary contributions.
+
+Next ordinary interaction gaps are a plain literal-intent editor for ligation
+(current junction editing is tied to PCR redesign in other methods), and explicit
+swapping of captured oligo roles for reversed paired inserts. Swapping must carry
+the full strand chemistry, reset the independent contribution to the new top,
+clear the old candidate/junction declarations and reconstruct downstream ligation.
+These are UI/source handoffs to existing native operations, not new chemistry.

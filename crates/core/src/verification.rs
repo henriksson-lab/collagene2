@@ -1702,7 +1702,7 @@ pub fn simulate_tailing(
     bounded_physical_preview(&preview)?;
     Ok(preview)
 }
-fn declared_oligo(source: &Molecule) -> Result<(), Error> {
+pub(crate) fn declared_oligo(source: &Molecule) -> Result<(), Error> {
     source.validate()?;
     if source.sequence.alphabet() != Alphabet::Dna || source.topology != Topology::Linear {
         return Err(Error::Unsupported(

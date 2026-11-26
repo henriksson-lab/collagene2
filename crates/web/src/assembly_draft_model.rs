@@ -47,6 +47,12 @@ pub struct Slot {
     pub reverse: bool,
     #[serde(default)]
     pub digest_geometry: Option<DigestGeometry>,
+    #[serde(
+        default,
+        with = "optional_snapshot",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub anneal_bottom: Option<Arc<CapturedSource>>,
 }
 impl Slot {
     pub(crate) fn empty(label: &str) -> Self {
@@ -57,6 +63,7 @@ impl Slot {
             end: 0,
             reverse: false,
             digest_geometry: None,
+            anneal_bottom: None,
         }
     }
 }
@@ -203,6 +210,26 @@ pub(crate) fn bounded_size(value: &impl Serialize) -> Result<(), String> {
     serde_json::to_writer(&mut Count(0), value).map_err(|e| e.to_string())
 }
 pub(crate) fn validate_preparation_input(row: &OverlapInput) -> Result<(), String> {
+    let options = &row.anneal_options;
+    if options.min_paired_bases == 0
+        || options.min_paired_bases > collagene_core::chemistry::MAX_ANNEAL_OLIGO_BASES
+        || options.max_comparisons == 0
+        || options.max_comparisons > collagene_core::chemistry::MAX_ANNEAL_COMPARISONS
+        || options.max_candidates == 0
+        || options.max_candidates > collagene_core::chemistry::MAX_ANNEAL_CANDIDATES
+        || row
+            .anneal_candidate
+            .is_some_and(|index| index >= options.max_candidates)
+        || row
+            .anneal_bottom_document
+            .is_some_and(|index| index >= 1000)
+        || row
+            .anneal_source_context
+            .as_ref()
+            .is_some_and(|context| !hex(context))
+    {
+        return Err("Paired-oligo settings exceed their bounded native profile.".into());
+    }
     if let Some(selection) = &row.catalog_selection {
         selection.validate().map_err(|e| e.to_string())?;
     }
@@ -253,6 +280,16 @@ pub(crate) fn validate_controls(
                 return Err("TA/GC tail controls differ from the pinned source slots.".into());
             }
         }
+    }
+    if methods.mode != Mode::Ligation
+        && methods
+            .rows
+            .iter()
+            .any(|row| row.preparation == OverlapPreparation::AnnealedOligos)
+    {
+        return Err(
+            "Paired-oligo preparation currently requires ordinary ordered ligation.".into(),
+        );
     }
     if let Some(pool) = &methods.golden_gate_pool {
         pool.validate()?;
@@ -324,7 +361,7 @@ pub(crate) fn validate_controls(
             return Err("Assembly option field exceeds64KiB".into());
         }
     }
-    methods.role_ids(count)?;
+    methods.all_input_ids()?;
     Ok(())
 }
 pub(crate) fn validate_slot_link(
@@ -353,6 +390,9 @@ pub(crate) fn validate_slot(slot: &Slot, row: &OverlapInput, index: usize) -> Re
     }
     validate_preparation_input(row)?;
     validate_slot_link(slot, row, index)?;
+    if let Some(bottom) = slot.anneal_bottom.as_deref() {
+        validate_oligo_capture(bottom)?;
+    }
     let Some(captured) = slot.captured.as_deref() else {
         if slot.start != 0 || slot.end != 0 || slot.digest_geometry.is_some() {
             return Err("An empty slot cannot retain a source interval".into());
@@ -389,15 +429,114 @@ pub(crate) fn validate_slot(slot: &Slot, row: &OverlapInput, index: usize) -> Re
     if molecule.revision() != source.binding.revision {
         return Err("Pinned source content differs from its captured revision".into());
     }
+    if row.preparation == OverlapPreparation::AnnealedOligos {
+        validate_oligo_capture(captured)?;
+    }
+    Ok(())
+}
+fn validate_oligo_capture(captured: &CapturedSource) -> Result<(), String> {
+    let source = &captured.source;
+    let molecule = &captured.molecule;
+    let n = molecule.sequence.len();
+    if n == 0
+        || n > collagene_core::chemistry::MAX_ANNEAL_OLIGO_BASES
+        || source.topology != Topology::Linear
+        || molecule.topology != Topology::Linear
+        || source.alphabet != Alphabet::Dna
+        || molecule.sequence.alphabet() != Alphabet::Dna
+        || source.length != n
+        || source.name != molecule.name
+        || !token(&source.binding.document_id, 512)
+        || !token(&source.binding.event_id, 512)
+        || !hex(&source.binding.revision)
+    {
+        return Err("Paired oligos require bounded nonempty linear original DNA sources and exact event bindings.".into());
+    }
+    molecule.validate().map_err(|error| error.to_string())?;
+    if molecule.revision() != source.binding.revision {
+        return Err("Captured oligo content differs from its original source revision.".into());
+    }
     Ok(())
 }
 impl Draft {
+    fn uses_paired_fields(&self) -> bool {
+        self.slots.iter().any(|slot| slot.anneal_bottom.is_some())
+            || self.methods.rows.iter().any(|row| {
+                row.preparation == OverlapPreparation::AnnealedOligos
+                    || row.anneal_options != Default::default()
+                    || row.anneal_candidate.is_some()
+                    || row.anneal_bottom_document.is_some()
+                    || row.anneal_source_context.is_some()
+            })
+            || self.alternatives.as_ref().is_some_and(|library| {
+                library.bins.iter().any(|bin| {
+                    bin.choices
+                        .iter()
+                        .any(|choice| choice.slot.anneal_bottom.is_some())
+                }) || library.rows.iter().any(|saved| {
+                    saved.edits.methods.rows.iter().any(|row| {
+                        row.preparation == OverlapPreparation::AnnealedOligos
+                            || row.anneal_options != Default::default()
+                            || row.anneal_candidate.is_some()
+                            || row.anneal_bottom_document.is_some()
+                            || row.anneal_source_context.is_some()
+                    })
+                })
+            })
+    }
+    /// A documentary pin for an explicit candidate index, never physical evidence.
+    pub(crate) fn anneal_context(&self, index: usize) -> Option<String> {
+        let row = self.methods.rows.get(index)?;
+        if row.preparation != OverlapPreparation::AnnealedOligos {
+            return None;
+        }
+        let slot = self.slots.get(index)?;
+        let top = &slot.captured.as_ref()?.source.binding;
+        let bottom = &slot.anneal_bottom.as_ref()?.source.binding;
+        let input_id = self
+            .methods
+            .role_ids(self.slots.len())
+            .ok()?
+            .get(index)?
+            .input_id
+            .clone();
+        let mut hasher = blake3::Hasher::new();
+        for value in [
+            collagene_core::chemistry::ANNEAL_ENGINE_VERSION,
+            input_id.as_str(),
+            &top.document_id,
+            &top.event_id,
+            &top.revision,
+            &bottom.document_id,
+            &bottom.event_id,
+            &bottom.revision,
+        ] {
+            if value.len() > 512 {
+                return None;
+            }
+            hasher.update(&(value.len() as u64).to_le_bytes());
+            hasher.update(value.as_bytes());
+        }
+        let options = serde_json::to_vec(&row.anneal_options).ok()?;
+        hasher.update(&options);
+        Some(hasher.finalize().to_hex().to_string())
+    }
     /// Structural/bounded source consistency only. Historical event IDs require
     /// the host workspace to attest them before installing any candidate.
     pub fn validate(&self) -> Result<(), String> {
-        if !matches!(self.version, 1 | 2 | 3) || self.version == 1 && self.alternatives.is_some() {
+        if !matches!(self.version, 1 | 2 | 3 | 4)
+            || self.version == 1 && self.alternatives.is_some()
+        {
             return Err(
                 "Unsupported assembly draft version or alternatives in a legacy draft.".into(),
+            );
+        }
+        if self.uses_paired_fields() && self.version < 4 {
+            return Err("Paired-oligo sources/settings require assembly draft version 4.".into());
+        }
+        if self.alternatives.is_some() && self.uses_paired_fields() {
+            return Err(
+                "Paired-oligo sources/settings are not supported in assembly libraries.".into(),
             );
         }
         if self.methods.mode == Mode::Tailing && self.version < 3 {
@@ -442,18 +581,35 @@ impl Draft {
         let models = self
             .slots
             .iter()
-            .filter_map(|slot| slot.captured.as_deref().map(|c| &c.molecule))
+            .flat_map(|slot| [slot.captured.as_deref(), slot.anneal_bottom.as_deref()])
+            .flatten()
+            .map(|captured| &captured.molecule)
             .collect::<Vec<_>>();
         collagene_core::model::bounds::model_preflight(&models).map_err(|e| e.to_string())?;
         let mut bases = 0usize;
+        let mut next_bottom = self.slots.len();
         for (index, (slot, row)) in self.slots.iter().zip(&self.methods.rows).enumerate() {
-            if let Some(captured) = &slot.captured {
+            for captured in [&slot.captured, &slot.anneal_bottom].into_iter().flatten() {
                 bases = bases
                     .checked_add(captured.molecule.sequence.len())
                     .filter(|n| *n <= 8 << 20)
                     .ok_or("Assembly pinned source bases exceed8MiB")?;
             }
             validate_slot(slot, row, index)?;
+            if row.preparation == OverlapPreparation::AnnealedOligos {
+                let expected = slot.anneal_bottom.as_ref().map(|_| {
+                    let index = next_bottom;
+                    next_bottom += 1;
+                    index
+                });
+                if row.anneal_bottom_document != expected
+                    || (row.anneal_candidate.is_some()
+                        && (self.anneal_context(index).is_none()
+                            || row.anneal_source_context != self.anneal_context(index)))
+                {
+                    return Err("Annealing candidate/source binding changed; capture and inspect the oligos again.".into());
+                }
+            }
         }
         if let Some(library) = &self.alternatives {
             if library.bins.len() != self.slots.len() {
@@ -489,6 +645,30 @@ impl Draft {
             self.methods.insert.document = 1;
             self.methods.insert.reversed = self.slots[1].reverse;
         }
+        let mut next_bottom = self.slots.len();
+        for index in 0..self.slots.len() {
+            let context = self.anneal_context(index);
+            let row = &mut self.methods.rows[index];
+            if row.anneal_source_context != context {
+                row.anneal_candidate = None;
+            }
+            row.anneal_source_context = context;
+            row.anneal_bottom_document = if row.preparation == OverlapPreparation::AnnealedOligos
+                && self.slots[index].anneal_bottom.is_some()
+            {
+                let at = next_bottom;
+                next_bottom += 1;
+                Some(at)
+            } else {
+                None
+            };
+            if row.preparation != OverlapPreparation::AnnealedOligos {
+                row.anneal_candidate = None;
+            }
+        }
+        if self.uses_paired_fields() {
+            self.version = self.version.max(4);
+        }
     }
 }
 
@@ -499,8 +679,8 @@ pub fn encode(draft: &Draft) -> Result<Vec<u8>, String> {
 }
 /// Encode current editable state without promoting working fields into saved rows.
 pub fn encode_raw(draft: &Draft) -> Result<Vec<u8>, String> {
-    if draft.version != 3 {
-        return Err("Raw assembly persistence requires draft version 3.".into());
+    if !matches!(draft.version, 3 | 4) {
+        return Err("Raw assembly persistence requires draft version 3 or 4.".into());
     }
     draft.validate()?;
     let mut writer = Bounded { bytes: Vec::new() };
@@ -522,7 +702,7 @@ fn decode_expected(bytes: &[u8], expected: Option<u32>) -> Result<Draft, String>
         return Err("Assembly attachment kind disagrees with its draft version.".into());
     }
     draft.validate()?;
-    draft.version = 3;
+    draft.version = draft.version.max(3);
     Ok(draft)
 }
 
@@ -793,5 +973,192 @@ mod tailing_tests {
             assembly_junction_edit::build_intent(&inputs, &base, &draft.junction_edits).unwrap();
         assert_eq!(target.context_revision, unchanged.context_revision);
         assert_eq!(target.target, unchanged.target);
+    }
+}
+
+#[cfg(test)]
+mod paired_oligo_tests {
+    use super::*;
+    use crate::assembly_role_ids::Role;
+    use collagene_core::workspace::Workspace;
+
+    fn captured(name: &str, dna: &str) -> Arc<CapturedSource> {
+        let molecule = Molecule::dna(name, dna, Topology::Linear).unwrap();
+        let workspace = Workspace::from_documents(name, vec![molecule.clone()], 0).unwrap();
+        let document = &workspace.documents[0];
+        Arc::new(CapturedSource {
+            source: SourceInfo {
+                binding: collagene_core::run_lineage::EventBinding {
+                    document_id: document.id.clone(),
+                    event_id: document.head_event.clone().unwrap(),
+                    revision: document.head.clone(),
+                },
+                name: molecule.name.clone(),
+                length: molecule.sequence.len(),
+                alphabet: Alphabet::Dna,
+                topology: Topology::Linear,
+            },
+            molecule,
+        })
+    }
+    fn paired() -> Draft {
+        let mut draft = Draft::default();
+        draft.methods.mode = Mode::Ligation;
+        draft.methods.source_roles = Some(vec![
+            Role {
+                input_id: "backbone-parent".into(),
+                role: "backbone".into(),
+            },
+            Role {
+                input_id: "adaptor-top".into(),
+                role: "adaptor".into(),
+            },
+        ]);
+        for (slot, source) in draft.slots.iter_mut().zip([
+            captured("Backbone", "AAACCC"),
+            captured("Top oligo", "AAGGCC"),
+        ]) {
+            slot.end = source.molecule.sequence.len();
+            slot.captured = Some(source);
+        }
+        draft.methods.rows[1].preparation = OverlapPreparation::AnnealedOligos;
+        draft.methods.rows[1].anneal_options.min_paired_bases = 4;
+        draft.slots[1].anneal_bottom = Some(captured("Bottom oligo", "GGCCTT"));
+        draft.sync_rows();
+        draft.methods.rows[1].anneal_candidate = Some(0);
+        draft.validate().unwrap();
+        draft
+    }
+
+    #[test]
+    fn paired_draft_flattens_three_exact_originals_and_roundtrips_version_four() {
+        let draft = paired();
+        assert_eq!(draft.version, 4);
+        let expected = format!("anneal-bottom-{}", blake3::hash(b"adaptor-top").to_hex());
+        assert_eq!(draft.methods.bottom_input_id(1).unwrap(), expected);
+        assert_eq!(
+            draft.methods.all_input_ids().unwrap(),
+            vec![
+                "backbone-parent".to_string(),
+                "adaptor-top".into(),
+                expected
+            ]
+        );
+        assert_eq!(draft.methods.source_indices().unwrap(), vec![0, 1, 2]);
+        assert_eq!(
+            crate::assembly_alternatives::all_captures(&draft).count(),
+            3,
+            "Workspace restore must validate the bottom event as well as primary contributions"
+        );
+        let restored = decode_version(&encode_raw(&draft).unwrap(), 4).unwrap();
+        assert!(restored == draft);
+        assert_eq!(restored.methods.rows[1].anneal_candidate, Some(0));
+        let mut legacy = draft.clone();
+        legacy.version = 3;
+        assert!(legacy.validate().is_err());
+        assert!(
+            crate::assembly_alternatives::for_storage(&draft)
+                .unwrap()
+                .version
+                == 4
+        );
+        // New ordinary v3 payloads keep the prior strict Slot shape.
+        let ordinary = serde_json::to_value(Draft::default()).unwrap();
+        assert!(
+            ordinary["slots"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|slot| slot.get("anneal_bottom").is_none())
+        );
+        // Missing additive fields remain a legacy, unpaired editable declaration.
+        let mut legacy = ordinary;
+        for slot in legacy["slots"].as_array_mut().unwrap() {
+            slot.as_object_mut().unwrap().remove("anneal_bottom");
+        }
+        for row in legacy["methods"]["rows"].as_array_mut().unwrap() {
+            for name in [
+                "anneal_options",
+                "anneal_candidate",
+                "anneal_bottom_document",
+                "anneal_source_context",
+            ] {
+                row.as_object_mut().unwrap().remove(name);
+            }
+        }
+        let restored = decode(&serde_json::to_vec(&legacy).unwrap()).unwrap();
+        assert_eq!(restored.version, 3);
+        assert!(
+            restored
+                .slots
+                .iter()
+                .all(|slot| slot.anneal_bottom.is_none())
+        );
+    }
+
+    #[test]
+    fn moving_source_slots_keeps_pair_events_options_candidate_and_stable_identity() {
+        let mut draft = paired();
+        let before = draft.clone();
+        let bottom_id = draft.methods.bottom_input_id(1).unwrap();
+        draft.slots.swap(0, 1);
+        draft.methods.swap_rows(0, 1);
+        draft.sync_rows();
+        draft.validate().unwrap();
+        assert!(draft.slots[0].anneal_bottom == before.slots[1].anneal_bottom);
+        assert_eq!(draft.methods.bottom_input_id(0).unwrap(), bottom_id);
+        assert_eq!(draft.methods.rows[0].anneal_candidate, Some(0));
+        assert_eq!(
+            draft.methods.rows[0].anneal_source_context,
+            before.methods.rows[1].anneal_source_context
+        );
+        assert_eq!(draft.methods.source_indices().unwrap(), vec![0, 1, 2]);
+        draft.slots.swap(1, 0);
+        draft.methods.swap_rows(1, 0);
+        draft.sync_rows();
+        assert!(draft == before);
+    }
+
+    #[test]
+    fn equal_dna_different_bottom_event_and_changed_options_clear_candidate() {
+        let mut draft = paired();
+        let prior = draft.methods.rows[1].anneal_source_context.clone();
+        let bottom = Arc::make_mut(draft.slots[1].anneal_bottom.as_mut().unwrap());
+        bottom.source.binding.event_id = "another-original-bottom-event".into();
+        assert!(draft.validate().is_err());
+        draft.sync_rows();
+        assert_eq!(draft.methods.rows[1].anneal_candidate, None);
+        assert_ne!(draft.methods.rows[1].anneal_source_context, prior);
+        draft.methods.rows[1].anneal_candidate = Some(0);
+        draft.methods.rows[1].anneal_options.min_paired_bases = 5;
+        draft.sync_rows();
+        assert_eq!(draft.methods.rows[1].anneal_candidate, None);
+        draft.slots[1].anneal_bottom = None;
+        draft.sync_rows();
+        assert!(draft.methods.source_indices().is_err());
+        assert_eq!(draft.methods.rows[1].anneal_bottom_document, None);
+    }
+
+    #[test]
+    fn collisions_non_ligation_libraries_and_unbounded_oligos_are_rejected() {
+        let mut draft = paired();
+        let secondary = draft.methods.bottom_input_id(1).unwrap();
+        draft.methods.source_roles.as_mut().unwrap()[0].input_id = secondary;
+        assert!(draft.methods.all_input_ids().is_err());
+        let mut wrong = paired();
+        wrong.methods.mode = Mode::Overlap;
+        assert!(wrong.validate().is_err());
+        let mut library =
+            crate::assembly_alternatives::enable(&Draft::default(), "pair-ban").unwrap();
+        library.slots[0].anneal_bottom = paired().slots[1].anneal_bottom.clone();
+        library.sync_rows();
+        assert!(library.validate().unwrap_err().contains("libraries"));
+        let mut too_long = paired();
+        too_long.slots[1].anneal_bottom = Some(captured(
+            "Oversized oligo",
+            &"A".repeat(collagene_core::chemistry::MAX_ANNEAL_OLIGO_BASES + 1),
+        ));
+        too_long.sync_rows();
+        assert!(too_long.validate().is_err());
     }
 }

@@ -43,6 +43,20 @@ impl Draft {
             }),
             combination: crate::assembly_alternatives::identity(self),
             junction_edits: self.junction_edits.clone(),
+            paired_rows: self
+                .methods
+                .rows
+                .iter()
+                .enumerate()
+                .filter_map(|(i, row)| {
+                    (row.preparation == OverlapPreparation::AnnealedOligos).then_some(i)
+                })
+                .collect(),
+            secondary_sources: self
+                .slots
+                .iter()
+                .map(|slot| slot.anneal_bottom.as_ref().map(|s| s.source.clone()))
+                .collect(),
             slots: self
                 .slots
                 .iter()
@@ -77,6 +91,8 @@ struct IntentIdentity {
     roles: Option<Vec<crate::assembly_role_ids::Role>>,
     combination: Option<(String, String, Vec<String>)>,
     junction_edits: Vec<assembly_junction_edit::Edit>,
+    paired_rows: Vec<usize>,
+    secondary_sources: Vec<Option<SourceInfo>>,
     slots: Vec<(
         String,
         Option<SourceInfo>,
@@ -116,6 +132,7 @@ struct Frozen {
     epoch: u64,
     intent: IntendedReference,
     sources: Vec<Arc<CapturedSource>>,
+    input_ids: Vec<String>,
     target_revision: String,
 }
 
@@ -131,7 +148,7 @@ fn inputs_request(
 > {
     draft.validate()?;
     crate::assembly_alternatives::require_active_choice_match(draft)?;
-    let captures = draft
+    let mut captures = draft
         .slots
         .iter()
         .map(|s| {
@@ -144,10 +161,17 @@ fn inputs_request(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let roles = draft.methods.role_ids(captures.len())?;
-    let ids = roles
-        .iter()
-        .map(|role| role.input_id.clone())
-        .collect::<Vec<_>>();
+    let ids = draft.methods.all_input_ids()?;
+    for (index, row) in draft.methods.rows.iter().enumerate() {
+        if row.preparation == OverlapPreparation::AnnealedOligos {
+            captures.push(draft.slots[index].anneal_bottom.clone().ok_or_else(|| {
+                format!(
+                    "Pin the bottom oligo for {} before reviewing intended DNA.",
+                    draft.slots[index].label
+                )
+            })?);
+        }
+    }
     let request = assembly_intent::Request {
         name: draft.name.clone(),
         circular: draft.circular,
@@ -261,7 +285,10 @@ pub fn AssemblyWorkspace(
     Effect::new(move |_| {
         let value = methods.get();
         if draft.with_untracked(|d| d.methods != value) {
-            draft.update(|d| d.methods = value);
+            draft.update(|d| {
+                d.methods = value;
+                d.sync_rows();
+            });
         }
     });
     let frozen = RwSignal::new(None::<Arc<Frozen>>);
@@ -354,6 +381,7 @@ pub fn AssemblyWorkspace(
             return;
         }
         next.slots[index].captured = Some(Arc::new(CapturedSource { source, molecule }));
+        next.slots[index].anneal_bottom = None;
         next.slots[index].start = start;
         next.slots[index].end = end;
         next.slots[index].digest_geometry = None;
@@ -371,6 +399,53 @@ pub fn AssemblyWorkspace(
                 status.set("Source region pinned to this slot. Review the intended construct, then choose or design its PCR primers/preparation.".into());
             }
             Err(e) => status.set(e),
+        }
+    });
+    let pin_bottom = Callback::new(move |()| {
+        let source = active_source.get_untracked();
+        if source.alphabet != Alphabet::Dna
+            || source.topology != Topology::Linear
+            || source.length == 0
+            || source.length > collagene_core::chemistry::MAX_ANNEAL_OLIGO_BASES
+        {
+            status.set(
+                "Choose the actual bottom DNA oligo as a linear 5′→3′ source (at most10000 bases)."
+                    .into(),
+            );
+            return;
+        }
+        let molecule = match get_source.run(source.binding.clone()) {
+            Ok(m) => m,
+            Err(error) => {
+                status.set(error);
+                return;
+            }
+        };
+        if active_source.get_untracked().binding != source.binding {
+            status.set("The viewer source changed; capture the bottom oligo again.".into());
+            return;
+        }
+        let mut next = draft.get_untracked();
+        let index = next.active_slot;
+        if next.methods.mode != Mode::Ligation
+            || next.alternatives.is_some()
+            || index >= next.slots.len()
+            || next.slots[index].captured.is_none()
+        {
+            status.set("Use ordered ligation and pin this fragment’s top oligo before capturing its bottom strand.".into());
+            return;
+        }
+        next.slots[index].anneal_bottom = Some(Arc::new(CapturedSource { source, molecule }));
+        next.methods.rows[index].preparation = OverlapPreparation::AnnealedOligos;
+        next.methods.rows[index].anneal_candidate = None;
+        next.methods.rows[index].repair = None;
+        next.sync_rows();
+        match next.validate() {
+            Ok(()) => {
+                draft.set(next);
+                status.set("Bottom oligo pinned. Review the independently selected top-strand contribution, then inspect and choose an annealing geometry in preparation.".into());
+            }
+            Err(error) => status.set(error),
         }
     });
     let review_intent = Callback::new(move |()| {
@@ -395,6 +470,10 @@ pub fn AssemblyWorkspace(
                 return;
             }
         };
+        let input_ids = inputs
+            .iter()
+            .map(|input| input.id.clone())
+            .collect::<Vec<_>>();
         let job = if declared.junction_edits.is_empty() {
             AnalysisJob::BuildAssemblyIntent { inputs, request }
         } else {
@@ -465,6 +544,7 @@ pub fn AssemblyWorkspace(
                                 epoch: bound_epoch,
                                 intent,
                                 sources: captures,
+                                input_ids,
                                 target_revision,
                             })));
                             status.set("Intended construct ready for review. No cloning method has been verified.".into());
@@ -573,12 +653,14 @@ pub fn AssemblyWorkspace(
             let target_revision = intent.target().revision();
             undo_junction.set(Some((proposal.before.clone(), next.clone())));
             methods.set(next.methods.clone());
+            let input_ids = next.methods.all_input_ids()?;
             draft.set(next);
             frozen.set(Some(Arc::new(Frozen {
                 identity,
                 epoch: proposal.epoch,
                 intent,
                 sources: proposal.sources.clone(),
+                input_ids,
                 target_revision,
             })));
             status.set("Junction edits and selected PCR primers applied together; other preparations were preserved. Compute fresh method evidence against the revised intended reference.".into());
@@ -658,6 +740,7 @@ pub fn AssemblyWorkspace(
             next.active_slot=next.slots.len()-1;next.junction_edits.clear();next.sync_rows();draft.set(next);
         }>"Add fragment slot"</button>
         <Show when=move||draft.with(|d|d.methods.mode!=Mode::Tailing)><details class="assembly-library-options"><summary>"Source alternatives / library"</summary><crate::assembly_alternatives_view::AssemblyAlternativesView draft epoch/></details></Show>
+        <Show when=move||draft.with(|d|d.methods.mode==Mode::Ligation&&d.alternatives.is_none())><details class="assembly-fragment-options"><summary>"Use an annealed oligo insert"</summary><p class="helper">"Pin the top oligo for this slot using Use whole source, then open the bottom oligo in the viewer and capture it below. Both ordered sequences are 5′→3′. The top source region declares your intended reference contribution; add any intended extra junction bases separately, before reaction simulation."</p><button class="button secondary" on:click=move|_|pin_bottom.run(())>"Capture viewer source as bottom oligo"</button><p class="helper">{move||draft.with(|d|d.slots.get(d.active_slot).and_then(|slot|slot.anneal_bottom.as_ref()).map(|capture|format!("Pinned bottom: {} · {} bases",capture.source.name,capture.molecule.sequence.len())).unwrap_or_else(||"No bottom oligo captured for this slot.".into()))}</p></details></Show>
         <section class="assembly-set-fragment"><p>{move||format!("Active viewer source: {} · set {}",active_source.get().name,draft.with(|d|d.slots.get(d.active_slot).map(|s|s.label.as_str()).unwrap_or("selected slot").to_owned()))}</p><button class="button primary" on:click=move|_|pin.run(1)>"Set from sequence selection"</button><button class="button secondary" on:click=move|_|pin.run(0)>"Use whole source"</button><button class="button secondary" on:click=move|_|pin.run(2)>"Keep outside selection"</button><p class="helper">"Keep outside selection retains the complementary path on circular DNA, including an origin crossing. This sets intended source coordinates; it does not digest, amplify or prove a physical fragment."</p></section></div></details>
         <button class="button primary" disabled=move||busy.get() on:click=move|_|review_intent.run(())>"Review intended construct"</button><Show when=move||busy.get()><button class="text-tool" on:click=cancel>"Cancel intended construct"</button></Show><p class="assembly-workspace-status" role="status">{move||status.get()}</p>
         <Show when=move||draft.with(|d|d.methods.mode==Mode::Tailing)><details class="assembly-junction-options"><summary>"Declare intended junction bases"</summary><p class="helper">"Enter the intended top-strand DNA between the selected source regions, in construct order. Tailing changes the junction sequence; linear constructs also retain an outer 3′ terminal base. Declare the intended added bases here before reviewing the intended construct. This declaration is independent of the simulated reaction."</p>
@@ -747,7 +830,20 @@ fn FrozenWorkspace(
             f.sources
                 .iter()
                 .enumerate()
-                .map(|(i, c)| (i, format!("{} · {}", f.identity.slots[i].0, c.source.name)))
+                .map(|(i, c)| {
+                    (
+                        i,
+                        format!(
+                            "{} · {}",
+                            f.identity
+                                .slots
+                                .get(i)
+                                .map(|slot| slot.0.as_str())
+                                .unwrap_or("Bottom oligo"),
+                            c.source.name
+                        ),
+                    )
+                })
                 .collect::<Vec<_>>()
         })
     });
@@ -770,11 +866,10 @@ fn FrozenWorkspace(
             {
                 return Err("Source slots changed; review the intended construct again.".into());
             }
-            let roles = crate::assembly_role_ids::resolve(&f.identity.roles, f.sources.len())?;
             if candidate.plan.target_revision != f.target_revision
                 || candidate.plan.inputs.len() != f.sources.len()
                 || candidate.plan.inputs.iter().enumerate().any(|(i, p)| {
-                    p.id != roles[i].input_id || p.revision != f.sources[i].source.binding.revision
+                    p.id != f.input_ids[i] || p.revision != f.sources[i].source.binding.revision
                 })
             {
                 return Err(
@@ -867,12 +962,11 @@ fn FrozenWorkspace(
                 &f.sources.iter().map(|s| &s.molecule).collect::<Vec<_>>(),
             )
             .map_err(|e| e.to_string())?;
-            let roles = crate::assembly_role_ids::resolve(&f.identity.roles, f.sources.len())?;
-            Ok(roles
-                .into_iter()
+            Ok(f.input_ids
+                .iter()
                 .zip(&f.sources)
                 .map(|(r, c)| PlanInput {
-                    id: r.input_id,
+                    id: r.clone(),
                     revision: c.source.binding.revision.clone(),
                     molecule: c.molecule.clone(),
                 })
@@ -882,7 +976,7 @@ fn FrozenWorkspace(
     view! {<section class="assembly-intended-review"><details class="assembly-intent-details"><summary>{bound.with_value(|f|format!("Intended construct: {} · {} bp",f.intent.target().name,f.intent.target().sequence.len()))}</summary><h3>"2. Review the intended construct"</h3><p>{bound.with_value(|f|format!("{} · {} bp · {}",f.intent.target().name,f.intent.target().sequence.len(),if f.intent.target().topology==Topology::Circular{"circular"}else{"linear"}))}</p><p class="helper">"This sequence is your declared design requirement, assembled from chosen source regions and any explicit junction edits. It is separate from any simulated cloning outcome. Editing a slot clears this review."</p>
         {bound.with_value(|f|match &f.intent{IntendedReference::Junctions(intent)=>Some(view!{<p class="helper">{format!("{} explicit junction edits are included. Ribbon output spans include each adjusted source core and its outgoing synthetic insert; source navigation selects only the adjusted original-source core.",intent.edits.len())}</p>}),_=>None})}
         <div class="assembly-fragment-ribbon" role="group" aria-label="Intended construct fragments">{bound.with_value(|f|f.intent.fragments().iter().enumerate().map(|(i,fragment)|view!{<button class="assembly-ribbon-fragment" on:click=move|_|navigate.run(i)>{format!("{}{} · {} bp · {}–{}",f.identity.slots[i].0,if fragment.reverse{" ←"}else{" →"},fragment.output_end-fragment.output_start,fragment.output_start+1,fragment.output_end)}</button>}).collect_view())}</div>
-        {bound.with_value(|f|{let count=f.intent.fragments().len().saturating_sub(1)+usize::from(f.intent.target().topology==Topology::Circular);if count==0{return view!{<p>"One linear fragment has no internal junction."</p>}.into_any();}view!{<div class="assembly-intended-junction">{move||bound.with_value(|f|{let i=junction.get().min(count-1);let next=(i+1)%f.sources.len();let boundary=f.intent.fragments()[i].output_end;view!{<h4>{format!("Intended junction {} · {} → {}{}",i+1,f.identity.slots[i].0,f.identity.slots[next].0,if i+1==f.sources.len(){" · circle closure"}else{""})}</h4><pre>{intended_window(f.intent.target(),boundary)}</pre><p class="helper">{format!("| marks intended product boundary {} (zero-based). These letters are not a digest/ligation/homology validation.",if boundary==f.intent.target().sequence.len()&&f.intent.target().topology==Topology::Circular{0}else{boundary})}</p><button class="text-tool" on:click=move|_|navigate.run(i)>"View upstream source"</button><button class="text-tool" on:click=move|_|navigate.run(next)>"View downstream source"</button>}})}<div class="method-row-actions"><button class="text-tool" disabled=move||junction.get()==0 on:click=move|_|junction.update(|i|*i=i.saturating_sub(1))>"Previous intended junction"</button><button class="text-tool" disabled=move||{junction.get()+1>=count} on:click=move|_|junction.update(|i|*i=(*i+1).min(count-1))>"Next intended junction"</button></div></div>}.into_any()})}
+        {bound.with_value(|f|{let count=f.intent.fragments().len().saturating_sub(1)+usize::from(f.intent.target().topology==Topology::Circular);if count==0{return view!{<p>"One linear fragment has no internal junction."</p>}.into_any();}view!{<div class="assembly-intended-junction">{move||bound.with_value(|f|{let i=junction.get().min(count-1);let next=(i+1)%f.intent.fragments().len();let boundary=f.intent.fragments()[i].output_end;view!{<h4>{format!("Intended junction {} · {} → {}{}",i+1,f.identity.slots[i].0,f.identity.slots[next].0,if i+1==f.intent.fragments().len(){" · circle closure"}else{""})}</h4><pre>{intended_window(f.intent.target(),boundary)}</pre><p class="helper">{format!("| marks intended product boundary {} (zero-based). These letters are not a digest/ligation/homology validation.",if boundary==f.intent.target().sequence.len()&&f.intent.target().topology==Topology::Circular{0}else{boundary})}</p><button class="text-tool" on:click=move|_|navigate.run(i)>"View upstream source"</button><button class="text-tool" on:click=move|_|navigate.run(next)>"View downstream source"</button>}})}<div class="method-row-actions"><button class="text-tool" disabled=move||junction.get()==0 on:click=move|_|junction.update(|i|*i=i.saturating_sub(1))>"Previous intended junction"</button><button class="text-tool" disabled=move||{junction.get()+1>=count} on:click=move|_|junction.update(|i|*i=(*i+1).min(count-1))>"Next intended junction"</button></div></div>}.into_any()})}
         </details>
         {bound.with_value(|f|warnings(&f.intent).iter().map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view())}
         <h3>{move||draft.with(|d|if d.methods.mode==Mode::MultiSiteReference{"3. Reconstruct and choose a reference component"}else{"3. Prepare fragments and verify the method"})}</h3><p class="helper">{move||draft.with(|d|if d.methods.mode==Mode::MultiSiteReference{"Reconstruct the whole original parents under the reviewed site profile, then choose a reciprocal component explicitly. The intended reference remains a separate requirement; sequence agreement does not establish physical recombination."}else{"PCR rows begin with no primer sequences. Suggest and explicitly apply primers, or choose another declared preparation. The pinned original sources remain the inputs; the intended reference is never used as physical source material."})}</p>

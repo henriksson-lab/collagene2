@@ -64,6 +64,13 @@ fn recipe_shape(recipe: &Recipe) -> Result<(), Error> {
                     }
                 }
             }
+            preparation::Preparation::AnnealedOligos {
+                bottom_input_id,
+                options,
+                candidate_index,
+            } => {
+                preparation::anneal_shape(bottom_input_id, options, *candidate_index)?;
+            }
             preparation::Preparation::CatalogDigest { selection, .. } => {
                 selection.validate()?;
             }
@@ -327,6 +334,16 @@ fn validate_preparation_prefix(
         let original = Source::Input(spec.input_id.clone());
         let operation = match &spec.preparation {
             Preparation::WholeLinear => None,
+            Preparation::AnnealedOligos {
+                bottom_input_id,
+                options,
+                candidate_index,
+            } => Some(Operation::AnnealOligos {
+                top: original.clone(),
+                bottom: Source::Input(bottom_input_id.clone()),
+                options: options.clone(),
+                candidate_index: *candidate_index,
+            }),
             Preparation::DeclaredDuplex { left, right } => Some(Operation::DeclareSourceTermini {
                 template: original.clone(),
                 left: *left,
@@ -488,6 +505,10 @@ impl Preview {
                 }
             }
         }
+        preparation::validate_prepared_inputs(
+            &self.compiled.plan.inputs,
+            &self.compiled.plan.steps,
+        )?;
         for input in &self.compiled.plan.inputs {
             if preparation::hash(&input.molecule)? != input.revision {
                 return Err(bad("original source content/revision differs"));
@@ -525,6 +546,7 @@ impl Preview {
                     !matches!(
                         s,
                         Operation::Pcr { .. }
+                            | Operation::AnnealOligos { .. }
                             | Operation::DeclareSourceTermini { .. }
                             | Operation::Digest { .. }
                             | Operation::CatalogDigest { .. }

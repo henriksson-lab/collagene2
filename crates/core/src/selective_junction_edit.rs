@@ -36,6 +36,13 @@ fn raw_preparation(f: &FragmentSpec) -> Result<(), Error> {
         Ok(())
     };
     match &f.preparation {
+        Preparation::AnnealedOligos {
+            bottom_input_id,
+            options,
+            candidate_index,
+        } => {
+            assembly_recipe::anneal_shape(bottom_input_id, options, *candidate_index)?;
+        }
         Preparation::ExactPcr { forward, reverse } => {
             primer(forward)?;
             primer(reverse)?;

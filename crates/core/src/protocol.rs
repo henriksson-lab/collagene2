@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 70;
+pub const WORKER_SCHEMA_VERSION: u16 = 71;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 16;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -1703,6 +1703,36 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         _ => 5,
     };
     check_variant_version(bytes, required)?;
+    check_preparation_version(bytes, &response.result)?;
+    // Existing generic AnnealOligos plans keep their historical version. These
+    // recipe previews newly admit annealing as a row preparation in schema71.
+    match &response.result {
+        AnalysisResult::OverlapRecipePreview(p)
+            if p.compiled
+                .rows
+                .iter()
+                .any(|r| annealed_preparation(&p.compiled.plan, r)) =>
+        {
+            check_variant_version(bytes, 71)?
+        }
+        AnalysisResult::LigationRecipePreview(p)
+            if p.compiled
+                .rows
+                .iter()
+                .any(|r| annealed_preparation(&p.compiled.plan, &r.preparation)) =>
+        {
+            check_variant_version(bytes, 71)?
+        }
+        AnalysisResult::TailingRecipePreview(p)
+            if p.compiled
+                .rows
+                .iter()
+                .any(|r| annealed_preparation(&p.compiled.plan, &r.preparation)) =>
+        {
+            check_variant_version(bytes, 71)?
+        }
+        _ => {}
+    }
     if let AnalysisResult::AnnotationImport(report) = &response.result {
         check_annotation_format_version(bytes, report.format)?;
     }
@@ -2849,10 +2879,227 @@ fn check_scientific_report_version(bytes: &[u8], engine: &str) -> Result<(), Err
     }
     Ok(())
 }
+fn annealed_preparation(
+    plan: &crate::verification::DesignPlan,
+    row: &crate::assembly_recipe::PreparedRow,
+) -> bool {
+    row.preparation_step
+        .and_then(|i| plan.steps.get(i))
+        .is_some_and(|step| matches!(step, crate::verification::Operation::AnnealOligos { .. }))
+}
+// A post-decode semantic gate for an appended nested enum. This visits borrowed
+// typed shapes without allocating an intermediate JSON value or copying DNA.
+// Byte payloads remain opaque; recognized workspace records have their own
+// decoded typed request checks below.
+mod preparation_shape {
+    use serde::Serialize;
+    use serde::ser::{
+        self, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant, SerializeTuple,
+        SerializeTupleStruct, SerializeTupleVariant,
+    };
+    #[derive(Debug)]
+    pub struct Found;
+    impl std::fmt::Display for Found {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("annealed-oligo recipe capability requires worker schema 71")
+        }
+    }
+    impl std::error::Error for Found {}
+    impl ser::Error for Found {
+        fn custom<T: std::fmt::Display>(_: T) -> Self {
+            Self
+        }
+    }
+    pub struct Visitor;
+    fn variant(name: &str, variant: &str) -> Result<(), Found> {
+        if name == "Preparation" && variant == "AnnealedOligos" {
+            Err(Found)
+        } else {
+            Ok(())
+        }
+    }
+    macro_rules! scalar {
+        ($($method:ident($ty:ty)),* $(,)?) => { $(fn $method(self, _: $ty) -> Result<(),Found> { Ok(()) })* };
+    }
+    impl ser::Serializer for Visitor {
+        type Ok = ();
+        type Error = Found;
+        type SerializeSeq = Self;
+        type SerializeTuple = Self;
+        type SerializeTupleStruct = Self;
+        type SerializeTupleVariant = Self;
+        type SerializeMap = Self;
+        type SerializeStruct = Self;
+        type SerializeStructVariant = Self;
+        scalar!(
+            serialize_bool(bool),
+            serialize_i8(i8),
+            serialize_i16(i16),
+            serialize_i32(i32),
+            serialize_i64(i64),
+            serialize_i128(i128),
+            serialize_u8(u8),
+            serialize_u16(u16),
+            serialize_u32(u32),
+            serialize_u64(u64),
+            serialize_u128(u128),
+            serialize_f32(f32),
+            serialize_f64(f64),
+            serialize_char(char),
+            serialize_str(&str),
+            serialize_bytes(&[u8])
+        );
+        fn serialize_none(self) -> Result<(), Found> {
+            Ok(())
+        }
+        fn serialize_some<T: ?Sized + Serialize>(self, v: &T) -> Result<(), Found> {
+            v.serialize(Self)
+        }
+        fn serialize_unit(self) -> Result<(), Found> {
+            Ok(())
+        }
+        fn serialize_unit_struct(self, _: &'static str) -> Result<(), Found> {
+            Ok(())
+        }
+        fn serialize_unit_variant(
+            self,
+            n: &'static str,
+            _: u32,
+            v: &'static str,
+        ) -> Result<(), Found> {
+            variant(n, v)
+        }
+        fn serialize_newtype_struct<T: ?Sized + Serialize>(
+            self,
+            _: &'static str,
+            v: &T,
+        ) -> Result<(), Found> {
+            v.serialize(Self)
+        }
+        fn serialize_newtype_variant<T: ?Sized + Serialize>(
+            self,
+            n: &'static str,
+            _: u32,
+            v: &'static str,
+            value: &T,
+        ) -> Result<(), Found> {
+            variant(n, v)?;
+            // Native archive bytes are inspected through check_workspace_version,
+            // not traversed one scalar byte at a time by this shape-only visitor.
+            if n == "AnalysisResult" && v == "WorkspaceSaved" {
+                return Ok(());
+            }
+            value.serialize(Self)
+        }
+        fn serialize_seq(self, _: Option<usize>) -> Result<Self, Found> {
+            Ok(self)
+        }
+        fn serialize_tuple(self, _: usize) -> Result<Self, Found> {
+            Ok(self)
+        }
+        fn serialize_tuple_struct(self, _: &'static str, _: usize) -> Result<Self, Found> {
+            Ok(self)
+        }
+        fn serialize_tuple_variant(
+            self,
+            n: &'static str,
+            _: u32,
+            v: &'static str,
+            _: usize,
+        ) -> Result<Self, Found> {
+            variant(n, v)?;
+            Ok(self)
+        }
+        fn serialize_map(self, _: Option<usize>) -> Result<Self, Found> {
+            Ok(self)
+        }
+        fn serialize_struct(self, _: &'static str, _: usize) -> Result<Self, Found> {
+            Ok(self)
+        }
+        fn serialize_struct_variant(
+            self,
+            n: &'static str,
+            _: u32,
+            v: &'static str,
+            _: usize,
+        ) -> Result<Self, Found> {
+            variant(n, v)?;
+            Ok(self)
+        }
+        fn collect_str<T: ?Sized + std::fmt::Display>(self, _: &T) -> Result<(), Found> {
+            Ok(())
+        }
+    }
+    macro_rules! sequence {
+        ($trait:ident,$method:ident) => {
+            impl $trait for Visitor {
+                type Ok = ();
+                type Error = Found;
+                fn $method<T: ?Sized + Serialize>(&mut self, v: &T) -> Result<(), Found> {
+                    v.serialize(Visitor)
+                }
+                fn end(self) -> Result<(), Found> {
+                    Ok(())
+                }
+            }
+        };
+    }
+    sequence!(SerializeSeq, serialize_element);
+    sequence!(SerializeTuple, serialize_element);
+    sequence!(SerializeTupleStruct, serialize_field);
+    sequence!(SerializeTupleVariant, serialize_field);
+    impl SerializeMap for Visitor {
+        type Ok = ();
+        type Error = Found;
+        fn serialize_key<T: ?Sized + Serialize>(&mut self, v: &T) -> Result<(), Found> {
+            v.serialize(Visitor)
+        }
+        fn serialize_value<T: ?Sized + Serialize>(&mut self, v: &T) -> Result<(), Found> {
+            v.serialize(Visitor)
+        }
+        fn end(self) -> Result<(), Found> {
+            Ok(())
+        }
+    }
+    macro_rules! structure {
+        ($trait:ident) => {
+            impl $trait for Visitor {
+                type Ok = ();
+                type Error = Found;
+                fn serialize_field<T: ?Sized + Serialize>(
+                    &mut self,
+                    key: &'static str,
+                    v: &T,
+                ) -> Result<(), Found> {
+                    if key == "bytes" {
+                        Ok(())
+                    } else {
+                        v.serialize(Visitor)
+                    }
+                }
+                fn end(self) -> Result<(), Found> {
+                    Ok(())
+                }
+            }
+        };
+    }
+    structure!(SerializeStruct);
+    structure!(SerializeStructVariant);
+}
+fn check_preparation_version(bytes: &[u8], value: &impl Serialize) -> Result<(), Error> {
+    if u16::from_le_bytes([bytes[4], bytes[5]]) < 71 {
+        value
+            .serialize(preparation_shape::Visitor)
+            .map_err(|e| Error::Format(e.to_string()))?;
+    }
+    Ok(())
+}
+
 fn check_combinatorial_request_version(
     bytes: &[u8],
     request: &crate::combinatorial_batch::Request,
 ) -> Result<(), Error> {
+    check_preparation_version(bytes, request)?;
     use crate::combinatorial_design::Method;
     let required = |method: &Method| match method {
         Method::MultiSiteReference { .. } => 69,
@@ -2882,7 +3129,9 @@ fn check_workspace_version(
         check_variant_version(bytes, plan_worker_version(&candidate.plan))?;
     }
     for attachment in workspace.attachments.values() {
-        if attachment.kind == crate::run_lineage::WORKSPACE_ATTACHMENT_KIND {
+        if attachment.kind == "assembly-draft-v4" {
+            check_variant_version(bytes, 71)?;
+        } else if attachment.kind == crate::run_lineage::WORKSPACE_ATTACHMENT_KIND {
             check_variant_version(bytes, 12)?;
             let record = crate::run_lineage::load_run_record(&attachment.bytes)?;
             check_variant_version(bytes, plan_worker_version(&record.plan))?;
@@ -3333,6 +3582,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         _ => 5,
     };
     check_variant_version(bytes, required)?;
+    check_preparation_version(bytes, &r.job)?;
     if let AnalysisJob::BeginCombinatorialBatch { workspace, matrix } = &r.job {
         check_workspace_version(bytes, workspace)?;
         check_combinatorial_request_version(bytes, matrix)?;

@@ -2,7 +2,7 @@
 use crate::{assembly_role_ids::Role, golden_gate_pool_form::PoolForm};
 use collagene_core::{
     analysis::Primer,
-    chemistry::{EndRepairMethod, EndTreatment, FivePrime, Terminus, ThreePrime},
+    chemistry::{AnnealOptions, EndRepairMethod, EndTreatment, FivePrime, Terminus, ThreePrime},
     overlap_profiles::{OverlapMethod, ProfileOptions},
     tailing::TailingBase,
     verification::TailSubstrate,
@@ -109,6 +109,7 @@ pub enum OverlapPreparation {
     CatalogDigest,
     ExactPcr,
     PcrCatalogDigest,
+    AnnealedOligos,
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OverlapInput {
@@ -133,6 +134,18 @@ pub struct OverlapInput {
     pub reverse_tail: String,
     #[serde(default)]
     pub right_fusion: String,
+    #[serde(default, skip_serializing_if = "default_anneal_options")]
+    pub anneal_options: AnnealOptions,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anneal_candidate: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anneal_bottom_document: Option<usize>,
+    /// Documentary selection context only; physical authority requires replay.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anneal_source_context: Option<String>,
+}
+fn default_anneal_options(options: &AnnealOptions) -> bool {
+    *options == AnnealOptions::default()
 }
 impl Default for OverlapInput {
     fn default() -> Self {
@@ -156,6 +169,10 @@ impl Default for OverlapInput {
             forward_tail: String::new(),
             reverse_tail: String::new(),
             right_fusion: String::new(),
+            anneal_options: AnnealOptions::default(),
+            anneal_candidate: None,
+            anneal_bottom_document: None,
+            anneal_source_context: None,
         }
     }
 }
@@ -206,6 +223,13 @@ impl OverlapInput {
                 self.reverse_primer.len(),
                 self.forward_tail.len(),
                 self.reverse_tail.len()
+            ),
+            OverlapPreparation::AnnealedOligos => format!(
+                "Anneal original top/bottom oligos · {} paired bases minimum · {}",
+                self.anneal_options.min_paired_bases,
+                self.anneal_candidate
+                    .map(|index| format!("explicit candidate {}", index + 1))
+                    .unwrap_or_else(|| "choose an annealing candidate".into())
             ),
         };
         format!(
@@ -377,6 +401,51 @@ impl Default for MethodsState {
     }
 }
 impl MethodsState {
+    pub(crate) fn bottom_input_id(&self, row: usize) -> Result<String, String> {
+        if self
+            .rows
+            .get(row)
+            .is_none_or(|input| input.preparation != OverlapPreparation::AnnealedOligos)
+        {
+            return Err("Choose an active paired-oligo preparation row.".into());
+        }
+        let roles = self.role_ids(self.rows.len())?;
+        Ok(format!(
+            "anneal-bottom-{}",
+            blake3::hash(roles[row].input_id.as_bytes()).to_hex()
+        ))
+    }
+    pub(crate) fn all_input_ids(&self) -> Result<Vec<String>, String> {
+        let mut ids = self
+            .role_ids(self.rows.len())?
+            .into_iter()
+            .map(|role| role.input_id)
+            .collect::<Vec<_>>();
+        for (index, row) in self.rows.iter().enumerate() {
+            if row.preparation == OverlapPreparation::AnnealedOligos {
+                ids.push(self.bottom_input_id(index)?);
+            }
+        }
+        if ids.iter().collect::<std::collections::BTreeSet<_>>().len() != ids.len() {
+            return Err("Primary and paired-oligo input identities collide.".into());
+        }
+        Ok(ids)
+    }
+    pub(crate) fn source_indices(&self) -> Result<Vec<usize>, String> {
+        if self.mode == Mode::Tailing {
+            return Ok(vec![self.vector.document, self.insert.document]);
+        }
+        self.all_input_ids()?;
+        let mut indices = self.rows.iter().map(|row| row.document).collect::<Vec<_>>();
+        for row in &self.rows {
+            if row.preparation == OverlapPreparation::AnnealedOligos {
+                indices.push(row.anneal_bottom_document.ok_or(
+                    "Capture the original bottom oligo before reconstructing its preparation.",
+                )?);
+            }
+        }
+        Ok(indices)
+    }
     pub(crate) fn role_ids(&self, count: usize) -> Result<Vec<Role>, String> {
         if self.mode == Mode::MultiSiteReference && self.source_roles.is_none() {
             return crate::multisite_form::ordinary_roles(count);

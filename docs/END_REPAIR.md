@@ -35,3 +35,28 @@ Defaults are 12 paired bases, 20 million compared bases and 100 retained candida
 `cargo test -p collagene-core --test end_repair --locked` uses manually specified 5′/3′/mixed overhangs and resulting actual strand strings, both chemical termini, reverse-orientation equivalence, retained/rejected nick boundaries, explicit phosphorylation before ligation and complete source-to-product ancestry coverage. An independent absolute-reference interval matrix checks every overlapping strand interval pair on multiple concrete reference strings. Annealing is compared against 12,288 independent three-base pair/minimum-overlap cases using manual allele complements and coordinate overlays, without another cloning program as an oracle. Separate tests cover repeated offsets, partial/candidate limits, no matches, unknown/blocked states, RNA/ambiguity, JSON reconstruction and output bounds.
 
 The web End repair / annealing panel computes restriction-derived repair and annealing previews in workers. Its active document remains an independently selected target; reviewing a candidate does not verify it. Optional phosphorylation and no-nick circular ligation are separate typed steps. Opening a preview creates a reference document whose metadata cannot authorize later physical operations. HTML/PDF step sheets include exact ordered oligos and declared terminal chemistry; native workspace plan schema 2 and candidate v4 distinguish the new operations.
+
+## Annealed insert plus a digested backbone
+
+Use **Design assembly → Digest and ligate** for a connected source-to-product
+workflow. Set the backbone slot from its actual pinned virtual-digest fragment.
+For the insert slot, open the ordered top oligo and choose **Use whole source**
+(or explicitly declare its intended source interval). Open the ordered bottom
+oligo, expand **Use an annealed oligo insert**, and capture the viewer source as
+the bottom strand. Both original sequences are written5′→3′.
+
+Review the intended construct from the independently selected backbone and top
+contributions. The bottom source remains bound to the declaration but is not
+concatenated into that reference as a third fragment. In the active preparation
+card, set pairing/search limits and declared termini, inspect the annealing
+geometries, and explicitly choose one. Phosphorylation after annealing is a
+separate terminal-treatment choice. Compute the full preparation/ligation against
+the frozen target before reviewing the product and creating named outputs.
+
+The plan retains the backbone and both oligo originals; it reconstructs catalog
+digestion, annealing, treatment and ligation in one verifier pass. Step sheets
+include both complete ordered oligos. Opened reference previews cannot replace
+these original operations. Saving/restoring a paired draft checks all three
+retained source events. Paired drafts use version4; combinatorial paired-source
+projection is not yet implemented. Existing plan14/candidate16 formats already
+represent the physical operations; worker71 adds the shared recipe preparation.

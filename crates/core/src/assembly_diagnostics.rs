@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
 dto! {#[derive(Copy,PartialEq,Eq)] pub enum RowState {InputReference,Reconstructed,Failed,Blocked}}
-dto! {#[derive(Copy,PartialEq,Eq)] pub enum Stage {Pcr,Digest,Repair,EndTreatment,SourceDeclaration,OverlapAssembly,LigationAssembly,TargetComparison}}
+dto! {#[derive(Copy,PartialEq,Eq)] pub enum Stage {Pcr,Digest,Repair,EndTreatment,SourceDeclaration,OverlapAssembly,LigationAssembly,TargetComparison,Annealing}}
 dto! {#[derive(Copy,PartialEq,Eq)] pub enum JunctionState {ExactHomology,HomologyMismatch,HomologyUnavailable,EndpointsAvailable,EndpointsUnavailable}}
 dto! {pub struct Row {pub index:usize,pub role:String,pub input_id:String,pub reverse:bool,pub state:RowState,pub preparation_step:Option<usize>,pub repair_step:Option<usize>,pub completed_steps:usize,pub total_steps:usize}}
 dto! {pub struct Failure {pub step:usize,pub stage:Stage,pub row:Option<usize>,pub upstream:Option<usize>,pub downstream:Option<usize>,pub message:String,pub recovery:String}}
@@ -45,6 +45,7 @@ fn template(op: &Operation) -> Option<&Source> {
 fn stage(op: &Operation) -> Result<Stage, Error> {
     Ok(match op {
         Operation::Pcr { .. } => Stage::Pcr,
+        Operation::AnnealOligos { .. } => Stage::Annealing,
         Operation::Digest { .. } | Operation::CatalogDigest { .. } => Stage::Digest,
         Operation::RepairEnds { .. } => Stage::Repair,
         Operation::TreatEnds { .. } => Stage::EndTreatment,
@@ -78,6 +79,7 @@ fn guard(
         ));
     }
     verification::validate_reference_steps(plan)?;
+    assembly_recipe::validate_prepared_inputs(&plan.inputs, &plan.steps)?;
     let mut ids = BTreeSet::new();
     for input in &plan.inputs {
         if input.id.trim().is_empty() || input.id.len() > 128 || !ids.insert(&input.id) {
@@ -103,7 +105,8 @@ fn guard(
     }
     Ok(())
 }
-// A row's native preparation is Input, or one initial Input operation, optionally
+// A row's native preparation is Input, one initial Input operation, or annealing
+// of its own top original plus a separately bound bottom original; optionally
 // PCR->CatalogDigest, then explicit repair. No steps may be skipped or shared.
 fn preparation(
     plan: &DesignPlan,
@@ -132,14 +135,25 @@ fn preparation(
             return Err(bad("preparation chain is not in compiler order"));
         }
         let op = &plan.steps[first];
-        if !matches!(
-            op,
+        let initial_bound = match op {
+            Operation::AnnealOligos {
+                top,
+                bottom: Source::Input(bottom),
+                ..
+            } => {
+                same(top, &input)
+                    && bottom != &row.input_id
+                    && plan.inputs.iter().any(|i| &i.id == bottom)
+            }
             Operation::Pcr { .. }
-                | Operation::Digest { .. }
-                | Operation::CatalogDigest { .. }
-                | Operation::DeclareSourceTermini { .. }
-        ) || !template(op).is_some_and(|s| same(s, &input))
-        {
+            | Operation::Digest { .. }
+            | Operation::CatalogDigest { .. }
+            | Operation::DeclareSourceTermini { .. } => {
+                template(op).is_some_and(|s| same(s, &input))
+            }
+            _ => false,
+        };
+        if !initial_bound {
             return Err(bad(
                 "initial preparation must consume its own original input",
             ));
@@ -232,6 +246,10 @@ fn prepared_binding(
 }
 fn failure(step: usize, stage: Stage, row: Option<usize>) -> Failure {
     let (message, recovery) = match stage {
+        Stage::Annealing => (
+            "No product was retained for this oligo-annealing step.",
+            "Review both independently bound original oligos, explicit terminal assumptions, selected placement and search limits; no stock duplex is substituted.",
+        ),
         Stage::Pcr => (
             "No product was retained for this PCR step.",
             "Review this row's actual domains, tails and selected source; rerun preparation to inspect all possible placements.",

@@ -68,6 +68,13 @@ pub fn source_preflight(
                     }
                 }
             }
+            preparation::Preparation::AnnealedOligos {
+                bottom_input_id,
+                options,
+                candidate_index,
+            } => {
+                preparation::anneal_shape(bottom_input_id, options, *candidate_index)?;
+            }
             preparation::Preparation::CatalogDigest { selection, .. } => {
                 selection.validate()?;
             }
@@ -338,6 +345,10 @@ impl Preview {
                 }
             }
         }
+        preparation::validate_prepared_inputs(
+            &self.compiled.plan.inputs,
+            &self.compiled.plan.steps,
+        )?;
         if self.verification.plan_revision != preparation::hash(&self.compiled.plan)?
             || self.verification.target_revision != self.compiled.plan.target_revision
         {
@@ -358,6 +369,7 @@ impl Preview {
                     !matches!(
                         s,
                         Operation::Pcr { .. }
+                            | Operation::AnnealOligos { .. }
                             | Operation::DeclareSourceTermini { .. }
                             | Operation::Digest { .. }
                             | Operation::CatalogDigest { .. }
@@ -370,6 +382,7 @@ impl Preview {
         }
         for (index, (row, fragment)) in self.compiled.rows.iter().zip(fragments).enumerate() {
             let p = &row.preparation;
+            preparation::validate_annealed_row(p, &self.compiled.plan.steps)?;
             if p.row_index != index
                 || p.role.len() > 128
                 || p.input_id.len() > 128

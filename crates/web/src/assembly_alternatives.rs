@@ -301,13 +301,17 @@ fn stage(draft: &Draft) -> Result<Draft, String> {
     Ok(draft.clone())
 }
 fn finish(mut draft: Draft) -> Result<Draft, String> {
-    draft.methods.source_roles = roles_for_active(&draft)?;
+    if draft.alternatives.is_some() {
+        draft.methods.source_roles = roles_for_active(&draft)?;
+    }
     draft.validate()?;
     Ok(draft)
 }
 fn save_inner(draft: &mut Draft) -> Result<(), String> {
     require_active_choice_match(draft)?;
-    draft.methods.source_roles = roles_for_active(draft)?;
+    if draft.alternatives.is_some() {
+        draft.methods.source_roles = roles_for_active(draft)?;
+    }
     let saved = edits(draft);
     let labels = draft
         .slots
@@ -406,7 +410,7 @@ pub fn for_storage(draft: &Draft) -> Result<Draft, String> {
     if require_active_choice_match(&next).is_ok() {
         save_inner(&mut next)?;
     }
-    next.version = 3;
+    next.version = next.version.max(3);
     finish(next)
 }
 pub fn capture_active_choice(draft: &Draft) -> Result<Draft, String> {
@@ -623,14 +627,25 @@ pub fn all_captures(draft: &Draft) -> impl Iterator<Item = &CapturedSource> {
     draft
         .slots
         .iter()
-        .filter_map(|slot| slot.captured.as_deref())
+        .flat_map(|slot| {
+            [slot.captured.as_deref(), slot.anneal_bottom.as_deref()]
+                .into_iter()
+                .flatten()
+        })
         .chain(
             draft
                 .alternatives
                 .iter()
                 .flat_map(|l| &l.bins)
                 .flat_map(|bin| &bin.choices)
-                .filter_map(|choice| choice.slot.captured.as_deref()),
+                .flat_map(|choice| {
+                    [
+                        choice.slot.captured.as_deref(),
+                        choice.slot.anneal_bottom.as_deref(),
+                    ]
+                    .into_iter()
+                    .flatten()
+                }),
         )
 }
 
@@ -689,6 +704,7 @@ mod tests {
             end: captured.molecule.sequence.len(),
             reverse: false,
             digest_geometry: None,
+            anneal_bottom: None,
             captured: Some(captured),
         };
         draft.sync_rows();

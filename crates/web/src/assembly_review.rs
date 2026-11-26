@@ -449,6 +449,167 @@ mod tests {
         (frame, staged.target, staged.sources, candidate)
     }
     #[test]
+    fn paired_insert_stages_two_contributions_and_finalizes_all_three_exact_parents() {
+        use crate::cloning_methods_model::{MethodsState, Mode, OverlapPreparation, Treatment};
+        use collagene_core::{
+            catalog_digest, cloning_outputs, ligation_recipe, run_lineage, verification,
+        };
+        let originals = vec![
+            Molecule::dna("Backbone original", "GGAATTCTTACG", Topology::Circular).unwrap(),
+            Molecule::dna("Top original", "AATTGCTACG", Topology::Linear).unwrap(),
+            Molecule::dna("Bottom original", "AATTCGTAGC", Topology::Linear).unwrap(),
+        ];
+        let frame = Workspace::from_documents("Three original events", originals, 0).unwrap();
+        let mut state = MethodsState::default();
+        state.mode = Mode::Ligation;
+        let catalog = catalog_digest::builtin_catalog().unwrap();
+        let ecori = catalog
+            .edition()
+            .enzymes
+            .iter()
+            .find(|enzyme| enzyme.name == "EcoRI")
+            .unwrap()
+            .id
+            .clone();
+        state.rows[0].preparation = OverlapPreparation::CatalogDigest;
+        state.rows[0].catalog_selection = Some(catalog_digest::select(&catalog, &[ecori]).unwrap());
+        state.rows[1].preparation = OverlapPreparation::AnnealedOligos;
+        state.rows[1].anneal_bottom_document = Some(2);
+        state.rows[1].anneal_options.min_paired_bases = 6;
+        state.rows[1].anneal_candidate = Some(0);
+        state.rows[1].treatment = Treatment::Phosphorylate;
+        let ids = state.all_input_ids().unwrap();
+        let bindings = frame
+            .documents
+            .iter()
+            .map(|document| EventBinding {
+                document_id: document.id.clone(),
+                event_id: document.head_event.clone().unwrap(),
+                revision: document.head.clone(),
+            })
+            .collect::<Vec<_>>();
+        let inputs = ids
+            .iter()
+            .zip(&bindings)
+            .map(|(id, binding)| PlanInput {
+                id: id.clone(),
+                revision: binding.revision.clone(),
+                molecule: frame.revisions[&binding.revision].clone(),
+            })
+            .collect::<Vec<_>>();
+        let roles = state.role_ids(2).unwrap();
+        let declaration = assembly_intent::Request {
+            name: "Independent two-contribution intent".into(),
+            circular: true,
+            fragments: vec![
+                Fragment {
+                    role: roles[0].role.clone(),
+                    input_id: ids[0].clone(),
+                    start: 2,
+                    end: 14,
+                    reverse: false,
+                },
+                Fragment {
+                    role: roles[1].role.clone(),
+                    input_id: ids[1].clone(),
+                    start: 0,
+                    end: 10,
+                    reverse: false,
+                },
+            ],
+        };
+        let intent =
+            IntendedReference::Regions(assembly_intent::build(&inputs, &declaration).unwrap());
+        // Literal independent expectation precedes actual digestion/annealing.
+        assert_eq!(intent.target().sequence.as_str(), "AATTCTTACGGGAATTGCTACG");
+        assert_eq!(intent.fragments().len(), 2);
+        let (_, rows) = crate::cloning_preparations::prepared_rows(&state, 3).unwrap();
+        let recipe = ligation_recipe::Recipe {
+            name: "Backbone and annealed insert".into(),
+            circular: true,
+            allow_nicked: false,
+            fragments: rows
+                .into_iter()
+                .zip(&state.rows)
+                .map(|(source, row)| ligation_recipe::Fragment {
+                    source,
+                    treatment: row.treatment.operation(),
+                })
+                .collect(),
+        };
+        let compiled = ligation_recipe::compile(&inputs, intent.target(), &recipe).unwrap();
+        assert_eq!(compiled.plan.inputs.len(), 3);
+        assert_eq!(
+            verification::verify(&compiled.plan, intent.target()).status,
+            verification::Status::ConsistentUnderAssumptions
+        );
+        assert!(compiled.plan.steps.iter().any(|step|matches!(step,Operation::AnnealOligos{top:Source::Input(top),bottom:Source::Input(bottom),..} if top==&ids[1]&&bottom==&ids[2])));
+        let candidate = Candidate::new(compiled.plan);
+        let before = serde_json::to_value(&frame).unwrap();
+        let staged = stage_any(&frame, &intent, &bindings, &candidate).unwrap();
+        assert_eq!(serde_json::to_value(&frame).unwrap(), before);
+        assert_eq!(staged.sources.len(), 3);
+        for (index, pinned) in staged.sources.iter().enumerate() {
+            assert_eq!(pinned.input_id, ids[index]);
+            assert_eq!(pinned.event, bindings[index]);
+        }
+        let intended_event = staged
+            .workspace
+            .history
+            .iter()
+            .find(|event| event.id == staged.target.event_id)
+            .unwrap();
+        assert_eq!(
+            intended_event
+                .parents
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>(),
+            bindings.iter().map(|source| &source.event_id).collect()
+        );
+        let committed = cloning_outputs::finalize(
+            &staged.workspace,
+            &candidate.plan,
+            staged.target.clone(),
+            staged.sources.clone(),
+            &cloning_outputs::Options {
+                name: "Named adaptor clone".into(),
+                show_prepared: false,
+                save_primers: false,
+                allow_incomplete: false,
+            },
+        )
+        .unwrap();
+        let recorded =
+            run_lineage::load_run(&committed.workspace, &committed.receipt.run.run_id).unwrap();
+        assert_eq!(recorded.inputs.len(), 3);
+        for original in &bindings {
+            assert!(recorded.inputs.iter().any(|input| &input.event == original));
+            assert!(
+                committed
+                    .workspace
+                    .history
+                    .iter()
+                    .any(|event| event.id == original.event_id)
+            );
+            assert!(
+                committed
+                    .workspace
+                    .revisions
+                    .contains_key(&original.revision)
+            );
+        }
+        assert_eq!(
+            committed.workspace.revisions[&committed.receipt.construct.revision]
+                .sequence
+                .as_str(),
+            "AATTCTTACGGGAATTGCTACG"
+        );
+        assert_eq!(
+            committed.workspace.revisions[&committed.receipt.construct.revision].name,
+            "Named adaptor clone"
+        );
+    }
+    #[test]
     fn existing_target_outputs_stage_only_the_candidate_without_inventing_intent() {
         let (frame, target, sources, candidate) = existing_fixture();
         let before = serde_json::to_value(&frame).unwrap();

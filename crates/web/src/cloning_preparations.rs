@@ -13,15 +13,15 @@ pub(crate) fn prepared_rows(
     String,
 > {
     use collagene_core::assembly_recipe::{FragmentSpec, Preparation};
-    if input_count != state.rows.len() || input_count == 0 || input_count > 12 {
-        return Err("Choose 1–12 ordered original sources".into());
+    if state.rows.is_empty() || state.rows.len() > 12 || input_count > 24 {
+        return Err("Choose 1–12 ordered preparation rows and their exact original sources".into());
     }
-    let roles = state.role_ids(input_count)?;
-    let ids = roles
-        .iter()
-        .map(|role| role.input_id.clone())
-        .collect::<Vec<_>>();
-    let mut fragments = Vec::with_capacity(input_count);
+    let roles = state.role_ids(state.rows.len())?;
+    let ids = state.all_input_ids()?;
+    if ids.len() != input_count {
+        return Err("Preparation inputs differ from the complete pinned source list.".into());
+    }
+    let mut fragments = Vec::with_capacity(state.rows.len());
     for (i, row) in state.rows.iter().enumerate() {
         if row.fragment.len() > 20 || row.forward_name.len() > 256 || row.reverse_name.len() > 256 {
             return Err("Preparation names or fragment number exceed their field bounds".into());
@@ -39,6 +39,11 @@ pub(crate) fn prepared_rows(
             return Err("Preparation fields exceed the 64 KiB field limit".into());
         }
         let preparation = match row.preparation {
+            OverlapPreparation::AnnealedOligos=>Preparation::AnnealedOligos {
+                bottom_input_id:state.bottom_input_id(i)?,
+                options:row.anneal_options.clone(),
+                candidate_index:row.anneal_candidate.ok_or("Inspect the annealing alternatives and explicitly choose a candidate before assembling.")?,
+            },
             OverlapPreparation::WholeLinear => Preparation::WholeLinear,
             OverlapPreparation::DeclaredDuplex => Preparation::DeclaredDuplex {
                 left: row.left_terminus,
@@ -310,5 +315,120 @@ mod tailing_tests {
         let target = Molecule::dna("intent", "AACC", Topology::Linear).unwrap();
         assert!(tailing_request(&state, vec![], &target).is_err());
         assert!(tailing_request(&state, vec![target.clone(); 3], &target).is_err());
+    }
+}
+
+#[cfg(test)]
+mod annealed_tests {
+    use super::*;
+    use crate::cloning_methods_model::{Mode, Treatment};
+    use collagene_core::{
+        Topology, assembly_intent, catalog_digest, overlap_primer_design, verification::Status,
+    };
+    #[test]
+    fn two_reference_contributions_keep_three_original_sources_through_ligation() {
+        let catalog = catalog_digest::builtin_catalog().unwrap();
+        let ecori = catalog
+            .edition()
+            .enzymes
+            .iter()
+            .find(|e| e.name == "EcoRI")
+            .unwrap()
+            .id
+            .clone();
+        let mut state = MethodsState::default();
+        state.mode = Mode::Ligation;
+        state.circular = true;
+        state.rows[0].preparation = OverlapPreparation::CatalogDigest;
+        state.rows[0].catalog_selection = Some(catalog_digest::select(&catalog, &[ecori]).unwrap());
+        state.rows[1].preparation = OverlapPreparation::AnnealedOligos;
+        state.rows[1].anneal_bottom_document = Some(2);
+        state.rows[1].anneal_options.min_paired_bases = 6;
+        state.rows[1].anneal_candidate = Some(0);
+        state.rows[1].treatment = Treatment::Phosphorylate;
+        let originals = vec![
+            Molecule::dna("Backbone", "GGAATTCTTACG", Topology::Circular).unwrap(),
+            Molecule::dna("Top", "AATTGCTACG", Topology::Linear).unwrap(),
+            Molecule::dna("Bottom", "AATTCGTAGC", Topology::Linear).unwrap(),
+        ];
+        let ids = state.all_input_ids().unwrap();
+        let inputs = ids
+            .iter()
+            .zip(&originals)
+            .map(|(id, m)| PlanInput {
+                id: id.clone(),
+                molecule: m.clone(),
+                revision: m.revision(),
+            })
+            .collect::<Vec<_>>();
+        let roles = state.role_ids(2).unwrap();
+        let declaration = assembly_intent::Request {
+            name: "Independent backbone and top contribution".into(),
+            circular: true,
+            fragments: vec![
+                overlap_primer_design::Fragment {
+                    role: roles[0].role.clone(),
+                    input_id: ids[0].clone(),
+                    start: 2,
+                    end: 14,
+                    reverse: false,
+                },
+                overlap_primer_design::Fragment {
+                    role: roles[1].role.clone(),
+                    input_id: ids[1].clone(),
+                    start: 0,
+                    end: 10,
+                    reverse: false,
+                },
+            ],
+        };
+        let intent = assembly_intent::build(&inputs, &declaration).unwrap();
+        assert_eq!(intent.target.sequence.as_str(), "AATTCTTACGGGAATTGCTACG");
+        let (bound_ids, fragments) = prepared_rows(&state, 3).unwrap();
+        assert_eq!(bound_ids, ids);
+        assert_eq!(fragments.len(), 2);
+        assert!(
+            matches!(&fragments[1].preparation,collagene_core::assembly_recipe::Preparation::AnnealedOligos{bottom_input_id,..} if bottom_input_id==&ids[2])
+        );
+        let recipe = collagene_core::ligation_recipe::Recipe {
+            name: "Actual three-source ligation".into(),
+            fragments: fragments
+                .into_iter()
+                .zip(&state.rows)
+                .map(|(source, row)| collagene_core::ligation_recipe::Fragment {
+                    source,
+                    treatment: row.treatment.operation(),
+                })
+                .collect(),
+            circular: true,
+            allow_nicked: false,
+        };
+        let preview =
+            collagene_core::ligation_recipe::preview(&inputs, &intent.target, &recipe).unwrap();
+        assert_eq!(preview.compiled.plan.inputs.len(), 3);
+        assert_eq!(preview.compiled.rows.len(), 2);
+        assert_eq!(
+            preview.verification.status,
+            Status::ConsistentUnderAssumptions,
+            "{:?}",
+            preview.verification.findings
+        );
+        assert_eq!(
+            preview
+                .verification
+                .products
+                .last()
+                .unwrap()
+                .sequence
+                .as_str(),
+            intent.target.sequence.as_str()
+        );
+        state.rows[1].anneal_candidate = None;
+        assert!(
+            prepared_rows(&state, 3)
+                .unwrap_err()
+                .contains("explicitly choose")
+        );
+        assert!(prepared_rows(&state, 2).is_err());
     }
 }

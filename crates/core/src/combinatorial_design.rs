@@ -235,6 +235,11 @@ pub fn cartesian_page(
 }
 fn preparation_shape(preparation: &assembly_recipe::Preparation) -> Result<(), Error> {
     match preparation {
+        assembly_recipe::Preparation::AnnealedOligos { .. } => {
+            return Err(bad(
+                "paired oligo preparation requires separately bound original inputs and is not supported by library projection",
+            ));
+        }
         assembly_recipe::Preparation::ExactPcr { forward, reverse }
         | assembly_recipe::Preparation::PcrCatalogDigest {
             forward, reverse, ..

@@ -183,6 +183,7 @@ pub fn AddLibraryBinView(
                 end: last,
                 reverse: flipped,
                 digest_geometry: None,
+                anneal_bottom: None,
             };
             let preparation = OverlapInput {
                 interval_start: first.saturating_add(1).to_string(),

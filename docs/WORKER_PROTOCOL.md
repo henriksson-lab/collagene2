@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **70** and reads supported schemas 1–69. Candidate files write schema 16; workspace plan schema is 14; the verifier is science-19.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **71** and reads supported schemas 1–70. Candidate files write schema 16; workspace plan schema is 14; the verifier is science-19.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -898,3 +898,11 @@ plan/scientific versions and `Preview::validate_binding` without rerunning
 science on the GUI thread. A changed tail base, treatment or target requires a
 fresh preview. Unknown material, inaccessible termini, invalid targets and
 explicitly retained nicks are not converted into sealed-product authority.
+
+## Shared paired-oligo preparation (schema71)
+
+Worker schema71 appends `assembly_recipe::Preparation::AnnealedOligos {bottom_input_id, options, candidate_index}` at preparation ordinal6. Existing jobs/results and preparation ordinals remain fixed; the schema70 tailing job156/result148 remains unchanged. All typed nested preparation payloads require71 when they carry this variant, including reused pool reports and combinatorial request/override records. The bounded binary decoder applies this post-decode capability guard through a borrowed serializer visitor; it allocates no intermediate JSON or copied molecule data. Opaque attachment bytes remain opaque, while recognized stored batch requests receive the same typed check. Paired editable assembly attachment kind `assembly-draft-v4` also requires71 in workspace transports.
+
+Ligation/overlap/tailing preview rows whose actual `preparation_step` is `Operation::AnnealOligos` require71 even where the preview omits its recipe. Generic plans and Verify requests using the previously supported `Operation::AnnealOligos` keep their existing version requirements. Candidate16, plan14 and science19 are unchanged. Original inputs include both top and bottom oligos with exact revisions; the bottom input is not replaced by an annealed product.
+
+The additive structured recipe diagnostic stage `assembly_diagnostics::Stage::Annealing` identifies failed paired-oligo preparation in MCP/frontend evidence. No current binary job/result carries that diagnostic enum, so it needs no additional binary selector or layout gate. Existing diagnostic stages keep their ordinals.

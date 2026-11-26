@@ -36,13 +36,17 @@ use web_sys::{HtmlCanvasElement, HtmlInputElement};
 
 type OpenDocument = collagene_core::history::DocumentHistory;
 const MAX_WORKSPACE_BYTES: usize = 64 * 1024 * 1024;
-const ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v3";
-const PREVIOUS_ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v2";
+const ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v4";
+const PREVIOUS_ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v3";
+const OLDER_ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v2";
 const LEGACY_ASSEMBLY_DRAFT_KIND: &str = "assembly-draft-v1";
 fn assembly_draft_kind(kind: &str) -> bool {
     matches!(
         kind,
-        ASSEMBLY_DRAFT_KIND | PREVIOUS_ASSEMBLY_DRAFT_KIND | LEGACY_ASSEMBLY_DRAFT_KIND
+        ASSEMBLY_DRAFT_KIND
+            | PREVIOUS_ASSEMBLY_DRAFT_KIND
+            | OLDER_ASSEMBLY_DRAFT_KIND
+            | LEGACY_ASSEMBLY_DRAFT_KIND
     )
 }
 fn current_event_binding(doc: &OpenDocument) -> collagene_core::run_lineage::EventBinding {
@@ -241,10 +245,12 @@ fn restore_workspace_state(
                 &asset.bytes,
                 if asset.kind == LEGACY_ASSEMBLY_DRAFT_KIND {
                     1
-                } else if asset.kind == PREVIOUS_ASSEMBLY_DRAFT_KIND {
+                } else if asset.kind == OLDER_ASSEMBLY_DRAFT_KIND {
                     2
-                } else {
+                } else if asset.kind == PREVIOUS_ASSEMBLY_DRAFT_KIND {
                     3
+                } else {
+                    4
                 },
             )?
         }
@@ -1817,11 +1823,14 @@ pub fn App() -> impl IntoView {
         }
         match crate::assembly_draft_model::encode_raw(&draft) {
             Ok(bytes) => {
+                let draft_kind = if draft.version >= 4 {
+                    ASSEMBLY_DRAFT_KIND
+                } else {
+                    PREVIOUS_ASSEMBLY_DRAFT_KIND
+                };
                 let hash = blake3::hash(&bytes).to_hex().to_string();
                 if attachments.with_untracked(|assets| {
-                    assets
-                        .get(&hash)
-                        .is_some_and(|a| a.kind == ASSEMBLY_DRAFT_KIND)
+                    assets.get(&hash).is_some_and(|a| a.kind == draft_kind)
                         && assets
                             .values()
                             .filter(|a| assembly_draft_kind(&a.kind))
@@ -1835,7 +1844,7 @@ pub fn App() -> impl IntoView {
                     assets.insert(
                         hash,
                         collagene_core::workspace::WorkspaceAttachment {
-                            kind: ASSEMBLY_DRAFT_KIND.into(),
+                            kind: draft_kind.into(),
                             name: "assembly-draft.json".into(),
                             media_type: "application/json".into(),
                             bytes,

@@ -1401,7 +1401,7 @@ pub fn App() -> impl IntoView {
         });
     });
 
-    let db = StoredValue::new_local(None::<web_sys::IdbDatabase>);
+    let db = StoredValue::new_local(None::<crate::storage::Database>);
     let loaded = RwSignal::new(false);
     let save_status = RwSignal::new("Opening local storage…".to_string());
     let save_generation = RwSignal::new(0u64);
@@ -2215,14 +2215,25 @@ pub fn App() -> impl IntoView {
             spawn_local(async move {
                 let result = encode_workspace(frame, generation as u32).await;
                 // Work can finish out of order. Only the current generation may start a
-                // write transaction; IndexedDB then serializes same-store transactions.
+                // write transaction, including after native admission waits.
                 if generation != save_generation.get_untracked()
                     || workspace_restoring.get_untracked()
                 {
                     return;
                 }
                 let result = match result {
-                    Ok(bytes) => storage::save(&database, &bytes).await,
+                    Ok(bytes) => {
+                        storage::save(&database, &bytes, move || {
+                            if generation != save_generation.get_untracked()
+                                || workspace_restoring.get_untracked()
+                            {
+                                Err("Autosave superseded".into())
+                            } else {
+                                Ok(())
+                            }
+                        })
+                        .await
+                    }
                     Err(error) => Err(error),
                 };
                 if generation != save_generation.get_untracked()
@@ -2231,7 +2242,14 @@ pub fn App() -> impl IntoView {
                     return;
                 }
                 match result {
-                    Ok(()) => save_status.set("Saved in this browser".into()),
+                    Ok(()) => save_status.set(
+                        if crate::desktop_rpc::is_desktop() {
+                            "Saved locally"
+                        } else {
+                            "Saved in this browser"
+                        }
+                        .into(),
+                    ),
                     Err(error) => {
                         save_status.set("Autosave failed".into());
                         message.set(error);

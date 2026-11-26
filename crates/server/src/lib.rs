@@ -16,6 +16,7 @@ use axum::{
 use collagene_lab_library::{LabAccess, Library};
 use collagene_library_host as host;
 use collagene_library_protocol as wire;
+use collagene_library_sync as sync;
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
@@ -157,6 +158,7 @@ impl ServerState {
 pub fn router(state: ServerState) -> Router {
     Router::new()
         .route("/api/library", post(library))
+        .route("/api/library/sync", post(reliable_library))
         .fallback(static_asset)
         .layer(middleware::from_fn(response_headers))
         .with_state(state)
@@ -192,7 +194,70 @@ fn rejection(status: StatusCode) -> Response {
     }
     response
 }
+#[derive(Clone, Copy)]
+enum Endpoint {
+    Library,
+    Reliable,
+}
+impl Endpoint {
+    fn media_type(self) -> &'static str {
+        match self {
+            Self::Library => wire::MEDIA_TYPE,
+            Self::Reliable => sync::MEDIA_TYPE,
+        }
+    }
+}
 async fn library(State(state): State<ServerState>, request: Request<Body>) -> Response {
+    binary_library(state, request, Endpoint::Library).await
+}
+async fn reliable_library(State(state): State<ServerState>, request: Request<Body>) -> Response {
+    binary_library(state, request, Endpoint::Reliable).await
+}
+pub const EXPECTED_LAB_HEADER: &str = "x-collagene-expected-lab";
+fn expected_lab_pin(
+    headers: &HeaderMap,
+    expected: &str,
+    required: bool,
+) -> std::result::Result<bool, StatusCode> {
+    let mut values = headers.get_all(EXPECTED_LAB_HEADER).iter();
+    let Some(value) = values.next() else {
+        return if required {
+            Err(StatusCode::PRECONDITION_REQUIRED)
+        } else {
+            Ok(false)
+        };
+    };
+    if values.next().is_some() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let pin = value
+        .to_str()
+        .ok()
+        .and_then(|value| wire::LabId::new(value).ok())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    if pin.as_str() != expected {
+        return Err(StatusCode::PRECONDITION_FAILED);
+    }
+    Ok(true)
+}
+fn is_v1_mutation(request: &wire::Request) -> bool {
+    matches!(
+        request,
+        wire::Request::CreateFolder { .. }
+            | wire::Request::RenameFolder { .. }
+            | wire::Request::MoveFolder { .. }
+            | wire::Request::DeleteEmptyFolder { .. }
+            | wire::Request::ImportDocument { .. }
+            | wire::Request::SaveRevision { .. }
+            | wire::Request::RenameDocument { .. }
+            | wire::Request::MoveDocument { .. }
+    )
+}
+async fn binary_library(
+    state: ServerState,
+    request: Request<Body>,
+    endpoint: Endpoint,
+) -> Response {
     // Authenticate before reading, buffering, decoding or dispatching any body.
     let headers = request.headers();
     let mut authorization = headers.get_all(header::AUTHORIZATION).iter();
@@ -206,12 +271,20 @@ async fn library(State(state): State<ServerState>, request: Request<Body>) -> Re
     if !state.0.origin.accepts(headers) {
         return rejection(StatusCode::FORBIDDEN);
     }
+    let lab_pinned = match expected_lab_pin(
+        headers,
+        state.0.access.lab_id().as_str(),
+        matches!(endpoint, Endpoint::Reliable),
+    ) {
+        Ok(present) => present,
+        Err(status) => return rejection(status),
+    };
     if request.uri().query().is_some() {
         return rejection(StatusCode::BAD_REQUEST);
     }
     if headers
         .get(header::CONTENT_TYPE)
-        .is_none_or(|value| value.as_bytes() != wire::MEDIA_TYPE.as_bytes())
+        .is_none_or(|value| value.as_bytes() != endpoint.media_type().as_bytes())
         || headers.get_all(header::CONTENT_TYPE).iter().count() != 1
     {
         return rejection(StatusCode::UNSUPPORTED_MEDIA_TYPE);
@@ -252,26 +325,65 @@ async fn library(State(state): State<ServerState>, request: Request<Body>) -> Re
     let work_permit = permit.clone();
     let result = tokio::task::spawn_blocking(move || {
         let _permit = work_permit;
-        let request = wire::decode_request(&bytes).map_err(|_| StatusCode::BAD_REQUEST)?;
+        enum Decoded {
+            Library(wire::RequestEnvelope),
+            Reliable(sync::RequestEnvelope),
+        }
+        let decoded = match endpoint {
+            Endpoint::Library => {
+                let request = wire::decode_request(&bytes).map_err(|_| StatusCode::BAD_REQUEST)?;
+                if !lab_pinned && is_v1_mutation(&request.request) {
+                    return Err(StatusCode::PRECONDITION_REQUIRED);
+                }
+                Decoded::Library(request)
+            }
+            Endpoint::Reliable => {
+                // Validate the intended database in the borrowed frame prefix
+                // before allocating a decoded archive or touching SQLite.
+                let prefix = sync::request_prefix(&bytes).map_err(|_| StatusCode::BAD_REQUEST)?;
+                if prefix.expected_lab != state.0.access.lab_id().as_str() {
+                    return Err(StatusCode::PRECONDITION_FAILED);
+                }
+                Decoded::Reliable(
+                    sync::decode_request(&bytes).map_err(|_| StatusCode::BAD_REQUEST)?,
+                )
+            }
+        };
         let mut db = state
             .0
             .database
             .lock()
             .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
-        let payload = match &request.request {
-            wire::Request::ImportDocument { payload, .. }
-            | wire::Request::SaveRevision { payload, .. } => Some(payload),
-            _ => None,
-        };
-        let scope = payload
-            .map(|payload| host::document_publication_scope(&state.0.access, payload))
-            .transpose();
-        // A failed publication review is dispatched without a scope so the host
-        // returns its bounded typed failure, retaining request correlation.
-        let scope = scope.ok().flatten().flatten();
-        let response = host::dispatch(&mut db, &state.0.access, &request, scope.as_ref())
-            .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
-        wire::encode_response(&response).map_err(|_| StatusCode::SERVICE_UNAVAILABLE)
+        match decoded {
+            Decoded::Reliable(request) => {
+                // The native adapter performs exact receipt lookup before a retry,
+                // and fresh native/publication validation before any new mutation.
+                // It exposes no checkpoint, SQL, local-scope or administration API.
+                let response = sync::native::dispatch(&mut db, &state.0.access, &request).map_err(
+                    |error| match error {
+                        sync::native::DispatchError::WrongLab => StatusCode::PRECONDITION_FAILED,
+                        _ => StatusCode::SERVICE_UNAVAILABLE,
+                    },
+                )?;
+                sync::encode_response(&response).map_err(|_| StatusCode::SERVICE_UNAVAILABLE)
+            }
+            Decoded::Library(request) => {
+                let payload = match &request.request {
+                    wire::Request::ImportDocument { payload, .. }
+                    | wire::Request::SaveRevision { payload, .. } => Some(payload),
+                    _ => None,
+                };
+                let scope = payload
+                    .map(|payload| host::document_publication_scope(&state.0.access, payload))
+                    .transpose();
+                // A failed publication review is dispatched without a scope so the host
+                // returns its bounded typed failure, retaining request correlation.
+                let scope = scope.ok().flatten().flatten();
+                let response = host::dispatch(&mut db, &state.0.access, &request, scope.as_ref())
+                    .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+                wire::encode_response(&response).map_err(|_| StatusCode::SERVICE_UNAVAILABLE)
+            }
+        }
     })
     .await;
     match result {
@@ -283,7 +395,7 @@ async fn library(State(state): State<ServerState>, request: Request<Body>) -> Re
             let mut response = Response::new(Body::from(leased));
             response.headers_mut().insert(
                 header::CONTENT_TYPE,
-                HeaderValue::from_static(wire::MEDIA_TYPE),
+                HeaderValue::from_static(endpoint.media_type()),
             );
             response
                 .headers_mut()

@@ -10,6 +10,7 @@ description = "Native same-origin server for an authenticated shared plasmid lib
 collagene-lab-library = { path = "../lab-library" }
 collagene-library-protocol = { path = "../library-protocol" }
 collagene-library-host = { path = "../library-host" }
+collagene-library-sync = { path = "../library-sync" }
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "tokio"] }
 tokio = { version = "=1.54.1", features = ["net", "rt-multi-thread", "time", "sync", "macros", "signal"] }
 subtle = "=2.6.1"

@@ -7,13 +7,13 @@ use leptos::prelude::*;
 use std::{cell::RefCell, rc::Rc};
 
 pub async fn persist(
-    database: &web_sys::IdbDatabase,
+    database: &crate::storage::Database,
     next: Workspace,
     previous: Workspace,
     validate: Callback<Workspace, Result<(), String>>,
     encoder: Rc<CachedWorker>,
     guard: impl Fn() -> Result<(), String>,
-    transaction: Rc<RefCell<Option<web_sys::IdbTransaction>>>,
+    transaction: Rc<RefCell<Option<crate::storage::Transaction>>>,
 ) -> Result<Workspace, String> {
     guard()?;
     validate.run(next.clone())?;

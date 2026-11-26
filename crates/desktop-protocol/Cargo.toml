@@ -1,0 +1,14 @@
+[package]
+name = "collagene-desktop-protocol"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.88"
+description = "Bounded raw desktop IPC for a host-scoped offline Collagene repository"
+
+[dependencies]
+collagene-library-protocol = { path = "../library-protocol" }
+serde = { version = "1", features = ["derive"] }
+postcard = { version = "1", features = ["alloc"] }
+blake3 = { version = "1", default-features = false, features = ["pure", "std"] }
+thiserror = "2"

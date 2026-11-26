@@ -58,7 +58,7 @@ pub fn AssemblyReleaseView(
     snapshot: Callback<(), Result<Workspace, String>>,
     validate: Callback<Workspace, Result<(), String>>,
     on_restore: Callback<Workspace>,
-    db: StoredValue<Option<web_sys::IdbDatabase>, LocalStorage>,
+    db: StoredValue<Option<crate::storage::Database>, LocalStorage>,
     workspace_busy: RwSignal<bool>,
     loaded: RwSignal<bool>,
     save_generation: RwSignal<u64>,
@@ -79,7 +79,7 @@ pub fn AssemblyReleaseView(
     let worker = StoredValue::new_local(None::<Rc<CachedWorker>>);
     let generation = StoredValue::new_local(Rc::new(Cell::new(0u64)));
     let transaction =
-        StoredValue::new_local(Rc::new(RefCell::new(None::<web_sys::IdbTransaction>)));
+        StoredValue::new_local(Rc::new(RefCell::new(None::<crate::storage::Transaction>)));
     let lease = StoredValue::new_local(Rc::new(CommitLease::default()));
     let alive = Arc::new(AtomicBool::new(true));
     let cancel = Callback::new(move |()| {

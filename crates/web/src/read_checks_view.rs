@@ -29,7 +29,7 @@ pub fn ReadCheckCapturePanel(
     snapshot: Callback<(), Result<Workspace, String>>,
     validate: Callback<Workspace, Result<(), String>>,
     on_restore: Callback<Workspace>,
-    db: StoredValue<Option<web_sys::IdbDatabase>, LocalStorage>,
+    db: StoredValue<Option<crate::storage::Database>, LocalStorage>,
     busy: RwSignal<bool>,
     loaded: RwSignal<bool>,
     save_generation: RwSignal<u64>,
@@ -43,7 +43,7 @@ pub fn ReadCheckCapturePanel(
     let alive = Arc::new(AtomicBool::new(true));
     let worker = StoredValue::new_local(None::<Rc<CachedWorker>>);
     let transaction =
-        StoredValue::new_local(Rc::new(RefCell::new(None::<web_sys::IdbTransaction>)));
+        StoredValue::new_local(Rc::new(RefCell::new(None::<crate::storage::Transaction>)));
     let generation = StoredValue::new_local(Rc::new(Cell::new(0u64)));
     let owns_lock = StoredValue::new_local(Rc::new(Cell::new(false)));
     let cancel = Callback::new(move |()| {

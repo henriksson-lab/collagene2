@@ -1066,3 +1066,6 @@ CREATE TABLE revisions(
 CREATE TRIGGER immutable_revision_update BEFORE UPDATE ON revisions BEGIN SELECT RAISE(ABORT,'immutable revision'); END;
 CREATE TRIGGER immutable_revision_delete BEFORE DELETE ON revisions BEGIN SELECT RAISE(ABORT,'immutable revision'); END;
 "#;
+
+/// Retry-safe native transactions and private repository checkpoints.
+pub mod mutations;

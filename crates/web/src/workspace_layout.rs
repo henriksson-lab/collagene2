@@ -1,11 +1,12 @@
 //! Desktop display preferences and pane controls. No molecule/history/worker
 //! state is read or written. Register only with the matching preference helpers.
+use crate::storage::Database;
 use crate::workspace_preferences::{self, Preferences, ViewMode};
 use leptos::prelude::*;
 use std::{cell::RefCell, rc::Rc};
 use wasm_bindgen::{JsCast, closure::Closure};
 use wasm_bindgen_futures::spawn_local;
-use web_sys::{Element, HtmlElement, IdbDatabase};
+use web_sys::{Element, HtmlElement};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pane {
@@ -25,7 +26,7 @@ struct Drag {
 struct State {
     alive: bool,
     prefs: Preferences,
-    db: Option<IdbDatabase>,
+    db: Option<Database>,
     pending_save: Option<Vec<u8>>,
     writing: bool,
     saved: Option<Vec<u8>>,

@@ -2679,3 +2679,58 @@ of new server Windows/macOS execution. CI now explicitly includes all five new
 crates and the server binary in the native matrix, plus the portable protocol/
 sharing crates in the WASM gate. Their first expanded matrix result remains
 pending; native local and integrated WASM evidence above is unchanged.
+
+
+### Offline repository implementation checkpoint — 26 November 2026
+
+The local repository now persists folders, immutable plasmid revisions, private
+workspace archives and independent remote bindings in embedded SQLite. An outbox
+is committed before network transfer; restarting after a lost reply looks up the
+original mutation receipt before retrying the same identity. Remote conflicts
+retain the local branch. Recursive folder checkout captures a complete,
+generation-pinned tree before importing documents. This does not yet provide
+automatic bidirectional folder publication or deletion reconciliation.
+
+A separate bounded sync protocol and server route require the configured database
+identity before any mutation. The existing browser route also requires a database
+pin for writes; initial read-only connection discovers the lab identity. Identity
+is a precondition, not an authentication credential. Forty-two focused native
+cases pass across receipt storage, sync, repository restart/conflict, recursive
+folder checkout and in-process server routing. No application HTTP or browser
+checks were run.
+
+Tauri shell, host IPC and the frontend native-storage adapter are being connected.
+Native editor persistence uses a separate transactional current/recovery pair
+with version checks, while browser deployments retain IndexedDB. Working-file
+paths come from the native host configuration, never from a web IPC request.
+Desktop packaging, native credential integration, sync controls and full
+disconnected user-workflow acceptance remain unfinished.
+
+
+### Native host and frontend storage checkpoint — 26 November 2026
+
+The Rust/WASM editor now chooses native working-file persistence and a local
+plasmid/folder catalog inside Tauri, without network login. Ordinary IPC requests
+serialize across catalog, workspace and preference clients; cancellation bypasses
+that lane. Autosaves recheck their original generation after admission, so an old
+queued save cannot overwrite a newer workspace replacement. Native-origin windows
+fail closed if their IPC initialization is broken, instead of silently falling
+back to an ephemeral WebView database. The frontend passes its WASM compiler check.
+
+The framework-independent native host owns fixed database paths under the
+configured root, validates private Unix ownership/modes, and preserves independently
+versioned current/recovery archives. Local mutation retries use stable intent-bound
+receipts across restart; private run/FromRun evidence survives native persistence
+and replay. Its committed-result handling keeps a completed write authoritative
+when cancellation/window revocation arrives after commit acceptance. Windows
+credential/file ACL and installation acceptance remain separate required work.
+
+The integrated native batch passes61 focused cases across host persistence, IPC,
+library and sync wire formats, durable receipts, repository/folder replay and
+in-process server routing. Five HTTP adapter cases and three independent packaging
+compatibility fixtures also pass. The asset guard rejects an old browser-only
+main WASM even if a worker or stale sibling file contains native IPC strings.
+Three native host unit cases also pass, including real transaction rollback and
+committed-result handling after window revocation. Tauri packaging and a fresh
+native-capable frontend publication remain in progress. No application HTTP/browser
+checks were run.

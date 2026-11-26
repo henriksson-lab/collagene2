@@ -41,7 +41,11 @@ impl Drop for Temp {
         let _ = std::fs::remove_dir_all(&self.0);
     }
 }
-fn fixture(limits: Limits) -> (Router, String) {
+struct TestSession {
+    authorization: String,
+    lab: wire::LabId,
+}
+fn fixture(limits: Limits) -> (Router, TestSession) {
     let temp = Temp::new();
     let assets = temp.0.join("assets");
     std::fs::create_dir(&assets).unwrap();
@@ -69,7 +73,13 @@ fn fixture(limits: Limits) -> (Router, String) {
     let state = ServerState::new(db, access, key, "https://lab.example", snapshot, limits).unwrap();
     // Startup files may disappear: all HTTP static reads are immutable snapshots.
     drop(temp);
-    (collagene_server::router(state), authorization)
+    (
+        collagene_server::router(state),
+        TestSession {
+            authorization,
+            lab: wire::LabId::new(lab.id.as_str()).unwrap(),
+        },
+    )
 }
 fn envelope(request: wire::Request) -> wire::RequestEnvelope {
     wire::RequestEnvelope {
@@ -87,11 +97,12 @@ fn browse() -> wire::RequestEnvelope {
         },
     })
 }
-fn request(auth: &str, body: Body) -> Request<Body> {
+fn request(auth: &TestSession, body: Body) -> Request<Body> {
     Request::builder()
         .method("POST")
         .uri("/api/library")
-        .header(header::AUTHORIZATION, auth)
+        .header(header::AUTHORIZATION, auth.authorization.as_str())
+        .header(collagene_server::EXPECTED_LAB_HEADER, auth.lab.as_str())
         .header(header::HOST, "lab.example")
         .header(header::ORIGIN, "https://lab.example")
         .header(header::CONTENT_TYPE, wire::MEDIA_TYPE)
@@ -100,7 +111,7 @@ fn request(auth: &str, body: Body) -> Request<Body> {
 }
 async fn call(
     app: &Router,
-    auth: &str,
+    auth: &TestSession,
     request_frame: &wire::RequestEnvelope,
 ) -> wire::ResponseEnvelope {
     let response = app
@@ -153,7 +164,7 @@ async fn authentication_origin_and_size_checks_precede_body_polling() {
             StatusCode::UNAUTHORIZED,
         ),
         (
-            &auth,
+            auth.authorization.as_str(),
             "https://evil.example",
             "lab.example",
             wire::MEDIA_TYPE,
@@ -161,7 +172,7 @@ async fn authentication_origin_and_size_checks_precede_body_polling() {
             StatusCode::FORBIDDEN,
         ),
         (
-            &auth,
+            auth.authorization.as_str(),
             "null",
             "lab.example",
             wire::MEDIA_TYPE,
@@ -169,7 +180,7 @@ async fn authentication_origin_and_size_checks_precede_body_polling() {
             StatusCode::FORBIDDEN,
         ),
         (
-            &auth,
+            auth.authorization.as_str(),
             "https://lab.example",
             "evil.example",
             wire::MEDIA_TYPE,
@@ -177,7 +188,7 @@ async fn authentication_origin_and_size_checks_precede_body_polling() {
             StatusCode::FORBIDDEN,
         ),
         (
-            &auth,
+            auth.authorization.as_str(),
             "https://lab.example",
             "lab.example",
             "text/plain",
@@ -185,7 +196,7 @@ async fn authentication_origin_and_size_checks_precede_body_polling() {
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
         ),
         (
-            &auth,
+            auth.authorization.as_str(),
             "https://lab.example",
             "lab.example",
             wire::MEDIA_TYPE,
@@ -193,7 +204,9 @@ async fn authentication_origin_and_size_checks_precede_body_polling() {
             StatusCode::PAYLOAD_TOO_LARGE,
         ),
     ] {
-        let mut req = request(token, Body::new(PendingBody(polled.clone())));
+        let mut req = request(&auth, Body::new(PendingBody(polled.clone())));
+        req.headers_mut()
+            .insert(header::AUTHORIZATION, token.parse().unwrap());
         req.headers_mut()
             .insert(header::ORIGIN, origin.parse().unwrap());
         req.headers_mut()
@@ -744,5 +757,773 @@ async fn outgoing_frame_clones_and_slices_keep_the_native_response_admission_lea
     assert!(matches!(
         call(&app, &auth, &browse()).await.outcome,
         wire::Outcome::Success(_)
+    ));
+}
+
+fn sync_request(auth: &TestSession, body: Body) -> Request<Body> {
+    let mut request = request(auth, body);
+    *request.uri_mut() = "/api/library/sync".parse().unwrap();
+    request.headers_mut().insert(
+        header::CONTENT_TYPE,
+        collagene_library_sync::MEDIA_TYPE.parse().unwrap(),
+    );
+    request
+}
+fn sync_mutation(
+    n: u128,
+    operation: collagene_library_sync::MutationOperation,
+) -> collagene_library_sync::Mutation {
+    collagene_library_sync::Mutation {
+        id: collagene_library_sync::MutationId::new(format!("mut-{n:032x}")).unwrap(),
+        operation,
+    }
+}
+fn sync_envelope(
+    auth: &TestSession,
+    request: collagene_library_sync::Request,
+) -> collagene_library_sync::RequestEnvelope {
+    collagene_library_sync::RequestEnvelope {
+        request_id: 23,
+        expected_lab: auth.lab.clone(),
+        request,
+    }
+}
+async fn sync_call(
+    app: &Router,
+    auth: &TestSession,
+    frame: &collagene_library_sync::RequestEnvelope,
+) -> collagene_library_sync::ResponseEnvelope {
+    use collagene_library_sync as sync;
+    let response = app
+        .clone()
+        .oneshot(sync_request(
+            auth,
+            Body::from(sync::encode_request(frame).unwrap()),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()[header::CONTENT_TYPE], sync::MEDIA_TYPE);
+    assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+    let bytes = to_bytes(
+        response.into_body(),
+        sync::MAX_MESSAGE_BYTES + sync::HEADER_BYTES,
+    )
+    .await
+    .unwrap();
+    sync::decode_response_for(&bytes, frame).unwrap()
+}
+fn native_sync_payload(sequence: &str) -> wire::Payload {
+    let molecule =
+        collagene_core::Molecule::dna("pReliable", sequence, collagene_core::Topology::Circular)
+            .unwrap();
+    let bytes = collagene_core::protocol::save_document(&molecule).unwrap();
+    wire::Payload {
+        kind: wire::PayloadKind::NativeDocument,
+        archive_hash: wire::Digest::of(&bytes),
+        bytes: wire::Blob::new(bytes).unwrap(),
+        selection: None,
+        sharing: None,
+    }
+}
+#[tokio::test]
+async fn sync_route_authenticates_before_polling_and_separates_media_and_binary_namespaces() {
+    use collagene_library_sync as sync;
+    let (app, auth) = fixture(Limits {
+        max_concurrent_library_requests: 1,
+        ..Limits::default()
+    });
+    let polled = Arc::new(AtomicUsize::new(0));
+    let apply = sync_envelope(
+        &auth,
+        sync::Request::Apply {
+            mutation: sync_mutation(
+                1,
+                sync::MutationOperation::CreateFolder {
+                    parent: None,
+                    name: wire::Text::new("Sync folder").unwrap(),
+                },
+            ),
+        },
+    );
+    let mut unauthorized = sync_request(&auth, Body::new(PendingBody(polled.clone())));
+    unauthorized
+        .headers_mut()
+        .insert(header::AUTHORIZATION, "Bearer wrong".parse().unwrap());
+    assert_eq!(
+        app.clone().oneshot(unauthorized).await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let mut foreign = sync_request(&auth, Body::new(PendingBody(polled.clone())));
+    foreign
+        .headers_mut()
+        .insert(header::ORIGIN, "https://other.example".parse().unwrap());
+    assert_eq!(
+        app.clone().oneshot(foreign).await.unwrap().status(),
+        StatusCode::FORBIDDEN
+    );
+    let mut wrong_media = sync_request(&auth, Body::new(PendingBody(polled.clone())));
+    wrong_media
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, wire::MEDIA_TYPE.parse().unwrap());
+    assert_eq!(
+        app.clone().oneshot(wrong_media).await.unwrap().status(),
+        StatusCode::UNSUPPORTED_MEDIA_TYPE
+    );
+    assert_eq!(polled.load(Ordering::SeqCst), 0);
+    let v1_as_sync = sync_request(&auth, Body::from(wire::encode_request(&browse()).unwrap()));
+    assert_eq!(
+        app.clone().oneshot(v1_as_sync).await.unwrap().status(),
+        StatusCode::BAD_REQUEST
+    );
+    let sync_as_v1 = request(&auth, Body::from(sync::encode_request(&apply).unwrap()));
+    assert_eq!(
+        app.clone().oneshot(sync_as_v1).await.unwrap().status(),
+        StatusCode::BAD_REQUEST
+    );
+    // Both routes share admission, including an outstanding encoded response.
+    let response = app
+        .clone()
+        .oneshot(sync_request(
+            &auth,
+            Body::from(sync::encode_request(&apply).unwrap()),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let blocked = app
+        .clone()
+        .oneshot(request(
+            &auth,
+            Body::from(wire::encode_request(&browse()).unwrap()),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(blocked.status(), StatusCode::TOO_MANY_REQUESTS);
+    drop(response);
+    let listed = call(&app, &auth, &browse()).await;
+    assert!(
+        matches!(listed.outcome,wire::Outcome::Success(wire::Success::Browsed(page))if page.entries.len()==1)
+    );
+}
+#[tokio::test]
+async fn lost_sync_import_reply_is_lookup_replayed_without_a_second_document() {
+    use collagene_library_sync as sync;
+    let (app, auth) = fixture(Limits::default());
+    let mutation = sync_mutation(
+        10,
+        sync::MutationOperation::ImportDocument {
+            folder: None,
+            name: wire::Text::new("One durable plasmid").unwrap(),
+            payload: native_sync_payload("AGTCCGATGCTA"),
+        },
+    );
+    let apply = sync_envelope(
+        &auth,
+        sync::Request::Apply {
+            mutation: mutation.clone(),
+        },
+    );
+    let lost = app
+        .clone()
+        .oneshot(sync_request(
+            &auth,
+            Body::from(sync::encode_request(&apply).unwrap()),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(lost.status(), StatusCode::OK);
+    drop(lost); // Commit succeeded; client never read its receipt.
+    let lookup = sync_envelope(
+        &auth,
+        sync::Request::Lookup {
+            mutation_id: mutation.id.clone(),
+            expected_intent: mutation.intent_digest().unwrap(),
+        },
+    );
+    let found = sync_call(&app, &auth, &lookup).await;
+    let sync::ResponseOutcome::Receipt(first) = found.outcome else {
+        panic!("lost receipt unavailable")
+    };
+    let repeated = sync_call(&app, &auth, &apply).await;
+    assert_eq!(
+        repeated.outcome,
+        sync::ResponseOutcome::Receipt(first.clone())
+    );
+    let sync::MutationOutcome::Applied(sync::Applied::Imported(document)) = first.outcome else {
+        panic!("import failed")
+    };
+    let listing = call(&app, &auth, &browse()).await;
+    let wire::Outcome::Success(wire::Success::Browsed(page)) = listing.outcome else {
+        panic!("legacy browse failed")
+    };
+    assert_eq!(page.entries.len(), 1);
+    let opened = call(
+        &app,
+        &auth,
+        &envelope(wire::Request::OpenDocument {
+            id: document.id,
+            revision: None,
+        }),
+    )
+    .await;
+    let wire::Outcome::Success(wire::Success::Opened {
+        revision, payload, ..
+    }) = opened.outcome
+    else {
+        panic!("legacy open failed")
+    };
+    assert_eq!(revision.number, 1);
+    assert_eq!(
+        collagene_core::protocol::load_document(&payload.bytes)
+            .unwrap()
+            .sequence
+            .as_str(),
+        "AGTCCGATGCTA"
+    );
+    let changed = sync::Mutation {
+        id: mutation.id,
+        operation: sync::MutationOperation::CreateFolder {
+            parent: None,
+            name: wire::Text::new("Different intent").unwrap(),
+        },
+    };
+    let reply = sync_call(
+        &app,
+        &auth,
+        &sync_envelope(&auth, sync::Request::Apply { mutation: changed }),
+    )
+    .await;
+    assert!(matches!(
+        reply.outcome,
+        sync::ResponseOutcome::IntentMismatch { .. }
+    ));
+}
+#[tokio::test]
+async fn sync_cas_rejections_are_durable_original_snapshots_and_legacy_heads_stay_intact() {
+    use collagene_library_sync as sync;
+    let (app, auth) = fixture(Limits::default());
+    let imported = sync_call(
+        &app,
+        &auth,
+        &sync_envelope(
+            &auth,
+            sync::Request::Apply {
+                mutation: sync_mutation(
+                    20,
+                    sync::MutationOperation::ImportDocument {
+                        folder: None,
+                        name: wire::Text::new("pCAS").unwrap(),
+                        payload: native_sync_payload("AGTCCGATGCTA"),
+                    },
+                ),
+            },
+        ),
+    )
+    .await;
+    let sync::ResponseOutcome::Receipt(sync::Receipt {
+        outcome: sync::MutationOutcome::Applied(sync::Applied::Imported(original)),
+        ..
+    }) = imported.outcome
+    else {
+        panic!("import failed")
+    };
+    let saved = sync_call(
+        &app,
+        &auth,
+        &sync_envelope(
+            &auth,
+            sync::Request::Apply {
+                mutation: sync_mutation(
+                    21,
+                    sync::MutationOperation::SaveRevision {
+                        id: original.id.clone(),
+                        base_revision: original.head.id.clone(),
+                        payload: native_sync_payload("AGTCCGATGCTATT"),
+                    },
+                ),
+            },
+        ),
+    )
+    .await;
+    let sync::ResponseOutcome::Receipt(sync::Receipt {
+        outcome:
+            sync::MutationOutcome::Applied(sync::Applied::Saved {
+                document: second, ..
+            }),
+        ..
+    }) = saved.outcome
+    else {
+        panic!("save failed")
+    };
+    let stale = sync_envelope(
+        &auth,
+        sync::Request::Apply {
+            mutation: sync_mutation(
+                22,
+                sync::MutationOperation::SaveRevision {
+                    id: original.id.clone(),
+                    base_revision: original.head.id.clone(),
+                    payload: native_sync_payload("AGTCCGATGCTAGG"),
+                },
+            ),
+        },
+    );
+    let rejected = sync_call(&app, &auth, &stale).await;
+    assert!(
+        matches!(&rejected.outcome,sync::ResponseOutcome::Receipt(sync::Receipt{outcome:sync::MutationOutcome::Rejected(sync::Rejection{code:sync::RejectionCode::Conflict,conflict:Some(sync::MutationConflict::Document{current}),..}),..})if current.head.id==second.head.id)
+    );
+    let latest = sync_call(
+        &app,
+        &auth,
+        &sync_envelope(
+            &auth,
+            sync::Request::Apply {
+                mutation: sync_mutation(
+                    23,
+                    sync::MutationOperation::SaveRevision {
+                        id: original.id.clone(),
+                        base_revision: second.head.id,
+                        payload: native_sync_payload("AGTCCGATGCTACC"),
+                    },
+                ),
+            },
+        ),
+    )
+    .await;
+    assert!(matches!(
+        latest.outcome,
+        sync::ResponseOutcome::Receipt(sync::Receipt {
+            outcome: sync::MutationOutcome::Applied(sync::Applied::Saved { .. }),
+            ..
+        })
+    ));
+    assert_eq!(
+        sync_call(&app, &auth, &stale).await.outcome,
+        rejected.outcome
+    );
+    let original_bytes = call(
+        &app,
+        &auth,
+        &envelope(wire::Request::OpenDocument {
+            id: original.id.clone(),
+            revision: Some(original.head.id),
+        }),
+    )
+    .await;
+    let wire::Outcome::Success(wire::Success::Opened { payload, .. }) = original_bytes.outcome
+    else {
+        panic!("original revision lost")
+    };
+    assert_eq!(
+        collagene_core::protocol::load_document(&payload.bytes)
+            .unwrap()
+            .sequence
+            .as_str(),
+        "AGTCCGATGCTA"
+    );
+    let head = call(
+        &app,
+        &auth,
+        &envelope(wire::Request::OpenDocument {
+            id: original.id,
+            revision: None,
+        }),
+    )
+    .await;
+    let wire::Outcome::Success(wire::Success::Opened {
+        revision, payload, ..
+    }) = head.outcome
+    else {
+        panic!("current unavailable")
+    };
+    assert_eq!(revision.number, 3);
+    assert_eq!(
+        collagene_core::protocol::load_document(&payload.bytes)
+            .unwrap()
+            .sequence
+            .as_str(),
+        "AGTCCGATGCTACC"
+    );
+}
+#[tokio::test]
+async fn sync_payload_validation_rejects_bad_native_bytes_without_creating_a_receipt() {
+    use collagene_library_sync as sync;
+    let (app, auth) = fixture(Limits::default());
+    let bytes = b"not a native document".to_vec();
+    let payload = wire::Payload {
+        kind: wire::PayloadKind::NativeDocument,
+        archive_hash: wire::Digest::of(&bytes),
+        bytes: wire::Blob::new(bytes).unwrap(),
+        selection: None,
+        sharing: None,
+    };
+    let mutation = sync_mutation(
+        30,
+        sync::MutationOperation::ImportDocument {
+            folder: None,
+            name: wire::Text::new("Invalid").unwrap(),
+            payload,
+        },
+    );
+    let reply = sync_call(
+        &app,
+        &auth,
+        &sync_envelope(
+            &auth,
+            sync::Request::Apply {
+                mutation: mutation.clone(),
+            },
+        ),
+    )
+    .await;
+    assert!(matches!(
+        reply.outcome,
+        sync::ResponseOutcome::Failure(wire::Failure {
+            code: wire::ErrorCode::Invalid,
+            ..
+        })
+    ));
+    let lookup = sync_call(
+        &app,
+        &auth,
+        &sync_envelope(
+            &auth,
+            sync::Request::Lookup {
+                mutation_id: mutation.id.clone(),
+                expected_intent: mutation.intent_digest().unwrap(),
+            },
+        ),
+    )
+    .await;
+    assert!(matches!(
+        lookup.outcome,
+        sync::ResponseOutcome::Unknown { .. }
+    ));
+    let listed = call(&app, &auth, &browse()).await;
+    assert!(
+        matches!(listed.outcome,wire::Outcome::Success(wire::Success::Browsed(page))if page.entries.is_empty())
+    );
+}
+
+#[tokio::test]
+async fn sync_workspace_writes_retain_exact_history_and_reject_unrelated_document_sharing() {
+    use collagene_library_sync as sync;
+    fn archived(documents: Vec<collagene_core::Molecule>) -> wire::Payload {
+        let frame = collagene_core::workspace::Workspace::from_documents(
+            "Selected publication",
+            documents,
+            0,
+        )
+        .unwrap();
+        let selected = &frame.documents[0];
+        let selection = wire::NativeSelection {
+            document_id: wire::Text::new(&selected.id).unwrap(),
+            revision: wire::Digest::new(&selected.head).unwrap(),
+            head_event: selected
+                .head_event
+                .as_ref()
+                .map(|event| wire::Text::new(event).unwrap()),
+        };
+        let bytes = collagene_core::workspace::save_workspace(&frame).unwrap();
+        wire::Payload {
+            kind: wire::PayloadKind::WorkspaceArchive,
+            archive_hash: wire::Digest::of(&bytes),
+            bytes: wire::Blob::new(bytes).unwrap(),
+            selection: Some(selection),
+            sharing: Some(wire::WorkspaceSharing::DocumentClosure),
+        }
+    }
+    let (app, auth) = fixture(Limits::default());
+    let selected = collagene_core::Molecule::dna(
+        "Selected",
+        "AGTCCGATGCTA",
+        collagene_core::Topology::Circular,
+    )
+    .unwrap();
+    let valid = archived(vec![selected.clone()]);
+    let imported = sync_call(
+        &app,
+        &auth,
+        &sync_envelope(
+            &auth,
+            sync::Request::Apply {
+                mutation: sync_mutation(
+                    40,
+                    sync::MutationOperation::ImportDocument {
+                        folder: None,
+                        name: wire::Text::new("Selected native history").unwrap(),
+                        payload: valid.clone(),
+                    },
+                ),
+            },
+        ),
+    )
+    .await;
+    let sync::ResponseOutcome::Receipt(sync::Receipt {
+        outcome: sync::MutationOutcome::Applied(sync::Applied::Imported(document)),
+        ..
+    }) = imported.outcome
+    else {
+        panic!("valid closure rejected")
+    };
+    let opened = call(
+        &app,
+        &auth,
+        &envelope(wire::Request::OpenDocument {
+            id: document.id,
+            revision: None,
+        }),
+    )
+    .await;
+    let wire::Outcome::Success(wire::Success::Opened { payload, .. }) = opened.outcome else {
+        panic!("saved archive unavailable")
+    };
+    assert_eq!(payload.bytes, valid.bytes);
+    assert_eq!(payload.selection, valid.selection);
+    let restored = collagene_core::workspace::load_workspace(&payload.bytes).unwrap();
+    assert!(!restored.history.is_empty());
+    assert_eq!(
+        restored.documents[0].head_event.as_deref(),
+        payload
+            .selection
+            .as_ref()
+            .unwrap()
+            .head_event
+            .as_ref()
+            .map(|event| event.as_str())
+    );
+    let private = collagene_core::Molecule::dna(
+        "Unrelated private document",
+        "TTCGAATTCAGTC",
+        collagene_core::Topology::Linear,
+    )
+    .unwrap();
+    let rejected = sync_mutation(
+        41,
+        sync::MutationOperation::ImportDocument {
+            folder: None,
+            name: wire::Text::new("Do not leak unrelated work").unwrap(),
+            payload: archived(vec![selected, private]),
+        },
+    );
+    let intent = rejected.intent_digest().unwrap();
+    let id = rejected.id.clone();
+    let reply = sync_call(
+        &app,
+        &auth,
+        &sync_envelope(&auth, sync::Request::Apply { mutation: rejected }),
+    )
+    .await;
+    assert!(matches!(
+        reply.outcome,
+        sync::ResponseOutcome::Failure(wire::Failure {
+            code: wire::ErrorCode::Forbidden,
+            ..
+        })
+    ));
+    let lookup = sync_call(
+        &app,
+        &auth,
+        &sync_envelope(
+            &auth,
+            sync::Request::Lookup {
+                mutation_id: id,
+                expected_intent: intent,
+            },
+        ),
+    )
+    .await;
+    assert!(matches!(
+        lookup.outcome,
+        sync::ResponseOutcome::Unknown { .. }
+    ));
+}
+
+#[tokio::test]
+async fn expected_lab_is_a_prewrite_precondition_even_when_an_access_key_is_reused() {
+    use collagene_library_sync as sync;
+    let (app, auth) = fixture(Limits::default());
+    let header = collagene_server::EXPECTED_LAB_HEADER;
+    let wrong = wire::LabId::new(
+        if auth.lab.as_str() == "lab-ffffffffffffffffffffffffffffffff" {
+            "lab-00000000000000000000000000000000"
+        } else {
+            "lab-ffffffffffffffffffffffffffffffff"
+        },
+    )
+    .unwrap();
+    let polled = Arc::new(AtomicUsize::new(0));
+    for sync_route in [false, true] {
+        for mode in ["wrong", "malformed", "duplicate"] {
+            let mut req = if sync_route {
+                sync_request(&auth, Body::new(PendingBody(polled.clone())))
+            } else {
+                request(&auth, Body::new(PendingBody(polled.clone())))
+            };
+            match mode {
+                "wrong" => {
+                    req.headers_mut()
+                        .insert(header, wrong.as_str().parse().unwrap());
+                }
+                "malformed" => {
+                    req.headers_mut()
+                        .insert(header, "not-a-lab-id".parse().unwrap());
+                }
+                _ => {
+                    req.headers_mut()
+                        .append(header, wrong.as_str().parse().unwrap());
+                }
+            }
+            assert_eq!(
+                app.clone().oneshot(req).await.unwrap().status(),
+                if mode == "wrong" {
+                    StatusCode::PRECONDITION_FAILED
+                } else {
+                    StatusCode::BAD_REQUEST
+                }
+            );
+        }
+    }
+    let mut absent = sync_request(&auth, Body::new(PendingBody(polled.clone())));
+    absent.headers_mut().remove(header);
+    assert_eq!(
+        app.clone().oneshot(absent).await.unwrap().status(),
+        StatusCode::PRECONDITION_REQUIRED
+    );
+    assert_eq!(polled.load(Ordering::SeqCst), 0);
+    // Legacy discovery remains possible before the client knows the lab ID.
+    let mut bootstrap = request(&auth, Body::from(wire::encode_request(&browse()).unwrap()));
+    bootstrap.headers_mut().remove(header);
+    assert_eq!(
+        app.clone().oneshot(bootstrap).await.unwrap().status(),
+        StatusCode::OK
+    );
+    let folder = wire::FolderId::new("fld-00000000000000000000000000000001").unwrap();
+    let doc = wire::DocumentId::new("doc-00000000000000000000000000000001").unwrap();
+    let revision = wire::RevisionId::new("a".repeat(64)).unwrap();
+    let name = wire::Text::new("Must not mutate without a pin").unwrap();
+    let payload = native_sync_payload("AGTCCGATGCTA");
+    for operation in [
+        wire::Request::CreateFolder {
+            parent: None,
+            name: name.clone(),
+        },
+        wire::Request::RenameFolder {
+            id: folder.clone(),
+            expected_generation: 1,
+            name: name.clone(),
+        },
+        wire::Request::MoveFolder {
+            id: folder.clone(),
+            expected_generation: 1,
+            parent: None,
+        },
+        wire::Request::DeleteEmptyFolder {
+            id: folder,
+            expected_generation: 1,
+        },
+        wire::Request::ImportDocument {
+            folder: None,
+            name: name.clone(),
+            payload: payload.clone(),
+        },
+        wire::Request::SaveRevision {
+            id: doc.clone(),
+            base_revision: revision,
+            payload,
+        },
+        wire::Request::RenameDocument {
+            id: doc.clone(),
+            expected_generation: 1,
+            name,
+        },
+        wire::Request::MoveDocument {
+            id: doc,
+            expected_generation: 1,
+            folder: None,
+        },
+    ] {
+        let mut req = request(
+            &auth,
+            Body::from(wire::encode_request(&envelope(operation)).unwrap()),
+        );
+        req.headers_mut().remove(header);
+        assert_eq!(
+            app.clone().oneshot(req).await.unwrap().status(),
+            StatusCode::PRECONDITION_REQUIRED
+        );
+    }
+    let mutation = sync_mutation(
+        90,
+        sync::MutationOperation::CreateFolder {
+            parent: None,
+            name: wire::Text::new("Pinned sync folder").unwrap(),
+        },
+    );
+    let intent = mutation.intent_digest().unwrap();
+    let mut contradictory = sync_envelope(
+        &auth,
+        sync::Request::Apply {
+            mutation: mutation.clone(),
+        },
+    );
+    contradictory.expected_lab = wrong;
+    assert_eq!(
+        app.clone()
+            .oneshot(sync_request(
+                &auth,
+                Body::from(sync::encode_request(&contradictory).unwrap())
+            ))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::PRECONDITION_FAILED
+    );
+    let unknown = sync_call(
+        &app,
+        &auth,
+        &sync_envelope(
+            &auth,
+            sync::Request::Lookup {
+                mutation_id: mutation.id.clone(),
+                expected_intent: intent,
+            },
+        ),
+    )
+    .await;
+    assert!(matches!(
+        unknown.outcome,
+        sync::ResponseOutcome::Unknown { .. }
+    ));
+    let listed = call(&app, &auth, &browse()).await;
+    assert!(
+        matches!(listed.outcome,wire::Outcome::Success(wire::Success::Browsed(page))if page.entries.is_empty())
+    );
+    assert!(matches!(
+        call(
+            &app,
+            &auth,
+            &envelope(wire::Request::CreateFolder {
+                parent: None,
+                name: wire::Text::new("Pinned v1 folder").unwrap()
+            })
+        )
+        .await
+        .outcome,
+        wire::Outcome::Success(wire::Success::CreatedFolder(_))
+    ));
+    assert!(matches!(
+        sync_call(
+            &app,
+            &auth,
+            &sync_envelope(&auth, sync::Request::Apply { mutation })
+        )
+        .await
+        .outcome,
+        sync::ResponseOutcome::Receipt(sync::Receipt {
+            outcome: sync::MutationOutcome::Applied(sync::Applied::CreatedFolder(_)),
+            ..
+        })
     ));
 }

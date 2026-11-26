@@ -1214,7 +1214,7 @@ pub fn DonorOpenPanel(
     snapshot: Callback<(), Result<collagene_core::workspace::Workspace, String>>,
     validate: Callback<collagene_core::workspace::Workspace, Result<(), String>>,
     on_restore: Callback<collagene_core::workspace::Workspace>,
-    db: StoredValue<Option<web_sys::IdbDatabase>, LocalStorage>,
+    db: StoredValue<Option<crate::storage::Database>, LocalStorage>,
     busy: RwSignal<bool>,
     loaded: RwSignal<bool>,
     save_generation: RwSignal<u64>,

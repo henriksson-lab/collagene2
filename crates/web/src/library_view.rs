@@ -107,6 +107,9 @@ enum NameEditor {
 }
 
 pub fn enabled() -> bool {
+    if crate::desktop_rpc::is_desktop() {
+        return true;
+    }
     web_sys::window()
         .and_then(|window| window.document())
         .and_then(|document| {
@@ -128,6 +131,7 @@ pub fn LibraryPane(
     on_binding: Callback<(u64, Binding), Result<(), String>>,
     locked: Memo<bool>,
 ) -> impl IntoView {
+    let local = client.is_local();
     let initial_context = client.context();
     let server_key = client.remote_key();
     let session = StoredValue::new_local(client);
@@ -401,7 +405,7 @@ pub fn LibraryPane(
         });
     });
     runner.set_value(Some(send));
-    if connected.with_untracked(Option::is_some) {
+    if local || connected.with_untracked(Option::is_some) {
         send.run(Command::Browse(Navigation::default()));
     }
     let connect = Callback::new(move |()| {
@@ -468,8 +472,8 @@ pub fn LibraryPane(
         }
     };
     view! {
-        <details class="lab-library-pane"><summary>"Lab library"</summary>
-            <Show when=move||connected.with(Option::is_none)>
+        <details class="lab-library-pane"><summary>{if local { "Local library" } else { "Lab library" }}</summary>
+            <Show when=move||!local&&connected.with(Option::is_none)>
                 <form class="library-connect" on:submit=move|event|{event.prevent_default();connect.run(());}>
                     <label>"Lab access key"<input type="password" autocomplete="off" aria-label="Lab library access key" prop:value=move||key.get() disabled=move||busy.get() on:input=move|event|key.set(event_target_value(&event))/></label>
                     <button class="button secondary" type="submit" disabled=move||busy.get()||locked.get()>"Connect"</button>
@@ -477,20 +481,20 @@ pub fn LibraryPane(
                 </form>
             </Show>
             <Show when=move||connected.with(Option::is_some)>
-                <div class="library-heading"><strong>{move||connected.get().map(|context|context.name.into_string()).unwrap_or_default()}</strong><button class="text-tool" on:click=disconnect>"Disconnect"</button></div>
+                <div class="library-heading"><strong>{move||connected.get().map(|context|context.name.into_string()).unwrap_or_default()}</strong><Show when=move||!local><button class="text-tool" on:click=disconnect>"Disconnect"</button></Show></div>
                 <div class="library-location"><button class="text-tool" disabled=move||busy.get() on:click=move|_|{search.set(String::new());send.run(Command::Browse(Navigation::default()));}>"Library"</button>
                     {move||navigation.with(|nav|nav.path.iter().enumerate().map(|(index,folder)|{let path=nav.path[..=index].to_vec();let label=folder.name.to_string();view!{<span>" / "</span><button class="text-tool" disabled=move||busy.get() on:click=move|_|{search.set(String::new());send.run(Command::Browse(Navigation{path:path.clone(),..Default::default()}));}>{label}</button>}}).collect_view())}
                 </div>
                 <form class="library-search" on:submit=move|event|{event.prevent_default();send.run(Command::Browse(Navigation{query:search.get_untracked(),..Default::default()}));}>
-                    <input type="search" aria-label="Search lab plasmids and folders" placeholder="Search lab library" prop:value=move||search.get() on:input=move|event|search.set(event_target_value(&event))/><button type="submit" class="text-tool" disabled=move||busy.get()>"Find"</button>
+                    <input type="search" aria-label="Search lab plasmids and folders" placeholder={if local { "Search local library" } else { "Search lab library" }} prop:value=move||search.get() on:input=move|event|search.set(event_target_value(&event))/><button type="submit" class="text-tool" disabled=move||busy.get()>"Find"</button>
                 </form>
                 <div class="library-actions"><button class="text-tool" disabled=move||busy.get()||locked.get() on:click=move|_|{name.set(String::new());editor.set(Some(NameEditor::Folder));}>"New folder"</button>
-                    <button class="text-tool" disabled=move||busy.get()||locked.get()||current.with(Option::is_none) on:click=move|_|send.run(Command::Publish)>{move||if current_binding.get().is_some(){"Push plasmid revision"}else{"Share current plasmid"}}</button>
+                    <button class="text-tool" disabled=move||busy.get()||locked.get()||current.with(Option::is_none) on:click=move|_|send.run(Command::Publish)>{move||if local { if current_binding.get().is_some(){"Save plasmid revision"}else{"Save current plasmid"} } else if current_binding.get().is_some(){"Push plasmid revision"}else{"Share current plasmid"}}</button>
                     <button class="text-tool" disabled=move||busy.get() on:click=move|_|send.run(Command::Browse(navigation.get_untracked().refresh("Library refreshed.".into())))>"Refresh"</button>
                 </div>
                 {move||editor.get().map(|_|view!{<form class="library-name-editor" on:submit=move|event|{event.prevent_default();submit_name();}><label>"Name"<input autofocus=true prop:value=move||name.get() on:input=move|event|name.set(event_target_value(&event))/></label><button class="text-tool" disabled=move||busy.get()||locked.get() type="submit">"Save"</button><button class="text-tool" type="button" on:click=move|_|editor.set(None)>"Cancel"</button></form>})}
                 {move||moving.get().map(|entry|view!{<div class="library-move"><p>{format!("Choose a destination for {}.",entry.name())}</p><button class="text-tool" disabled=move||busy.get()||locked.get() on:click=move|_|{let parent=navigation.get_untracked().parent();let request=match entry.clone(){wire::Entry::Folder(folder)=>wire::Request::MoveFolder{id:folder.id,expected_generation:folder.generation,parent},wire::Entry::Document(document)=>wire::Request::MoveDocument{id:document.id,expected_generation:document.generation,folder:parent}};send.run(Command::Request(request,"Item moved.".into()));}>"Move here"</button><button class="text-tool" on:click=move|_|moving.set(None)>"Cancel move"</button></div>})}
-                <ul class="lab-library-entries" aria-label="Shared plasmids and folders">{move||entries.get().into_iter().map(|entry|{
+                <ul class="lab-library-entries" aria-label={if local { "Local plasmids and folders" } else { "Shared plasmids and folders" }}>{move||entries.get().into_iter().map(|entry|{
                     let open=entry.clone();let rename=entry.clone();let move_entry=entry.clone();let history_entry=entry.clone();let delete=entry.clone();let is_folder=matches!(entry,wire::Entry::Folder(_));let label=entry.name().to_owned();
                     view!{<li class:library-folder=is_folder><button class="library-entry-name" disabled=move||busy.get()||locked.get() on:click=move|_|match &open{wire::Entry::Folder(folder)=>{let mut path=if navigation.with_untracked(|nav|nav.query.is_empty()){navigation.get_untracked().path}else{vec![]};path.push(folder.clone());search.set(String::new());send.run(Command::Browse(Navigation{path,..Default::default()}));},wire::Entry::Document(document)=>send.run(Command::Open(document.clone(),None))}><span aria-hidden="true">{if is_folder{"▸"}else{"○"}}</span>{label}</button>
                         <details class="library-entry-menu" data-transient-menu=""><summary aria-label="Item actions">"⋯"</summary><div>

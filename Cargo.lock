@@ -449,6 +449,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "collagene-desktop-host"
+version = "0.1.0"
+dependencies = [
+ "collagene-core",
+ "collagene-desktop-protocol",
+ "collagene-lab-library",
+ "collagene-library-protocol",
+ "collagene-library-sync",
+ "collagene-repository",
+ "libc",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "collagene-desktop-protocol"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "collagene-library-protocol",
+ "postcard",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "collagene-enzyme-catalog"
 version = "0.1.0"
 dependencies = [
@@ -501,6 +529,21 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "collagene-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "collagene-library-sync"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "collagene-core",
+ "collagene-lab-library",
+ "collagene-library-host",
+ "collagene-library-protocol",
+ "postcard",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -580,6 +623,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "collagene-repository"
+version = "0.1.0"
+dependencies = [
+ "collagene-core",
+ "collagene-lab-library",
+ "collagene-library-host",
+ "collagene-library-protocol",
+ "collagene-library-sharing",
+ "collagene-library-sync",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "url",
+]
+
+[[package]]
 name = "collagene-server"
 version = "0.1.0"
 dependencies = [
@@ -591,6 +651,7 @@ dependencies = [
  "collagene-lab-library",
  "collagene-library-host",
  "collagene-library-protocol",
+ "collagene-library-sync",
  "getrandom 0.4.3",
  "http-body",
  "subtle",
@@ -669,12 +730,14 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "collagene-core",
+ "collagene-desktop-protocol",
  "collagene-library-protocol",
  "collagene-library-sharing",
  "collagene-map-label-layout",
  "collagene-sources",
  "collagene-view-layout",
  "futures-channel",
+ "futures-util",
  "js-sys",
  "leptos",
  "serde",
@@ -2521,7 +2584,9 @@ checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
  "base64 0.22.1",
  "bytes",
+ "futures-channel",
  "futures-core",
+ "futures-util",
  "http",
  "http-body",
  "http-body-util",

@@ -32,7 +32,7 @@ pub fn DigestOpenPanel(
     snapshot: Callback<(), Result<Workspace, String>>,
     validate: Callback<Workspace, Result<(), String>>,
     on_restore: Callback<Workspace>,
-    db: StoredValue<Option<web_sys::IdbDatabase>, LocalStorage>,
+    db: StoredValue<Option<crate::storage::Database>, LocalStorage>,
     busy: RwSignal<bool>,
     loaded: RwSignal<bool>,
     save_generation: RwSignal<u64>,
@@ -45,7 +45,7 @@ pub fn DigestOpenPanel(
     let started = RwSignal::new(false);
     let alive = Arc::new(AtomicBool::new(true));
     let worker = StoredValue::new_local(None::<Rc<CachedWorker>>);
-    let transaction = Rc::new(RefCell::new(None::<web_sys::IdbTransaction>));
+    let transaction = Rc::new(RefCell::new(None::<crate::storage::Transaction>));
     let owns_lock = Rc::new(Cell::new(false));
     let cleanup = alive.clone();
     let pending = StoredValue::new_local(transaction.clone());

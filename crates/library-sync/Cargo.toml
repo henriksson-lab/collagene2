@@ -1,0 +1,22 @@
+[package]
+name = "collagene-library-sync"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.88"
+description = "Bounded retry-safe library mutation protocol and native dispatch"
+
+[dependencies]
+collagene-library-protocol = { path = "../library-protocol" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+postcard = { version = "1", features = ["alloc"] }
+blake3 = { version = "1", default-features = false, features = ["pure", "std"] }
+thiserror = "2"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+collagene-lab-library = { path = "../lab-library" }
+collagene-library-host = { path = "../library-host" }
+
+[dev-dependencies]
+collagene-core = { path = "../core", default-features = false }

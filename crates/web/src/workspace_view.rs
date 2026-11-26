@@ -16,7 +16,7 @@ pub fn WorkspacePanel(
     snapshot: Callback<(), Result<Workspace, String>>,
     validate: Callback<Workspace, Result<(), String>>,
     on_restore: Callback<Workspace>,
-    db: StoredValue<Option<web_sys::IdbDatabase>, LocalStorage>,
+    db: StoredValue<Option<crate::storage::Database>, LocalStorage>,
     busy: RwSignal<bool>,
     loaded: RwSignal<bool>,
     save_generation: RwSignal<u64>,

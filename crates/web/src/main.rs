@@ -250,6 +250,8 @@ mod biology_source_view;
 #[cfg(target_arch = "wasm32")]
 mod compare;
 #[cfg(target_arch = "wasm32")]
+mod desktop_rpc;
+#[cfg(target_arch = "wasm32")]
 mod editors;
 #[cfg(target_arch = "wasm32")]
 mod gel;

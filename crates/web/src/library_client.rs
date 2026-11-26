@@ -10,9 +10,12 @@ const ENDPOINT: &str = "/api/library";
 const REQUEST_TIMEOUT_MS: i32 = 60_000;
 const MAX_FRAME_BYTES: usize = wire::HEADER_BYTES + wire::MAX_MESSAGE_BYTES;
 
-/// The folder UI consumes this boundary. A future offline Tauri adapter can
-/// dispatch the same messages to its embedded library without a network login.
+/// The folder UI consumes this boundary. Browser requests use the configured
+/// server; Tauri dispatches to its embedded library without a network login.
 pub trait LibraryClient {
+    fn is_local(&self) -> bool {
+        false
+    }
     fn remote_key(&self) -> String;
     fn context(&self) -> Option<wire::LabContext>;
     fn connect(&self, key: String) -> Result<(), String>;
@@ -25,7 +28,11 @@ pub trait LibraryClient {
 
 pub type Client = Rc<dyn LibraryClient>;
 pub fn browser() -> Client {
-    Rc::new(Session::default())
+    if crate::desktop_rpc::is_desktop() {
+        Rc::new(DesktopSession::default())
+    } else {
+        Rc::new(Session::default())
+    }
 }
 
 #[derive(Clone, Default)]
@@ -100,6 +107,20 @@ impl Session {
             if state.key.is_empty() {
                 return Err("Connect to the lab library first.".into());
             }
+            let mutation = matches!(
+                &operation,
+                wire::Request::CreateFolder { .. }
+                    | wire::Request::RenameFolder { .. }
+                    | wire::Request::MoveFolder { .. }
+                    | wire::Request::DeleteEmptyFolder { .. }
+                    | wire::Request::ImportDocument { .. }
+                    | wire::Request::SaveRevision { .. }
+                    | wire::Request::RenameDocument { .. }
+                    | wire::Request::MoveDocument { .. }
+            );
+            if mutation && state.context.is_none() {
+                return Err("Load and review the selected lab before sending changes.".into());
+            }
             state.next_request = state.next_request.checked_add(1).ok_or(
                 "This library session has exhausted its request identifiers; reload the app.",
             )?;
@@ -147,6 +168,11 @@ impl Session {
         http.headers()
             .set("Authorization", &format!("Bearer {key}"))
             .map_err(|_| "Cannot prepare lab authorization")?;
+        if let Some(context) = &context {
+            http.headers()
+                .set(wire::EXPECTED_LAB_HEADER, context.lab_id.as_str())
+                .map_err(|_| "Cannot pin the requested lab database")?;
+        }
         drop(key);
         let response = JsFuture::from(window.fetch_with_request(&http))
             .await
@@ -160,6 +186,16 @@ impl Session {
             401 => {
                 self.disconnect();
                 return Err("The lab access key was not accepted. Connect again.".into());
+            }
+            412 => {
+                self.disconnect();
+                return Err("The server's lab changed. Reconnect and review the selected database before saving.".into());
+            }
+            428 => {
+                return Err(
+                    "The server requires a database identity pin. Reload this app before saving."
+                        .into(),
+                );
             }
             404 | 405 => return Err("Shared library access is not enabled on this server.".into()),
             413 => return Err("The document exceeds this server's library size limit.".into()),
@@ -270,4 +306,72 @@ async fn read_bounded(response: &web_sys::Response) -> Result<Vec<u8>, String> {
     }
     reader.release_lock();
     Ok(bytes)
+}
+
+/// Offline local catalog. The native shell supplies repository authority; no
+/// lab access key or network endpoint is accepted by this adapter.
+#[derive(Default)]
+struct DesktopSession {
+    context: RefCell<Option<wire::LabContext>>,
+    epoch: std::cell::Cell<u64>,
+}
+impl LibraryClient for DesktopSession {
+    fn is_local(&self) -> bool {
+        true
+    }
+    fn remote_key(&self) -> String {
+        "collagene-desktop://local".into()
+    }
+    fn context(&self) -> Option<wire::LabContext> {
+        self.context.borrow().clone()
+    }
+    fn connect(&self, _key: String) -> Result<(), String> {
+        Ok(())
+    }
+    fn disconnect(&self) {
+        self.epoch.set(self.epoch.get().wrapping_add(1));
+    }
+    fn request(
+        &self,
+        operation: wire::Request,
+    ) -> Pin<Box<dyn Future<Output = Result<wire::ResponseEnvelope, String>> + '_>> {
+        Box::pin(async move {
+            use collagene_desktop_protocol as desktop;
+            let epoch = self.epoch.get();
+            if self.context.borrow().is_none() {
+                let bootstrap = crate::desktop_rpc::call(desktop::Command::Bootstrap).await?;
+                if epoch != self.epoch.get() {
+                    return Err("Local library view closed".into());
+                }
+                match bootstrap {
+                    desktop::Success::Bootstrap(b) => {
+                        *self.context.borrow_mut() = Some(b.library_context)
+                    }
+                    _ => return Err("Unexpected local library bootstrap".into()),
+                }
+            }
+            let request = crate::desktop_rpc::request(desktop::Command::Library(operation))?;
+            let outcome = crate::desktop_rpc::dispatch(&request).await?;
+            if epoch != self.epoch.get() {
+                return Err("Local library view closed".into());
+            }
+            let outcome = match outcome {
+                desktop::Outcome::Success(desktop::Success::Library(success)) => {
+                    wire::Outcome::Success(success)
+                }
+                desktop::Outcome::Failure(desktop::Failure::Library(failure)) => {
+                    wire::Outcome::Failure(failure)
+                }
+                desktop::Outcome::Failure(failure) => {
+                    return Err(crate::desktop_rpc::failure(&failure));
+                }
+                _ => return Err("Unexpected local library response".into()),
+            };
+            Ok(wire::ResponseEnvelope {
+                request_id: request.request_id,
+                context: self.context(),
+                outcome,
+            })
+        })
+    }
 }

@@ -13,6 +13,8 @@ pub const MAX_MESSAGE_BYTES: usize = 65 << 20;
 pub const MAX_PAGE_ROWS: usize = 200;
 pub const MAX_OFFSET: u32 = 100_000;
 pub const MEDIA_TYPE: &str = "application/vnd.collagene.library+postcard";
+/// A target precondition, never a source of membership or namespace authority.
+pub const EXPECTED_LAB_HEADER: &str = "x-collagene-expected-lab";
 const REQUEST_MAGIC: &[u8; 4] = b"CLQ\0";
 const RESPONSE_MAGIC: &[u8; 4] = b"CLR\0";
 

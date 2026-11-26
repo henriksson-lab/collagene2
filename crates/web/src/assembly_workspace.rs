@@ -296,6 +296,13 @@ pub fn AssemblyWorkspace(
     epoch: RwSignal<u64>,
     snapshot: Callback<(), Result<collagene_core::workspace::Workspace, String>>,
     workspace_busy: RwSignal<bool>,
+    apply_saved_attachments: Callback<
+        (
+            collagene_core::workspace::Workspace,
+            collagene_core::workspace::Workspace,
+        ),
+        Result<(), String>,
+    >,
     sources: Memo<Vec<SourceInfo>>,
     active_source: Memo<SourceInfo>,
     selected_region: Callback<(), Option<(usize, usize)>>,
@@ -770,7 +777,34 @@ pub fn AssemblyWorkspace(
             status.set(String::new());
         });
     });
+    let load_saved = Callback::new(
+        move |(before, next): (Draft, Draft)| -> Result<(), String> {
+            if workspace_busy.get_untracked() || busy.get_untracked() {
+                return Err(
+                    "Wait for current workspace or intent work to finish before loading a design."
+                        .into(),
+                );
+            }
+            if draft.with_untracked(|current| current != &before) {
+                return Err(
+                    "The working draft changed before replacement. Choose the saved design again."
+                        .into(),
+                );
+            }
+            next.validate()?;
+            // The source-bound loader already re-attested this declaration in the
+            // current workspace. Replacement clears private intent/method receipts.
+            batch(|| {
+                previous_draft.set(Some(Arc::new(before)));
+                replace_draft.run(next);
+            });
+            Ok(())
+        },
+    );
+    let saved_busy = Memo::new(move |_| workspace_busy.get() || busy.get());
     view! {<section class="assembly-workspace"><header class="assembly-workspace-header"><h2>"Design assembly"</h2><p class="helper">"Choose a fragment, then select its source in the sequence viewer above."</p><crate::assembly_draft_actions::AssemblyDraftActions draft previous=previous_draft epoch locked=Memo::new(move |_| workspace_busy.get()||busy.get()) on_replace=replace_draft/></header>
+        <crate::assembly_saved_designs_view::SavedDesigns draft epoch busy=saved_busy snapshot
+            apply_attachments=apply_saved_attachments replace_draft=load_saved/>
         <Show when=move||!strategy_chosen.get()>
             <crate::assembly_strategy_view::AssemblyStrategyPicker initial=draft.with_untracked(|d|d.methods.mode) on_start=Callback::new(move|mode|{
                 draft.update(|d|{

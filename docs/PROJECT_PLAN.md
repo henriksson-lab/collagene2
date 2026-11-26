@@ -2111,3 +2111,40 @@ The preceding138f220 commit completed all four CI jobs successfully in GitHub
 run45762136629 (native Windows/macOS/Linux and web). The new junction-viewer
 increment will receive its own post-push matrix; no result is inferred for it
 from that preceding commit.
+
+### Named editable assembly snapshots
+
+The ordinary dock now has a compact Saved designs disclosure: save the current
+editable declaration under a name, list/load it, rename its display label, or
+explicitly delete that saved snapshot. It is a flat workspace collection, without
+project/ELN structure. Loading keeps one temporary previous working draft for the
+session and clears private intended-review, method and worker state. It creates
+no document, candidate or successful verification. The existing current-draft
+autosave and all recorded constructs/runs remain separate.
+
+Saved attachments use a distinct versioned kind. Captured source molecules are
+replaced by exact document/event/revision references at the native declaration's
+typed source paths, including library choices and paired oligos. Hydration attests
+the original historical event and full source description, not an equal sequence
+or another document's current head. A borrowed event index avoids scanning the
+whole history for each source reference. Before copying source DNA, the loader
+predicts the expanded declaration size. Closed run-origin evidence stays intact;
+loading refuses silent native-codec recovery changes rather than dropping it.
+
+The host rechecks the complete before/current workspace and permits only changes
+to named-design attachments. Source documents, revisions/history, candidates,
+workspace selection, active autosave and unrelated attachments cannot be changed
+by this callback. UI actions pin entry hashes, epoch, draft state and proposal
+tokens. An old confirm/cancel/rename handler cannot act on a newer proposal. An
+orphaned saved snapshot may still be deleted without restoring its sources.
+Unreadable named attachments have a narrowly hash-bound confirmed removal action.
+Ambiguous imported collections with duplicate valid names/IDs or more than64
+entries remain outside this schema's supported collection contract.
+
+Limits are64 snapshots,160-byte display names,8MiB stored declaration and32MiB
+hydrated declaration. Twelve focused native fixtures pass, covering versions1–7,
+internal edits, source alternatives, paired strands, actual closed run origins,
+source-free storage, exact historical references, hydration bounds, malformed
+cleanup and attachment-only atomicity. The frontend WASM check passes. Browser and
+HTTP application checks remain deferred. Public8082 remains on24e38a2 until the
+next batched publication; the full original project goal remains active.

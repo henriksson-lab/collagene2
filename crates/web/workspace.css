@@ -532,3 +532,12 @@
 .empty-document-view p { max-width:480px; margin:0; font-size:13px; line-height:1.6; }
 .empty-document-actions { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; margin-top:8px; }
 .empty-document-view:focus { outline:none; }
+
+.assembly-saved-designs { margin:6px 0 9px; font-size:12px; }
+.assembly-saved-designs>summary { cursor:pointer; color:#426486; padding:4px 0; }
+.assembly-saved-designs>.assembly-draft-menu-content { position:static; width:auto; max-width:none; margin-top:5px; box-shadow:none; border-color:#d9e0e8; background:#f8fafc; }
+.assembly-saved-design-list { margin:8px 0; }
+.assembly-saved-design-list>li { padding:7px 0; border-bottom:1px solid #e2e8ef; overflow-wrap:anywhere; }
+.assembly-saved-design-list>li:last-child { border-bottom:0; }
+.assembly-saved-design-list .method-row-actions { margin-top:3px; gap:10px; }
+.assembly-saved-designs input { max-width:100%; }

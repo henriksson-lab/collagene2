@@ -1,0 +1,29 @@
+[package]
+name = "collagene-source-gateway"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Bounded same-origin binary gateway for approved scientific sequence sources"
+
+[dependencies]
+collagene-core = { path = "../core" }
+collagene-sources = { path = "../sources" }
+serde.workspace = true
+postcard.workspace = true
+blake3.workspace = true
+thiserror.workspace = true
+url = "=2.5.8"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+bytes = "1"
+http = "=1.5.0"
+http-body-util = "=0.1.5"
+hyper = { version = "=1.13.0", features = ["server", "http1"] }
+hyper-util = { version = "=0.1.21", features = ["tokio"] }
+tokio = { version = "1", features = ["net", "rt", "time", "sync", "macros"] }
+getrandom = "=0.4.3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }
+serde_json.workspace = true

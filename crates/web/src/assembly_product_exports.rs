@@ -94,8 +94,8 @@ pub fn AssemblyProductExports(
         <div class="assembly-product-exports">
             <p>"Actual final product reference · may include a diagnostic product that differs from the intended target. Export does not create a saved construct or accept the target."</p>
             <div class="assembly-actions">
-                <button type="button" on:click=move |_| prepare.run(Format::GenBank)>"Prepare GenBank"</button>
-                <button type="button" on:click=move |_| prepare.run(Format::Fasta)>"Prepare FASTA"</button>
+                <button type="button" data-menu-keep-open="" on:click=move |_| prepare.run(Format::GenBank)>"Prepare GenBank"</button>
+                <button type="button" data-menu-keep-open="" on:click=move |_| prepare.run(Format::Fasta)>"Prepare FASTA"</button>
             </div>
             <p role="status">{move || status.get()}</p>
             {move || prepared.get().map(|bound| {

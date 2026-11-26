@@ -974,38 +974,27 @@ impl MapRenderer {
                 }
                 rendered += 1;
             }
-            for &(a, b) in selection {
+            // Circular ranges are translucent pie sectors in the camera overlay.
+            for &(a, b) in selection
+                .iter()
+                .filter(|_| s.molecule.topology == Topology::Linear)
+            {
                 if a >= b || b > n {
                     continue;
                 }
-                let needed = if s.molecule.topology == Topology::Linear {
-                    36
-                } else {
-                    arc_segments(a as f64 / nf * TAU - PI / 2., b as f64 / nf * TAU - PI / 2.) * 36
-                };
+                let needed = 36;
                 if needed > MAX_FLOATS - vertices.len() {
                     limited = true;
                     break;
                 }
-                if s.molecule.topology == Topology::Linear {
-                    quad(
-                        &mut vertices,
-                        a as f64 / nf * 1.6 - 0.8,
-                        b as f64 / nf * 1.6 - 0.8,
-                        -0.08,
-                        -0.04,
-                        [0.09, 0.30, 0.27, 1.],
-                    );
-                } else {
-                    arc(
-                        &mut vertices,
-                        a as f64 / nf * TAU - PI / 2.,
-                        b as f64 / nf * TAU - PI / 2.,
-                        0.59,
-                        0.63,
-                        [0.09, 0.30, 0.27, 1.],
-                    );
-                }
+                quad(
+                    &mut vertices,
+                    a as f64 / nf * 1.6 - 0.8,
+                    b as f64 / nf * 1.6 - 0.8,
+                    -0.08,
+                    -0.04,
+                    [0.09, 0.30, 0.27, 1.],
+                );
             }
         }
         s.rendered_geometry_count = rendered;
@@ -1158,15 +1147,11 @@ fn geometry_capacity(s: &State, selection: &[(usize, usize)], cap: usize) -> usi
             }
         }
     }
-    for &(a, b) in selection {
+    for &(a, b) in selection.iter().filter(|_| !circular) {
         if a >= b || b > n {
             continue;
         }
-        total = total.saturating_add(if circular {
-            arc_segments(a as f64 / nf * TAU - PI / 2., b as f64 / nf * TAU - PI / 2.) * 36
-        } else {
-            36
-        });
+        total = total.saturating_add(36);
         if total >= cap {
             return cap;
         }
@@ -1313,6 +1298,159 @@ fn nearest_span(s: &State, index: usize, pos: usize) -> Option<(usize, usize)> {
         .map(|&(a, b, _)| (a, b))
 }
 
+/// Exact reference boundaries share the same camera angle as the GPU geometry.
+/// Each part is independent: disjoint/wrapped selections never shade their gap.
+fn draw_selection_sectors(
+    ctx: &Ctx,
+    spans: &[(usize, usize)],
+    n: usize,
+    view: View,
+    radius: f64,
+    color: &str,
+) {
+    if n == 0 || radius <= 0. {
+        return;
+    }
+    let (cx, cy) = (view.width / 2., view.height / 2.);
+    ctx.save();
+    ctx.set_fill_style_str(color);
+    for &(a, b) in spans {
+        if a >= n || a >= b || b.saturating_sub(a) > n {
+            continue;
+        }
+        if b - a == n {
+            ctx.begin_path();
+            let _ = ctx.arc(cx, cy, radius * 0.655, 0., TAU);
+            ctx.close_path();
+            ctx.fill();
+            continue;
+        }
+        // Sequence ranges may represent an origin crossing with an unrolled end.
+        // Split it explicitly, preserving every multipart gap and exact boundary.
+        for (start, end) in [(a, b.min(n)), (0, b.saturating_sub(n))] {
+            if start >= end {
+                continue;
+            }
+            let start = start as f64 / n as f64 * TAU - PI / 2. + view.rotation;
+            let end = end as f64 / n as f64 * TAU - PI / 2. + view.rotation;
+            ctx.begin_path();
+            ctx.move_to(cx, cy);
+            let _ = ctx.arc(cx, cy, radius * 0.655, start, end);
+            ctx.close_path();
+            ctx.fill();
+        }
+    }
+    ctx.restore();
+}
+
+/// Stroke the actual arrow/ring contour, never its screen bounding rectangle.
+fn draw_selected_feature_outline(s: &State, view: View, radius: f64) {
+    let Some(index) = s.selected_feature else {
+        return;
+    };
+    let Some((ordinal, located)) = s
+        .geometry
+        .located
+        .iter()
+        .enumerate()
+        .take(s.rendered_geometry_count)
+        .find(|(_, located)| located.index == index)
+    else {
+        return;
+    };
+    let n = s.molecule.sequence.len();
+    if n == 0 {
+        return;
+    }
+    let nf = n as f64;
+    let ctx = &s.overlay_ctx;
+    let (cx, cy) = (view.width / 2., view.height / 2.);
+    let terminal = s.terminals[ordinal];
+    ctx.save();
+    ctx.set_line_join("round");
+    for &(a, b, reverse) in &located.spans {
+        if a >= b || b > n {
+            continue;
+        }
+        ctx.begin_path();
+        if view.topology == Topology::Linear {
+            let y = -0.10 - s.feature_lanes[ordinal] as f64 * 0.07;
+            let top = cy - (y + 0.055) * radius;
+            let bottom = cy - y * radius;
+            let start = a as f64 / nf * 1.6 - 0.8;
+            let end = b as f64 / nf * 1.6 - 0.8;
+            let px = |x: f64| cx + x * radius;
+            if terminal == Some((a, b, reverse)) {
+                let (tip, base) =
+                    collagene_map_label_layout::radial::arrow_head(start, end, reverse, 0.035)
+                        .expect("positive selected feature span");
+                let tail = if reverse { end } else { start };
+                ctx.move_to(px(tail), top);
+                ctx.line_to(px(base), top);
+                ctx.line_to(px(tip), (top + bottom) / 2.);
+                ctx.line_to(px(base), bottom);
+                ctx.line_to(px(tail), bottom);
+            } else {
+                ctx.rect(px(start), top, (end - start) * radius, bottom - top);
+            }
+        } else {
+            let (inner, outer) =
+                collagene_map_label_layout::radial::feature_band(s.feature_lanes[ordinal]);
+            let start = a as f64 / nf * TAU - PI / 2.;
+            let end = b as f64 / nf * TAU - PI / 2.;
+            let point = |angle: f64, r: f64| {
+                (
+                    cx + (angle + view.rotation).cos() * r * radius,
+                    cy + (angle + view.rotation).sin() * r * radius,
+                )
+            };
+            let trace = |from: f64, to: f64, r: f64, back: bool| {
+                let _ = ctx.arc_with_anticlockwise(
+                    cx,
+                    cy,
+                    r * radius,
+                    from + view.rotation,
+                    to + view.rotation,
+                    back,
+                );
+            };
+            if terminal == Some((a, b, reverse)) {
+                let (tip, base) =
+                    collagene_map_label_layout::radial::arrow_head(start, end, reverse, 0.055)
+                        .expect("positive selected feature span");
+                let tail = if reverse { end } else { start };
+                let (x, y) = point(tail, inner);
+                ctx.move_to(x, y);
+                let (x, y) = point(tail, outer);
+                ctx.line_to(x, y);
+                trace(tail, base, outer, reverse);
+                let (x, y) = point(tip, (inner + outer) / 2.);
+                ctx.line_to(x, y);
+                let (x, y) = point(base, inner);
+                ctx.line_to(x, y);
+                trace(base, tail, inner, !reverse);
+            } else {
+                let (x, y) = point(start, inner);
+                ctx.move_to(x, y);
+                let (x, y) = point(start, outer);
+                ctx.line_to(x, y);
+                trace(start, end, outer, false);
+                let (x, y) = point(end, inner);
+                ctx.line_to(x, y);
+                trace(end, start, inner, true);
+            }
+        }
+        ctx.close_path();
+        ctx.set_line_width(3.5);
+        ctx.set_stroke_style_str("rgba(255,255,255,0.90)");
+        ctx.stroke();
+        ctx.set_line_width(1.8);
+        ctx.set_stroke_style_str("#174f43");
+        ctx.stroke();
+    }
+    ctx.restore();
+}
+
 fn draw(s: &mut State) -> Option<LabelStats> {
     let rect = s.canvas.get_bounding_client_rect();
     let w = rect.width().max(0.);
@@ -1389,32 +1527,44 @@ fn draw(s: &mut State) -> Option<LabelStats> {
         "data-range-preview",
         &serde_json::to_string(&s.range_preview).unwrap_or_else(|_| "[]".into()),
     );
-    if w > 0. && h > 0. && !s.range_preview.is_empty() && !s.molecule.sequence.is_empty() {
-        ctx.save();
-        ctx.set_fill_style_str("rgba(25,128,104,0.25)");
-        ctx.set_stroke_style_str("rgba(25,128,104,0.4)");
-        let n = s.molecule.sequence.len() as f64;
-        for &(a, b) in &s.range_preview {
-            if a >= b || b > s.molecule.sequence.len() {
-                continue;
+    if w > 0. && h > 0. {
+        if s.molecule.topology == Topology::Circular {
+            draw_selection_sectors(
+                ctx,
+                &s.selection_spans,
+                s.molecule.sequence.len(),
+                view,
+                radius,
+                "rgba(25,128,104,0.14)",
+            );
+            draw_selection_sectors(
+                ctx,
+                &s.range_preview,
+                s.molecule.sequence.len(),
+                view,
+                radius,
+                "rgba(25,128,104,0.20)",
+            );
+        } else if !s.range_preview.is_empty() {
+            ctx.save();
+            ctx.set_fill_style_str("rgba(25,128,104,0.25)");
+            let n = s.molecule.sequence.len();
+            if n > 0 {
+                for &(a, b) in &s.range_preview {
+                    if a < b && b <= n {
+                        let x = w / 2. + (a as f64 / n as f64 * 1.6 - 0.8) * radius;
+                        ctx.fill_rect(
+                            x,
+                            h / 2. - 9.,
+                            (b - a) as f64 / n as f64 * 1.6 * radius,
+                            18.,
+                        );
+                    }
+                }
             }
-            if s.molecule.topology == Topology::Linear {
-                let x = w / 2. + (a as f64 / n * 1.6 - 0.8) * radius;
-                ctx.fill_rect(x, h / 2. - 9., (b - a) as f64 / n * 1.6 * radius, 18.);
-            } else {
-                ctx.set_line_width((radius * 0.08).max(4.));
-                ctx.begin_path();
-                let _ = ctx.arc(
-                    w / 2.,
-                    h / 2.,
-                    radius * 0.615,
-                    a as f64 / n * TAU - PI / 2. + s.rotation,
-                    b as f64 / n * TAU - PI / 2. + s.rotation,
-                );
-                ctx.stroke();
-            }
+            ctx.restore();
         }
-        ctx.restore();
+        draw_selected_feature_outline(s, view, radius);
     }
     if w > 0. && h > 0. {
         ctx.set_text_align("center");

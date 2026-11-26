@@ -19,6 +19,7 @@ const DISPLAY_BUDGET: usize = 128;
 const MAX_NAME_BYTES: usize = 4 * 1024 * 1024;
 const MAX_SINGLE_NAME_BYTES: usize = 4 * 1024;
 const MAX_VARIANT_CHARS: usize = 512;
+const MAX_INLINE_GLYPHS: usize = 65_536;
 
 #[derive(Clone, Copy, Debug)]
 pub struct View {
@@ -61,6 +62,13 @@ struct Name {
     width: f64,
     left: f64,
     ascent: f64,
+    descent: f64,
+    /// Actual arrow-body interval, excluding the terminal head on either strand.
+    arc_start: f64,
+    arc_end: f64,
+    glyphs: Vec<Glyph>,
+    glyph_ink_center: f64,
+    glyph_ink_width: f64,
     color: String,
 }
 
@@ -81,6 +89,22 @@ struct Metrics {
     width: f64,
     left: f64,
     ascent: f64,
+    descent: f64,
+}
+
+#[derive(Clone, Copy)]
+struct Glyph {
+    character: char,
+    advance: f64,
+    left: f64,
+    right: f64,
+    ascent: f64,
+    descent: f64,
+}
+struct CurvedGlyph {
+    glyph: Glyph,
+    center: Point,
+    rotation: f64,
 }
 
 pub struct Cache {
@@ -197,7 +221,96 @@ fn metrics(ctx: &Ctx, text: &str) -> Option<Metrics> {
         width: left + advance.max(right).max(0.),
         left,
         ascent: ascent.max(0.),
+        descent: descent.max(0.),
     })
+}
+
+fn glyph_metrics(ctx: &Ctx, character: char) -> Option<Glyph> {
+    let mut encoded = [0; 4];
+    let m = ctx.measure_text(character.encode_utf8(&mut encoded)).ok()?;
+    let glyph = Glyph {
+        character,
+        advance: m.width(),
+        left: m.actual_bounding_box_left(),
+        right: m.actual_bounding_box_right(),
+        ascent: m.actual_bounding_box_ascent(),
+        descent: m.actual_bounding_box_descent(),
+    };
+    if [
+        glyph.advance,
+        glyph.left,
+        glyph.right,
+        glyph.ascent,
+        glyph.descent,
+    ]
+    .iter()
+    .any(|n| !n.is_finite())
+        || glyph.advance < 0.
+        || glyph.ascent.max(0.) + glyph.descent.max(0.) > LINE
+    {
+        return None;
+    }
+    Some(glyph)
+}
+
+/// One tangent per glyph, with travel reversed on the lower semicircle. Both
+/// geometry and hit bounds use cached ink metrics, never frame-time measuring.
+fn curved_inline(name: &Name, view: &View, distance: f64) -> Option<(Rect, Vec<CurvedGlyph>)> {
+    let available = (name.arc_end - name.arc_start) * TAU * distance;
+    if name.glyphs.is_empty()
+        || name.glyph_ink_width + 8. >= available
+        || name.glyph_ink_width >= distance * PI * 0.8
+    {
+        return None;
+    }
+    let angle = (name.arc_start + name.arc_end) / 2. * TAU - PI / 2. + view.rotation;
+    let direction = if angle.sin() > 0. { -1. } else { 1. };
+    let baseline = (name.ascent - name.descent) / 2.;
+    let (cx, cy) = (view.width / 2., view.height / 2.);
+    let mut cursor = 0.;
+    let mut placed = Vec::with_capacity(name.glyphs.len());
+    let (mut min_x, mut min_y, mut max_x, mut max_y) = (
+        f64::INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NEG_INFINITY,
+    );
+    for &glyph in &name.glyphs {
+        let offset = cursor + glyph.advance / 2. - name.glyph_ink_center;
+        let theta = angle + direction * offset / distance;
+        let rotation = theta + direction * PI / 2.;
+        let center = Point {
+            x: cx + theta.cos() * distance,
+            y: cy + theta.sin() * distance,
+        };
+        let (s, c) = rotation.sin_cos();
+        for x in [
+            -glyph.advance / 2. - glyph.left,
+            -glyph.advance / 2. + glyph.right,
+        ] {
+            for y in [baseline - glyph.ascent, baseline + glyph.descent] {
+                let px = center.x + c * x - s * y;
+                let py = center.y + s * x + c * y;
+                min_x = min_x.min(px);
+                min_y = min_y.min(py);
+                max_x = max_x.max(px);
+                max_y = max_y.max(py);
+            }
+        }
+        placed.push(CurvedGlyph {
+            glyph,
+            center,
+            rotation,
+        });
+        cursor += glyph.advance;
+    }
+    let rect = Rect {
+        x: min_x - TEXT_PAD,
+        y: min_y - TEXT_PAD,
+        width: max_x - min_x + 2. * TEXT_PAD,
+        height: max_y - min_y + 2. * TEXT_PAD,
+    };
+    Some((rect, placed))
 }
 
 fn measure(ctx: &Ctx, text: &str) -> Option<f64> {
@@ -269,6 +382,8 @@ impl Cache {
         ctx.set_text_align("left");
         ctx.set_text_baseline("alphabetic");
         let mut names = Vec::with_capacity(geometry.located.len());
+        let mut glyph_cache = BTreeMap::new();
+        let mut glyph_count = 0usize;
         for (ordinal, located) in geometry.located.iter().enumerate() {
             let feature = &molecule.features[located.index];
             // Longest actual local part avoids putting joined annotations' one
@@ -288,6 +403,53 @@ impl Cache {
                 cache.failed = true;
                 break;
             }
+            let mut glyphs = vec![];
+            let text = feature.label();
+            let count = text.chars().count();
+            if count <= MAX_VARIANT_CHARS && count <= MAX_INLINE_GLYPHS.saturating_sub(glyph_count)
+            {
+                for character in text.chars() {
+                    let glyph = if let Some(glyph) = glyph_cache.get(&character) {
+                        Some(*glyph)
+                    } else {
+                        let glyph = glyph_metrics(ctx, character);
+                        if let Some(g) = glyph {
+                            glyph_cache.insert(character, g);
+                        }
+                        glyph
+                    };
+                    if let Some(glyph) = glyph {
+                        glyphs.push(glyph);
+                    } else {
+                        glyphs.clear();
+                        break;
+                    }
+                }
+            }
+            glyph_count += glyphs.len();
+            let mut advance = 0f64;
+            let mut ink_left = 0f64;
+            let mut ink_right = 0f64;
+            for glyph in &glyphs {
+                ink_left = ink_left.min(advance - glyph.left);
+                ink_right = ink_right.max(advance + glyph.right);
+                advance += glyph.advance;
+            }
+            let mut arc_start = part.0 as f64 / molecule.sequence.len() as f64;
+            let mut arc_end = part.1 as f64 / molecule.sequence.len() as f64;
+            if molecule.sequence.alphabet() != collagene_core::Alphabet::Protein
+                && collagene_core::tracks::terminal_span(&feature.location) == Some(part)
+            {
+                if let Some((_, base)) =
+                    label_layout::radial::arrow_head(arc_start * TAU, arc_end * TAU, part.2, 0.055)
+                {
+                    if part.2 {
+                        arc_start = base / TAU;
+                    } else {
+                        arc_end = base / TAU;
+                    }
+                }
+            }
             names.push(Name {
                 feature_index: located.index,
                 lane: lanes[ordinal],
@@ -306,6 +468,12 @@ impl Cache {
                 width: measured.width,
                 left: measured.left,
                 ascent: measured.ascent,
+                descent: measured.descent,
+                arc_start,
+                arc_end,
+                glyphs,
+                glyph_ink_center: (ink_left + ink_right) / 2.,
+                glyph_ink_width: ink_right - ink_left,
                 color: crate::renderer::css_color_for_strand(feature, part.2),
             });
         }
@@ -429,37 +597,61 @@ impl Cache {
             let layer = name.lane as f64;
             let (inner, outer) = label_layout::radial::feature_band(name.lane);
             let distance = (inner + outer) / 2. * r;
-            let inline_width = if view.topology == Topology::Circular {
-                name.span_fraction * TAU * distance * 0.82
-            } else {
-                name.span_fraction * 1.6 * r - 12.
-            };
-            if name.width + 8. < inline_width
-                && (view.topology != Topology::Circular || name.width < distance * 0.65)
-            {
-                let angle = name.midpoint * TAU - PI / 2. + view.rotation;
-                let (anchor, mut rotate) = if view.topology == Topology::Circular {
-                    (
-                        Point {
-                            x: cx + angle.cos() * distance,
-                            y: cy + angle.sin() * distance,
-                        },
-                        angle + PI / 2.,
-                    )
-                } else {
-                    (
-                        Point {
-                            x: cx + (name.midpoint * 1.6 - 0.8) * r,
-                            y: cy + (0.0725 + layer * 0.07) * r,
-                        },
-                        0.,
-                    )
-                };
-                if rotate.cos() < 0. {
-                    rotate += PI;
+            if view.topology == Topology::Circular {
+                if let Some((rect, glyphs)) = curved_inline(name, view, distance) {
+                    let collision = frame.hits.iter().any(|h| {
+                        h.rect.x < rect.right()
+                            && h.rect.right() > rect.x
+                            && h.rect.y < rect.bottom()
+                            && h.rect.bottom() > rect.y
+                    });
+                    if !collision
+                        && rect.x >= 0.
+                        && rect.y >= 0.
+                        && rect.right() <= view.width
+                        && rect.bottom() <= view.height
+                    {
+                        ctx.save();
+                        ctx.set_font(FONT);
+                        ctx.set_text_align("left");
+                        ctx.set_text_baseline("alphabetic");
+                        ctx.set_fill_style_str(name.inline_color);
+                        let baseline = (name.ascent - name.descent) / 2.;
+                        let mut success = true;
+                        for placed in glyphs {
+                            ctx.save();
+                            let _ = ctx.translate(placed.center.x, placed.center.y);
+                            let _ = ctx.rotate(placed.rotation);
+                            let mut encoded = [0; 4];
+                            success &= ctx
+                                .fill_text(
+                                    placed.glyph.character.encode_utf8(&mut encoded),
+                                    -placed.glyph.advance / 2.,
+                                    baseline,
+                                )
+                                .is_ok();
+                            ctx.restore();
+                        }
+                        ctx.restore();
+                        if success {
+                            frame.hits.push(Hit {
+                                feature_index: name.feature_index,
+                                rect,
+                            });
+                            frame.stats.displayed += 1;
+                            continue;
+                        }
+                    }
                 }
-                let width = name.width * rotate.cos().abs() + LINE * rotate.sin().abs();
-                let height = name.width * rotate.sin().abs() + LINE * rotate.cos().abs();
+            }
+            let inline_width = name.span_fraction * 1.6 * r - 12.;
+            if view.topology == Topology::Linear && name.width + 8. < inline_width {
+                let anchor = Point {
+                    x: cx + (name.midpoint * 1.6 - 0.8) * r,
+                    y: cy + (0.0725 + layer * 0.07) * r,
+                };
+                let width = name.width;
+                let height = LINE;
                 let rect = Rect {
                     x: anchor.x - width / 2.,
                     y: anchor.y - height / 2.,
@@ -481,7 +673,6 @@ impl Cache {
                     ctx.save();
                     ctx.set_font(FONT);
                     let _ = ctx.translate(anchor.x, anchor.y);
-                    let _ = ctx.rotate(rotate);
                     ctx.set_text_align("center");
                     ctx.set_text_baseline("middle");
                     ctx.set_fill_style_str(name.inline_color);
@@ -646,8 +837,10 @@ impl Cache {
                 .binary_search(&index)
                 .ok()
                 .and_then(|_| self.variants.get(&source_index));
-            ctx.set_fill_style_str("#fbfcfb");
-            ctx.fill_rect(rect.x, rect.y, rect.width, rect.height);
+            if selected_feature != Some(name.feature_index) {
+                ctx.set_fill_style_str("#fbfcfb");
+                ctx.fill_rect(rect.x, rect.y, rect.width, rect.height);
+            }
             ctx.set_fill_style_str(&name.color);
             let success = if let Some(variant) = variant {
                 variant.lines.iter().enumerate().all(|(line, text)| {

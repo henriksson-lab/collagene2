@@ -72,6 +72,88 @@ execution priority, not the full goal's completion criteria. Browser checks stay
 deferred until all in-scope implementation is complete, and compiler checks run
 in the background while coding continues.
 
+## Shared lab library in server mode — user requirement, 26 November 2026
+
+Server deployments must provide a persistent joint database accessible to all lab
+members, with folders for organizing plasmids. F29 now explicitly includes this
+requirement. It belongs with the everyday sequence workspace and server delivery;
+it does not wait for advanced concurrent editing, comments or review in F30.
+The current port8082 deployment is a static preview with browser-local documents;
+shared persistence is required implementation work, not a current capability.
+
+- Keep the main editor directly accessible. A shared library tree supports folder
+  browsing, import, open, save, rename and move without requiring projects or
+  organization dashboards. Folders organize sequence documents, not physical
+  samples, freezer locations or reagent inventory.
+- Use one authoritative server database for the lab, accessed through the Rust
+  host and compact versioned binary messages. Keep the storage adapter separate
+  from the scientific core, browser workspace cache and future Tauri local files.
+  An embedded transactional database is sufficient for the initial single-server
+  lab deployment; do not require an external database executable for normal use.
+- Store stable folder/document identities and immutable document revisions,
+  retaining native document/history, annotations, cloning provenance and format
+  evidence. Saving against an outdated revision must report a conflict and retain
+  both work streams rather than silently overwriting another member's changes.
+  Sharing a plasmid includes its declared dependency/history closure, not unrelated
+  private documents from the browser workspace.
+- Authenticate lab membership at the host boundary. All members initially access
+  the shared lab library; client-supplied lab/user IDs grant no authority. Keep
+  server persistence inside operator-configured storage, and provide backup and
+  restore with schema migrations. Database-backed access does not expose arbitrary
+  server filesystem paths. Do not publish database writes anonymously on8082.
+- Acceptance includes two independent clients seeing the same folders/plasmids,
+  persistence across restart, atomic save/conflict behavior, folder-cycle and
+  cross-lab isolation checks, backup/restore, and unchanged native/WASM scientific
+  results. Browser acceptance remains deferred under the existing instruction.
+
+Storage and binary service contracts are suitable independent parallel work.
+Host integration and the library sidebar follow those contracts; existing local
+workspaces remain useful for standalone/offline use.
+
+## Tauri local library and database synchronization — user requirement, 26 November 2026
+
+The desktop application must work fully offline, with local plasmids, folders,
+annotations, cloning plans/history and embedded scientific computation. Shared
+server storage is one deployment mode; desktop use must not depend on a server,
+network login or an always-available database. Tauri should behave like a local
+repository with configurable remotes, rather than a thin wrapper around the web
+server.
+
+- Users choose which shared database/remotes to connect and which plasmids or
+  folders to bring into their local library. Keep remote configuration and
+  credentials outside exported biological documents; credentials belong in the
+  native credential store. The storage/service abstraction must allow independent
+  database deployments and later backend adapters without changing the science
+  model or hard-coding one lab server.
+- Support explicit clone/import, pull and push, with visible local modifications,
+  pending uploads and remote updates. Connection loss must leave local editing,
+  analysis, design verification, exports and history usable. Failed synchronization
+  must preserve unsent local revisions for retry.
+- Retain stable native identities, immutable revisions, ancestry and all selected
+  dependency/run-capsule evidence. Distinguish a local document from its bindings
+  to each remote library/document and last common synchronized revision. Matching
+  DNA sequence or display name does not establish shared identity or ancestry.
+- Synchronization exchanges bounded versioned binary records and compares revision
+  ancestry. Push uses atomic expected-head updates; pull never silently overwrites
+  unpublished local work. Divergence remains explicit, retaining both versions
+  for review/merge or save-as-copy. Do not implement last-writer-wins for DNA,
+  annotations or cloning evidence, and do not fabricate physical authority during
+  merge or replay.
+- Transfer the required immutable revision/dependency closure and preserve folder
+  structure, including offline folder changes and destination conflicts. Track
+  synchronization separately for every configured remote. The initial shared
+  library import/CAS API is groundwork; it is not evidence of completed offline
+  synchronization or multi-remote support.
+- Acceptance includes disconnected startup and ordinary cloning workflows,
+  reconnect after local/remote changes, interrupted push/retry, two diverging
+  clients, remote selection/switching, history/provenance preservation, and native
+  Windows/macOS/Linux parity. No external Git installation or scientific process
+  is required at runtime.
+
+F31 includes this local repository and synchronization workflow; F29/F30 provide
+shared library and conflict primitives. Desktop and sync implementation remain
+active deliverables, not optional replacements for a fully offline application.
+
 ## Workflow review follow-up — 25 November 2026
 
 The user's requested parallel checks of official Benchling workflows are recorded
@@ -312,9 +394,9 @@ P0 is the foundation and first usable cloning release. P1 supplies everyday mole
 | F26 | P2 | Codon optimization, reverse translation and synthesis constraints | Optimized DNA translates to the required protein and satisfies declared constraints |
 | F27 | P2 | Bulk cloning, batch analysis, plate layouts and combinatorial libraries | Jobs are cancellable; stable identifiers connect designs, oligos and outputs |
 | F28 | P2 | Whole-plasmid/NGS/long-read validation and large reference browsing | Coverage, variants and structural discrepancies are distinguishable from consensus |
-| F29 | P2 | Searchable sequence library, tags and optional shallow collections | Open/edit/export without creating a project; biological equivalence and document identity are handled separately |
+| F29 | P1 | Searchable sequence library; server mode joint lab database with plasmid folders; local standalone documents | Lab members browse/open/save the same persisted folders and plasmid revisions across browsers; restart persistence and explicit concurrent-save conflicts; no mandatory project creation |
 | F30 | P2 | Sharing, permissions, comments, review and concurrent editing | Revision conflicts are explicit; scientific verification survives only valid revisions |
-| F31 | P2 | Tauri desktop, offline files, embedded native compute and local MCP on Windows/macOS/Linux | Shared fixtures give equivalent native/WASM results; all three OS webviews are tested; no external software is invoked |
+| F31 | P2 | Tauri desktop with full offline local plasmid library, embedded compute/MCP, and git-like pull/push to chosen database remotes on Windows/macOS/Linux | Offline startup/design/export; explicit per-remote ancestry and divergence; interrupted-sync recovery; native/WASM parity and all three OS delivery; no external executables |
 | F33 | P2 | Remote/local sequence sources, embedded sequence similarity search and data connectors | Accession/version, source and retrieval time accompany imports; search uses embedded algorithms |
 | F34 | P3 | RNA modifications, antibody/protein analysis and structure visualization | Specialized semantics and imported structure data have explicit provenance; computation uses embedded code |
 | F35 | P1 | Import by Addgene plasmid URL/ID, NCBI nucleotide/GenBank URL or accession.version, and direct sequence-file URLs through source adapters | Imported sequence/topology/features are validated by the same parsers; canonical source, accession/version, retrieval timestamp and evidence hash survive save/export; missing authentication, multiple sequence choices and fetch failures remain explicit |
@@ -356,7 +438,7 @@ Every import returns a structured report: supported fields, preserved opaque dat
 
 Round-trip acceptance compares molecule/annotation semantics, not whitespace or field ordering. When a destination cannot express information, show an export loss summary. Original opaque chunks may be retained as attachments, but must not be emitted as current sequence-linked metadata after edits without validating them.
 
-The proposed native archive contains a small JSON manifest with schema versions and hashes, binary sequence/analysis chunks, versioned document metadata and plan records, and original evidence files. Sequence bytes can initially be IUPAC ASCII; packing can follow profiling. Keep durable schemas independently migratable from transient RPC types. Browser IndexedDB and native/server databases store the same logical records through platform adapters.
+The proposed native archive contains a small JSON manifest with schema versions and hashes, binary sequence/analysis chunks, versioned document metadata and plan records, and original evidence files. Sequence bytes can initially be IUPAC ASCII; packing can follow profiling. Keep durable schemas independently migratable from transient RPC types. Browser IndexedDB and native/server databases store the same logical records through platform adapters. Server mode requires a persistent joint lab database and shared plasmid folders, rather than isolated per-browser storage; see the server library requirement below.
 
 ## Rust libraries and implementation ownership
 
@@ -425,7 +507,7 @@ crates/
   reports/     protocol data and HTML/PDF adapters
   app-web/     Leptos application and platform adapters
   worker/      WASM analysis worker entry point
-  service/     optional HTTP, hosted jobs and project synchronization
+  service/     server-mode lab library, authentication and binary API; optional hosted jobs
   mcp/         native rmcp server and tool contracts
   desktop/     later Tauri shell and native adapters
 ```
@@ -655,13 +737,13 @@ Run the same scientific fixtures natively on Windows, macOS and Linux and in bro
 | M3 | MCP design workflow and HTML/print reports | External client proposes a plan; core verifies it; UI inspects it; export records the same revisions end to end |
 | M4 | Everyday workflows: Addgene/NCBI URL import, basic primer tools, Golden Gate, mutagenesis, traces, pairwise alignment, gel prediction and embedded PDF | Migration corpus and representative laboratory workflows work without undocumented loss or manual sequence repair |
 | M5 | Remaining cloning methods and bulk design first; CRISPR, optimization, NGS and collaboration follow the execution queue above | Method-specific validation and bounded large-job execution are established; further BAM/BAI work waits until the rest of the software is implemented |
-| M6 | Tauri and offline workflows on Windows/macOS/Linux | Cross-platform parity fixtures and real installation/recovery tests pass; scientific processing invokes no external software |
+| M6 | Tauri local library, full offline workflows and synchronization to chosen database remotes on Windows/macOS/Linux | Offline startup/design/export, remote divergence and interruption recovery, cross-platform parity and real installation checks; no external Git/scientific executables |
 
 M0 spikes should produce concrete measurements: a GenBank/ApE origin-spanning round trip; SnapGene and trace parser fidelity reports; a rotating/scrolling Leptos-WebGL2 stress view; binary protocol comparisons; portable core builds on Windows/macOS/Linux and WASM; and one typed MCP plan checked by a small deterministic simulator. Audit runtime dependencies for external executable calls. These are bounded experiments before committing to the full dependency stack.
 
 The desktop viewer/GenBank/virtual-digest MVP remains the foundation. The current cloning-first execution queue governs implementation across M1–M6, with browser validation deferred until implementation is complete. M1–M3 expand the end-to-end workflow to target definition, proposed or manually authored cloning plans, deterministic reconstruction/checking and inspectable protocols. These later milestones retain their original scope and build on the same scientific and architectural boundaries.
 
-Open product decisions for implementation are the supported browser/device baseline, minimum supported Windows/macOS/Linux versions, initial hosted-versus-local project model, availability of representative legacy files, and database redistribution sources. Until those are resolved, favor portable scientific crates, local browser editing, optional hosted services and explicit dataset provenance.
+Open product decisions for implementation are the supported browser/device baseline, minimum supported Windows/macOS/Linux versions, availability of representative legacy files, and database redistribution sources. Until those are resolved, favor portable scientific crates, local browser editing, optional hosted services and explicit dataset provenance.
 
 The independent [two-site recombination crate](../crates/recombination/README.md) and [application workflow](RECOMBINATION_UI.md) are an initial F15 increment: explicit BP/LR reference exchanges, versioned full-site contexts, reciprocal products, source annotation projection, typed plans/history, binary workers, MCP and HTML/PDF exports. Fresh reconstruction checks the selected component against the independent target; reference-only chemical incompleteness remains sticky. Completing F15 still requires the remaining physical chemistry, broader Gateway profiles/reactions and method coverage above. These reference designs do not substitute for that scope.
 
@@ -2485,5 +2567,39 @@ fixtures, old ancestry/capability behavior and UI persistence. The new negative
 fixtures were corrected to the established Unsupported→Incomplete contract and
 shared conservative fuzzy-feature policy; actual absence of downstream products
 and material remains asserted. Native/WASM compilation and formatting pass.
-Public8082 remains the combined-cloning worker85 snapshot; no browser checks or
-HTTP smoke checks were run. The complete original product objective remains active.
+Source checkpoint7b93508 also passes all four CI jobs (run45799970938):
+scientific Windows/macOS/Linux and web. At this checkpoint Public8082 remained
+the combined-cloning worker85 snapshot; no browser checks or HTTP smoke checks
+were run. The complete original product objective remains active.
+
+
+### Map selection, curved feature labels and transient menus
+
+Circular feature names now use individually positioned tangent glyphs along the
+actual feature body, excluding directional arrowheads. Text reverses its travel
+on the lower semicircle to stay upright as the plasmid rotates. Cached glyph ink
+metrics feed hit bounds and collision handling; short features retain external
+leader labels. Restriction labels remain straight.
+
+Selected features receive borders following their real arrow contours and lanes.
+Exact circular base ranges use translucent center-to-arc sectors, including
+origin crossings and separate multipart spans; linear range bands remain. Map
+dragging still rotates, with precise base selection in the sequence/coordinates.
+Selected external feature text no longer has an opaque background rectangle.
+
+Toolbar Create/Analyze, File, inspector tools, selection actions and assembly
+popup menus share one transient lifecycle: opening another branch, outside
+interaction, choosing an action or Escape closes menus appropriately. Nested
+ancestors remain open while using a submenu; Escape returns focus to its trigger.
+Editable fields and intermediate draft/export preparation actions stay open.
+Ordinary scientific disclosure sections remain independent.
+
+The combined Trunk build passes (existing three warnings), and all799 frozen build
+inputs remain unchanged. Public8082 now serves worker86, with57 immutable assets
+(460451110 bytes) and all15 previous worker versions retained. SRI references,
+WASM headers, complete worker triples and exact process/socket ownership validate
+without browser or application HTTP checks. The bounded static asset allowance
+increased414→441MiB based on measured total plus oneMiB margin; no preallocation,
+path/per-file restrictions or filesystem access changed. The previous combined
+cloning snapshot remains available for rollback. Four offline staging tests pass.
+This is publication evidence, not GUI acceptance; the full product goal remains active.

@@ -68,11 +68,11 @@ pub fn AssemblyDraftActions(
         });
     });
     view! {
-        <details class="assembly-draft-menu">
+        <details class="assembly-draft-menu" data-transient-menu="">
             <summary>"Draft ▾"</summary>
             <div class="assembly-draft-menu-content">
-                <button class="text-tool" disabled=move||locked.get() on:click=move|_|propose.run(false)>"New assembly…"</button>
-                <button class="text-tool" disabled=move||locked.get()||previous.with(Option::is_none) on:click=move|_|propose.run(true)>"Switch to previous draft…"</button>
+                <button class="text-tool" data-menu-keep-open="" disabled=move||locked.get() on:click=move|_|propose.run(false)>"New assembly…"</button>
+                <button class="text-tool" data-menu-keep-open="" disabled=move||locked.get()||previous.with(Option::is_none) on:click=move|_|propose.run(true)>"Switch to previous draft…"</button>
                 <p class="helper">"The working draft is saved with the workspace. One previous draft is kept for this session, until another draft replaces it, a workspace update clears it, or this session ends."</p>
                 {move||pending.get().map(|saved|{
                     let title=if saved.restore { "Switch working drafts?" } else { "Start a new assembly?" };

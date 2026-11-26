@@ -191,7 +191,7 @@ pub fn AssemblyProductView(
             <p class="product-review-result"><strong>{snapshot.with_value(|s|format!("{:?}",s.report.status))}</strong><span>{move||if current.get(){"Current reconstruction snapshot"}else{"Historical snapshot · reconstruct again"}}</span></p>
         </div><div class="product-review-actions">
             {on_finalize.map(|finalize|view!{<button class="button primary" disabled=move||!output_available||!current.get() on:click=move|_|{let result=capture.run(()).and_then(|(plan,_)|finalize.run(collagene_core::transfer::Candidate::new(plan)));if let Err(error)=result{status.set(error);}}>"Create assembly outputs"</button>})}
-            <details class="product-export-menu"><summary>"Export primers / steps"</summary><crate::assembly_outputs::AssemblyOutputs capture identity epoch/><Show when=move||available><crate::assembly_product_exports::AssemblyProductExports capture=export_actual identity=export_identity epoch/></Show><button class="text-tool" disabled=move||!report_available||!current.get() on:click=export_report>"Export full reconstruction JSON"</button></details>
+            <details class="product-export-menu" data-transient-menu=""><summary>"Export primers / steps"</summary><crate::assembly_outputs::AssemblyOutputs capture identity epoch/><Show when=move||available><crate::assembly_product_exports::AssemblyProductExports capture=export_actual identity=export_identity epoch/></Show><button class="text-tool" disabled=move||!report_available||!current.get() on:click=export_report>"Export full reconstruction JSON"</button></details>
         </div></header>
         {snapshot.with_value(|s|(s.product_revision.is_some()&&s.report.status==Status::Invalid).then(||view!{<p class="assembly-product-status" role="status">"Output creation is unavailable because the independent target check is invalid. Inspect the actual DNA and findings, then correct the design."</p>}))}
         <p class="helper product-review-scope">"Actual reconstructed reference DNA, separate from intended DNA. This view does not establish experimental success, exhaustive product uniqueness or newly prepared material."</p>
@@ -575,7 +575,7 @@ pub(crate) fn ReferenceCanvas(
                 <button class="text-tool" title="Fit product map" disabled=move||!current.get() on:click=move|_|if let Some(map)=renderer.get_value(){map.reset();}>"Fit"</button>
                 <button class="text-tool" aria-label="Zoom product map in" title="Zoom in" disabled=move||!current.get() on:click=move|_|if let Some(map)=renderer.get_value(){map.zoom(1.15);}>"+"</button>
             </div></Show>
-            <details class="product-interval-menu"><summary>"Go to interval"</summary><div class="product-interval-fields">
+            <details class="product-interval-menu" data-transient-menu=""><summary>"Go to interval"</summary><div class="product-interval-fields">
                 <label>"Start (1-based)"<input type="number" min="1" aria-label="Reference start" disabled=move||!current.get() prop:value=move||start.get() on:input=move|event|start.set(event_target_value(&event))/></label>
                 <label>"End (inclusive)"<input type="number" min="1" aria-label="Reference end" disabled=move||!current.get() prop:value=move||end.get() on:input=move|event|end.set(event_target_value(&event))/></label>
                 <button class="button secondary" disabled=move||!current.get() on:click=navigate>"Show exact interval"</button>

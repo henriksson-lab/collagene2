@@ -2645,3 +2645,37 @@ Public8082 still serves the curved-map/menu snapshot e128dc1 and worker86. The n
 shared-library code is not yet published there; no access key or database has
 been created for public deployment. Browser acceptance remains deferred under
 the user's instruction, and the complete original product goal remains active.
+
+
+### Shared-library asset publication and private preview
+
+Source814733e now passes its complete Trunk/WASM asset build, including the
+final historical-checkout policy. All825 frozen build inputs match their saved
+hashes. Staging retains16 worker versions with58 immutable assets/461962855bytes,
+within the unchanged441MiB static limit. Active worker86 remains
+`3fb7ed14ce8175df3fd728c4f1db25727c7d215d37f3321ccea3231a1a24ebff`;
+referenced digests, WASM headers and complete triples validate. Public8082 now
+serves these assets in read-only viewer mode. The previous curved-label snapshot
+is retained for rollback.
+
+An independently snapshotted native server binary starts the library-enabled
+preview on loopback127.0.0.1:8084 against an initialized, owner-private SQLite root
+under ignored `.collagene-runtime/shared-library`. Its key is generated into a
+private file and has not been printed, placed in argv or committed. Operator
+configuration stays beside that data; neither the key nor DB is under static
+assets. Shared-lab production exposure still requires operator HTTPS/proxy
+configuration; the public viewer remains read-only. Exact PID/argv/cwd/listening
+socket ownership was verified for both processes without application HTTP or
+browser checks. No GUI acceptance is claimed.
+
+Reliable mutation, separate sync-wire and durable offline repository sources are
+being prepared independently. They were not registered or built during this
+asset freeze and do not change the published v1 service. Their native integration
+and actual Tauri IPC/credential/desktop delivery remain active work.
+
+Source814733e passes all four existing CI jobs (run45814836237). Those native
+package lists predated the new library/server crates, so they are not evidence
+of new server Windows/macOS execution. CI now explicitly includes all five new
+crates and the server binary in the native matrix, plus the portable protocol/
+sharing crates in the WASM gate. Their first expanded matrix result remains
+pending; native local and integrated WASM evidence above is unchanged.

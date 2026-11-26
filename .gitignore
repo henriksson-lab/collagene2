@@ -3,3 +3,4 @@
 /.trunk/
 *.log
 __pycache__/
+/.collagene-runtime/

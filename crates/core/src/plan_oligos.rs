@@ -302,6 +302,15 @@ pub fn preflight(plan: &DesignPlan, target: &Molecule, _options: &Options) -> Re
                 source_guard(template, index, &ids)?;
                 origin.validate_documentary()?;
             }
+            Operation::ReconstructDigestFragment { template, origin } => {
+                source_guard(template, index, &ids)?;
+                origin.validate_documentary()?;
+                if !matches!(template, Source::Input(_)) {
+                    return Err(bad(
+                        "saved digest reconstruction requires an original input",
+                    ));
+                }
+            }
             Operation::AnnealOligos { top, bottom, .. } => {
                 source_guard(top, index, &ids)?;
                 source_guard(bottom, index, &ids)?;
@@ -653,6 +662,15 @@ pub fn build(plan: &DesignPlan, target: &Molecule, options: &Options) -> Result<
                     index + 1,
                     origin.selection.run_id,
                     origin.selection.step_index + 1
+                ),
+            ),
+            Operation::ReconstructDigestFragment { origin, .. } => warning(
+                &mut builder.warnings,
+                format!(
+                    "Step {} reuses an explicitly saved catalog digest fragment (source event {}, fragment {}). Its originating PCR primers and oligos are historical and excluded from this new order; only new downstream preparation contributes orderable oligos. Native origin assumptions and incomplete findings remain applicable.",
+                    index + 1,
+                    origin.record.request.source.event_id,
+                    origin.record.request.fragment_index + 1
                 ),
             ),
             Operation::MultiSiteRecombineReference { .. } => warning(

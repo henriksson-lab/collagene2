@@ -100,6 +100,7 @@ fn presentation(kind: &str) -> bool {
             | "assembly-draft-v9"
             | "assembly-draft-v10"
             | "assembly-draft-v11"
+            | "assembly-draft-v12"
             // Named working designs, unfinished primer text and visibility
             // preferences produce no immutable plasmid/run event themselves.
             | "assembly-design-v1"
@@ -348,6 +349,21 @@ impl<'a> Graph<'a> {
                 // Following owner plans avoids independently interpreting opaque
                 // serialized candidate packages or inventing material state.
                 for op in &run.plan.steps {
+                    if let Operation::ReconstructDigestFragment { origin, .. } = op {
+                        // The native owner record validates the exact capsule; close
+                        // its actual retained derivation, not a label or sequence alias.
+                        self.binding(&origin.record.product)?;
+                        for binding in
+                            collagene_core::run_digest_history::source_bindings(&origin.record)?
+                        {
+                            self.binding(&binding)?;
+                        }
+                        for run in
+                            collagene_core::run_digest_history::required_run_ids(&origin.record)?
+                        {
+                            self.run(&run)?;
+                        }
+                    }
                     if let Operation::ReconstructRunProduct { origin, .. } = op {
                         self.run(&origin.selection.run_id)?;
                         self.binding(&origin.selection.event)?;

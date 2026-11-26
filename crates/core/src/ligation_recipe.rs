@@ -33,12 +33,26 @@ fn sources(recipe: &Recipe) -> Result<Vec<FragmentSpec>, Error> {
     if recipe.fragments.is_empty() || recipe.fragments.len() > preparation::MAX_ROWS {
         return Err(Error::TooLarge);
     }
-    crate::run_material::capsules_preflight(recipe.fragments.iter().filter_map(|row| {
+    crate::run_material::material_capsules_preflight(recipe.fragments.iter().filter_map(|row| {
         match &row.source.preparation {
-            preparation::Preparation::FromRun { origin, .. } => Some(origin),
+            preparation::Preparation::FromRun { origin, .. } => {
+                Some(crate::run_material::MaterialOriginRef::Run(origin))
+            }
+            preparation::Preparation::FromDigest { origin, .. } => {
+                Some(crate::run_material::MaterialOriginRef::Digest(origin))
+            }
             _ => None,
         }
     }))?;
+    for row in &recipe.fragments {
+        if let preparation::Preparation::FromDigest {
+            origin,
+            preparation: child,
+        } = &row.source.preparation
+        {
+            preparation::from_digest_shape(origin, child)?;
+        }
+    }
     Ok(recipe.fragments.iter().map(|f| f.source.clone()).collect())
 }
 /// Borrowed host guard before document copies, hashing or scientific work.
@@ -122,6 +136,10 @@ pub fn source_preflight(
                 origin,
                 preparation: child,
             } => preparation::from_run_shape(origin, child)?,
+            preparation::Preparation::FromDigest {
+                origin,
+                preparation: child,
+            } => preparation::from_digest_shape(origin, child)?,
             preparation::Preparation::AnnealedOligos {
                 bottom_input_id,
                 options,
@@ -426,6 +444,7 @@ impl Preview {
                             | Operation::PcrWithMismatches { .. }
                             | Operation::OverlapExtension { .. }
                             | Operation::ReconstructRunProduct { .. }
+                            | Operation::ReconstructDigestFragment { .. }
                             | Operation::AnnealOligos { .. }
                             | Operation::DeclareSourceTermini { .. }
                             | Operation::Digest { .. }

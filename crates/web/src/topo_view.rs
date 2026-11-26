@@ -258,9 +258,10 @@ pub fn TopoPanel(
     let selected_origin = Memo::new(move |_| template_origin.get());
     let on_origin = Callback::new(move |pin: Option<crate::run_origin_model::PinnedOrigin>| {
         if let Some(pin) = &pin {
+            pin.as_run()?;
             if template_source
                 .get_untracked()
-                .is_none_or(|s| s.binding != pin.selection.event)
+                .is_none_or(|s| s.binding != *pin.event())
             {
                 return Err("The insert template event changed.".into());
             }
@@ -312,17 +313,21 @@ pub fn TopoPanel(
             return Err("The independent target exceeds the100,000-base check limit.".into());
         }
         if let Some(pin) = template_origin.get() {
+            pin.as_run()?;
             if bindings
                 .iter()
                 .find(|(r, _)| r == "insert_template")
-                .is_none_or(|(_, e)| *e != pin.selection.event)
+                .is_none_or(|(_, e)| *e != *pin.event())
             {
                 return Err("Select the saved origin again for this exact template event.".into());
             }
         }
         Ok(Context {
             draft: d,
-            template_origin: template_origin.get().map(|p| p.selection.clone()),
+            template_origin: template_origin
+                .get()
+                .map(|p| p.as_run().map(|r| r.selection.clone()))
+                .transpose()?,
             sources: bindings,
             target,
             epoch: epoch.get(),

@@ -16,8 +16,11 @@ pub mod verification;
 pub use model::{Alphabet, Error, Feature, Location, Molecule, Sequence, Topology};
 
 pub mod embl;
+pub mod scf_export;
+pub mod sequence_export;
 pub mod snapgene;
 pub mod traces;
+pub mod xdna_export;
 
 pub mod svg;
 
@@ -234,3 +237,5 @@ pub mod gcg_sequence;
 pub mod snapgene_export;
 
 mod format_fidelity;
+
+pub mod material_pcr;

@@ -69,13 +69,15 @@ fn oligos(prep: &Preparation) -> Vec<(&'static str, &Primer)> {
             vec![("Forward", forward), ("Reverse", reverse)]
         }
         Preparation::OverlapExtensionPcr { request } => oe_oligos(request),
-        Preparation::FromRun { preparation, .. } => match preparation {
-            RunPreparation::ExactPcr { forward, reverse } => {
-                vec![("Forward", forward), ("Reverse", reverse)]
+        Preparation::FromRun { preparation, .. } | Preparation::FromDigest { preparation, .. } => {
+            match preparation {
+                RunPreparation::ExactPcr { forward, reverse } => {
+                    vec![("Forward", forward), ("Reverse", reverse)]
+                }
+                RunPreparation::OverlapExtensionPcr { request } => oe_oligos(request),
+                _ => vec![],
             }
-            RunPreparation::OverlapExtensionPcr { request } => oe_oligos(request),
-            _ => vec![],
-        },
+        }
         _ => vec![],
     }
 }

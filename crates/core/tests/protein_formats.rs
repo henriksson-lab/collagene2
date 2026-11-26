@@ -309,3 +309,32 @@ fn generic_dispatch_preserves_original_protein_bytes_and_oversize_aa_never_falls
         Err(collagene_core::Error::TooLarge)
     ));
 }
+#[test]
+fn annotated_protein_export_refuses_unrepresentable_chemical_metadata() {
+    let original = collagene_core::Molecule {
+        name: "REFERENCE".into(),
+        sequence: collagene_core::Sequence::new(collagene_core::Alphabet::Protein, "ACDEFGHIK")
+            .unwrap(),
+        topology: collagene_core::Topology::Linear,
+        features: vec![],
+        metadata: Default::default(),
+        original_genbank: None,
+    };
+    for key in [
+        "protein:modifications",
+        "protein:modified",
+        "modifications",
+        "tracked_modifications",
+    ] {
+        let mut molecule = original.clone();
+        molecule
+            .metadata
+            .insert(key.into(), "unresolved chemical state".into());
+        for profile in [Profile::GenPept, Profile::UniProt] {
+            assert!(matches!(
+                protein::export(std::slice::from_ref(&molecule), profile),
+                Err(collagene_core::Error::Unsupported(_))
+            ));
+        }
+    }
+}

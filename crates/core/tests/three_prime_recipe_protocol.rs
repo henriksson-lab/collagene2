@@ -101,7 +101,7 @@ fn worker88_job168_operation26_evidence5_and_portable_schemas_bind_annealing_wit
         "{:?}",
         preview.verification.findings
     );
-    assert!(preview.verification.engine_version.ends_with("/science-23"));
+    assert!(preview.verification.engine_version.ends_with("/science-24"));
     assert_eq!(
         preview
             .verification

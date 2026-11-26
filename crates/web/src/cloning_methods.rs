@@ -747,7 +747,7 @@ pub fn CloningMethodsPanel(
             row.run_origin.as_ref().is_some_and(|pin| {
                 bound_context
                     .get(index)
-                    .is_none_or(|source| source.binding != pin.selection.event)
+                    .is_none_or(|source| source.binding != *pin.event())
             })
         }) {
             status.set("A saved-material origin no longer matches its exact source event. Select it again before preparing fragments.".into());

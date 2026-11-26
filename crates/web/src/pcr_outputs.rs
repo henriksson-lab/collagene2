@@ -18,6 +18,7 @@ static NEXT_OVERLAY_OWNER: AtomicU32 = AtomicU32::new(1);
 #[derive(Clone)]
 pub struct Review {
     pub source: EventBinding,
+    pub origin: Option<crate::run_origin_model::PinnedOrigin>,
     pub epoch: u64,
     pub generation: u32,
     pub inputs: (String, String, String, String, String, String),
@@ -52,6 +53,7 @@ pub fn PcrOutputsPanel(
     on_overlay: Callback<Publication>,
     on_navigate: Callback<(EventBinding, u64, Vec<(usize, usize)>), Result<(), String>>,
 ) -> impl IntoView {
+    let saved_material = review.origin.is_some();
     let count = review.products.len();
     let selected = RwSignal::new((count == 1).then_some(0usize));
     let initial_name = if count == 1 {
@@ -213,6 +215,7 @@ pub fn PcrOutputsPanel(
     view! {
         <section class="pcr-output-review">
             <h3>"Review PCR products"</h3>
+            {saved_material.then(||view!{<p class="helper">"The saved material was reconstructed before PCR geometry was calculated. Opened outputs remain documentary reference previews; use a saved-origin PCR preparation in assembly and record its verified run to create reusable material."</p>})}
             <p class="helper">{format!("{count} exact-annealing binding geometries. Choose the reference preview to retain; alternative geometries remain separate. Physical end chemistry, target verification and experimental success are not established.")}</p>
             <details><summary>"Original template event"</summary><p>{bound.with_value(|r|format!("Document {} · event {} · revision {}",r.source.document_id,r.source.event_id,r.source.revision))}</p></details>
             <details open><summary>"Declared oligos · ordered 5′→3′"</summary>

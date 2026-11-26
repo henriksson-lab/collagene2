@@ -34,7 +34,9 @@ fn same(a: &Source, b: &Source) -> bool {
 
 fn stage(op: &Operation) -> Result<Stage, Error> {
     Ok(match op {
-        Operation::ReconstructRunProduct { .. } => Stage::MaterialReconstruction,
+        Operation::ReconstructRunProduct { .. } | Operation::ReconstructDigestFragment { .. } => {
+            Stage::MaterialReconstruction
+        }
         Operation::Pcr { .. } | Operation::PcrWithMismatches { .. } => Stage::Pcr,
         Operation::OverlapExtension { .. } => Stage::OverlapExtension,
         Operation::AnnealOligos { .. } => Stage::Annealing,
@@ -156,7 +158,7 @@ fn failure(step: usize, stage: Stage, row: Option<usize>) -> Failure {
     let (message, recovery) = match stage {
         Stage::MaterialReconstruction => (
             "No reusable material was retained from the saved origin reconstruction.",
-            "Review the exact saved source event and unchanged originating plan, target and inputs. Reconstruct the complete origin; imported physical summaries do not supply material authority.",
+            "Review the exact saved source event and unchanged originating plan, target and inputs; for a saved digest fragment also review the pinned catalog, fragment index and original digest source event. Reconstruct the complete origin; imported physical summaries do not supply material authority.",
         ),
         Stage::OverlapExtension => (
             "No product was retained for this reciprocal extension step.",

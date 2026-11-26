@@ -329,6 +329,10 @@ mod remote_removal_model;
 mod remote_removal_view;
 #[cfg(target_arch = "wasm32")]
 mod renderer;
+#[cfg(any(target_arch = "wasm32", test))]
+mod scf_export_model;
+#[cfg(target_arch = "wasm32")]
+mod scf_export_view;
 #[cfg(target_arch = "wasm32")]
 mod source_gateway_client;
 #[cfg(target_arch = "wasm32")]
@@ -395,3 +399,5 @@ mod library_view;
 mod sequence_compat_export;
 #[cfg(target_arch = "wasm32")]
 mod sequence_compat_import;
+#[cfg(any(target_arch = "wasm32", test))]
+mod sequence_export_model;

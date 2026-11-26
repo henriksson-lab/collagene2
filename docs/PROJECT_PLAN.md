@@ -420,6 +420,16 @@ Accessibility is a cross-cutting requirement: keyboard navigation, readable labe
 
 ## File formats and migration
 
+The resumed parallel format queue now covers regenerated XDNA v0 reference
+export, SCF export from actual retained trace channels/calls/qualities, and a
+single typed MCP annotated-sequence export surface over the existing nucleotide
+and protein writers. Each adapter remains independent of the scientific model,
+declares its supported profile and export losses, and retains original evidence
+separately. No sequence-to-synthetic-trace conversion is authorized. These are
+implementation tasks until their focused fixtures and native/WASM checks pass;
+they do not establish broad vendor-container compatibility. Further BAM/BAI,
+OpenGel and external alignment-engine work retain their existing deferrals.
+
 Import and export must be tracked separately. A format parser is only one part of support: feature locations, chemistry, primers, history and metadata need explicit fidelity tests. [SnapGene's supported extensions](https://support.snapgene.com/hc/en-us/articles/10242726896020-What-File-Extensions-does-SnapGene-support) show the breadth of migration users may expect, while its [developer guidance](https://www.snapgene.com/features/convert-file-formats) offers a route to information on native SnapGene files.
 
 | Format family | Delivery | Read | Write | Fidelity and implementation plan |
@@ -3089,3 +3099,68 @@ The complete product goal, all exclusions and the BAM/BAI deferral remain active
 After its CI frontend artifact is available, publish the immutable snapshot to
 8082 with static integrity/process checks and bounded compatibility-worker
 retention; keep the authenticated local library separate.
+
+### Saved digest reuse and parallel format continuation — 26 November 2026
+
+Pending source connects saved-run digest opening, exact-event origin selection
+and `FromDigest` preparation through ordinary PCR/assembly controls and native
+history replay. Mixed Run/Digest ancestry shares one traversal budget and keeps
+actual strands, modifications, nicks and inherited incompleteness. Appended
+operation27/evidence6, worker90, candidate21, native plan19 and science24 preserve
+old discriminants while enforcing the new capability floors. Digest-bearing
+drafts use version12; old run-only draft encoding remains compatible. MCP can
+inspect either material-origin kind through an explicit selection.
+
+PCR on intact staggered material is limited to geometries contained in its known
+top reference. Other actual-strand geometries and nicked templates refuse with an
+explicit unsupported explanation. Opened analytical PCR documents remain
+reference-only: treating them as standalone physical material requires a future
+target-free PCR derivation. The supported physical path is a typed preparation
+followed by assembly and a retained run, never an invented independent target.
+[Model](MATERIAL_PCR.md) · [Preparations](SAVED_DIGEST_PREPARATION.md) ·
+[Mixed ancestry](MIXED_MATERIAL_ORIGINS.md).
+
+In parallel, independent workers implemented selected XDNA v0 reference export,
+SCF3 regeneration from actual retained signals, and one MCP annotated-sequence
+export tool for existing GenBank/EMBL/GenPept/UniProt writers. XDNA names and
+unsupported annotations produce explicit loss reports. SCF does not synthesize
+signal or convert scalar ABIF scores into four-channel accuracy evidence.
+The protein writers now refuse metadata-only chemical state they cannot preserve.
+These implementations are pending focused validation and do not imply new
+frontend export controls or vendor-application acceptance.
+[XDNA](XDNA_EXPORT.md) · [SCF](SCF_EXPORT.md) ·
+[MCP exports](MCP_SEQUENCE_EXPORTS.md).
+
+Committed `320adb5` passes scientific, web and desktop builds/MCP on Windows,
+macOS and Linux. Its statically verified immutable frontend is now published on
+8082 with only the immediately preceding compatibility worker retained. Pending
+source above requires its own validation and CI. No browser or application HTTP
+checks were performed; the full implementation goal remains active.
+
+The native format and saved-material integration now passes71 focused cases
+across core, protocol, native sharing, MCP and the draft model. The integration
+WASM check passes. Follow-on source adds XDNA to the existing File dropdown and
+SCF regeneration to a compact trace export menu, with explicit review before a
+real acknowledged save. SnapGene/GCG/XDNA review and preparation now run through
+one source-bound worker export facade rather than synchronous UI writer calls.
+Worker90 appends jobs174–176/results164–166 for these export capabilities; this
+worker version has not yet been published. Trace reviews also pin the exact
+workspace epoch, document/event, orientation and precision. Options, source or
+scope changes invalidate the prepared export. These controls pass fourteen
+focused core/protocol cases and seven native UI-model cases, alongside the final
+web/worker WASM compiler check. There are86 distinct passing cases across this
+increment after excluding repeated SCF fixtures. Vendor-file corpus and browser acceptance remain
+separate requirements. [Facade](SEQUENCE_EXPORT_PROFILES.md) ·
+[Trace controls](SCF_EXPORT_CONTROLS.md).
+
+
+Next close the standalone material loop: open an actual PCR product, save/restart,
+digest it (including repeated digest of derived material), assemble it against an
+independently declared target and replay the retained run. Use one generic
+target-free material-derivation record with ExactPcr/CatalogDigest transformations
+and the existing shared mixed-origin budget, rather than copying digest history
+per operation. Parallel source for this next phase remains unregistered and
+outside the verified worker90 checkpoint until its native/archive/protocol/
+sharing/UI integration is complete. Also retain the explicit Golden Gate
+internal-site domestication proposal gap; existing manual OE/Golden Gate engines
+alone do not establish that connected workflow.

@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 184;
+pub const CURRENT_TOOL_COUNT: usize = 186;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -45,6 +45,32 @@ pub struct DocumentRef {
     pub id: String,
     /// Exact expected revision, returned by import_document or list_documents.
     pub revision: String,
+}
+/// Explicit writer profiles; unrelated options cannot be silently ignored.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub enum AnnotatedSequenceFormat {
+    GenBank,
+    Embl,
+    GenPept {
+        /// Actual export date DD-MMM-YYYY; absent uses retained source date only.
+        locus_date: Option<String>,
+        entry_name: Option<String>,
+    },
+    UniProt {
+        entry_name: Option<String>,
+        /// Explicit valid UniProt accession; never allocated or invented.
+        accession: Option<String>,
+    },
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AnnotatedSequenceExportQuery {
+    pub document: DocumentRef,
+    pub format: AnnotatedSequenceFormat,
+    /// Default false returns warning review without an artifact when losses exist.
+    #[serde(default)]
+    pub accept_omissions: bool,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -939,6 +965,14 @@ pub struct WorkspaceRef {
 pub struct RunMaterialOriginsQuery {
     pub workspace: WorkspaceRef,
     pub event: collagene_core::run_lineage::EventBinding,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MaterialOriginQuery {
+    pub workspace: WorkspaceRef,
+    pub event: collagene_core::run_lineage::EventBinding,
+    /// None discovers choices; Some explicitly replays that exact retained origin.
+    pub selection: Option<collagene_core::run_material::MaterialSelection>,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -5258,6 +5292,50 @@ impl CollageneServer {
         }).await
     }
     #[tool(
+        description = "Review/export one immutable session revision as annotated GenBank, EMBL, GenPept or UniProt text using the native writers. GenBank/EMBL require explicit DNA/RNA documents; GenPept/UniProt require linear Protein. Protein profiles accept bounded explicit record identifiers and GenPept calendar export date; source accessions, review status, molecular mass and biological history are never invented. Returns exact writer warnings and no artifact until accept_omissions=true when warnings exist. Unsupported chemistry/locations/options remain errors even with acknowledgement. Output is bounded32MiB and session-only; retain native files/workspaces for exact source evidence and history."
+    )]
+    async fn export_annotated_sequence(
+        &self,
+        Parameters(args): Parameters<AnnotatedSequenceExportQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || {
+            use collagene_core::{Alphabet,protein_formats};
+            let molecule=server.store.lock().unwrap().document(&args.document)?.clone();
+            let protein=molecule.sequence.alphabet()==Alphabet::Protein;
+            let (report,profile,filename)=match args.format {
+                AnnotatedSequenceFormat::GenBank=> {
+                    if protein{return Err(bad("GenBank requires DNA/RNA; use the explicit GenPept protein profile"));}
+                    (formats::export_with_report(&molecule,formats::TextFormat::GenBank).map_err(bad)?,"genbank","sequence.gb")
+                },
+                AnnotatedSequenceFormat::Embl=> {
+                    if protein{return Err(bad("EMBL requires DNA/RNA; use the explicit UniProt protein profile"));}
+                    (formats::export_with_report(&molecule,formats::TextFormat::Embl).map_err(bad)?,"embl","sequence.embl")
+                },
+                profile=> {
+                    if !protein{return Err(bad("GenPept/UniProt require an explicitly Protein document; no alphabet is inferred"));}
+                    let (profile,options,label,filename)=match profile {
+                        AnnotatedSequenceFormat::GenPept{locus_date,entry_name}=>{
+                            if locus_date.as_ref().is_some_and(|v|v.len()!=11)||entry_name.as_ref().is_some_and(|v|v.len()>20){return Err(bad("GenPept date/entry identifier exceeds the supported profile bounds"));}
+                            let date=locus_date.as_deref().map(protein_formats::InsdcDate::new).transpose().map_err(bad)?;
+                            (protein_formats::Profile::GenPept,protein_formats::ExportOptions{locus_date:date,entry_name,uniprot_accession:None},"genpept","sequence.gp")
+                        },
+                        AnnotatedSequenceFormat::UniProt{entry_name,accession}=>{
+                            if entry_name.as_ref().is_some_and(|v|v.len()>20)||accession.as_ref().is_some_and(|v|v.len()>32){return Err(bad("UniProt entry/accession exceeds the supported profile bounds"));}
+                            (protein_formats::Profile::UniProt,protein_formats::ExportOptions{locus_date:None,entry_name,uniprot_accession:accession},"uniprot","sequence.dat")
+                        },_=>unreachable!(),
+                    };
+                    (protein_formats::export_with_options(std::slice::from_ref(&molecule),profile,&options).map_err(bad)?,label,filename)
+                },
+            };
+            if report.text.len()>32*1024*1024{return Err(bad("Annotated sequence export exceeds32MiB; use native export"));}
+            if !args.accept_omissions&&!report.warnings.is_empty(){return output(json!({"document":args.document,"state":"review_required","profile":profile,"warnings":report.warnings,"artifact_id":null}));}
+            let bytes=report.text.len();
+            let artifact=server.text_artifact(report.text,"text/plain",filename)?;
+            output(json!({"document":args.document,"source_revision":molecule.revision(),"state":"prepared","profile":profile,"warnings":report.warnings,"artifact_id":artifact,"bytes":bytes,"filename":filename,"mime_type":"text/plain","encoding":"utf8","persistence":"session only","authority":"Annotated exchange text is not a native history archive or new scientific verification."}))
+        }).await
+    }
+    #[tool(
         description = "Import explicit FASTA, GCG/Wisconsin single-sequence or original Collagene XML profiles, at most 4 MiB of text. FASTA alphabet=null retains per-record declarations (unmarked records are DNA); an explicit alphabet handles unmarked RNA/protein and must agree with every declaration. GCG requires a caller-selected alphabet and verifies the declared type, length and checksum. XML lower-only migration requires AllowLowerOnly, retains exact original rows/bytes and never reconstructs physical cloning chemistry. Imports the entire selected project atomically as immutable session documents; no paths or external programs."
     )]
     async fn import_compat_sequence(
@@ -5683,6 +5761,31 @@ impl CollageneServer {
             let (text,filename)=if let Some(run)=&from_run{(bounded_json_limit(run,32*1024*1024)?,"run-pcr-digest-inspection.json")}else{(bounded_json_limit(preview,32*1024*1024)?,"pcr-digest-inspection.json")};
             let artifact=server.text_artifact(text,"application/json",filename)?;
             let mut result=result;result["artifact_id"]=json!(artifact);output(result)
+        }).await
+    }
+    #[tool(
+        description = "Discover or explicitly replay a saved run product or saved digest fragment origin for an exact event in an immutable native workspace. No origin is automatically selected. Returns bounded origin choices, findings and complete immutable inspection JSON including any selected closed documentary origin. Every later FromRun/FromDigest preparation must freshly replay again; imported summaries and equal DNA are not material authority. Creates no documents, candidates, targets or stock."
+    )]
+    async fn inspect_material_origin(
+        &self,
+        Parameters(args): Parameters<MaterialOriginQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || {
+            if args.selection.as_ref().is_some_and(|selection|selection.event()!=&args.event) {
+                return Err(bad("selected origin belongs to a different exact event"));
+            }
+            let workspace=server.restore_workspace(&args.workspace)?;
+            let expected=collagene_core::run_material::material_inspection_revision(&workspace,&args.event,&args.selection).map_err(bad)?;
+            let inspection=collagene_core::run_material::inspect_material(&workspace,&args.event,&args.selection).map_err(bad)?;
+            inspection.validate_binding(&expected).map_err(bad)?;
+            if let Some(selected)=&inspection.selected {
+                selected.validate_for_workspace(&workspace,&args.event).map_err(bad)?;
+                if args.selection.as_ref()!=Some(&selected.selection()) { return Err(bad("replayed origin differs from the explicit selection")); }
+            }
+            let text=bounded_json_limit(&inspection,32*1024*1024)?;
+            let artifact=server.text_artifact(text,"application/json","material-origin-inspection.json")?;
+            output(json!({"workspace":args.workspace,"event":inspection.event,"context_revision":inspection.context_revision,"engine_version":inspection.engine_version,"origins":inspection.origins,"selection":args.selection,"origin_available":inspection.selected.is_some(),"findings":inspection.findings,"artifact_id":artifact,"authority":"A closed documentary replay request is returned only after fresh native reconstruction. Its serialized bytes confer no private material authority; every later preparation independently replays against exact retained sources."}))
         }).await
     }
     #[tool(

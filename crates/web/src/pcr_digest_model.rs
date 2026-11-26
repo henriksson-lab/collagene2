@@ -622,7 +622,7 @@ pub(crate) fn apply_inspection(
             let current_origin_revision = state.rows[row]
                 .run_origin
                 .as_ref()
-                .map(|origin| capsule_revision(origin.as_ref()))
+                .map(|origin| capsule_revision(origin.as_run()?))
                 .transpose()?;
             if current_origin_revision != p.origin_revision {
                 return Err("The saved-material origin changed; inspect the overlap-extension digest again.".into());

@@ -1304,6 +1304,13 @@ pub(crate) fn export_protocol_pdf_checked(
                 origin.target.name,
                 origin.target_event.event_id
             ),
+            Operation::ReconstructDigestFragment { template, origin } => format!(
+                "Reconstruct saved catalog digest fragment {} from exact product event {}, originating source event {}, fragment {}. Replay the unchanged native origin recipe, then the pinned catalog digest and fragment selection; no independent target is invented for this source preparation. Historical primers are not newly ordered or executed. Origin assumptions, modifications and incomplete search findings remain applicable.",
+                source_name(template),
+                origin.record.product.event_id,
+                origin.record.request.source.event_id,
+                origin.record.request.fragment_index + 1
+            ),
             Operation::DeclareSourceTermini {
                 template,
                 left,
@@ -1614,6 +1621,24 @@ pub(crate) fn export_protocol_pdf_checked(
             .find(|entry| entry.step_index == index)
         {
             match &entry.evidence {
+                verification::PhysicalProcessingEvidence::SavedDigestOrigin(evidence) => {
+                    evidence.validate_documentary()?;
+                    layout.paragraph_size(&format!("Fresh saved-digest origin reconstruction: source event {}, exact fragment event {}, selected fragment {}. Actual top/bottom lengths {}/{} nt, bottom start {}, retained nicks {}. Modified / chemically unknown eligible / known unmodified bases: {} / {} / {}. Origin incomplete: {}. Material identity {}. This documentary summary does not grant imported chemical authority, isolation or a newly performed historical reaction.", evidence.origin.record.request.source.event_id, evidence.origin.record.product.event_id, evidence.origin.record.request.fragment_index + 1, evidence.duplex.top_length, evidence.duplex.bottom_length, evidence.duplex.bottom_start, evidence.duplex.nicks.len(), evidence.modifications.known_modified, evidence.modifications.unknown_eligible, evidence.modifications.known_unmodified, evidence.origin_incomplete, evidence.material_revision), 9.0, INK)?;
+                    layout.paragraph_size(
+                        &format!(
+                            "Origin findings shown {} of {}; excerpt truncated: {}. {}",
+                            evidence.origin_findings.len(),
+                            evidence.origin_findings_total,
+                            evidence.origin_findings_truncated,
+                            evidence.duplex.describe()
+                        ),
+                        9.0,
+                        INK,
+                    )?;
+                    for finding in &evidence.origin_findings {
+                        layout.paragraph_size(&format!("Origin finding: {finding}"), 9.0, INK)?;
+                    }
+                }
                 verification::PhysicalProcessingEvidence::ThreePrimeResection(geometry) => {
                     geometry.validate_documentary()?;
                     layout.paragraph_size(&format!("Actual3′ resection left/right {}/{} nt. Retained top/bottom {}/{} nt; bottom start {}. Unchanged5′ groups left/right {:?}/{:?};3′ groups {:?}/{:?}. Complete literal copied/removed strand mappings remain in JSON, not synthesized DNA.",geometry.cuts.left,geometry.cuts.right,geometry.product.top.len(),geometry.product.bottom.len(),geometry.product.bottom_start,geometry.product.left.five_prime,geometry.product.right.five_prime,geometry.product.left.three_prime,geometry.product.right.three_prime),9.0,INK)?;

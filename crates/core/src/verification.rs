@@ -208,6 +208,11 @@ pub enum Operation {
         options: crate::overlap_profiles::ProfileOptions,
         policy: crate::homology_annealing::Options,
     },
+    /// Replay an exact target-free saved digest derivation before using its material.
+    ReconstructDigestFragment {
+        template: Source,
+        origin: crate::run_digest_history::Capsule,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -287,6 +292,70 @@ pub enum PhysicalProcessingEvidence {
     HomologyAssembly(crate::homology_assembly::Report),
     ThreePrimeResection(crate::three_prime_resection::Report),
     HomologyAnnealing(crate::homology_annealing::Report),
+    SavedDigestOrigin(SavedDigestOriginEvidence),
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct SavedDigestOriginEvidence {
+    pub origin: crate::run_digest_history::Capsule,
+    pub material_revision: String,
+    pub duplex: chemistry::DuplexSummary,
+    pub modifications: modified_duplex::ModificationSummary,
+    pub origin_incomplete: bool,
+    pub origin_findings: Vec<String>,
+    pub origin_findings_total: usize,
+    pub origin_findings_truncated: bool,
+}
+impl SavedDigestOriginEvidence {
+    /// Documentary shape and exact recipe binding, never imported material authority.
+    pub fn validate_documentary(&self) -> Result<(), Error> {
+        self.origin.validate_documentary()?;
+        let hex = |value: &str| {
+            value.len() == 64
+                && value
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        };
+        let count = self
+            .modifications
+            .known_modified
+            .checked_add(self.modifications.unknown_eligible)
+            .and_then(|n| n.checked_add(self.modifications.known_unmodified))
+            .ok_or(Error::TooLarge)?;
+        let total = self
+            .duplex
+            .top_length
+            .checked_add(self.duplex.bottom_length)
+            .ok_or(Error::TooLarge)?;
+        if !hex(&self.material_revision)
+            || self.material_revision != self.modifications.state_revision
+            || self.material_revision != self.origin.record.product_state_revision
+            || self.origin_incomplete != self.origin.record.origin_incomplete
+            || self.modifications.engine_version != modified_duplex::ENGINE_VERSION
+            || self.duplex.top_length == 0
+            || self.duplex.bottom_length == 0
+            || self.duplex.top_length > crate::model::MAX_SEQUENCE_LEN
+            || self.duplex.bottom_length > crate::model::MAX_SEQUENCE_LEN
+            || self.modifications.top_length != self.duplex.top_length
+            || self.modifications.bottom_length != self.duplex.bottom_length
+            || count > total
+            || self.origin_findings.len() > 128
+            || self
+                .origin_findings
+                .iter()
+                .any(|s| s.len() > 8192 || s.chars().count() > 2048)
+            || self.origin_findings_total < self.origin_findings.len()
+            || self.origin_findings_truncated
+                != (self.origin_findings_total > self.origin_findings.len())
+        {
+            return Err(Error::Format(
+                "Saved digest evidence changed its bounded source/material binding".into(),
+            ));
+        }
+        evidence_bytes(self, 32 * 1024 * 1024)?;
+        Ok(())
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -311,7 +380,7 @@ pub struct ReferenceStepReport {
     pub evidence: ReferenceStepEvidence,
 }
 
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-23");
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-24");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrDocument {
@@ -343,16 +412,93 @@ pub(crate) fn simulate_pcr_documents_from_fresh(
 ) -> Result<Vec<PcrDocument>, Error> {
     source.validate()?;
     tracked.validate()?;
+    pcr_material_preflight(source, tracked, forward, reverse)?;
+    let mut documents = build_pcr_documents(source, forward, reverse)?;
+    if tracked.duplex.bottom_start != 0 || tracked.duplex.bottom.len() != tracked.duplex.top.len() {
+        for document in &mut documents {
+            document.findings.push("PCR uses the actual intact top strand as a first-cycle template. Its initially staggered complement is not silently filled or repaired; both-strand coverage was checked for additional geometries outside the supported top reference.".into());
+        }
+    }
+    Ok(documents)
+}
+/// Exact PCR may seed from an intact covalent top strand even when its initial
+/// complement is staggered. Search the known strand union first: extra geometries
+/// outside the top reference are explicit unsupported work, never false absence.
+pub(crate) fn pcr_material_preflight(
+    source: &Molecule,
+    tracked: &modified_duplex::TrackedDuplex,
+    forward: &Primer,
+    reverse: &Primer,
+) -> Result<(), Error> {
+    source.validate()?;
+    tracked.validate()?;
     let duplex = &tracked.duplex;
     if duplex.top != source.sequence
         || duplex.topology != source.topology
-        || duplex.bottom_start != 0
-        || duplex.bottom.len() != duplex.top.len()
         || !duplex.nicks.is_empty()
     {
-        return Err(Error::Unsupported("Fresh PCR template requires reference-matching, fully aligned intact strands without nicks".into()));
+        return Err(Error::Unsupported("PCR requires reference-matching intact covalent template strands; nick propagation is not modeled".into()));
     }
-    build_pcr_documents(source, forward, reverse)
+    if duplex.bottom_start == 0 && duplex.bottom.len() == duplex.top.len() {
+        return Ok(());
+    }
+    if duplex.topology != Topology::Linear {
+        return Err(Error::Unsupported(
+            "Staggered circular PCR templates require an explicit supported linearization".into(),
+        ));
+    }
+    let bottom_end = duplex
+        .bottom_start
+        .checked_add(i64::try_from(duplex.bottom.len()).map_err(|_| Error::TooLarge)?)
+        .ok_or(Error::TooLarge)?;
+    let start = 0i64.min(duplex.bottom_start);
+    let end = (duplex.top.len() as i64).max(bottom_end);
+    let length = usize::try_from(end.checked_sub(start).ok_or(Error::TooLarge)?)
+        .map_err(|_| Error::TooLarge)?;
+    if length > crate::model::MAX_SEQUENCE_LEN {
+        return Err(Error::TooLarge);
+    }
+    let bottom_plus = duplex.bottom.reverse_complement()?;
+    let mut bases = Vec::with_capacity(length);
+    for i in 0..length {
+        let coordinate = start.checked_add(i as i64).ok_or(Error::TooLarge)?;
+        let base = if coordinate >= 0 && (coordinate as usize) < duplex.top.len() {
+            duplex.top.as_str().as_bytes()[coordinate as usize]
+        } else {
+            let p = coordinate
+                .checked_sub(duplex.bottom_start)
+                .and_then(|n| usize::try_from(n).ok())
+                .filter(|p| *p < bottom_plus.len())
+                .ok_or_else(|| {
+                    Error::Unsupported("PCR strand coverage contains an unmodeled gap".into())
+                })?;
+            bottom_plus.as_str().as_bytes()[p]
+        };
+        bases.push(base);
+    }
+    let projection = Molecule::dna(
+        "Actual PCR strand-coverage projection",
+        std::str::from_utf8(&bases)
+            .map_err(|_| Error::Format("PCR strand coverage is not ASCII".into()))?,
+        Topology::Linear,
+    )?;
+    let offset = usize::try_from(start.checked_neg().ok_or(Error::TooLarge)?)
+        .map_err(|_| Error::TooLarge)?;
+    for geometry in analysis::simulate_pcr_geometry(&projection, forward, reverse)? {
+        let begin = geometry.product.forward_start;
+        let stop = begin
+            .checked_add(geometry.template_length)
+            .ok_or(Error::TooLarge)?;
+        if begin < offset
+            || stop
+                > offset
+                    .checked_add(duplex.top.len())
+                    .ok_or(Error::TooLarge)?
+        {
+            return Err(Error::Unsupported("Actual staggered strands admit a PCR geometry outside the top-reference-contained profile. Inspect the strand extensions; no complete absence, unique product, or silent repair is asserted".into()));
+        }
+    }
+    Ok(())
 }
 
 fn build_pcr_documents(
@@ -1100,7 +1246,8 @@ pub fn operation_sources(op: &Operation) -> Vec<&Source> {
         | Operation::TreatEnds { template, .. }
         | Operation::RepairEnds { template, .. }
         | Operation::Tail3Prime { template, .. } => vec![template],
-        Operation::ReconstructRunProduct { template, .. } => vec![template],
+        Operation::ReconstructRunProduct { template, .. }
+        | Operation::ReconstructDigestFragment { template, .. } => vec![template],
         Operation::ResectThreePrime { source, .. } => vec![source],
         Operation::Overlap { fragments, .. }
         | Operation::GoldenGate {
@@ -1144,7 +1291,8 @@ pub fn operation_sources_mut(op: &mut Operation) -> Vec<&mut Source> {
         | Operation::TreatEnds { template, .. }
         | Operation::RepairEnds { template, .. }
         | Operation::Tail3Prime { template, .. } => vec![template],
-        Operation::ReconstructRunProduct { template, .. } => vec![template],
+        Operation::ReconstructRunProduct { template, .. }
+        | Operation::ReconstructDigestFragment { template, .. } => vec![template],
         Operation::ResectThreePrime { source, .. } => vec![source],
         Operation::Overlap { fragments, .. }
         | Operation::GoldenGate {
@@ -2565,6 +2713,52 @@ fn reconstruct(
                 next_physical = Some(extended);
                 product
             }
+            Operation::ReconstructDigestFragment { template, origin } => {
+                if !matches!(template, Source::Input(_)) {
+                    return Err(Error::Unsupported(
+                        "Saved digest reconstruction requires an exact original input event".into(),
+                    ));
+                }
+                let fresh = crate::run_digest_history::replay(origin, resolve(template)?)?;
+                let modification_summary = modified_duplex::summary(fresh.tracked())?;
+                let duplex_summary = fresh.tracked().duplex.summary()?;
+                let bytes = evidence_bytes(origin, crate::run_digest_history::MAX_CAPSULE_BYTES)?
+                    .checked_add(evidence_bytes(&modification_summary, 32 * 1024 * 1024)?)
+                    .ok_or(Error::TooLarge)?;
+                step_evidence_bytes = step_evidence_bytes
+                    .checked_add(bytes)
+                    .filter(|n| *n <= 32 * 1024 * 1024)
+                    .ok_or(Error::TooLarge)?;
+                let (
+                    reference,
+                    tracked,
+                    origin_incomplete,
+                    origin_findings,
+                    origin_findings_total,
+                    origin_findings_truncated,
+                ) = fresh.into_parts();
+                let evidence = SavedDigestOriginEvidence {
+                    origin: origin.clone(),
+                    material_revision: modification_summary.state_revision.clone(),
+                    duplex: duplex_summary,
+                    modifications: modification_summary,
+                    origin_incomplete,
+                    origin_findings,
+                    origin_findings_total,
+                    origin_findings_truncated,
+                };
+                evidence.validate_documentary()?;
+                findings.push(format!("Step {} freshly reconstructs saved digest fragment event {} from its exact original source and cleavage recipe. Actual strand termini and positional modifications are retained; this is material retrieval, not a new target check or proof of experimental isolation.",index+1,origin.record.product.event_id));
+                if origin_incomplete {
+                    incomplete.push(format!("Step {} retains incomplete origin findings; saved fragment reuse does not upgrade them.",index+1));
+                }
+                physical_processing_reports.push(PhysicalProcessingStepReport {
+                    step_index: index,
+                    evidence: PhysicalProcessingEvidence::SavedDigestOrigin(evidence),
+                });
+                next_physical = Some(tracked);
+                reference
+            }
             Operation::ReconstructRunProduct { template, origin } => {
                 if !matches!(template, Source::Input(_)) {
                     return Err(Error::Unsupported("Saved material reconstruction requires an explicit saved input event, not an enclosing step projection".into()));
@@ -2981,11 +3175,9 @@ fn reconstruct(
                         let duplex = physical.get(*i).and_then(Option::as_ref).ok_or_else(|| {
                             Error::Unsupported("PCR requires an established physical template from the originating step; a reference-only assembly cannot be materialized by PCR".into())
                         })?;
-                        if duplex.bottom_start != 0
-                            || duplex.bottom.len() != duplex.top.len()
-                            || !duplex.nicks.is_empty()
-                        {
-                            return Err(Error::Unsupported("PCR of staggered or nicked physical templates is not yet modeled; a top-strand projection is insufficient".into()));
+                        pcr_material_preflight(substrate, duplex, forward, reverse)?;
+                        if duplex.bottom_start != 0 || duplex.bottom.len() != duplex.top.len() {
+                            findings.push(format!("Step {} exact PCR seeds from an actual intact top strand; initially staggered complementary ends remain on the template and are not silently repaired. Known strand extensions were checked for unsupported additional geometries.",index+1));
                         }
                     }
                 }
@@ -3857,6 +4049,9 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
             Operation::OverlapExtension { left, right, options } => {
                 body.push_str(&format!("<li>Denature overlapping duplexes {} ({}) and {} ({}), reanneal left top/right bottom strands across {} bp, and extend both paired 3′ ends. Minimum terminal pairing {} bp. Complementary synthesis is assumed unmodified; selected geometry does not establish isolation or experimental success.</li>", source(&left.source), if left.reverse {"reverse complement"} else {"forward"}, source(&right.source), if right.reverse {"reverse complement"} else {"forward"}, options.overlap, options.min_paired_bases));
             },
+            Operation::ReconstructDigestFragment { template, origin } => {
+                body.push_str(&format!("<li>Retrieve saved digest fragment {} by freshly replaying its original source event <code>{}</code> and selected cleavage {}. Retain actual strands, termini, modifications and unresolved origin findings. No independent fragment target or experimental isolation is inferred.</li>",source(template),e(&origin.record.request.source.event_id),origin.record.request.fragment_index+1));
+            },
             Operation::ReconstructRunProduct { template, origin } => {
                 body.push_str(&format!("<li>Use saved material {} by reconstructing run <code>{}</code>, product {} against its unchanged original target <code>{}</code>. Preserve actual nicks, termini and positional modifications. Complete origin evidence is retained; this is not a newly performed reaction, inferred repair or proof of isolation.</li>", source(template), e(&origin.selection.run_id), origin.selection.step_index+1, e(&origin.target_event.revision)));
             },
@@ -4030,6 +4225,13 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
                 }
                 PhysicalProcessingEvidence::OverlapExtension(geometry) => {
                     body.push_str(&format!("<li>Step {} reciprocal extension: selected homology {} bp; retained terminal pairings {:?}; complete search {}; unique within terminal model {}; {} comparisons. Original source geometry revisions: {} / {}. Exact copied/synthesized strand mappings remain in the reconstruction report.</li>", step.step_index+1, geometry.options.overlap, geometry.terminal_pairings.overlaps, geometry.terminal_pairings.complete, geometry.terminal_pairings.unique, geometry.terminal_pairings.comparisons, e(&geometry.source_geometry_revisions[0]), e(&geometry.source_geometry_revisions[1])));
+                }
+                PhysicalProcessingEvidence::SavedDigestOrigin(evidence) => {
+                    body.push_str(&format!("<li>Step {}: freshly replayed saved digest event <code>{}</code>; material <code>{}</code>. {} Known modified/unknown/unmodified eligible calls: {}/{}/{}. Origin incomplete: {}; showing {} of {} findings{}.<ul>",step.step_index+1,e(&evidence.origin.record.product.event_id),e(&evidence.material_revision),e(&evidence.duplex.describe()),evidence.modifications.known_modified,evidence.modifications.unknown_eligible,evidence.modifications.known_unmodified,evidence.origin_incomplete,evidence.origin_findings.len(),evidence.origin_findings_total,if evidence.origin_findings_truncated{" (truncated)"}else{""}));
+                    for finding in &evidence.origin_findings {
+                        body.push_str(&format!("<li>{}</li>", e(finding)));
+                    }
+                    body.push_str("</ul></li>");
                 }
                 PhysicalProcessingEvidence::RunProduct(evidence) => {
                     body.push_str(&format!("<li>Step {}: saved run <code>{}</code>, product {}, actual material summary <code>{}</code>. Full originating report is retained with the reconstruction recipe.<ul>", step.step_index+1, e(&evidence.origin.selection.run_id), evidence.origin.selection.step_index+1, e(&evidence.material_revision)));

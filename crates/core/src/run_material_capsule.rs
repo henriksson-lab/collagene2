@@ -199,6 +199,9 @@ impl Budget {
                 Operation::ReconstructRunProduct {
                     template: Source::Step(_),
                     ..
+                } | Operation::ReconstructDigestFragment {
+                    template: Source::Step(_),
+                    ..
                 }
             ) {
                 return Err(bad(
@@ -217,22 +220,42 @@ impl Budget {
     }
 }
 enum Pending<'a> {
-    Borrowed(&'a Capsule),
-    Owned(Capsule),
+    Run(std::borrow::Cow<'a, Capsule>),
+    Digest(std::borrow::Cow<'a, crate::run_digest_history::Capsule>),
+    Record(&'a crate::run_digest_history::Record),
 }
-impl Pending<'_> {
-    fn get(&self) -> &Capsule {
-        match self {
-            Self::Borrowed(c) => c,
-            Self::Owned(c) => c,
+fn origins(plan: &DesignPlan) -> Vec<(usize, Pending<'_>)> {
+    plan.steps
+        .iter()
+        .filter_map(|op| match op {
+            Operation::ReconstructRunProduct { origin, .. } => {
+                Some((1, Pending::Run(std::borrow::Cow::Borrowed(origin))))
+            }
+            Operation::ReconstructDigestFragment { origin, .. } => {
+                Some((1, Pending::Digest(std::borrow::Cow::Borrowed(origin))))
+            }
+            _ => None,
+        })
+        .collect()
+}
+// Count bounded serialized structure without allocating a duplicate capsule. In
+// particular a digest layer is charged before its inner candidate is decoded.
+fn charge_serialized(budget: &mut Budget, value: &impl Serialize) -> Result<(), Error> {
+    struct Count<'a>(&'a mut usize);
+    impl Write for Count<'_> {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            *self.0 = self
+                .0
+                .checked_add(bytes.len())
+                .filter(|n| *n <= MAX_CAPSULE_BYTES)
+                .ok_or_else(|| std::io::Error::other("mixed origin bytes exceed bound"))?;
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
         }
     }
-}
-fn origins(plan: &DesignPlan) -> impl Iterator<Item = &Capsule> {
-    plan.steps.iter().filter_map(|op| match op {
-        Operation::ReconstructRunProduct { origin, .. } => Some(origin),
-        _ => None,
-    })
+    serde_json::to_writer(Count(&mut budget.bytes), value).map_err(|_| Error::TooLarge)
 }
 
 fn shallow_binding(origin: &Capsule, candidate: &Candidate) -> Result<(), Error> {
@@ -278,19 +301,26 @@ pub fn validate_input_origins(
     bindings: &[InputEventBinding],
 ) -> Result<(), Error> {
     for op in &plan.steps {
-        if let Operation::ReconstructRunProduct { template, origin } = op {
-            let Source::Input(id) = template else {
-                return Err(bad("saved material requires a saved Input event"));
-            };
-            let mut matching = bindings.iter().filter(|b| &b.input_id == id);
-            let actual = matching
-                .next()
-                .ok_or_else(|| bad("saved material source event binding is absent"))?;
-            if matching.next().is_some() || actual.event != origin.selection.event {
-                return Err(bad(
-                    "saved material source event differs from the explicitly selected saved event",
-                ));
+        let (template, selected) = match op {
+            Operation::ReconstructRunProduct { template, origin } => {
+                (template, &origin.selection.event)
             }
+            Operation::ReconstructDigestFragment { template, origin } => {
+                (template, &origin.record.product)
+            }
+            _ => continue,
+        };
+        let Source::Input(id) = template else {
+            return Err(bad("saved material requires a saved Input event"));
+        };
+        let mut matching = bindings.iter().filter(|b| &b.input_id == id);
+        let actual = matching
+            .next()
+            .ok_or_else(|| bad("saved material source event binding is absent"))?;
+        if matching.next().is_some() || &actual.event != selected {
+            return Err(bad(
+                "saved material source event differs from the explicitly selected saved event",
+            ));
         }
     }
     Ok(())
@@ -299,58 +329,234 @@ pub fn validate_input_origins(
 /// The tree is decoded iteratively, with aggregate limits charged BEFORE each
 /// child envelope is decoded. No recursive Candidate::validate call is used here.
 fn walk<'a>(
-    initial: impl Iterator<Item = &'a Capsule>,
+    stack: Vec<(usize, Pending<'a>)>,
+    budget: Budget,
+    visit: impl FnMut(&Capsule, &Candidate) -> Result<(), Error>,
+    digest_visit: impl FnMut(&crate::run_digest_history::Record, Option<&Molecule>) -> Result<(), Error>,
+) -> Result<(), Error> {
+    walk_enclosed(stack, None, budget, visit, digest_visit)
+}
+fn walk_enclosed<'a>(
+    roots: Vec<(usize, Pending<'a>)>,
+    enclosing_version: Option<u16>,
     mut budget: Budget,
     mut visit: impl FnMut(&Capsule, &Candidate) -> Result<(), Error>,
+    mut digest_visit: impl FnMut(
+        &crate::run_digest_history::Record,
+        Option<&Molecule>,
+    ) -> Result<(), Error>,
 ) -> Result<(), Error> {
-    let mut stack = initial
-        .map(|c| (1, Pending::Borrowed(c)))
+    let mut stack = roots
+        .into_iter()
+        .map(|(depth, node)| (depth, enclosing_version, node))
         .collect::<Vec<_>>();
-    while let Some((depth, node)) = stack.pop() {
+    while let Some((depth, enclosing, node)) = stack.pop() {
         if depth > MAX_NESTING {
-            return Err(bad("origin recipe nesting exceeds eight generations"));
+            return Err(bad("mixed origin recipe nesting exceeds eight generations"));
         }
-        let origin = node.get();
-        add(&mut budget.bytes, origin.candidate.len(), MAX_CAPSULE_BYTES)?;
-        if origin.schema_version != 1 || origin.inputs.len() > 1000 || origin.products.len() > 1000
-        {
-            return Err(bad("invalid origin recipe schema or binding counts"));
-        }
-        budget.model(&origin.target)?;
-        let candidate = transfer::decode_candidate_shallow(&origin.candidate)?;
-        budget.plan(&candidate.plan)?;
-        shallow_binding(origin, &candidate)?;
-        visit(origin, &candidate)?;
-        for step in candidate.plan.steps {
-            if let Operation::ReconstructRunProduct { origin, .. } = step {
-                stack.push((depth + 1, Pending::Owned(origin)));
+        match node {
+            Pending::Run(origin) => {
+                add(&mut budget.bytes, origin.candidate.len(), MAX_CAPSULE_BYTES)?;
+                if origin.schema_version != 1
+                    || origin.inputs.len() > 1000
+                    || origin.products.len() > 1000
+                {
+                    return Err(bad("invalid origin recipe schema or binding counts"));
+                }
+                budget.model(&origin.target)?;
+                let candidate = transfer::decode_candidate_shallow(&origin.candidate)?;
+                let version = u16::from_le_bytes([origin.candidate[4], origin.candidate[5]]);
+                let enclosing = Some(enclosing.map_or(version, |prior| prior.min(version)));
+                if enclosing.is_some_and(|version| version < 21)
+                    && candidate
+                        .plan
+                        .steps
+                        .iter()
+                        .any(|step| matches!(step, Operation::ReconstructDigestFragment { .. }))
+                {
+                    return Err(bad(
+                        "digest reconstruction requires candidate schema21 in every enclosing native capsule",
+                    ));
+                }
+                budget.plan(&candidate.plan)?;
+                shallow_binding(&origin, &candidate)?;
+                visit(&origin, &candidate)?;
+                for step in candidate.plan.steps {
+                    match step {
+                        Operation::ReconstructRunProduct { origin, .. } => stack.push((
+                            depth + 1,
+                            enclosing,
+                            Pending::Run(std::borrow::Cow::Owned(origin)),
+                        )),
+                        Operation::ReconstructDigestFragment { origin, .. } => stack.push((
+                            depth + 1,
+                            enclosing,
+                            Pending::Digest(std::borrow::Cow::Owned(origin)),
+                        )),
+                        _ => {}
+                    }
+                }
+            }
+            Pending::Digest(origin) => {
+                charge_serialized(&mut budget, origin.as_ref())?;
+                if origin.schema_version != 1 {
+                    return Err(bad("unsupported derived capsule schema"));
+                }
+                budget.model(&origin.source)?;
+                origin.record.validate_shallow()?;
+                if origin.source.revision() != origin.record.request.source.revision {
+                    return Err(bad("digest capsule source snapshot differs from its event"));
+                }
+                digest_visit(&origin.record, Some(&origin.source))?;
+                match origin {
+                    std::borrow::Cow::Borrowed(origin) => stack.push((
+                        depth + 1,
+                        enclosing,
+                        Pending::Run(std::borrow::Cow::Borrowed(&origin.record.request.origin)),
+                    )),
+                    std::borrow::Cow::Owned(origin) => stack.push((
+                        depth + 1,
+                        enclosing,
+                        Pending::Run(std::borrow::Cow::Owned(origin.record.request.origin)),
+                    )),
+                }
+            }
+            Pending::Record(record) => {
+                charge_serialized(&mut budget, record)?;
+                record.validate_shallow()?;
+                digest_visit(record, None)?;
+                stack.push((
+                    depth + 1,
+                    enclosing,
+                    Pending::Run(std::borrow::Cow::Borrowed(&record.request.origin)),
+                ));
             }
         }
     }
     Ok(())
 }
-
 impl Capsule {
     /// Documentary consistency only. This never reconstructs a physical product.
     pub fn validate_documentary(&self) -> Result<(), Error> {
-        walk(std::iter::once(self), Budget::default(), |_, _| Ok(()))
+        walk(
+            vec![(1, Pending::Run(std::borrow::Cow::Borrowed(self)))],
+            Budget::default(),
+            |_, _| Ok(()),
+            |_, _| Ok(()),
+        )
     }
 }
-
-/// Guard all nested existing plans before outer hashing, cloning or science.
 pub fn plan_preflight(plan: &DesignPlan) -> Result<(), Error> {
-    if origins(plan).next().is_none() {
+    if !plan.steps.iter().any(|step| {
+        matches!(
+            step,
+            Operation::ReconstructRunProduct { .. } | Operation::ReconstructDigestFragment { .. }
+        )
+    }) {
         return Ok(());
     }
     let mut budget = Budget::default();
     budget.plan(plan)?;
-    walk(origins(plan), budget, |_, _| Ok(()))
+    let nodes = origins(plan);
+    walk(nodes, budget, |_, _| Ok(()), |_, _| Ok(()))
 }
-
-/// Aggregate borrowed recipe origins before a row compiler clones or executes
-/// them. Distinct uses are charged separately because each will be reconstructed.
 pub fn capsules_preflight<'a>(origins: impl IntoIterator<Item = &'a Capsule>) -> Result<(), Error> {
-    walk(origins.into_iter(), Budget::default(), |_, _| Ok(()))
+    walk(
+        origins
+            .into_iter()
+            .map(|o| (1, Pending::Run(std::borrow::Cow::Borrowed(o))))
+            .collect(),
+        Budget::default(),
+        |_, _| Ok(()),
+        |_, _| Ok(()),
+    )
+}
+/// Borrowed roots let compilers reserve their aggregate budget before cloning.
+pub enum MaterialOriginRef<'a> {
+    Run(&'a Capsule),
+    Digest(&'a crate::run_digest_history::Capsule),
+}
+pub fn material_capsules_preflight<'a>(
+    origins: impl IntoIterator<Item = MaterialOriginRef<'a>>,
+) -> Result<(), Error> {
+    walk(
+        origins
+            .into_iter()
+            .map(|origin| {
+                (
+                    1,
+                    match origin {
+                        MaterialOriginRef::Run(o) => Pending::Run(std::borrow::Cow::Borrowed(o)),
+                        MaterialOriginRef::Digest(o) => {
+                            Pending::Digest(std::borrow::Cow::Borrowed(o))
+                        }
+                    },
+                )
+            })
+            .collect(),
+        Budget::default(),
+        |_, _| Ok(()),
+        |_, _| Ok(()),
+    )
+}
+/// Aggregate both origin types before recipe compilers copy them.
+pub fn material_origins_preflight<'a>(
+    origins: impl IntoIterator<Item = &'a run_material::MaterialOrigin>,
+) -> Result<(), Error> {
+    walk(
+        origins
+            .into_iter()
+            .map(|origin| {
+                (
+                    1,
+                    match origin {
+                        run_material::MaterialOrigin::Run(o) => {
+                            Pending::Run(std::borrow::Cow::Borrowed(o))
+                        }
+                        run_material::MaterialOrigin::Digest(o) => {
+                            Pending::Digest(std::borrow::Cow::Borrowed(o))
+                        }
+                    },
+                )
+            })
+            .collect(),
+        Budget::default(),
+        |_, _| Ok(()),
+        |_, _| Ok(()),
+    )
+}
+pub(crate) fn digest_capsule_preflight(
+    origin: &crate::run_digest_history::Capsule,
+) -> Result<(), Error> {
+    walk(
+        vec![(1, Pending::Digest(std::borrow::Cow::Borrowed(origin)))],
+        Budget::default(),
+        |_, _| Ok(()),
+        |_, _| Ok(()),
+    )
+}
+pub(crate) fn digest_record_preflight(
+    record: &crate::run_digest_history::Record,
+) -> Result<(), Error> {
+    walk(
+        vec![(1, Pending::Record(record))],
+        Budget::default(),
+        |_, _| Ok(()),
+        |_, _| Ok(()),
+    )
+}
+/// A new digest occupies one ancestry layer above its saved native source.
+pub(crate) fn digest_origin_walk(
+    origin: &Capsule,
+    visit: impl FnMut(&Capsule, &Candidate) -> Result<(), Error>,
+    digest_visit: impl FnMut(&crate::run_digest_history::Record, Option<&Molecule>) -> Result<(), Error>,
+) -> Result<(), Error> {
+    walk(
+        vec![(2, Pending::Run(std::borrow::Cow::Borrowed(origin)))],
+        Budget::default(),
+        visit,
+        digest_visit,
+    )
 }
 
 /// Build a durable declaration only after the actual saved event has been freshly
@@ -374,10 +580,95 @@ pub fn capsule(workspace: &Workspace, selection: &Selection) -> Result<Capsule, 
 /// Workspace ownership only, safe inside workspace/run structural validation.
 /// Does not call Workspace::validate/load_run (which would recurse back here),
 /// replay science, deserialize material, or confer a current verdict.
-pub fn validate_plan_origins(workspace: &Workspace, plan: &DesignPlan) -> Result<(), Error> {
-    if origins(plan).next().is_none() {
-        return Ok(());
+fn attest_run(
+    workspace: &Workspace,
+    records: &BTreeMap<String, run_lineage::RunRecord>,
+    origin: &Capsule,
+    candidate: &Candidate,
+) -> Result<(), Error> {
+    let run = records
+        .get(&origin.selection.run_id)
+        .ok_or_else(|| bad("origin run is not retained in this workspace"))?;
+    if run.plan_revision != candidate.plan_revision
+        || crate::assembly_recipe::hash(&run.plan)?
+            != crate::assembly_recipe::hash(&candidate.plan)?
+        || run.target != origin.target_event
+        || crate::assembly_recipe::hash(&run.inputs)?
+            != crate::assembly_recipe::hash(&origin.inputs)?
+        || crate::assembly_recipe::hash(&run.products)?
+            != crate::assembly_recipe::hash(&origin.products)?
+        || run_material::resolve(workspace, &run.target)? != &origin.target
+    {
+        return Err(bad("origin declaration differs from retained run/events"));
     }
+    for (binding, input) in origin.inputs.iter().zip(&candidate.plan.inputs) {
+        if run_material::resolve(workspace, &binding.event)? != &input.molecule {
+            return Err(bad(
+                "original input event no longer owns the declared snapshot",
+            ));
+        }
+    }
+    for product in &origin.products {
+        run_material::resolve(
+            workspace,
+            &EventBinding {
+                document_id: product.document_id.clone(),
+                event_id: product.event_id.clone(),
+                revision: product.revision.clone(),
+            },
+        )?;
+    }
+    let selected = run_material::resolve(workspace, &origin.selection.event)?;
+    let product = &origin.products[origin.selection.step_index];
+    let original = workspace
+        .revisions
+        .get(&product.revision)
+        .ok_or_else(|| bad("origin product revision is unavailable"))?;
+    if !cloning_outputs::same_reference(selected, original)
+        || !run_material::name_only_ancestors(
+            workspace,
+            &origin.selection.event.event_id,
+            selected,
+        )?
+        .contains(product.event_id.as_str())
+    {
+        return Err(bad(
+            "selected saved event is not a name-only descendant of the origin product",
+        ));
+    }
+    Ok(())
+}
+fn workspace_walk(
+    workspace: &Workspace,
+    nodes: Vec<(usize, Pending<'_>)>,
+    budget: Budget,
+) -> Result<(), Error> {
+    // Reject the complete mixed declaration under one ledger before loading or
+    // hashing retained owner records. The second pass only performs attestation;
+    // it cannot introduce children or grant another ancestry allowance.
+    let mut checked = Budget::default();
+    checked.bytes = budget.bytes;
+    checked.steps = budget.steps;
+    checked.bases = budget.bases;
+    checked.inputs = budget.inputs;
+    let borrowed = nodes
+        .iter()
+        .map(|(depth, node)| {
+            (
+                *depth,
+                match node {
+                    Pending::Run(origin) => {
+                        Pending::Run(std::borrow::Cow::Borrowed(origin.as_ref()))
+                    }
+                    Pending::Digest(origin) => {
+                        Pending::Digest(std::borrow::Cow::Borrowed(origin.as_ref()))
+                    }
+                    Pending::Record(record) => Pending::Record(record),
+                },
+            )
+        })
+        .collect();
+    walk(borrowed, checked, |_, _| Ok(()), |_, _| Ok(()))?;
     let mut records = BTreeMap::new();
     for attachment in workspace
         .attachments
@@ -385,63 +676,85 @@ pub fn validate_plan_origins(workspace: &Workspace, plan: &DesignPlan) -> Result
         .filter(|a| a.kind == run_lineage::WORKSPACE_ATTACHMENT_KIND)
     {
         let run = run_lineage::load_run_record(&attachment.bytes)?;
-        records.insert(run.run_id.clone(), run);
+        if records.insert(run.run_id.clone(), run).is_some() {
+            return Err(bad("duplicate retained origin run"));
+        }
+    }
+    walk(
+        nodes,
+        budget,
+        |origin, candidate| attest_run(workspace, &records, origin, candidate),
+        |record, source| {
+            crate::run_digest_history::attest_record_shallow(workspace, record, source)
+        },
+    )
+}
+pub fn validate_plan_origins(workspace: &Workspace, plan: &DesignPlan) -> Result<(), Error> {
+    if !plan.steps.iter().any(|step| {
+        matches!(
+            step,
+            Operation::ReconstructRunProduct { .. } | Operation::ReconstructDigestFragment { .. }
+        )
+    }) {
+        return Ok(());
     }
     let mut budget = Budget::default();
     budget.plan(plan)?;
-    walk(origins(plan), budget, |origin, candidate| {
-        let run = records
-            .get(&origin.selection.run_id)
-            .ok_or_else(|| bad("origin run is not retained in this workspace"))?;
-        if run.plan_revision != candidate.plan_revision
-            || crate::assembly_recipe::hash(&run.plan)?
-                != crate::assembly_recipe::hash(&candidate.plan)?
-            || run.target != origin.target_event
-            || crate::assembly_recipe::hash(&run.inputs)?
-                != crate::assembly_recipe::hash(&origin.inputs)?
-            || crate::assembly_recipe::hash(&run.products)?
-                != crate::assembly_recipe::hash(&origin.products)?
-            || run_material::resolve(workspace, &run.target)? != &origin.target
-        {
-            return Err(bad("origin declaration differs from retained run/events"));
-        }
-        for (binding, input) in origin.inputs.iter().zip(&candidate.plan.inputs) {
-            if run_material::resolve(workspace, &binding.event)? != &input.molecule {
-                return Err(bad(
-                    "original input event no longer owns the declared snapshot",
-                ));
-            }
-        }
-        for product in &origin.products {
-            run_material::resolve(
-                workspace,
-                &EventBinding {
-                    document_id: product.document_id.clone(),
-                    event_id: product.event_id.clone(),
-                    revision: product.revision.clone(),
-                },
-            )?;
-        }
-        let selected = run_material::resolve(workspace, &origin.selection.event)?;
-        let product = &origin.products[origin.selection.step_index];
-        let original = workspace
-            .revisions
-            .get(&product.revision)
-            .ok_or_else(|| bad("origin product revision is unavailable"))?;
-        if !cloning_outputs::same_reference(selected, original)
-            || !run_material::name_only_ancestors(
-                workspace,
-                &origin.selection.event.event_id,
-                selected,
-            )?
-            .contains(product.event_id.as_str())
-        {
-            return Err(bad(
-                "selected saved event is not a name-only descendant of the origin product",
-            ));
-        }
-        Ok(())
-    })
+    let nodes = origins(plan);
+    workspace_walk(workspace, nodes, budget)
+}
+pub(crate) fn validate_run_capsule_origins(
+    workspace: &Workspace,
+    origin: &Capsule,
+) -> Result<(), Error> {
+    workspace_walk(
+        workspace,
+        vec![(1, Pending::Run(std::borrow::Cow::Borrowed(origin)))],
+        Budget::default(),
+    )
+}
+pub(crate) fn validate_digest_request_origins(
+    workspace: &Workspace,
+    origin: &Capsule,
+) -> Result<(), Error> {
+    workspace_walk(
+        workspace,
+        vec![(2, Pending::Run(std::borrow::Cow::Borrowed(origin)))],
+        Budget::default(),
+    )
+}
+pub(crate) fn validate_digest_capsule_origins(
+    workspace: &Workspace,
+    origin: &crate::run_digest_history::Capsule,
+) -> Result<(), Error> {
+    workspace_walk(
+        workspace,
+        vec![(1, Pending::Digest(std::borrow::Cow::Borrowed(origin)))],
+        Budget::default(),
+    )
+}
+/// Capability checks can visit nested plans without another recursive decoder or
+/// per-generation budget. The initial bytes are an origin's candidate envelope.
+pub fn visit_candidate_plans(
+    first: &[u8],
+    mut visit: impl FnMut(&Candidate) -> Result<(), Error>,
+) -> Result<(), Error> {
+    let mut budget = Budget::default();
+    add(&mut budget.bytes, first.len(), MAX_CAPSULE_BYTES)?;
+    let candidate = transfer::decode_candidate_shallow(first)?;
+    budget.plan(&candidate.plan)?;
+    visit(&candidate)?;
+    let nodes = origins(&candidate.plan)
+        .into_iter()
+        .map(|(depth, node)| (depth + 1, node))
+        .collect();
+    walk_enclosed(
+        nodes,
+        Some(u16::from_le_bytes([first[4], first[5]])),
+        budget,
+        |_, candidate| visit(candidate),
+        |_, _| Ok(()),
+    )
 }
 
 struct Bounded(Vec<u8>);

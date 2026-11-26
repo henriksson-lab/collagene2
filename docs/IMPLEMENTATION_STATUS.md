@@ -4,8 +4,9 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-Current source uses worker89, candidate20, native plan18, science23 and184 MCP
-tools. Desktop remote review messages now use DSQ/DSR3, with compatible legacy
+Current source uses worker90, candidate21, native plan19, science24 and186 MCP
+tools. Eighty-six distinct focused cases and the integrated web/worker WASM
+compiler check pass for this increment. Desktop remote review messages use DSQ/DSR3, with compatible legacy
 prefix commands/replies and explicit version floors for new review controls.
 Saved-catalog backup commands use DTQ/DTR2 with legacy commands retaining their
 version-1 wire floor. The Tauri shell has a durable offline local library, explicit multi-remote
@@ -26,6 +27,20 @@ boundary correction remains intact. Committed `3077971` and `ac0ba0d` now pass s
 builds/MCP on Windows/macOS/Linux. New source requires its own CI. Installation
 and graphical/offline acceptance remain separate unfinished gates.
 
+Checkpoint `320adb5` also passes scientific, web and desktop builds/MCP on all
+three operating systems. Its immutable frontend is published on port8082 with
+static integrity verification and the immediately preceding worker retained.
+No browser or application HTTP checks were performed. New source is not yet
+included in that published checkpoint.
+
+Parallel format work now adds selected XDNA v0 reference export, SCF regeneration
+from retained real trace signals, and direct MCP annotated text exports. These
+pass25 focused native/SDK format cases. The two binary writers have reviewed
+worker-backed controls in the existing File/trace menus. Fourteen export
+core/protocol cases (including six repeated SCF cases) and seven native UI-model
+cases pass, alongside the final integrated web/worker WASM check;
+the [format matrix](FORMAT_DELIVERY_MATRIX.md) records existing support and gaps.
+
 Native saved-catalog backup controls now create/list/verify and restore an
 exact selected archive to a new managed copy through a separate service lane.
 They preserve durable retry identities and leave the working editor state in
@@ -39,11 +54,14 @@ catalog cutover and broader collaboration remain unfinished.
 Sequence editing now preserves exact local caret continuity through typing,
 cut and normalized paste, while clearing stale external/undo/restore selections.
 GenBank RNA T/U handling and citation replay are corrected; explicit FASTA
-alphabet review is connected to file/paste and MCP imports. A target-free saved
-run digest derivation and typed native sharing foundation are implemented, but
-worker/source-picker/typed preparation reuse remain required before the disabled
-saved-fragment opening path is exposed. All38 focused cases and web/worker WASM
-checking pass. [Editor](SEQUENCE_EDIT_TRANSITIONS.md) · [RNA](GENBANK_RNA.md) ·
+alphabet review is connected to file/paste and MCP imports. The committed
+target-free digest foundation passes38 focused cases and web/worker WASM checking.
+Pending source now connects fragment opening, mixed Run/Digest origin selection,
+typed preparations, downstream PCR/assembly and exact native replay. Opened PCR
+reference documents still require a future target-free derivation before they
+can be selected as standalone physical material; typed preparation followed by
+assembly and a saved run is the supported physical path. New source has its own
+focused checks in progress. [Editor](SEQUENCE_EDIT_TRANSITIONS.md) · [RNA](GENBANK_RNA.md) ·
 [FASTA](FASTA_ALPHABETS.md) · [Digest foundation](RUN_DIGEST_HISTORY.md).
 
 The resumed format batch adds fresh reviewed SnapGene DNA/protein reference

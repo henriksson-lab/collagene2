@@ -30,7 +30,7 @@ const MAX_ENTRIES: usize = 50_000;
 const MAX_STACK: usize = 1000;
 const FORMAT: &str = "collagene-workspace";
 const VERSION: u32 = 1;
-pub const PLAN_SCHEMA_VERSION: u32 = 18;
+pub const PLAN_SCHEMA_VERSION: u32 = 19;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1052,7 +1052,9 @@ pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
         || header.get("molecule_schema").and_then(|v| v.as_u64()) != Some(1)
         || !matches!(
             header.get("plan_schema").and_then(|v| v.as_u64()),
-            Some(1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18)
+            Some(
+                1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19
+            )
         )
     {
         return Err(Error::Unsupported(
@@ -1214,6 +1216,15 @@ pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
             });
         }
         let steps: Vec<Operation> = json_exact(get(&blobs, &record.steps)?)?;
+        if manifest.plan_schema < 19
+            && steps
+                .iter()
+                .any(|step| matches!(step, Operation::ReconstructDigestFragment { .. }))
+        {
+            return Err(Error::Unsupported(
+                "Saved digest reconstruction requires plan schema19".into(),
+            ));
+        }
         if manifest.plan_schema < 18
             && steps.iter().any(|step| {
                 matches!(

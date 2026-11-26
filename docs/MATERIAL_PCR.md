@@ -1,0 +1,17 @@
+# Ordinary PCR from saved native material
+
+`material_pcr::{revision,simulate}` take an exact source molecule, a selected `run_material::MaterialOrigin` and two explicit primers. `outputs_revision(origin,request)` and `prepare_outputs(origin,request)` extend the existing selected-PCR output API without changing its DTO.
+
+Each simulation freshly replays either the original closed native run capsule or the saved catalog-digest derivation capsule. The original source document retains all restrictive markers. Only the resulting private tracked duplex is passed to the shared exact-PCR simulator; imported end summaries or a matching sequence do not bypass native replay. Supported staggered-template geometries follow the native simulator's source-strand coverage rule; unsupported overhang-extension geometries or nicked sources are refused. There is no fabricated target, target-based candidate selection, recorded physical run, host rescue or chemical certainty inferred from a preview.
+
+The context binds all original source content, the complete typed origin, engine versions and both literal primers. Selected-output contexts additionally bind the selected preview revision/index and all save choices. Preparation recomputes the native preview before selection; ordinary source-only PCR outputs remain unchanged.
+
+Each saved-material preview retains a restrictive `duplex_model` marker and `pcr:material_origin` documentary evidence: the complete origin hash, typed exact original event/selection, source revision, native preview context, inherited incomplete flag, and findings excerpt with total/truncation. Excerpts contain at most 32 entries of 512 characters. This evidence does not itself grant physical authority. Hosts must still bind the immutable source event and current UI/session epoch when saving; later physical reuse requires native preparation ancestry rather than treating these reference documents as original stock. The full local original archive is not duplicated into metadata.
+
+The same metadata is generated before both preview-revision selection and output preparation. New names change the saved presentation after exact preview selection. Primer collections contain the two new declared oligos; historical origin reactions are not repeated or newly ordered.
+
+Focused native fixtures in `core/tests/material_pcr.rs` exercise an actual saved PCR run, an actual staggered EcoRI fragment, a reusable but search-incomplete physical circular origin, selected-output revision binding, source-marker retention, and changed source/origin/oligo refusal. Core material/verification bounds govern original closed replay; this wrapper adds bounded primer fields, findings excerpts and aggregate serialized preview size, rather than claiming a new absolute end-to-end computation budget.
+
+This slice closes native saved-material **PCR reference preview and selected-reference output** handling, not unrestricted physical reuse of the newly opened PCR reference. A future target-free PCR derivation record is still needed for that separate path. The existing `FromDigest` → new PCR → assembly candidate route can already record/replay an actual physical native run against its independent assembly target.
+
+Additional literal `material_pcr_staggered` fixtures cover unequal 13/17-base strands, a second geometry admitted only by bottom-strand extra DNA (explicit unsupported rather than false uniqueness), and retained source nicks (unsupported). All assert source immutability.

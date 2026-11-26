@@ -21,11 +21,11 @@ ELN/inventory, external alignment engines, OpenGel or further BAM/index work.
 | Native single document `.cg2` | Versioned parser | Versioned writer | File save/open; native durable export | `export_document`; desktop saved catalog preload | Single molecule is not whole workspace/history closure |
 | Native workspace/history `.collagene` ZIP and design/candidate envelopes | Yes, bounded schemas and immutable graph validation | Yes | Working autosave, workspace open/save, selected sharing, native catalog | Dedicated candidate/design/run surfaces; not a generic filesystem importer | Preserve exact schema/version capability floors; history closure and whole-workspace sharing remain separate intentions |
 | SnapGene `.dna` / selected `.prot` | Bounded DNA reader and NEW strict uncompressed linear protein packet21 reader | NEW selected DNA/protein reference writer with strict/explicit-loss policy | File DNA/protein import, supported DNA URL import, original download, NEW guarded File SnapGene export | NEW `export_snapgene`; no dedicated binary-file upload tool | Compressed data, broader packets/history/version fidelity and vendor-produced corpus/application acceptance remain unverified |
-| ABI/ABIF, SCF traces | Yes, channels/calls/qualities/peaks | Exact original only; derived sequence/quality exports separately | Trace file import/view/original export | No dedicated trace-file import/export tool found | Regenerated trace writer not implemented; never invent signal evidence from sequence |
+| ABI/ABIF, SCF traces | Yes, channels/calls/qualities/peaks | Exact original; NEW selected SCF3 writer from retained real channels/calls/qualities | Trace file import/view/original export; NEW reviewed SCF export menu | No dedicated trace-file import/export tool found | Selected regenerated SCF3 writer is in focused validation; ABIF scores are not converted to four-channel SCF accuracies, and no signal is invented from sequence |
 | Original Collagene XML | Yes, independent migration profile plus NEW explicit lower-only reference projection | Exact original only | Generic file/paste, original download, explicit lower-only migration review | Generic XML import; NEW `import_compat_sequence` explicit reference policy | Regenerated legacy XML writer and broader schema corpus; lower-only source is reviewed reference correspondence, never reconstructed material |
-| DNA Strider/Serial Cloner XDNA v0 | Yes, explicit v0 binary profile | Exact original only | Generic file import, original legacy download | No direct binary upload tool found | Other versions/native containers need separate identification; filenames do not prove format |
-| EMBL/ENA nucleotide text | Yes | Yes, explicit field profile | Generic file import; explicit File EMBL export | Generic text import; no standalone annotated-text export tool found | Broader header/feature fidelity and a direct MCP annotated-text export surface remain distinct work |
-| GenPept + UniProt annotated protein text | Yes, independent adapters | Yes, explicit source-ID/date/mass/CRC policies | Protein-aware import and compact File export dialog/original source download | Generic text detection imports; no dedicated regenerated protein-text export tool found | Broader FT vocabularies/representative sources; never alias protein GenPept to DNA GenBank |
+| DNA Strider/Serial Cloner XDNA v0 | Yes, explicit v0 binary profile | NEW reviewed v0 DNA/linear-protein reference writer | Generic file import, original legacy download; NEW reviewed File XDNA export | No direct binary upload tool found | Binary writer fixtures pass; new worker-backed controls are in integration validation. Names/unsupported annotations require explicit loss review. Other versions need separate identification; filenames do not prove format |
+| EMBL/ENA nucleotide text | Yes | Yes, explicit field profile | Generic file import; explicit File EMBL export | Generic text import; NEW export_annotated_sequence explicit writer profile | Broader header/feature fidelity and representative application corpora remain work; direct MCP annotated export is now implemented |
+| GenPept + UniProt annotated protein text | Yes, independent adapters | Yes, explicit source-ID/date/mass/CRC policies | Protein-aware import and compact File export dialog/original source download | Generic text detection imports; NEW export_annotated_sequence explicit protein profiles | Broader FT vocabularies/representative sources; never alias protein GenPept to DNA GenBank |
 | GCG/Wisconsin SINGLE sequence | NEW bounded `gcg_sequence`, explicit alphabet required | NEW sequence-only writer with source-ID/date policy | NEW guarded compatibility import/export dialogs and File action | NEW `import_compat_sequence` and `export_gcg` | Focused core/MCP checks pass; browser acceptance deferred; profile is not MSF or native Lasergene `.seq` |
 | Aligned FASTA, CLUSTAL, Stockholm | Yes, explicit alphabet/row metadata | Yes, declared loss profiles | Retained alignment workspace/selection/export | Typed import/read/export tools | No aligner executed; unsupported annotation semantics remain evidence |
 | PHYLIP strict/relaxed sequential/interleaved, MSF, NEXUS | Yes, bounded explicit dialects | Yes, options and loss notices | Alignment import/export selectors | Typed alignment tools/options | PHYLIP truncation is explicit; NEXUS/GCG variants outside profiles refuse |
@@ -85,8 +85,8 @@ Surface evidence: [App File/import flows](../crates/web/src/app.rs),
    of adding one permanent toolbar button per format. Existing native/HTML/PDF
    history remains the fidelity escape hatch. Generic MCP sequence import still calls `formats::import_text`; the NEW
    `import_compat_sequence`, `export_snapgene` and `export_gcg` tools now provide
-   explicit compatibility profiles and acknowledged output loss. Many other
-   binary adapters and annotated writers lack a direct MCP surface despite core
+   explicit compatibility profiles and acknowledged output loss. Several other
+   binary adapters lack a direct MCP surface despite core
    implementation. Focused batch checks pass; parser/UI/MCP and browser acceptance are separate
    evidence, as documented in [compatibility controls](SEQUENCE_COMPATIBILITY_CONTROLS.md).
 
@@ -94,3 +94,10 @@ Native commercial-container work needs exact versions and independently sourced
 fixtures. No third-party cloning application code was borrowed for this audit or
 new GCG implementation. Further native proprietary writers should follow actual
 migration demand rather than treating every parsed format as a writer obligation.
+
+The selected XDNA/SCF writers pass fourteen focused native fixture groups
+(eight XDNA, six SCF); annotated protein exchange passes nine and the MCP
+annotated export tool passes two SDK groups. Worker-backed XDNA/SCF controls pass
+their focused native UI-model and integrated web/worker WASM checks. This does
+not establish browser acceptance, ABIF writing
+or vendor application parity.

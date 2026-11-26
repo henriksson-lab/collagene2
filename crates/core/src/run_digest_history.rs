@@ -3,18 +3,16 @@
 use crate::{
     Error, Molecule, assembly_recipe,
     catalog_digest::{self, CatalogSelection},
-    chemistry, cloning_outputs,
+    chemistry,
     modified_duplex::{self, TrackedDuplex},
     restriction_history,
     restriction_inspection::{self, InspectionOptions},
     run_lineage::{self, EventBinding},
-    run_material, transfer,
-    verification::{self, Operation},
+    run_material, transfer, verification,
     workspace::{self, Workspace, WorkspaceAttachment},
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    borrow::Cow,
     collections::{BTreeMap, BTreeSet},
     io::Write,
 };
@@ -64,6 +62,17 @@ impl FreshFragment {
     pub fn origin_findings_truncated(&self) -> bool {
         self.origin_findings_truncated
     }
+    /// Move freshly replayed state into the verifier; never deserialize it.
+    pub fn into_parts(self) -> (Molecule, TrackedDuplex, bool, Vec<String>, usize, bool) {
+        (
+            self.reference,
+            self.tracked,
+            self.origin_incomplete,
+            self.origin_findings,
+            self.origin_findings_total,
+            self.origin_findings_truncated,
+        )
+    }
 }
 fn bad(s: &str) -> Error {
     Error::Unsupported(format!("saved-run digest history: {s}"))
@@ -105,66 +114,20 @@ fn encoded(value: &impl Serialize, limit: usize) -> Result<Vec<u8>, Error> {
 fn context(fingerprint: &str, request: &Request, science: &str) -> Result<String, Error> {
     assembly_recipe::hash(&(ENGINE_VERSION, science, fingerprint, request))
 }
-/// Walk only explicit, already bounded native origin plans. One nesting level is
-/// reserved for this derivation; no opaque attachment is treated as a leaf.
+/// Visit native plans through the common mixed-origin traversal. One nesting
+/// level is reserved for this derivation; digest children are never opaque leaves.
 fn origins(
     origin: &run_material::Capsule,
     mut visit: impl FnMut(&run_material::Capsule, &transfer::Candidate) -> Result<(), Error>,
 ) -> Result<(), Error> {
-    origin.validate_documentary()?;
-    let mut pending = vec![(Cow::Borrowed(origin), 1usize)];
-    while let Some((origin, depth)) = pending.pop() {
-        if depth >= crate::run_material_capsule::MAX_NESTING {
-            return Err(bad(
-                "derived digest plus native origin exceeds eight ancestry levels",
-            ));
-        }
-        let candidate = transfer::decode_candidate_shallow(&origin.candidate)?;
-        visit(&origin, &candidate)?;
-        for step in candidate.plan.steps {
-            match step {
-                Operation::ReconstructRunProduct { origin, .. } => {
-                    pending.push((Cow::Owned(origin), depth + 1))
-                }
-                // Exhaustive by design: adding another closed-material operation
-                // must extend ancestry discovery and the shared nesting budget.
-                Operation::Pcr { .. }
-                | Operation::Overlap { .. }
-                | Operation::Digest { .. }
-                | Operation::TreatEnds { .. }
-                | Operation::Ligate { .. }
-                | Operation::PcrWithMismatches { .. }
-                | Operation::GoldenGate { .. }
-                | Operation::RepairEnds { .. }
-                | Operation::AnnealOligos { .. }
-                | Operation::Tail3Prime { .. }
-                | Operation::ProfiledOverlap { .. }
-                | Operation::DeclareSourceModifications { .. }
-                | Operation::CheckedDigest { .. }
-                | Operation::RecombineReference { .. }
-                | Operation::Topo { .. }
-                | Operation::CheckedTopo { .. }
-                | Operation::DeclareSourceTermini { .. }
-                | Operation::CatalogDigest { .. }
-                | Operation::SelectedGoldenGate { .. }
-                | Operation::ProcessedTopo { .. }
-                | Operation::TopoActions { .. }
-                | Operation::MultiSiteRecombineReference { .. }
-                | Operation::OverlapExtension { .. }
-                | Operation::HomologyAssembly { .. }
-                | Operation::ResectThreePrime { .. }
-                | Operation::HomologyAnnealing { .. } => (),
-            }
-        }
-    }
-    Ok(())
+    crate::run_material_capsule::digest_origin_walk(origin, |o, c| visit(o, c), |_, _| Ok(()))
 }
-fn request_shape(request: &Request) -> Result<(), Error> {
+
+pub(crate) fn request_shape_shallow(request: &Request) -> Result<(), Error> {
     run_material::event_shape(&request.source)?;
     if request.origin.selection.event != request.source {
         return Err(bad("source event differs from selected native origin"));
     }
-    origins(&request.origin, |_, _| Ok(()))?;
     request.selection.validate()?;
     request.options.validate()?;
     if request.fragment_index >= request.options.max_fragments {
@@ -172,6 +135,10 @@ fn request_shape(request: &Request) -> Result<(), Error> {
     }
     encoded(request, MAX_RECORD_BYTES)?;
     Ok(())
+}
+fn request_shape(request: &Request) -> Result<(), Error> {
+    origins(&request.origin, |_, _| Ok(()))?;
+    request_shape_shallow(request)
 }
 /// Exact immutable source/target/product/native-run dependencies for archive
 /// closure code. These documentary pins confer no current material status.
@@ -189,6 +156,19 @@ pub fn source_bindings(record: &Record) -> Result<Vec<EventBinding>, Error> {
         );
     };
     add(&record.request.source);
+    let mut nested = Vec::new();
+    crate::run_material_capsule::digest_origin_walk(
+        &record.request.origin,
+        |_, _| Ok(()),
+        |r, _| {
+            nested.push(r.request.source.clone());
+            nested.push(r.product.clone());
+            Ok(())
+        },
+    )?;
+    for binding in &nested {
+        add(binding);
+    }
     origins(&record.request.origin, |origin, _| {
         add(&origin.selection.event);
         add(&origin.target_event);
@@ -217,6 +197,9 @@ pub fn required_run_ids(record: &Record) -> Result<Vec<String>, Error> {
 }
 impl Record {
     pub fn validate_documentary(&self) -> Result<(), Error> {
+        crate::run_material_capsule::digest_record_preflight(self)
+    }
+    pub(crate) fn validate_shallow(&self) -> Result<(), Error> {
         if self.schema_version != 1
             || self.engine_version != ENGINE_VERSION
             || self.scientific_engine.is_empty()
@@ -229,7 +212,7 @@ impl Record {
         {
             return Err(bad("unsupported derivation schema/engine or fingerprint"));
         }
-        request_shape(&self.request)?;
+        request_shape_shallow(&self.request)?;
         run_material::event_shape(&self.product)?;
         if context(
             &self.source_workspace_fingerprint,
@@ -271,81 +254,49 @@ fn retained_run(w: &Workspace, id: &str) -> Result<run_lineage::RunRecord, Error
     }
     selected.ok_or_else(|| bad("original native run is not retained"))
 }
-fn selected_descendant(w: &Workspace, origin: &run_material::Capsule) -> Result<(), Error> {
-    let source = run_material::resolve(w, &origin.selection.event)?;
-    let original = origin
-        .products
-        .get(origin.selection.step_index)
-        .ok_or_else(|| bad("selected origin step unavailable"))?;
-    let mut event = origin.selection.event.event_id.as_str();
-    let mut seen = BTreeSet::new();
-    loop {
-        if !seen.insert(event) {
-            return Err(bad("cyclic selected product ancestry"));
-        }
-        let entry = w
-            .history
-            .iter()
-            .find(|e| e.id == event)
-            .ok_or_else(|| bad("selected product ancestor unavailable"))?;
-        let current = w
-            .revisions
-            .get(&entry.revision)
-            .ok_or_else(|| bad("selected ancestor reference unavailable"))?;
-        if !cloning_outputs::same_reference(source, current) {
-            return Err(bad(
-                "source is not a name-only descendant of the selected native product",
-            ));
-        }
-        if event == original.event_id {
-            if entry.document_id != original.document_id || entry.revision != original.revision {
-                return Err(bad("selected original product binding changed"));
-            }
-            break;
-        }
-        if entry.parents.len() != 1 {
-            return Err(bad("ambiguous selected source ancestry"));
-        }
-        event = &entry.parents[0];
-    }
-    Ok(())
-}
 /// Structural retained-closure attestation. Does not call Workspace::validate or
 /// scientific replay, so archive validators can use this without recursion.
 fn attest(w: &Workspace, request: &Request) -> Result<(), Error> {
-    request_shape(request)?;
+    request_shape_shallow(request)?;
     run_material::resolve(w, &request.source)?;
-    origins(&request.origin, |origin, candidate| {
-        let run = retained_run(w, &origin.selection.run_id)?;
-        if run.plan_revision != candidate.plan_revision
-            || assembly_recipe::hash(&run.plan)? != assembly_recipe::hash(&candidate.plan)?
-            || run.target != origin.target_event
-            || assembly_recipe::hash(&run.inputs)? != assembly_recipe::hash(&origin.inputs)?
-            || assembly_recipe::hash(&run.products)? != assembly_recipe::hash(&origin.products)?
-            || run_material::resolve(w, &run.target)? != &origin.target
-        {
-            return Err(bad(
-                "original retained run, target or bindings differ from the closed recipe",
-            ));
-        }
-        for (binding, input) in origin.inputs.iter().zip(&candidate.plan.inputs) {
-            if run_material::resolve(w, &binding.event)? != &input.molecule {
-                return Err(bad("original input snapshot changed"));
-            }
-        }
-        for product in &origin.products {
-            run_material::resolve(
-                w,
-                &EventBinding {
-                    document_id: product.document_id.clone(),
-                    event_id: product.event_id.clone(),
-                    revision: product.revision.clone(),
-                },
-            )?;
-        }
-        selected_descendant(w, origin)
-    })
+    crate::run_material_capsule::validate_digest_request_origins(w, &request.origin)
 }
+/// Compare one already-budgeted digest declaration to retained immutable native
+/// records. Descendants are attested by the caller's SAME iterative walk.
+pub(crate) fn attest_record_shallow(
+    w: &Workspace,
+    record: &Record,
+    source: Option<&Molecule>,
+) -> Result<(), Error> {
+    let retained = record_for(w, &record.product)?;
+    if encoded(&retained, MAX_RECORD_BYTES)? != encoded(record, MAX_RECORD_BYTES)? {
+        return Err(bad(
+            "digest declaration differs from retained derivation record",
+        ));
+    }
+    let actual = run_material::resolve(w, &record.request.source)?;
+    if source.is_some_and(|source| source != actual) {
+        return Err(bad(
+            "digest declaration source differs from retained source event",
+        ));
+    }
+    let reference = run_material::resolve(w, &record.product)?;
+    let event = w
+        .history
+        .iter()
+        .find(|e| e.id == record.product.event_id)
+        .ok_or_else(|| bad("digest event unavailable"))?;
+    if event.parents != vec![record.request.source.event_id.clone()]
+        || reference.metadata.get(CONTEXT_KEY) != Some(&record.context_revision)
+        || !reference.metadata.contains_key("duplex_model")
+    {
+        return Err(bad(
+            "digest product ancestry or restrictive native context changed",
+        ));
+    }
+    Ok(())
+}
+
 fn require_current_origins(w: &Workspace, request: &Request) -> Result<(), Error> {
     origins(&request.origin, |origin, _| {
         if retained_run(w, &origin.selection.run_id)?
@@ -709,19 +660,10 @@ pub fn capsule(w: &Workspace, product: &EventBinding) -> Result<Capsule, Error> 
 }
 impl Capsule {
     pub fn validate_documentary(&self) -> Result<(), Error> {
-        if self.schema_version != 1 {
-            return Err(bad("unsupported derived capsule schema"));
-        }
-        self.record.validate_documentary()?;
-        crate::model::bounds::model_preflight(&[&self.source])?;
-        self.source.validate()?;
-        if self.source.revision() != self.record.request.source.revision {
-            return Err(bad("derived capsule source snapshot changed"));
-        }
-        encoded(self, MAX_CAPSULE_BYTES)?;
-        Ok(())
+        crate::run_material_capsule::digest_capsule_preflight(self)
     }
 }
+
 /// Receiving workspace/native-host check before selecting a serialized capsule.
 /// This verifies retained ancestry, not chemical state.
 pub fn validate_capsule_for_workspace(
@@ -729,17 +671,12 @@ pub fn validate_capsule_for_workspace(
     capsule: &Capsule,
     product: &EventBinding,
 ) -> Result<(), Error> {
-    capsule.validate_documentary()?;
-    if &capsule.record.product != product
-        || encoded(&record_for(w, product)?, MAX_RECORD_BYTES)?
-            != encoded(&capsule.record, MAX_RECORD_BYTES)?
-        || run_material::resolve(w, &capsule.record.request.source)? != &capsule.source
-    {
+    if &capsule.record.product != product {
         return Err(bad(
-            "derived capsule differs from exact retained native record/source",
+            "digest material requires its exact saved product event",
         ));
     }
-    attest(w, &capsule.record.request)
+    crate::run_material_capsule::validate_digest_capsule_origins(w, capsule)
 }
 /// Closed recipe replay for a future typed FromDerivedDigest operation. Never
 /// trusts a cached duplex, material summary, fragment index chosen by target DNA,

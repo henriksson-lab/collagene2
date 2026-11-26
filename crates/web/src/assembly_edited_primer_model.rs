@@ -9,8 +9,9 @@ use crate::{
         OverlapPreparation,
     },
 };
+#[cfg(test)]
+use collagene_core::Molecule;
 use collagene_core::{
-    Molecule,
     analysis::Primer,
     assembly_edit_intent, assembly_edited_primer_design as native, overlap_extension_primer_design,
     run_lineage::EventBinding,
@@ -291,14 +292,15 @@ pub fn request(
     {
         return Err("Whole-assembly tails are derived from declared junction inserts and edited source cores; global tail overrides must be empty.".into());
     }
-    collagene_core::run_material::capsules_preflight(
-        draft
-            .methods
-            .rows
-            .iter()
-            .filter_map(|row| row.run_origin.as_deref()),
-    )
-    .map_err(|e| e.to_string())?;
+    let run_origins = draft
+        .methods
+        .rows
+        .iter()
+        .filter_map(|row| row.run_origin.as_ref())
+        .map(|origin| origin.as_run())
+        .collect::<Result<Vec<_>, _>>()?;
+    collagene_core::run_material::capsules_preflight(run_origins.into_iter())
+        .map_err(|e| e.to_string())?;
     let (inputs, base, _) = assembly_draft_model::inputs_request(draft)?;
     let (intent_kind, intent_context_revision, declared) =
         independent(draft, intent, &inputs, base)?;
@@ -309,7 +311,10 @@ pub fn request(
         .filter_map(|(role, row)| {
             row.run_origin.as_ref().map(|origin| native::RoleOrigin {
                 role: role.role.clone(),
-                origin: origin.as_ref().clone(),
+                origin: origin
+                    .as_run()
+                    .expect("all origins were explicitly checked above")
+                    .clone(),
             })
         })
         .collect();
@@ -481,7 +486,7 @@ impl Proposal {
                         .run_origin
                         .as_ref()
                         .ok_or("An unrequested saved origin appeared in the proposed recipe.")?;
-                    if receipt(origin, MAX_CONTEXT)? != receipt(saved.as_ref(), MAX_CONTEXT)? {
+                    if receipt(origin, MAX_CONTEXT)? != receipt(saved.as_run()?, MAX_CONTEXT)? {
                         return Err("The proposed recipe changed a saved material origin.".into());
                     }
                     match preparation{RunPreparation::ExactPcr{forward,reverse}=>Preparation::ExactPcr{forward:forward.clone(),reverse:reverse.clone()},RunPreparation::OverlapExtensionPcr{request}=>Preparation::OverlapExtensionPcr{request:request.clone()},_=>return Err("The native whole-assembly preparation is outside the supported flat PCR vocabulary.".into())}

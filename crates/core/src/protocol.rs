@@ -6,8 +6,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 89;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 20;
+pub const WORKER_SCHEMA_VERSION: u16 = 90;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 21;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
@@ -960,6 +960,39 @@ pub enum AnalysisJob {
         origin: crate::run_material::Capsule,
         task: crate::topo_run_preparation::Task,
     },
+    InspectMaterialOrigin {
+        workspace: crate::workspace::Workspace,
+        event: crate::run_lineage::EventBinding,
+        selection: Option<crate::run_material::MaterialSelection>,
+    },
+    InstallRunDigestFragment {
+        workspace: crate::workspace::Workspace,
+        request: crate::run_digest_history::Request,
+    },
+    MaterialPcrDocuments {
+        molecule: Molecule,
+        origin: crate::run_material::MaterialOrigin,
+        forward: crate::analysis::Primer,
+        reverse: crate::analysis::Primer,
+    },
+    PrepareMaterialPcrOutputs {
+        origin: crate::run_material::MaterialOrigin,
+        request: crate::pcr_outputs::Request,
+    },
+    ReviewSequenceExport {
+        molecule: Molecule,
+        format: crate::sequence_export::Format,
+    },
+    PrepareSequenceExport {
+        molecule: Molecule,
+        format: crate::sequence_export::Format,
+        expected_context_revision: String,
+        allow_omissions: bool,
+    },
+    ExportScfTrace {
+        trace: crate::traces::Trace,
+        options: crate::scf_export::Options,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1132,6 +1165,13 @@ pub enum AnalysisResult {
     OverlapExtensionDigestInspection(crate::overlap_extension_digest_inspection::Preview),
     EditedOverlapPrimersDesigned(crate::assembly_edited_primer_design::Report),
     TopoRunInspection(crate::topo_run_preparation::Inspection),
+    MaterialOriginInspection(crate::run_material::MaterialInspection),
+    RunDigestInstalled(crate::run_digest_history::Installed),
+    MaterialPcrDocuments(Vec<crate::verification::PcrDocument>),
+    MaterialPcrOutputsPrepared(crate::pcr_outputs::Prepared),
+    SequenceExportAssessment(crate::sequence_export::Assessment),
+    SequenceExportPrepared(crate::sequence_export::Prepared),
+    ScfTraceExported(crate::scf_export::Exported),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1361,6 +1401,37 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         crate::pairwise_context::preflight(report, reference, query, *translate)?;
     }
     match &r.job {
+        AnalysisJob::InspectMaterialOrigin {
+            workspace,
+            event,
+            selection,
+        } => {
+            crate::run_material::material_inspection_revision(workspace, event, selection)?;
+        }
+        AnalysisJob::InstallRunDigestFragment { workspace, request } => {
+            crate::run_digest_history::preflight(workspace, request)?;
+        }
+        AnalysisJob::MaterialPcrDocuments {
+            molecule,
+            origin,
+            forward,
+            reverse,
+        } => {
+            crate::material_pcr::revision(molecule, origin, forward, reverse)?;
+        }
+        AnalysisJob::PrepareMaterialPcrOutputs { origin, request } => {
+            crate::material_pcr::outputs_revision(origin, request)?;
+        }
+        AnalysisJob::ReviewSequenceExport { molecule, format }
+        | AnalysisJob::PrepareSequenceExport {
+            molecule, format, ..
+        } => {
+            crate::sequence_export::revision(molecule, format)?;
+        }
+        AnalysisJob::ExportScfTrace { trace, options } => {
+            crate::scf_export::revision(trace, options)?;
+        }
+
         AnalysisJob::InspectTopoRun {
             inputs,
             template_role,
@@ -1631,6 +1702,13 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::InspectRunMaterial { .. }
             | AnalysisJob::PreviewAnnealingRecipe { .. }
             | AnalysisJob::InspectTopoRun { .. }
+            | AnalysisJob::InspectMaterialOrigin { .. }
+            | AnalysisJob::InstallRunDigestFragment { .. }
+            | AnalysisJob::MaterialPcrDocuments { .. }
+            | AnalysisJob::PrepareMaterialPcrOutputs { .. }
+            | AnalysisJob::ReviewSequenceExport { .. }
+            | AnalysisJob::PrepareSequenceExport { .. }
+            | AnalysisJob::ExportScfTrace { .. }
     ) {
         MAX_WORKSPACE_MESSAGE_BYTES
     } else {
@@ -1658,6 +1736,13 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             (126, 58),
             (127, 58),
             (159, 89),
+            (160, 90),
+            (161, 90),
+            (162, 90),
+            (163, 90),
+            (164, 90),
+            (165, 90),
+            (166, 90),
         ],
     )?;
     preflight_codon_tag(bytes, &[42, 43])?;
@@ -1774,6 +1859,31 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         },
     };
     let required = match &response.result {
+        AnalysisResult::MaterialOriginInspection(report) => {
+            report.validate_binding(&response.revision)?;
+            90
+        }
+        AnalysisResult::RunDigestInstalled(report) => {
+            report.validate_binding(&response.revision)?;
+            90
+        }
+        AnalysisResult::SequenceExportAssessment(report) => {
+            report.validate_binding(&response.revision)?;
+            90
+        }
+        AnalysisResult::SequenceExportPrepared(report) => {
+            report.validate_binding(&response.revision)?;
+            90
+        }
+        AnalysisResult::ScfTraceExported(report) => {
+            report.validate_binding(&response.revision)?;
+            90
+        }
+        AnalysisResult::MaterialPcrDocuments(_) => 90,
+        AnalysisResult::MaterialPcrOutputsPrepared(report) => {
+            report.validate_binding(&response.revision)?;
+            90
+        }
         AnalysisResult::TopoRunInspection(_) => 89,
         AnalysisResult::EditedOverlapPrimersDesigned(_) => 85,
         AnalysisResult::OverlapExtensionDigestInspection(_) => 84,
@@ -3248,6 +3358,14 @@ fn check_verification_report_version(
                 ));
             }
             match &step.evidence {
+                crate::verification::PhysicalProcessingEvidence::SavedDigestOrigin(r) => {
+                    check_variant_version(bytes, 90)?;
+                    r.validate_documentary()?;
+                    check_capsule_candidate_version(
+                        u16::from_le_bytes([bytes[4], bytes[5]]),
+                        &r.origin.record.request.origin.candidate,
+                    )?;
+                }
                 crate::verification::PhysicalProcessingEvidence::RunProduct(r) => {
                     check_variant_version(bytes, 73)?;
                     r.validate_documentary()?;
@@ -3300,6 +3418,9 @@ fn check_verification_report_version(
     Ok(())
 }
 fn check_scientific_report_version(bytes: &[u8], engine: &str) -> Result<(), Error> {
+    if engine.ends_with("/science-24") {
+        check_variant_version(bytes, 90)?;
+    }
     if engine.ends_with("/science-23") {
         check_variant_version(bytes, 88)?;
     }
@@ -3391,6 +3512,10 @@ mod preparation_shape {
     }
     fn variant(worker: u16, name: &str, variant: &str) -> Result<(), Found> {
         let minimum = match (name, variant) {
+            ("Preparation", "FromDigest")
+            | ("Operation", "ReconstructDigestFragment")
+            | ("PhysicalProcessingEvidence", "SavedDigestOrigin")
+            | ("MaterialOrigin", "Digest") => 90,
             ("Operation", "ResectThreePrime")
             | ("Operation", "HomologyAnnealing")
             | ("PhysicalProcessingEvidence", "ThreePrimeResection")
@@ -3619,7 +3744,7 @@ mod preparation_shape {
 }
 fn check_preparation_version(bytes: &[u8], value: &impl Serialize) -> Result<(), Error> {
     let worker = u16::from_le_bytes([bytes[4], bytes[5]]);
-    if worker < 88 {
+    if worker < 90 {
         value
             .serialize(preparation_shape::Visitor {
                 worker,
@@ -3689,6 +3814,15 @@ fn check_workspace_version(
         if attachment.kind == crate::alignment_formats::WORKSPACE_ATTACHMENT_KIND {
             let document = crate::alignment_formats::load_alignment(&attachment.bytes)?;
             check_variant_version(bytes, alignment_document_worker_version(&document))?;
+        } else if attachment.kind == "assembly-draft-v12" {
+            check_variant_version(bytes, 90)?;
+        } else if attachment.kind == crate::run_digest_history::WORKSPACE_ATTACHMENT_KIND {
+            check_variant_version(bytes, 90)?;
+            let record = crate::run_digest_history::load_record(&attachment.bytes)?;
+            check_capsule_candidate_version(
+                u16::from_le_bytes([bytes[4], bytes[5]]),
+                &record.request.origin.candidate,
+            )?;
         } else if attachment.kind == "assembly-draft-v11" {
             check_variant_version(bytes, 88)?;
         } else if attachment.kind == "assembly-draft-v10" {
@@ -3783,32 +3917,14 @@ fn check_workspace_version(
 // those packages iteratively so a new operation cannot hide under an old worker
 // envelope. This is capability validation only, never scientific replay.
 fn check_capsule_candidate_version(worker: u16, first: &[u8]) -> Result<(), Error> {
-    if first.len() > crate::run_material_capsule::MAX_CAPSULE_BYTES {
-        return Err(Error::TooLarge);
-    }
-    let mut pending = vec![(first.to_vec(), 0usize)];
-    let mut total = 0usize;
-    while let Some((bytes, depth)) = pending.pop() {
-        total = total.checked_add(bytes.len()).ok_or(Error::TooLarge)?;
-        if total > crate::run_material_capsule::MAX_CAPSULE_BYTES
-            || depth > crate::run_material_capsule::MAX_NESTING
-        {
-            return Err(Error::TooLarge);
-        }
-        let candidate = crate::transfer::decode_candidate_shallow(&bytes)?;
+    crate::run_material_capsule::visit_candidate_plans(first, |candidate| {
         if worker < plan_worker_version(&candidate.plan) {
             return Err(Error::Unsupported(
-                "nested origin requires a newer worker schema".into(),
+                "Nested material origin requires a newer worker schema".into(),
             ));
         }
-        for operation in candidate.plan.steps {
-            if let crate::verification::Operation::ReconstructRunProduct { origin, .. } = operation
-            {
-                pending.push((origin.candidate, depth + 1));
-            }
-        }
-    }
-    Ok(())
+        Ok(())
+    })
 }
 // AnnotationFormat is append-only inside existing jobs/reports. A new selector
 // must not acquire semantics under an older envelope, even when the outer tag
@@ -3872,6 +3988,7 @@ fn plan_worker_version(plan: &crate::verification::DesignPlan) -> u16 {
     plan.steps
         .iter()
         .map(|step| match step {
+            crate::verification::Operation::ReconstructDigestFragment { .. } => 90,
             crate::verification::Operation::ResectThreePrime { .. }
             | crate::verification::Operation::HomologyAnnealing { .. } => 88,
             crate::verification::Operation::HomologyAssembly { .. } => 86,
@@ -3929,6 +4046,13 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             (158, 74),
             (168, 88),
             (169, 89),
+            (170, 90),
+            (171, 90),
+            (172, 90),
+            (173, 90),
+            (174, 90),
+            (175, 90),
+            (176, 90),
         ],
     )?;
     preflight_codon_tag(bytes, &[44, 45])?;
@@ -4001,6 +4125,13 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::InspectMaterialOrigin { .. }
+        | AnalysisJob::InstallRunDigestFragment { .. }
+        | AnalysisJob::MaterialPcrDocuments { .. }
+        | AnalysisJob::PrepareMaterialPcrOutputs { .. }
+        | AnalysisJob::ReviewSequenceExport { .. }
+        | AnalysisJob::PrepareSequenceExport { .. }
+        | AnalysisJob::ExportScfTrace { .. } => 90,
         AnalysisJob::InspectTopoRun { .. } => 89,
         AnalysisJob::PreviewAnnealingRecipe { .. } => 88,
         AnalysisJob::PreviewHomologyRecipe { .. } => 86,
@@ -4381,6 +4512,77 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let mol = match &r.job {
+        AnalysisJob::InspectMaterialOrigin {
+            workspace,
+            event,
+            selection,
+        } => {
+            check_workspace_version(bytes, workspace)?;
+            if crate::run_material::material_inspection_revision(workspace, event, selection)?
+                != r.revision
+            {
+                return Err(Error::Format("Material source/selection changed".into()));
+            }
+            None
+        }
+        AnalysisJob::InstallRunDigestFragment { workspace, request } => {
+            check_workspace_version(bytes, workspace)?;
+            if crate::run_digest_history::installation_revision(workspace, request)? != r.revision {
+                return Err(Error::Format(
+                    "Saved digest installation source/selection changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::MaterialPcrDocuments {
+            molecule,
+            origin,
+            forward,
+            reverse,
+        } => {
+            if crate::material_pcr::revision(molecule, origin, forward, reverse)? != r.revision {
+                return Err(Error::Format("Material PCR source/primers changed".into()));
+            }
+            None
+        }
+        AnalysisJob::PrepareMaterialPcrOutputs { origin, request } => {
+            if crate::material_pcr::outputs_revision(origin, request)? != r.revision {
+                return Err(Error::Format("Material PCR output choices changed".into()));
+            }
+            None
+        }
+        AnalysisJob::ReviewSequenceExport { molecule, format } => {
+            if crate::sequence_export::revision(molecule, format)? != r.revision {
+                return Err(Error::Format(
+                    "Sequence export source/options changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::PrepareSequenceExport {
+            molecule,
+            format,
+            expected_context_revision,
+            ..
+        } => {
+            if expected_context_revision != &r.revision
+                || crate::sequence_export::revision(molecule, format)? != r.revision
+            {
+                return Err(Error::Format(
+                    "Reviewed sequence export context changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::ExportScfTrace { trace, options } => {
+            if crate::scf_export::revision(trace, options)? != r.revision {
+                return Err(Error::Format(
+                    "Trace export source/view/options changed".into(),
+                ));
+            }
+            None
+        }
+
         AnalysisJob::FinalizeCloningOutputs {
             workspace,
             plan,
@@ -5641,6 +5843,47 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     let result = match r.job {
+        AnalysisJob::InspectMaterialOrigin {
+            workspace,
+            event,
+            selection,
+        } => crate::run_material::inspect_material(&workspace, &event, &selection)
+            .map(AnalysisResult::MaterialOriginInspection),
+        AnalysisJob::InstallRunDigestFragment { workspace, request } => {
+            crate::run_digest_history::install(&workspace, &request)
+                .map(AnalysisResult::RunDigestInstalled)
+        }
+        AnalysisJob::MaterialPcrDocuments {
+            molecule,
+            origin,
+            forward,
+            reverse,
+        } => crate::material_pcr::simulate(&molecule, &origin, &forward, &reverse)
+            .map(AnalysisResult::MaterialPcrDocuments),
+        AnalysisJob::PrepareMaterialPcrOutputs { origin, request } => {
+            crate::material_pcr::prepare_outputs(&origin, &request)
+                .map(AnalysisResult::MaterialPcrOutputsPrepared)
+        }
+        AnalysisJob::ReviewSequenceExport { molecule, format } => {
+            crate::sequence_export::review(&molecule, &format)
+                .map(AnalysisResult::SequenceExportAssessment)
+        }
+        AnalysisJob::PrepareSequenceExport {
+            molecule,
+            format,
+            expected_context_revision,
+            allow_omissions,
+        } => crate::sequence_export::prepare(
+            &molecule,
+            &format,
+            &expected_context_revision,
+            allow_omissions,
+        )
+        .map(AnalysisResult::SequenceExportPrepared),
+        AnalysisJob::ExportScfTrace { trace, options } => {
+            crate::scf_export::export(&trace, &options).map(AnalysisResult::ScfTraceExported)
+        }
+
         AnalysisJob::InspectTopoRun {
             inputs,
             template_role,
@@ -6501,6 +6744,11 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             | AnalysisResult::DigestInstalled(_)
             | AnalysisResult::CatalogDigestInstalled(_)
             | AnalysisResult::CombinatorialOutputsArchive(_)
+            | AnalysisResult::RunDigestInstalled(_)
+            | AnalysisResult::MaterialPcrOutputsPrepared(_)
+            | AnalysisResult::SequenceExportAssessment(_)
+            | AnalysisResult::SequenceExportPrepared(_)
+            | AnalysisResult::ScfTraceExported(_)
     ) {
         MAX_WORKSPACE_MESSAGE_BYTES
     } else {

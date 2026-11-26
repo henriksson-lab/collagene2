@@ -12,7 +12,7 @@ use web_sys::{CanvasRenderingContext2d as Ctx, HtmlCanvasElement};
 const PAD: f64 = 24.;
 const BASE_BIN: usize = 64;
 const COLORS: [&str; 4] = ["#2f8f61", "#367cbc", "#b88820", "#c45569"];
-const STYLE: &str = ".trace-view{display:flex;flex-direction:column;flex:1;min-height:0;background:white;overflow:hidden}.trace-controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:10px 14px;border-bottom:1px solid #e4e9e1;font-size:12px}.trace-controls button{border:1px solid #d6dfd8;background:white;border-radius:4px;min-width:32px;padding:5px 8px;color:#365147}.trace-controls button:hover{background:#edf4ef}.trace-legend{display:flex;gap:10px;margin-right:auto}.trace-legend span{font-weight:650}.trace-note,.trace-selection{font-size:12px;line-height:1.5;padding:8px 14px;margin:0;color:#65796e}.trace-scroller{position:relative;overflow:auto;flex:1;min-height:220px;outline-offset:-3px}.trace-spacer{position:relative;height:100%;min-height:220px}.trace-canvas{position:sticky;left:0;top:0;display:block;cursor:crosshair;outline-offset:-3px}.trace-error{padding:18px;color:#8c4c43;line-height:1.6;font-size:14px;overflow-wrap:anywhere}.trace-access{padding:8px 14px;font-size:12px;max-height:180px;overflow:auto;border-top:1px solid #e4e9e1}.trace-access summary{cursor:pointer;color:#365147}.trace-table-wrap{overflow:auto}.trace-access table{border-collapse:collapse;text-align:left;white-space:nowrap;font-size:11px}.trace-access th,.trace-access td{padding:5px 8px;border-bottom:1px solid #edf1ed}.trace-access caption{text-align:left;padding:8px 0;white-space:normal;color:#65796e}";
+const STYLE: &str = ".trace-view{display:flex;flex-direction:column;flex:1;min-height:0;background:white;overflow:hidden}.trace-controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:10px 14px;border-bottom:1px solid #e4e9e1;font-size:12px}.trace-controls button{border:1px solid #d6dfd8;background:white;border-radius:4px;min-width:32px;padding:5px 8px;color:#365147}.trace-export{position:relative}.trace-export>summary{cursor:pointer;border:1px solid #d6dfd8;border-radius:4px;padding:5px 8px;color:#365147}.trace-export-content{position:absolute;z-index:10;right:0;top:100%;width:min(510px,80vw);max-height:65vh;overflow:auto;background:white;border:1px solid #d6dfd8;border-radius:5px;box-shadow:0 8px 28px #163b2226;padding:12px;line-height:1.5;overflow-wrap:anywhere}.trace-export-content p{margin:0 0 10px}.trace-export-content select{max-width:100%;padding:4px}.trace-export-content ul{padding-left:18px}.trace-export-actions{display:flex;gap:6px;margin:10px 0}.trace-export-review{border-top:1px solid #e4e9e1;margin-top:10px;padding-top:10px}.trace-export-review>label{display:block;margin-bottom:10px}.trace-controls button:hover{background:#edf4ef}.trace-legend{display:flex;gap:10px;margin-right:auto}.trace-legend span{font-weight:650}.trace-note,.trace-selection{font-size:12px;line-height:1.5;padding:8px 14px;margin:0;color:#65796e}.trace-scroller{position:relative;overflow:auto;flex:1;min-height:220px;outline-offset:-3px}.trace-spacer{position:relative;height:100%;min-height:220px}.trace-canvas{position:sticky;left:0;top:0;display:block;cursor:crosshair;outline-offset:-3px}.trace-error{padding:18px;color:#8c4c43;line-height:1.6;font-size:14px;overflow-wrap:anywhere}.trace-access{padding:8px 14px;font-size:12px;max-height:180px;overflow:auto;border-top:1px solid #e4e9e1}.trace-access summary{cursor:pointer;color:#365147}.trace-table-wrap{overflow:auto}.trace-access table{border-collapse:collapse;text-align:left;white-space:nowrap;font-size:11px}.trace-access th,.trace-access td{padding:5px 8px;border-bottom:1px solid #edf1ed}.trace-access caption{text-align:left;padding:8px 0;white-space:normal;color:#65796e}";
 
 struct SignalPyramid {
     levels: Vec<Vec<(i32, i32)>>,
@@ -48,7 +48,7 @@ impl SignalPyramid {
     }
 }
 struct PlotData {
-    trace: Trace,
+    trace: Arc<Trace>,
     pyramids: [SignalPyramid; 4],
     minimum: i32,
     maximum: i32,
@@ -57,6 +57,7 @@ impl PartialEq for PlotData {
     fn eq(&self, other: &Self) -> bool {
         self.trace.source_hash == other.trace.source_hash
             && self.trace.orientation == other.trace.orientation
+            && self.trace.name == other.trace.name
     }
 }
 fn channels(c: &TraceChannels) -> [&[i32]; 4] {
@@ -81,7 +82,7 @@ impl PlotData {
             .max(0);
         let pyramids = std::array::from_fn(|i| SignalPyramid::new(values[i]));
         Self {
-            trace,
+            trace: Arc::new(trace),
             pyramids,
             minimum,
             maximum,
@@ -347,6 +348,7 @@ fn paint(
 #[component]
 pub fn TraceView(
     molecule: Memo<Molecule>,
+    source_scope: Memo<String>,
     selection: RwSignal<Option<(usize, usize)>>,
 ) -> impl IntoView {
     let data = Memo::new(move |_| {
@@ -354,6 +356,11 @@ pub fn TraceView(
             .map(|trace| Arc::new(PlotData::new(trace)))
             .map_err(|e| e.to_string())
     });
+    let export_trace = Memo::new(move |_| data.get().ok().map(|d| d.trace.clone()));
+    // Host scope includes workspace epoch and exact document/event identity;
+    // equal sequence attachments in separate documents must not share reviews.
+    let export_revision =
+        Memo::new(move |_| format!("{}:{}", source_scope.get(), molecule.with(|m| m.revision())));
     let canvas = NodeRef::<html::Canvas>::new();
     let container = NodeRef::<html::Div>::new();
     let zoom = RwSignal::new(2f64);
@@ -522,7 +529,7 @@ pub fn TraceView(
         <div class="trace-view"><style>{STYLE}</style>
             <Show when=move||data.get().is_err()><p class="trace-error" role="alert">{move||data.get().err().unwrap_or_default()}" Original evidence remains attached; a stale current sequence is never silently substituted into the chromatogram."</p></Show>
             <Show when=move||data.get().is_ok()>
-                <div class="trace-controls"><div class="trace-legend" aria-label="Trace channel legend"><span style:color=COLORS[0]>"A"</span><span style:color=COLORS[1]>"C"</span><span style:color=COLORS[2]>"G"</span><span style:color=COLORS[3]>"T"</span></div><button title="Zoom trace out" aria-label="Zoom trace out" on:click=move|_|zoom_by(1./1.5)>"−"</button><button title="Fit entire trace" on:click=fit>"Fit trace"</button><button title="Zoom trace in" aria-label="Zoom trace in" on:click=move|_|zoom_by(1.5)>"+"</button></div>
+                <div class="trace-controls"><div class="trace-legend" aria-label="Trace channel legend"><span style:color=COLORS[0]>"A"</span><span style:color=COLORS[1]>"C"</span><span style:color=COLORS[2]>"G"</span><span style:color=COLORS[3]>"T"</span></div><crate::scf_export_view::ScfExportControls document_revision=export_revision trace=export_trace/><button title="Zoom trace out" aria-label="Zoom trace out" on:click=move|_|zoom_by(1./1.5)>"−"</button><button title="Fit entire trace" on:click=fit>"Fit trace"</button><button title="Zoom trace in" aria-label="Zoom trace in" on:click=move|_|zoom_by(1.5)>"+"</button></div>
                 <p class="trace-note" id="trace-help">{move||data.get().ok().map(|d|format!("{} calls · {} samples/channel. {} Signals share one amplitude scale; negatives are retained. Scroll to pan; arrow keys select calls. Overview traces use min/max envelopes.",d.trace.sequence.len(),d.trace.channels.len(),quality_label(&d.trace))).unwrap_or_default()}</p>
                 <Show when=move||!render_error.get().is_empty()><p class="trace-error" role="alert">{move||render_error.get()}</p></Show>
                 <div class="trace-scroller" node_ref=container tabindex="0" role="region" aria-label="Horizontally scrollable chromatogram" on:scroll=move|_|if let Some(element)=container.get(){scroll.set(element.scroll_left() as f64);}>

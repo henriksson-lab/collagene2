@@ -498,8 +498,8 @@ pub(crate) fn validate_slot(slot: &Slot, row: &OverlapInput, index: usize) -> Re
             .captured
             .as_ref()
             .ok_or("Saved-run material needs its exact captured source.")?;
-        if origin.selection.event != capture.source.binding
-            || capture.molecule.revision() != origin.selection.event.revision
+        if *origin.event() != capture.source.binding
+            || capture.molecule.revision() != origin.event().revision
         {
             return Err("Saved-run material differs from the exact captured source event.".into());
         }
@@ -820,8 +820,10 @@ impl Draft {
     /// Structural/bounded source consistency only. Historical event IDs require
     /// the host workspace to attest them before installing any candidate.
     pub fn validate(&self) -> Result<(), String> {
-        if !matches!(self.version, 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11)
-            || self.version == 1 && self.alternatives.is_some()
+        if !matches!(
+            self.version,
+            1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12
+        ) || self.version == 1 && self.alternatives.is_some()
         {
             return Err(
                 "Unsupported assembly draft version or alternatives in a legacy draft.".into(),
@@ -883,6 +885,21 @@ impl Draft {
         }
         self.validate_internal_edits()?;
         let has_origin = self.methods.rows.iter().any(|row| row.run_origin.is_some());
+        if self.version < 12
+            && self
+                .methods
+                .rows
+                .iter()
+                .filter_map(|row| row.run_origin.as_ref())
+                .any(|origin| {
+                    matches!(
+                        origin.as_ref(),
+                        collagene_core::run_material::MaterialOrigin::Digest(_)
+                    )
+                })
+        {
+            return Err("Saved digest material requires assembly draft version12.".into());
+        }
         if has_origin && self.version < 5 {
             return Err("Saved-run material requires assembly draft version 5.".into());
         }
@@ -1006,8 +1023,8 @@ impl Draft {
         for (i, (slot, row)) in self.slots.iter().zip(&mut self.methods.rows).enumerate() {
             if row.run_origin.as_ref().is_some_and(|origin| {
                 slot.captured.as_ref().is_none_or(|capture| {
-                    origin.selection.event != capture.source.binding
-                        || origin.selection.event.revision != capture.molecule.revision()
+                    *origin.event() != capture.source.binding
+                        || origin.event().revision != capture.molecule.revision()
                 })
             }) {
                 row.run_origin = None;
@@ -1052,7 +1069,24 @@ impl Draft {
             self.version = self.version.max(4);
         }
         if self.methods.rows.iter().any(|row| row.run_origin.is_some()) {
-            self.version = self.version.max(5);
+            self.version = self.version.max(
+                if self
+                    .methods
+                    .rows
+                    .iter()
+                    .filter_map(|row| row.run_origin.as_ref())
+                    .any(|origin| {
+                        matches!(
+                            origin.as_ref(),
+                            collagene_core::run_material::MaterialOrigin::Digest(_)
+                        )
+                    })
+                {
+                    12
+                } else {
+                    5
+                },
+            );
         }
         if !self.substitutions.is_empty() {
             self.version = self.version.max(6);
@@ -1082,8 +1116,8 @@ pub fn encode(draft: &Draft) -> Result<Vec<u8>, String> {
 }
 /// Encode current editable state without promoting working fields into saved rows.
 pub fn encode_raw(draft: &Draft) -> Result<Vec<u8>, String> {
-    if !matches!(draft.version, 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11) {
-        return Err("Raw assembly persistence requires draft version3–11.".into());
+    if !matches!(draft.version, 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12) {
+        return Err("Raw assembly persistence requires draft version3–12.".into());
     }
     draft.validate()?;
     let mut writer = Bounded { bytes: Vec::new() };
@@ -1107,8 +1141,8 @@ fn decode_expected(bytes: &[u8], expected: Option<u32>) -> Result<Draft, String>
     for (slot, row) in draft.slots.iter().zip(&mut draft.methods.rows) {
         if row.run_origin.as_ref().is_some_and(|origin| {
             slot.captured.as_ref().is_none_or(|capture| {
-                origin.selection.event != capture.source.binding
-                    || origin.selection.event.revision != capture.molecule.revision()
+                *origin.event() != capture.source.binding
+                    || origin.event().revision != capture.molecule.revision()
             })
         }) {
             row.run_origin = None;
@@ -1900,6 +1934,9 @@ mod run_origin_tests {
     };
 
     fn saved_pcr() -> Draft {
+        saved_pcr_workspace().0
+    }
+    fn saved_pcr_workspace() -> (Draft, Workspace) {
         let source = Molecule::dna("Original", "ACGACCCCGGGGTAAC", Topology::Linear).unwrap();
         let target = Molecule::dna("Independent", "ACGACCCCGGGGTAAC", Topology::Linear).unwrap();
         let workspace =
@@ -1978,7 +2015,88 @@ mod run_origin_tests {
         );
         draft.sync_rows();
         draft.validate().unwrap();
-        draft
+        (draft, commit.workspace)
+    }
+
+    #[test]
+    fn digest_origin_v12_roundtrip_retains_actual_preparation_and_refuses_legacy_or_run_only_routes()
+     {
+        let (original, mut workspace) = saved_pcr_workspace();
+        let run = original.methods.rows[0]
+            .run_origin
+            .as_ref()
+            .unwrap()
+            .as_run()
+            .unwrap()
+            .clone();
+        let source = run.selection.event.clone();
+        workspace.active_document = source.document_id.clone();
+        let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+        let enzyme = catalog
+            .edition()
+            .enzymes
+            .iter()
+            .find(|e| e.name == "SmaI")
+            .unwrap();
+        let selection =
+            collagene_core::catalog_digest::select(&catalog, &[enzyme.id.clone()]).unwrap();
+        let installed = collagene_core::run_digest_history::prepare_install(
+            &workspace,
+            &collagene_core::run_digest_history::Request {
+                source,
+                origin: run,
+                selection,
+                options: Default::default(),
+                fragment_index: 0,
+            },
+        )
+        .unwrap();
+        let event = installed.receipt.product.clone();
+        let capsule =
+            collagene_core::run_digest_history::capsule(&installed.workspace, &event).unwrap();
+        let before = serde_json::to_vec(&installed.workspace).unwrap();
+        let material = collagene_core::run_material::MaterialOrigin::Digest(capsule);
+        let pin = crate::run_origin_model::PinnedOrigin::from_material(material).unwrap();
+        assert!(pin.as_run().is_err());
+        let molecule = installed.workspace.revisions[&event.revision].clone();
+        assert_eq!(molecule.sequence.as_str(), "ACGACCCC");
+        let mut draft = original;
+        draft.slots[0].captured = Some(Arc::new(CapturedSource {
+            source: SourceInfo {
+                binding: event,
+                name: molecule.name.clone(),
+                length: molecule.sequence.len(),
+                alphabet: Alphabet::Dna,
+                topology: molecule.topology,
+            },
+            molecule,
+        }));
+        draft.slots[0].end = 8;
+        draft.methods.rows[0].run_origin = Some(pin);
+        draft.methods.rows[0].preparation = OverlapPreparation::ExactPcr;
+        draft.methods.rows[0].forward = "ACGACCCC".into();
+        draft.methods.rows[0].reverse_primer = "GGGGTCGT".into();
+        draft.sync_rows();
+        assert_eq!(draft.version, 12);
+        let bytes = encode_raw(&draft).unwrap();
+        let restored = decode_version(&bytes, 12).unwrap();
+        assert!(restored == draft);
+        assert!(decode_version(&bytes, 11).is_err());
+        let (_, rows) = crate::cloning_preparations::prepared_rows(&restored.methods, 1).unwrap();
+        assert!(matches!(
+            &rows[0].preparation,
+            collagene_core::assembly_recipe::Preparation::FromDigest {
+                preparation: collagene_core::assembly_recipe::RunPreparation::ExactPcr { .. },
+                ..
+            }
+        ));
+        let mut downgraded = draft.clone();
+        downgraded.version = 11;
+        assert!(downgraded.validate().is_err());
+        let mut future = draft;
+        future.version = 13;
+        assert!(future.validate().is_err());
+        assert_eq!(serde_json::to_vec(&installed.workspace).unwrap(), before);
     }
 
     #[test]
@@ -2087,15 +2205,16 @@ pub fn set_digest_fragment(
     let role =
         restriction_history::source_role(&fragment.source.binding).map_err(|e| e.to_string())?;
     if let Some(origin) = &fragment.origin {
-        if origin.selection.event != fragment.source.binding {
+        if *origin.event() != fragment.source.binding {
             return Err("Saved material belongs to a different exact source event".into());
         }
+        origin.as_run()?;
         collagene_core::run_catalog_digest::source_preflight(
             &catalog,
             &fragment.selection,
             &role,
             &fragment.molecule,
-            origin.as_ref(),
+            origin.as_run()?,
             &fragment.options,
         )
         .map_err(|e| e.to_string())?;
@@ -2140,7 +2259,9 @@ pub fn set_digest_fragment(
                         &fragment.selection,
                         &role,
                         &fragment.molecule,
-                        origin.as_ref(),
+                        origin
+                            .as_run()
+                            .expect("origin was explicitly checked above"),
                         &fragment.options,
                     )
                 },

@@ -229,3 +229,139 @@ fn orphan_reserved_producer_corrupt_record_and_wrong_product_binding_refuse_inst
         .insert(blake3::hash(&a.bytes).to_hex().to_string(), a);
     assert!(sharing::project_private_document_closure(&wrong, &pin(&product)).is_err());
 }
+
+#[test]
+fn later_pcr_run_closes_nested_saved_digest_recipe_and_replays_after_publication() {
+    let (mut w, product, record, private, new_head) = fixture();
+    let origin = digest::capsule(&w, &product).unwrap();
+    let source = w.revisions[&product.revision].clone();
+    let target = Molecule::dna(
+        "Independent downstream PCR target",
+        "AGTCCGATGCTAG",
+        Topology::Linear,
+    )
+    .unwrap();
+    let id = "independent-downstream-target".to_string();
+    let revision = target.revision();
+    let target_event =
+        RevisionEvent::new(&id, &revision, vec![], "Independent target import").unwrap();
+    w.documents.push(workspace::WorkspaceDocument {
+        id: id.clone(),
+        head: revision.clone(),
+        head_event: Some(target_event.id.clone()),
+        undo: vec![],
+        redo: vec![],
+        undo_events: vec![],
+        redo_events: vec![],
+    });
+    w.revisions.insert(revision.clone(), target.clone());
+    w.history.push(target_event.clone());
+    // The baseline PCR engine requires non-overlapping annealing sites.
+    // Literal six-base sites 0..6 and 7..13 leave one intervening source base.
+    let forward = Primer::new("F", "AGTCCG", "").unwrap();
+    let reverse = Primer::new("R", "CTAGCA", "").unwrap();
+    let geometries =
+        collagene_core::analysis::simulate_pcr_geometry(&source, &forward, &reverse).unwrap();
+    assert_eq!(geometries.len(), 1);
+    assert_eq!(geometries[0].product.sequence.as_str(), "AGTCCGATGCTAG");
+    assert_eq!(
+        (
+            geometries[0].product.forward_start,
+            geometries[0].product.reverse_start
+        ),
+        (0, 7)
+    );
+    let plan = DesignPlan {
+        name: "PCR from saved digest material".into(),
+        target_revision: revision.clone(),
+        inputs: vec![PlanInput {
+            id: "digest".into(),
+            revision: source.revision(),
+            molecule: source,
+        }],
+        steps: vec![
+            Operation::ReconstructDigestFragment {
+                template: Source::Input("digest".into()),
+                origin,
+            },
+            Operation::Pcr {
+                template: Source::Step(0),
+                forward,
+                reverse,
+            },
+        ],
+    };
+    let committed = run_lineage::record_run(
+        &w,
+        &plan,
+        EventBinding {
+            document_id: id,
+            event_id: target_event.id,
+            revision,
+        },
+        vec![InputEventBinding {
+            input_id: "digest".into(),
+            event: product,
+        }],
+        false,
+    )
+    .unwrap();
+    let p = committed.receipt.products.last().unwrap();
+    let derived = EventBinding {
+        document_id: p.document_id.clone(),
+        event_id: p.event_id.clone(),
+        revision: p.revision.clone(),
+    };
+    let selected = run_material::Selection {
+        run_id: committed.receipt.run_id,
+        step_index: 1,
+        event: derived.clone(),
+    };
+    let before = serde_json::to_vec(&committed.workspace).unwrap();
+    for export in [
+        sharing::project_document_closure(&committed.workspace, &pin(&derived)).unwrap(),
+        sharing::project_private_document_closure(&committed.workspace, &pin(&derived)).unwrap(),
+    ] {
+        assert!(export.inventory.attachments.contains(&record));
+        assert!(!export.workspace.revisions.contains_key(&private));
+        assert!(!export.workspace.revisions.contains_key(&new_head));
+        let archive = workspace::save_workspace(&export.workspace).unwrap();
+        let reopened = workspace::load_workspace(&archive).unwrap();
+        let fresh = run_material::reconstruct(&reopened, &selected).unwrap();
+        assert_eq!(fresh.tracked().duplex.top.as_str(), "AGTCCGATGCTAG");
+    }
+    assert_eq!(serde_json::to_vec(&committed.workspace).unwrap(), before);
+}
+
+#[test]
+fn newest_editable_drafts_are_presentation_only_not_publication_dependencies() {
+    let (mut w, product, _, _, _) = fixture();
+    let mut hashes = vec![];
+    for version in [11, 12] {
+        let bytes =
+            format!("{{\"version\":{version},\"private_unfinished_text\":\"DO NOT PUBLISH\"}}")
+                .into_bytes();
+        let hash = blake3::hash(&bytes).to_hex().to_string();
+        w.attachments.insert(
+            hash.clone(),
+            WorkspaceAttachment {
+                kind: format!("assembly-draft-v{version}"),
+                name: "private draft".into(),
+                media_type: "application/json".into(),
+                bytes,
+            },
+        );
+        hashes.push(hash);
+    }
+    for projected in [
+        sharing::project_document_closure(&w, &pin(&product)).unwrap(),
+        sharing::project_private_document_closure(&w, &pin(&product)).unwrap(),
+    ] {
+        assert!(
+            hashes
+                .iter()
+                .all(|hash| !projected.inventory.attachments.contains(hash)
+                    && !projected.workspace.attachments.contains_key(hash))
+        );
+    }
+}

@@ -405,6 +405,8 @@ fn prepare(m: &Molecule) -> Result<Prepared, Error> {
                 "LIPID",
                 "CARBOHYD",
                 "DISULFID",
+                "CROSSLNK",
+                "NON_STD",
             ]
             .iter()
             .any(|kind| f.kind.eq_ignore_ascii_case(kind));

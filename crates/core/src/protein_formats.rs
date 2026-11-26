@@ -908,6 +908,7 @@ pub fn export_with_options(
     let mut warnings = vec!["Normalized protein export does not reproduce all source headers/citations and does not establish database review or physical-material authority; retain the native workspace and original attachment.".into()];
     for molecule in molecules {
         molecule.validate()?;
+        crate::format_fidelity::reference_export_guard(molecule)?;
         if molecule.sequence.alphabet() != Alphabet::Protein
             || molecule.topology != Topology::Linear
         {

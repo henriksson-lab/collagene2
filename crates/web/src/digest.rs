@@ -409,9 +409,12 @@ pub fn DigestPanel(
                 if molecule.revision() != source.binding.revision
                     || origin_snapshot
                         .as_ref()
-                        .is_some_and(|pin| pin.selection.event != source.binding)
+                        .is_some_and(|pin| *pin.event() != source.binding)
                 {
                     return Err("The source document/event changed. Run the digest again.".into());
+                }
+                if let Some(pin) = &origin_snapshot {
+                    pin.as_run()?;
                 }
                 let revision = if let Some(pin) = &origin_snapshot {
                     collagene_core::run_catalog_digest::inspection_revision(
@@ -419,7 +422,7 @@ pub fn DigestPanel(
                         &selection,
                         &role,
                         &molecule,
-                        pin.as_ref(),
+                        pin.as_run()?,
                         &options,
                     )
                 } else {
@@ -492,7 +495,13 @@ pub fn DigestPanel(
                             AnalysisJob::InspectRunCatalogRestriction {
                                 source_role: role.clone(),
                                 molecule: molecule.clone(),
-                                origin: pin.as_ref().clone(),
+                                origin: match pin.as_run() {
+                                    Ok(p) => p.clone(),
+                                    Err(error) => {
+                                        status.set(error);
+                                        return;
+                                    }
+                                },
                                 selection: selection.clone(),
                                 options: options.clone(),
                             }
@@ -568,7 +577,13 @@ pub fn DigestPanel(
                         &selection,
                         &role,
                         &molecule,
-                        pin.as_ref(),
+                        match pin.as_run() {
+                            Ok(p) => p,
+                            Err(error) => {
+                                status.set(error);
+                                return;
+                            }
+                        },
                         &options,
                     ) {
                         status.set(format!("Saved digest binding failed: {e}"));
@@ -627,10 +642,6 @@ pub fn DigestPanel(
         }
     });
     let open = Callback::new(move |index: usize| {
-        if origin.get_untracked().is_some() {
-            status.set("Saved-material mode supports origin-preserving assembly handoff. Standalone fragment output, named setups and gel recipes are not yet supported.".into());
-            return;
-        }
         let Some(data) = bound.get_untracked() else {
             return;
         };
@@ -644,6 +655,7 @@ pub fn DigestPanel(
         }
         let request = crate::digest_product::DigestOpenRequest {
             source: data.source.binding.clone(),
+            origin: data.origin.clone(),
             selection: data.inputs.selection.clone(),
             options: data.inputs.limits.options(),
             fragment_index: index,
@@ -1306,7 +1318,7 @@ pub fn DigestPanel(
             kind: &'static str,
             authority: &'static str,
             source: &'a SourceInfo,
-            saved_origin: Option<&'a collagene_core::run_material::Capsule>,
+            saved_origin: Option<&'a collagene_core::run_material::MaterialOrigin>,
             saved_inspection: Option<&'a collagene_core::run_catalog_digest::Inspection>,
             report: &'a RestrictionInspection,
             catalog_pin: &'a CatalogSelection,
@@ -1343,7 +1355,7 @@ pub fn DigestPanel(
         }
     };
     view! {
-            <section class="inspector-content digest-panel"><h2>"Virtual digest"</h2><crate::run_origin_view::SourceOriginPicker source=Memo::new(move |_|Some(source.get())) epoch get_workspace selected=Memo::new(move |_|origin.get()) on_select=Callback::new(move |pin:Option<PinnedOrigin>|{if pin.as_ref().is_some_and(|p|p.selection.event!=source.get_untracked().binding){return Err("Saved origin source changed.".into());}origin.set(pin);Ok(())})/><Show when=move||origin.with(Option::is_some)><p class="helper">"Saved-material mode: assembly retains the exact originating run. Standalone fragment opening, GenBank export, named setups and predicted-gel recipes are unavailable until those routes preserve saved origins."</p></Show><p class="helper">"Choose enzymes to inspect recognition sites and predicted fragments. Products assume complete cleavage; methylation, reaction conditions and laboratory success are not assessed."</p>
+            <section class="inspector-content digest-panel"><h2>"Virtual digest"</h2><crate::run_origin_view::SourceOriginPicker source=Memo::new(move |_|Some(source.get())) epoch get_workspace selected=Memo::new(move |_|origin.get()) on_select=Callback::new(move |pin:Option<PinnedOrigin>|{if pin.as_ref().is_some_and(|p|*p.event()!=source.get_untracked().binding){return Err("Saved origin source changed.".into());}origin.set(pin);Ok(())})/><Show when=move||origin.with(Option::is_some)><p class="helper">"Saved-material mode: assembly retains the exact originating run. Fragment opening and assembly preserve the saved origin. GenBank export, named setups and predicted-gel recipes are unavailable for saved material."</p></Show><p class="helper">"Choose enzymes to inspect recognition sites and predicted fragments. Products assume complete cleavage; methylation, reaction conditions and laboratory success are not assessed."</p>
             <details class="saved-digest-setups"><summary>"Named digest setups"</summary>
                 <p class="helper">"Save the exact source event, ordered catalog geometry, cleavage assumption, limits and historical evidence together. Reopening a saved setup does not move document heads or restore a current result."</p>
                 <label>"Digest name"<input aria-label="Saved digest setup name" maxlength="256" placeholder="Name this digest" prop:value=move||setup_name.get() on:input=move|e|{setup_name.set(event_target_value(&e));}/></label>
@@ -1373,7 +1385,7 @@ pub fn DigestPanel(
             <section class="digest-cut-selection"><h3>"Choose a cut-defined assembly fragment"</h3><p class="helper">"Pick the first cut, then the second in the source sequence/map, or use the buttons below. Circular paths follow first → second; keep the opposite path for a retained backbone. A same-cut pair can describe a full circle opened at that cut. Internal selected-enzyme cuts must not split the retained path."</p><p>{move||cut_boundary_label(first_boundary.get().as_ref(),&first_report,"First")}</p><p>{move||cut_boundary_label(second_boundary.get().as_ref(),&second_report,"Second")}</p><Show when=move||linear_source><div class="digest-actions"><button class="text-tool" disabled=move||busy.get() on:click=move|_|choose_boundary.run((true,collagene_core::digest_cut_selection::Boundary::SourceStart))>"First: source start"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|choose_boundary.run((true,collagene_core::digest_cut_selection::Boundary::SourceEnd))>"First: source end"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|choose_boundary.run((false,collagene_core::digest_cut_selection::Boundary::SourceStart))>"Second: source start"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|choose_boundary.run((false,collagene_core::digest_cut_selection::Boundary::SourceEnd))>"Second: source end"</button></div></Show><Show when=move||!linear_source><label class="checkbox-label"><input type="checkbox" aria-label="Keep complementary digest cut path" prop:checked=move||complement.get() on:change=move|e|{stop.run(());complement.set(event_target_checked(&e));}/>"Keep opposite path (outside selected cut interval)"</label></Show><div class="digest-actions"><button class="text-tool" on:click=clear_boundaries>"Clear boundaries / start new pair"</button><button class="button primary" disabled=move||busy.get()||first_boundary.with(Option::is_none)||second_boundary.with(Option::is_none) on:click=move|_|use_boundaries.run(())>"Use selected cut boundaries in assembly"</button></div></section>
     <h3>{format!("{sites} recognition sites")}</h3><p class="helper">"Recognition ranges are original source bases, 1-based inclusive. Strand cuts are boundaries measured from the source origin; 0 is before the first base."</p>{data.report.sites.iter().skip(site_page.get()*25).take(25).map(|site|{let index=site.index;view!{<article class="digest-site"><button class="result-entry" on:click=move|_|navigate.run(index)>{format!("{} · {} · {}{}",site.enzyme,span_label(site),if site.reverse{"reverse"}else{"forward"},if site.certain{""}else{" · possible"})}</button><p>{format!("Top / bottom cut boundaries: {} / {}",cut_label(site.top_cut,site.top_boundary),cut_label(site.bottom_cut,site.bottom_boundary))}</p><div class="digest-actions"><button class="text-tool" disabled=move||busy.get() on:click=move|_|{choose_boundary.run((true,collagene_core::digest_cut_selection::Boundary::Cut{site_index:index}));navigate.run(index);}>"Use as first boundary"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|{choose_boundary.run((false,collagene_core::digest_cut_selection::Boundary::Cut{site_index:index}));navigate.run(index);}>"Use as second boundary"</button></div>{site.diagnostics.iter().map(|d|view!{<p class="digest-warning">{site_diagnostic(*d)}</p>}).collect_view()}</article>}}).collect_view()}<div class="digest-actions"><button class="button secondary" disabled=move||site_page.get()==0 on:click=move|_|site_page.update(|p|*p=p.saturating_sub(1))>"Previous digest sites"</button><button class="button secondary" disabled={move||(site_page.get()+1)*25>=sites} on:click=move|_|site_page.update(|p|*p+=1)>"Next digest sites"</button></div>
             <h3>"Reference-strand fragment lengths"</h3><p class="fragment-sizes">{data.report.ref_top_lengths.as_ref().map(|lengths|lengths.iter().take(100).map(|n|format!("{n} nt")).collect::<Vec<_>>().join(" · ")).unwrap_or_else(||"Not determined from this recognition evidence.".into())}</p><p class="helper">"First 100 lengths shown, following the reference/top strand and sorted by size. The JSON evidence retains every determined length. Physical summaries below use ascending reference cut order; staggered ends can give different top and bottom lengths."</p>
-            <h3>{format!("{fragments} virtual fragment(s)")}</h3>{data.report.fragments.iter().skip(fragment_page.get()*25).take(25).map(|fragment|{let index=fragment.index;let circular=fragment.duplex.topology==Topology::Circular;let ends=fragment.duplex.ends.as_ref().map(|(a,b)|format!("Left: {} · right: {}",end_label(a),end_label(b))).unwrap_or_else(||"Uncut circular substrate: no free ends".into());view!{<article class="digest-fragment"><h4>{format!("Fragment {} · {}",index+1,if fragment.duplex.topology==Topology::Circular{"circular"}else{"linear"})}</h4><p>{format!("{} nt top / {} nt bottom · original reference start {}",fragment.duplex.top_length,fragment.duplex.bottom_length,fragment.top_start+1)}</p><p>{ends}</p>{data.origin_inspection.as_ref().and_then(|saved|saved.fragment_modifications.get(index)).map(|mods|view!{<p class="helper">{format!("Retained positional calls: {} modified · {} eligible unknown · {} unmodified",mods.known_modified,mods.unknown_eligible,mods.known_unmodified)}</p>})}<div class="digest-actions"><button class="button secondary" disabled=move||busy.get() on:click=move|_|navigate_fragment.run(index)>"View fragment in source"</button><button class="button primary" disabled=move||busy.get()||circular on:click=move|_|use_in_assembly.run(index)>"Use in active assembly slot"</button><button class="button secondary" disabled=move||busy.get()||origin.with(Option::is_some) on:click=move|_|open.run(index)>"Open fragment"</button><button class="button secondary" disabled=move||busy.get()||origin.with(Option::is_some) on:click=move|_|export_product.run(index)>{move||if product_busy.get()==Some(index){"Reconstructing…"}else{"Export fragment GenBank"}}</button></div></article>}}).collect_view()}<div class="digest-actions"><button class="button secondary" disabled=move||fragment_page.get()==0 on:click=move|_|fragment_page.update(|p|*p=p.saturating_sub(1))>"Previous digest fragments"</button><button class="button secondary" disabled={move||(fragment_page.get()+1)*25>=fragments} on:click=move|_|fragment_page.update(|p|*p+=1)>"Next digest fragments"</button></div><button class="button secondary full" on:click=export_report>"Download digest evidence"</button><p class="helper">"Opening reconstructs the fragment again and retains its exact source event in the workspace. GenBank comments preserve descriptive, unverified producer/end information; native workspace files retain full source history."</p></div>}})}
+            <h3>{format!("{fragments} virtual fragment(s)")}</h3>{data.report.fragments.iter().skip(fragment_page.get()*25).take(25).map(|fragment|{let index=fragment.index;let circular=fragment.duplex.topology==Topology::Circular;let ends=fragment.duplex.ends.as_ref().map(|(a,b)|format!("Left: {} · right: {}",end_label(a),end_label(b))).unwrap_or_else(||"Uncut circular substrate: no free ends".into());view!{<article class="digest-fragment"><h4>{format!("Fragment {} · {}",index+1,if fragment.duplex.topology==Topology::Circular{"circular"}else{"linear"})}</h4><p>{format!("{} nt top / {} nt bottom · original reference start {}",fragment.duplex.top_length,fragment.duplex.bottom_length,fragment.top_start+1)}</p><p>{ends}</p>{data.origin_inspection.as_ref().and_then(|saved|saved.fragment_modifications.get(index)).map(|mods|view!{<p class="helper">{format!("Retained positional calls: {} modified · {} eligible unknown · {} unmodified",mods.known_modified,mods.unknown_eligible,mods.known_unmodified)}</p>})}<div class="digest-actions"><button class="button secondary" disabled=move||busy.get() on:click=move|_|navigate_fragment.run(index)>"View fragment in source"</button><button class="button primary" disabled=move||busy.get()||circular on:click=move|_|use_in_assembly.run(index)>"Use in active assembly slot"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|open.run(index)>"Open fragment"</button><button class="button secondary" disabled=move||busy.get()||origin.with(Option::is_some) on:click=move|_|export_product.run(index)>{move||if product_busy.get()==Some(index){"Reconstructing…"}else{"Export fragment GenBank"}}</button></div></article>}}).collect_view()}<div class="digest-actions"><button class="button secondary" disabled=move||fragment_page.get()==0 on:click=move|_|fragment_page.update(|p|*p=p.saturating_sub(1))>"Previous digest fragments"</button><button class="button secondary" disabled={move||(fragment_page.get()+1)*25>=fragments} on:click=move|_|fragment_page.update(|p|*p+=1)>"Next digest fragments"</button></div><button class="button secondary full" on:click=export_report>"Download digest evidence"</button><p class="helper">"Opening reconstructs the fragment again and retains its exact source event in the workspace. GenBank comments preserve descriptive, unverified producer/end information; native workspace files retain full source history."</p></div>}})}
             </section>
         }.into_any()
 }

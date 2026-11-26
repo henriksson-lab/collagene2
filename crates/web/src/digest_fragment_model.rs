@@ -147,7 +147,7 @@ mod tests {
             &selection,
             &role,
             &molecule,
-            pin.as_ref(),
+            pin.as_run().unwrap(),
             &options,
         )
         .unwrap();

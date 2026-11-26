@@ -21,6 +21,7 @@ use wasm_bindgen_futures::spawn_local;
 #[derive(Clone)]
 pub struct DigestOpenRequest {
     pub source: SourceBinding,
+    pub origin: Option<crate::run_origin_model::PinnedOrigin>,
     pub selection: CatalogSelection,
     pub options: InspectionOptions,
     pub fragment_index: usize,
@@ -113,20 +114,44 @@ pub fn DigestOpenPanel(
                 let fingerprint =
                     run_lineage::workspace_fingerprint(&frame).map_err(|e| e.to_string())?;
                 let catalog = catalog_digest::builtin_catalog().map_err(|e| e.to_string())?;
-                let revision = catalog_digest::installation_revision(
-                    &catalog,
-                    &input.selection,
-                    &frame,
-                    &input.source,
-                    &input.options,
-                    input.fragment_index,
-                )
-                .map_err(|e| e.to_string())?;
+                let saved_request = input
+                    .origin
+                    .as_ref()
+                    .map(|origin| {
+                        Ok::<_, String>(collagene_core::run_digest_history::Request {
+                            source: input.source.clone(),
+                            origin: origin.as_run()?.clone(),
+                            selection: input.selection.clone(),
+                            options: input.options.clone(),
+                            fragment_index: input.fragment_index,
+                        })
+                    })
+                    .transpose()?;
+                if let Some(origin) = &input.origin {
+                    origin
+                        .as_ref()
+                        .validate_for_workspace(&frame, &input.source)
+                        .map_err(|e| e.to_string())?;
+                }
+                let revision = if let Some(request) = &saved_request {
+                    collagene_core::run_digest_history::installation_revision(&frame, request)
+                        .map_err(|e| e.to_string())?
+                } else {
+                    catalog_digest::installation_revision(
+                        &catalog,
+                        &input.selection,
+                        &frame,
+                        &input.source,
+                        &input.options,
+                        input.fragment_index,
+                    )
+                    .map_err(|e| e.to_string())?
+                };
                 let w = Rc::new(CachedWorker::new()?);
                 worker.set_value(Some(w.clone()));
-                Ok((frame, fingerprint, revision, w, catalog))
+                Ok((frame, fingerprint, revision, w, catalog, saved_request))
             })();
-            let (frame, fingerprint, revision, w, catalog) = match prepared {
+            let (frame, fingerprint, revision, w, catalog, saved_request) = match prepared {
                 Ok(v) => v,
                 Err(e) => {
                     owns_lock.set(false);
@@ -146,12 +171,19 @@ pub fn DigestOpenPanel(
                         .ask(Request {
                             id: u32::MAX - 60,
                             revision: revision.clone(),
-                            job: AnalysisJob::InstallCatalogDigestFragment {
-                                workspace: frame.clone(),
-                                source: input.source.clone(),
-                                selection: input.selection.clone(),
-                                options: input.options.clone(),
-                                fragment_index: input.fragment_index,
+                            job: if let Some(request) = saved_request.clone() {
+                                AnalysisJob::InstallRunDigestFragment {
+                                    workspace: frame.clone(),
+                                    request,
+                                }
+                            } else {
+                                AnalysisJob::InstallCatalogDigestFragment {
+                                    workspace: frame.clone(),
+                                    source: input.source.clone(),
+                                    selection: input.selection.clone(),
+                                    options: input.options.clone(),
+                                    fragment_index: input.fragment_index,
+                                }
                             },
                         })
                         .await?;
@@ -160,21 +192,29 @@ pub fn DigestOpenPanel(
                             "Digest installation response belongs to another request.".into()
                         );
                     }
-                    let installed = match response.result {
-                        AnalysisResult::CatalogDigestInstalled(p) => p,
+                    let (archive, plain_receipt, saved_receipt) = match response.result {
+                        AnalysisResult::CatalogDigestInstalled(p) if saved_request.is_none() => {
+                            p.validate_bindings_for(
+                                &catalog,
+                                &input.selection,
+                                &frame,
+                                &input.source,
+                                &input.options,
+                                input.fragment_index,
+                            )
+                            .map_err(|e| e.to_string())?;
+                            (p.installed.archive.clone(), Some(p), None)
+                        }
+                        AnalysisResult::RunDigestInstalled(p) if saved_request.is_some() => {
+                            p.validate_binding(&revision).map_err(|e| e.to_string())?;
+                            if p.receipt.source != input.source {
+                                return Err("Saved digest installation source changed.".into());
+                            }
+                            (p.archive, None, Some(p.receipt))
+                        }
                         AnalysisResult::Error(e) => return Err(e),
                         _ => return Err("Unexpected digest installation result.".into()),
                     };
-                    installed
-                        .validate_bindings_for(
-                            &catalog,
-                            &input.selection,
-                            &frame,
-                            &input.source,
-                            &input.options,
-                            input.fragment_index,
-                        )
-                        .map_err(|e| e.to_string())?;
                     let guard = || -> Result<(), String> {
                         if !alive.load(Ordering::Relaxed) || epoch.get_untracked() != input.epoch {
                             return Err(
@@ -194,28 +234,29 @@ pub fn DigestOpenPanel(
                         Ok(())
                     };
                     guard()?;
-                    let next = crate::app::decode_workspace(
-                        installed.installed.archive.clone(),
-                        u32::MAX - 61,
-                    )
-                    .await?;
-                    installed
-                        .validate_archive_bindings_for(
-                            &catalog,
-                            &input.selection,
-                            &frame,
-                            &input.source,
-                            &input.options,
-                            input.fragment_index,
-                            &next,
-                        )
-                        .map_err(|e| e.to_string())?;
+                    let next = crate::app::decode_workspace(archive.clone(), u32::MAX - 61).await?;
+                    if let Some(installed) = &plain_receipt {
+                        installed
+                            .validate_archive_bindings_for(
+                                &catalog,
+                                &input.selection,
+                                &frame,
+                                &input.source,
+                                &input.options,
+                                input.fragment_index,
+                                &next,
+                            )
+                            .map_err(|e| e.to_string())?;
+                    }
+                    if let Some(receipt) = &saved_receipt {
+                        receipt.validate_archive(&next).map_err(|e| e.to_string())?;
+                    }
                     validate.run(next.clone())?;
                     let previous = crate::app::encode_workspace(frame, u32::MAX - 62).await?;
                     guard()?;
                     crate::storage::replace_workspace_cancellable(
                         &database,
-                        &installed.installed.archive,
+                        &archive,
                         &previous,
                         transaction.clone(),
                     )

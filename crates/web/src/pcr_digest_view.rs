@@ -145,12 +145,24 @@ pub fn PcrDigestPicker(
         if bound
             .origin
             .as_ref()
-            .is_some_and(|origin| origin.selection.event != bound.source.binding)
+            .is_some_and(|origin| *origin.event() != bound.source.binding)
         {
             status.set("The saved-material origin belongs to a different source event.".into());
             return;
         }
-        let revision = match request.revision(&source, bound.origin.as_deref()) {
+        let run_origin = match bound
+            .origin
+            .as_ref()
+            .map(|origin| origin.as_run().cloned())
+            .transpose()
+        {
+            Ok(origin) => origin,
+            Err(error) => {
+                status.set(error);
+                return;
+            }
+        };
+        let revision = match request.revision(&source, run_origin.as_ref()) {
             Ok(revision) => revision,
             Err(error) => {
                 status.set(error.to_string());
@@ -177,7 +189,7 @@ pub fn PcrDigestPicker(
         spawn_local(async move {
             let mismatch = matches!(&request, InspectionRequest::Mismatch(_));
             let extension = matches!(&request, InspectionRequest::Extension(_));
-            let job = request.into_job(source, bound.origin.as_ref().map(|o| o.as_ref().clone()));
+            let job = request.into_job(source, run_origin);
             let response = worker
                 .ask(Request {
                     id: token,

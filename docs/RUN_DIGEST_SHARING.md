@@ -49,3 +49,11 @@ select an unrelated document (no record/origin leakage), remove the owner, corru
 its canonical bytes and change its product binding. No browser, HTTP, external
 program or live data is used. Formatting/scoped diff checks were run by the worker;
 parent compiler/fixture validation remains pending.
+
+A later native run may use `ReconstructDigestFragment` followed by PCR or another
+supported material preparation. Selected-document publication follows that typed
+capsule's exact product, source/target/input events and required originating runs;
+it retains the owned digest record even when the user selects only the later
+product. Matching DNA, producer labels and serialized duplex summaries do not
+replace this closure or fresh receiving-side replay. The focused nested-PCR
+fixture checks both public and private projection, excluding later private heads.

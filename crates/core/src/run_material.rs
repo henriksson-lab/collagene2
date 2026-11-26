@@ -13,8 +13,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use crate::run_material_capsule::{
-    Capsule, ReplayEvidence, capsule, capsules_preflight, plan_preflight, validate_input_origins,
-    validate_plan_origins,
+    Capsule, MaterialOriginRef, ReplayEvidence, capsule, capsules_preflight,
+    material_capsules_preflight, material_origins_preflight, plan_preflight,
+    validate_input_origins, validate_plan_origins, visit_candidate_plans,
 };
 
 pub const ENGINE_VERSION: &str = "run-material-1";
@@ -135,6 +136,203 @@ pub struct Selection {
     pub run_id: String,
     pub step_index: usize,
     pub event: EventBinding,
+}
+
+/// Append-only choice of saved native material; no serialized choice is physical authority.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub enum MaterialSelection {
+    Run(Selection),
+    Digest(EventBinding),
+}
+impl MaterialSelection {
+    pub fn event(&self) -> &EventBinding {
+        match self {
+            Self::Run(s) => &s.event,
+            Self::Digest(e) => e,
+        }
+    }
+    pub fn validate(&self) -> Result<(), Error> {
+        match self {
+            Self::Run(s) => shape(s),
+            Self::Digest(e) => event_shape(e),
+        }
+    }
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub enum MaterialOrigin {
+    Run(Capsule),
+    Digest(crate::run_digest_history::Capsule),
+}
+impl MaterialOrigin {
+    pub fn event(&self) -> &EventBinding {
+        match self {
+            Self::Run(o) => &o.selection.event,
+            Self::Digest(o) => &o.record.product,
+        }
+    }
+    pub fn selection(&self) -> MaterialSelection {
+        match self {
+            Self::Run(o) => MaterialSelection::Run(o.selection.clone()),
+            Self::Digest(o) => MaterialSelection::Digest(o.record.product.clone()),
+        }
+    }
+    pub fn validate_documentary(&self) -> Result<(), Error> {
+        match self {
+            Self::Run(o) => o.validate_documentary(),
+            Self::Digest(o) => o.validate_documentary(),
+        }
+    }
+    /// Exact retained archive attestation. No marker, alias or documentary graph
+    /// replaces the fresh replay which every downstream verifier performs.
+    pub fn validate_for_workspace(
+        &self,
+        workspace: &Workspace,
+        event: &EventBinding,
+    ) -> Result<(), Error> {
+        event_shape(event)?;
+        if self.event() != event {
+            return Err(bad("material origin names another exact input event"));
+        }
+        workspace.validate()?;
+        resolve(workspace, event)?;
+        match self {
+            Self::Run(origin) => {
+                crate::run_material_capsule::validate_run_capsule_origins(workspace, origin)
+            }
+            Self::Digest(origin) => {
+                crate::run_digest_history::validate_capsule_for_workspace(workspace, origin, event)
+            }
+        }
+    }
+}
+pub const MATERIAL_INSPECTION_ENGINE_VERSION: &str = "material-origin-inspection-1";
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct MaterialInspection {
+    pub engine_version: String,
+    pub context_revision: String,
+    pub event: EventBinding,
+    pub origins: Vec<MaterialSelection>,
+    pub selected: Option<MaterialOrigin>,
+    pub findings: Vec<String>,
+}
+pub fn material_inspection_revision(
+    workspace: &Workspace,
+    event: &EventBinding,
+    selection: &Option<MaterialSelection>,
+) -> Result<String, Error> {
+    event_shape(event)?;
+    if let Some(selection) = selection {
+        selection.validate()?;
+        if selection.event() != event {
+            return Err(bad("material selection names a different event"));
+        }
+    }
+    // workspace_fingerprint validates native source/model/attachment bounds first.
+    let fingerprint = run_lineage::workspace_fingerprint(workspace)?;
+    resolve(workspace, event)?;
+    crate::assembly_recipe::hash(&(
+        MATERIAL_INSPECTION_ENGINE_VERSION,
+        fingerprint,
+        event,
+        selection,
+    ))
+}
+pub fn inspect_material(
+    workspace: &Workspace,
+    event: &EventBinding,
+    selection: &Option<MaterialSelection>,
+) -> Result<MaterialInspection, Error> {
+    let context_revision = material_inspection_revision(workspace, event, selection)?;
+    let mut origins = originating_products(workspace, event)?
+        .into_iter()
+        .map(MaterialSelection::Run)
+        .collect::<Vec<_>>();
+    for asset in workspace
+        .attachments
+        .values()
+        .filter(|a| a.kind == crate::run_digest_history::WORKSPACE_ATTACHMENT_KIND)
+    {
+        let record = crate::run_digest_history::load_record(&asset.bytes)?;
+        if record.product == *event {
+            origins.push(MaterialSelection::Digest(event.clone()));
+        }
+    }
+    if origins.len() > 1000 {
+        return Err(Error::TooLarge);
+    }
+    let mut findings = Vec::new();
+    let selected = if let Some(selection) = selection {
+        if !origins.contains(selection) {
+            return Err(bad(
+                "material selection is not an exact retained origin choice",
+            ));
+        }
+        let result = match selection {
+            MaterialSelection::Run(s) => capsule(workspace, s).map(MaterialOrigin::Run),
+            MaterialSelection::Digest(e) => {
+                crate::run_digest_history::capsule(workspace, e).map(MaterialOrigin::Digest)
+            }
+        };
+        match result {
+            Ok(origin) => {
+                findings.push("Selected material was freshly reconstructed from its exact saved native recipe. Origin limitations remain; reuse never proves isolation or experimental success. Downstream verification reconstructs it again.".into());
+                Some(origin)
+            }
+            Err(error) => {
+                findings.push(error.to_string().chars().take(4096).collect());
+                None
+            }
+        }
+    } else {
+        findings.push("Choose a retained native run product or exact saved digest fragment. Documentary origin discovery does not restore physical material. Renamed digest descendants are not inferred.".into());
+        None
+    };
+    let result = MaterialInspection {
+        engine_version: MATERIAL_INSPECTION_ENGINE_VERSION.into(),
+        context_revision,
+        event: event.clone(),
+        origins,
+        selected,
+        findings,
+    };
+    result.validate_binding(&result.context_revision)?;
+    Ok(result)
+}
+impl MaterialInspection {
+    /// Readonly bounded documentary validation; never replay science in a decoder.
+    pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
+        if !digest(expected)
+            || self.context_revision != expected
+            || self.engine_version != MATERIAL_INSPECTION_ENGINE_VERSION
+            || self.origins.len() > 1000
+            || self.findings.len() > 128
+            || self.findings.iter().any(|s| s.len() > 16384)
+        {
+            return Err(bad("material inspection context or bounds changed"));
+        }
+        event_shape(&self.event)?;
+        for (i, choice) in self.origins.iter().enumerate() {
+            choice.validate()?;
+            if choice.event() != &self.event || self.origins[..i].contains(choice) {
+                return Err(bad("material choices duplicate or name another event"));
+            }
+        }
+        if let Some(origin) = &self.selected {
+            origin.validate_documentary()?;
+            if origin.event() != &self.event || !self.origins.contains(&origin.selection()) {
+                return Err(bad(
+                    "prepared material is not an offered exact-event choice",
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Fresh in-process reconstruction receipt. Intentionally not serializable or

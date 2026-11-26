@@ -127,6 +127,19 @@ pub fn save_candidate(candidate: &Candidate) -> Result<Vec<u8>, Error> {
 pub fn load_candidate(bytes: &[u8]) -> Result<Candidate, Error> {
     let candidate = decode_candidate_shallow(bytes)?;
     candidate.validate()?;
+    if u16::from_le_bytes([bytes[4], bytes[5]]) < 21 {
+        crate::run_material_capsule::visit_candidate_plans(bytes, |nested| {
+            if nested.plan.steps.iter().any(|op| {
+                matches!(
+                    op,
+                    crate::verification::Operation::ReconstructDigestFragment { .. }
+                )
+            }) {
+                return Err(Error::Unsupported("Saved digest origins require candidate schema21 throughout their closed package".into()));
+            }
+            Ok(())
+        })?;
+    }
     Ok(candidate)
 }
 /// Decode only the bounded CGP envelope and operation capability floors. The
@@ -134,6 +147,19 @@ pub fn load_candidate(bytes: &[u8]) -> Result<Candidate, Error> {
 /// Candidate::validate through nested origins.
 pub(crate) fn decode_candidate_shallow(bytes: &[u8]) -> Result<Candidate, Error> {
     let candidate: Candidate = protocol::decode(b"CGP\0", bytes)?;
+    if u16::from_le_bytes([bytes[4], bytes[5]]) < 21
+        && candidate.plan.steps.iter().any(|op| {
+            matches!(
+                op,
+                crate::verification::Operation::ReconstructDigestFragment { .. }
+            )
+        })
+    {
+        return Err(Error::Unsupported(
+            "Saved digest reconstruction requires candidate schema21".into(),
+        ));
+    }
+
     if u16::from_le_bytes([bytes[4], bytes[5]]) < 20
         && candidate.plan.steps.iter().any(|step| {
             matches!(

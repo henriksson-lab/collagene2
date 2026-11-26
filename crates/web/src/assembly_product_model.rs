@@ -118,6 +118,12 @@ pub(crate) fn operation_label(operation: &Operation) -> String {
             base.as_str(),
             source_label(template)
         ),
+        Operation::ReconstructDigestFragment { template, origin } => format!(
+            "Reconstruct saved digest fragment from {} · exact event {} · originating run {}",
+            source_label(template),
+            origin.record.product.event_id,
+            origin.record.request.origin.selection.run_id
+        ),
         Operation::ReconstructRunProduct { template, origin } => format!(
             "Reconstruct saved material {} · origin run {} · product {}",
             source_label(template),

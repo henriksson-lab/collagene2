@@ -7,7 +7,7 @@ use crate::{
 };
 use collagene_core::{
     protocol::{AnalysisJob, AnalysisResult, Request},
-    run_material::{self, Inspection, Selection},
+    run_material::{self, MaterialInspection, MaterialSelection},
     workspace::Workspace,
 };
 use leptos::prelude::*;
@@ -44,7 +44,7 @@ pub fn RunOriginPicker(
         if selected.get_untracked().is_some_and(|pin| {
             current
                 .as_ref()
-                .is_none_or(|source| pin.selection.event != source.binding)
+                .is_none_or(|source| *pin.event() != source.binding)
         }) {
             config.update(|state| {
                 if let Some(row) = state.rows.get_mut(index) {
@@ -63,7 +63,7 @@ pub fn RunOriginPicker(
             .get_mut(index)
             .ok_or("The preparation row is unavailable.")?;
         if let Some(pin) = &pin {
-            if pin.selection.event != current.binding
+            if *pin.event() != current.binding
                 || matches!(
                     row.preparation,
                     OverlapPreparation::DeclaredDuplex | OverlapPreparation::AnnealedOligos
@@ -90,7 +90,7 @@ pub fn SourceOriginPicker(
     on_select: Callback<Option<PinnedOrigin>, Result<(), String>>,
 ) -> impl IntoView {
     let status = RwSignal::new(String::new());
-    let choices = RwSignal::new(None::<Arc<Inspection>>);
+    let choices = RwSignal::new(None::<Arc<MaterialInspection>>);
     let busy = RwSignal::new(false);
     let generation = RwSignal::new(0u32);
     let active = StoredValue::new_local(None::<Rc<CachedWorker>>);
@@ -121,7 +121,7 @@ pub fn SourceOriginPicker(
         if selected_pin.is_some_and(|pin| {
             current
                 .as_ref()
-                .is_none_or(|c| pin.selection.event != c.source.binding)
+                .is_none_or(|c| *pin.event() != c.source.binding)
         }) {
             if let Err(error) = on_select.run(None) {
                 status.set(error);
@@ -133,14 +133,14 @@ pub fn SourceOriginPicker(
     });
     let run = {
         let alive = alive.clone();
-        Callback::new(move |selection: Option<Selection>| {
+        Callback::new(move |selection: Option<MaterialSelection>| {
             let Some(bound) = context.get_untracked() else {
                 status.set("Choose an available exact source event.".into());
                 return;
             };
             if selection
                 .as_ref()
-                .is_some_and(|s| s.event != bound.source.binding)
+                .is_some_and(|s| *s.event() != bound.source.binding)
             {
                 status.set("This origin belongs to a different source event.".into());
                 return;
@@ -152,7 +152,7 @@ pub fn SourceOriginPicker(
                     return;
                 }
             };
-            let revision = match run_material::inspection_revision(
+            let revision = match run_material::material_inspection_revision(
                 &workspace,
                 &bound.source.binding,
                 &selection,
@@ -192,7 +192,7 @@ pub fn SourceOriginPicker(
                     .ask(Request {
                         id: token,
                         revision: revision.clone(),
-                        job: AnalysisJob::InspectRunMaterial {
+                        job: AnalysisJob::InspectMaterialOrigin {
                             workspace,
                             event: bound.source.binding.clone(),
                             selection,
@@ -211,7 +211,7 @@ pub fn SourceOriginPicker(
                 let result = match response {
                     Ok(response) if response.id == token && response.revision == revision => {
                         match response.result {
-                            AnalysisResult::RunMaterialInspection(value) => Ok(value),
+                            AnalysisResult::MaterialOriginInspection(value) => Ok(value),
                             AnalysisResult::Error(e) => Err(e),
                             _ => Err("Unexpected saved-material response.".into()),
                         }
@@ -234,7 +234,7 @@ pub fn SourceOriginPicker(
                             if inspection
                                 .selected
                                 .as_ref()
-                                .is_some_and(|p| p.selection != requested)
+                                .is_some_and(|p| p.selection() != requested)
                             {
                                 status.set(
                                     "The reconstructed origin differs from the requested choice."
@@ -248,7 +248,7 @@ pub fn SourceOriginPicker(
                                     .as_ref()
                                     .cloned()
                                     .ok_or("No fresh material was selected.".to_string())
-                                    .and_then(PinnedOrigin::new)
+                                    .and_then(PinnedOrigin::from_material)
                                     .and_then(|pin| on_select.run(Some(pin)));
                                 match result {
                                     Ok(()) => {
@@ -272,10 +272,10 @@ pub fn SourceOriginPicker(
         })
     };
     view!{<details class="saved-run-origin"><summary>{move||if selected.with(Option::is_some){"Saved material · origin selected"}else{"Reuse a saved cloning product…"}}</summary>
-        <p class="helper">"Select the actual saved product’s originating run. Its recorded cloning steps are checked again before further preparation, retaining its ends and modifications."</p>
-        {move||selected.get().map(|pin|view!{<p title=pin.selection.run_id.clone()>{format!("Run {}… · product {}",&pin.selection.run_id[..12],pin.selection.step_index+1)}</p><button class="text-tool" disabled=move||busy.get() on:click=move|_|{generation.update(|g|*g=g.wrapping_add(1));if let Some(w)=active.get_value(){w.close();}active.set_value(None);busy.set(false);match on_select.run(None){Ok(())=>status.set("Origin removed. The source is again only a reference input.".into()),Err(error)=>status.set(error)};}>"Remove saved-material origin"</button>})}
-        <button class="button secondary" disabled=move||busy.get()||context.get().is_none() on:click=move|_|run.run(None)>"Find originating runs"</button>
-        {move||choices.get().map(|inspection|inspection.origins.iter().take(100).cloned().map(|selection|{let label=format!("Reconstruct run {}… · product {}",&selection.run_id[..12],selection.step_index+1);let title=selection.run_id.clone();view!{<button class="text-tool" title=title disabled=move||busy.get() on:click=move|_|run.run(Some(selection.clone()))>{label}</button>}}).collect_view())}
+        <p class="helper">"Select the actual saved product’s retained material origin. Its recorded cloning steps are checked again before further preparation, retaining its ends and modifications."</p>
+        {move||selected.get().map(|pin|view!{<p>{pin.label()}</p><button class="text-tool" disabled=move||busy.get() on:click=move|_|{generation.update(|g|*g=g.wrapping_add(1));if let Some(w)=active.get_value(){w.close();}active.set_value(None);busy.set(false);match on_select.run(None){Ok(())=>status.set("Origin removed. The source is again only a reference input.".into()),Err(error)=>status.set(error)};}>"Remove saved-material origin"</button>})}
+        <button class="button secondary" disabled=move||busy.get()||context.get().is_none() on:click=move|_|run.run(None)>"Find saved material origins"</button>
+        {move||choices.get().map(|inspection|inspection.origins.iter().take(100).cloned().map(|selection|{let (label,title)=match &selection{MaterialSelection::Run(s)=>(format!("Reconstruct run {}… · product {}",s.run_id.chars().take(12).collect::<String>(),s.step_index+1),s.run_id.clone()),MaterialSelection::Digest(e)=>("Reconstruct saved digest fragment".to_string(),e.event_id.clone())};view!{<button class="text-tool" title=title disabled=move||busy.get() on:click=move|_|run.run(Some(selection.clone()))>{label}</button>}}).collect_view())}
         <p class="helper" role="status" aria-live="polite">{move||status.get()}</p>
     </details>}.into_any()
 }

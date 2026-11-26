@@ -50,6 +50,7 @@ fn reference_count(op: &Operation) -> usize {
         | Operation::OverlapExtension { .. } => 2,
         Operation::ResectThreePrime { .. }
         | Operation::ReconstructRunProduct { .. }
+        | Operation::ReconstructDigestFragment { .. }
         | Operation::Pcr { .. }
         | Operation::PcrWithMismatches { .. }
         | Operation::Digest { .. }

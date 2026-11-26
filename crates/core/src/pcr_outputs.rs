@@ -40,7 +40,7 @@ fn name(value: &str) -> Result<(), Error> {
     }
     Ok(())
 }
-fn primer(value: &Primer) -> Result<(), Error> {
+pub(crate) fn primer(value: &Primer) -> Result<(), Error> {
     name(&value.name)?;
     if value.annealing.alphabet() != Alphabet::Dna
         || value.annealing.is_empty()
@@ -99,6 +99,15 @@ pub fn prepare(request: &Request) -> Result<Prepared, Error> {
     let context_revision = revision(request)?;
     let previews =
         verification::simulate_pcr_documents(&request.source, &request.forward, &request.reverse)?;
+    prepare_from_previews(request, context_revision, previews)
+}
+/// Only native callers which just reconstructed source-bound previews may use
+/// this selection adapter. No serialized preview is accepted by public APIs.
+pub(crate) fn prepare_from_previews(
+    request: &Request,
+    context_revision: String,
+    previews: Vec<verification::PcrDocument>,
+) -> Result<Prepared, Error> {
     let preview = previews
         .into_iter()
         .nth(request.selected_index)

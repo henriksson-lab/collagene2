@@ -242,7 +242,7 @@ fn version(value: &Value) -> Result<u32, String> {
     value
         .get("version")
         .and_then(Value::as_u64)
-        .filter(|v| (1..=10).contains(v))
+        .filter(|v| (1..=12).contains(v))
         .map(|v| v as u32)
         .ok_or_else(|| fail("unsupported editable-draft version."))
 }

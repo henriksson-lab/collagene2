@@ -13,6 +13,7 @@ pub fn AssemblyStrategyPicker(initial: Mode, on_start: Callback<Mode>) -> impl I
                     (Mode::Ligation, "Digest and ligate", "Join prepared fragments with compatible physical ends."),
                     (Mode::Overlap, "Gibson / HiFi / In-Fusion", "Prepare fragments with overlaps and review their junctions."),
                     (Mode::GoldenGate, "Golden Gate", "Use Type IIS digestion and ordered overhang junctions."),
+                    (Mode::Tailing, "TA / GC cloning", "Prepare two source fragments, add explicit 3′ tails and verify ligation against your declared junctions."),
                     (Mode::MultiSiteReference, "BP/LR reference exchange", "Reconstruct parent exchange under a declared reference profile."),
                 ].into_iter().map(move |(mode, title, description)| view! {
                     <label class="assembly-strategy-choice" class:chosen=move||selected.get()==mode>

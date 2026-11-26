@@ -11,7 +11,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io::Write};
-pub const ENGINE_VERSION: &str = "assembly-junction-edit-1";
+pub const ENGINE_VERSION: &str = "assembly-junction-edit-2";
 const MAX_ROWS: usize = 32;
 const MAX_BASES: usize = 8 << 20;
 const REFERENCE_MODEL: &str =
@@ -33,6 +33,18 @@ pub(crate) fn inserts(
     base: &assembly_intent::Request,
     edits: &[Edit],
 ) -> Result<Vec<String>, Error> {
+    insertions(base, edits, false)
+}
+/// Reference intent can declare the final outgoing suffix of linear DNA. The
+/// primer/assembly design paths retain their narrower internal-junction scope.
+fn intent_inserts(base: &assembly_intent::Request, edits: &[Edit]) -> Result<Vec<String>, Error> {
+    insertions(base, edits, true)
+}
+fn insertions(
+    base: &assembly_intent::Request,
+    edits: &[Edit],
+    allow_linear_terminal: bool,
+) -> Result<Vec<String>, Error> {
     let n = base.fragments.len();
     if n == 0
         || n > MAX_ROWS
@@ -45,12 +57,13 @@ pub(crate) fn inserts(
             "requires1..32 source rows, bounded name and at most32 unique edits",
         ));
     }
-    let count = n - 1 + usize::from(base.circular);
+    let count = n - 1 + usize::from(base.circular || allow_linear_terminal);
     let mut seen = BTreeSet::new();
     let mut total = 0usize;
     let mut result = vec![String::new(); n];
     for e in edits {
         if e.junction >= count
+            || (!base.circular && e.junction == n - 1 && e.remove_right != 0)
             || !seen.insert(e.junction)
             || e.inserted.len() > 400
             || !e.inserted.is_ascii()
@@ -82,7 +95,22 @@ pub(crate) fn adjustment(
     edits: &[Edit],
     lengths: &[usize],
 ) -> Result<assembly_intent::Request, Error> {
-    inserts(base, edits)?;
+    adjusted_sources(base, edits, lengths, false)
+}
+fn intent_adjustment(
+    base: &assembly_intent::Request,
+    edits: &[Edit],
+    lengths: &[usize],
+) -> Result<assembly_intent::Request, Error> {
+    adjusted_sources(base, edits, lengths, true)
+}
+fn adjusted_sources(
+    base: &assembly_intent::Request,
+    edits: &[Edit],
+    lengths: &[usize],
+    allow_linear_terminal: bool,
+) -> Result<assembly_intent::Request, Error> {
+    insertions(base, edits, allow_linear_terminal)?;
     if lengths.len() != base.fragments.len() {
         return Err(bad("source lengths disagree with rows"));
     }
@@ -90,7 +118,11 @@ pub(crate) fn adjustment(
     let mut right = left.clone();
     for e in edits {
         right[e.junction] = e.remove_left;
-        left[(e.junction + 1) % lengths.len()] = e.remove_right;
+        if e.junction + 1 < lengths.len() {
+            left[e.junction + 1] = e.remove_right;
+        } else if base.circular {
+            left[0] = e.remove_right;
+        }
     }
     let mut seen = BTreeSet::new();
     for (f, n) in base.fragments.iter().zip(lengths) {
@@ -171,9 +203,9 @@ pub fn intent_preflight(
     base: &assembly_intent::Request,
     edits: &[Edit],
 ) -> Result<(), Error> {
-    let insert = inserts(base, edits)?;
+    let insert = intent_inserts(base, edits)?;
     assembly_intent::preflight(inputs, base)?;
-    let adjusted = adjustment(base, edits, &lengths(inputs, base)?)?;
+    let adjusted = intent_adjustment(base, edits, &lengths(inputs, base)?)?;
     assembly_intent::preflight(inputs, &adjusted)?;
     let target = adjusted
         .fragments
@@ -250,8 +282,8 @@ pub fn build_intent(
             .collect::<Vec<_>>(),
         base,
     )?;
-    let adjusted_request = adjustment(base, edits, &lens)?;
-    let insert = inserts(base, edits)?;
+    let adjusted_request = intent_adjustment(base, edits, &lens)?;
+    let insert = intent_inserts(base, edits)?;
     let initial = assembly_intent::build(inputs, &adjusted_request)?;
     let mut target = initial.target;
     let mut warnings = initial.warnings;
@@ -330,6 +362,9 @@ fn primer_request(
     }
 }
 pub fn preflight(inputs: &[(&str, &Molecule)], r: &Request) -> Result<(), Error> {
+    // An explicit terminal intention is not a modeled primer tail/homology
+    // design. Reject it before any sequence-dependent preparation work.
+    inserts(&r.base, &r.edits)?;
     intent_preflight(inputs, &r.base, &r.edits)?;
     if !r.primer_options.forward_tail.is_empty() || !r.primer_options.reverse_tail.is_empty() {
         return Err(bad(
@@ -521,7 +556,7 @@ impl Intent {
         {
             return Err(bad("intent context or row count changed"));
         }
-        let insert = inserts(&self.base_request, &self.edits)?;
+        let insert = intent_inserts(&self.base_request, &self.edits)?;
         crate::model::bounds::model_preflight(&[&self.target])?;
         self.target.validate()?;
         warning_guard(&self.warnings)?;
@@ -536,7 +571,7 @@ impl Intent {
         if lengths.iter().any(|n| *n == 0 || *n > MAX_BASES) {
             return Err(bad("invalid source bounds"));
         }
-        let adjusted = adjustment(&self.base_request, &self.edits, &lengths)?;
+        let adjusted = intent_adjustment(&self.base_request, &self.edits, &lengths)?;
         if assembly_recipe::hash(&adjusted)? != assembly_recipe::hash(&self.adjusted_request)? {
             return Err(bad("adjusted source coordinates changed"));
         }

@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **67** and reads supported schemas 1–66. Candidate files write schema 15; workspace plan schema is 13; the verifier is science-18.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **70** and reads supported schemas 1–69. Candidate files write schema 16; workspace plan schema is 14; the verifier is science-19.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -870,3 +870,31 @@ fresh native PCR-only template check. Science18 reports require67. No DTO layout
 operation tag, report field or worker selector changes. Original-input operation20
 retains its66/14/12 floor and old reports remain documentary data.
 [Native authority, synthesis and exact history](TOPO_UPSTREAM_PCR.md).
+
+
+## Source-bound single-nucleotide tailing recipes (schema70)
+
+Job156 `PreviewTailingRecipe { inputs, target, recipe }` returns result148
+`TailingRecipePreview`. The source-bound recipe declares each original-source
+preparation, strand orientation, single added tail base and optional subsequent
+terminal treatment, followed by ordered ligation. It uses the existing PCR,
+digest, tailing, end-treatment and ligation operations; no plan operation,
+VerificationReport field, candidate format or scientific version is added.
+Candidate16, plan14 and science19 retain their current meanings.
+
+Both selectors require70 before their bodies are deserialized. Existing selectors
+and their version floors remain stable. The ordinary32MiB message cap applies;
+there is no new workspace128MiB exception. The web client and worker entry share
+`core::protocol` and its existing envelope limits rather than a separate literal
+schema constant; release-hashed worker assets remain required.
+
+Request revision is `tailing_recipe::preview_revision`, binding exact original
+inputs/revisions, independent target and the complete recipe. Encoding performs
+borrowed preflight before serialization; execution rejects a stale revision
+before preparation. The reply retains the declared recipe, compiled plan,
+per-row preparation/tail/treatment step identities, verification, prepared
+references, optional physical summaries and junctions. Decoding checks nested
+plan/scientific versions and `Preview::validate_binding` without rerunning
+science on the GUI thread. A changed tail base, treatment or target requires a
+fresh preview. Unknown material, inaccessible termini, invalid targets and
+explicitly retained nicks are not converted into sealed-product authority.

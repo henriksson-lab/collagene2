@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 69;
+pub const WORKER_SCHEMA_VERSION: u16 = 70;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 16;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -890,6 +890,11 @@ pub enum AnalysisJob {
         design: crate::combinatorial_design::Design,
         construct: crate::combinatorial_design::SelectedConstruct,
     },
+    PreviewTailingRecipe {
+        inputs: Vec<crate::verification::PlanInput>,
+        target: Molecule,
+        recipe: crate::tailing_recipe::Recipe,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1050,6 +1055,7 @@ pub enum AnalysisResult {
     MultiSiteRecombinationProduct(crate::multisite_recombination::ProductDocument),
     MultiSiteRecombinationChecked(crate::multisite_recombination::CheckedProduct),
     CombinatorialMultiSiteInspection(crate::combinatorial_design::MultiSiteInspection),
+    TailingRecipePreview(crate::tailing_recipe::Preview),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1279,6 +1285,13 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         crate::pairwise_context::preflight(report, reference, query, *translate)?;
     }
     match &r.job {
+        AnalysisJob::PreviewTailingRecipe {
+            inputs,
+            target,
+            recipe,
+        } => {
+            crate::tailing_recipe::preflight(inputs, target, recipe)?;
+        }
         AnalysisJob::InspectCombinatorialMultiSite {
             workspace,
             design,
@@ -1487,6 +1500,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_topo_actions_tag(bytes, &[142, 143])?;
     preflight_multisite_recombination_tag(bytes, &[144, 145, 146])?;
     preflight_combinatorial_multisite_tag(bytes, &[147])?;
+    preflight_tailing_recipe_tag(bytes, &[148])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1543,6 +1557,10 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         },
     };
     let required = match &response.result {
+        AnalysisResult::TailingRecipePreview(report) => {
+            check_variant_version(bytes, plan_worker_version(&report.compiled.plan))?;
+            70
+        }
         AnalysisResult::CombinatorialMultiSiteInspection(_) => 69,
         AnalysisResult::MultiSiteRecombination(_)
         | AnalysisResult::MultiSiteRecombinationProduct(_)
@@ -1917,6 +1935,10 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
                 check_variant_version(bytes, 48)?;
             }
             report.validate_binding(&response.revision)?
+        }
+        AnalysisResult::TailingRecipePreview(report) => {
+            check_verification_report_version(bytes, &report.verification)?;
+            report.validate_binding(&response.revision)?;
         }
         AnalysisResult::LigationRecipePreview(report) => {
             check_verification_report_version(bytes, &report.verification)?;
@@ -2617,6 +2639,14 @@ fn preflight_assembly_junctions_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Er
     }
     Ok(())
 }
+fn preflight_tailing_recipe_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 70)?;
+    }
+    Ok(())
+}
 fn preflight_ligation_recipe_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -3076,6 +3106,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_topo_actions_tag(bytes, &[150, 151])?;
     preflight_multisite_recombination_tag(bytes, &[152, 153, 154])?;
     preflight_combinatorial_multisite_tag(bytes, &[155])?;
+    preflight_tailing_recipe_tag(bytes, &[156])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -3083,6 +3114,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::PreviewTailingRecipe { .. } => 70,
         AnalysisJob::InspectCombinatorialMultiSite { .. } => 69,
         AnalysisJob::SimulateMultiSiteRecombination { .. }
         | AnalysisJob::ProjectMultiSiteRecombination { .. }
@@ -3933,6 +3965,18 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             }
             None
         }
+        AnalysisJob::PreviewTailingRecipe {
+            inputs,
+            target,
+            recipe,
+        } => {
+            if crate::tailing_recipe::preview_revision(inputs, target, recipe)? != r.revision {
+                return Err(Error::Format(
+                    "tailing preparation source/target/options changed".into(),
+                ));
+            }
+            None
+        }
         AnalysisJob::PreviewLigationRecipe {
             inputs,
             target,
@@ -4757,6 +4801,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             options,
         } => crate::assembly_junctions::inspect_plan(&plan, &target, &options)
             .map(AnalysisResult::AssemblyJunctionInspection),
+        AnalysisJob::PreviewTailingRecipe {
+            inputs,
+            target,
+            recipe,
+        } => crate::tailing_recipe::preview(&inputs, &target, &recipe)
+            .map(AnalysisResult::TailingRecipePreview),
         AnalysisJob::PreviewLigationRecipe {
             inputs,
             target,

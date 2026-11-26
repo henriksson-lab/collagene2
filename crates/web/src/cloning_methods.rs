@@ -89,6 +89,7 @@ struct Evidence {
     profile: Option<ProfileReport>,
     overlap: Option<collagene_core::assembly_recipe::Preview>,
     ligation: Option<collagene_core::ligation_recipe::Preview>,
+    tailing: Option<collagene_core::tailing_recipe::Preview>,
 }
 fn guidance(minimum: Option<usize>, maximum: Option<usize>) -> String {
     match (minimum, maximum) {
@@ -252,7 +253,7 @@ pub fn CloningMethodsPanel(
     });
     let source_indices = Memo::new(move |_| {
         config.with(|c| {
-            if c.mode == Mode::Tailing {
+            if c.mode == Mode::Tailing && !fixed_sources {
                 vec![c.vector.document, c.insert.document]
             } else {
                 c.rows.iter().map(|r| r.document).collect()
@@ -718,10 +719,6 @@ pub fn CloningMethodsPanel(
             status.set("This construct declares a finite reaction pool. Use Review selected reaction and junctions in its Construct reaction candidate panel, or explicitly return to ordered prepared assembly.".into());
             return;
         }
-        if state.mode == Mode::Tailing && state.source_roles.is_some() {
-            status.set("Stable source-choice assemblies use overlap or ordered ligation preparation. Tailing cannot reinterpret those identities as vector/insert inputs.".into());
-            return;
-        }
         let Some(inputs) = sources.get_untracked() else {
             status.set("Choose available source documents".into());
             return;
@@ -744,7 +741,7 @@ pub fn CloningMethodsPanel(
             return;
         }
 
-        let recipes = if state.mode == Mode::Tailing {
+        let recipes = if state.mode == Mode::Tailing && !fixed_sources {
             match state
                 .vector
                 .recipe()
@@ -793,7 +790,35 @@ pub fn CloningMethodsPanel(
         spawn_local(async move {
             let revs = inputs.iter().map(Molecule::revision).collect::<Vec<_>>();
             let result = async {
-                if matches!(state.mode, Mode::Ligation | Mode::GoldenGate) {
+                if state.mode == Mode::Tailing && fixed_sources {
+                    let (bound_inputs, recipe) =
+                        tailing_request(&state, inputs, &bound_target_molecule)?;
+                    let revision = collagene_core::tailing_recipe::preview_revision(
+                        &bound_inputs,
+                        &bound_target_molecule,
+                        &recipe,
+                    )
+                    .map_err(|e| e.to_string())?;
+                    let response = ask(
+                        &worker,
+                        AnalysisJob::PreviewTailingRecipe {
+                            inputs: bound_inputs,
+                            target: bound_target_molecule,
+                            recipe,
+                        },
+                        revision.clone(),
+                        token,
+                    )
+                    .await?;
+                    if let AnalysisResult::TailingRecipePreview(preview) = response {
+                        preview
+                            .validate_binding(&revision)
+                            .map_err(|e| e.to_string())?;
+                        Ok((vec![], None, None, None, Some(preview)))
+                    } else {
+                        Err("Unexpected tailing/ligation response".into())
+                    }
+                } else if matches!(state.mode, Mode::Ligation | Mode::GoldenGate) {
                     let (bound_inputs, recipe) =
                         ligation_request(&state, inputs, &bound_target_molecule)?;
                     let revision = collagene_core::ligation_recipe::preview_revision(
@@ -817,7 +842,7 @@ pub fn CloningMethodsPanel(
                         preview
                             .validate_binding(&revision)
                             .map_err(|e| e.to_string())?;
-                        Ok((vec![], None, None, Some(preview)))
+                        Ok((vec![], None, None, Some(preview), None))
                     } else {
                         Err("Unexpected ordered ligation response".into())
                     }
@@ -846,7 +871,7 @@ pub fn CloningMethodsPanel(
                         preview
                             .validate_binding(&revision)
                             .map_err(|e| e.to_string())?;
-                        Ok((vec![], preview.profile.clone(), Some(preview), None))
+                        Ok((vec![], preview.profile.clone(), Some(preview), None, None))
                     } else {
                         Err("Unexpected overlap preparation response".into())
                     }
@@ -878,7 +903,7 @@ pub fn CloningMethodsPanel(
                             return Err("Unexpected tailing preview response".into());
                         }
                     }
-                    Ok((previews, None, None, None))
+                    Ok((previews, None, None, None, None))
                 }
             }
             .await;
@@ -897,7 +922,7 @@ pub fn CloningMethodsPanel(
             active.set_value(None);
             busy.set(false);
             match result {
-                Ok((tails, profile, overlap, ligation)) => {
+                Ok((tails, profile, overlap, ligation, tailing)) => {
                     evidence.set(Some(Arc::new(Evidence {
                         config: state,
                         revisions: revs,
@@ -909,6 +934,7 @@ pub fn CloningMethodsPanel(
                         profile,
                         overlap,
                         ligation,
+                        tailing,
                     })));
                     status.set("Evidence ready. Review assumptions and build a candidate against the independently selected target.".into());
                 }
@@ -959,6 +985,16 @@ pub fn CloningMethodsPanel(
             status.set(
                 "Inputs changed; recompute method evidence before reviewing a candidate".into(),
             );
+            return;
+        }
+        if state.mode == Mode::Tailing && fixed_sources {
+            match tailing_request(&state, inputs, &current_target).and_then(|(bound, recipe)| {
+                collagene_core::tailing_recipe::compile(&bound, &current_target, &recipe)
+                    .map_err(|e| e.to_string())
+            }) {
+                Ok(compiled) => on_candidate.run(Candidate::new(compiled.plan)),
+                Err(error) => status.set(error),
+            }
             return;
         }
         let mut steps = vec![];
@@ -1101,9 +1137,9 @@ pub fn CloningMethodsPanel(
         Ok::<_, String>((inputs, molecule.get_untracked()))
     });
     view! {<div class="inspector-content cloning-methods-panel" class:active-fragment-preparation=active_row.is_some()><Show when=move||!fixed_sources><h2>"Cloning methods"</h2></Show><p class="helper">{if fixed_sources {"Verify the prepared fragments against the separately reviewed intended construct."} else {"The active document is the independently chosen target. Method evidence never selects a target or establishes experimental success."}}</p><Show when=move||!fixed_sources>
-        <label>"Method workflow"<select aria-label="Cloning workflow" disabled=disable_plain_primer_design prop:value=move||match config.get().mode{Mode::Tailing=>"tailing",Mode::Overlap=>"overlap",Mode::Ligation=>"ligation",Mode::GoldenGate=>"golden_gate",Mode::MultiSiteReference=>"multisite"} on:change=move|e|config.update(|c|c.mode=match event_target_value(&e).as_str(){"overlap"=>Mode::Overlap,"ligation"=>Mode::Ligation,"golden_gate"=>Mode::GoldenGate,_=>Mode::Tailing})><option value="tailing" disabled=fixed_sources>"TA / GC tailing and ligation"</option><option value="overlap">"Gibson / HiFi / In-Fusion overlap"</option><option value="ligation">"Ordered multi-fragment ligation"</option><option value="golden_gate">"Golden Gate — reaction and prepared assembly"</option></select></label></Show>
-        <Show when=move||config.get().mode==Mode::Tailing><p class="helper">"Append one declared nucleotide to both actual 3′ ends of an established blunt duplex. This is an ideal endpoint operation; polymerase activity, mixtures and proprietary kit chemistry are not predicted. TA/GC products include two added junction bases."</p><div class="method-shortcuts"><button class="text-tool" on:click=move|_|config.update(|c|{c.vector.base=TailingBase::T;c.insert.base=TailingBase::A;})>"Use T/A pair"</button><button class="text-tool" on:click=move|_|config.update(|c|{c.vector.base=TailingBase::C;c.insert.base=TailingBase::G;})>"Use C/G pair"</button></div><TailFields vector=true config=config query_options=query_options primer_sources list_primers resolve_primer epoch/><TailFields vector=false config=config query_options=query_options primer_sources list_primers resolve_primer epoch/><label class="checkbox-label"><input type="checkbox" aria-label="Allow retained tailing ligation nicks" prop:checked=move||config.get().allow_nicked on:change=move|e|config.update(|c|c.allow_nicked=event_target_checked(&e))/>"Allow explicitly retained nicks"</label><p class="helper">"Exact PCR has 5′ OH termini. A sealed ligation may need an explicit phosphorylation step. Factory-vector chemistry and host nick repair are not inferred."</p></Show>
-        <Show when=move||config.get().mode!=Mode::Tailing><Show when=move||config.get().mode==Mode::Overlap><label>"Overlap profile"<select aria-label="Overlap profile method" prop:value=move||format!("{:?}",config.get().method) on:change=move|e|config.update(|c|c.method=match event_target_value(&e).as_str(){"Gibson"=>OverlapMethod::Gibson,"InFusion"=>OverlapMethod::InFusion,_=>OverlapMethod::HiFi})><option value="Gibson">"Gibson"</option><option value="HiFi">"HiFi"</option><option value="InFusion">"In-Fusion"</option></select></label><p class="helper">"Fragments are listed in product order with explicit orientation. Homology geometry is checked exactly; published length guidance is advisory. No reaction completion or unique mixture product is established."</p></Show>
+        <label>"Method workflow"<select aria-label="Cloning workflow" disabled=disable_plain_primer_design prop:value=move||match config.get().mode{Mode::Tailing=>"tailing",Mode::Overlap=>"overlap",Mode::Ligation=>"ligation",Mode::GoldenGate=>"golden_gate",Mode::MultiSiteReference=>"multisite"} on:change=move|e|config.update(|c|c.mode=match event_target_value(&e).as_str(){"overlap"=>Mode::Overlap,"ligation"=>Mode::Ligation,"golden_gate"=>Mode::GoldenGate,_=>Mode::Tailing})><option value="tailing">"TA / GC tailing and ligation"</option><option value="overlap">"Gibson / HiFi / In-Fusion overlap"</option><option value="ligation">"Ordered multi-fragment ligation"</option><option value="golden_gate">"Golden Gate — reaction and prepared assembly"</option></select></label></Show>
+        <Show when=move||config.get().mode==Mode::Tailing><p class="helper">"Append one declared nucleotide to both actual 3′ ends of an established blunt duplex. This is an ideal endpoint operation; polymerase activity, mixtures and proprietary kit chemistry are not predicted. TA/GC products include two added junction bases."</p><div class="method-shortcuts"><button class="text-tool" on:click=move|_|config.update(|c|{c.vector.base=TailingBase::T;c.insert.base=TailingBase::A;})>"Use T/A pair"</button><button class="text-tool" on:click=move|_|config.update(|c|{c.vector.base=TailingBase::C;c.insert.base=TailingBase::G;})>"Use C/G pair"</button></div><Show when=move||active_row.is_none_or(|row|row.get()==0)><TailFields vector=true config=config query_options=query_options primer_sources list_primers resolve_primer epoch fixed_sources/></Show><Show when=move||active_row.is_none_or(|row|row.get()==1)><TailFields vector=false config=config query_options=query_options primer_sources list_primers resolve_primer epoch fixed_sources/></Show><label class="checkbox-label"><input type="checkbox" aria-label="Allow retained tailing ligation nicks" prop:checked=move||config.get().allow_nicked on:change=move|e|config.update(|c|c.allow_nicked=event_target_checked(&e))/>"Allow explicitly retained nicks"</label><p class="helper">"Exact PCR has 5′ OH termini. A sealed ligation may need an explicit phosphorylation step. Factory-vector chemistry and host nick repair are not inferred."</p></Show>
+        <Show when=move||config.get().mode!=Mode::Tailing||fixed_sources><Show when=move||config.get().mode==Mode::Overlap><label>"Overlap profile"<select aria-label="Overlap profile method" prop:value=move||format!("{:?}",config.get().method) on:change=move|e|config.update(|c|c.method=match event_target_value(&e).as_str(){"Gibson"=>OverlapMethod::Gibson,"InFusion"=>OverlapMethod::InFusion,_=>OverlapMethod::HiFi})><option value="Gibson">"Gibson"</option><option value="HiFi">"HiFi"</option><option value="InFusion">"In-Fusion"</option></select></label><p class="helper">"Fragments are listed in product order with explicit orientation. Homology geometry is checked exactly; published length guidance is advisory. No reaction completion or unique mixture product is established."</p></Show>
             <Show when=move||matches!(config.get().mode,Mode::Ligation|Mode::GoldenGate)><p class="helper">"List fragments in intended ligation order. Preparation, end repair and terminal treatment are explicit source-bound operations. Whole linear DNA retains unknown terminal chemistry; its sequence alone does not imply cleaved or PCR ends. Unknown ends can withhold ligation even after phosphorylation."</p><label class="checkbox-label"><input type="checkbox" aria-label="Allow retained ordered ligation nicks" prop:checked=move||config.get().allow_nicked on:change=move|e|config.update(|c|c.allow_nicked=event_target_checked(&e))/>"Allow explicitly retained nicks"</label></Show>
             <h3>{if fixed_sources{"Prepare active fragment"}else{"1. Choose source fragments and regions"}}</h3>
             <Show when=move||config.with(|c|c.rows.len()>12)><p role="alert">"This preparation exceeds the supported 12 rows. No partial row list is shown."</p></Show><For each=move||config.with(|c|if c.rows.len()<=12{(0..c.rows.len()).collect::<Vec<_>>()}else{Vec::new()}) key=|i|*i children=move|i|view!{<Show when=move||active_row.is_none_or(|row|row.get()==i)><div node_ref=row_nodes.with_value(|nodes|nodes[i]) tabindex="-1" class="method-preparation-focus"><OverlapFields config index=i query_options primer_sources list_primers resolve_primer epoch selected_region fixed_sources edited_junctions=disable_plain_primer_design/></div></Show>}/>
@@ -1221,16 +1257,16 @@ pub fn CloningMethodsPanel(
             let preparations=proof.config.rows.iter().map(OverlapInput::summary).collect::<Vec<_>>();
             view!{<div class="method-evidence">
             {move||current.with_value(|proof|{
-                let preview=proof.ligation.as_ref()?;
+                let physical=proof.ligation.as_ref().map(|p|&p.physical).or_else(||proof.tailing.as_ref().map(|p|&p.physical))?;
                 let index=active_row.map(|row|row.get()).unwrap_or(0);
                 let label=proof.context.get(index).map(|source|source.name.clone()).unwrap_or_else(||format!("Fragment {}",index+1));
                 Some(view!{<section class="active-fragment-end-preview"><h3>{format!("Fragment {} · {} · reconstructed ends",index+1,label)}</h3>
-                    {preview.physical.get(index).and_then(Option::as_ref).map(crate::end_view::summary).unwrap_or_else(||view!{<p class="physical-end-unavailable">"Physical ends unavailable. Review the blocking preparation result below."</p>}.into_any())}
+                    {physical.get(index).and_then(Option::as_ref).map(crate::end_view::summary).unwrap_or_else(||view!{<p class="physical-end-unavailable">"Physical ends unavailable. Review the blocking preparation result below."</p>}.into_any())}
                     <p class="helper">"Shown in assembly orientation after declared preparation and terminal treatment."</p>
                 </section>})
             })}
             {diagnostics.map(|result|match result{Ok(diagnostics)=>view!{<MethodDiagnostics diagnostics names preparations on_edit=edit on_source=view_source/>}.into_any(),Err(error)=>view!{<p class="helper">{format!("Structured preparation diagnostics unavailable: {error}. The full fresh findings remain below.")}</p>}.into_any()})}
-            {proof.ligation.as_ref().map(|p|(&p.compiled.plan,&p.verification)).or_else(||proof.overlap.as_ref().map(|p|(&p.compiled.plan,&p.verification))).map(|(plan,report)|{
+            {proof.ligation.as_ref().map(|p|(&p.compiled.plan,&p.verification)).or_else(||proof.overlap.as_ref().map(|p|(&p.compiled.plan,&p.verification))).or_else(||proof.tailing.as_ref().map(|p|(&p.compiled.plan,&p.verification))).map(|(plan,report)|{
                 let captured = StoredValue::new(proof.clone());
                 let captured_sources = StoredValue::new(Some(proof.context.clone()));
                 let captured_target = StoredValue::new(proof.target_context.clone());
@@ -1250,11 +1286,12 @@ pub fn CloningMethodsPanel(
                 view!{<crate::assembly_product_view::AssemblyProductView plan=plan.clone() target=molecule.get_untracked() report=report.clone() epoch on_products on_finalize=guarded_finalize/>}
             })}
 
+            {proof.tailing.as_ref().map(|preview|view!{<article class="tail-evidence"><h3>"Reconstructed tailing and ligation"</h3><p>{format!("Preparation reconstructed: {} · independent-target assessment: {}",preview.preparation_complete,method_status(&preview.verification.status))}</p><p class="helper">"Ends are reconstructed from the pinned originals, then tailed and treated as declared. Junction bases are compared with your separately reviewed intended DNA."</p>{preview.junctions.iter().map(|junction|view!{<details><summary>{format!("Junction {} · fragment {} → {}{}",junction.index+1,junction.upstream+1,junction.downstream+1,if junction.closing{" · circle closure"}else{""})}</summary><div class="physical-junction-ends"><section><h4>"Upstream right end"</h4>{crate::end_view::right(junction.upstream_end.as_ref())}</section><section><h4>"Downstream left end"</h4>{crate::end_view::left(junction.downstream_end.as_ref())}</section></div></details>}).collect_view()}{preview.verification.findings.iter().map(|finding|view!{<p>{finding.clone()}</p>}).collect_view()}</article>})}
             {proof.tails.iter().enumerate().map(|(i,preview)|{let opened=preview.molecule.clone();view!{<article class="tail-evidence"><h3>{format!("{} · {}-tailed duplex",if i==0{"Vector"}else{"Insert"},preview.base.as_str())}</h3><pre>{format!("Top 5′→3′: {}\nBottom 5′→3′: {}\n{}",short(preview.tailing.duplex.top.as_str()),short(preview.tailing.duplex.bottom.as_str()),preview.tailing.duplex.summary().map(|s|s.describe()).unwrap_or_else(|e|e.to_string()))}</pre><details><summary>"Source, additions and assumptions"</summary><pre>{format!("Source top 5′→3′: {}\nSource bottom 5′→3′: {}",short(preview.tailing.source.top.as_str()),short(preview.tailing.source.bottom.as_str()))}</pre>{preview.tailing.additions.iter().map(|a|view!{<p>{format!("New {:?} residue {}–{}: {} (no template ancestry)",a.strand,a.product_start+1,a.product_end,a.sequence)}</p>}).collect_view()}{preview.findings.iter().chain(&preview.tailing.warnings).map(|w|view!{<p>{w.clone()}</p>}).collect_view()}</details><button class="button secondary full" on:click=move|_|match on_products.run(vec![opened.clone()]){Ok(())=>status.set("Reference preview opened; reconstruct its original graph for later physical operations.".into()),Err(e)=>status.set(e)}>{format!("Open {} reference preview",if i==0{"vector"}else{"insert"})}</button></article>}}).collect_view()}
             {proof.ligation.as_ref().map(|preview|view!{<article class="ordered-ligation-evidence"><h3>"Reconstructed ligation evidence"</h3><p>{format!("Preparation reconstructed: {} · independent-target assessment: {}",preview.preparation_complete,method_status(&preview.verification.status))}</p><p class="helper">"These ends and junctions were freshly reconstructed from the original source operations. An end-compatible ordered candidate is not a unique mixture product or demonstrated reaction outcome."</p>{preview.prepared.iter().enumerate().map(|(i,fragment)|view!{<details><summary>{format!("Fragment {} · {} bp · {}",i+1,fragment.sequence.len(),proof.config.rows.get(i).map(OverlapInput::summary).unwrap_or_default())}</summary><pre>{format!("Prepared source before orientation: {}",short(fragment.sequence.as_str()))}</pre>{preview.physical.get(i).and_then(Option::as_ref).map(crate::end_view::summary)}<p>{preview.physical.get(i).and_then(Option::as_ref).map(method_duplex).unwrap_or_else(||"Physical end geometry unavailable; no chemistry inferred".into())}</p><p class="helper">"End summary is in assembly orientation, after any explicit terminal treatment."</p></details>}).collect_view()}{preview.junctions.iter().map(|junction|view!{<details><summary>{format!("Junction {} · fragment {} → {}{}",junction.index+1,junction.upstream+1,junction.downstream+1,if junction.closing{" · circle closure"}else{""})}</summary><div class="physical-junction-ends"><section><h4>"Upstream fragment: right end"</h4>{crate::end_view::right(junction.upstream_end.as_ref())}</section><section><h4>"Downstream fragment: left end"</h4>{crate::end_view::left(junction.downstream_end.as_ref())}</section></div><p>{format!("Upstream right: {}",method_end(junction.upstream_end.as_ref()))}</p><p>{format!("Downstream left: {}",method_end(junction.downstream_end.as_ref()))}</p></details>}).collect_view()}{preview.product_physical.as_ref().map(|physical|view!{<section><h4>"Reconstructed product"</h4><p>{method_duplex(physical)}</p>{physical.nicks.iter().map(|nick|view!{<p>{format!("Retained {} strand nick at top-reference boundary {}",match nick.strand{collagene_core::chemistry::Strand::Top=>"top",collagene_core::chemistry::Strand::Bottom=>"bottom"},nick.position)}</p>}).collect_view()}</section>})}{preview.verification.findings.iter().map(|finding|view!{<p>{finding.clone()}</p>}).collect_view()}</article>})}
             {proof.overlap.as_ref().map(|preview|view!{<article class="overlap-preparation-evidence"><h3>"Prepared fragments from original sources"</h3><p>{format!("Preparation reconstructed: {} · independent-target assessment: {}",preview.preparation_complete,method_status(&preview.verification.status))}</p><p class="helper">"Prepared reference sequences below are reconstructed from the declared originals. They are not substituted as plan inputs, confirmed amplicons or physical reaction outcomes."</p>{preview.prepared.iter().enumerate().map(|(i,fragment)|view!{<details><summary>{format!("Fragment {} · {} bp · {}",i+1,fragment.sequence.len(),proof.config.rows.get(i).map(OverlapInput::summary).unwrap_or_default())}</summary><pre>{format!("Prepared source 5′→3′ (before orientation): {}",short(fragment.sequence.as_str()))}</pre></details>}).collect_view()}{preview.verification.findings.iter().map(|finding|view!{<p>{finding.clone()}</p>}).collect_view()}</article>})}
             {proof.profile.as_ref().map(|p|view!{<article class="overlap-profile-evidence"><h3>"Overlap evidence"</h3><p>{format!("Geometry consistent: {} · analysis complete: {} · published length guidance: {}",p.geometry_valid,p.complete,match p.recommendation_compliant{Some(true)=>"met",Some(false)=>"outside published guidance",None=>"not established"})}</p><p class="helper">{format!("{} comparisons; no exhaustive alternative-product search",p.comparisons)}</p>{p.junctions.iter().map(|j|view!{<details class="profile-junction"><summary>{format!("Junction {} · {}bp · {}",j.index+1,j.overlap_bases,if j.exact_match{"exact end homology"}else{"incompatible homology"})}</summary><pre>{format!("Upstream {}\nDownstream {}",j.homology,j.downstream_homology)}</pre><p>{format!("GC: {} · advisory length: {} · repeat search complete: {}",j.gc_fraction.map(|f|format!("{:.1}%",f*100.)).unwrap_or_else(||"unavailable".into()),guidance(j.recommended_min,j.recommended_max),j.repeat_search_complete)}</p>{j.occurrences.iter().take(40).map(|o|view!{<p>{format!("Source {} · {}–{}{}{}",o.fragment+1,o.start+1,o.end,if o.reverse{" reverse"}else{" forward"},if o.assigned_junction{" · assigned end"}else{" · additional occurrence"})}</p>}).collect_view()}<p class="helper">"Up to 40 occurrence positions shown; full evidence download retains every reported position."</p></details>}).collect_view()}<details><summary>"Profile findings and assumptions"</summary>{p.findings.iter().chain(&p.warnings).map(|w|view!{<p>{w.clone()}</p>}).collect_view()}</details></article>})}
-            <button class="button primary full" on:click=move|_|review.run(())>"Review method candidate"</button><button class="button secondary full" on:click=move|_|{let result=if let Some(preview)=&report.ligation{serde_json::to_vec_pretty(preview)}else if let Some(preview)=&report.overlap{serde_json::to_vec_pretty(preview)}else if let Some(profile)=&report.profile{serde_json::to_vec_pretty(profile)}else{serde_json::to_vec_pretty(&report.tails)};match result{Ok(bytes)=>if let Err(e)=download("cloning-method-evidence.json","application/json",&bytes){status.set(e)},Err(e)=>status.set(e.to_string())}}>"Download method evidence"</button>
+            <button class="button primary full" on:click=move|_|review.run(())>"Review method candidate"</button><button class="button secondary full" on:click=move|_|{let result=if let Some(preview)=&report.tailing{serde_json::to_vec_pretty(preview)}else if let Some(preview)=&report.ligation{serde_json::to_vec_pretty(preview)}else if let Some(preview)=&report.overlap{serde_json::to_vec_pretty(preview)}else if let Some(profile)=&report.profile{serde_json::to_vec_pretty(profile)}else{serde_json::to_vec_pretty(&report.tails)};match result{Ok(bytes)=>if let Err(e)=download("cloning-method-evidence.json","application/json",&bytes){status.set(e)},Err(e)=>status.set(e.to_string())}}>"Download method evidence"</button>
         </div>}})}
     </div>}
 }
@@ -1274,9 +1311,10 @@ fn TailFields(
         Result<collagene_core::primer_reuse::Resolved, String>,
     >,
     epoch: RwSignal<u64>,
+    fixed_sources: bool,
 ) -> impl IntoView {
     let label = if vector { "Vector" } else { "Insert" };
-    view! {<fieldset class="tail-source-fields"><legend>{label}</legend><label>"Source document"<select aria-label=format!("{label} tailing source") prop:value=move||config.with(|c|c.input(vector).document.to_string()) on:change=move|e|config.update(|c|c.input_mut(vector).document=event_target_value(&e).parse().unwrap_or(0))>{move||query_options.get().into_iter().map(|(i,name)|view!{<option value=i.to_string()>{name}</option>}).collect_view()}</select></label><label>"Preparation"<select aria-label=format!("{label} tailing preparation") prop:value=move||if config.with(|c|c.input(vector).pcr){"pcr"}else{"digest"} on:change=move|e|config.update(|c|c.input_mut(vector).pcr=event_target_value(&e)=="pcr")><option value="digest">"Restriction fragment"</option><option value="pcr">"Unique exact PCR product"</option></select></label>
+    view! {<fieldset class="tail-source-fields"><legend>{label}</legend><Show when=move||!fixed_sources><label>"Source document"<select aria-label=format!("{label} tailing source") prop:value=move||config.with(|c|c.input(vector).document.to_string()) on:change=move|e|config.update(|c|c.input_mut(vector).document=event_target_value(&e).parse().unwrap_or(0))>{move||query_options.get().into_iter().map(|(i,name)|view!{<option value=i.to_string()>{name}</option>}).collect_view()}</select></label><label>"Preparation"<select aria-label=format!("{label} tailing preparation") prop:value=move||if config.with(|c|c.input(vector).pcr){"pcr"}else{"digest"} on:change=move|e|config.update(|c|c.input_mut(vector).pcr=event_target_value(&e)=="pcr")><option value="digest">"Restriction fragment"</option><option value="pcr">"Unique exact PCR product"</option></select></label>
         <Show when=move||!config.with(|c|c.input(vector).pcr)><label>"Restriction enzymes"<input aria-label=format!("{label} tailing enzymes") prop:value=move||config.with(|c|c.input(vector).enzymes.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).enzymes=event_target_value(&e))/></label><label>"Digest fragment (cut order, 1-based)"<input type="number" min="1" aria-label=format!("{label} tailing fragment") prop:value=move||config.with(|c|c.input(vector).fragment.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).fragment=event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label=format!("{label} blunt before tailing") prop:checked=move||config.with(|c|c.input(vector).blunt) on:change=move|e|config.update(|c|c.input_mut(vector).blunt=event_target_checked(&e))/>"Blunt staggered ends before tailing"</label></Show>
         <Show when=move||config.with(|c|c.input(vector).pcr)>
         <crate::primer_picker::PrimerPicker label=format!("{label} tailing forward") sources=primer_sources list_primers resolve_primer epoch on_copy=Callback::new(move|primer:Primer|config.update(|c|{let r=c.input_mut(vector);r.forward_name=primer.name;r.forward=primer.annealing.as_str().into();r.forward_tail=primer.tail;}))/>
@@ -1284,7 +1322,7 @@ fn TailFields(
         <crate::primer_picker::PrimerPicker label=format!("{label} tailing reverse") sources=primer_sources list_primers resolve_primer epoch on_copy=Callback::new(move|primer:Primer|config.update(|c|{let r=c.input_mut(vector);r.reverse_name=primer.name;r.reverse=primer.annealing.as_str().into();r.reverse_tail=primer.tail;}))/>
         <label>"Reverse primer name"<input maxlength="256" aria-label=format!("{label} tailing reverse primer name") prop:value=move||config.with(|c|c.input(vector).reverse_name.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).reverse_name=event_target_value(&e))/></label>
     <label>"Forward annealing sequence 5′→3′"<input aria-label=format!("{label} tailing forward primer") prop:value=move||config.with(|c|c.input(vector).forward.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).forward=event_target_value(&e))/></label><label>"Reverse annealing sequence 5′→3′"<input aria-label=format!("{label} tailing reverse primer") prop:value=move||config.with(|c|c.input(vector).reverse.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).reverse=event_target_value(&e))/></label><label>"Forward primer 5′ extension"<input aria-label=format!("{label} tailing forward extension") prop:value=move||config.with(|c|c.input(vector).forward_tail.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).forward_tail=event_target_value(&e))/></label><label>"Reverse primer 5′ extension"<input aria-label=format!("{label} tailing reverse extension") prop:value=move||config.with(|c|c.input(vector).reverse_tail.clone()) on:input=move|e|config.update(|c|c.input_mut(vector).reverse_tail=event_target_value(&e))/></label><details><summary>"Review current primer domains"</summary><pre>{move||config.with(|c|{let r=c.input(vector);format!("{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\n5′ tail: {}\n\n{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\n5′ tail: {}",r.forward_name,r.forward_tail,r.forward,r.forward,r.forward_tail,r.reverse_name,r.reverse_tail,r.reverse,r.reverse,r.reverse_tail)})}</pre></details></Show>
-        <label>"One nucleotide added to BOTH 3′ ends"<select aria-label=format!("{label} tailing base") prop:value=move||config.with(|c|c.input(vector).base.as_str()) on:change=move|e|config.update(|c|c.input_mut(vector).base=match event_target_value(&e).as_str(){"C"=>TailingBase::C,"G"=>TailingBase::G,"T"=>TailingBase::T,_=>TailingBase::A})><option value="A">"A"</option><option value="C">"C"</option><option value="G">"G"</option><option value="T">"T"</option></select></label><label>"Explicit terminal treatment after tailing"<select aria-label=format!("{label} tailing terminal treatment") prop:value=move||config.with(|c|match c.input(vector).treatment{Treatment::Keep=>"keep",Treatment::Phosphorylate=>"phosphorylate",Treatment::Dephosphorylate=>"dephosphorylate"}) on:change=move|e|config.update(|c|c.input_mut(vector).treatment=match event_target_value(&e).as_str(){"phosphorylate"=>Treatment::Phosphorylate,"dephosphorylate"=>Treatment::Dephosphorylate,_=>Treatment::Keep})><option value="keep">"Keep reconstructed 5′ chemistry"</option><option value="phosphorylate">"Add 5′ phosphorylation"</option><option value="dephosphorylate">"Add 5′ dephosphorylation"</option></select></label><label class="checkbox-label"><input type="checkbox" aria-label=format!("Reverse {label} tailing product") prop:checked=move||config.with(|c|c.input(vector).reversed) on:change=move|e|config.update(|c|c.input_mut(vector).reversed=event_target_checked(&e))/>"Reverse fragment for ligation"</label></fieldset>}
+        </Show><label>"One nucleotide added to BOTH 3′ ends"<select aria-label=format!("{label} tailing base") prop:value=move||config.with(|c|c.input(vector).base.as_str()) on:change=move|e|config.update(|c|c.input_mut(vector).base=match event_target_value(&e).as_str(){"C"=>TailingBase::C,"G"=>TailingBase::G,"T"=>TailingBase::T,_=>TailingBase::A})><option value="A">"A"</option><option value="C">"C"</option><option value="G">"G"</option><option value="T">"T"</option></select></label><label>"Explicit terminal treatment after tailing"<select aria-label=format!("{label} tailing terminal treatment") prop:value=move||config.with(|c|match c.input(vector).treatment{Treatment::Keep=>"keep",Treatment::Phosphorylate=>"phosphorylate",Treatment::Dephosphorylate=>"dephosphorylate"}) on:change=move|e|config.update(|c|c.input_mut(vector).treatment=match event_target_value(&e).as_str(){"phosphorylate"=>Treatment::Phosphorylate,"dephosphorylate"=>Treatment::Dephosphorylate,_=>Treatment::Keep})><option value="keep">"Keep reconstructed 5′ chemistry"</option><option value="phosphorylate">"Add 5′ phosphorylation"</option><option value="dephosphorylate">"Add 5′ dephosphorylation"</option></select></label><Show when=move||!fixed_sources><label class="checkbox-label"><input type="checkbox" aria-label=format!("Reverse {label} tailing product") prop:checked=move||config.with(|c|c.input(vector).reversed) on:change=move|e|config.update(|c|c.input_mut(vector).reversed=event_target_checked(&e))/>"Reverse fragment for ligation"</label></Show></fieldset>}
 }
 
 #[component]
@@ -1352,7 +1390,7 @@ fn OverlapFields(
     </fieldset>}
 }
 
-pub(crate) use crate::cloning_preparations::prepared_rows;
+pub(crate) use crate::cloning_preparations::{prepared_rows, tailing_request};
 
 fn overlap_request(
     state: &MethodsState,

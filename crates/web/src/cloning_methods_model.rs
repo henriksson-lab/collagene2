@@ -398,6 +398,7 @@ impl MethodsState {
     pub(crate) fn swap_rows(&mut self, a: usize, b: usize) {
         if a >= self.rows.len()
             || b >= self.rows.len()
+            || (self.mode == Mode::Tailing && self.rows.len() != 2)
             || self.role_ids(self.rows.len()).is_err()
             || self.golden_gate_pool.as_ref().is_some_and(|form| {
                 !form.choices.is_empty() && form.choices.len() != self.rows.len()
@@ -406,6 +407,13 @@ impl MethodsState {
             return;
         }
         self.rows.swap(a, b);
+        if self.mode == Mode::Tailing && a != b {
+            // These are the only tail controls used by the source-slot recipe.
+            // Preparation/roles travel with rows; sync_rows rebinds the legacy
+            // document/reverse fields to the new slot positions afterwards.
+            std::mem::swap(&mut self.vector.base, &mut self.insert.base);
+            std::mem::swap(&mut self.vector.treatment, &mut self.insert.treatment);
+        }
         if let Some(roles) = &mut self.source_roles {
             roles.swap(a, b);
         }

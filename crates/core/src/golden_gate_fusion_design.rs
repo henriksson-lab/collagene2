@@ -136,6 +136,8 @@ fn shape(r: &Request) -> Result<usize, Error> {
 /// Borrowed bounds before input copies, hashing, source scans or native preparation.
 pub fn preflight(inputs: &[(&str, &Molecule)], r: &Request) -> Result<(), Error> {
     shape(r)?;
+    // Fusion preparation does not model independently declared outer termini.
+    junction::inserts(&r.base.base, &r.base.edits)?;
     junction::intent_preflight(inputs, &r.base.base, &r.base.edits)?;
     let catalog = catalog_digest::builtin_catalog()?;
     let mut retained = Vec::new();

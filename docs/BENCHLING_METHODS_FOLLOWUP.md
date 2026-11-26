@@ -24,7 +24,8 @@ handoff and chemical-conjugate administration are outside our scope.
 
 ## Recommendations against the existing implementation
 
-These are our adaptations, not additional claims about Benchling:
+These are our adaptations, not additional claims about Benchling. Implementation
+status below was reconciled against source on26 November2026:
 
 1. **Keep explicit preparation beside source selection.** Retain the current
    fill/remove/blunt and terminal-treatment choices, showing actual before/after
@@ -33,15 +34,16 @@ These are our adaptations, not additional claims about Benchling:
    another physical engine is unnecessary. Errors should point to the affected
    source/end or parameter. Do not adopt undocumented automatic repair.
 2. **Extend the existing source/recipe handoff where coverage is missing.** Current
-   [cloning methods](../crates/web/src/cloning_methods.rs) support explicit TA/GC
-   graphs, but disable that route for stable library source roles. Native
+   [cloning methods](../crates/web/src/cloning_methods.rs) now connect ordinary two-source TA/GC
+   drafts through exact source roles, pinned preparations, independently declared
+   junction/terminal intent, fresh verification and product/output review. Native
    [combinatorial design](../crates/core/src/combinatorial_design.rs) does not yet
    represent tailing or two-input annealing as a library preparation. Future
    integration should reuse existing typed operations and exact original events;
    copying an intermediate reference into a slot must not invent physical stock.
 3. **Preserve the existing TOPO inspection contract.** The current
-   [web workflow](TOPO_WEB_WORKFLOW.md) exposes one declared TA geometry; broader
-   directional preparation controls remain a real delivery gap. Reuse the
+   [web workflow](TOPO_WEB_WORKFLOW.md) already exposes declared TA and directional CACC
+   preparation, explicit source strands and both orientation outcomes. Preserve the
    [general core adapter](TOPO_ADAPTER.md), explicit component/source-call choice,
    independent target and acceptance policy. Public Benchling evidence supplies
    no justification for hiding transfer outcomes or defaulting away retained nicks.
@@ -49,7 +51,12 @@ These are our adaptations, not additional claims about Benchling:
    [annealing candidates](END_REPAIR.md#oligo-annealing), actual antiparallel
    overlap and per-strand termini. Present offset/overhang previews and local
    invalid-placement messages; preserve alternatives and explicit selection.
-   Multi-oligo physical assembly needs its own supported composition rules;
+   The next ordinary workflow gap is an annealed adaptor/sgRNA insert plus a
+   separately digested backbone in one source-bound ligation plan. Capture both
+   original oligo events and the backbone event, pin an explicit annealing
+   candidate, and reuse existing `AnnealOligos`, catalog digest and ligation
+   operations. An opened annealed reference preview cannot serve as physical
+   stock. Multi-oligo physical assembly needs its own supported composition rules;
    Benchling's concatenation feature does not establish them.
 5. **Do not relabel reference recombination as full Gateway chemistry.** Our
    [BP/LR workflow](RECOMBINATION_UI.md) already has explicit profiles, exact

@@ -61,6 +61,212 @@ fn fixture() -> (Vec<PlanInput>, Request) {
     };
     (inputs, request)
 }
+
+#[test]
+fn literal_linear_terminal_intent_maps_last_suffix_without_extending_source_annotations() {
+    let mut inputs = vec![input("vector", "AAACCC"), input("insert", "GGGTTT")];
+    for source in &mut inputs {
+        source.molecule.features.push(Feature {
+            kind: "CDS".into(),
+            location: Location::range(0, 6),
+            qualifiers: vec![("label".into(), Some(format!("{} core", source.id)))],
+            needs_review: false,
+        });
+        source.revision = source.molecule.revision();
+    }
+    let before = serde_json::to_value(&inputs).unwrap();
+    let base = assembly_intent::Request {
+        name: "Independently declared linear target".into(),
+        circular: false,
+        fragments: inputs
+            .iter()
+            .map(|source| Fragment {
+                role: source.id.clone(),
+                input_id: source.id.clone(),
+                start: 0,
+                end: 6,
+                reverse: false,
+            })
+            .collect(),
+    };
+    let edits = vec![
+        Edit {
+            junction: 0,
+            remove_left: 0,
+            remove_right: 0,
+            inserted: "T".into(),
+        },
+        Edit {
+            junction: 1,
+            remove_left: 0,
+            remove_right: 0,
+            inserted: "a".into(),
+        },
+    ];
+    intent_preflight(
+        &inputs
+            .iter()
+            .map(|input| (input.id.as_str(), &input.molecule))
+            .collect::<Vec<_>>(),
+        &base,
+        &edits,
+    )
+    .unwrap();
+    let intent = build_intent(&inputs, &base, &edits).unwrap();
+    assert_eq!(intent.target.sequence.as_str(), "AAACCCTGGGTTTA");
+    assert_eq!(intent.target.topology, Topology::Linear);
+    assert_eq!(
+        (
+            intent.fragments[0].output_start,
+            intent.fragments[0].output_end
+        ),
+        (0, 7)
+    );
+    assert_eq!(
+        (
+            intent.fragments[1].output_start,
+            intent.fragments[1].output_end
+        ),
+        (7, 14)
+    );
+    for (label, expected) in [("vector core", (0, 6)), ("insert core", (7, 13))] {
+        let feature = intent
+            .target
+            .features
+            .iter()
+            .find(|feature| feature.label() == label)
+            .unwrap();
+        assert_eq!(
+            feature.location.spans(),
+            vec![(expected.0, expected.1, false)]
+        );
+    }
+    assert!(
+        intent
+            .target
+            .features
+            .iter()
+            .any(|feature| feature.needs_review && feature.location == Location::range(13, 14))
+    );
+    intent
+        .validate_binding(&intent_revision(&inputs, &base, &edits).unwrap())
+        .unwrap();
+    let mut other = edits.clone();
+    other[1].inserted = "G".into();
+    assert!(
+        intent
+            .validate_binding(&intent_revision(&inputs, &base, &other).unwrap())
+            .is_err()
+    );
+    assert_eq!(serde_json::to_value(&inputs).unwrap(), before);
+    assert!(collagene_core::chemistry::Duplex::from_molecule(&intent.target).is_err());
+}
+
+#[test]
+fn terminal_trim_respects_reverse_origin_spanning_core_without_wrapping_into_first_row() {
+    let mut inputs = vec![input("first", "AACCGGTT"), input("last", "AACCGGTT")];
+    for source in &mut inputs {
+        source.molecule.topology = Topology::Circular;
+        source.revision = source.molecule.revision();
+    }
+    inputs[1].molecule.features.push(Feature {
+        kind: "misc_feature".into(),
+        location: Location::range(0, 4),
+        qualifiers: vec![("label".into(), Some("Last original core".into()))],
+        needs_review: false,
+    });
+    inputs[1].revision = inputs[1].molecule.revision();
+    let base = assembly_intent::Request {
+        name: "Original digest origins retained".into(),
+        circular: false,
+        fragments: vec![
+            Fragment {
+                role: "first".into(),
+                input_id: "first".into(),
+                start: 6,
+                end: 12,
+                reverse: false,
+            },
+            Fragment {
+                role: "last".into(),
+                input_id: "last".into(),
+                start: 6,
+                end: 12,
+                reverse: true,
+            },
+        ],
+    };
+    let edits = vec![
+        Edit {
+            junction: 0,
+            remove_left: 0,
+            remove_right: 0,
+            inserted: "G".into(),
+        },
+        Edit {
+            junction: 1,
+            remove_left: 2,
+            remove_right: 0,
+            inserted: "C".into(),
+        },
+    ];
+    let intent = build_intent(&inputs, &base, &edits).unwrap();
+    // First unrolled core TTAACC, literal G, reverse trimmed core GGTT, literal C.
+    assert_eq!(intent.target.sequence.as_str(), "TTAACCGGGTTC");
+    assert_eq!(
+        (
+            intent.adjusted_request.fragments[0].start,
+            intent.adjusted_request.fragments[0].end
+        ),
+        (6, 12)
+    );
+    assert_eq!(
+        (
+            intent.adjusted_request.fragments[1].start,
+            intent.adjusted_request.fragments[1].end
+        ),
+        (0, 4)
+    );
+    let feature = intent
+        .target
+        .features
+        .iter()
+        .find(|feature| feature.label() == "Last original core")
+        .unwrap();
+    assert_eq!(feature.location.spans(), vec![(7, 11, true)]);
+    let mut downstream = edits.clone();
+    downstream[1].remove_right = 1;
+    assert!(build_intent(&inputs, &base, &downstream).is_err());
+    let mut empty_core = edits;
+    empty_core[1].remove_left = 6;
+    assert!(build_intent(&inputs, &base, &empty_core).is_err());
+}
+
+#[test]
+fn terminal_literal_is_intent_only_and_not_a_silent_overlap_primer_tail() {
+    let (inputs, mut request) = fixture();
+    request.edits.push(Edit {
+        junction: 1,
+        remove_left: 0,
+        remove_right: 0,
+        inserted: "A".into(),
+    });
+    assert!(build_intent(&inputs, &request.base, &request.edits).is_ok());
+    assert!(
+        preflight(
+            &inputs
+                .iter()
+                .map(|input| (input.id.as_str(), &input.molecule))
+                .collect::<Vec<_>>(),
+            &request
+        )
+        .is_err()
+    );
+    assert!(design_revision(&inputs, &request).is_err());
+    assert!(design(&inputs, &request).is_err());
+    request.edits[1].remove_right = 1;
+    assert!(intent_revision(&inputs, &request.base, &request.edits).is_err());
+}
 fn verify(inputs: &[PlanInput], r: &Report) {
     let compiled = assembly_recipe::compile(inputs, &r.intent.target, &r.recipe).unwrap();
     let report = verification::verify(&compiled.plan, &r.intent.target);

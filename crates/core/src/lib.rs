@@ -197,3 +197,5 @@ pub mod plan_editing;
 pub mod multisite_recombination;
 
 pub mod reference_run_evidence;
+
+pub mod tailing_recipe;

@@ -1480,3 +1480,43 @@ Neither simulated product DNA nor enzyme-name substitutions may replace the
 independent intended target or a retained catalog pin. Library tailing remains a
 separate typed-preparation extension. The unused ta_request compatibility wrapper
 is not evidence that the existing TOPO route is disconnected.
+
+### Ordinary TA/GC assembly dock
+
+TA/GC cloning uses the ordinary two-source assembly draft, exact captured source
+roles/events and shared preparation rows. Pinned catalog digest and PCR/catalog
+preparations remain typed requests; legacy enzyme text cannot replace their pins.
+The user declares intended junction DNA separately before freezing the target.
+Tailing bases are never copied from a simulated product into that target.
+
+The native `tailing_recipe` compiler emits the existing preparation, `Tail3Prime`,
+optional terminal treatment and `Ligate` operations. Its fresh verifier preview
+supplies oriented physical ends and junctions, independent-target findings and the
+actual reconstructed product. The dock reuses product inspection, candidate review
+and the existing finalization/HTML/PDF path. Source/settings/event changes invalidate
+positive evidence. Tail base/treatment choices travel with their sources when rows
+move. Ordinary tailing requires two sources; combinatorial/library tailing remains
+a separate typed-preparation gap and is not enabled by this increment.
+
+Worker schema70 adds an appended typed tailing-preview job/result; candidate16,
+plan14 and scientific19 remain unchanged. Browser/application checks remain
+explicitly deferred. This increment does not establish completion of the full
+project plan or replace outstanding GUI acceptance.
+
+Linear TA/GC intent also exposes an explicitly declared final outer 3′ suffix.
+The shared reference-intent builder accepts that linear terminal edit without a
+wrapped downstream trim, preserving source and synthetic annotation boundaries.
+Its intent engine is now `assembly-junction-edit-2`; the serialized DTO is
+unchanged. Primer and fusion-design APIs retain their existing internal-junction
+limits and reject terminal edits until their preparation models support them.
+MCP `propose_tailing_assembly` exposes the same source-bound compiler and fresh
+verifier, with candidate and complete evidence retained atomically (170 tools).
+
+Validation for this increment:40 targeted core tests,8 native web-model tests and
+3 MCP SDK tests pass. The MCP test reads the generated HTML tailing instructions
+and validates the decoded PDF header, terminator and byte count. A complete offline
+Trunk build succeeds for the frontend and worker70. Static publication checks do
+not execute the app or replace deferred GUI acceptance. The next ordinary workflow
+handoff to connect is annealed oligo pair + digested backbone ligation; existing
+native operations cover the chemistry, while two-original-source slot capture and
+composition still need implementation.

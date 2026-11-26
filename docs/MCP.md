@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current registry has 165 tools. Selected-construct design and batch operations
+The current registry has 170 tools. Selected-construct design and batch operations
 add exact-version matrix paging, native inspection, historical capture/list/open
 and explicit fresh replay. [Batch contracts](COMBINATORIAL_BATCHES.md).
 Reference recombination retains explicit profile discovery, source inspection,
@@ -837,3 +837,9 @@ step only when that role is solely an ExactPcr template. Fresh native tracked
 material is required; no serialized graph restores it. Historical run inspection
 retains the exact upstream product identity. Standalone source-inspection tools
 remain original-input interfaces. [Contract and limits](TOPO_UPSTREAM_PCR.md).
+
+## Source-bound TA/GC assembly
+
+`propose_tailing_assembly` accepts `{inputs, target, recipe}` with exact immutable source document references and an independent target. Its recipe is `{name, fragments, circular, allow_nicked}`; each fragment is `{source: FragmentSpec, base: "A" | "C" | "G" | "T", treatment}`. Preparations use the same original-source PCR, digest, optional end repair or explicitly declared intact duplex contracts as ordered ligation. `treatment` is `null`, `"Phosphorylate"` or `"Dephosphorylate"` and occurs after tailing. Each ideal tailing operation adds the declared nucleotide to both actual 3′ ends of a freshly established blunt duplex. Primer extensions and added tail nucleotides remain distinct.
+
+The tool freshly compiles and verifies the complete recipe against the supplied target. It atomically retains a candidate and bounded complete `tailing-assembly-recipe.json` evidence, including unsuccessful designs, physical junctions, explicit retained nicks and assumptions. The response gives `plan_revision`, `context_revision`, preparation completeness, compact verifier findings and an artifact ID. Saving a candidate returns `verified: false`; use `verify_plan`, `export_protocol` and `export_protocol_pdf` for fresh checks and handoff. Repeated identical requests reuse immutable outputs. No source documents change, and factory chemistry, polymerase activity, host repair and proprietary kit performance are not inferred.

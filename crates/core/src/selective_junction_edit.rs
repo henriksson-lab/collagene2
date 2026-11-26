@@ -36,6 +36,11 @@ fn raw_preparation(f: &FragmentSpec) -> Result<(), Error> {
         Ok(())
     };
     match &f.preparation {
+        Preparation::MismatchPcr {
+            forward,
+            reverse,
+            options,
+        } => assembly_recipe::mismatch_pcr_shape(forward, reverse, options)?,
         Preparation::FromRun {
             origin,
             preparation,

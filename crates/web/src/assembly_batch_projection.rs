@@ -99,11 +99,7 @@ fn typed_row(
                             if raw.treatment != crate::cloning_methods_model::Treatment::Keep {
                                 return Err("Whole-amplicon reaction substrates require Keep terminal chemistry; post-digest terminal treatment does not apply to this substrate.".into());
                             }
-                            if !matches!(raw.preparation, OverlapPreparation::ExactPcr | OverlapPreparation::PcrCatalogDigest) {
-                                return Err("Choose actual PCR primers before using a whole amplicon.".into());
-                            }
-                            raw.preparation = OverlapPreparation::ExactPcr;
-                            raw.fragment = "1".into();
+                            raw.use_complete_pcr_amplicon()?;
                             raw.treatment = crate::cloning_methods_model::Treatment::Keep;
                             PoolSubstrateKind::Prepared
                         },
@@ -734,6 +730,52 @@ mod tests {
         assert!(
             matches!(&projection.request.rows[1], RowRequest::DraftError { message, .. } if message.contains("sealed products"))
         );
+    }
+
+    #[test]
+    fn whole_amplicon_projection_preserves_intentional_mismatch_policy() {
+        let mut draft = two_rows();
+        draft.methods.mode = Mode::GoldenGate;
+        draft.methods.golden_gate_pool = Some(PoolForm {
+            reaction: true,
+            choices: vec![2, 0],
+            circular: false,
+            ..PoolForm::default()
+        });
+        let raw = &mut draft.methods.rows[0];
+        raw.preparation = OverlapPreparation::MismatchPcr;
+        raw.forward = "ATGA".into();
+        raw.reverse_primer = "GTCA".into();
+        raw.mismatch_max_mismatches = "1".into();
+        raw.mismatch_three_prime_exact = "2".into();
+        let before = draft.clone();
+        let projection = project(&draft).unwrap();
+        let row = ready(&projection.request, 1);
+        let overrides = row.overrides.as_ref().unwrap();
+        let Some(collagene_core::assembly_recipe::Preparation::MismatchPcr {
+            forward,
+            reverse,
+            options,
+        }) = &overrides.preparations[0].preparation
+        else {
+            panic!("whole amplicon discarded intentional mismatches");
+        };
+        assert_eq!(forward.annealing.as_str(), "ATGA");
+        assert_eq!(reverse.annealing.as_str(), "GTCA");
+        assert_eq!(options.binding.max_mismatches, 1);
+        assert_eq!(options.binding.min_three_prime_exact, 2);
+        assert!(
+            draft == before,
+            "projection must not rewrite the declared target or draft"
+        );
+        draft.methods.rows[0].mismatch_max_mismatches = "2e".into();
+        let unfinished = project(&draft).unwrap();
+        assert_ne!(unfinished.revision, projection.revision);
+        assert!(matches!(unfinished.request.rows[0], RowRequest::Ready(_)));
+        assert!(matches!(
+            unfinished.request.rows[1],
+            RowRequest::DraftError { .. }
+        ));
     }
 
     #[test]

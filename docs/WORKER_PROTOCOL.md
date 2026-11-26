@@ -1,6 +1,6 @@
 # Binary worker protocol
 
-The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **75** and reads supported schemas 1–74. Candidate files write schema 17; workspace plan schema is 15; the verifier is science-20.
+The browser and native worker share `core::protocol` DTOs and deterministic scientific engines. Request magic is `CGQ\0`; response magic is `CGR\0`. The current writer uses schema **76** and reads supported schemas 1–76. Candidate files write schema 17; workspace plan schema is 15; the verifier is science-20.
 
 Each envelope has a 42-byte header: four-byte magic, little-endian `u16` version, little-endian `u32` payload length, 32-byte BLAKE3 payload checksum, then a Postcard payload. A request contains `id`, exact expected source `revision`, then a typed job. A response returns the same `id`/`revision` and a typed result or error. Compound/circular coordinates and scientific options are typed data, not JSON strings. Unknown versions, invalid lengths/checksums, trailing payload, stale source revisions and variants claiming a schema older than their introduction fail explicitly.
 
@@ -934,3 +934,9 @@ The same schema74 increment appends ordinary32MiB job159 `InspectRunPcrDigest {m
 Appended ordinary32MiB job160 `InspectRunCatalogRestriction {source_role, molecule, origin, selection, options}` and result152 `RunCatalogRestrictionInspection(Inspection)` require worker75. Borrowed native source preflight precedes request serialization; processing checks the full origin/source/catalog/options inspection revision. The reply validates its outer context and bounded documentary shape. Candidate17, plan15, science20 and all previous enum positions remain unchanged.
 
 The fresh native pass reconstructs actual saved strands, ends, nicks and tracked modifications, then applies the existing complete-cleavage catalog model. `run_catalog_digest::Inspection` retains origin revision/status, source and fragment modification summaries, findings and the ordinary `CatalogRestrictionInspection` in its `inspection` field. Its outer context binds both origin and ordinary catalog batch; the inner catalog DTO/layout is unchanged. This evidence supplies readonly fragment choices, never a reference-only product installation, target acceptance or imported material authority.
+
+## Explicit mismatch-PCR preparation (schema76)
+
+Worker76 appends `Preparation::MismatchPcr {forward, reverse, options: PcrOptions}` at preparation ordinal8 and flat `RunPreparation::MismatchPcr` at ordinal5. No worker selector or physical operation is appended: compilation uses existing `Operation::PcrWithMismatches`, so candidate17, native plan15 and science20 remain unchanged.
+
+The borrowed typed capability visitor rejects either new nested preparation under worker<76 after bounded DTO decoding and before dispatch/science; existing jobs with older preparations retain their historical request floors. Recipe-preview receipts whose actual preparation prefix contains mismatch PCR also require76. Standalone plans/Verify requests using the previously supported mismatch-PCR operation keep their old capability floors, including historical candidate3 packages when no newer operation is present. The visitor uses binary serialization mode to skip opaque capsule bytes without allocating base64 or copied molecule data. Existing ordinals and literal old-header fixtures remain unchanged.

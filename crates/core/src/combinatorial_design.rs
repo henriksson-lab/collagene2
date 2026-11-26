@@ -274,6 +274,11 @@ fn preparation_shape(preparation: &assembly_recipe::Preparation) -> Result<(), E
                 }
             }
         }
+        assembly_recipe::Preparation::MismatchPcr {
+            forward,
+            reverse,
+            options,
+        } => assembly_recipe::mismatch_pcr_shape(forward, reverse, options)?,
         assembly_recipe::Preparation::Digest { enzymes, .. } => {
             if enzymes.len() > 64 || enzymes.iter().any(|e| e.len() > 256) {
                 return Err(Error::TooLarge);
@@ -568,6 +573,17 @@ pub(crate) fn work_charge(
         let mut factor = 1usize;
         if let Some(preparation) = preparation {
             match preparation {
+                assembly_recipe::Preparation::MismatchPcr {
+                    forward,
+                    reverse,
+                    options,
+                } => {
+                    work = work
+                        .checked_add(assembly_recipe::mismatch_pcr_work(
+                            n, forward, reverse, options,
+                        )?)
+                        .ok_or(Error::TooLarge)?;
+                }
                 assembly_recipe::Preparation::ExactPcr { forward, reverse }
                 | assembly_recipe::Preparation::PcrCatalogDigest {
                     forward, reverse, ..

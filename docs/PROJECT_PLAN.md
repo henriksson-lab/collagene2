@@ -1744,3 +1744,34 @@ roundtrip/alias refusal, worker capability gates and real MCP SDK ownership/page
 checks. Web/worker WASM checks passed. Formatting and whitespace checks passed.
 No browser/HTTP checks or full Trunk rebuild were run for this increment; port
 8082 remains on the previous compiled saved-preparation preview.
+
+
+### Intentional-mismatch PCR in shared fragment preparation
+
+Shared overlap, ordered-ligation and TA/GC recipes now offer an explicit
+`MismatchPcr` preparation over original inputs or a freshly reconstructed saved
+run. It compiles to the existing native mismatch-PCR operation. The independent
+target is unchanged by primer settings. Actual primer domains/tails, mismatch
+limits and required exact 3′ binding are retained; complete-amplicon reaction
+selection preserves the mismatch policy. Drafts retain unfinished bounded text,
+with scientific parsing deferred until preparation.
+
+Worker76 adds only the nested preparation capability; candidate17, native plan15,
+science20 and the173 MCP tools retain their versions/counts. Existing standalone
+mismatch-PCR plans keep their historical compatibility. Validation passed:49 targeted native checks cover physical and wrong-target
+fixtures, protocol compatibility, web models and an actual MCP SDK design →
+verification → HTML/oligo export flow. The web/worker WASM check, formatting and
+whitespace checks passed.
+No browser/HTTP checks or visual acceptance are claimed. Public8082 remains on
+the previously published saved-material build pending a bundled frontend build.
+
+The ordinary dock still needs independently declared internal substitutions.
+Implement that as a new source-bound reference-intent request/report, retaining
+original source revisions and literal changes independently of preparation. Role
+plus oriented contribution offset identifies each edit, including repeated,
+reverse and circular source contributions; expected-base guards reject stale
+edits, and junction trims cannot silently remove them. Preserve existing wire
+layouts with additive jobs/results. Same-length edits retain annotation positions
+but flag affected features and invalidate stale translations. Add explicit draft
+and finalization bindings before offering this internal-edit UI. This is the next
+workflow integration, not a relaxation of the original project scope.

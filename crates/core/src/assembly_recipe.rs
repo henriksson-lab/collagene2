@@ -21,8 +21,8 @@ const MAX_INPUT_BASES: usize = 8 << 20;
 pub(crate) const MAX_ROLE_BASES: usize = 16 << 20;
 const MAX_PREPARATION_WORK: usize = 100_000_000;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
-dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},AnnealedOligos{bottom_input_id:String,options:crate::chemistry::AnnealOptions,candidate_index:usize},FromRun{origin:crate::run_material::Capsule,preparation:RunPreparation}}}
-dto! {pub enum RunPreparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>}}}
+dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},AnnealedOligos{bottom_input_id:String,options:crate::chemistry::AnnealOptions,candidate_index:usize},FromRun{origin:crate::run_material::Capsule,preparation:RunPreparation},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions}}}
+dto! {pub enum RunPreparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions}}}
 impl RunPreparation {
     /// Bounded conversion to the existing preparation vocabulary; no recursion,
     /// chemistry restoration, or scientific computation.
@@ -60,6 +60,18 @@ impl RunPreparation {
                     selection: selection.clone(),
                     fragment_index: *fragment_index,
                     repair: *repair,
+                })
+            }
+            Self::MismatchPcr {
+                forward,
+                reverse,
+                options,
+            } => {
+                mismatch_pcr_shape(forward, reverse, options)?;
+                Ok(Preparation::MismatchPcr {
+                    forward: forward.clone(),
+                    reverse: reverse.clone(),
+                    options: options.clone(),
                 })
             }
             Self::ExactPcr { forward, reverse } => {
@@ -211,6 +223,15 @@ pub(crate) fn validate_prepared_inputs(
         }
     }
     for step in steps {
+        if let Operation::PcrWithMismatches {
+            forward,
+            reverse,
+            options,
+            ..
+        } = step
+        {
+            mismatch_pcr_shape(forward, reverse, options)?;
+        }
         if let Operation::ReconstructRunProduct { template, origin } = step {
             origin.validate_documentary()?;
             let Source::Input(id) = template else {
@@ -272,6 +293,7 @@ pub(crate) fn validate_annealed_row(row: &PreparedRow, steps: &[Operation]) -> R
 fn preparation_template(op: &Operation) -> Option<&Source> {
     match op {
         Operation::Pcr { template, .. }
+        | Operation::PcrWithMismatches { template, .. }
         | Operation::Digest { template, .. }
         | Operation::CatalogDigest { template, .. }
         | Operation::DeclareSourceTermini { template, .. }
@@ -325,6 +347,7 @@ pub(crate) fn prepared_chain(
             }
             Operation::ReconstructRunProduct { .. }
             | Operation::Pcr { .. }
+            | Operation::PcrWithMismatches { .. }
             | Operation::Digest { .. }
             | Operation::CatalogDigest { .. }
             | Operation::DeclareSourceTermini { .. } => {
@@ -341,7 +364,7 @@ pub(crate) fn prepared_chain(
         *cursor += 1;
         if matches!(op, Operation::ReconstructRunProduct { .. })
             && *cursor < assembly
-            && matches!(plan.steps.get(*cursor),Some(Operation::Pcr{template:Source::Step(n),..}|Operation::Digest{template:Source::Step(n),..}|Operation::CatalogDigest{template:Source::Step(n),..}) if *n==first)
+            && matches!(plan.steps.get(*cursor),Some(Operation::Pcr{template:Source::Step(n),..}|Operation::PcrWithMismatches{template:Source::Step(n),..}|Operation::Digest{template:Source::Step(n),..}|Operation::CatalogDigest{template:Source::Step(n),..}) if *n==first)
         {
             steps.push(*cursor);
             *cursor += 1;
@@ -410,6 +433,77 @@ pub(crate) fn validate_preparation_rows(
     }
     Ok(())
 }
+/// Same explicit bounded policy as the native mismatch-PCR model; no binding
+/// search is performed by this structural guard.
+pub(crate) fn mismatch_pcr_shape(
+    forward: &Primer,
+    reverse: &Primer,
+    options: &crate::mutagenesis::PcrOptions,
+) -> Result<(), Error> {
+    for p in [forward, reverse] {
+        primer(p)?;
+        if p.annealing
+            .len()
+            .checked_add(p.tail.len())
+            .is_none_or(|n| n > 200)
+            || options.binding.max_mismatches > p.annealing.len()
+            || options.binding.min_three_prime_exact > p.annealing.len()
+        {
+            return Err(bad(
+                "mismatch PCR requires bounded oligos and valid mismatch/3-prime policy",
+            ));
+        }
+    }
+    if options.binding.max_hits == 0
+        || options.binding.max_hits > 10_000
+        || options.binding.max_work == 0
+        || options.binding.max_work > 200_000_000
+        || options.max_pair_checks == 0
+        || options.max_pair_checks > 1_000_000
+        || options.max_products == 0
+        || options.max_products > 10_000
+        || options.max_product_bases == 0
+        || options.max_product_bases > 32_000_000
+    {
+        return Err(bad("invalid mismatch PCR search/materialization bounds"));
+    }
+    Ok(())
+}
+pub(crate) fn mismatch_pcr_work(
+    n: usize,
+    forward: &Primer,
+    reverse: &Primer,
+    options: &crate::mutagenesis::PcrOptions,
+) -> Result<usize, Error> {
+    mismatch_pcr_shape(forward, reverse, options)?;
+    let binding = n
+        .checked_mul(forward.annealing.len() + reverse.annealing.len())
+        .and_then(|n| n.checked_mul(4))
+        .ok_or(Error::TooLarge)?
+        .min(
+            options
+                .binding
+                .max_work
+                .checked_mul(2)
+                .ok_or(Error::TooLarge)?,
+        );
+    let pairs = n
+        .checked_mul(n)
+        .and_then(|n| n.checked_mul(4))
+        .ok_or(Error::TooLarge)?
+        .min(options.max_pair_checks);
+    let products = n
+        .checked_add(forward.tail.len())
+        .and_then(|n| n.checked_add(reverse.tail.len()))
+        .and_then(|n| n.checked_mul(options.max_products))
+        .ok_or(Error::TooLarge)?
+        .min(options.max_product_bases);
+    binding
+        .checked_add(pairs)
+        .and_then(|n| n.checked_add(products))
+        .ok_or(Error::TooLarge)
+}
+
 fn primer(p: &Primer) -> Result<(), Error> {
     token(&p.name, 256)?;
     if p.annealing.alphabet() != Alphabet::Dna
@@ -618,6 +712,14 @@ fn preparation_preflight_inner(
                     ));
                 }
                 0
+            }
+            Preparation::MismatchPcr {
+                forward,
+                reverse,
+                options,
+            } => {
+                mismatch_pcr_shape(forward, reverse, options)?;
+                mismatch_pcr_work(m.sequence.len(), forward, reverse, options)?
             }
             Preparation::ExactPcr { forward, reverse } => {
                 primer(forward)?;
@@ -856,6 +958,16 @@ pub(crate) fn preparation_steps(
                 template: input.clone(),
                 enzymes: enzymes.clone(),
                 fragment_index: *fragment_index,
+            }),
+            Preparation::MismatchPcr {
+                forward,
+                reverse,
+                options,
+            } => Some(Operation::PcrWithMismatches {
+                template: input.clone(),
+                forward: forward.clone(),
+                reverse: reverse.clone(),
+                options: options.clone(),
             }),
             Preparation::ExactPcr { forward, reverse }
             | Preparation::PcrCatalogDigest {
@@ -1121,6 +1233,7 @@ impl Preview {
                     !matches!(
                         step,
                         Operation::Pcr { .. }
+                            | Operation::PcrWithMismatches { .. }
                             | Operation::ReconstructRunProduct { .. }
                             | Operation::AnnealOligos { .. }
                             | Operation::Digest { .. }

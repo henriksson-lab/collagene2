@@ -35,7 +35,7 @@ fn same(a: &Source, b: &Source) -> bool {
 fn stage(op: &Operation) -> Result<Stage, Error> {
     Ok(match op {
         Operation::ReconstructRunProduct { .. } => Stage::MaterialReconstruction,
-        Operation::Pcr { .. } => Stage::Pcr,
+        Operation::Pcr { .. } | Operation::PcrWithMismatches { .. } => Stage::Pcr,
         Operation::AnnealOligos { .. } => Stage::Annealing,
         Operation::Digest { .. } | Operation::CatalogDigest { .. } => Stage::Digest,
         Operation::RepairEnds { .. } => Stage::Repair,

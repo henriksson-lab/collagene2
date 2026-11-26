@@ -110,6 +110,7 @@ pub enum OverlapPreparation {
     ExactPcr,
     PcrCatalogDigest,
     AnnealedOligos,
+    MismatchPcr,
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OverlapInput {
@@ -134,6 +135,16 @@ pub struct OverlapInput {
     pub reverse_primer: String,
     pub forward_tail: String,
     pub reverse_tail: String,
+    #[serde(
+        default = "default_mismatch_max",
+        skip_serializing_if = "is_default_mismatch_max"
+    )]
+    pub mismatch_max_mismatches: String,
+    #[serde(
+        default = "default_mismatch_exact",
+        skip_serializing_if = "is_default_mismatch_exact"
+    )]
+    pub mismatch_three_prime_exact: String,
     #[serde(default)]
     pub right_fusion: String,
     #[serde(default, skip_serializing_if = "default_anneal_options")]
@@ -145,6 +156,24 @@ pub struct OverlapInput {
     /// Documentary selection context only; physical authority requires replay.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub anneal_source_context: Option<String>,
+}
+fn default_mismatch_max() -> String {
+    collagene_core::mutagenesis::PcrOptions::default()
+        .binding
+        .max_mismatches
+        .to_string()
+}
+fn default_mismatch_exact() -> String {
+    collagene_core::mutagenesis::PcrOptions::default()
+        .binding
+        .min_three_prime_exact
+        .to_string()
+}
+fn is_default_mismatch_max(value: &String) -> bool {
+    *value == default_mismatch_max()
+}
+fn is_default_mismatch_exact(value: &String) -> bool {
+    *value == default_mismatch_exact()
 }
 fn default_anneal_options(options: &AnnealOptions) -> bool {
     *options == AnnealOptions::default()
@@ -171,6 +200,8 @@ impl Default for OverlapInput {
             reverse_primer: String::new(),
             forward_tail: String::new(),
             reverse_tail: String::new(),
+            mismatch_max_mismatches: default_mismatch_max(),
+            mismatch_three_prime_exact: default_mismatch_exact(),
             right_fusion: String::new(),
             anneal_options: AnnealOptions::default(),
             anneal_candidate: None,
@@ -180,6 +211,53 @@ impl Default for OverlapInput {
     }
 }
 impl OverlapInput {
+    pub(crate) fn is_pcr(&self) -> bool {
+        matches!(
+            self.preparation,
+            OverlapPreparation::ExactPcr
+                | OverlapPreparation::PcrCatalogDigest
+                | OverlapPreparation::MismatchPcr
+        )
+    }
+    /// Select the complete PCR product without replacing the declared PCR policy.
+    pub(crate) fn use_complete_pcr_amplicon(&mut self) -> Result<(), String> {
+        if !self.is_pcr() {
+            return Err(
+                "Choose an explicit PCR preparation before using its complete amplicon.".into(),
+            );
+        }
+        if self.preparation == OverlapPreparation::PcrCatalogDigest {
+            self.preparation = OverlapPreparation::ExactPcr;
+        }
+        self.fragment = "1".into();
+        Ok(())
+    }
+    pub(crate) fn mismatch_options(
+        &self,
+    ) -> Result<collagene_core::mutagenesis::PcrOptions, String> {
+        fn number(value: &str, name: &str) -> Result<usize, String> {
+            if value.is_empty()
+                || value.len() > 20
+                || !value.bytes().all(|byte| byte.is_ascii_digit())
+            {
+                return Err(format!("Enter a nonnegative whole number for {name}."));
+            }
+            value
+                .parse::<usize>()
+                .map_err(|_| format!("{name} exceeds the supported range."))
+        }
+        let max_mismatches = number(&self.mismatch_max_mismatches, "allowed mismatches")?;
+        let min_three_prime_exact = number(&self.mismatch_three_prime_exact, "exact 3′ bases")?;
+        let domain = self.forward.len().min(self.reverse_primer.len());
+        if domain == 0 || domain > 1000 || max_mismatches > domain || min_three_prime_exact > domain
+        {
+            return Err("Mismatch and exact 3′ counts must fit both explicit primer annealing domains (1–1000 bases).".into());
+        }
+        let mut options = collagene_core::mutagenesis::PcrOptions::default();
+        options.binding.max_mismatches = max_mismatches;
+        options.binding.min_three_prime_exact = min_three_prime_exact;
+        Ok(options)
+    }
     pub(crate) fn summary(&self) -> String {
         let preparation = match self.preparation {
             OverlapPreparation::WholeLinear => {
@@ -219,6 +297,15 @@ impl OverlapInput {
                         "explicit 3′ overhang removal",
                     Some(EndRepairMethod::Blunt) => "explicit blunting",
                 }
+            ),
+            OverlapPreparation::MismatchPcr => format!(
+                "Intentional-mismatch PCR: annealing {} / {} bp; 5′ extensions {} / {} bp; at most {} mismatches, {} exact 3′ bases per primer",
+                self.forward.len(),
+                self.reverse_primer.len(),
+                self.forward_tail.len(),
+                self.reverse_tail.len(),
+                self.mismatch_max_mismatches,
+                self.mismatch_three_prime_exact,
             ),
             OverlapPreparation::ExactPcr => format!(
                 "Exact PCR: annealing {} / {} bp; 5′ extensions {} / {} bp",
@@ -592,4 +679,60 @@ pub(crate) fn declared_terminus(end: Terminus) -> String {
             ThreePrime::Unknown => "unknown",
         }
     )
+}
+
+#[cfg(test)]
+mod mismatch_tests {
+    use super::*;
+    #[test]
+    fn legacy_row_json_defaults_and_mismatch_policy_bounds_are_explicit() {
+        let ordinary = OverlapInput::default();
+        let json = serde_json::to_value(&ordinary).unwrap();
+        assert!(json.get("mismatch_max_mismatches").is_none());
+        assert!(json.get("mismatch_three_prime_exact").is_none());
+        let mut row: OverlapInput = serde_json::from_value(json).unwrap();
+        row.forward = "ACGT".into();
+        row.reverse_primer = "TGCA".into();
+        let native = collagene_core::mutagenesis::PcrOptions::default();
+        let options = row.mismatch_options().unwrap();
+        assert_eq!(
+            options.binding.max_mismatches,
+            native.binding.max_mismatches
+        );
+        assert_eq!(
+            options.binding.min_three_prime_exact,
+            native.binding.min_three_prime_exact
+        );
+        for value in ["-1", "1.5", "", "5", "999999999999999999999"] {
+            row.mismatch_max_mismatches = value.into();
+            assert!(row.mismatch_options().is_err());
+        }
+        row.mismatch_max_mismatches = "2".into();
+        row.mismatch_three_prime_exact = "3".into();
+        assert_eq!(row.mismatch_options().unwrap().binding.max_mismatches, 2);
+        row.mismatch_three_prime_exact = "5".into();
+        assert!(row.mismatch_options().is_err());
+    }
+    #[test]
+    fn complete_amplicon_keeps_intentional_mismatch_policy_and_rejects_non_pcr_atomically() {
+        let mut row = OverlapInput {
+            preparation: OverlapPreparation::MismatchPcr,
+            mismatch_max_mismatches: "2".into(),
+            mismatch_three_prime_exact: "3".into(),
+            fragment: "9".into(),
+            ..Default::default()
+        };
+        let before = row.clone();
+        row.use_complete_pcr_amplicon().unwrap();
+        let mut expected = before;
+        expected.fragment = "1".into();
+        assert!(row == expected);
+        row.preparation = OverlapPreparation::PcrCatalogDigest;
+        row.use_complete_pcr_amplicon().unwrap();
+        assert!(row.preparation == OverlapPreparation::ExactPcr);
+        row.preparation = OverlapPreparation::Digest;
+        let before = row.clone();
+        assert!(row.use_complete_pcr_amplicon().is_err());
+        assert!(row == before);
+    }
 }

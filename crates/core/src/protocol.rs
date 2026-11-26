@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 75;
+pub const WORKER_SCHEMA_VERSION: u16 = 76;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 17;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -1815,6 +1815,13 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     }) {
         check_variant_version(bytes, 74)?;
     }
+    if recipe_plan.is_some_and(|p| {
+        p.steps
+            .iter()
+            .any(|op| matches!(op, crate::verification::Operation::PcrWithMismatches { .. }))
+    }) {
+        check_variant_version(bytes, 76)?;
+    }
     if let AnalysisResult::AnnotationImport(report) = &response.result {
         check_annotation_format_version(bytes, report.format)?;
     }
@@ -3049,6 +3056,7 @@ mod preparation_shape {
         let minimum = match (name, variant) {
             ("Preparation", "AnnealedOligos") => 71,
             ("Preparation", "FromRun") => 74,
+            ("Preparation", "MismatchPcr") | ("RunPreparation", "MismatchPcr") => 76,
             _ => 0,
         };
         if worker < minimum {
@@ -3061,6 +3069,9 @@ mod preparation_shape {
         ($($method:ident($ty:ty)),* $(,)?) => { $(fn $method(self, _: $ty) -> Result<(),Found> { Ok(()) })* };
     }
     impl ser::Serializer for Visitor {
+        fn is_human_readable(&self) -> bool {
+            false
+        }
         type Ok = ();
         type Error = Found;
         type SerializeSeq = Self;
@@ -3241,7 +3252,7 @@ mod preparation_shape {
 }
 fn check_preparation_version(bytes: &[u8], value: &impl Serialize) -> Result<(), Error> {
     let worker = u16::from_le_bytes([bytes[4], bytes[5]]);
-    if worker < 74 {
+    if worker < 76 {
         value
             .serialize(preparation_shape::Visitor { worker })
             .map_err(|e| Error::Format(e.to_string()))?;

@@ -166,3 +166,27 @@ handoff. Ordinary named digest setups, gel handoff, GenBank product export and
 reference installation remain disabled for that route until they can retain the
 same origin scope. They do not silently fall back to an ordinary source. Those
 actions remain available for ordinary-reference digests.
+
+
+## Intentional-mismatch PCR fragment preparation
+
+Fragment preparation can use explicit forward/reverse primer annealing domains,
+separate 5′ tails and a recorded mismatch/3′ binding policy. The shared recipe
+compiler emits the existing mismatch-PCR operation; overlap assembly, ordered
+ligation and TA/GC preparation retain the same source event and policy. Saved-run
+sources are freshly reconstructed before amplification. The complete-amplicon
+reaction option retains this policy rather than converting it to exact PCR.
+
+The intended reference remains independent. Primer changes never rewrite the
+selected target to make a result pass. The standalone method inspector can use
+an independently edited/imported target. The ordinary dock still declares its
+reference from chosen source intervals and explicit junction edits; it does not
+yet offer arbitrary internal intended substitutions. An internal primer mutation
+which is absent from that declaration must fail target comparison. Adding
+source-bound internal edit intent to that dock remains required work.
+
+Unique concrete binding geometry, search completeness and strand compatibility
+are checked by the existing verifier. Truncated searches cannot establish a
+complete result. Reconstructed PCR products have newly synthesized unphosphorylated
+5′ ends; ordered ligation still requires an explicit terminal treatment where
+necessary. Binding compatibility does not establish amplification efficiency.

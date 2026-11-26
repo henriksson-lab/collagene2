@@ -108,6 +108,11 @@ pub(crate) fn prepared_rows(
                     repair: row.repair,
                 }
             }
+            OverlapPreparation::MismatchPcr => Preparation::MismatchPcr {
+                forward: Primer::new(&row.forward_name, &row.forward, &row.forward_tail).map_err(|e|e.to_string())?,
+                reverse: Primer::new(&row.reverse_name, &row.reverse_primer, &row.reverse_tail).map_err(|e|e.to_string())?,
+                options: row.mismatch_options()?,
+            },
             OverlapPreparation::ExactPcr => Preparation::ExactPcr {
                 forward: Primer::new(&row.forward_name, &row.forward, &row.forward_tail)
                     .map_err(|e| e.to_string())?,
@@ -122,6 +127,7 @@ pub(crate) fn prepared_rows(
                 Preparation::Digest { enzymes, fragment_index, repair } => RunPreparation::Digest { enzymes, fragment_index, repair },
                 Preparation::CatalogDigest { selection, fragment_index, repair } => RunPreparation::CatalogDigest { selection, fragment_index, repair },
                 Preparation::ExactPcr { forward, reverse } => RunPreparation::ExactPcr { forward, reverse },
+                Preparation::MismatchPcr { forward, reverse, options } => RunPreparation::MismatchPcr { forward, reverse, options },
                 Preparation::PcrCatalogDigest { forward, reverse, selection, fragment_index, repair } => RunPreparation::PcrCatalogDigest { forward, reverse, selection, fragment_index, repair },
                 Preparation::DeclaredDuplex { .. } | Preparation::AnnealedOligos { .. } | Preparation::FromRun { .. } => return Err("Saved-run material supports whole material, digest or exact PCR preparation; declared duplex and paired-oligo substitution are unsupported.".into()),
             };
@@ -447,5 +453,53 @@ mod annealed_tests {
                 .contains("explicitly choose")
         );
         assert!(prepared_rows(&state, 2).is_err());
+    }
+}
+
+#[cfg(test)]
+mod mismatch_tests {
+    use super::*;
+    #[test]
+    fn mismatch_preparation_retains_named_oligo_domains_policy_and_source_role() {
+        let mut state = MethodsState::default();
+        state.rows.truncate(1);
+        state.source_roles = Some(vec![crate::assembly_role_ids::Role {
+            role: "cargo".into(),
+            input_id: "exact-cargo-event".into(),
+        }]);
+        let row = &mut state.rows[0];
+        row.preparation = OverlapPreparation::MismatchPcr;
+        row.forward_name = "Cargo mutation F".into();
+        row.reverse_name = "Cargo mutation R".into();
+        row.forward = "ACGACCCC".into();
+        row.reverse_primer = "GTTACCCC".into();
+        row.forward_tail = "GG".into();
+        row.reverse_tail = "TT".into();
+        row.mismatch_max_mismatches = "2".into();
+        row.mismatch_three_prime_exact = "3".into();
+        let before = state.clone();
+        let (ids, rows) = prepared_rows(&state, 1).unwrap();
+        assert_eq!(ids, vec!["exact-cargo-event"]);
+        assert_eq!(rows[0].role, "cargo");
+        let collagene_core::assembly_recipe::Preparation::MismatchPcr {
+            forward,
+            reverse,
+            options,
+        } = &rows[0].preparation
+        else {
+            panic!("explicit mismatch preparation")
+        };
+        assert_eq!(forward.name, "Cargo mutation F");
+        assert_eq!(forward.ordered_sequence(), "GGACGACCCC");
+        assert_eq!(reverse.ordered_sequence(), "TTGTTACCCC");
+        assert_eq!(options.binding.max_mismatches, 2);
+        assert_eq!(options.binding.min_three_prime_exact, 3);
+        assert_eq!(
+            options.max_pair_checks,
+            collagene_core::mutagenesis::PcrOptions::default().max_pair_checks
+        );
+        assert!(state == before);
+        state.rows[0].mismatch_max_mismatches = "99".into();
+        assert!(prepared_rows(&state, 1).is_err());
     }
 }

@@ -60,6 +60,11 @@ fn recipe_shape(recipe: &Recipe) -> Result<(), Error> {
             selection.validate()?;
         }
         match &f.source.preparation {
+            preparation::Preparation::MismatchPcr {
+                forward,
+                reverse,
+                options,
+            } => preparation::mismatch_pcr_shape(forward, reverse, options)?,
             preparation::Preparation::ExactPcr { forward, reverse }
             | preparation::Preparation::PcrCatalogDigest {
                 forward, reverse, ..
@@ -450,6 +455,7 @@ impl Preview {
                     !matches!(
                         s,
                         Operation::Pcr { .. }
+                            | Operation::PcrWithMismatches { .. }
                             | Operation::ReconstructRunProduct { .. }
                             | Operation::AnnealOligos { .. }
                             | Operation::DeclareSourceTermini { .. }

@@ -210,6 +210,9 @@ pub(crate) fn bounded_size(value: &impl Serialize) -> Result<(), String> {
     serde_json::to_writer(&mut Count(0), value).map_err(|e| e.to_string())
 }
 pub(crate) fn validate_preparation_input(row: &OverlapInput) -> Result<(), String> {
+    if row.mismatch_max_mismatches.len() > 20 || row.mismatch_three_prime_exact.len() > 20 {
+        return Err("Mismatch-PCR policy fields exceed20 bytes.".into());
+    }
     let options = &row.anneal_options;
     if options.min_paired_bases == 0
         || options.min_paired_bases > collagene_core::chemistry::MAX_ANNEAL_OLIGO_BASES
@@ -1696,6 +1699,33 @@ mod run_origin_tests {
     }
 
     #[test]
+    fn saved_origin_mismatch_preparation_keeps_original_event_and_policy() {
+        let mut draft = saved_pcr();
+        let row = &mut draft.methods.rows[0];
+        row.preparation = OverlapPreparation::MismatchPcr;
+        row.forward = "ACGACCCC".into();
+        row.reverse_primer = "GTTACCCC".into();
+        row.mismatch_max_mismatches = "2".into();
+        row.mismatch_three_prime_exact = "3".into();
+        let restored = decode_version(&encode_raw(&draft).unwrap(), 5).unwrap();
+        let (_, rows) = crate::cloning_preparations::prepared_rows(&restored.methods, 1).unwrap();
+        let collagene_core::assembly_recipe::Preparation::FromRun {
+            origin,
+            preparation:
+                collagene_core::assembly_recipe::RunPreparation::MismatchPcr { options, .. },
+        } = &rows[0].preparation
+        else {
+            panic!("saved mismatch preparation")
+        };
+        assert_eq!(
+            origin.selection.event,
+            restored.slots[0].captured.as_ref().unwrap().source.binding
+        );
+        assert_eq!(options.binding.max_mismatches, 2);
+        assert_eq!(options.binding.min_three_prime_exact, 3);
+    }
+
+    #[test]
     fn exact_saved_source_survives_v5_roundtrip_and_compiles_explicit_reconstruction() {
         let mut draft = saved_pcr();
         assert_eq!(draft.version, 5);
@@ -1892,4 +1922,69 @@ pub fn set_digest_fragment(
     next.validate()?;
     *draft = next;
     Ok(())
+}
+
+#[cfg(test)]
+mod mismatch_draft_tests {
+    use super::*;
+    #[test]
+    fn unfinished_mismatch_primers_and_policy_are_persisted_without_claiming_valid_preparation() {
+        let mut draft = Draft::default();
+        draft.slots.truncate(1);
+        draft.sync_rows();
+        let row = &mut draft.methods.rows[0];
+        row.preparation = OverlapPreparation::MismatchPcr;
+        row.forward_name = "Unfinished mutation F".into();
+        row.forward = String::new();
+        row.reverse_primer = "GTTACCCC".into();
+        row.mismatch_max_mismatches = "2e".into();
+        row.mismatch_three_prime_exact = String::new();
+        let restored = decode(&encode_raw(&draft).unwrap()).unwrap();
+        assert!(restored == draft);
+        assert!(crate::cloning_preparations::prepared_rows(&restored.methods, 1).is_err());
+        draft.methods.rows[0].forward = "ACGACCCC".into();
+        // Even with complete oligos, unfinished policy text remains an editable
+        // draft while fresh preparation compilation reports the local error.
+        assert!(decode(&encode_raw(&draft).unwrap()).unwrap() == draft);
+        let error = crate::cloning_preparations::prepared_rows(&draft.methods, 1)
+            .err()
+            .unwrap();
+        assert!(error.contains("allowed mismatches"));
+    }
+    #[test]
+    fn mismatch_policy_roundtrip_preserves_explicit_primers_and_legacy_defaults() {
+        let mut draft = Draft::default();
+        let row = &mut draft.methods.rows[0];
+        row.preparation = OverlapPreparation::MismatchPcr;
+        row.forward = "ACGACCCC".into();
+        row.reverse_primer = "GTTACCCC".into();
+        row.mismatch_max_mismatches = "2".into();
+        row.mismatch_three_prime_exact = "3".into();
+        let restored = decode(&encode_raw(&draft).unwrap()).unwrap();
+        assert!(restored == draft);
+        let mut old = serde_json::to_value(Draft::default()).unwrap();
+        for row in old["methods"]["rows"].as_array_mut().unwrap() {
+            row.as_object_mut()
+                .unwrap()
+                .remove("mismatch_max_mismatches");
+            row.as_object_mut()
+                .unwrap()
+                .remove("mismatch_three_prime_exact");
+        }
+        let restored = decode(&serde_json::to_vec(&old).unwrap()).unwrap();
+        assert_eq!(
+            restored.methods.rows[0].mismatch_max_mismatches,
+            collagene_core::mutagenesis::PcrOptions::default()
+                .binding
+                .max_mismatches
+                .to_string()
+        );
+        draft.methods.rows[0].mismatch_three_prime_exact = "9".into();
+        assert!(draft.validate().is_ok());
+        assert!(draft.methods.rows[0].mismatch_options().is_err());
+        assert!(decode(&encode_raw(&draft).unwrap()).unwrap() == draft);
+        draft.methods.rows[0].preparation = OverlapPreparation::ExactPcr;
+        draft.methods.rows[0].mismatch_max_mismatches = "x".repeat(21);
+        assert!(draft.validate().is_err());
+    }
 }

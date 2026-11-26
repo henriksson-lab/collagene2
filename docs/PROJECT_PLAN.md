@@ -2023,3 +2023,47 @@ Linux matrix and web job successfully in GitHub run45757888263. That is evidence
 for that exact preceding commit; the new general-edit increment requires its own
 post-push matrix. A direct dock inverse-PCR adapter has been drafted in a separate,
 unregistered module for the next milestone and is not part of the published bundle.
+
+### Dock inverse-PCR preparation bridge
+
+A collapsed preparation action now connects a frozen ordinary internal-edit
+reference to the existing inverse-PCR worker. It requires one whole forward
+circular source and one literal insertion, deletion, replacement or dedicated
+point-substitution declaration, with no junction edits, mixed/multiple mutations,
+source alternatives or prepared-run ancestry.
+Other designs retain explicit preparation workflows; this first bridge does not
+pretend one primer pair can perform arbitrary staged edits.
+
+The adapter independently rebuilds the declared reference from exact original
+source pins using its original general-edit or point-substitution engine, then
+checks the literal mutation representation against the full frozen target. It compiles directly against that target, without changing its revision
+or metadata to fit primers. The native worker does the molecular reconstruction;
+UI response guards compare deterministic preparation DTOs, full source/target/
+options and bounded product receipts without rerunning physics on the main thread.
+Ordered primers and the explicit PCR → phosphorylation → sealed circular ligation
+steps appear before an explicit candidate/output review action.
+
+Rebinding the compiler's local `template` input to a stable dock role changes the
+candidate's plan revision. The original worker verification therefore stays bound
+to its original plan, with its product tags unchanged. The ordinary review and
+finalization paths freshly verify the rebound candidate and attest exact retained
+workspace source events. The bridge does not save a copied receipt as new authority.
+Cancellation, settings changes, source/intent changes, workspace epoch changes and
+unmounting invalidate pending work and prepared actions. Exact source-event
+attestation precedes request, reply use and review/output actions.
+
+Twenty-three focused native checks pass, including real insertion/deletion/
+replacement and point-substitution designs, insertion-tail splits, binary worker
+revision binding, rejected stale/forged receipts and retained source-event ancestry.
+The finalization fixture retains ordered primers and replays the saved run against
+its original inputs and independent target. Existing staging regression fixtures
+remain green. The initial web/worker WASM check and final frontend check after the
+point-substitution extension pass; formatting and whitespace checks pass. No
+browser or HTTP application checks were run.
+
+Public8082 remains on52aa1b7; publication of this bridge will be batched with
+subsequent workflow improvements. A precise actual-junction navigation adapter
+has been drafted separately and remains unregistered/uncompiled for the next
+milestone. Its viewer integration must update the sequence selection without
+remounting or resetting the right-hand plasmid camera. The full original project
+goal and exclusions remain active.

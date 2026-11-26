@@ -1,0 +1,883 @@
+//! Proposal adapter for one independently declared edit in one whole circular
+//! source. No target is inferred from primers or changed to fit a PCR product.
+//!
+//! This pure adapter compares the caller's current source-event identity with the
+//! pinned draft. The host must still attest that exact event in its workspace and
+//! use ordinary atomic assembly staging before installing the returned candidate.
+use crate::assembly_draft_model::Draft;
+use collagene_core::{
+    Molecule, Topology, assembly_edit_intent, assembly_substitution_intent,
+    mutagenesis::{self, InversePcrDesign, InversePcrOptions, InversePcrPreparation},
+    mutation_intent,
+    run_lineage::EventBinding,
+    transfer::Candidate,
+    verification::{Operation, PlanInput, Source, VerificationReport},
+};
+use serde::{Deserialize, Serialize};
+
+const ENGINE_VERSION: &str = "assembly-inverse-pcr-proposal-1";
+
+mod sealed {
+    pub trait Sealed {}
+    impl Sealed for collagene_core::assembly_edit_intent::Report {}
+    impl Sealed for collagene_core::assembly_substitution_intent::Report {}
+    impl Sealed for crate::assembly_review::IntendedReference {}
+}
+
+/// The two independently source-bound intent kinds supported by this bridge.
+/// A frozen target is never converted between report kinds or rewritten to match
+/// prepared DNA. This sealed interface also lets the dock retain its typed enum.
+pub trait IntendedEdit: sealed::Sealed {
+    fn intended_target(&self) -> &Molecule;
+    fn validate_original(
+        &self,
+        inputs: &[PlanInput],
+        base: &assembly_substitution_intent::Request,
+        edits: &[assembly_edit_intent::Edit],
+    ) -> Result<String, String>;
+}
+impl IntendedEdit for assembly_edit_intent::Report {
+    fn intended_target(&self) -> &Molecule {
+        &self.target
+    }
+    fn validate_original(
+        &self,
+        inputs: &[PlanInput],
+        base: &assembly_substitution_intent::Request,
+        edits: &[assembly_edit_intent::Edit],
+    ) -> Result<String, String> {
+        if edits.len() != 1 || !base.substitutions.is_empty() {
+            return Err(
+                "The general-edit report does not describe the declared single edit.".into(),
+            );
+        }
+        let request = assembly_edit_intent::Request {
+            base: base.clone(),
+            edits: edits.to_vec(),
+        };
+        let expected =
+            assembly_edit_intent::intent_revision(inputs, &request).map_err(|e| e.to_string())?;
+        self.validate_sources(inputs, &expected)
+            .map_err(|e| e.to_string())?;
+        Ok(expected)
+    }
+}
+impl IntendedEdit for assembly_substitution_intent::Report {
+    fn intended_target(&self) -> &Molecule {
+        &self.target
+    }
+    fn validate_original(
+        &self,
+        inputs: &[PlanInput],
+        base: &assembly_substitution_intent::Request,
+        edits: &[assembly_edit_intent::Edit],
+    ) -> Result<String, String> {
+        if !edits.is_empty() || base.substitutions.len() != 1 {
+            return Err(
+                "The substitution report does not describe the declared single-base edit.".into(),
+            );
+        }
+        let expected = assembly_substitution_intent::intent_revision(inputs, base)
+            .map_err(|e| e.to_string())?;
+        self.validate_binding(&expected)
+            .map_err(|e| e.to_string())?;
+        let fresh = assembly_substitution_intent::build(inputs, base).map_err(|e| e.to_string())?;
+        if receipt(self)? != receipt(&fresh)? {
+            return Err(
+                "The substitution intent differs from its exact original source declaration."
+                    .into(),
+            );
+        }
+        Ok(expected)
+    }
+}
+impl IntendedEdit for crate::assembly_review::IntendedReference {
+    fn intended_target(&self) -> &Molecule {
+        self.target()
+    }
+    fn validate_original(
+        &self,
+        inputs: &[PlanInput],
+        base: &assembly_substitution_intent::Request,
+        edits: &[assembly_edit_intent::Edit],
+    ) -> Result<String, String> {
+        match self {
+            Self::Edits(intent) => intent.validate_original(inputs, base, edits),
+            Self::Substitutions(intent) => intent.validate_original(inputs, base, edits),
+            _ => Err("Declare one internal edit before preparing it by inverse PCR.".into()),
+        }
+    }
+}
+fn literal_edit(draft: &Draft) -> Result<assembly_edit_intent::Edit, String> {
+    match (draft.edits.as_slice(),draft.substitutions.as_slice()) {
+        ([edit],[])=>Ok(edit.clone()),
+        ([],[edit])=>Ok(assembly_edit_intent::Edit {
+            role:edit.role.clone(),start:edit.offset,
+            end:edit.offset.checked_add(1).ok_or("Substitution coordinates overflow.")?,
+            expected:edit.expected.clone(),replacement:edit.replacement.clone(),
+        }),
+        _=>Err("Inverse-PCR proposals require exactly one internal edit or one point substitution; mixed or multiple declarations need a staged preparation.".into()),
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Options {
+    pub forward_length: usize,
+    pub reverse_length: usize,
+    pub reverse_tail_bases: usize,
+}
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            forward_length: 20,
+            reverse_length: 20,
+            reverse_tail_bases: 0,
+        }
+    }
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Capture {
+    pub context_revision: String,
+    pub source: EventBinding,
+    pub input_id: String,
+    pub intent_context_revision: String,
+    pub target_revision: String,
+    pub options: Options,
+}
+#[derive(Clone, Debug, Serialize)]
+pub struct Proposal {
+    pub capture: Capture,
+    pub preparation: InversePcrPreparation,
+    pub candidate: Candidate,
+    /// Original worker-plan diagnostic only. Its fixed "template" identity and
+    /// product tags remain unchanged; this is not a receipt for the rebound
+    /// candidate. Opening/finalizing that candidate requires fresh verification.
+    pub verification: VerificationReport,
+    worker_design: InversePcrDesign,
+    worker_receipt: String,
+}
+
+fn context(
+    event: &EventBinding,
+    input_id: &str,
+    intent: &str,
+    target: &str,
+    options: &Options,
+) -> Result<String, String> {
+    let bytes = serde_json::to_vec(&(ENGINE_VERSION, event, input_id, intent, target, options))
+        .map_err(|e| e.to_string())?;
+    Ok(blake3::hash(&bytes).to_hex().to_string())
+}
+
+/// Rebuild independent intent from the original draft before preparing any
+/// oligos. Accepting a current event pin does not forge historical workspace proof.
+pub fn capture<I: IntendedEdit + ?Sized>(
+    draft: &Draft,
+    intent: &I,
+    current_source: &EventBinding,
+    frozen_target: &Molecule,
+    options: &Options,
+) -> Result<Capture, String> {
+    draft.validate()?;
+    collagene_core::model::bounds::model_preflight(&[frozen_target]).map_err(|e| e.to_string())?;
+    frozen_target.validate().map_err(|e| e.to_string())?;
+    if frozen_target.sequence.len() > 8 << 20 {
+        return Err("The frozen target exceeds the ordinary assembly size bound.".into());
+    }
+    if draft.alternatives.is_some()
+        || draft.slots.len() != 1
+        || !draft.circular
+        || !draft.junction_edits.is_empty()
+    {
+        return Err("Inverse-PCR proposals require one whole circular source and one independent internal edit or point substitution, without junction edits.".into());
+    }
+    let edit = literal_edit(draft)?;
+    let slot = &draft.slots[0];
+    let source = slot
+        .captured
+        .as_ref()
+        .ok_or("Pin the original circular source first.")?;
+    if source.source.binding != *current_source
+        || source.source.binding.revision != source.molecule.revision()
+    {
+        return Err(
+            "The current original-source event differs from the pinned contribution.".into(),
+        );
+    }
+    if source.molecule.topology != Topology::Circular
+        || slot.start != 0
+        || slot.end != source.molecule.sequence.len()
+        || slot.reverse
+        || slot.digest_geometry.is_some()
+        || slot.anneal_bottom.is_some()
+        || draft.methods.rows[0].run_origin.is_some()
+    {
+        return Err("Inverse-PCR proposals currently require the complete forward original circular reference, without prepared-material or alternative-source ancestry.".into());
+    }
+    if !(8..=80).contains(&options.forward_length)
+        || !(8..=80).contains(&options.reverse_length)
+        || options.reverse_tail_bases > edit.replacement.len()
+    {
+        return Err("Choose 8–80 base primer domains and a valid insertion-tail split.".into());
+    }
+    let roles = draft.methods.role_ids(1)?;
+    let role = &roles[0];
+    let input = PlanInput {
+        id: role.input_id.clone(),
+        revision: source.molecule.revision(),
+        molecule: source.molecule.clone(),
+    };
+    let base = assembly_substitution_intent::Request {
+        base: collagene_core::assembly_intent::Request {
+            name: draft.name.clone(),
+            circular: true,
+            fragments: vec![collagene_core::overlap_primer_design::Fragment {
+                role: role.role.clone(),
+                input_id: role.input_id.clone(),
+                start: 0,
+                end: source.molecule.sequence.len(),
+                reverse: false,
+            }],
+        },
+        junction_edits: vec![],
+        substitutions: draft.substitutions.clone(),
+    };
+    // Preserve and rebuild the original report kind, including its full target
+    // metadata. Normalizing the literal below is only for native PCR options.
+    let expected = intent.validate_original(std::slice::from_ref(&input), &base, &draft.edits)?;
+    if frozen_target.revision() != intent.intended_target().revision() {
+        return Err("The frozen intended target changed; review the edit again.".into());
+    }
+    let independently_edited = mutation_intent::build(
+        &source.molecule,
+        &mutation_intent::Request {
+            name: draft.name.clone(),
+            edit_start: edit.start,
+            edit_end: edit.end,
+            inserted: edit.replacement.clone(),
+        },
+    )
+    .map_err(|e| e.to_string())?;
+    if independently_edited.target.sequence != frozen_target.sequence
+        || independently_edited.target.topology != frozen_target.topology
+    {
+        return Err("The declared mutation does not describe the frozen dock target.".into());
+    }
+    let target_revision = frozen_target.revision();
+    Ok(Capture {
+        context_revision: context(
+            current_source,
+            &role.input_id,
+            &expected,
+            &target_revision,
+            options,
+        )?,
+        source: current_source.clone(),
+        input_id: role.input_id.clone(),
+        intent_context_revision: expected,
+        target_revision,
+        options: options.clone(),
+    })
+}
+
+/// Capture a bounded request for the existing inverse-PCR worker job. The
+/// source-event guard is checked independently from the eventual response.
+pub fn request<I: IntendedEdit + ?Sized>(
+    draft: &Draft,
+    intent: &I,
+    current_source: &EventBinding,
+    frozen_target: &Molecule,
+    options: &Options,
+) -> Result<(Capture, Molecule, InversePcrOptions), String> {
+    let captured = capture(draft, intent, current_source, frozen_target, options)?;
+    let edit = literal_edit(draft)?;
+    let native = InversePcrOptions {
+        edit_start: edit.start,
+        edit_end: edit.end,
+        inserted: edit.replacement.clone(),
+        forward_length: options.forward_length,
+        reverse_length: options.reverse_length,
+        reverse_tail_bases: options.reverse_tail_bases,
+    };
+    Ok((
+        captured,
+        draft.slots[0].captured.as_ref().unwrap().molecule.clone(),
+        native,
+    ))
+}
+
+struct ReceiptWriter {
+    hash: blake3::Hasher,
+    bytes: usize,
+    max: usize,
+}
+impl std::io::Write for ReceiptWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.bytes = self
+            .bytes
+            .checked_add(bytes.len())
+            .filter(|n| *n <= self.max)
+            .ok_or_else(|| std::io::Error::other("inverse-PCR proposal receipt size"))?;
+        self.hash.update(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+fn receipt_with_limit(value: &impl Serialize, max: usize) -> Result<String, String> {
+    let mut writer = ReceiptWriter {
+        hash: blake3::Hasher::new(),
+        bytes: 0,
+        max,
+    };
+    serde_json::to_writer(&mut writer, value).map_err(|e| e.to_string())?;
+    Ok(writer.hash.finalize().to_hex().to_string())
+}
+fn receipt(value: &impl Serialize) -> Result<String, String> {
+    receipt_with_limit(value, 128 << 20)
+}
+fn preparation_from_design(report: &InversePcrDesign) -> InversePcrPreparation {
+    InversePcrPreparation {
+        source_revision: report.source_revision.clone(),
+        target_revision: report.target_revision.clone(),
+        options: report.options.clone(),
+        forward: report.forward.clone(),
+        reverse: report.reverse.clone(),
+        forward_location: report.forward_location.clone(),
+        reverse_location: report.reverse_location.clone(),
+        retained_template_length: report.retained_template_length,
+        plan: report.plan.clone(),
+        warnings: report.warnings.clone(),
+    }
+}
+
+/// Validate an existing worker result without rerunning molecular reconstruction
+/// on the UI thread. Native deterministic compilation checks the exact source,
+/// target, options, ordered oligos and steps; the shared product-snapshot adapter
+/// checks the original worker report's outer pins, engine and product tags.
+///
+/// Renaming an input changes its plan revision. Consequently the original worker
+/// verification stays diagnostic evidence for the original "template" plan. It
+/// is never rewritten or installed as evidence for the stable-role candidate.
+pub fn from_design<I: IntendedEdit + ?Sized>(
+    draft: &Draft,
+    intent: &I,
+    current_source: &EventBinding,
+    frozen_target: &Molecule,
+    options: &Options,
+    report: InversePcrDesign,
+) -> Result<Proposal, String> {
+    // Bound rich response fields before cloning or checking their correspondence.
+    let worker_receipt = receipt_with_limit(&report, 32 << 20)?;
+    let (captured, source, native) =
+        request(draft, intent, current_source, frozen_target, options)?;
+    let mut preparation = mutagenesis::compile_inverse_pcr(&source, frozen_target, &native)
+        .map_err(|e| e.to_string())?;
+    if receipt(&preparation)? != receipt(&preparation_from_design(&report))? {
+        return Err("The worker inverse-PCR plan, oligos or options differ from the pinned source declaration.".into());
+    }
+    let checked = crate::assembly_product_model::Snapshot::new(
+        report.plan.clone(),
+        frozen_target.clone(),
+        report.verification.clone(),
+    );
+    if let Some(error) = checked.prefix_error {
+        return Err(format!(
+            "The original worker reconstruction receipt is unbound: {error}"
+        ));
+    }
+    // Rebind only the input identifier; do not relabel worker receipt/product pins.
+    if preparation.plan.inputs.len() != 1 || preparation.plan.inputs[0].id != "template" {
+        return Err("The native inverse-PCR input shape changed; inspect the adapter.".into());
+    }
+    match preparation.plan.steps.first_mut() {
+        Some(Operation::Pcr{template:Source::Input(id),..}) if id=="template" => *id=captured.input_id.clone(),
+        _=>return Err("The native inverse-PCR preparation no longer starts with the expected original-source PCR.".into()),
+    }
+    preparation.plan.inputs[0].id = captured.input_id.clone();
+    let candidate = Candidate::new(preparation.plan.clone());
+    candidate.validate().map_err(|e| e.to_string())?;
+    Ok(Proposal {
+        capture: captured,
+        preparation,
+        candidate,
+        verification: report.verification.clone(),
+        worker_design: report,
+        worker_receipt,
+    })
+}
+
+/// Native fixture/reference path: the expensive molecular reconstruction runs
+/// once. The web UI uses request → existing worker → from_design instead.
+pub fn propose<I: IntendedEdit + ?Sized>(
+    draft: &Draft,
+    intent: &I,
+    current_source: &EventBinding,
+    frozen_target: &Molecule,
+    options: &Options,
+) -> Result<Proposal, String> {
+    let (_, source, native) = request(draft, intent, current_source, frozen_target, options)?;
+    let report = mutagenesis::design_inverse_pcr(&source, frozen_target, &native)
+        .map_err(|e| e.to_string())?;
+    from_design(
+        draft,
+        intent,
+        current_source,
+        frozen_target,
+        options,
+        report,
+    )
+}
+
+impl Proposal {
+    /// Recheck the capture, exact native compilation and retained worker receipt.
+    /// This rejects edits to public proposal fields without rerunning physics.
+    /// Host staging and fresh verification still authorize the rebound candidate.
+    pub fn validate_binding<I: IntendedEdit + ?Sized>(
+        &self,
+        draft: &Draft,
+        intent: &I,
+        current_source: &EventBinding,
+        frozen_target: &Molecule,
+        options: &Options,
+    ) -> Result<(), String> {
+        if receipt_with_limit(&self.worker_design, 32 << 20)? != self.worker_receipt {
+            return Err("The retained worker receipt changed.".into());
+        }
+        let fresh = from_design(
+            draft,
+            intent,
+            current_source,
+            frozen_target,
+            options,
+            self.worker_design.clone(),
+        )?;
+        if receipt(self)? != receipt(&fresh)? {
+            return Err(
+                "The inverse-PCR proposal differs from its source-bound worker receipt.".into(),
+            );
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        assembly_draft_model::CapturedSource, assembly_edit_model, cloning_methods_model::Mode,
+        source_identity::SourceInfo,
+    };
+    use collagene_core::{
+        Alphabet, analysis,
+        verification::{self, Status},
+        workspace::Workspace,
+    };
+    use std::sync::Arc;
+    fn fixture(
+        start: &str,
+        end: &str,
+        inserted: &str,
+    ) -> (Draft, assembly_edit_intent::Report, EventBinding, Options) {
+        let source = Molecule::dna(
+            "Original parent",
+            "AGTCCGATGCTACGTAGGACTTCAGACCTGTA",
+            Topology::Circular,
+        )
+        .unwrap();
+        let frame = Workspace::from_documents("Original events", vec![source.clone()], 0).unwrap();
+        let doc = &frame.documents[0];
+        let event = EventBinding {
+            document_id: doc.id.clone(),
+            event_id: doc.head_event.clone().unwrap(),
+            revision: doc.head.clone(),
+        };
+        let capture = Arc::new(CapturedSource {
+            source: SourceInfo {
+                binding: event.clone(),
+                name: source.name.clone(),
+                length: source.sequence.len(),
+                alphabet: Alphabet::Dna,
+                topology: Topology::Circular,
+            },
+            molecule: source.clone(),
+        });
+        let mut draft = Draft::default();
+        draft.slots.truncate(1);
+        draft.methods.rows.truncate(1);
+        draft.methods.mode = Mode::Overlap;
+        draft.slots[0].captured = Some(capture);
+        draft.slots[0].start = 0;
+        draft.slots[0].end = source.sequence.len();
+        draft.sync_rows();
+        let draft = assembly_edit_model::declare(&draft, 0, start, end, inserted).unwrap();
+        let role = &draft.methods.role_ids(1).unwrap()[0];
+        let inputs = vec![PlanInput {
+            id: role.input_id.clone(),
+            revision: source.revision(),
+            molecule: source,
+        }];
+        let intent = assembly_edit_intent::build(
+            &inputs,
+            &assembly_edit_intent::Request {
+                base: collagene_core::assembly_substitution_intent::Request {
+                    base: collagene_core::assembly_intent::Request {
+                        name: draft.name.clone(),
+                        circular: true,
+                        fragments: vec![collagene_core::overlap_primer_design::Fragment {
+                            role: role.role.clone(),
+                            input_id: role.input_id.clone(),
+                            start: 0,
+                            end: 32,
+                            reverse: false,
+                        }],
+                    },
+                    junction_edits: vec![],
+                    substitutions: vec![],
+                },
+                edits: draft.edits.clone(),
+            },
+        )
+        .unwrap();
+        (
+            draft,
+            intent,
+            event,
+            Options {
+                forward_length: 8,
+                reverse_length: 8,
+                reverse_tail_bases: 0,
+            },
+        )
+    }
+    #[test]
+    fn original_source_inverse_pcr_reconstructs_independent_insertion_deletion_and_replacement() {
+        for (start, end, inserted) in [("11", "11", "AACG"), ("10", "14", ""), ("4", "6", "GGA")] {
+            let (draft, intent, event, mut options) = fixture(start, end, inserted);
+            for split in 0..=inserted.len() {
+                options.reverse_tail_bases = split;
+                let proposal = propose(&draft, &intent, &event, &intent.target, &options).unwrap();
+                assert_eq!(
+                    proposal.verification.status,
+                    Status::ConsistentUnderAssumptions,
+                    "{:?}",
+                    proposal.verification.findings
+                );
+                assert_eq!(
+                    proposal.candidate.plan.inputs[0].molecule,
+                    draft.slots[0].captured.as_ref().unwrap().molecule
+                );
+                assert_eq!(
+                    proposal.candidate.plan.inputs[0].id,
+                    proposal.capture.input_id
+                );
+                assert_eq!(
+                    proposal.candidate.plan.target_revision,
+                    intent.target.revision()
+                );
+                assert_eq!(
+                    proposal.verification.target_revision,
+                    intent.target.revision()
+                );
+                // The diagnostic keeps the worker's original plan identity. It
+                // cannot become a receipt for the stable-role candidate by rename.
+                assert_eq!(
+                    proposal.verification.plan_revision,
+                    verification::plan_revision(&proposal.worker_design.plan)
+                );
+                assert_ne!(
+                    proposal.verification.plan_revision,
+                    proposal.candidate.plan_revision
+                );
+                let rebound_check = verification::verify(&proposal.candidate.plan, &intent.target);
+                assert_eq!(rebound_check.status, Status::ConsistentUnderAssumptions);
+                assert_eq!(
+                    rebound_check.plan_revision,
+                    proposal.candidate.plan_revision
+                );
+                assert_eq!(proposal.verification.products.len(), 3);
+                let actual = proposal.verification.products.last().unwrap();
+                assert_eq!(actual.topology, Topology::Circular);
+                assert!(
+                    analysis::rotation_offset(
+                        actual.sequence.as_str(),
+                        intent.target.sequence.as_str()
+                    )
+                    .is_some()
+                );
+                proposal
+                    .validate_binding(&draft, &intent, &event, &intent.target, &options)
+                    .unwrap();
+            }
+        }
+    }
+    #[test]
+    fn source_event_wrong_target_and_forged_receipt_are_rejected() {
+        let (draft, intent, event, options) = fixture("11", "11", "AACG");
+        let mut stale = event.clone();
+        stale.event_id = "0".repeat(64);
+        assert!(propose(&draft, &intent, &stale, &intent.target, &options).is_err());
+        let mut wrong = intent.target.clone();
+        wrong.sequence = collagene_core::Sequence::dna(&"A".repeat(wrong.sequence.len())).unwrap();
+        assert!(propose(&draft, &intent, &event, &wrong, &options).is_err());
+        wrong = intent.target.clone();
+        wrong.metadata.insert("changed".into(), "yes".into());
+        assert!(propose(&draft, &intent, &event, &wrong, &options).is_err());
+        let mut forged = intent.clone();
+        forged.applied[0].output_start += 1;
+        assert!(propose(&draft, &forged, &event, &forged.target, &options).is_err());
+        let mut proposal = propose(&draft, &intent, &event, &intent.target, &options).unwrap();
+        proposal.verification.findings.push("forged receipt".into());
+        assert!(
+            proposal
+                .validate_binding(&draft, &intent, &event, &intent.target, &options)
+                .is_err()
+        );
+    }
+    #[test]
+    fn worker_response_preserves_original_receipts_and_rejects_wrong_native_fields_or_products() {
+        let (draft, intent, event, options) = fixture("11", "11", "AACG");
+        let (captured, source, native) =
+            request(&draft, &intent, &event, &intent.target, &options).unwrap();
+        assert_eq!(captured.target_revision, intent.target.revision());
+        let report = mutagenesis::design_inverse_pcr(&source, &intent.target, &native).unwrap();
+        let original = serde_json::to_value(&report.verification).unwrap();
+        let proposal = from_design(
+            &draft,
+            &intent,
+            &event,
+            &intent.target,
+            &options,
+            report.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(&proposal.verification).unwrap(),
+            original
+        );
+        let mut wrong = report.clone();
+        wrong.forward = collagene_core::analysis::Primer::new("Forged", "AAAAAAAA", "").unwrap();
+        assert!(from_design(&draft, &intent, &event, &intent.target, &options, wrong).is_err());
+        let mut wrong = report.clone();
+        wrong.options.reverse_tail_bases = 1;
+        assert!(from_design(&draft, &intent, &event, &intent.target, &options, wrong).is_err());
+        let mut wrong = report.clone();
+        wrong.verification.target_revision = "0".repeat(64);
+        assert!(from_design(&draft, &intent, &event, &intent.target, &options, wrong).is_err());
+        let mut wrong = report.clone();
+        wrong.verification.products[0]
+            .metadata
+            .insert("plan_revision".into(), "0".repeat(64));
+        assert!(from_design(&draft, &intent, &event, &intent.target, &options, wrong).is_err());
+        let mut wrong = report;
+        wrong.verification.engine_version = "other-engine".into();
+        assert!(from_design(&draft, &intent, &event, &intent.target, &options, wrong).is_err());
+        let mut changed = proposal;
+        changed.candidate.plan.steps.clear();
+        assert!(
+            changed
+                .validate_binding(&draft, &intent, &event, &intent.target, &options)
+                .is_err()
+        );
+    }
+    #[test]
+    fn unsupported_declarations_never_become_guessed_preparations() {
+        let (draft, intent, event, options) = fixture("11", "11", "AACG");
+        let mut partial = draft.clone();
+        partial.slots[0].start = 1;
+        partial.sync_rows();
+        assert!(propose(&partial, &intent, &event, &intent.target, &options).is_err());
+        let mut reverse = draft.clone();
+        reverse.slots[0].reverse = true;
+        reverse.sync_rows();
+        assert!(propose(&reverse, &intent, &event, &intent.target, &options).is_err());
+        let mut multiple = draft.clone();
+        multiple.edits.push(assembly_edit_intent::Edit {
+            role: multiple.edits[0].role.clone(),
+            start: 20,
+            end: 21,
+            expected: "T".into(),
+            replacement: "C".into(),
+        });
+        multiple.sync_rows();
+        assert!(propose(&multiple, &intent, &event, &intent.target, &options).is_err());
+        let mut mixture = draft.clone();
+        mixture
+            .substitutions
+            .push(collagene_core::assembly_substitution_intent::Substitution {
+                role: mixture.edits[0].role.clone(),
+                offset: 20,
+                expected: "T".into(),
+                replacement: "C".into(),
+            });
+        mixture.sync_rows();
+        assert!(propose(&mixture, &intent, &event, &intent.target, &options).is_err());
+        let mut multifragment = draft.clone();
+        multifragment.slots.push(multifragment.slots[0].clone());
+        multifragment.methods.source_roles = None;
+        multifragment.sync_rows();
+        assert!(propose(&multifragment, &intent, &event, &intent.target, &options).is_err());
+    }
+    #[test]
+    fn existing_binary_worker_uses_original_source_revision_and_returns_bound_preparation() {
+        use collagene_core::protocol::{self, AnalysisJob, AnalysisResult, Request};
+        let (draft, intent, event, options) = fixture("11", "11", "AACG");
+        let (capture, source, native) =
+            request(&draft, &intent, &event, &intent.target, &options).unwrap();
+        let original = source.clone();
+        let request = Request {
+            id: 721,
+            revision: capture.source.revision.clone(),
+            job: AnalysisJob::InversePcr {
+                molecule: source,
+                target: intent.target.clone(),
+                options: native,
+            },
+        };
+        let raw = protocol::process_request(&protocol::encode_request(&request).unwrap()).unwrap();
+        let response = protocol::decode_response(&raw).unwrap();
+        assert_eq!(response.id, 721);
+        assert_eq!(response.revision, event.revision);
+        let AnalysisResult::InversePcr(report) = response.result else {
+            panic!("inverse-PCR reply");
+        };
+        let proposal =
+            from_design(&draft, &intent, &event, &intent.target, &options, report).unwrap();
+        let fresh = verification::verify(&proposal.candidate.plan, &intent.target);
+        assert_eq!(
+            fresh.status,
+            Status::ConsistentUnderAssumptions,
+            "{:?}",
+            fresh.findings
+        );
+        assert_eq!(proposal.candidate.plan.inputs[0].molecule, original);
+        assert_eq!(proposal.capture.target_revision, intent.target.revision());
+        let mut stale = request;
+        stale.revision = intent.target.revision();
+        assert_ne!(stale.revision, event.revision);
+        assert!(protocol::process_request(&protocol::encode_request(&stale).unwrap()).is_err());
+    }
+    #[test]
+    fn point_substitution_keeps_its_original_intent_through_binary_worker_and_rebound_review() {
+        use collagene_core::protocol::{self, AnalysisJob, AnalysisResult, Request};
+        let (mut draft, _, event, mut options) = fixture("11", "11", "AACG");
+        draft.edits.clear();
+        draft.sync_rows();
+        let draft = crate::assembly_substitution_model::declare(&draft, 0, "11", "A").unwrap();
+        let source = draft.slots[0].captured.as_ref().unwrap().molecule.clone();
+        let role = draft.methods.role_ids(1).unwrap().remove(0);
+        let input = PlanInput {
+            id: role.input_id.clone(),
+            revision: source.revision(),
+            molecule: source.clone(),
+        };
+        let request = assembly_substitution_intent::Request {
+            base: collagene_core::assembly_intent::Request {
+                name: draft.name.clone(),
+                circular: true,
+                fragments: vec![collagene_core::overlap_primer_design::Fragment {
+                    role: role.role.clone(),
+                    input_id: role.input_id.clone(),
+                    start: 0,
+                    end: source.sequence.len(),
+                    reverse: false,
+                }],
+            },
+            junction_edits: vec![],
+            substitutions: draft.substitutions.clone(),
+        };
+        let intent =
+            assembly_substitution_intent::build(std::slice::from_ref(&input), &request).unwrap();
+        let target_revision = intent.target.revision();
+        assert_eq!(
+            intent.target.sequence.as_str(),
+            "AGTCCGATGCAACGTAGGACTTCAGACCTGTA"
+        );
+        let typed = crate::assembly_review::IntendedReference::Substitutions(intent.clone());
+        for split in 0..=1 {
+            options.reverse_tail_bases = split;
+            let (capture, original, native) =
+                super::request(&draft, &typed, &event, &intent.target, &options).unwrap();
+            assert_eq!(
+                (native.edit_start, native.edit_end, native.inserted.as_str()),
+                (10, 11, "A")
+            );
+            assert_eq!(capture.intent_context_revision, intent.context_revision);
+            let binary = Request {
+                id: 723 + split as u32,
+                revision: capture.source.revision.clone(),
+                job: AnalysisJob::InversePcr {
+                    molecule: original,
+                    target: intent.target.clone(),
+                    options: native,
+                },
+            };
+            let response = protocol::decode_response(
+                &protocol::process_request(&protocol::encode_request(&binary).unwrap()).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(response.id, binary.id);
+            assert_eq!(response.revision, event.revision);
+            let AnalysisResult::InversePcr(report) = response.result else {
+                panic!("inverse-PCR SNP reply")
+            };
+            let original_worker_plan = report.verification.plan_revision.clone();
+            let proposal =
+                from_design(&draft, &typed, &event, &intent.target, &options, report).unwrap();
+            assert_eq!(proposal.verification.plan_revision, original_worker_plan);
+            assert_ne!(
+                proposal.verification.plan_revision,
+                proposal.candidate.plan_revision
+            );
+            assert_eq!(proposal.candidate.plan.inputs[0].molecule, source);
+            assert_eq!(proposal.candidate.plan.inputs[0].id, role.input_id);
+            assert_eq!(proposal.candidate.plan.target_revision, target_revision);
+            proposal
+                .validate_binding(&draft, &typed, &event, &intent.target, &options)
+                .unwrap();
+            // The bridge has not converted the substitution target into another
+            // design-intent schema or changed its metadata to fit a PCR result.
+            assert_eq!(typed.target().revision(), target_revision);
+            assert_eq!(
+                super::capture(&draft, &intent, &event, &intent.target, &options)
+                    .unwrap()
+                    .intent_context_revision,
+                intent.context_revision
+            );
+            let fresh = verification::verify(&proposal.candidate.plan, &intent.target);
+            assert_eq!(
+                fresh.status,
+                Status::ConsistentUnderAssumptions,
+                "{:?}",
+                fresh.findings
+            );
+            let actual = fresh.products.last().unwrap();
+            assert!(
+                analysis::rotation_offset(
+                    actual.sequence.as_str(),
+                    intent.target.sequence.as_str()
+                )
+                .is_some()
+            );
+        }
+        let mut mixed = draft.clone();
+        mixed.edits.push(assembly_edit_intent::Edit {
+            role: role.role.clone(),
+            start: 20,
+            end: 21,
+            expected: "T".into(),
+            replacement: "C".into(),
+        });
+        mixed.sync_rows();
+        assert!(super::request(&mixed, &typed, &event, &intent.target, &options).is_err());
+        let multiple = crate::assembly_substitution_model::declare(&draft, 0, "21", "C").unwrap();
+        assert!(super::request(&multiple, &typed, &event, &intent.target, &options).is_err());
+        let mut forged = intent.clone();
+        forged.applied[0].output_position += 1;
+        assert!(super::request(&draft, &forged, &event, &intent.target, &options).is_err());
+        let mut stale = event;
+        stale.event_id = "0".repeat(64);
+        assert!(super::request(&draft, &typed, &stale, &intent.target, &options).is_err());
+    }
+}

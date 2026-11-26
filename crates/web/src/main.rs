@@ -40,6 +40,10 @@ mod assembly_finalize;
 mod assembly_fusion_design;
 #[cfg(target_arch = "wasm32")]
 mod assembly_fusion_view;
+#[cfg(any(target_arch = "wasm32", test))]
+mod assembly_inverse_pcr_model;
+#[cfg(target_arch = "wasm32")]
+mod assembly_inverse_pcr_view;
 #[cfg(target_arch = "wasm32")]
 mod assembly_library_add_view;
 #[cfg(any(target_arch = "wasm32", test))]

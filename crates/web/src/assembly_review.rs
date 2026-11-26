@@ -1805,4 +1805,188 @@ mod tests {
             original_inputs
         );
     }
+    #[test]
+    fn declared_inverse_pcr_indel_stages_and_finalizes_original_source_ancestry() {
+        use collagene_core::{
+            analysis, assembly_edit_intent as edits, assembly_substitution_intent as substitutions,
+            chemistry::EndTreatment, cloning_outputs, mutagenesis, run_lineage,
+        };
+        let original = Molecule::dna(
+            "Original circular parent",
+            "AGTCCGATGCTACGTAGGACTTCAGACCTGTA",
+            Topology::Circular,
+        )
+        .unwrap();
+        let frame =
+            Workspace::from_documents("Inverse-PCR dock", vec![original.clone()], 0).unwrap();
+        let doc = &frame.documents[0];
+        let original_event = EventBinding {
+            document_id: doc.id.clone(),
+            event_id: doc.head_event.clone().unwrap(),
+            revision: doc.head.clone(),
+        };
+        let inputs = vec![PlanInput {
+            id: "pinned-original".into(),
+            revision: original.revision(),
+            molecule: original.clone(),
+        }];
+        let intent = edits::build(
+            &inputs,
+            &edits::Request {
+                base: substitutions::Request {
+                    base: assembly_intent::Request {
+                        name: "Independent four-base insertion".into(),
+                        circular: true,
+                        fragments: vec![Fragment {
+                            role: "backbone".into(),
+                            input_id: "pinned-original".into(),
+                            start: 0,
+                            end: 32,
+                            reverse: false,
+                        }],
+                    },
+                    junction_edits: vec![],
+                    substitutions: vec![],
+                },
+                edits: vec![edits::Edit {
+                    role: "backbone".into(),
+                    start: 10,
+                    end: 10,
+                    expected: "".into(),
+                    replacement: "AACG".into(),
+                }],
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            intent.target.sequence.as_str(),
+            "AGTCCGATGCAACGTACGTAGGACTTCAGACCTGTA"
+        );
+        let target_before = intent.target.clone();
+        let mut preparation = mutagenesis::compile_inverse_pcr(
+            &original,
+            &intent.target,
+            &mutagenesis::InversePcrOptions {
+                edit_start: 10,
+                edit_end: 10,
+                inserted: "AACG".into(),
+                forward_length: 8,
+                reverse_length: 8,
+                reverse_tail_bases: 2,
+            },
+        )
+        .unwrap();
+        assert_eq!(preparation.plan.inputs[0].molecule, original);
+        preparation.plan.inputs[0].id = "pinned-original".into();
+        let Operation::Pcr {
+            template: Source::Input(id),
+            ..
+        } = &mut preparation.plan.steps[0]
+        else {
+            panic!("inverse-PCR must start from the actual original source");
+        };
+        *id = "pinned-original".into();
+        let candidate = Candidate::new(preparation.plan);
+        assert_eq!(candidate.plan.steps.len(), 3);
+        assert!(matches!(
+            &candidate.plan.steps[1],
+            Operation::TreatEnds {
+                template: Source::Step(0),
+                treatment: EndTreatment::Phosphorylate,
+            }
+        ));
+        assert!(matches!(&candidate.plan.steps[2], Operation::Ligate {
+            fragments, circular: true, allow_nicked: false,
+        } if fragments.len()==1 && matches!(&fragments[0].source, Source::Step(1)) && !fragments[0].reverse));
+        let assessed = collagene_core::verification::verify(&candidate.plan, &intent.target);
+        assert_eq!(
+            assessed.status,
+            collagene_core::verification::Status::ConsistentUnderAssumptions,
+            "{:?}",
+            assessed.findings
+        );
+        assert_eq!(assessed.products.len(), 3);
+        let actual = assessed.products.last().unwrap();
+        assert_eq!(actual.topology, Topology::Circular);
+        assert!(
+            analysis::rotation_offset(
+                actual.sequence.as_str(),
+                "AGTCCGATGCAACGTACGTAGGACTTCAGACCTGTA"
+            )
+            .is_some()
+        );
+        let original_workspace = serde_json::to_value(&frame).unwrap();
+        let original_inputs = serde_json::to_value(&candidate.plan.inputs).unwrap();
+        let staged = stage_any(
+            &frame,
+            &IntendedReference::Edits(intent.clone()),
+            std::slice::from_ref(&original_event),
+            &candidate,
+        )
+        .unwrap();
+        assert_eq!(staged.sources[0].input_id, "pinned-original");
+        assert_eq!(staged.sources[0].event, original_event);
+        assert_eq!(
+            staged.workspace.revisions[&original_event.revision],
+            original
+        );
+        let target_event = staged
+            .workspace
+            .history
+            .iter()
+            .find(|e| e.id == staged.target.event_id)
+            .unwrap();
+        assert_eq!(target_event.parents, vec![original_event.event_id.clone()]);
+        assert_eq!(
+            staged.workspace.revisions[&staged.target.revision],
+            target_before
+        );
+        let committed = cloning_outputs::finalize(
+            &staged.workspace,
+            &candidate.plan,
+            staged.target.clone(),
+            staged.sources.clone(),
+            &cloning_outputs::Options {
+                name: "Named inverse-PCR insertion clone".into(),
+                show_prepared: false,
+                save_primers: true,
+                allow_incomplete: false,
+            },
+        )
+        .unwrap();
+        assert!(committed.receipt.primer_attachment.is_some());
+        let recorded =
+            run_lineage::load_run(&committed.workspace, &committed.receipt.run.run_id).unwrap();
+        assert_eq!(recorded.inputs.len(), 1);
+        assert_eq!(recorded.inputs[0].event, original_event);
+        assert_eq!(
+            serde_json::to_value(&recorded.plan.inputs).unwrap(),
+            original_inputs
+        );
+        assert_eq!(recorded.target, staged.target);
+        let clone = &committed.workspace.revisions[&committed.receipt.construct.revision];
+        assert_eq!(clone.name, "Named inverse-PCR insertion clone");
+        assert_eq!(clone.topology, Topology::Circular);
+        assert!(
+            analysis::rotation_offset(clone.sequence.as_str(), target_before.sequence.as_str())
+                .is_some()
+        );
+        let replay =
+            run_lineage::replay_run(&committed.workspace, &committed.receipt.run.run_id).unwrap();
+        assert!(replay.products_match && replay.status_matches && replay.engine_matches);
+        assert_eq!(
+            replay.current_report.status,
+            collagene_core::verification::Status::ConsistentUnderAssumptions
+        );
+        assert_eq!(
+            committed.workspace.revisions[&original_event.revision],
+            original
+        );
+        assert_eq!(intent.target, target_before);
+        assert_eq!(serde_json::to_value(&frame).unwrap(), original_workspace);
+        assert_eq!(
+            serde_json::to_value(&candidate.plan.inputs).unwrap(),
+            original_inputs
+        );
+    }
 }

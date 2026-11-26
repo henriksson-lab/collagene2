@@ -7,6 +7,37 @@ use collagene_core::{
     restriction_inspection::InspectionOptions,
 };
 
+/// Match the native origin digest using bounded streaming JSON. This hashes a
+/// documentary capsule only; it never restores physical state or replays it.
+fn capsule_revision(origin: &collagene_core::run_material::Capsule) -> Result<String, String> {
+    use std::io::Write;
+    struct Digest {
+        hash: blake3::Hasher,
+        bytes: usize,
+    }
+    impl Write for Digest {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.bytes = self
+                .bytes
+                .checked_add(bytes.len())
+                .filter(|n| *n <= 32 << 20)
+                .ok_or_else(|| std::io::Error::other("bounded origin digest"))?;
+            self.hash.update(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    origin.validate_documentary().map_err(|e| e.to_string())?;
+    let mut writer = Digest {
+        hash: blake3::Hasher::new(),
+        bytes: 0,
+    };
+    serde_json::to_writer(&mut writer, origin).map_err(|e| e.to_string())?;
+    Ok(writer.hash.finalize().to_hex().to_string())
+}
+
 pub(crate) fn build_request(state: &MethodsState, row: usize) -> Result<Request, String> {
     if state
         .rows
@@ -317,15 +348,41 @@ mod tests {
 pub(crate) enum InspectionRequest {
     Exact(Request),
     Mismatch(collagene_core::mismatch_pcr_digest_inspection::Request),
+    Extension(collagene_core::overlap_extension_digest_inspection::Request),
 }
 pub(crate) enum InspectionPreview {
     Exact(Preview),
     Mismatch(collagene_core::mismatch_pcr_digest_inspection::Preview),
+    Extension(collagene_core::overlap_extension_digest_inspection::Preview),
 }
 pub(crate) fn build_inspection_request(
     state: &MethodsState,
     row: usize,
 ) -> Result<InspectionRequest, String> {
+    if let Some(input) = state
+        .rows
+        .get(row)
+        .filter(|input| input.preparation == OverlapPreparation::OverlapExtensionPcrCatalogDigest)
+    {
+        let roles = state.role_ids(state.rows.len())?;
+        if input.fragment.len() > 20 {
+            return Err("The digest-fragment field exceeds its bounded size.".into());
+        }
+        let preparation = input.overlap_extension_pcr.as_ref().ok_or("Enter all six overlap-extension oligos before inspecting the outer-PCR product digest.")?.request()?;
+        let selection = input
+            .catalog_selection
+            .as_ref()
+            .ok_or("Pin the outer-PCR product digest enzymes first.")?;
+        selection.validate().map_err(|e| e.to_string())?;
+        return Ok(InspectionRequest::Extension(
+            collagene_core::overlap_extension_digest_inspection::Request {
+                source_role: roles[row].role.clone(),
+                preparation,
+                selection: selection.clone(),
+                options: InspectionOptions::default(),
+            },
+        ));
+    }
     let base = build_base(state, row)?;
     if state.rows[row].preparation == OverlapPreparation::MismatchPcrCatalogDigest {
         Ok(InspectionRequest::Mismatch(
@@ -359,6 +416,11 @@ impl InspectionRequest {
                     source, origin, r,
                 )
             }
+            Self::Extension(r) => {
+                collagene_core::overlap_extension_digest_inspection::inspection_revision(
+                    source, origin, r,
+                )
+            }
         }
     }
     pub(crate) fn into_job(
@@ -381,6 +443,11 @@ impl InspectionRequest {
                 origin,
                 request,
             },
+            Self::Extension(request) => AnalysisJob::InspectOverlapExtensionDigest {
+                source: molecule,
+                origin,
+                request,
+            },
         }
     }
 }
@@ -389,30 +456,35 @@ impl InspectionPreview {
         match self {
             Self::Exact(p) => &p.context_revision,
             Self::Mismatch(p) => &p.context_revision,
+            Self::Extension(p) => &p.context_revision,
         }
     }
     pub(crate) fn source_revision(&self) -> &str {
         match self {
             Self::Exact(p) => &p.source_revision,
             Self::Mismatch(p) => &p.source_revision,
+            Self::Extension(p) => &p.source_revision,
         }
     }
     pub(crate) fn request(&self) -> InspectionRequest {
         match self {
             Self::Exact(p) => InspectionRequest::Exact(p.request.clone()),
             Self::Mismatch(p) => InspectionRequest::Mismatch(p.request.clone()),
+            Self::Extension(p) => InspectionRequest::Extension(p.request.clone()),
         }
     }
     pub(crate) fn validate_binding(&self, r: &str) -> Result<(), collagene_core::Error> {
         match self {
             Self::Exact(p) => p.validate_binding(r),
             Self::Mismatch(p) => p.validate_binding(r),
+            Self::Extension(p) => p.validate_binding(r),
         }
     }
     pub(crate) fn amplicon(&self) -> Option<&collagene_core::Molecule> {
         match self {
             Self::Exact(p) => p.amplicon.as_ref(),
             Self::Mismatch(p) => p.amplicon.as_ref(),
+            Self::Extension(p) => p.amplicon.as_ref(),
         }
     }
     pub(crate) fn inspection(
@@ -421,18 +493,21 @@ impl InspectionPreview {
         match self {
             Self::Exact(p) => p.inspection.as_ref(),
             Self::Mismatch(p) => p.inspection.as_ref(),
+            Self::Extension(p) => p.inspection.as_ref(),
         }
     }
     pub(crate) fn findings(&self) -> &[String] {
         match self {
             Self::Exact(p) => &p.findings,
             Self::Mismatch(p) => &p.findings,
+            Self::Extension(p) => &p.findings,
         }
     }
     pub(crate) fn geometry_count(&self) -> usize {
         match self {
             Self::Exact(p) => p.pcr_geometries.len(),
             Self::Mismatch(p) => p.pcr.report.products.len(),
+            Self::Extension(p) => usize::from(p.amplicon.is_some()),
         }
     }
     pub(crate) fn geometry_page(
@@ -440,6 +515,7 @@ impl InspectionPreview {
         start: usize,
     ) -> Vec<collagene_core::pcr_digest_inspection::GeometrySummary> {
         match self {
+            Self::Extension(_) => Vec::new(),
             Self::Exact(p) => p
                 .pcr_geometries
                 .iter()
@@ -467,9 +543,16 @@ impl InspectionPreview {
         }
     }
     pub(crate) fn incomplete(&self) -> bool {
-        matches!(self,Self::Mismatch(p) if p.incomplete)
+        match self {
+            Self::Exact(_) => false,
+            Self::Mismatch(p) => p.incomplete,
+            Self::Extension(p) => p.incomplete,
+        }
     }
     pub(crate) fn selectable(&self) -> bool {
+        if let Self::Extension(p) = self {
+            return p.selectable();
+        }
         self.geometry_count() == 1
             && self.amplicon().is_some()
             && self
@@ -517,6 +600,46 @@ pub(crate) fn apply_inspection(
                 .is_some_and(|i| i.fragments.iter().any(|f| f.index == fragment))
             {
                 return Err("The selected fragment is unavailable.".into());
+            }
+            let number = fragment.checked_add(1).ok_or("Fragment number overflow.")?;
+            let mut next = state.clone();
+            next.rows[row].fragment = number.to_string();
+            Ok(next)
+        }
+        (InspectionRequest::Extension(r), InspectionPreview::Extension(p)) => {
+            let InspectionRequest::Extension(mut current) = build_inspection_request(state, row)?
+            else {
+                return Err("The overlap-extension preparation mode changed.".into());
+            };
+            current.options = r.options.clone();
+            let key = InspectionRequest::Extension(r.clone()).key()?;
+            if InspectionRequest::Extension(current).key() != Ok(key.clone())
+                || preview.request().key() != Ok(key)
+            {
+                return Err("The six oligos, extension geometry, source role or catalog changed; inspect again.".into());
+            }
+            p.validate_binding(revision).map_err(|e| e.to_string())?;
+            let current_origin_revision = state.rows[row]
+                .run_origin
+                .as_ref()
+                .map(|origin| capsule_revision(origin.as_ref()))
+                .transpose()?;
+            if current_origin_revision != p.origin_revision {
+                return Err("The saved-material origin changed; inspect the overlap-extension digest again.".into());
+            }
+            if !p.selectable() {
+                return Err(
+                    "The actual overlap-extension product or digest fragments are unavailable."
+                        .into(),
+                );
+            }
+            if !p.inspection.as_ref().is_some_and(|inspection| {
+                inspection
+                    .fragments
+                    .iter()
+                    .any(|item| item.index == fragment)
+            }) {
+                return Err("The selected outer-PCR digest fragment is unavailable.".into());
             }
             let number = fragment.checked_add(1).ok_or("Fragment number overflow.")?;
             let mut next = state.clone();
@@ -654,5 +777,323 @@ mod mismatch_digest_tests {
         );
         assert_eq!(state.rows[1].forward, old.forward);
         assert_eq!(state.rows[1].reverse_tail, old.reverse_tail);
+    }
+}
+
+#[cfg(test)]
+mod overlap_extension_digest_tests {
+    use super::*;
+    use crate::{
+        assembly_role_ids::Role,
+        cloning_methods_model::{ExtensionPrimerInput, Mode, OverlapExtensionPcrInput, Treatment},
+    };
+    use collagene_core::{
+        Molecule, Topology, catalog_digest, overlap_extension_digest_inspection as native,
+        verification::Status,
+    };
+    const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
+    const MUTANT: &str = "AGTCCGATGCTACGTATTTTCAGACCTGTAGATCGTCA";
+    fn oligo(name: &str, annealing: &str, tail: &str) -> ExtensionPrimerInput {
+        ExtensionPrimerInput {
+            name: name.into(),
+            annealing: annealing.into(),
+            tail: tail.into(),
+        }
+    }
+    fn fixture() -> (MethodsState, Molecule, InspectionRequest) {
+        let mut state = MethodsState::default();
+        state.mode = Mode::Ligation;
+        state.rows[0].preparation = OverlapPreparation::WholeLinear;
+        state.source_roles = Some(vec![
+            Role {
+                role: "backbone".into(),
+                input_id: "original-backbone".into(),
+            },
+            Role {
+                role: "edited-insert".into(),
+                input_id: "original-insert".into(),
+            },
+        ]);
+        let row = &mut state.rows[1];
+        row.preparation = OverlapPreparation::OverlapExtensionPcrCatalogDigest;
+        row.document = 17;
+        row.interval_start = "4".into();
+        row.interval_end = "31".into();
+        row.reverse = true;
+        row.treatment = Treatment::Phosphorylate;
+        row.repair = Some(collagene_core::chemistry::EndRepairMethod::Blunt);
+        row.fragment = "19".into();
+        row.right_fusion = "CGCG".into();
+        row.forward = "Unused old single-pair field".into();
+        let mut raw = OverlapExtensionPcrInput::default();
+        raw.left.forward = oligo("Left outer", "AGTCCGAT", "");
+        raw.left.reverse = oligo("Left mutagenic", "TACGTAGC", "GGTCTGAAAA");
+        raw.right.forward = oligo("Right mutagenic", "TTCAGACC", "GCTACGTATT");
+        raw.right.reverse = oligo("Right outer", "TGACGATC", "");
+        raw.outer.forward = oligo("Outer F + EcoRI", "AGTCCGAT", "CCGAATTC");
+        raw.outer.reverse = oligo("Outer R + XhoI", "TGACGATC", "GGCTCGAG");
+        raw.overlap = "18".into();
+        raw.min_paired_bases = "8".into();
+        row.overlap_extension_pcr = Some(raw);
+        let catalog = catalog_digest::builtin_catalog().unwrap();
+        let ids = catalog
+            .edition()
+            .enzymes
+            .iter()
+            .filter(|entry| entry.name == "EcoRI" || entry.name == "XhoI")
+            .map(|entry| entry.id.clone())
+            .collect::<Vec<_>>();
+        row.catalog_selection = Some(catalog_digest::select(&catalog, &ids).unwrap());
+        let source =
+            Molecule::dna("Unchanged original insert", ORIGINAL, Topology::Linear).unwrap();
+        let request = build_inspection_request(&state, 1).unwrap();
+        (state, source, request)
+    }
+    fn inspect(
+        source: &Molecule,
+        origin: Option<&collagene_core::run_material::Capsule>,
+        request: &InspectionRequest,
+    ) -> InspectionPreview {
+        let InspectionRequest::Extension(request) = request else {
+            panic!("four-step inspection request");
+        };
+        InspectionPreview::Extension(native::inspect(source, origin, request).unwrap())
+    }
+    #[test]
+    fn real_four_step_digest_selection_changes_only_fragment_and_retains_exact_source_and_oligos() {
+        let (state, source, request) = fixture();
+        let before = state.clone();
+        let preview = inspect(&source, None, &request);
+        let revision = request.revision(&source, None).unwrap();
+        assert_eq!(
+            preview.amplicon().unwrap().sequence.as_str(),
+            format!("CCGAATTC{MUTANT}CTCGAGCC")
+        );
+        assert_eq!(preview.inspection().unwrap().fragments.len(), 3);
+        assert_eq!(
+            preview.inspection().unwrap().fragments[1].duplex.top_length,
+            44
+        );
+        assert!(preview.selectable() && !preview.incomplete());
+        assert!(preview.geometry_page(0).is_empty());
+        let InspectionPreview::Extension(report) = &preview else {
+            unreachable!()
+        };
+        assert_eq!(report.pcr_stages.len(), 3);
+        assert_eq!(report.pcr_stages[0].template_revision, source.revision());
+        assert_ne!(report.pcr_stages[2].template_revision, source.revision());
+        let next = apply_inspection(&state, 1, &request, &preview, &revision, 1).unwrap();
+        let mut expected = state.clone();
+        expected.rows[1].fragment = "2".into();
+        assert!(next == expected);
+        assert!(state == before);
+        let (_, rows) = crate::cloning_preparations::prepared_rows(&next, 2).unwrap();
+        let collagene_core::assembly_recipe::Preparation::OverlapExtensionPcrCatalogDigest {
+            request: prep,
+            selection,
+            fragment_index,
+            repair,
+        } = &rows[1].preparation
+        else {
+            panic!("preserved OE catalog chain");
+        };
+        assert_eq!(prep.left.reverse.ordered_sequence(), "GGTCTGAAAATACGTAGC");
+        assert_eq!(prep.right.forward.ordered_sequence(), "GCTACGTATTTTCAGACC");
+        assert_eq!(prep.outer.forward.tail, "CCGAATTC");
+        assert_eq!(prep.outer.reverse.tail, "GGCTCGAG");
+        assert_eq!(selection, next.rows[1].catalog_selection.as_ref().unwrap());
+        assert_eq!(*fragment_index, 1);
+        assert_eq!(*repair, next.rows[1].repair);
+        assert_eq!(source.sequence.as_str(), ORIGINAL);
+    }
+    #[test]
+    fn stale_any_of_six_oligos_or_geometry_catalog_role_and_missing_fragments_never_apply() {
+        let (state, source, request) = fixture();
+        let preview = inspect(&source, None, &request);
+        let revision = request.revision(&source, None).unwrap();
+        for field in 0..9 {
+            let mut changed = state.clone();
+            if field < 6 {
+                let raw = changed.rows[1].overlap_extension_pcr.as_mut().unwrap();
+                let primer = match field {
+                    0 => &mut raw.left.forward,
+                    1 => &mut raw.left.reverse,
+                    2 => &mut raw.right.forward,
+                    3 => &mut raw.right.reverse,
+                    4 => &mut raw.outer.forward,
+                    _ => &mut raw.outer.reverse,
+                };
+                primer.name.push_str(" changed");
+            } else {
+                match field {
+                    6 => {
+                        changed.rows[1]
+                            .overlap_extension_pcr
+                            .as_mut()
+                            .unwrap()
+                            .overlap = "17".into()
+                    }
+                    7 => changed.source_roles.as_mut().unwrap()[1]
+                        .role
+                        .push_str(" other"),
+                    _ => changed.rows[1].catalog_selection = None,
+                }
+            }
+            assert!(apply_inspection(&changed, 1, &request, &preview, &revision, 1).is_err());
+        }
+        assert!(apply_inspection(&state, 1, &request, &preview, &"0".repeat(64), 1).is_err());
+        assert!(apply_inspection(&state, 1, &request, &preview, &revision, 99).is_err());
+    }
+    #[test]
+    fn capped_extension_selection_preserves_the_cap_and_remains_incomplete_on_fresh_verification() {
+        let (mut state, source, _) = fixture();
+        state.rows[1]
+            .overlap_extension_pcr
+            .as_mut()
+            .unwrap()
+            .max_comparisons = "18".into();
+        state.rows[1].repair = None;
+        let request = build_inspection_request(&state, 1).unwrap();
+        let preview = inspect(&source, None, &request);
+        assert!(preview.incomplete() && preview.selectable());
+        assert!(preview.amplicon().is_some());
+        assert!(preview.inspection().is_some());
+        let revision = request.revision(&source, None).unwrap();
+        let next = apply_inspection(&state, 1, &request, &preview, &revision, 1).unwrap();
+        assert_eq!(
+            next.rows[1]
+                .overlap_extension_pcr
+                .as_ref()
+                .unwrap()
+                .max_comparisons,
+            "18"
+        );
+        let (ids, fragments) = crate::cloning_preparations::prepared_rows(&next, 2).unwrap();
+        let other =
+            Molecule::dna("Other original source", "CCGGAATTGGCC", Topology::Linear).unwrap();
+        let inputs = ids
+            .into_iter()
+            .zip([other, source])
+            .map(|(id, molecule)| collagene_core::verification::PlanInput {
+                id,
+                revision: molecule.revision(),
+                molecule,
+            })
+            .collect::<Vec<_>>();
+        let target = Molecule::dna(
+            "Independent selected conditional digest",
+            &format!("AATTC{MUTANT}C"),
+            Topology::Linear,
+        )
+        .unwrap();
+        let compiled = collagene_core::assembly_recipe::compile_preparations(
+            &inputs,
+            &target,
+            "Fresh conditional preparation",
+            &fragments,
+        )
+        .unwrap();
+        let plan = collagene_core::verification::DesignPlan {
+            name: "Fresh conditional preparation".into(),
+            inputs,
+            target_revision: target.revision(),
+            steps: compiled.steps,
+        };
+        let checked = collagene_core::verification::verify(&plan, &target);
+        assert_eq!(checked.status, Status::Incomplete, "{:?}", checked.findings);
+        assert_eq!(
+            checked.products.last().unwrap().sequence.as_str(),
+            target.sequence.as_str()
+        );
+    }
+    #[test]
+    fn saved_origin_is_replayed_and_cannot_be_removed_from_an_existing_digest_receipt() {
+        use collagene_core::{
+            cloning_outputs,
+            run_lineage::{EventBinding, InputEventBinding},
+            run_material,
+            verification::{DesignPlan, Operation, PlanInput, Source},
+            workspace::Workspace,
+        };
+        let (mut state, original, _) = fixture();
+        let target = Molecule::dna(
+            "Independent saved-stock PCR requirement",
+            ORIGINAL,
+            Topology::Linear,
+        )
+        .unwrap();
+        let frame = Workspace::from_documents(
+            "Actual original-stock preparation",
+            vec![original.clone(), target.clone()],
+            0,
+        )
+        .unwrap();
+        let event = |index: usize| {
+            let doc = &frame.documents[index];
+            EventBinding {
+                document_id: doc.id.clone(),
+                event_id: doc.head_event.clone().unwrap(),
+                revision: doc.head.clone(),
+            }
+        };
+        let plan = DesignPlan {
+            name: "Actual stock PCR".into(),
+            target_revision: target.revision(),
+            inputs: vec![PlanInput {
+                id: "stock".into(),
+                revision: original.revision(),
+                molecule: original,
+            }],
+            steps: vec![Operation::Pcr {
+                template: Source::Input("stock".into()),
+                forward: Primer::new("Stock F", "AGTCCGAT", "").unwrap(),
+                reverse: Primer::new("Stock R", "TGACGATC", "").unwrap(),
+            }],
+        };
+        let commit = cloning_outputs::finalize(
+            &frame,
+            &plan,
+            event(1),
+            vec![InputEventBinding {
+                input_id: "stock".into(),
+                event: event(0),
+            }],
+            &cloning_outputs::Options {
+                name: "Saved original-stock PCR".into(),
+                save_primers: false,
+                show_prepared: false,
+                allow_incomplete: false,
+            },
+        )
+        .unwrap();
+        let selection = run_material::Selection {
+            run_id: commit.receipt.run.run_id.clone(),
+            step_index: 0,
+            event: commit.receipt.construct.clone(),
+        };
+        let origin = run_material::capsule(&commit.workspace, &selection).unwrap();
+        let source = commit.workspace.revisions[&selection.event.revision].clone();
+        state.rows[1].run_origin =
+            Some(crate::run_origin_model::PinnedOrigin::new(origin.clone()).unwrap());
+        let request = build_inspection_request(&state, 1).unwrap();
+        assert!(request.revision(&source, None).is_err());
+        let revision = request.revision(&source, Some(&origin)).unwrap();
+        let preview = inspect(&source, Some(&origin), &request);
+        let InspectionPreview::Extension(report) = &preview else {
+            unreachable!()
+        };
+        assert_eq!(
+            report.origin_status,
+            Some(Status::ConsistentUnderAssumptions)
+        );
+        assert_eq!(
+            report.origin_revision.as_deref(),
+            Some(capsule_revision(&origin).unwrap().as_str())
+        );
+        let next = apply_inspection(&state, 1, &request, &preview, &revision, 1).unwrap();
+        assert!(next.rows[1].run_origin == state.rows[1].run_origin);
+        assert_eq!(next.rows[1].fragment, "2");
+        state.rows[1].run_origin = None;
+        assert!(apply_inspection(&state, 1, &request, &preview, &revision, 1).is_err());
     }
 }

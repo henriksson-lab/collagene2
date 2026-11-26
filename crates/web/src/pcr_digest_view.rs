@@ -172,10 +172,11 @@ pub fn PcrDigestPicker(
         generation.set(token);
         busy.set(true);
         proof.set(None);
-        status.set("Reconstructing the declared PCR and selected catalog digest…".into());
+        status.set("Reconstructing the declared preparation and pinned catalog digest…".into());
         let alive = alive.clone();
         spawn_local(async move {
             let mismatch = matches!(&request, InspectionRequest::Mismatch(_));
+            let extension = matches!(&request, InspectionRequest::Extension(_));
             let job = request.into_job(source, bound.origin.as_ref().map(|o| o.as_ref().clone()));
             let response = worker
                 .ask(Request {
@@ -197,12 +198,12 @@ pub fn PcrDigestPicker(
                 Ok(response) if response.id == token && response.revision == revision => {
                     match response.result {
                         AnalysisResult::PcrDigestInspection(preview)
-                            if !mismatch && bound.origin.is_none() =>
+                            if !mismatch && !extension && bound.origin.is_none() =>
                         {
                             Ok(InspectionPreview::Exact(preview))
                         }
                         AnalysisResult::RunPcrDigestInspection(report)
-                            if !mismatch && bound.origin.is_some() =>
+                            if !mismatch && !extension && bound.origin.is_some() =>
                         {
                             report
                                 .validate_binding(&revision)
@@ -213,6 +214,15 @@ pub fn PcrDigestPicker(
                             .validate_binding(&revision)
                             .map(|()| InspectionPreview::Mismatch(report))
                             .map_err(|e| e.to_string()),
+                        AnalysisResult::OverlapExtensionDigestInspection(report)
+                            if extension
+                                && report.origin_revision.is_some() == bound.origin.is_some() =>
+                        {
+                            report
+                                .validate_binding(&revision)
+                                .map(|()| InspectionPreview::Extension(report))
+                                .map_err(|e| e.to_string())
+                        }
                         AnalysisResult::Error(error) => Err(error),
                         _ => Err("Unexpected PCR digest response.".into()),
                     }
@@ -292,7 +302,8 @@ pub fn PcrDigestPicker(
             let preview=&saved.preview;let count=preview.geometry_count();let start=geometry_page.get().min(count.saturating_sub(1)/20)*20;
             let geometries=preview.geometry_page(start).iter().map(|g|view!{<tr><td>{g.index+1}</td><td>{g.product_length}</td><td>{format!("{} / {}",g.forward_start+1,g.reverse_start+1)}</td></tr>}).collect_view();
             let selectable=preview.selectable();
-            view!{<section class="pcr-digest-result"><p>{format!("{} {} PCR geometries",count,if matches!(preview,InspectionPreview::Mismatch(_)){"intentional-mismatch"}else{"exact"})}</p>
+            let extension=matches!(preview,InspectionPreview::Extension(_));
+            view!{<section class="pcr-digest-result"><p>{if extension {format!("Overlap-extension preparation · {} reconstructed outer-PCR product",count)} else {format!("{} {} PCR geometries",count,if matches!(preview,InspectionPreview::Mismatch(_)){"intentional-mismatch"}else{"exact"})}}</p>
                 {preview.incomplete().then(||view!{<p class="helper" role="status">"Conditional geometry: PCR alternatives or saved-origin evidence remain incomplete. Selecting a fragment does not resolve those limitations."</p>})}
                 {preview.findings().iter().take(40).map(|finding|view!{<p class="helper">{finding.clone()}</p>}).collect_view()}
                 {if let InspectionPreview::Mismatch(report)=preview {
@@ -306,7 +317,18 @@ pub fn PcrDigestPicker(
                         </details>}).collect_view()}
                     </details>}.into_any()
                 }else{().into_any()}}
-                {(count>0).then(||view!{<details open={count>1}><summary>"PCR geometry review"</summary><table><thead><tr><th>"Geometry"</th><th>"Product nt"</th><th>"Template binding starts · 1-based"</th></tr></thead><tbody>{geometries}</tbody></table>
+                {if let InspectionPreview::Extension(report)=preview {
+                    view!{<details><summary>"Actual PCR stages and terminal pairing"</summary>
+                        {report.extension.as_ref().map(|geometry|view!{<p>{format!("Selected terminal pairing {} bp · complete alternative search {} · unique within terminal model {}",geometry.options.overlap,geometry.terminal_pairings.complete,geometry.terminal_pairings.unique)}</p>})}
+                        {report.pcr_stages.iter().map(|stage|view!{<details><summary>{format!("PCR stage {} · {} geometries · {}",stage.stage,stage.geometries.len(),stage.product_length.map(|n|format!("{n} nt product")).unwrap_or_else(||"product unavailable".into()))}</summary>
+                            <p class="helper">"Binding starts address this PCR stage’s actual template, before outer digestion and assembly orientation."</p>
+                            <p class="helper">{format!("Template revision {}",stage.template_revision)}</p>
+                            <table><thead><tr><th>"Geometry"</th><th>"Product nt"</th><th>"Binding starts · 1-based"</th></tr></thead><tbody>{stage.geometries.iter().take(20).map(|geometry|view!{<tr><td>{geometry.index+1}</td><td>{geometry.product_length}</td><td>{format!("{} / {}",geometry.forward_start+1,geometry.reverse_start+1)}</td></tr>}).collect_view()}</tbody></table>
+                            {(stage.geometries.len()>20).then(||view!{<p class="helper">"First20 geometries shown for this stage; the full retained stage evidence remains bound to this inspection."</p>})}
+                        </details>}).collect_view()}
+                    </details>}.into_any()
+                } else {().into_any()}}
+                {(!extension&&count>0).then(||view!{<details open={count>1}><summary>"PCR geometry review"</summary><table><thead><tr><th>"Geometry"</th><th>"Product nt"</th><th>"Template binding starts · 1-based"</th></tr></thead><tbody>{geometries}</tbody></table>
                     <div class="method-row-actions"><button class="text-tool" disabled=move||geometry_page.get()==0 on:click=move|_|geometry_page.update(|p|*p=p.saturating_sub(1))>"Previous PCR geometries"</button><button class="text-tool" disabled=move||(geometry_page.get()+1)*20>=count on:click=move|_|geometry_page.update(|p|*p=p.saturating_add(1))>"Next PCR geometries"</button></div>
                 </details>})}
                 {preview.amplicon().map(|amplicon|view!{<p>{format!("Reconstructed amplicon · {} nt",amplicon.sequence.len())}</p>})}

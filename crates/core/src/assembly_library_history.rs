@@ -261,7 +261,15 @@ fn active(w: &Workspace) -> Result<(&str, &WorkspaceAttachment), Error> {
     let mut matches = w.attachments.iter().filter(|(_, a)| {
         matches!(
             a.kind.as_str(),
-            "assembly-draft-v1" | "assembly-draft-v2" | "assembly-draft-v4" | ACTIVE_DRAFT_KIND
+            "assembly-draft-v1"
+                | "assembly-draft-v2"
+                | "assembly-draft-v4"
+                | "assembly-draft-v5"
+                | "assembly-draft-v6"
+                | "assembly-draft-v7"
+                | "assembly-draft-v8"
+                | "assembly-draft-v9"
+                | ACTIVE_DRAFT_KIND
         )
     });
     let (hash, a) = matches
@@ -341,7 +349,15 @@ pub fn allocation_highwater(w: &Workspace, library_id: &str) -> Result<u64, Erro
         .filter(|a| {
             matches!(
                 a.kind.as_str(),
-                "assembly-draft-v1" | "assembly-draft-v2" | "assembly-draft-v4" | ACTIVE_DRAFT_KIND
+                "assembly-draft-v1"
+                    | "assembly-draft-v2"
+                    | "assembly-draft-v4"
+                    | "assembly-draft-v5"
+                    | "assembly-draft-v6"
+                    | "assembly-draft-v7"
+                    | "assembly-draft-v8"
+                    | "assembly-draft-v9"
+                    | ACTIVE_DRAFT_KIND
             )
         })
         .count();
@@ -465,7 +481,15 @@ pub fn install(mut w: Workspace, record: Record, after: Vec<u8>) -> Result<Commi
     w.attachments.retain(|_, a| {
         !matches!(
             a.kind.as_str(),
-            "assembly-draft-v1" | "assembly-draft-v2" | "assembly-draft-v4" | ACTIVE_DRAFT_KIND
+            "assembly-draft-v1"
+                | "assembly-draft-v2"
+                | "assembly-draft-v4"
+                | "assembly-draft-v5"
+                | "assembly-draft-v6"
+                | "assembly-draft-v7"
+                | "assembly-draft-v8"
+                | "assembly-draft-v9"
+                | ACTIVE_DRAFT_KIND
         )
     });
     w.attachments.insert(

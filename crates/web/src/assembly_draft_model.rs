@@ -697,10 +697,26 @@ impl Draft {
         next.validate()?;
         Ok(next)
     }
+    fn uses_overlap_extension_catalog_fields(&self) -> bool {
+        let uses = |row: &OverlapInput| {
+            row.preparation == OverlapPreparation::OverlapExtensionPcrCatalogDigest
+        };
+        self.methods.rows.iter().any(uses)
+            || self.alternatives.as_ref().is_some_and(|library| {
+                library
+                    .bins
+                    .iter()
+                    .flat_map(|bin| &bin.choices)
+                    .any(|choice| uses(&choice.row))
+                    || library
+                        .rows
+                        .iter()
+                        .any(|saved| saved.edits.methods.rows.iter().any(uses))
+            })
+    }
     fn uses_overlap_extension_fields(&self) -> bool {
         let uses = |row: &OverlapInput| {
-            row.preparation == OverlapPreparation::OverlapExtensionPcr
-                || row.overlap_extension_pcr.is_some()
+            row.is_overlap_extension_pcr() || row.overlap_extension_pcr.is_some()
         };
         self.methods.rows.iter().any(uses)
             || self.alternatives.as_ref().is_some_and(|library| {
@@ -780,12 +796,15 @@ impl Draft {
     /// Structural/bounded source consistency only. Historical event IDs require
     /// the host workspace to attest them before installing any candidate.
     pub fn validate(&self) -> Result<(), String> {
-        if !matches!(self.version, 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8)
+        if !matches!(self.version, 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9)
             || self.version == 1 && self.alternatives.is_some()
         {
             return Err(
                 "Unsupported assembly draft version or alternatives in a legacy draft.".into(),
             );
+        }
+        if self.uses_overlap_extension_catalog_fields() && self.version < 9 {
+            return Err("Overlap-extension PCR followed by pinned catalog digestion requires assembly draft version9.".into());
         }
         if self.uses_overlap_extension_fields() && self.version < 8 {
             return Err("Overlap-extension PCR declarations and working settings require assembly draft version8.".into());
@@ -1012,6 +1031,9 @@ impl Draft {
         if self.uses_overlap_extension_fields() {
             self.version = self.version.max(8);
         }
+        if self.uses_overlap_extension_catalog_fields() {
+            self.version = self.version.max(9);
+        }
     }
 }
 
@@ -1022,8 +1044,8 @@ pub fn encode(draft: &Draft) -> Result<Vec<u8>, String> {
 }
 /// Encode current editable state without promoting working fields into saved rows.
 pub fn encode_raw(draft: &Draft) -> Result<Vec<u8>, String> {
-    if !matches!(draft.version, 3 | 4 | 5 | 6 | 7 | 8) {
-        return Err("Raw assembly persistence requires draft version3–8.".into());
+    if !matches!(draft.version, 3 | 4 | 5 | 6 | 7 | 8 | 9) {
+        return Err("Raw assembly persistence requires draft version3–9.".into());
     }
     draft.validate()?;
     let mut writer = Bounded { bytes: Vec::new() };
@@ -2462,6 +2484,28 @@ mod extension_draft_tests {
         assert!(encode_raw(&oversized).is_err());
     }
 
+    #[test]
+    fn extension_catalog_selector_and_unfinished_raw6_require_version9() {
+        let mut draft = Draft::default();
+        draft.methods.rows[1].preparation = OverlapPreparation::OverlapExtensionPcrCatalogDigest;
+        draft.sync_rows();
+        assert_eq!(draft.version, 9);
+        assert!(draft.methods.rows[1].overlap_extension_pcr.is_none());
+        let mut raw = OverlapExtensionPcrInput::default();
+        raw.outer.forward.tail = "CCGAATTC".into();
+        raw.right.forward.annealing = "unfinished".into();
+        draft.methods.rows[1].overlap_extension_pcr = Some(raw);
+        draft.sync_rows();
+        let restored = decode_version(&encode_raw(&draft).unwrap(), 9).unwrap();
+        assert!(restored == draft);
+        assert!(decode_version(&encode_raw(&draft).unwrap(), 8).is_err());
+        let mut downgraded = draft.clone();
+        downgraded.version = 8;
+        assert!(downgraded.validate().is_err());
+        downgraded.methods.rows[1].preparation = OverlapPreparation::OverlapExtensionPcr;
+        assert!(downgraded.validate().is_ok());
+        assert!(decode_version(&encode_raw(&downgraded).unwrap(), 8).unwrap() == downgraded);
+    }
     #[test]
     fn selected_empty_extension_preparation_requires8_without_storing_default_fields() {
         let mut draft = Draft::default();

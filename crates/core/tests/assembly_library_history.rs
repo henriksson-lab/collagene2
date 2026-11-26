@@ -445,3 +445,35 @@ fn record_retention_count_exhaustion_refuses_the_whole_edit_without_pruning() {
     assert_eq!(history::list(&w).unwrap().len(), 128);
     assert_eq!(serde_json::to_vec(&w).unwrap(), snapshot);
 }
+
+#[test]
+fn newer_ordinary_drafts_cannot_be_ignored_as_second_active_library_drafts() {
+    let original = fixture();
+    for version in 5..=9 {
+        let mut w = original.clone();
+        let raw = format!("ordinary editable draft {version}").into_bytes();
+        w.attachments.insert(
+            hash(&raw),
+            WorkspaceAttachment {
+                kind: format!("assembly-draft-v{version}"),
+                name: "second active draft".into(),
+                media_type: "application/json".into(),
+                bytes: raw,
+            },
+        );
+        let before = serde_json::to_vec(&w).unwrap();
+        assert!(
+            history::create(
+                &w,
+                draft(8, "before"),
+                &draft(9, "after"),
+                &proposal(),
+                vec![],
+                vec![]
+            )
+            .is_err()
+        );
+        assert!(history::allocation_highwater(&w, "literal-library").is_err());
+        assert_eq!(serde_json::to_vec(&w).unwrap(), before);
+    }
+}

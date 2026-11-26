@@ -113,6 +113,7 @@ pub enum OverlapPreparation {
     MismatchPcr,
     MismatchPcrCatalogDigest,
     OverlapExtensionPcr,
+    OverlapExtensionPcrCatalogDigest,
 }
 /// Editable oligos remain strings until the operator requests reconstruction.
 /// Incomplete fields are retained by draft persistence, without scientific status.
@@ -418,9 +419,19 @@ impl OverlapInput {
                 | OverlapPreparation::MismatchPcrCatalogDigest
         )
     }
+    pub(crate) fn is_overlap_extension_pcr(&self) -> bool {
+        matches!(
+            self.preparation,
+            OverlapPreparation::OverlapExtensionPcr
+                | OverlapPreparation::OverlapExtensionPcrCatalogDigest
+        )
+    }
+    pub(crate) fn has_pcr_amplicon(&self) -> bool {
+        self.is_pcr() || self.is_overlap_extension_pcr()
+    }
     /// Select the complete PCR product without replacing the declared PCR policy.
     pub(crate) fn use_complete_pcr_amplicon(&mut self) -> Result<(), String> {
-        if !self.is_pcr() {
+        if !self.has_pcr_amplicon() {
             return Err(
                 "Choose an explicit PCR preparation before using its complete amplicon.".into(),
             );
@@ -429,6 +440,8 @@ impl OverlapInput {
             self.preparation = OverlapPreparation::ExactPcr;
         } else if self.preparation == OverlapPreparation::MismatchPcrCatalogDigest {
             self.preparation = OverlapPreparation::MismatchPcr;
+        } else if self.preparation == OverlapPreparation::OverlapExtensionPcrCatalogDigest {
+            self.preparation = OverlapPreparation::OverlapExtensionPcr;
         }
         self.fragment = "1".into();
         Ok(())
@@ -549,12 +562,30 @@ impl OverlapInput {
                     .map(|index| format!("explicit candidate {}", index + 1))
                     .unwrap_or_else(|| "choose an annealing candidate".into())
             ),
-            OverlapPreparation::OverlapExtensionPcr => format!(
-                "Two source PCRs → reciprocal extension ({} bp homology) → outer-primer PCR",
+            OverlapPreparation::OverlapExtensionPcr
+            | OverlapPreparation::OverlapExtensionPcrCatalogDigest => format!(
+                "Two source PCRs → reciprocal extension ({} bp homology) → outer-primer PCR{}",
                 self.overlap_extension_pcr
                     .as_ref()
                     .map(|request| request.overlap.as_str())
-                    .unwrap_or("enter")
+                    .unwrap_or("enter"),
+                if self.preparation == OverlapPreparation::OverlapExtensionPcrCatalogDigest {
+                    format!(
+                        " → pinned catalog digest: {}; fragment {}",
+                        self.catalog_selection
+                            .as_ref()
+                            .map(|selection| selection
+                                .enzymes
+                                .iter()
+                                .map(|entry| entry.enzyme.name.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", "))
+                            .unwrap_or_else(|| "choose enzymes".into()),
+                        self.fragment
+                    )
+                } else {
+                    String::new()
+                }
             ),
         };
         format!(
@@ -1002,8 +1033,38 @@ mod overlap_extension_tests {
         assert!(decoded.overlap_extension_pcr.as_ref().unwrap() == &raw);
         assert!(!decoded.is_pcr());
         let before = row.clone();
-        assert!(row.use_complete_pcr_amplicon().is_err());
+        row.use_complete_pcr_amplicon().unwrap();
         assert!(row == before);
+        assert!(row.has_pcr_amplicon());
+    }
+    #[test]
+    fn complete_oe_amplicon_keeps_all_six_oligos_and_catalog_settings() {
+        let mut row = OverlapInput::default();
+        row.preparation = OverlapPreparation::OverlapExtensionPcrCatalogDigest;
+        let mut raw = OverlapExtensionPcrInput::default();
+        raw.left.forward.annealing = "unfinished".into();
+        raw.outer.forward.tail = "CCGAATTC".into();
+        raw.outer.reverse.tail = "GGCTCGAG".into();
+        row.overlap_extension_pcr = Some(raw);
+        row.fragment = "8".into();
+        row.repair = Some(EndRepairMethod::Blunt);
+        let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+        let id = catalog
+            .edition()
+            .enzymes
+            .iter()
+            .find(|entry| entry.name == "EcoRI")
+            .unwrap()
+            .id
+            .clone();
+        row.catalog_selection =
+            Some(collagene_core::catalog_digest::select(&catalog, &[id]).unwrap());
+        let mut expected = row.clone();
+        expected.preparation = OverlapPreparation::OverlapExtensionPcr;
+        expected.fragment = "1".into();
+        assert!(!row.is_pcr() && row.has_pcr_amplicon());
+        row.use_complete_pcr_amplicon().unwrap();
+        assert!(row == expected);
     }
     #[test]
     fn raw_bounds_are_separate_from_scientific_oligo_and_search_validity() {

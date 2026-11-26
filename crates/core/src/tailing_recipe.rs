@@ -51,6 +51,20 @@ fn recipe_shape(recipe: &Recipe) -> Result<(), Error> {
     {
         return Err(Error::TooLarge);
     }
+    let operations = recipe
+        .fragments
+        .iter()
+        .try_fold(1usize, |total, fragment| {
+            total
+                .checked_add(preparation::preparation_operation_count(
+                    &fragment.source.preparation,
+                ))
+                .and_then(|n| n.checked_add(1 + usize::from(fragment.treatment.is_some())))
+                .ok_or(Error::TooLarge)
+        })?;
+    if operations > 1000 {
+        return Err(Error::TooLarge);
+    }
     for f in &recipe.fragments {
         if f.source.role.len() > 128 || f.source.input_id.len() > 128 {
             return Err(Error::TooLarge);
@@ -60,6 +74,14 @@ fn recipe_shape(recipe: &Recipe) -> Result<(), Error> {
             selection.validate()?;
         }
         match &f.source.preparation {
+            preparation::Preparation::OverlapExtensionPcrCatalogDigest {
+                request,
+                selection,
+                fragment_index,
+                ..
+            } => {
+                preparation::overlap_extension_catalog_shape(request, selection, *fragment_index)?;
+            }
             preparation::Preparation::OverlapExtensionPcr { request } => {
                 request.validate_shape()?
             }

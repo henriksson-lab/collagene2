@@ -73,6 +73,20 @@ pub struct Proposal {
     worker_receipt: String,
     public_receipt: String,
 }
+/// Keep a declared downstream digestion when replacing the upstream PCR route.
+/// Catalog pins and fragment numbers remain untouched and require fresh inspection.
+pub(crate) fn proposed_preparation(current: OverlapPreparation) -> OverlapPreparation {
+    match current {
+        OverlapPreparation::CatalogDigest
+        | OverlapPreparation::PcrCatalogDigest
+        | OverlapPreparation::MismatchPcrCatalogDigest
+        | OverlapPreparation::OverlapExtensionPcrCatalogDigest => {
+            OverlapPreparation::OverlapExtensionPcrCatalogDigest
+        }
+        _ => OverlapPreparation::OverlapExtensionPcr,
+    }
+}
+
 /// Retain the active preparation's outer-oligo sequences using the same case
 /// and whitespace normalization as ordinary Primer::new. A blank OE editor has
 /// no explicit tails and does not require its inner oligos to be completed.
@@ -82,7 +96,11 @@ pub fn current_outer_tails(draft: &Draft, index: usize) -> Result<(String, Strin
         .rows
         .get(index)
         .ok_or("Select a source contribution.")?;
-    let (forward, reverse) = if row.preparation == OverlapPreparation::OverlapExtensionPcr {
+    let (forward, reverse) = if matches!(
+        row.preparation,
+        OverlapPreparation::OverlapExtensionPcr
+            | OverlapPreparation::OverlapExtensionPcrCatalogDigest
+    ) {
         let Some(raw) = row.overlap_extension_pcr.as_ref() else {
             return Ok((String::new(), String::new()));
         };
@@ -247,6 +265,9 @@ pub fn request(
         .rows
         .get(index)
         .ok_or("The selected preparation is unavailable.")?;
+    if row.preparation == OverlapPreparation::Digest {
+        return Err("Pin the digest enzymes using the catalog before proposing an upstream PCR preparation; manual starter-enzyme digestion cannot be silently discarded.".into());
+    }
     if row.preparation == OverlapPreparation::AnnealedOligos || slot.anneal_bottom.is_some() {
         return Err(
             "A paired-oligo contribution requires its existing two-source preparation.".into(),
@@ -546,7 +567,7 @@ impl Proposal {
             max_candidates: o.max_candidates.to_string(),
         };
         raw.validate_raw()?;
-        row.preparation = OverlapPreparation::OverlapExtensionPcr;
+        row.preparation = proposed_preparation(row.preparation);
         row.overlap_extension_pcr = Some(raw);
         next.sync_rows();
         next.validate()?;
@@ -682,6 +703,67 @@ mod tests {
         let report = native::design(&molecule, &request).unwrap();
         from_design(draft, intent, draft.active_slot, &source, options, report).unwrap()
     }
+    #[test]
+    fn manual_digest_cannot_be_silently_removed_by_a_primer_proposal() {
+        let (mut draft, _, frame, _) = fixture(false);
+        draft.methods.rows[1].preparation = OverlapPreparation::Digest;
+        draft.methods.rows[1].enzymes = "EcoRI".into();
+        draft.sync_rows();
+        let intent = intent(&draft);
+        let options = options(&draft);
+        let before = receipt(&draft, MAX_CONTEXT).unwrap();
+        let message = request(&draft, &intent, 1, &event(&frame, 1), &options)
+            .err()
+            .unwrap();
+        assert!(message.contains("catalog"), "{message}");
+        assert_eq!(receipt(&draft, MAX_CONTEXT).unwrap(), before);
+    }
+
+    #[test]
+    fn proposed_internal_edits_keep_downstream_catalog_request_and_independent_target() {
+        let (mut draft, _, frame, _) = fixture(false);
+        let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+        let id = catalog
+            .edition()
+            .enzymes
+            .iter()
+            .find(|e| e.name == "EcoRI")
+            .unwrap()
+            .id
+            .clone();
+        let pin = collagene_core::catalog_digest::select(&catalog, &[id]).unwrap();
+        draft.methods.rows[1].preparation = OverlapPreparation::PcrCatalogDigest;
+        draft.methods.rows[1].catalog_selection = Some(pin.clone());
+        draft.methods.rows[1].forward_tail = "CCGAATTC".into();
+        draft.methods.rows[1].reverse_tail = "GGGAATTC".into();
+        draft.sync_rows();
+        let intent = intent(&draft);
+        let target = intent.target().revision();
+        let options = options(&draft);
+        let p = proposal(&draft, &intent, &frame, &options);
+        let after = p
+            .apply(&draft, &intent, &p.capture.source, &options)
+            .unwrap();
+        assert_eq!(after.version, 9);
+        assert!(
+            after.methods.rows[1].preparation
+                == OverlapPreparation::OverlapExtensionPcrCatalogDigest
+        );
+        assert_eq!(after.methods.rows[1].catalog_selection.as_ref(), Some(&pin));
+        assert_eq!(after.methods.rows[1].fragment, "7");
+        assert_eq!(after.methods.rows[1].repair, draft.methods.rows[1].repair);
+        assert_eq!(intent.target().revision(), target);
+        crate::assembly_extension_primer_commit::validate(&draft, &after, &draft).unwrap();
+        // Subsequent proposal requests retain the six-oligo editor's explicit tails,
+        // even when unrelated legacy single-pair fields contain other text.
+        let mut changed = after.clone();
+        changed.methods.rows[1].forward_tail = "TTTT".into();
+        assert_eq!(
+            current_outer_tails(&changed, 1).unwrap(),
+            ("CCGAATTC".into(), "GGGAATTC".into())
+        );
+    }
+
     #[test]
     fn mixed_internal_edits_propose_six_oligos_and_change_only_selected_preparation() {
         let (draft, intent, frame, options) = fixture(false);

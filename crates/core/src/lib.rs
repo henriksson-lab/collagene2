@@ -215,3 +215,5 @@ pub mod overlap_extension;
 pub mod overlap_extension_pcr;
 
 pub mod overlap_extension_primer_design;
+
+pub mod overlap_extension_digest_inspection;

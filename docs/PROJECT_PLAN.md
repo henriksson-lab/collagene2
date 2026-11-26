@@ -2337,5 +2337,40 @@ test compilation and the WASM check passed. Fixtures exposed and corrected empty
 outer-tail parsing and contribution-coordinate remapping after junction trims,
 including reverse and origin-wrapping regions. No browser checks were run.
 The public8082 renderer remains the published00a54e0 snapshot; these new controls
-await the next batched frontend publication. Whole-assembly junction-tail design
-and preparation followed by catalog digestion remain separate unfinished work.
+await the next batched frontend publication. Combining automatic junction-tail
+proposals with internally edited OE contributions remains unfinished; ordinary
+source-interval overlap primer planning already exists in core/MCP and the
+cloning controls. Preparation followed by pinned catalog
+digestion is connected in the next increment below.
+
+
+### Overlap-extension preparation followed by pinned digestion — native and WASM checked
+
+The next ordinary-cloning connection keeps two original-source PCRs, reciprocal
+extension, outer PCR, catalog-pinned digestion and optional end repair in one
+explicit preparation chain. Original-run reconstruction precedes this chain for
+saved material. The fragment inspector must reconstruct the actual native
+substrates without accepting a target sequence or serialized physical state as
+authority. Its selected fragment remains a declaration, independently replayed
+by the final assembly verifier.
+
+Draft9 adds the compound preparation selector while earlier six-oligo editors
+remain draft8. Primer suggestions preserve declared downstream catalog pins,
+fragment choices and repair rather than silently replacing the route with a
+whole amplicon. Named-design retention, autosave and historical capability guards
+are extended together. Worker84 adds target-free inspection job165 and
+result157; MCP tool177 exposes the same reconstruction. Existing candidate18,
+native-plan16 and science22 semantics stay unchanged. Duplicate-active-library
+checks also recognize newer ordinary draft kinds; the native library history format itself remains
+version3. [Workflow contract](OVERLAP_EXTENSION_DIGEST.md).
+
+Focused native validation passes63 cases: four compound compiler groups, five
+target-free inspector groups, four new binary groups, one MCP SDK group, eight
+library-history cases, six historical binary cases and35 affected web cases.
+Fixtures cover literal58bp outer product and5/44/9 digest fragments, real repair
+chemistry, exact saved origins, conditional terminal caps, competing PCR
+geometries, stale oligos/pins, draft9 and old-format retention. The private-hash
+API misuse found by compilation is corrected with bounded borrowed serialization.
+Native compilation and the final WASM check pass. No browser or
+application HTTP checks were run. These controls await the next batched preview
+publication; public8082 remains the restriction-fanout viewer snapshot.

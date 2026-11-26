@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 176;
+pub const CURRENT_TOOL_COUNT: usize = 177;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -911,6 +911,22 @@ pub struct PcrDigestInspectionQuery {
     #[serde(default)]
     pub origin: Option<collagene_core::run_material::Capsule>,
     /// Required exact retained native workspace when a saved-run origin is supplied.
+    #[serde(default)]
+    pub workspace: Option<WorkspaceRef>,
+    #[serde(default)]
+    pub fragment_start: usize,
+    #[serde(default = "default_methylation_page")]
+    pub max_fragments: usize,
+}
+/// Inspect the actual final outer-PCR product of a complete physical OE preparation.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OverlapExtensionDigestInspectionQuery {
+    pub document: DocumentRef,
+    pub request: collagene_core::overlap_extension_digest_inspection::Request,
+    #[serde(default)]
+    pub origin: Option<collagene_core::run_material::Capsule>,
+    /// Required exact retained native workspace when an origin is supplied.
     #[serde(default)]
     pub workspace: Option<WorkspaceRef>,
     #[serde(default)]
@@ -5282,6 +5298,68 @@ impl CollageneServer {
         }).await
     }
     #[tool(
+        description = "Inspect catalog-pinned cleavage of the actual outer-PCR product from an explicit four-step overlap-extension preparation. Freshly reconstructs both original-source PCR branches, selected physical strand extension and outer PCR before scanning/cutting its actual product; no intended target or claimed product is an input. Retains each stage's geometry counts, terminal-pair uncertainty, source/origin pins and full immutable evidence. Optional saved origin requires its exact native workspace and fresh replay; imported physical summaries never grant substrate authority. Returns a bounded fragment page and explicit selectable/incomplete status; it creates no stock, candidate, target or chosen cloning fragment."
+    )]
+    async fn inspect_overlap_extension_digest(
+        &self,
+        Parameters(args): Parameters<OverlapExtensionDigestInspectionQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if !(1..=100).contains(&args.max_fragments) {
+            return Err(bad(
+                "overlap-extension digest fragment page size must be1..100",
+            ));
+        }
+        if args.origin.is_some() && args.workspace.is_none() {
+            return Err(bad(
+                "saved overlap-extension source requires its exact native workspace reference",
+            ));
+        }
+        let server = self.clone();
+        self.compute(move || {
+            let source = {
+                let store = server.store.lock().unwrap();
+                let source = store.document(&args.document)?;
+                collagene_core::overlap_extension_digest_inspection::source_preflight(source, args.origin.as_ref(), &args.request).map_err(bad)?;
+                source.clone()
+            };
+            if let Some(origin) = &args.origin {
+                server.attest_run_source(args.workspace.as_ref().ok_or_else(||bad("saved overlap-extension workspace unavailable"))?, origin, &source)?;
+            }
+            let expected = collagene_core::overlap_extension_digest_inspection::inspection_revision(&source, args.origin.as_ref(), &args.request).map_err(bad)?;
+            let preview = collagene_core::overlap_extension_digest_inspection::inspect(&source, args.origin.as_ref(), &args.request).map_err(bad)?;
+            preview.validate_binding(&expected).map_err(bad)?;
+            let count = preview.inspection.as_ref().map_or(0, |inspection|inspection.fragments.len());
+            if args.fragment_start > count { return Err(bad("overlap-extension digest fragment offset exceeds retained evidence")); }
+            let end = args.fragment_start.saturating_add(args.max_fragments).min(count);
+            let artifact = server.text_artifact(bounded_json_limit(&preview, 32 * 1024 * 1024)?, "application/json", "overlap-extension-digest-inspection.json")?;
+            output(json!({
+                "document":args.document,"mode":"overlap-extension-pcr","engine_version":preview.engine_version,
+                "context_revision":preview.context_revision,"source_revision":preview.source_revision,
+                "origin_revision":preview.origin_revision,"origin_status":preview.origin_status,
+                "selectable":preview.selectable(),"incomplete":preview.incomplete,
+                "amplicon":preview.amplicon.as_ref().map(|m|json!({"revision":m.revision(),"length":m.sequence.len(),"topology":m.topology})),
+                "pcr_stages":preview.pcr_stages.iter().take(3).map(|stage|json!({
+                    "stage":stage.stage,"template_revision":stage.template_revision,"geometry_count":stage.geometries.len(),
+                    "product_revision":stage.product_revision,"product_length":stage.product_length
+                })).collect::<Vec<_>>(),
+                "extension":preview.extension.as_ref().map(|extension|json!({
+                    "homology_length":extension.homology.len(),"terminal_pairings":extension.terminal_pairings.overlaps.iter().take(100).collect::<Vec<_>>(),
+                    "pairings_truncated":extension.terminal_pairings.overlaps.len()>100,
+                    "complete":extension.terminal_pairings.complete,"unique":extension.terminal_pairings.unique,
+                    "comparisons":extension.terminal_pairings.comparisons
+                })),
+                "products_determined":preview.inspection.as_ref().is_some_and(|i|i.products_determined),
+                "scan_complete":preview.inspection.as_ref().map(|i|i.scan_complete),
+                "fragment_count":count,"fragment_start":args.fragment_start,"next_fragment_start":end,"fragments_done":end==count,
+                "fragments":preview.inspection.as_ref().map(|i|&i.fragments[args.fragment_start..end]),
+                "findings":preview.findings.iter().take(100).map(|s|s.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),
+                "findings_truncated":preview.findings.len()>100||preview.findings.iter().take(100).any(|s|s.chars().count()>1024),
+                "artifact_id":artifact,
+                "authority":"Fresh source-bound four-step preparation and declared complete-cleavage inspection only. No target agreement, fragment isolation, stock, candidate or experimental success is inferred. Keep original-source bindings and incomplete evidence when explicitly selecting a fragment for a separate cloning recipe."
+            }))
+        }).await
+    }
+    #[tool(
         description = "Inspect actual restriction fragments of a freshly reconstructed unique exact PCR product from an immutable original source, explicit ordered primers and a full catalog pin. Primer 5′ extensions participate in the actual product and catalog scan. Ambiguous/no PCR geometry withholds physical fragment inspection; uncertain or partial cleavage retains diagnostics. Returns a paged actual end-chemistry summary and immutable full JSON evidence. Optional saved-run origin requires an explicit native workspace proving exact original run/source/target events before fresh reconstruction. Optional pcr_options enables the explicit mismatch-PCR engine with its own complete typed artifact and visible incomplete/conditional-singleton evidence; omitting it retains exact-PCR behavior. It never chooses a fragment, creates a plan, copies a result into an independent target, publishes a product document or infers amplification/cleavage success."
     )]
     async fn inspect_pcr_digest(
@@ -6095,7 +6173,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Compile an explicit ordered overlap cloning recipe from immutable source document revisions and an independent target. Each fragment declares WholeLinear, an explicit DeclaredDuplex original-source terminal assumption, complete Digest or exact CatalogDigest selection with chosen fragment/optional repair, or ExactPcr with actual ordered oligos, or PcrCatalogDigest chaining actual original-source PCR into a pinned catalog digest; orientations, homology lengths, topology and published-method advisory profile are explicit. Freshly reconstructs preparations and verifies the resulting typed plan. Returns additive typed diagnostics locating failed/blocked preparation rows, junction evidence and final target mismatch, without parsing findings. Atomically saves an immutable candidate and full preparation/junction/verification JSON; no guessed tails, automatic winner, source mutation or laboratory guarantee. Reuse verify_plan and HTML/PDF exports with its plan_revision. Explicit MismatchPcr retains both ordered primers and its declared mismatch/3′-exact/search policy. OverlapExtensionPcr retains two actual PCR branches from the same source, selected physical overlap extension and separate outer-primer PCR; every ordered oligo and terminal-pair search policy is explicit. FromRun preserves a deliberately selected saved origin before downstream preparation. Mutation intent and the target remain independently declared; no mutation is selected to fit a simulated product."
+        description = "Compile an explicit ordered overlap cloning recipe from immutable source document revisions and an independent target. Each fragment declares WholeLinear, an explicit DeclaredDuplex original-source terminal assumption, complete Digest or exact CatalogDigest selection with chosen fragment/optional repair, or ExactPcr with actual ordered oligos, or PcrCatalogDigest chaining actual original-source PCR into a pinned catalog digest; orientations, homology lengths, topology and published-method advisory profile are explicit. Freshly reconstructs preparations and verifies the resulting typed plan. Returns additive typed diagnostics locating failed/blocked preparation rows, junction evidence and final target mismatch, without parsing findings. Atomically saves an immutable candidate and full preparation/junction/verification JSON; no guessed tails, automatic winner, source mutation or laboratory guarantee. Reuse verify_plan and HTML/PDF exports with its plan_revision. Explicit MismatchPcr retains both ordered primers and its declared mismatch/3′-exact/search policy. OverlapExtensionPcr retains two actual PCR branches from the same source, selected physical overlap extension and separate outer-primer PCR; every ordered oligo and terminal-pair search policy is explicit. OverlapExtensionPcrCatalogDigest appends exact catalog-pinned cleavage of that actual outer-PCR product, explicit fragment index and optional repair; inspect_overlap_extension_digest exposes the same real product without requiring a target. FromRun preserves a deliberately selected saved origin before downstream preparation. Mutation intent and the target remain independently declared; no mutation is selected to fit a simulated product."
     )]
     async fn propose_overlap_assembly(
         &self,
@@ -6173,7 +6251,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Compile an explicit ordered ligation cloning recipe from immutable DNA source revisions and an independent target. Each fragment declares WholeLinear, explicit DeclaredDuplex terminal assumptions on an original intact linear DNA input, complete Digest or catalog-pinned CatalogDigest with optional end repair, or actual ExactPcr preparation, explicit terminal treatment and orientation; circular and allow_nicked policies are explicit. Freshly reconstructs physical strands, oriented ends, junctions and retained nicks through the deterministic verifier. Returns additive typed row/step/junction diagnostics without treating available endpoints as proof of compatibility. Atomically stores a candidate and full preparation/physical/verification JSON, including failed drafts. No metadata-derived chemistry authority, automatic treatment/repair, experimental guarantee or source mutation. Reuse verify_plan and HTML/PDF exports with plan_revision. Explicit MismatchPcr retains both ordered primers and its declared mismatch/3′-exact/search policy. OverlapExtensionPcr retains two actual PCR branches from the same source, selected physical overlap extension and separate outer-primer PCR; every ordered oligo and terminal-pair search policy is explicit. FromRun preserves a deliberately selected saved origin before downstream preparation. Mutation intent and the target remain independently declared; no mutation is selected to fit a simulated product."
+        description = "Compile an explicit ordered ligation cloning recipe from immutable DNA source revisions and an independent target. Each fragment declares WholeLinear, explicit DeclaredDuplex terminal assumptions on an original intact linear DNA input, complete Digest or catalog-pinned CatalogDigest with optional end repair, or actual ExactPcr preparation, explicit terminal treatment and orientation; circular and allow_nicked policies are explicit. Freshly reconstructs physical strands, oriented ends, junctions and retained nicks through the deterministic verifier. Returns additive typed row/step/junction diagnostics without treating available endpoints as proof of compatibility. Atomically stores a candidate and full preparation/physical/verification JSON, including failed drafts. No metadata-derived chemistry authority, automatic treatment/repair, experimental guarantee or source mutation. Reuse verify_plan and HTML/PDF exports with plan_revision. Explicit MismatchPcr retains both ordered primers and its declared mismatch/3′-exact/search policy. OverlapExtensionPcr retains two actual PCR branches from the same source, selected physical overlap extension and separate outer-primer PCR; every ordered oligo and terminal-pair search policy is explicit. OverlapExtensionPcrCatalogDigest appends exact catalog-pinned cleavage of that actual outer-PCR product, explicit fragment index and optional repair; inspect_overlap_extension_digest exposes the same real product without requiring a target. FromRun preserves a deliberately selected saved origin before downstream preparation. Mutation intent and the target remain independently declared; no mutation is selected to fit a simulated product."
     )]
     async fn propose_ligation_assembly(
         &self,
@@ -6255,7 +6333,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Compile explicit source-bound TA/GC cloning preparations, ideal single-base addition at both actual 3′ ends, optional post-tail terminal treatment and ordered ligation against an independently supplied target. Fresh deterministic PCR/digest/strand/end verification retains failed drafts and explicit nicks. Does not assume polymerase activity, factory-vector chemistry, host repair, proprietary kit behavior, mixture uniqueness or experimental success. Atomically retains an immutable candidate and full typed evidence; reuse verify_plan and HTML/PDF exports with plan_revision. Explicit MismatchPcr retains both ordered primers and its declared mismatch/3′-exact/search policy. OverlapExtensionPcr retains two actual PCR branches from the same source, selected physical overlap extension and separate outer-primer PCR; every ordered oligo and terminal-pair search policy is explicit. FromRun preserves a deliberately selected saved origin before downstream preparation. Mutation intent and the target remain independently declared; no mutation is selected to fit a simulated product."
+        description = "Compile explicit source-bound TA/GC cloning preparations, ideal single-base addition at both actual 3′ ends, optional post-tail terminal treatment and ordered ligation against an independently supplied target. Fresh deterministic PCR/digest/strand/end verification retains failed drafts and explicit nicks. Does not assume polymerase activity, factory-vector chemistry, host repair, proprietary kit behavior, mixture uniqueness or experimental success. Atomically retains an immutable candidate and full typed evidence; reuse verify_plan and HTML/PDF exports with plan_revision. Explicit MismatchPcr retains both ordered primers and its declared mismatch/3′-exact/search policy. OverlapExtensionPcr retains two actual PCR branches from the same source, selected physical overlap extension and separate outer-primer PCR; every ordered oligo and terminal-pair search policy is explicit. OverlapExtensionPcrCatalogDigest appends exact catalog-pinned cleavage of that actual outer-PCR product, explicit fragment index and optional repair; inspect_overlap_extension_digest exposes the same real product without requiring a target. FromRun preserves a deliberately selected saved origin before downstream preparation. Mutation intent and the target remain independently declared; no mutation is selected to fit a simulated product."
     )]
     async fn propose_tailing_assembly(
         &self,

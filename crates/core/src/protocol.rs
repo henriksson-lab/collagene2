@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 83;
+pub const WORKER_SCHEMA_VERSION: u16 = 84;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 18;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -933,6 +933,11 @@ pub enum AnalysisJob {
         source: Molecule,
         request: crate::overlap_extension_primer_design::Request,
     },
+    InspectOverlapExtensionDigest {
+        source: Molecule,
+        origin: Option<crate::run_material::Capsule>,
+        request: crate::overlap_extension_digest_inspection::Request,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1102,6 +1107,7 @@ pub enum AnalysisResult {
     MismatchPcrDigestInspection(crate::mismatch_pcr_digest_inspection::Preview),
     ContributionEditIntent(crate::assembly_edit_intent::Report),
     OverlapExtensionPrimersDesigned(crate::overlap_extension_primer_design::Report),
+    OverlapExtensionDigestInspection(crate::overlap_extension_digest_inspection::Preview),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1333,6 +1339,17 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
     match &r.job {
         AnalysisJob::DesignOverlapExtensionPrimers { source, request } => {
             crate::overlap_extension_primer_design::preflight(source, request)?;
+        }
+        AnalysisJob::InspectOverlapExtensionDigest {
+            source,
+            origin,
+            request,
+        } => {
+            crate::overlap_extension_digest_inspection::source_preflight(
+                source,
+                origin.as_ref(),
+                request,
+            )?;
         }
         AnalysisJob::InspectMismatchPcrDigest {
             molecule,
@@ -1623,6 +1640,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_mismatch_digest_tag(bytes, &[154])?;
     preflight_contribution_edit_tag(bytes, &[155])?;
     preflight_overlap_extension_primer_tag(bytes, &[156])?;
+    preflight_overlap_extension_digest_tag(bytes, &[157])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1679,6 +1697,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         },
     };
     let required = match &response.result {
+        AnalysisResult::OverlapExtensionDigestInspection(_) => 84,
         AnalysisResult::OverlapExtensionPrimersDesigned(_) => 83,
         AnalysisResult::ContributionEditIntent(_) => 79,
         AnalysisResult::MismatchPcrDigestInspection(_) => 78,
@@ -1868,6 +1887,30 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         AnalysisResult::TailingRecipePreview(p) => Some(&p.compiled.plan),
         _ => None,
     };
+    if recipe_plan.is_some_and(|plan| {
+        plan.steps.iter().any(|operation| {
+            let crate::verification::Operation::CatalogDigest {
+                template: crate::verification::Source::Step(outer),
+                ..
+            } = operation
+            else {
+                return false;
+            };
+            let Some(crate::verification::Operation::Pcr {
+                template: crate::verification::Source::Step(extension),
+                ..
+            }) = plan.steps.get(*outer)
+            else {
+                return false;
+            };
+            matches!(
+                plan.steps.get(*extension),
+                Some(crate::verification::Operation::OverlapExtension { .. })
+            )
+        })
+    }) {
+        check_variant_version(bytes, 84)?;
+    }
     // The existing Operation stays worker81-compatible, but interpreting it as
     // a forked recipe-row preparation requires the ownership model of schema82.
     if recipe_plan.is_some_and(|p| {
@@ -2133,6 +2176,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
         AnalysisResult::OverlapExtensionPrimersDesigned(report) => {
             check_verification_report_version(bytes, &report.verification)?;
+            report.validate_binding(&response.revision)?;
+        }
+        AnalysisResult::OverlapExtensionDigestInspection(report) => {
             report.validate_binding(&response.revision)?;
         }
         AnalysisResult::AssemblyJunctionInspection(report) => {
@@ -2877,6 +2923,14 @@ fn preflight_mismatch_digest_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error
     }
     Ok(())
 }
+fn preflight_overlap_extension_digest_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 84)?;
+    }
+    Ok(())
+}
 fn preflight_overlap_extension_primer_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -3200,6 +3254,8 @@ mod preparation_shape {
     }
     fn variant(worker: u16, name: &str, variant: &str) -> Result<(), Found> {
         let minimum = match (name, variant) {
+            ("Preparation", "OverlapExtensionPcrCatalogDigest")
+            | ("RunPreparation", "OverlapExtensionPcrCatalogDigest") => 84,
             ("Preparation", "OverlapExtensionPcr")
             | ("RunPreparation", "OverlapExtensionPcr")
             | ("Stage", "OverlapExtension") => 82,
@@ -3418,7 +3474,7 @@ mod preparation_shape {
 }
 fn check_preparation_version(bytes: &[u8], value: &impl Serialize) -> Result<(), Error> {
     let worker = u16::from_le_bytes([bytes[4], bytes[5]]);
-    if worker < 82 {
+    if worker < 84 {
         value
             .serialize(preparation_shape::Visitor {
                 worker,
@@ -3464,7 +3520,9 @@ fn check_workspace_version(
         check_preparation_version(bytes, &candidate.plan)?;
     }
     for attachment in workspace.attachments.values() {
-        if attachment.kind == "assembly-draft-v8" {
+        if attachment.kind == "assembly-draft-v9" {
+            check_variant_version(bytes, 84)?;
+        } else if attachment.kind == "assembly-draft-v8" {
             check_variant_version(bytes, 82)?;
         } else if attachment.kind == "assembly-draft-v7" {
             check_variant_version(bytes, 79)?;
@@ -3747,6 +3805,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_mismatch_digest_tag(bytes, &[162])?;
     preflight_contribution_edit_tag(bytes, &[163])?;
     preflight_overlap_extension_primer_tag(bytes, &[164])?;
+    preflight_overlap_extension_digest_tag(bytes, &[165])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -3754,6 +3813,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::InspectOverlapExtensionDigest { .. } => 84,
         AnalysisJob::DesignOverlapExtensionPrimers { .. } => 83,
         AnalysisJob::BuildContributionEditIntent { .. } => 79,
         AnalysisJob::InspectMismatchPcrDigest { .. } => 78,
@@ -4194,6 +4254,24 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             {
                 return Err(Error::Format(
                     "Mismatch PCR digest original source/origin/policy/catalog context changed"
+                        .into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::InspectOverlapExtensionDigest {
+            source,
+            origin,
+            request,
+        } => {
+            if crate::overlap_extension_digest_inspection::inspection_revision(
+                source,
+                origin.as_ref(),
+                request,
+            )? != r.revision
+            {
+                return Err(Error::Format(
+                    "Overlap-extension digest source, origin, oligos or catalog/options changed"
                         .into(),
                 ));
             }
@@ -5433,6 +5511,14 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             request,
         } => crate::mismatch_pcr_digest_inspection::inspect(&molecule, origin.as_ref(), &request)
             .map(AnalysisResult::MismatchPcrDigestInspection),
+        AnalysisJob::InspectOverlapExtensionDigest {
+            source,
+            origin,
+            request,
+        } => {
+            crate::overlap_extension_digest_inspection::inspect(&source, origin.as_ref(), &request)
+                .map(AnalysisResult::OverlapExtensionDigestInspection)
+        }
         AnalysisJob::DesignOverlapExtensionPrimers { source, request } => {
             crate::overlap_extension_primer_design::design(&source, &request)
                 .map(AnalysisResult::OverlapExtensionPrimersDesigned)

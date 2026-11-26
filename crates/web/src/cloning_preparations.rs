@@ -51,6 +51,13 @@ pub(crate) fn prepared_rows(
             OverlapPreparation::OverlapExtensionPcr => Preparation::OverlapExtensionPcr {
                 request: row.overlap_extension_pcr.as_ref().ok_or("Enter the two source-PCR pairs, terminal homology and outer-PCR pair before reconstruction.")?.request()?,
             },
+            OverlapPreparation::OverlapExtensionPcrCatalogDigest => {
+                let request = row.overlap_extension_pcr.as_ref().ok_or("Enter all six overlap-extension oligos before inspecting the outer-PCR digest.")?.request()?;
+                let selection = row.catalog_selection.as_ref().ok_or("Pin the outer-PCR product digest enzymes first.")?;
+                selection.validate().map_err(|e| e.to_string())?;
+                let fragment_index = row.fragment.trim().parse::<usize>().ok().and_then(|n| n.checked_sub(1)).ok_or("Digest fragment numbers start at1")?;
+                Preparation::OverlapExtensionPcrCatalogDigest { request, selection: selection.clone(), fragment_index, repair: row.repair }
+            }
             OverlapPreparation::DeclaredDuplex => Preparation::DeclaredDuplex {
                 left: row.left_terminus,
                 right: row.right_terminus,
@@ -140,6 +147,7 @@ pub(crate) fn prepared_rows(
                 Preparation::CatalogDigest { selection, fragment_index, repair } => RunPreparation::CatalogDigest { selection, fragment_index, repair },
                 Preparation::ExactPcr { forward, reverse } => RunPreparation::ExactPcr { forward, reverse },
                 Preparation::OverlapExtensionPcr { request } => RunPreparation::OverlapExtensionPcr { request },
+                Preparation::OverlapExtensionPcrCatalogDigest { request, selection, fragment_index, repair } => RunPreparation::OverlapExtensionPcrCatalogDigest { request, selection, fragment_index, repair },
                 Preparation::MismatchPcr { forward, reverse, options } => RunPreparation::MismatchPcr { forward, reverse, options },
                 Preparation::PcrCatalogDigest { forward, reverse, selection, fragment_index, repair } => RunPreparation::PcrCatalogDigest { forward, reverse, selection, fragment_index, repair },
                 Preparation::MismatchPcrCatalogDigest { forward, reverse, options, selection, fragment_index, repair } => RunPreparation::MismatchPcrCatalogDigest { forward, reverse, options, selection, fragment_index, repair },
@@ -762,5 +770,104 @@ mod overlap_extension_tests {
             p.verification.products.last().unwrap().sequence.as_str(),
             FINAL
         );
+        s.rows[0].preparation = OverlapPreparation::OverlapExtensionPcrCatalogDigest;
+        let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+        let id = catalog
+            .edition()
+            .enzymes
+            .iter()
+            .find(|entry| entry.name == "EcoRI")
+            .unwrap()
+            .id
+            .clone();
+        s.rows[0].catalog_selection =
+            Some(collagene_core::catalog_digest::select(&catalog, &[id]).unwrap());
+        s.rows[0].fragment = "2".into();
+        let (_, rows) = prepared_rows(&s, 2).unwrap();
+        let assembly_recipe::Preparation::FromRun {
+            origin,
+            preparation:
+                assembly_recipe::RunPreparation::OverlapExtensionPcrCatalogDigest {
+                    request,
+                    selection,
+                    fragment_index,
+                    ..
+                },
+        } = &rows[0].preparation
+        else {
+            panic!("saved-source OE digest child");
+        };
+        assert_eq!(
+            serde_json::to_value(origin).unwrap(),
+            serde_json::to_value(&capsule).unwrap()
+        );
+        assert_eq!(
+            request.left.reverse.ordered_sequence(),
+            "GGTCTGAAAATACGTAGC"
+        );
+        assert_eq!(selection, s.rows[0].catalog_selection.as_ref().unwrap());
+        assert_eq!(*fragment_index, 1);
+    }
+    #[test]
+    fn extension_catalog_conversion_preserves_six_oligos_exact_pin_and_repair_request() {
+        let mut s = state();
+        let row = &mut s.rows[0];
+        row.preparation = OverlapPreparation::OverlapExtensionPcrCatalogDigest;
+        row.overlap_extension_pcr
+            .as_mut()
+            .unwrap()
+            .outer
+            .forward
+            .tail = "CCGAATTC".into();
+        row.overlap_extension_pcr
+            .as_mut()
+            .unwrap()
+            .outer
+            .reverse
+            .tail = "GGCTCGAG".into();
+        row.fragment = "2".into();
+        row.repair = Some(collagene_core::chemistry::EndRepairMethod::Blunt);
+        row.reverse = true;
+        let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+        let ids = catalog
+            .edition()
+            .enzymes
+            .iter()
+            .filter(|entry| entry.name == "EcoRI" || entry.name == "XhoI")
+            .map(|entry| entry.id.clone())
+            .collect::<Vec<_>>();
+        row.catalog_selection =
+            Some(collagene_core::catalog_digest::select(&catalog, &ids).unwrap());
+        let before = s.clone();
+        let (_, rows) = prepared_rows(&s, 2).unwrap();
+        let assembly_recipe::Preparation::OverlapExtensionPcrCatalogDigest {
+            request,
+            selection,
+            fragment_index,
+            repair,
+        } = &rows[0].preparation
+        else {
+            panic!("OE outer-PCR catalog digest");
+        };
+        assert_eq!(
+            request.left.reverse.ordered_sequence(),
+            "GGTCTGAAAATACGTAGC"
+        );
+        assert_eq!(
+            request.right.forward.ordered_sequence(),
+            "GCTACGTATTTTCAGACC"
+        );
+        assert_eq!(request.outer.forward.tail, "CCGAATTC");
+        assert_eq!(request.outer.reverse.tail, "GGCTCGAG");
+        assert_eq!(selection, s.rows[0].catalog_selection.as_ref().unwrap());
+        assert_eq!(*fragment_index, 1);
+        assert_eq!(
+            *repair,
+            Some(collagene_core::chemistry::EndRepairMethod::Blunt)
+        );
+        assert!(rows[0].reverse);
+        assert!(s == before);
+        s.rows[0].catalog_selection = None;
+        assert!(prepared_rows(&s, 2).is_err());
     }
 }

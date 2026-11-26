@@ -242,7 +242,7 @@ fn version(value: &Value) -> Result<u32, String> {
     value
         .get("version")
         .and_then(Value::as_u64)
-        .filter(|v| (1..=8).contains(v))
+        .filter(|v| (1..=9).contains(v))
         .map(|v| v as u32)
         .ok_or_else(|| fail("unsupported editable-draft version."))
 }
@@ -728,7 +728,7 @@ mod tests {
     fn ordinary_versions_and_latest_literal_declarations_roundtrip_without_source_copies() {
         let (frame, base) = fixture();
         let before = serde_json::to_value(&frame).unwrap();
-        for version in 1..=8 {
+        for version in 1..=9 {
             let mut draft = base.clone();
             draft.version = version;
             draft.validate().unwrap();
@@ -1097,6 +1097,43 @@ mod tests {
         });
         let error = load(&excessive, &entry.id).err().unwrap();
         assert!(error.contains("before source copies"), "{error}");
+    }
+
+    #[test]
+    fn saved_digest_chain_retains_unfinished_six_oligos_pins_and_source_events_as_version9() {
+        let (frame, mut draft) = fixture();
+        let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+        let id = catalog
+            .edition()
+            .enzymes
+            .iter()
+            .find(|e| e.name == "EcoRI")
+            .unwrap()
+            .id
+            .clone();
+        let pin = collagene_core::catalog_digest::select(&catalog, &[id]).unwrap();
+        let row = &mut draft.methods.rows[0];
+        row.preparation =
+            crate::cloning_methods_model::OverlapPreparation::OverlapExtensionPcrCatalogDigest;
+        row.catalog_selection = Some(pin.clone());
+        row.fragment = "unfinished index".into();
+        let mut raw = crate::cloning_methods_model::OverlapExtensionPcrInput::default();
+        raw.left.forward.annealing = "unfinished PCR".into();
+        row.overlap_extension_pcr = Some(raw);
+        draft.sync_rows();
+        let (saved, entry) = save(&frame, "Edited insert then digest", &draft).unwrap();
+        assert_eq!(entry.draft_version, 9);
+        let restored = load(&saved, &entry.id).unwrap();
+        assert!(restored == draft);
+        assert_eq!(
+            restored.methods.rows[0].catalog_selection.as_ref(),
+            Some(&pin)
+        );
+        assert_eq!(
+            serde_json::to_value(&saved.documents).unwrap(),
+            serde_json::to_value(&frame.documents).unwrap()
+        );
+        assert!(saved.candidates.is_empty());
     }
 
     #[test]

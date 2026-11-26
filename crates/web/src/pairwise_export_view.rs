@@ -1,5 +1,5 @@
 //! Cancellable binary-worker exports from the exact retained comparison.
-use crate::{app::download, pairwise_result_view::Review, worker::CachedWorker};
+use crate::{pairwise_result_view::Review, worker::CachedWorker};
 use collagene_core::{
     pairwise_export::{self, Export, Format},
     protocol::{AnalysisJob, AnalysisResult, Request},
@@ -141,16 +141,38 @@ pub fn PairwiseExportView(
         }
     };
     let save = move |_| {
-        let outcome = (|| -> Result<(), String> {
+        let result = (|| {
             guard.run(bound.get_value())?;
             let output = prepared.get_untracked().ok_or("Prepare an export first.")?;
-            download(
+            crate::app::prepare_download(
                 &format!("pairwise-comparison.{}", output.extension),
                 &output.mime,
                 &output.bytes,
             )
         })();
-        status.set(match outcome{Ok(())=>"Comparison export downloaded. Historical/fresh labels and sequence differences do not establish experimental verification.".into(),Err(error)=>error});
+        let captured_generation = generation.get_untracked();
+        let captured_format = format.get_untracked();
+        match result {
+            Ok(artifact) => {
+                let check = move || {
+                    if status.try_get_untracked().is_none() {
+                        return Err("Export review closed.".into());
+                    }
+                    if generation.get_untracked() != captured_generation
+                        || format.get_untracked() != captured_format
+                    {
+                        return Err("Comparison export settings changed.".into());
+                    }
+                    guard.run(bound.get_value())
+                };
+                let completion = check.clone();
+                artifact.complete_guarded(check, move |result| {
+                    if completion().is_err() { return; }
+                    status.set(match result { Ok(()) => "Comparison export saved. Historical/fresh labels and sequence differences do not establish experimental verification.".into(), Err(error) => error });
+                });
+            }
+            Err(error) => status.set(error),
+        }
     };
     view!{<details class="pairwise-export"><summary>"Export aligned sequences or printable review"</summary>
         <p class="helper">"Standard alignment files retain the displayed orientation, gaps and aligned segment. HTML/PDF retain the source-event and comparison context. Original source coordinates can differ from displayed coordinates. Complete native evidence remains available as JSON."</p>

@@ -1,5 +1,5 @@
 //! Export the exact currently reviewed graph; scientific work remains in a worker.
-use crate::{app::download, worker::CachedWorker};
+use crate::worker::CachedWorker;
 use collagene_core::{
     Molecule,
     oligo_formats::Delimiter,
@@ -137,8 +137,23 @@ pub fn AssemblyOutputs(
                 return;
             }
             worker.set_value(None);
-            busy.set(false);
-            let outcome = (|| -> Result<String, String> {
+            let export_guard = || -> Result<(), String> {
+                if !alive.load(Ordering::Relaxed)
+                    || generation.get_untracked() != token
+                    || epoch.get_untracked() != bound_epoch
+                    || identity.get_untracked() != bound
+                {
+                    return Err(
+                        "The reviewed design changed before native export acceptance.".into(),
+                    );
+                }
+                let (plan, target) = capture.run(())?;
+                if verification::plan_revision(&plan) != bound.0 || target.revision() != bound.1 {
+                    return Err("The source or target changed before export acceptance.".into());
+                }
+                Ok(())
+            };
+            let outcome: Result<String, String> = async {
                 let response = result?;
                 // Recheck host-owned source/target event guards after the worker,
                 // including switches between equal-content documents.
@@ -176,7 +191,13 @@ pub fn AssemblyOutputs(
                         } else {
                             ("cloning-primers.tsv", "text/tab-separated-values")
                         };
-                        download(name, mime, result.export.text.as_bytes())?;
+                        crate::app::download_guarded(
+                            name,
+                            mime,
+                            result.export.text.as_bytes(),
+                            &export_guard,
+                        )
+                        .await?;
                         Ok(format!(
                             "Exported {} oligos. {}",
                             result.report.oligos.records.len(),
@@ -192,14 +213,26 @@ pub fn AssemblyOutputs(
                         ))
                     }
                     (Format::Html, AnalysisResult::ProtocolHtml(html)) => {
-                        download("cloning-protocol.html", "text/html", html.as_bytes())?;
+                        crate::app::download_guarded(
+                            "cloning-protocol.html",
+                            "text/html",
+                            html.as_bytes(),
+                            &export_guard,
+                        )
+                        .await?;
                         Ok("Exported HTML steps from this plan and target.".into())
                     }
                     (Format::Pdf, AnalysisResult::ProtocolPdf(pdf)) => {
                         if pdf.plan_revision != bound.0 || pdf.target_revision != bound.1 {
                             return Err("PDF belongs to another design.".into());
                         }
-                        download("cloning-protocol.pdf", "application/pdf", &pdf.bytes)?;
+                        crate::app::download_guarded(
+                            "cloning-protocol.pdf",
+                            "application/pdf",
+                            &pdf.bytes,
+                            &export_guard,
+                        )
+                        .await?;
                         Ok(format!(
                             "Exported {} PDF pages · {:?}.",
                             pdf.pages, pdf.status
@@ -208,9 +241,17 @@ pub fn AssemblyOutputs(
                     (_, AnalysisResult::Error(error)) => Err(error),
                     _ => Err("Unexpected design export response.".into()),
                 }
-            })();
+            }
+            .await;
+            if !alive.load(Ordering::Relaxed)
+                || generation.get_untracked() != token
+                || epoch.get_untracked() != bound_epoch
+            {
+                return;
+            }
+            busy.set(false);
             status.set(outcome.unwrap_or_else(|e| e));
         });
     });
-    view! {<section class="assembly-outputs"><h4>"Design outputs"</h4><div class="assembly-output-actions"><button class="button secondary" disabled=move||busy.get() on:click=move|_|export.run(Format::Csv)>"Primer CSV"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|export.run(Format::Tsv)>"Primer TSV"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|export.run(Format::Html)>"Steps HTML"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|export.run(Format::Pdf)>"Steps PDF"</button><button class="text-tool" disabled=move||!busy.get() on:click=move|_|{generation.update(|g|*g=g.wrapping_add(1));if let Some(w)=worker.get_value(){w.close();}worker.set_value(None);busy.set(false);status.set("Export cancelled.".into());}>"Cancel export"</button></div><p class="helper">"Order sheets list declared oligos, including 5′ tails. Reaction treatments do not become supplier modification requests."</p><p role="status">{move||status.get()}</p></section>}
+    view! {<section class="assembly-outputs"><h4>"Design outputs"</h4><div class="assembly-output-actions"><button class="button secondary" disabled=move||busy.get() on:click=move|_|export.run(Format::Csv)>"Primer CSV"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|export.run(Format::Tsv)>"Primer TSV"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|export.run(Format::Html)>"Steps HTML"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|export.run(Format::Pdf)>"Steps PDF"</button><button class="text-tool" disabled=move||!busy.get() on:click=move|_|{generation.update(|g|*g=g.wrapping_add(1));if let Some(w)=worker.get_value(){w.close();}worker.set_value(None);busy.set(false);status.set("Export view cancelled; a native write already accepted may still finish.".into());}>"Cancel export"</button></div><p class="helper">"Order sheets list declared oligos, including 5′ tails. Reaction treatments do not become supplier modification requests."</p><p role="status">{move||status.get()}</p></section>}
 }

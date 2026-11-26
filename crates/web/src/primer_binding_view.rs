@@ -182,18 +182,36 @@ pub fn PrimerEvidenceView(
             Err(error) => error,
         });
     });
+    let export_alive = RwSignal::new(());
     let download = move |_| {
-        let result = guard.run(()).and_then(|()| {
-            report
-                .with_value(|report| {
+        let result = guard
+            .run(())
+            .and_then(|()| {
+                report.with_value(|report| {
                     serde_json::to_vec_pretty(report.as_ref()).map_err(|e| e.to_string())
                 })
-                .and_then(|bytes| {
-                    crate::app::download("primer-evidence.json", "application/json", &bytes)
-                })
-        });
-        if let Err(error) = result {
-            on_message.run(error);
+            })
+            .and_then(|bytes| {
+                crate::app::prepare_download("primer-evidence.json", "application/json", &bytes)
+            });
+        match result {
+            Ok(artifact) => {
+                let check = move || {
+                    if export_alive.try_get_untracked().is_none() {
+                        return Err("Primer review closed.".into());
+                    }
+                    guard.run(())
+                };
+                artifact.complete_guarded(check, move |result| {
+                    if export_alive.try_get_untracked().is_none() || guard.run(()).is_err() {
+                        return;
+                    }
+                    if let Err(error) = result {
+                        on_message.run(error);
+                    }
+                });
+            }
+            Err(error) => on_message.run(error),
         }
     };
     let metadata = report.with_value(|r| {

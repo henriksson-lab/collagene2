@@ -1,7 +1,6 @@
 //! Selected, source-bound mismatch-PCR reference outputs. Scientific preparation
 //! stays in the worker; naming and ordering never imply target verification.
 use crate::{
-    app::download,
     mutagenesis::OutputOpen,
     pcr_overlay::{self, Overlay, Publication, Role},
     worker::CachedWorker,
@@ -190,10 +189,20 @@ pub fn MismatchPcrOutputsPanel(
                         "text/tab-separated-values;charset=utf-8",
                     ),
                 };
-                match download(name, mime, report.text.as_bytes()) {
-                    Ok(()) => status.set(report.warnings.join(" ")),
-                    Err(error) => status.set(error),
-                }
+                crate::app::download_with_completion(
+                    name,
+                    mime,
+                    report.text.as_bytes(),
+                    move |result| {
+                        if status.try_get_untracked().is_none() {
+                            return;
+                        }
+                        match result {
+                            Ok(()) => status.set(report.warnings.join(" ")),
+                            Err(error) => status.set(error),
+                        }
+                    },
+                )
             }
             Err(error) => status.set(error.to_string()),
         }
@@ -313,10 +322,22 @@ pub fn MismatchPcrOutputsPanel(
         }
         let result = bound.with_value(|r| serde_json::to_vec_pretty(&r.report));
         match result {
-            Ok(bytes) => match download("mismatch-pcr.json", "application/json", &bytes) {
-                Ok(()) => status.set("Complete returned mismatch-PCR evidence downloaded.".into()),
-                Err(error) => status.set(error),
-            },
+            Ok(bytes) => crate::app::download_with_completion(
+                "mismatch-pcr.json",
+                "application/json",
+                &bytes,
+                move |result| {
+                    if status.try_get_untracked().is_none() {
+                        return;
+                    }
+                    match result {
+                        Ok(()) => {
+                            status.set("Complete returned mismatch-PCR evidence downloaded.".into())
+                        }
+                        Err(error) => status.set(error),
+                    }
+                },
+            ),
             Err(error) => status.set(error.to_string()),
         }
     };

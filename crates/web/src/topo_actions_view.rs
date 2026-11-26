@@ -1,6 +1,6 @@
 //! Explicit ordered physical processing after a freshly inspected TOPO path.
 //! No target-driven deletion, implicit repair, or advisory-plan handoff.
-use crate::{app::download, topo_nick_view::Frame, worker::CachedWorker};
+use crate::{topo_nick_view::Frame, worker::CachedWorker};
 use collagene_core::{
     protocol::{AnalysisJob, AnalysisResult, Request as WireRequest},
     topo::{
@@ -633,29 +633,67 @@ pub fn TopoActionsView(
     });
     let export = Callback::new(move |()| {
         let mut output = Json(vec![]);
-        let result = if let Some(p) = current_projection() {
-            if let Err(e) = capture.run(p.inspection.frame.clone()) {
-                status.set(e);
+        let (result, source_frame, expected_revision, projected) =
+            if let Some(p) = current_projection() {
+                if let Err(e) = capture.run(p.inspection.frame.clone()) {
+                    status.set(e);
+                    return;
+                }
+                (
+                    serde_json::to_writer(&mut output, p.report.as_ref()),
+                    p.inspection.frame.clone(),
+                    p.report.context_revision.clone(),
+                    true,
+                )
+            } else if let Some(i) = current_inspection() {
+                if let Err(e) = capture.run(i.frame.clone()) {
+                    status.set(e);
+                    return;
+                }
+                (
+                    serde_json::to_writer(&mut output, i.report.as_ref()),
+                    i.frame.clone(),
+                    i.report.context_revision.clone(),
+                    false,
+                )
+            } else {
                 return;
-            }
-            serde_json::to_writer(&mut output, p.report.as_ref())
-        } else if let Some(i) = current_inspection() {
-            if let Err(e) = capture.run(i.frame.clone()) {
-                status.set(e);
-                return;
-            }
-            serde_json::to_writer(&mut output, i.report.as_ref())
-        } else {
-            return;
-        };
-        if let Err(e) = result.map_err(|e| e.to_string()).and_then(|()| {
-            download(
+            };
+        let result = result.map_err(|e| e.to_string()).and_then(|()| {
+            crate::app::prepare_download(
                 "topo-ordered-actions-evidence.json",
                 "application/json",
                 &output.0,
             )
-        }) {
-            status.set(e);
+        });
+        match result {
+            Ok(artifact) => {
+                let check = move || {
+                    if status.try_get_untracked().is_none() {
+                        return Err("Export review closed.".into());
+                    }
+                    let revision = if projected {
+                        current_projection().map(|p| p.report.context_revision.clone())
+                    } else {
+                        current_inspection().map(|i| i.report.context_revision.clone())
+                    };
+                    if revision.as_deref() != Some(expected_revision.as_str()) {
+                        return Err("Ordered-action evidence changed.".into());
+                    }
+                    capture.run(source_frame.clone()).map(|_| ())
+                };
+                let completion = check.clone();
+                artifact.complete_guarded(check, move |result| {
+                    if completion().is_err() {
+                        return;
+                    }
+                    status.set(match result {
+                        Ok(()) => "Ordered-action evidence saved.".into(),
+                        Err(error) => error,
+                    });
+                });
+            }
+            Err(error) => status.set(error),
         }
     });
     view! {<details class="topo-actions"><summary>"Directional flap processing and ordered physical actions"</summary>

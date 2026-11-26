@@ -69,6 +69,12 @@ files. On Windows, protect the application data/configuration locations with the
 user's normal private ACLs. Configuration contains only a storage path and schema
 version, not passwords or remote access keys.
 
+File exports use the separate native [export service](DESKTOP_EXPORTS.md) and
+the fixed `exports` child of this storage area. The UI waits for a hash/length
+receipt and shows the saved filename. Export I/O holds neither the working-state
+mutex nor the remote-sync lane. All export formats use this same boundary;
+native mode has no browser-download fallback.
+
 ## IPC and window permissions
 
 The embedded main window is created by native code. Remote navigation and new

@@ -20,7 +20,8 @@ pub fn PrimerOrdersPanel(
     let primers = StoredValue::new(primers);
     let status = RwSignal::new(String::new());
     let action = Callback::new(move |action: Action| {
-        let result = (|| -> Result<String, String> {
+        wasm_bindgen_futures::spawn_local(async move {
+            let result:Result<String,String> = async {
             guard.run(())?;
             let table = primers
                 .with_value(|primers| collagene_core::oligo_orders::from_primers(primers))
@@ -62,15 +63,18 @@ pub fn PrimerOrdersPanel(
                     )
                     .map_err(|e| e.to_string())?;
                     guard.run(())?;
-                    crate::app::download(filename, mime, report.text.as_bytes())?;
+                    crate::app::download_guarded(filename, mime, report.text.as_bytes(),move||guard.run(())).await?;
                     Ok(format!(
                         "Named oligo order reference exported. {}",
                         report.warnings.join(" ")
                     ))
                 }
             }
-        })();
-        status.set(result.unwrap_or_else(|error| error));
+        }.await;
+            if status.try_get_untracked().is_some() && guard.run(()).is_ok() {
+                status.set(result.unwrap_or_else(|error| error));
+            }
+        });
     });
     view! {
         <section class="primer-order-outputs" aria-label="Selected oligo outputs">

@@ -439,16 +439,39 @@ pub fn SavedReadChecksPanel(
         let Some(r) = review.get_untracked() else {
             return;
         };
-        let result = (|| -> Result<(), String> {
+        let result = (|| {
             action_guard.run(r.clone())?;
             let bytes=serde_json::to_vec_pretty(&serde_json::json!({"attachment_hash":r.hash,"reference":r.reference,"reads":r.reads,"fresh_replay":r.fresh,"scope":"read evidence under recorded thresholds; not experimental confirmation","report":r.report.as_ref()})).map_err(|e|e.to_string())?;
             if bytes.len() > 32 << 20 {
                 return Err("JSON exceeds the32MiB download limit.".into());
             }
-            crate::app::download("read-check.json", "application/json", &bytes)
+            crate::app::prepare_download("read-check.json", "application/json", &bytes)
         })();
-        if let Err(e) = result {
-            status.set(e)
+        match result {
+            Ok(artifact) => {
+                let check = move || {
+                    if status.try_get_untracked().is_none() {
+                        return Err("Export review closed.".into());
+                    }
+                    if !review.with_untracked(|current| {
+                        current.as_ref().is_some_and(|v| Arc::ptr_eq(v, &r))
+                    }) {
+                        return Err("Selected read-check evidence changed.".into());
+                    }
+                    action_guard.run(r.clone())
+                };
+                let completion = check.clone();
+                artifact.complete_guarded(check, move |result| {
+                    if completion().is_err() {
+                        return;
+                    }
+                    status.set(match result {
+                        Ok(()) => "Read-check evidence saved.".into(),
+                        Err(error) => error,
+                    });
+                });
+            }
+            Err(error) => status.set(error),
         }
     });
     view! {<section class="saved-read-checks"><h2>"Saved read checks"</h2><p class="helper">"Checks retain exact historical reference and read events. Opening a record does not restore a current verification result."</p><p role="status">{move||status.get()}</p>

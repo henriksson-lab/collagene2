@@ -316,10 +316,11 @@ pub fn AssemblyPoolView(
         }
     };
     let download = move |_| {
-        let result = (|| -> Result<(), String> {
-            let saved = evidence
-                .get_untracked()
-                .ok_or("Inspect the construct first.")?;
+        let Some(saved) = evidence.get_untracked() else {
+            status.set("Inspect the construct first.".into());
+            return;
+        };
+        let result = (|| {
             guard.run(saved.clone())?;
             #[derive(serde::Serialize)]
             struct Export<'a> {
@@ -355,10 +356,25 @@ pub fn AssemblyPoolView(
                 },
             )
             .map_err(|e| e.to_string())?;
-            guard.run(saved)?;
-            crate::app::download("construct-reaction.json", "application/json", &bytes.0)
+            guard.run(saved.clone())?;
+            crate::app::prepare_download("construct-reaction.json", "application/json", &bytes.0)
         })();
-        status.set(match result{Ok(())=>"Complete pinned reaction discovery downloaded. Imported evidence does not restore scientific authority.".into(),Err(error)=>error});
+        match result {
+            Ok(artifact) => {
+                let check = move || {
+                    if status.try_get_untracked().is_none() {
+                        return Err("Export review closed.".into());
+                    }
+                    guard.run(saved.clone())
+                };
+                let completion = check.clone();
+                artifact.complete_guarded(check, move |result| {
+                    if completion().is_err() { return; }
+                    status.set(match result { Ok(()) => "Complete pinned reaction discovery saved. Imported evidence does not restore scientific authority.".into(), Err(error) => error });
+                });
+            }
+            Err(error) => status.set(error),
+        }
     };
     let current = Memo::new(move |_| {
         evidence.with(|saved| {

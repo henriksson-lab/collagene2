@@ -1,6 +1,6 @@
 //! Explicit downstream graph treatment. A sealed graph is not a checked target
 //! or a duplex projection; all untreated components and limitations remain.
-use crate::{app::download, worker::CachedWorker};
+use crate::worker::CachedWorker;
 use collagene_core::{
     protocol::{AnalysisJob, AnalysisResult, Request as WireRequest},
     run_lineage::EventBinding,
@@ -313,16 +313,35 @@ pub fn TopoNickView(
         let Some(e) = current() else {
             return;
         };
-        if let Err(error) = capture.run(e.frame.clone()) {
-            status.set(error);
-            return;
-        }
-        let mut bytes = Json(vec![]);
-        let result = serde_json::to_writer(&mut bytes, e.report.as_ref())
-            .map_err(|e| e.to_string())
-            .and_then(|()| download("topo-nick-treatment.json", "application/json", &bytes.0));
-        if let Err(error) = result {
-            status.set(error);
+        let result = (|| {
+            capture.run(e.frame.clone())?;
+            let mut bytes = Json(vec![]);
+            serde_json::to_writer(&mut bytes, e.report.as_ref()).map_err(|e| e.to_string())?;
+            crate::app::prepare_download("topo-nick-treatment.json", "application/json", &bytes.0)
+        })();
+        match result {
+            Ok(artifact) => {
+                let check = move || {
+                    if status.try_get_untracked().is_none() {
+                        return Err("Export review closed.".into());
+                    }
+                    if current().is_none_or(|now| !Arc::ptr_eq(&now, &e)) {
+                        return Err("Nick treatment changed.".into());
+                    }
+                    capture.run(e.frame.clone()).map(|_| ())
+                };
+                let completion = check.clone();
+                artifact.complete_guarded(check, move |result| {
+                    if completion().is_err() {
+                        return;
+                    }
+                    status.set(match result {
+                        Ok(()) => "Nick-treatment evidence saved.".into(),
+                        Err(error) => error,
+                    });
+                });
+            }
+            Err(error) => status.set(error),
         }
     });
     let nick_page = RwSignal::new(0usize);
@@ -641,16 +660,35 @@ fn ProcessedTopoView(
         let Some(value) = current() else {
             return;
         };
-        if let Err(e) = capture.run(value.parent.frame.clone()) {
-            status.set(e);
-            return;
-        }
-        let mut bytes = Json(vec![]);
-        if let Err(e) = serde_json::to_writer(&mut bytes, value.report.as_ref())
-            .map_err(|e| e.to_string())
-            .and_then(|()| download("topo-treated-contour.json", "application/json", &bytes.0))
-        {
-            status.set(e);
+        let result = (|| {
+            capture.run(value.parent.frame.clone())?;
+            let mut bytes = Json(vec![]);
+            serde_json::to_writer(&mut bytes, value.report.as_ref()).map_err(|e| e.to_string())?;
+            crate::app::prepare_download("topo-treated-contour.json", "application/json", &bytes.0)
+        })();
+        match result {
+            Ok(artifact) => {
+                let check = move || {
+                    if status.try_get_untracked().is_none() {
+                        return Err("Export review closed.".into());
+                    }
+                    if current().is_none_or(|now| !Arc::ptr_eq(&now, &value)) {
+                        return Err("Treated contour changed.".into());
+                    }
+                    capture.run(value.parent.frame.clone()).map(|_| ())
+                };
+                let completion = check.clone();
+                artifact.complete_guarded(check, move |result| {
+                    if completion().is_err() {
+                        return;
+                    }
+                    status.set(match result {
+                        Ok(()) => "Treated contour evidence saved.".into(),
+                        Err(error) => error,
+                    });
+                });
+            }
+            Err(error) => status.set(error),
         }
     });
     view! {<section class="topo-processed-contour">

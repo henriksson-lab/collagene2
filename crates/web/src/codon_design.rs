@@ -1,5 +1,5 @@
 //! Source-bound codon design with a separate independent candidate-check job.
-use crate::{app::download, worker::CachedWorker};
+use crate::worker::CachedWorker;
 use collagene_core::{
     Alphabet, Molecule, Topology,
     codon_design::{
@@ -427,12 +427,19 @@ pub fn CodonDesignPanel(
         }
         if let Some(value) = candidate.get_untracked() {
             match collagene_core::formats::export_genbank(&value) {
-                Ok(text) => {
-                    if let Err(e) = download("codon-designed-dna.gb", "text/plain", text.as_bytes())
-                    {
-                        status.set(e)
-                    }
-                }
+                Ok(text) => crate::app::download_with_completion(
+                    "codon-designed-dna.gb",
+                    "text/plain",
+                    text.as_bytes(),
+                    move |result| {
+                        if status.try_get_untracked().is_none() {
+                            return;
+                        }
+                        if let Err(e) = result {
+                            status.set(e)
+                        }
+                    },
+                ),
                 Err(e) => status.set(e.to_string()),
             }
         }
@@ -447,11 +454,19 @@ pub fn CodonDesignPanel(
             &mut bytes,
             &serde_json::json!({"design":design.get_untracked(),"independent_check":checked.get_untracked()}),
         ) {
-            Ok(()) => {
-                if let Err(e) = download("codon-design-report.json", "application/json", &bytes.0) {
-                    status.set(e)
-                }
-            }
+            Ok(()) => crate::app::download_with_completion(
+                "codon-design-report.json",
+                "application/json",
+                &bytes.0,
+                move |result| {
+                    if status.try_get_untracked().is_none() {
+                        return;
+                    }
+                    if let Err(e) = result {
+                        status.set(e)
+                    }
+                },
+            ),
             Err(e) => status.set(e.to_string()),
         }
     });

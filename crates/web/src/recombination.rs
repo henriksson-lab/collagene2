@@ -1,5 +1,5 @@
 //! Exact-event-bound reference exchange. Positive chemistry remains outside this model.
-use crate::{app::download, digest::SourceInfo, worker};
+use crate::{digest::SourceInfo, worker};
 use collagene_core::{
     Molecule,
     protocol::{AnalysisJob, AnalysisResult, Request as WireRequest},
@@ -374,15 +374,19 @@ pub fn RecombinationPanel(
             return;
         }
         match serde_json::to_vec_pretty(&bound.report) {
-            Ok(bytes) => {
-                if let Err(e) = download(
-                    "recombination-reference-evidence.json",
-                    "application/json",
-                    &bytes,
-                ) {
-                    status.set(e);
-                }
-            }
+            Ok(bytes) => crate::app::download_with_completion(
+                "recombination-reference-evidence.json",
+                "application/json",
+                &bytes,
+                move |result| {
+                    if status.try_get_untracked().is_none() {
+                        return;
+                    }
+                    if let Err(e) = result {
+                        status.set(e);
+                    }
+                },
+            ),
             Err(e) => status.set(e.to_string()),
         }
     };

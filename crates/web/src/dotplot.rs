@@ -1,7 +1,7 @@
 //! Revision-bound window dot plots with retained WebGL anchors and exact hit inspection.
 #[path = "dotplot_projection.rs"]
 mod projection;
-use crate::{app::download, renderer::ResizeListener, worker::CachedWorker};
+use crate::{renderer::ResizeListener, worker::CachedWorker};
 use collagene_core::{
     Alphabet, Molecule,
     dotplot::{self, DotHit, DotPlotOptions, DotPlotReport, Span},
@@ -815,12 +815,19 @@ pub fn DotPlotPanel(
         Ok(b) => {
             let mut bytes = Json(vec![]);
             match serde_json::to_writer_pretty(&mut bytes, b.report.as_ref()) {
-                Ok(()) => {
-                    if let Err(e) = download("sequence-dotplot.json", "application/json", &bytes.0)
-                    {
-                        status.set(e)
-                    }
-                }
+                Ok(()) => crate::app::download_with_completion(
+                    "sequence-dotplot.json",
+                    "application/json",
+                    &bytes.0,
+                    move |result| {
+                        if status.try_get_untracked().is_none() {
+                            return;
+                        }
+                        if let Err(e) = result {
+                            status.set(e)
+                        }
+                    },
+                ),
                 Err(e) => status.set(e.to_string()),
             }
         }
@@ -828,11 +835,19 @@ pub fn DotPlotPanel(
     });
     let export_svg = Callback::new(move |()| match guard.run(()) {
         Ok(b) => match dotplot::export_svg(&b.report) {
-            Ok(svg) => {
-                if let Err(e) = download("sequence-dotplot.svg", "image/svg+xml", svg.as_bytes()) {
-                    status.set(e)
-                }
-            }
+            Ok(svg) => crate::app::download_with_completion(
+                "sequence-dotplot.svg",
+                "image/svg+xml",
+                svg.as_bytes(),
+                move |result| {
+                    if status.try_get_untracked().is_none() {
+                        return;
+                    }
+                    if let Err(e) = result {
+                        status.set(e)
+                    }
+                },
+            ),
             Err(e) => status.set(e.to_string()),
         },
         Err(e) => status.set(e),

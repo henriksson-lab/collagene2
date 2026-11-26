@@ -1,6 +1,8 @@
 //! Exact-source virtual restriction inspection. Scientific work stays in the worker.
 pub use crate::source_identity::SourceInfo;
-use crate::{app::download, run_origin_model::PinnedOrigin, worker::CachedWorker};
+use crate::{
+    app::prepare_download as download, run_origin_model::PinnedOrigin, worker::CachedWorker,
+};
 use collagene_core::{
     Alphabet, Molecule, Topology, analysis,
     catalog_digest::{self, CatalogSelection, catalog},
@@ -1116,18 +1118,42 @@ pub fn DigestPanel(
                     return;
                 }
                 match formats::export_with_report(&product.molecule, formats::TextFormat::GenBank) {
-                    Ok(export) => match download(
-                        &format!("digest-fragment-{}.gb", index + 1),
-                        "text/plain",
-                        export.text.as_bytes(),
-                    ) {
-                        Ok(()) => {
-                            let mut findings = product.projection_findings;
-                            findings.extend(export.warnings);
-                            status.set(format!("Exported freshly reconstructed fragment {}. GenBank producer/end comments are unverified provenance; keep the native workspace for exact source history. {}",index+1,findings.join(" ")));
-                        }
-                        Err(e) => status.set(e),
-                    },
+                    Ok(export) => {
+                        let dispatch_data = data.clone();
+                        let dispatch_alive = alive.clone();
+                        crate::app::download_with_completion_guarded(
+                            &format!("digest-fragment-{}.gb", index + 1),
+                            "text/plain",
+                            export.text.as_bytes(),
+                            move || {
+                                if !dispatch_alive.load(Ordering::Relaxed)
+                                    || generation.try_get_untracked() != Some(expected_generation)
+                                    || !current.run(dispatch_data.clone())
+                                {
+                                    return Err(
+                                        "The digest source changed before export acceptance."
+                                            .into(),
+                                    );
+                                }
+                                Ok(())
+                            },
+                            move |result| {
+                                if status.try_get_untracked().is_none()
+                                    || !current.run(data.clone())
+                                {
+                                    return;
+                                }
+                                match result {
+                                    Ok(()) => {
+                                        let mut findings = product.projection_findings;
+                                        findings.extend(export.warnings);
+                                        status.set(format!("Exported freshly reconstructed fragment {}. GenBank producer/end comments are unverified provenance; keep the native workspace for exact source history. {}",index+1,findings.join(" ")));
+                                    }
+                                    Err(e) => status.set(e),
+                                }
+                            },
+                        );
+                    }
                     Err(e) => status.set(e.to_string()),
                 }
             });
@@ -1300,11 +1326,19 @@ pub fn DigestPanel(
         };
         let mut bytes = Json(vec![]);
         match serde_json::to_writer_pretty(&mut bytes, &artifact) {
-            Ok(()) => {
-                if let Err(e) = download("virtual-digest.json", "application/json", &bytes.0) {
-                    status.set(e)
-                }
-            }
+            Ok(()) => crate::app::download_with_completion(
+                "virtual-digest.json",
+                "application/json",
+                &bytes.0,
+                move |result| {
+                    if status.try_get_untracked().is_none() {
+                        return;
+                    }
+                    if let Err(e) = result {
+                        status.set(e)
+                    }
+                },
+            ),
             Err(e) => status.set(e.to_string()),
         }
     };
@@ -1407,7 +1441,7 @@ fn SavedDigestView(
             <button class="text-tool" on:click=move|_|{
                 let mut bytes=Json(Vec::new());
                 let result=bound.with_value(|record|serde_json::to_writer_pretty(&mut bytes,record.as_ref()).map_err(|e|e.to_string())).and_then(|()|download("saved-digest.json","application/json",&bytes.0));
-                if let Err(error)=result{status.set(error);}
+                crate::app::complete_download(result,move|result|{if status.try_get_untracked().is_some(){if let Err(error)=result{status.set(error);}}});
             }>"Download historical digest recipe and evidence"</button>
             <p class="helper" role="status">{move||status.get()}</p>
         </section>
@@ -1449,7 +1483,7 @@ pub fn DigestProvenance(molecule: Memo<Molecule>) -> impl IntoView {
         })
     });
     let status = RwSignal::new(String::new());
-    view! {<Show when=move||retained.get()><details class="digest-provenance"><summary>"Saved virtual-digest provenance · unverified"</summary><p>"Saved recipes and end summaries do not restore a current digest or prove experimental cleavage. Open the original source from workspace history and run a new digest before reusing its predictions. Text exports may retain only bounded producer comments; keep the native workspace for exact source history."</p><Show when=move||recipe.get().is_ok_and(|r|r.is_some())><button class="button secondary" on:click=move|_|match recipe.get_untracked(){Ok(Some(raw))=>if let Err(e)=download("digest-retained-recipe.json","application/json",raw.as_bytes()){status.set(e)},Err(e)=>status.set(e),_=>status.set("A complete native producer recipe is not present.".into())}>"Download retained digest recipe"</button></Show><Show when=move||catalog_recipe.get().is_ok_and(|r|r.is_some())><p class="helper">"The retained catalog edition, content hash, ordered enzyme identities and geometry are unverified producer claims. They do not select current enzymes or restore a current result."</p><button class="button secondary" on:click=move|_|match catalog_recipe.get_untracked(){Ok(Some(raw))=>if let Err(e)=download("digest-retained-catalog.json","application/json",raw.as_bytes()){status.set(e)},Err(e)=>status.set(e),_=>{}}>"Download retained catalog selection"</button></Show><p class="digest-warning">{move||catalog_recipe.get().err().unwrap_or_default()}</p><p class="helper" role="status">{move||status.get()}</p></details></Show>}
+    view! {<Show when=move||retained.get()><details class="digest-provenance"><summary>"Saved virtual-digest provenance · unverified"</summary><p>"Saved recipes and end summaries do not restore a current digest or prove experimental cleavage. Open the original source from workspace history and run a new digest before reusing its predictions. Text exports may retain only bounded producer comments; keep the native workspace for exact source history."</p><Show when=move||recipe.get().is_ok_and(|r|r.is_some())><button class="button secondary" on:click=move|_|match recipe.get_untracked(){Ok(Some(raw))=>crate::app::download_with_completion("digest-retained-recipe.json","application/json",raw.as_bytes(),move|result|{if status.try_get_untracked().is_none(){return;}if let Err(e)=result {status.set(e)}}),Err(e)=>status.set(e),_=>status.set("A complete native producer recipe is not present.".into())}>"Download retained digest recipe"</button></Show><Show when=move||catalog_recipe.get().is_ok_and(|r|r.is_some())><p class="helper">"The retained catalog edition, content hash, ordered enzyme identities and geometry are unverified producer claims. They do not select current enzymes or restore a current result."</p><button class="button secondary" on:click=move|_|match catalog_recipe.get_untracked(){Ok(Some(raw))=>crate::app::download_with_completion("digest-retained-catalog.json","application/json",raw.as_bytes(),move|result|{if status.try_get_untracked().is_none(){return;}if let Err(e)=result {status.set(e)}}),Err(e)=>status.set(e),_=>{}}>"Download retained catalog selection"</button></Show><p class="digest-warning">{move||catalog_recipe.get().err().unwrap_or_default()}</p><p class="helper" role="status">{move||status.get()}</p></details></Show>}
 }
 
 fn catalog_temperature_label(t: i32) -> String {

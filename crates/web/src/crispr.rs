@@ -1,6 +1,6 @@
 //! Revision-bound guide design, selected-record search and literal donor review.
 use crate::{
-    app::download,
+    app::prepare_download as download,
     contigs::{ReadBinding, ReadNavigation},
     worker::CachedWorker,
 };
@@ -940,7 +940,7 @@ pub fn CrisprPanel(
                         }
                     }
                     "fasta" | "genbank" => {
-                        let result = (|| -> Result<(), String> {
+                        let result = (|| -> Result<crate::app::ExportArtifact, String> {
                             let product = producer_product(&fresh, false)?;
                             if kind == "fasta" {
                                 download(
@@ -958,7 +958,19 @@ pub fn CrisprPanel(
                                 )
                             }
                         })();
-                        match result{Ok(())=>donor_status.set("Exported after fresh source, guide and independent-target reconstruction/check. Keep JSON/native evidence for provenance.".into()),Err(e)=>donor_status.set(e)}
+                        let dispatch_old = old.clone();
+                        crate::app::complete_download_guarded(
+                            result,
+                            move || donor_guard.run(dispatch_old.clone()),
+                            move |result| {
+                                if donor_status.try_get_untracked().is_none()
+                                    || donor_guard.run(old.clone()).is_err()
+                                {
+                                    return;
+                                }
+                                match result{Ok(())=>donor_status.set("Exported after fresh source, guide and independent-target reconstruction/check. Keep JSON/native evidence for provenance.".into()),Err(e)=>donor_status.set(e)}
+                            },
+                        );
                     }
                     _ => {}
                 }
@@ -977,9 +989,13 @@ pub fn CrisprPanel(
                     })
                 })
                 .and_then(|bytes| download("crispr-guides.json", "application/json", &bytes));
-            if let Err(e) = result {
-                guide_status.set(e);
-            }
+            crate::app::complete_download(result, move |result| {
+                if guide_status.try_get_untracked().is_some() {
+                    if let Err(e) = result {
+                        guide_status.set(e);
+                    }
+                }
+            });
         }
     };
     let export_search = move |_| {
@@ -1009,9 +1025,13 @@ pub fn CrisprPanel(
                 report: data.report.as_ref(),
             })
             .and_then(|bytes| download("crispr-off-targets.json", "application/json", &bytes));
-            if let Err(e) = result {
-                search_status.set(e);
-            }
+            crate::app::complete_download(result, move |result| {
+                if search_status.try_get_untracked().is_some() {
+                    if let Err(e) = result {
+                        search_status.set(e);
+                    }
+                }
+            });
         }
     };
     let export_donor = move |_| {
@@ -1020,9 +1040,13 @@ pub fn CrisprPanel(
                 .run(data.clone())
                 .and_then(|_| donor_json(&data))
                 .and_then(|bytes| download("crispr-donor-review.json", "application/json", &bytes));
-            if let Err(e) = result {
-                donor_status.set(e);
-            }
+            crate::app::complete_download(result, move |result| {
+                if donor_status.try_get_untracked().is_some() {
+                    if let Err(e) = result {
+                        donor_status.set(e);
+                    }
+                }
+            });
         }
     };
     let navigate_guide = Callback::new(move |at: usize| {

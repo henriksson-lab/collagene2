@@ -1,6 +1,6 @@
 //! Exchange the guarded actual final reference without installing it as material.
 use crate::{
-    app::download,
+    app::prepare_download as download,
     assembly_product_export_model::{self as model, Format, Prepared},
 };
 use collagene_core::Molecule;
@@ -55,7 +55,7 @@ pub fn AssemblyProductExports(
         let Some(bound) = prepared.get_untracked() else {
             return;
         };
-        let result = (|| -> Result<(), String> {
+        let result = (|| -> Result<crate::app::ExportArtifact, String> {
             if identity.get_untracked() != bound.identity || epoch.get_untracked() != bound.epoch {
                 return Err("The product review changed; prepare its export again.".into());
             }
@@ -75,20 +75,40 @@ pub fn AssemblyProductExports(
                 )
             }
         })();
-        match result {
-            Ok(()) => status.set(
-                if loss_report {
-                    "Export loss report downloaded."
-                } else {
-                    "Actual product reference downloaded."
+        let dispatch_bound = bound.clone();
+        crate::app::complete_download_guarded(
+            result,
+            move || {
+                if identity.try_get_untracked().as_ref() != Some(&dispatch_bound.identity)
+                    || epoch.try_get_untracked() != Some(dispatch_bound.epoch)
+                {
+                    return Err("The product review changed before export acceptance.".into());
                 }
-                .into(),
-            ),
-            Err(error) => {
-                prepared.set(None);
-                status.set(error);
-            }
-        }
+                dispatch_bound.export.require_source(&capture.run(())?)
+            },
+            move |result| {
+                if status.try_get_untracked().is_none()
+                    || identity.try_get_untracked().as_ref() != Some(&bound.identity)
+                    || epoch.try_get_untracked() != Some(bound.epoch)
+                {
+                    return;
+                }
+                match result {
+                    Ok(()) => status.set(
+                        if loss_report {
+                            "Export loss report downloaded."
+                        } else {
+                            "Actual product reference downloaded."
+                        }
+                        .into(),
+                    ),
+                    Err(error) => {
+                        prepared.set(None);
+                        status.set(error);
+                    }
+                }
+            },
+        );
     });
     view! {
         <div class="assembly-product-exports">

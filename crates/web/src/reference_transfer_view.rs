@@ -244,16 +244,43 @@ pub fn ReferencePastePanel(
         let Some(shown) = report.get_untracked() else {
             return;
         };
-        let outcome = (|| -> Result<(), String> {
+        let result = (|| {
             guard.run(opened.get_value())?;
             let bytes = serde_json::to_vec(shown.as_ref()).map_err(|e| e.to_string())?;
             if bytes.len() > collagene_core::formats::MAX_IMPORT_BYTES {
                 return Err("Reference preview exceeds the JSON export limit.".into());
             }
-            crate::app::download("annotated-reference-paste.json", "application/json", &bytes)
+            crate::app::prepare_download(
+                "annotated-reference-paste.json",
+                "application/json",
+                &bytes,
+            )
         })();
-        if let Err(error) = outcome {
-            status.set(error);
+        match result {
+            Ok(artifact) => {
+                let check = move || {
+                    if status.try_get_untracked().is_none() {
+                        return Err("Export review closed.".into());
+                    }
+                    if !report.with_untracked(|current| {
+                        current.as_ref().is_some_and(|r| Arc::ptr_eq(r, &shown))
+                    }) {
+                        return Err("Reference preview changed.".into());
+                    }
+                    guard.run(opened.get_value())
+                };
+                let completion = check.clone();
+                artifact.complete_guarded(check, move |result| {
+                    if completion().is_err() {
+                        return;
+                    }
+                    status.set(match result {
+                        Ok(()) => "Reference preview saved.".into(),
+                        Err(error) => error,
+                    });
+                });
+            }
+            Err(error) => status.set(error),
         }
     };
     view! {

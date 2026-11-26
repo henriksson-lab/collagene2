@@ -5,12 +5,62 @@ use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 thread_local! { static NEXT: Cell<u64> = const { Cell::new(0) }; }
 thread_local! {
+    static EXPORT_ACTIVE: Cell<bool> = const { Cell::new(false) };
+    static EXPORT_LANE: std::rc::Rc<futures_util::lock::Mutex<()>> =
+        std::rc::Rc::new(futures_util::lock::Mutex::new(()));
     static SOURCE_LANE: std::rc::Rc<futures_util::lock::Mutex<()>> =
         std::rc::Rc::new(futures_util::lock::Mutex::new(()));
     static SYNC_LANE: std::rc::Rc<futures_util::lock::Mutex<()>> =
         std::rc::Rc::new(futures_util::lock::Mutex::new(()));
     static LANE: std::rc::Rc<futures_util::lock::Mutex<()>> =
         std::rc::Rc::new(futures_util::lock::Mutex::new(()));
+}
+
+/// Reserve before copying an artifact: at most one large export is resident.
+pub struct ExportReservation {
+    _private: (),
+}
+impl Drop for ExportReservation {
+    fn drop(&mut self) {
+        EXPORT_ACTIVE.with(|active| active.set(false));
+    }
+}
+pub fn reserve_export() -> Result<ExportReservation, String> {
+    EXPORT_ACTIVE.with(|active| {
+        if active.replace(true) {
+            Err(
+                "Another export is still being saved. Wait for its receipt before exporting again."
+                    .into(),
+            )
+        } else {
+            Ok(ExportReservation { _private: () })
+        }
+    })
+}
+pub async fn export_reserved(
+    _reservation: ExportReservation,
+    name: String,
+    bytes: Vec<u8>,
+    guard: impl Fn() -> Result<(), String>,
+) -> Result<String, String> {
+    let request = request(wire::Command::ExportFile {
+        suggested_name: wire::library::Text::new(name)
+            .map_err(|_| "Export filename exceeds its bound")?,
+        bytes: wire::library::Blob::new(bytes).map_err(|_| "Export exceeds 64 MiB")?,
+    })?;
+    let lane = EXPORT_LANE.with(Clone::clone);
+    let _lane = lane.lock().await;
+    guard()?;
+    let bytes = wire::encode_request(&request).map_err(|e| e.to_string())?;
+    let bytes = invoke_frame(&bytes, wire::HEADER_BYTES + wire::MAX_RESPONSE_BYTES).await?;
+    match wire::decode_response_for(&bytes, &request)
+        .map_err(|e| e.to_string())?
+        .outcome
+    {
+        wire::Outcome::Success(wire::Success::Exported { name, .. }) => Ok(name.into_string()),
+        wire::Outcome::Failure(error) => Err(failure(&error)),
+        _ => Err("Native export returned an unexpected receipt.".into()),
+    }
 }
 
 fn invoke() -> Result<(JsValue, js_sys::Function), String> {

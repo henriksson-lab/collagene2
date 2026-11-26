@@ -1,6 +1,5 @@
 //! Complete paged pairwise evidence and native-coordinate discrepancy navigation.
 use crate::{
-    app::download,
     compare::Navigation,
     pairwise_pages::{PageIndex, render_page},
 };
@@ -150,14 +149,29 @@ pub fn PairwiseResultView(
     };
     let export = move |_| {
         let review = bound.get_value();
-        let result = (|| -> Result<(), String> {
+        let result = (|| {
             guard.run(review.clone())?;
             let mut out = Limited(Vec::new());
             serde_json::to_writer_pretty(&mut out, &review.record).map_err(|e| e.to_string())?;
-            guard.run(review)?;
-            download("pairwise-comparison.json", "application/json", &out.0)
+            guard.run(review.clone())?;
+            crate::app::prepare_download("pairwise-comparison.json", "application/json", &out.0)
         })();
-        status.set(match result{Ok(())=>"Complete comparison evidence downloaded; recorded data is not experimental verification.".into(),Err(error)=>error});
+        match result {
+            Ok(artifact) => {
+                let check = move || {
+                    if status.try_get_untracked().is_none() {
+                        return Err("Export review closed.".into());
+                    }
+                    guard.run(review.clone())
+                };
+                let completion = check.clone();
+                artifact.complete_guarded(check, move |result| {
+                    if completion().is_err() { return; }
+                    status.set(match result { Ok(()) => "Complete comparison evidence saved; recorded data is not experimental verification.".into(), Err(error) => error });
+                });
+            }
+            Err(error) => status.set(error),
+        }
     };
     view!{
         <section class="compare-result">

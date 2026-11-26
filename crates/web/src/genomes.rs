@@ -1,6 +1,6 @@
 //! Large-reference browser adapter: bounded Blob slices and private worker sessions.
 use crate::{
-    app::download,
+    app::prepare_download as download,
     genome_store::{self, DatasetRecord},
     genome_view::{GenomeWindowView, WindowDisplay},
     worker::CachedWorker,
@@ -454,7 +454,7 @@ impl std::io::Write for Json {
         Ok(())
     }
 }
-fn json_download(name: &str, value: &impl Serialize) -> Result<(), String> {
+fn json_download(name: &str, value: &impl Serialize) -> Result<crate::app::ExportArtifact, String> {
     let mut bytes = Json(vec![]);
     serde_json::to_writer_pretty(&mut bytes, value).map_err(|e| e.to_string())?;
     download(name, "application/json", &bytes.0)
@@ -1543,16 +1543,24 @@ pub fn GenomePanel(
                 reference: &'a ReferenceLink,
                 report: &'a GenomeGuideReport,
             }
-            if let Err(e) = json_download(
-                "genome-guides.json",
-                &Artifact {
-                    kind: "genome-guide-review-v1",
-                    reference: &data.key.link,
-                    report: &data.report,
+            crate::app::complete_download(
+                json_download(
+                    "genome-guides.json",
+                    &Artifact {
+                        kind: "genome-guide-review-v1",
+                        reference: &data.key.link,
+                        report: &data.report,
+                    },
+                ),
+                move |result| {
+                    if guide_status.try_get_untracked().is_none() {
+                        return;
+                    }
+                    if let Err(e) = result {
+                        guide_status.set(e);
+                    }
                 },
-            ) {
-                guide_status.set(e);
-            }
+            );
         }
     };
     let export_search = {
@@ -1633,19 +1641,27 @@ pub fn GenomePanel(
                             progress: &'a GenomeSearchProgress,
                             hits: &'a [GenomeOffTargetHit],
                         }
-                        if let Err(e) = json_download(
-                            "genome-search.json",
-                            &Artifact {
-                                kind: "genome-search-review-v1",
-                                authority: "Historical evidence only; serialized progress cannot restore a private coverage cursor",
-                                source: &state.source.link,
-                                reference: &state.reference.link,
-                                progress: &state.progress,
-                                hits: &hits,
+                        crate::app::complete_download(
+                            json_download(
+                                "genome-search.json",
+                                &Artifact {
+                                    kind: "genome-search-review-v1",
+                                    authority: "Historical evidence only; serialized progress cannot restore a private coverage cursor",
+                                    source: &state.source.link,
+                                    reference: &state.reference.link,
+                                    progress: &state.progress,
+                                    hits: &hits,
+                                },
+                            ),
+                            move |result| {
+                                if search_status.try_get_untracked().is_none() {
+                                    return;
+                                }
+                                if let Err(e) = result {
+                                    search_status.set(e);
+                                }
                             },
-                        ) {
-                            search_status.set(e);
-                        }
+                        );
                     }
                     Err(e) => search_status.set(e),
                 }

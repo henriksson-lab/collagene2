@@ -537,7 +537,7 @@ pub fn BiologyPanel(
                         let Some(saved)=result.get_untracked()else{return;};
                         if let Err(e)=guard.run(saved.clone()){status.set(e);return;}
                         let text=fasta_record(&output_name.get_untracked(),&saved.report.protein,&description(&saved.report));
-                        if let Err(e)=crate::app::download("translation.fasta","text/plain",text.as_bytes()){status.set(e);}
+                        crate::app::download_with_completion("translation.fasta","text/plain",text.as_bytes(),move|result|{if status.try_get_untracked().is_none(){return;}if let Err(e)=result {status.set(e);}})
                     }>"Download full protein FASTA"</button>
                     <button class="button primary full" disabled=move||{busy.get()||report.with_value(|r|r.protein.is_empty())} on:click=move|_|{prepare.run(false);}>"Open linked protein reference"</button>
                     <Show when=move||{report.with_value(|r|matches!(&r.selection,TranslationSelection::Region{..}))}>
@@ -575,7 +575,7 @@ pub fn BiologyPanel(
                 <button class="button secondary full" disabled=move||{orfs.with(|r|r.as_ref().is_none_or(|r|r.report.orfs.is_empty()))} on:click=move |_|{
                     let Some(bound)=orfs.get_untracked()else{return;};if source.get_untracked().binding!=bound.source||epoch.get_untracked()!=bound.epoch{status.set("ORF source event changed; search again.".into());return;}let report=&bound.report;let name=molecule.get_untracked().name;
                     let mut text=String::new();for (i,orf) in report.orfs.iter().enumerate(){text.push_str(&fasta_record(&format!("{name}_ORF_{}",i+1),&orf.protein,&format!("code={} reverse={} partial5={} partial3={}",report.options.genetic_code,orf.reverse,orf.partial_5prime,orf.partial_3prime)));}
-                    if let Err(e)=crate::app::download("orf-proteins.fasta","text/plain",text.as_bytes()){status.set(e);}
+                    crate::app::download_with_completion("orf-proteins.fasta","text/plain",text.as_bytes(),move|result|{if status.try_get_untracked().is_none(){return;}if let Err(e)=result {status.set(e);}})
                 }>"Download ORF proteins"</button></section>}
             })}
         </div>

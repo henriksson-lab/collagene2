@@ -3,6 +3,8 @@
 //! accepted from request data. Local operations need no network or login.
 #![cfg(not(target_arch = "wasm32"))]
 mod control;
+mod exports;
+pub use exports::DesktopExports;
 mod library;
 mod permissions;
 mod working;
@@ -153,6 +155,9 @@ impl DesktopHost {
         collagene_repository::Repository::open(self._root.join("repository.sqlite"))
             .map_err(|_| HostError::Unavailable)
     }
+    pub fn open_exports(&self) -> HostResult<DesktopExports> {
+        DesktopExports::open(&self._root, self.control.clone())
+    }
     pub fn control(&self) -> HostControl {
         self.control.clone()
     }
@@ -222,7 +227,9 @@ impl DesktopHost {
             } => S::Preferences(self.working.save_preferences(expected_version, bytes, || {
                 commit_gate(&control, access, op, accepted)
             })?),
-            C::Cancel { .. } | C::OperationStatus { .. } => return Err(HostError::Wire),
+            C::Cancel { .. } | C::OperationStatus { .. } | C::ExportFile { .. } => {
+                return Err(HostError::Wire);
+            }
         })
     }
     pub fn dispatch_raw(&mut self, access: &WindowAccess, bytes: &[u8]) -> HostResult<Vec<u8>> {
@@ -234,6 +241,9 @@ impl DesktopHost {
             return Err(HostError::Wire);
         }
         let request = wire::decode_request(bytes).map_err(|_| HostError::Wire)?;
+        if matches!(request.command, wire::Command::ExportFile { .. }) {
+            return Err(HostError::Wire);
+        }
         // Frame checksum already validated; use its digest without hashing or
         // allocating the complete128MiB replacement body again.
         let mut hash = String::with_capacity(64);

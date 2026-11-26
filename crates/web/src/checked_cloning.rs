@@ -75,9 +75,9 @@ pub fn modification_summary(molecule: &Molecule) -> Option<String> {
     ))
 }
 
-pub fn export_report(
+pub fn prepare_report_export(
     report: &collagene_core::verification::VerificationReport,
-) -> Result<(), String> {
+) -> Result<crate::app::ExportArtifact, String> {
     struct Json(Vec<u8>);
     impl std::io::Write for Json {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
@@ -95,5 +95,5 @@ pub fn export_report(
     }
     let mut bytes = Json(vec![]);
     serde_json::to_writer_pretty(&mut bytes, report).map_err(|e| e.to_string())?;
-    crate::app::download("cloning-reconstruction.json", "application/json", &bytes.0)
+    crate::app::prepare_download("cloning-reconstruction.json", "application/json", &bytes.0)
 }

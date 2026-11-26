@@ -1,6 +1,6 @@
 //! Explicit-assumption restriction planning review, bound to one source event.
 use crate::{
-    app::download,
+    app::prepare_download as download,
     contigs::{ReadBinding, ReadNavigation},
     worker::CachedWorker,
 };
@@ -321,9 +321,13 @@ pub fn MethylationPanel(
         let result = serde_json::to_writer_pretty(&mut bytes, &export)
             .map_err(|e| e.to_string())
             .and_then(|_| download("methylation-assessment.json", "application/json", &bytes.0));
-        if let Err(e) = result {
-            status.set(e);
-        }
+        crate::app::complete_download(result, move |result| {
+            if status.try_get_untracked().is_some() {
+                if let Err(e) = result {
+                    status.set(e);
+                }
+            }
+        });
     };
     let filtered = Memo::new(move |_| {
         data.with(|bound| {

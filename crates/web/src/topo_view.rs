@@ -1,7 +1,7 @@
 //! Explicit TA/directional preparation and fresh physical TOPO inspection. Source
 //! activation is declared, never inferred from a supplier label or DNA record.
 use crate::{
-    app::download,
+    app::prepare_download as download,
     digest::SourceInfo,
     topo_preparation::{self, Draft},
     worker::CachedWorker,
@@ -117,7 +117,7 @@ impl Write for BoundedJson {
         Ok(())
     }
 }
-fn json_download(value: &impl Serialize) -> Result<(), String> {
+fn json_download(value: &impl Serialize) -> Result<crate::app::ExportArtifact, String> {
     let mut output = BoundedJson(vec![]);
     serde_json::to_writer(&mut output, value).map_err(|e| e.to_string())?;
     download("topo-source-evidence.json", "application/json", &output.0)
@@ -1028,9 +1028,14 @@ pub fn TopoPanel(
             projection: p.as_ref().map(|p| p.product.as_ref()),
             assessment: c.as_ref().map(|c| c.report.as_ref()),
         };
-        if let Err(error) = json_download(&evidence) {
-            status.set(error);
-        }
+        crate::app::complete_download(json_download(&evidence), move |result| {
+            if status.try_get_untracked().is_none() {
+                return;
+            }
+            if let Err(error) = result {
+                status.set(error);
+            }
+        });
     });
     let propose_cacc = move |_| {
         if locked.get_untracked() || busy.get_untracked() {

@@ -1,5 +1,5 @@
 //! Explicit sequence-based protein estimates, isolated from biological verification authority.
-use crate::{app::download, worker::CachedWorker};
+use crate::worker::CachedWorker;
 use collagene_core::{
     Alphabet, Molecule,
     protein_properties::*,
@@ -193,7 +193,7 @@ pub fn ProteinPanel(molecule: Memo<Molecule>) -> impl IntoView {
                     <details open><summary>"Unavailable quantities and identity limits"</summary>{r.unavailable.into_iter().map(|reason|view!{<p class="helper">{reason}</p>}).collect_view()}<p class="helper">{if complete{"Every requested quantity is available within the declared model; this is not empirical validation."}else{"A point-valued number does not establish resolved identity or complete biological semantics."}}</p></details>
                     <details><summary>"Residue composition"</summary><table style="font-size:12px;width:100%"><thead><tr><th scope="col">"Symbol"</th><th scope="col">"Count"</th><th scope="col">"Fraction"</th></tr></thead><tbody>{r.composition.into_iter().map(|c|view!{<tr><th scope="row">{c.symbol}</th><td>{c.count}</td><td>{format!("{:.6}",c.fraction)}</td></tr>}).collect_view()}</tbody></table></details>
                     <details><summary>"Models and assumptions"</summary><p class="helper">{format!("{} · {} · {} · {}",r.engine_version,MASS_MODEL,r.charge_model,EXTINCTION_MODEL)}</p>{r.warnings.into_iter().map(|warning|view!{<p class="helper">{warning}</p>}).collect_view()}</details>
-                    <button class="button secondary full" on:click=move|_|if let Some(value)=report.get_untracked(){match serde_json::to_vec_pretty(&value){Ok(bytes)=>if let Err(error)=download("protein-properties.json","application/json",&bytes){status.set(error);},Err(error)=>status.set(error.to_string())}}>"Download protein report"</button>
+                    <button class="button secondary full" on:click=move|_|if let Some(value)=report.get_untracked(){match serde_json::to_vec_pretty(&value){Ok(bytes)=>crate::app::download_with_completion("protein-properties.json","application/json",&bytes,move|result|{if status.try_get_untracked().is_none(){return;}if let Err(error)=result {status.set(error);}}),Err(error)=>status.set(error.to_string())}}>"Download protein report"</button>
                 </div>}
             })}
         </Show>

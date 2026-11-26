@@ -4,8 +4,8 @@ compile_error!("Collagene desktop supports Windows, macOS and Linux; mobile is d
 mod policy;
 mod settings;
 use collagene_desktop_host::{
-    DesktopHost, HostControl, JobStart, MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES, OperationState,
-    WindowAccess,
+    DesktopExports, DesktopHost, HostControl, JobStart, MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES,
+    OperationState, WindowAccess,
 };
 use collagene_desktop_sync_host::{ProductionAdapter, SyncHost};
 use collagene_desktop_sync_protocol as sync;
@@ -20,6 +20,8 @@ use tauri::Manager;
 struct NativeState {
     host: Arc<Mutex<DesktopHost>>,
     sync: Arc<Mutex<SyncHost<ProductionAdapter>>>,
+    exports: Arc<DesktopExports>,
+    export_active: Arc<AtomicUsize>,
     control: HostControl,
     access: WindowAccess,
     local_active: Arc<AtomicUsize>,
@@ -212,7 +214,10 @@ async fn collagene_rpc(
     // Remote HTTPS and local working-file writes have separate admission lanes
     // and separate host mutexes. Their shared catalog uses immutable-head and
     // checkpoint CAS, so network latency cannot stop local working-file saves.
-    let lease = JobLease::acquire(if syncing {
+    let exporting = !syncing && collagene_desktop_protocol::export_request_hint(bytes);
+    let lease = JobLease::acquire(if exporting {
+        &state.export_active
+    } else if syncing {
         &state.sync_active
     } else {
         &state.local_active
@@ -223,6 +228,15 @@ async fn collagene_rpc(
         let _lease = lease;
         if syncing {
             return dispatch_sync(&state, &bytes);
+        }
+        if exporting {
+            return state
+                .exports
+                .dispatch_raw(&state.access, &bytes)
+                .map_err(|_| {
+                    "Native export could not complete; retain its operation ID before retrying."
+                        .to_owned()
+                });
         }
         let mut host = state
             .host
@@ -249,6 +263,7 @@ fn run(options: settings::GuiOptions) -> Result<(), Box<dyn std::error::Error>> 
             let mut host = DesktopHost::open(&root)?;
             let access = host.authorize_window()?;
             let control = host.control();
+            let exports = host.open_exports()?;
             let sync = SyncHost::production(
                 host.open_repository_connection()?,
                 collagene_repository::http::HttpOptions {
@@ -263,6 +278,8 @@ fn run(options: settings::GuiOptions) -> Result<(), Box<dyn std::error::Error>> 
             app.manage(NativeState {
                 host: Arc::new(Mutex::new(host)),
                 sync: Arc::new(Mutex::new(sync)),
+                exports: Arc::new(exports),
+                export_active: Arc::new(AtomicUsize::new(0)),
                 control,
                 access,
                 local_active: Arc::new(AtomicUsize::new(0)),

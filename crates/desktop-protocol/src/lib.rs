@@ -6,6 +6,7 @@ use library::{Blob, Digest, LabContext, Text};
 use serde::{Deserialize, Serialize};
 pub const SCHEMA_VERSION: u16 = 1;
 pub const HEADER_BYTES: usize = 42;
+pub const MAX_EXPORT_BYTES: usize = 64 << 20;
 pub const MAX_ARCHIVE_BYTES: usize = 64 << 20;
 pub const MAX_REQUEST_BYTES: usize = 129 << 20;
 pub const MAX_RESPONSE_BYTES: usize = 65 << 20;
@@ -92,6 +93,7 @@ dto! {pub enum Command{
     SavePreferences{expected_version:Option<Digest>,bytes:Blob<MAX_PREFERENCE_BYTES>},
     Cancel{operation_id:OperationId},
     OperationStatus{operation_id:OperationId},
+    ExportFile{suggested_name:Text<256>,bytes:Blob<MAX_EXPORT_BYTES>},
 }}
 dto! {pub struct RequestEnvelope{pub request_id:u64,pub operation_id:OperationId,pub command:Command}}
 dto! {pub struct SlotMetadata{pub archive_hash:Digest,pub bytes:u64}}
@@ -102,11 +104,60 @@ dto! {pub enum Success{
     Bootstrap(Bootstrap),Library(library::Success),WorkingMetadata(WorkingMetadata),
     WorkingArchive{slot:WorkingSlot,version:Digest,archive:Blob<MAX_ARCHIVE_BYTES>},
     Preferences(Preferences),Cancelled{operation_id:OperationId,status:OperationState},Status{operation_id:OperationId,status:OperationState},
+    Exported{name:Text<256>,hash:Digest,bytes:u64},
 }}
 dto! {pub enum Conflict{Working(WorkingMetadata),Preferences(Preferences)}}
 dto! {pub enum Failure{Invalid{message:Text<1024>},Conflict{current:Conflict},Cancelled,Unavailable,Library(library::Failure)}}
 dto! {pub enum Outcome{Success(Success),Failure(Failure)}}
 dto! {pub struct ResponseEnvelope{pub request_id:u64,pub operation_id:OperationId,pub outcome:Outcome}}
+/// A display basename, never a path or filesystem capability.
+pub fn validate_export_name(name: &str) -> Result<(), Error> {
+    if name.trim().is_empty()
+        || name.len() > 256
+        || name
+            .chars()
+            .any(|c| c.is_control() || matches!(c, '/' | '\\' | ':'))
+    {
+        return Err(Error::Invalid("export basename"));
+    }
+    Ok(())
+}
+/// Stable, portable name owned by this operation. Suggested Unicode characters
+/// are conservatively mapped; the original request still binds exact intent.
+pub fn export_file_name(operation: &OperationId, suggested: &str) -> Result<Text<256>, Error> {
+    validate_export_name(suggested)?;
+    let mut safe: String = suggested
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if safe.len() > 180 {
+        // Keep exchange-format extensions even for a long construct name.
+        // Sanitization above makes byte indexes ASCII character boundaries.
+        let extension = safe
+            .rfind('.')
+            .filter(|&dot| {
+                dot > 0
+                    && safe.len() - dot <= 17
+                    && safe[dot + 1..].bytes().all(|b| b.is_ascii_alphanumeric())
+            })
+            .map(|dot| safe[dot..].to_owned())
+            .unwrap_or_default();
+        safe.truncate(180 - extension.len());
+        safe.push_str(&extension);
+    }
+    Text::new(format!(
+        "{}-{}",
+        operation.as_str(),
+        safe.trim_end_matches('.')
+    ))
+    .map_err(Error::from)
+}
 fn archive_shape(bytes: &[u8]) -> Result<(), Error> {
     if bytes.is_empty() {
         return Err(Error::Invalid("empty native working archive"));
@@ -132,6 +183,7 @@ impl RequestEnvelope {
         }
         match &self.command {
             Command::Library(r) => r.validate()?,
+            Command::ExportFile { suggested_name, .. } => validate_export_name(suggested_name)?,
             Command::SaveCurrent { archive, .. } => archive_shape(archive)?,
             Command::ReplaceWorking {
                 current, previous, ..
@@ -181,6 +233,12 @@ impl Bootstrap {
 impl Success {
     pub fn validate(&self) -> Result<(), Error> {
         match self {
+            Self::Exported { name, bytes, .. } => {
+                validate_export_name(name)?;
+                if *bytes > MAX_EXPORT_BYTES as u64 {
+                    return Err(Error::TooLarge);
+                }
+            }
             Self::Bootstrap(b) => b.validate()?,
             Self::Library(s) => s.validate()?,
             Self::WorkingMetadata(m) => m.validate()?,
@@ -249,6 +307,21 @@ impl ResponseEnvelope {
             return Err(Error::Mismatch);
         }
         let matches = match (&request.command, &self.outcome) {
+            (
+                Command::ExportFile {
+                    suggested_name,
+                    bytes,
+                },
+                Outcome::Success(Success::Exported {
+                    name,
+                    hash,
+                    bytes: size,
+                }),
+            ) => {
+                *name == export_file_name(&request.operation_id, suggested_name)?
+                    && *hash == Digest::of(bytes)
+                    && *size == bytes.len() as u64
+            }
             (Command::Bootstrap, Outcome::Success(Success::Bootstrap(_))) => true,
             (Command::Library(r), Outcome::Success(Success::Library(s))) => library_matches(r, s),
             (Command::WorkingMetadata, Outcome::Success(Success::WorkingMetadata(_))) => true,
@@ -622,6 +695,18 @@ pub struct ControlRequest {
     pub operation_id: OperationId,
     pub control: Control,
 }
+/// Untrusted lane-selection hint only. It performs no checksum/content
+/// validation and grants no authority; the chosen blocking dispatcher must call
+/// decode_request before access. Borrowing the prefix avoids copying or hashing
+/// a 64 MiB export on the UI/async executor.
+pub fn export_request_hint(bytes: &[u8]) -> bool {
+    if bytes.len() < HEADER_BYTES || bytes.len() > MAX_REQUEST_BYTES || &bytes[..4] != REQUEST_MAGIC
+    {
+        return false;
+    }
+    postcard::take_from_bytes::<(u64, &str, u32)>(&bytes[HEADER_BYTES..])
+        .is_ok_and(|((id, op, tag), _)| id != 0 && operation_id(op) && tag == 11)
+}
 /// Fast path only for small controls. None defers checksum/full operation
 /// validation to decode_request; it does not validate a normal archive job.
 pub fn decode_control(bytes: &[u8]) -> Result<Option<ControlRequest>, Error> {
@@ -631,7 +716,7 @@ pub fn decode_control(bytes: &[u8]) -> Result<Option<ControlRequest>, Error> {
     if request_id == 0 || !operation_id(id) {
         return Err(Error::Invalid("control prefix"));
     }
-    if tag < 9 {
+    if tag < 9 || tag == 11 {
         return Ok(None);
     }
     if tag > 10 {

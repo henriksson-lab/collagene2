@@ -1,6 +1,6 @@
 //! Explicit event bindings for retained, replayable cloning products.
 use crate::{
-    app::{download, encode_workspace},
+    app::{encode_workspace, prepare_download as download},
     run_event_model::{Request as EventRequest, Role},
     storage, worker,
 };
@@ -560,9 +560,13 @@ pub fn RunDetailsPanel(
         let result = serde_json::to_writer_pretty(&mut bytes, &report)
             .map_err(|e| e.to_string())
             .and_then(|()| download("cloning-run-replay.json", "application/json", &bytes.0));
-        if let Err(error) = result {
-            status.set(error);
-        }
+        crate::app::complete_download(result, move |result| {
+            if status.try_get_untracked().is_some() {
+                if let Err(error) = result {
+                    status.set(error);
+                }
+            }
+        });
     };
     let historical_alive = alive.clone();
     let download_history = Callback::new(move |()| {
@@ -649,10 +653,10 @@ pub fn RunDetailsPanel(
                             }
                             match value.bytes {
                             Some(bytes)if bytes.len()<=32*1024*1024&&value.step_count>0=>{
-                                match download("recorded-cloning-evidence.json","application/json",&bytes){
+                                crate::app::download_with_completion("recorded-cloning-evidence.json","application/json",&bytes,move|result|{if status.try_get_untracked().is_none(){return;}match result{
                                     Ok(())=>status.set("Recorded graph evidence downloaded. This historical assessment does not restore physical authority or establish laboratory success.".into()),
                                     Err(e)=>status.set(e),
-                                }
+                                }})
                             },
                             None if value.step_count==0=>status.set("This run has no retained reference or physical graph attachment. Older records are not reconstructed by this download action; use explicit replay for fresh session evidence.".into()),
                             _=>status.set("Historical graph evidence exceeds its bound or has an inconsistent step count.".into()),

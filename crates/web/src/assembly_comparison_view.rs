@@ -216,17 +216,39 @@ pub(crate) fn AssemblyComparison(
         let result = (|| {
             guard.run(())?;
             snapshot.with_value(|s| model::validate(s, &bound.capture, &bound.report))?;
-            let data = serde_json::json!({"scope":"Read-only comparison of captured intended and reconstructed DNA; no history events or experimental verification", "context_revision":bound.capture.context_revision,"plan_revision":bound.capture.plan_revision,"target_revision":bound.capture.target_revision,"product_revision":bound.capture.product_revision,"comparison":bound.report});
+            let data = serde_json::json!({"scope":"Read-only comparison of captured intended and reconstructed DNA; no history events or experimental verification","context_revision":bound.capture.context_revision,"plan_revision":bound.capture.plan_revision,"target_revision":bound.capture.target_revision,"product_revision":bound.capture.product_revision,"comparison":bound.report});
             let bytes = serde_json::to_vec(&data).map_err(|e| e.to_string())?;
             if bytes.len() > collagene_core::pairwise_history::MAX_SAVED_BYTES {
                 return Err("Comparison export exceeds the native report limit.".into());
             }
-            crate::app::download("cloning-target-comparison.json", "application/json", &bytes)
+            crate::app::prepare_download(
+                "cloning-target-comparison.json",
+                "application/json",
+                &bytes,
+            )
         })();
-        status.set(match result {
-            Ok(()) => "Diagnostic comparison exported.".into(),
-            Err(error) => error,
-        });
+        match result {
+            Ok(artifact) => {
+                let check = move || {
+                    if status.try_get_untracked().is_none() {
+                        return Err("Export review closed.".into());
+                    }
+                    guard.run(())?;
+                    snapshot.with_value(|s| model::validate(s, &bound.capture, &bound.report))
+                };
+                let completion = check.clone();
+                artifact.complete_guarded(check, move |result| {
+                    if completion().is_err() {
+                        return;
+                    }
+                    status.set(match result {
+                        Ok(()) => "Diagnostic comparison saved.".into(),
+                        Err(error) => error,
+                    });
+                });
+            }
+            Err(error) => status.set(error),
+        }
     };
     view! {<details class="assembly-product-details"><summary>"Compare actual DNA with intended target"</summary>
         <p>{snapshot.with_value(|s|{let p=s.report.products.last().unwrap();format!("Intended: {} nt / {:?} · actual: {} nt / {:?} · cloning verdict {:?}",s.target.sequence.len(),s.target.topology,p.sequence.len(),p.topology,s.report.status)})}</p>

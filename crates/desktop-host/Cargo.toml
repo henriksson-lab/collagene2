@@ -6,6 +6,8 @@ license = "MIT"
 rust-version = "1.88"
 description = "Framework-independent native desktop host for bounded Collagene IPC"
 [dependencies]
+cap-std = "=4.0.3"
+cap-fs-ext = "=4.0.3"
 collagene-core = { path = "../core" }
 collagene-desktop-protocol = { path = "../desktop-protocol" }
 collagene-repository = { path = "../repository" }
@@ -19,3 +21,6 @@ thiserror = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "=0.2.191"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }

@@ -4,24 +4,28 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-The current source writes worker78, native plan15 and candidate17, uses science20,
-and exposes174 MCP tools. The ordinary cloning workflow includes independently
-declared substitutions, exact/mismatch-PCR digest preparation, intermediate DNA
-review, oligo-capability output choices, direct actual-versus-intended comparison,
-and guarded GenBank/FASTA review exports. The full project goal remains active.
+Current source uses worker86, candidate19, native plan17, science22 and179 MCP
+tools. The Tauri shell has a durable offline local library, explicit multi-remote
+synchronization, scoped native credentials, saved-branch review, embedded stdio
+MCP and authenticated URL-import adapters. All export controls now await native
+file receipts under the configured root, using a separate capability-based export
+service. Native SDK and UI WASM checks pass; focused backend/scientific fixtures
+pass. Installer workflow sources are present, but packaging, installation and
+graphical/offline acceptance remain unfinished.
 
-Public port8082 serves the compiled worker78 review bundle (active worker hash
-`e617ed24b0a7de06225a586c6a0c6fedc61d4ba71082c2a3b1c2c2077785786f`).
-Static integrity and server process/socket checks passed. Browser and HTTP
-application checks remain deferred; compilation does not establish visual
-acceptance. Earlier feature sections below describe historical checkpoints.
+The `bf1ff47` checkpoint passes scientific/web CI and actual desktop builds plus
+headless embedded MCP execution on Windows, macOS and Linux. This proves those
+checks, not the later export code or GUI behavior. New kernel APIs model explicit
+3′ shortening and unsealed homology annealing; verifier/recipe/UI integration is
+still required. The full product goal remains active.
 
-The native CI compilation blocker in three older enum-pattern fixtures has been
-corrected, with their scientific assertions retained. The15 focused cases pass
-locally; a fresh three-OS CI matrix is still required after publication. Tauri
-hosting, restricted native document I/O, installers and offline recovery are
-remaining delivery work; the current public preview serves only an immutable
-asset root and exposes no document filesystem API.
+The latest recorded public8082 publication is the immutable `334f4b8` frontend
+with worker86, hash `3fb7ed14ce8175df3fd728c4f1db25727c7d215d37f3321ccea3231a1a24ebff`.
+Static asset and process/socket metadata checks passed at publication. It exposes
+no host filesystem API. Current native/import/export source is ahead of that
+snapshot. No application browser or HTTP checks were run for these changes;
+visual acceptance remains deferred until all in-scope implementation is complete.
+Earlier sections below describe historical checkpoints.
 
 ## Current priority
 

@@ -234,18 +234,38 @@ pub fn AssemblyArchiveView(
         }
     };
     let download = move |_| {
-        let result = (|| -> Result<(), String> {
+        let result = (|| {
             let saved = loaded
                 .get_untracked()
                 .ok_or("Choose the released manifest again.")?;
             let fields = serde_json::to_vec(&options.run(())).map_err(|e| e.to_string())?;
-            guard.run((saved, fields))?;
+            guard.run((saved.clone(), fields.clone()))?;
             let archive = prepared
                 .get_untracked()
                 .ok_or("Prepare the archive first.")?;
-            crate::app::download("collagene-constructs.zip", &archive.mime, &archive.bytes)
+            let artifact = crate::app::prepare_download(
+                "collagene-constructs.zip",
+                &archive.mime,
+                &archive.bytes,
+            )?;
+            Ok::<_, String>((artifact, saved, fields, generation.get_untracked()))
         })();
-        status.set(match result{Ok(())=>"Bulk archive downloaded. Sequence/primer exchange and current protocol checks retain their distinct evidence scope.".into(),Err(error)=>error});
+        match result {
+            Ok((artifact, saved, fields, ticket)) => {
+                let check = move || {
+                    if status.try_get_untracked().is_none() {
+                        return Err("Export review closed.".into());
+                    }
+                    if generation.get_untracked() != ticket {
+                        return Err("Archive preparation changed.".into());
+                    }
+                    guard.run((saved.clone(), fields.clone()))
+                };
+                let completion = check.clone();
+                artifact.complete_guarded(check,move|result|{if completion().is_err(){return;}status.set(match result{Ok(())=>"Bulk archive saved. Sequence/primer exchange and current protocol checks retain their distinct evidence scope.".into(),Err(error)=>error});});
+            }
+            Err(error) => status.set(error),
+        }
     };
     let refresh = move |_| match snapshot
         .run(())

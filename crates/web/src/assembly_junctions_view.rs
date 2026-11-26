@@ -1,6 +1,6 @@
 //! Explicit fresh assembly-junction review. Scientific reconstruction/translation
 //! stays in a private worker; the host capture callback guards before cloning.
-use crate::{app::download, assembly_junction_navigation_model::Kind, worker::CachedWorker};
+use crate::{assembly_junction_navigation_model::Kind, worker::CachedWorker};
 use collagene_core::{
     Molecule,
     assembly_junctions::{self, Frame, Method, Options, Report},
@@ -284,7 +284,7 @@ pub(crate) fn AssemblyJunctionsPanel(
             </article>}
         }).collect_view()}<div class="method-row-actions"><button class="text-tool" disabled=current==0 on:click=move|_|page.set(current.saturating_sub(1))>"Previous junctions"</button><span>{format!("Page {} of {}",current+1,pages)}</span><button class="text-tool" disabled={current+1>=pages} on:click=move|_|page.set((current+1).min(pages-1))>"Next junctions"</button></div><button class="button secondary full" on:click=move|_|{
             if identity.get_untracked()!=saved.identity||epoch.get_untracked()!=saved.epoch||form.get_untracked()!=saved.form{status.set("Context changed; inspect junctions again before exporting current evidence.".into());return;}
-            match serde_json::to_vec_pretty(saved.report.as_ref()){Ok(bytes)=>if let Err(error)=download("assembly-junction-review.json","application/json",&bytes){status.set(error)},Err(error)=>status.set(error.to_string())}
+            match serde_json::to_vec_pretty(saved.report.as_ref()){Ok(bytes)=>crate::app::download_with_completion("assembly-junction-review.json","application/json",&bytes,move|result|{if status.try_get_untracked().is_none(){return;}if let Err(error)=result {status.set(error)}}),Err(error)=>status.set(error.to_string())}
         }>"Download junction evidence JSON"</button></div>}})}
     </details>}
 }

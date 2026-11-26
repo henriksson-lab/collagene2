@@ -14,6 +14,13 @@ includes browsing, search, history, and guarded share/push/import controls.
 Tauri's full offline local library and synchronization to chosen remotes remain
 active work; this server does not replace those requirements.
 
+The native shell now provides an offline local library, explicit database sync
+and embedded stdio MCP. Its export controls save exact files under the configured
+storage area's `exports` folder and show the actual filename after acknowledgment.
+Use `--storage-root DIRECTORY` to choose that area. See [desktop setup](docs/TAURI_DESKTOP.md),
+[native exports](docs/DESKTOP_EXPORTS.md) and [unsigned installer builds](docs/DESKTOP_PACKAGING.md).
+Installation and graphical offline acceptance remain unfinished.
+
 The immediate desktop MVP focuses on the sequence/plasmid viewer, GenBank import and virtual restriction digest. Features and Digest are primary; More tools retains the advanced modules. The shared [molecular model](crates/model/README.md), format adapters, worker API and renderer remain foundations for the full product. [MVP model and acceptance](docs/MVP_DESKTOP.md).
 
 ## Run the web application

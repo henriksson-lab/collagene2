@@ -1,5 +1,5 @@
 //! Reference-free read assembly with exact source-event binding and fresh replay before use.
-use crate::{app::download, renderer::ResizeListener, worker::CachedWorker};
+use crate::{renderer::ResizeListener, worker::CachedWorker};
 use collagene_core::{
     Molecule,
     contig::{
@@ -585,7 +585,7 @@ pub fn ContigPanel(
                     status.set(e);
                     return;
                 }
-                let result = (|| -> Result<(), String> {
+                let result:Result<(),String> = async {
                     let response = result?;
                     let AnalysisResult::Contigs(fresh) = response.result else {
                         return Err(
@@ -614,19 +614,26 @@ pub fn ContigPanel(
                     {
                         return Err("The fresh source reconstruction differs from the displayed consensus. Assemble again before release.".into());
                     }
+                    let export_guard=||guard.run(bound.clone());
                     if kind == "fasta" {
-                        download(
+                        crate::app::download_guarded(
                             "contig-consensus.fasta",
                             "text/plain",
-                            collagene_core::formats::export_fasta(&m).as_bytes(),
-                        )?;
+                            collagene_core::formats::export_fasta(&m).as_bytes(),&export_guard,
+                        ).await?;
                     } else {
                         let text = collagene_core::formats::export_genbank(&m)
                             .map_err(|e| e.to_string())?;
-                        download("contig-consensus.gb", "text/plain", text.as_bytes())?;
+                        crate::app::download_guarded("contig-consensus.gb", "text/plain", text.as_bytes(),&export_guard).await?;
                     }
                     Ok(())
-                })();
+                }.await;
+                if !alive.load(Ordering::Relaxed)
+                    || generation.get_untracked() != token
+                    || guard.run(bound.clone()).is_err()
+                {
+                    return;
+                }
                 match result{Ok(())=>status.set("Freshly reconstructed consensus released with its source bindings. Saved evidence never restores current verification.".into()),Err(e)=>status.set(e)}
             });
         })
@@ -669,13 +676,19 @@ pub fn ContigPanel(
         }
         let mut bytes = Json(vec![]);
         match serde_json::to_writer_pretty(&mut bytes, &*bound.report) {
-            Ok(()) => {
-                if let Err(e) =
-                    download("contig-assembly-report.json", "application/json", &bytes.0)
-                {
-                    status.set(e)
-                }
-            }
+            Ok(()) => crate::app::download_with_completion(
+                "contig-assembly-report.json",
+                "application/json",
+                &bytes.0,
+                move |result| {
+                    if status.try_get_untracked().is_none() {
+                        return;
+                    }
+                    if let Err(e) = result {
+                        status.set(e)
+                    }
+                },
+            ),
             Err(e) => status.set(e.to_string()),
         }
     });
@@ -1190,19 +1203,23 @@ pub fn SavedAssemblyPanel(
                     collagene_core::formats::export_genbank(molecule)
                 };
                 match text {
-                    Ok(text) => {
-                        if let Err(e) = download(
-                            if kind == "fasta" {
-                                "contig-consensus.fasta"
-                            } else {
-                                "contig-consensus.gb"
-                            },
-                            "text/plain",
-                            text.as_bytes(),
-                        ) {
-                            status.set(e)
-                        }
-                    }
+                    Ok(text) => crate::app::download_with_completion(
+                        if kind == "fasta" {
+                            "contig-consensus.fasta"
+                        } else {
+                            "contig-consensus.gb"
+                        },
+                        "text/plain",
+                        text.as_bytes(),
+                        move |result| {
+                            if status.try_get_untracked().is_none() {
+                                return;
+                            }
+                            if let Err(e) = result {
+                                status.set(e)
+                            }
+                        },
+                    ),
                     Err(e) => status.set(e.to_string()),
                 }
             }
@@ -1226,13 +1243,19 @@ pub fn SavedAssemblyPanel(
         };
         let mut bytes = Json(vec![]);
         match serde_json::to_writer_pretty(&mut bytes, &*bound.report) {
-            Ok(()) => {
-                if let Err(e) =
-                    download("contig-assembly-report.json", "application/json", &bytes.0)
-                {
-                    status.set(e)
-                }
-            }
+            Ok(()) => crate::app::download_with_completion(
+                "contig-assembly-report.json",
+                "application/json",
+                &bytes.0,
+                move |result| {
+                    if status.try_get_untracked().is_none() {
+                        return;
+                    }
+                    if let Err(e) = result {
+                        status.set(e)
+                    }
+                },
+            ),
             Err(e) => status.set(e.to_string()),
         }
     });

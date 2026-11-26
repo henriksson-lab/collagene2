@@ -1,5 +1,4 @@
 //! Historical editable recovery data. Viewing it never restores scientific evidence.
-use crate::app::download;
 use collagene_core::{assembly_library_history as history, workspace::Workspace};
 use leptos::prelude::*;
 use std::sync::Arc;
@@ -160,7 +159,7 @@ pub fn LibraryHistoryView(
     });
     let before_download = Callback::new(move |saved: Arc<Loaded>| {
         let result = guard.run(saved.clone()).and_then(|()| {
-            download(
+            crate::app::prepare_download(
                 &format!(
                     "assembly-library-{}-{}.json",
                     saved.record.library_id, saved.record.before_hash
@@ -169,7 +168,22 @@ pub fn LibraryHistoryView(
                 &saved.record.before_draft,
             )
         });
-        status.set(match result {Ok(())=>"Exact historical working-draft JSON downloaded; this does not install or verify it.".into(),Err(error)=>error});
+        match result {
+            Ok(artifact) => {
+                let check = move || {
+                    if status.try_get_untracked().is_none() {
+                        return Err("Export review closed.".into());
+                    }
+                    guard.run(saved.clone())
+                };
+                let completion = check.clone();
+                artifact.complete_guarded(check, move |result| {
+                    if completion().is_err() { return; }
+                    status.set(match result { Ok(()) => "Exact historical working-draft JSON saved; this does not install or verify it.".into(), Err(error) => error });
+                });
+            }
+            Err(error) => status.set(error),
+        }
     });
     let preview = Callback::new(move |saved: Arc<Loaded>| {
         let result = guard.run(saved.clone()).and_then(|()| {

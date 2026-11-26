@@ -1,9 +1,6 @@
 //! Explicit selection and output review for exact-PCR reference previews.
 //! Reaction reconstruction remains in the worker; this view never invents a target.
-use crate::{
-    app::download,
-    pcr_overlay::{self, Overlay, Publication, Role},
-};
+use crate::pcr_overlay::{self, Overlay, Publication, Role};
 use collagene_core::{
     Molecule,
     analysis::Primer,
@@ -165,10 +162,20 @@ pub fn PcrOutputsPanel(
                     status.set("The PCR inputs changed; no primer sheet downloaded.".into());
                     return;
                 }
-                match download(filename, mime, report.text.as_bytes()) {
-                    Ok(()) => status.set(report.warnings.join(" ")),
-                    Err(error) => status.set(error),
-                }
+                crate::app::download_with_completion(
+                    filename,
+                    mime,
+                    report.text.as_bytes(),
+                    move |result| {
+                        if status.try_get_untracked().is_none() {
+                            return;
+                        }
+                        match result {
+                            Ok(()) => status.set(report.warnings.join(" ")),
+                            Err(error) => status.set(error),
+                        }
+                    },
+                )
             }
             Err(error) => status.set(error.to_string()),
         }

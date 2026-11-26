@@ -114,13 +114,19 @@ pub fn WorkspacePanel(
                 return;
             }
             let result = match encoded {
-                Ok(bytes) => download(
-                    "collagene-workspace.cg2workspace",
-                    "application/zip",
-                    &bytes,
-                ),
+                Ok(bytes) => {
+                    download(
+                        "collagene-workspace.cg2workspace",
+                        "application/zip",
+                        &bytes,
+                    )
+                    .await
+                }
                 Err(error) => Err(error),
             };
+            if !alive.load(Ordering::Relaxed) {
+                return;
+            }
             status.set(match result{Ok(())=>"Workspace file prepared with document history, candidates and original evidence.".into(),Err(error)=>error});
             exporting.set(false);
         });

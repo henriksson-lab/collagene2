@@ -489,7 +489,7 @@ pub fn AssemblyBatchView(
         <p class="helper" role="status">{move||status.get()}</p>
         <button class="text-tool" disabled=move||workspace_busy.get() on:click=load_history>"Load saved batch records"</button>
         <BatchHistory history open_record replay on_release busy=workspace_busy/>
-        {move||historical_record.get().map(|record|view!{<button class="button secondary" on:click=move|_|match serde_json::to_vec(record.as_ref()){Ok(bytes)=>if let Err(error)=crate::app::download("combinatorial-batch.json","application/json",&bytes){status.set(error)},Err(error)=>status.set(error.to_string())}>"Download historical batch evidence JSON"</button>})}
+        {move||historical_record.get().map(|record|view!{<button class="button secondary" on:click=move|_|match serde_json::to_vec(record.as_ref()){Ok(bytes)=>crate::app::download_with_completion("combinatorial-batch.json","application/json",&bytes,move|result|{if status.try_get_untracked().is_none(){return;}if let Err(error)=result {status.set(error)}}),Err(error)=>status.set(error.to_string())}>"Download historical batch evidence JSON"</button>})}
     </details>}.into_any()
 }
 

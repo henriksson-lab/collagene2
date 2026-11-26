@@ -162,10 +162,29 @@ pub fn AssemblyProductView(
                 if bytes.len() > 64 * 1024 * 1024 {
                     return Err("The diagnostic JSON exceeds the 64MiB export profile.".into());
                 }
-                crate::app::download("cloning-reconstruction.json", "application/json", &bytes)
+                crate::app::prepare_download(
+                    "cloning-reconstruction.json",
+                    "application/json",
+                    &bytes,
+                )
             })
         });
-        status.set(match result{Ok(())=>"Complete reconstruction report exported, including retained intermediate and graph-only evidence. This is diagnostic evidence, not material authority.".into(),Err(error)=>error});
+        match result {
+            Ok(artifact) => {
+                let check = move || {
+                    if status.try_get_untracked().is_none() {
+                        return Err("Export review closed.".into());
+                    }
+                    capture.run(()).map(|_| ())
+                };
+                let completion = check.clone();
+                artifact.complete_guarded(check, move |result| {
+                    if completion().is_err() { return; }
+                    status.set(match result { Ok(()) => "Complete reconstruction report saved, including retained intermediate and graph-only evidence. This is diagnostic evidence, not material authority.".into(), Err(error) => error });
+                });
+            }
+            Err(error) => status.set(error),
+        }
     };
     let open = move |_| {
         if !current.get_untracked() {

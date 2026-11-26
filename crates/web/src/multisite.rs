@@ -1,5 +1,5 @@
 //! Ordered parent contributions, explicit full-context profiles and reference-only results.
-use crate::{app::download, digest::SourceInfo, worker};
+use crate::{digest::SourceInfo, worker};
 use collagene_core::{
     Molecule,
     multisite_recombination::{self as science, Request, Selection},
@@ -428,7 +428,7 @@ pub fn MultiSitePanel(
             {move||result.get().map(|b|b.batch.documents.iter().skip(page.get()*8).take(8).map(|d|{let selection=d.selection.clone();let id=selection.clone();view!{<div class="candidate-review"><label class="checkbox-label"><input type="radio" name="multisite-component" disabled=move||busy.get() prop:checked=move||choice.get().as_ref()==Some(&id) on:change=move |_|{choice.set(Some(selection.clone()));checked.set(None);}/>{format!("Candidate {}, component {} · {} bases · {:?}",d.selection.candidate_id+1,d.selection.component_id+1,d.molecule.sequence.len(),d.molecule.topology)}</label><p class="helper">{format!("{} reciprocal components retained · {} mapped annotations",d.reciprocal_components.len(),d.molecule.features.len())}</p><ul>{d.warnings.iter().map(|w|view!{<li>{w.clone()}</li>}).collect_view()}</ul></div>}}).collect_view())}
             <div class="plan-exchange"><button class="button secondary" disabled=move||page.get()==0 on:click=move |_|page.update(|p|*p=p.saturating_sub(1))>"Previous"</button><button class="button secondary" disabled=move||result.get().is_none_or(|b|(page.get()+1)*8>=b.batch.documents.len()) on:click=move |_|page.update(|p|*p+=1)>"Next"</button></div>
             <button class="button secondary full" disabled=move||busy.get()||choice.get().is_none() on:click=move |_|check.run(())>"Check selected component against target"</button><button class="button secondary full" disabled=move||busy.get()||choice.get().is_none() on:click=plan>"Review selected component in Plan"</button>
-            <button class="button secondary full" on:click=move |_|{if let Some(b)=result.get_untracked(){if current.run(b.key.clone()){match serde_json::to_vec_pretty(&b.batch){Ok(bytes)=>if let Err(e)=download("multisite-reference-evidence.json","application/json",&bytes){status.set(e);},Err(e)=>status.set(e.to_string())}}}}>"Download full reference evidence"</button>
+            <button class="button secondary full" on:click=move |_|{if let Some(b)=result.get_untracked(){if current.run(b.key.clone()){match serde_json::to_vec_pretty(&b.batch){Ok(bytes)=>crate::app::download_with_completion("multisite-reference-evidence.json","application/json",&bytes,move|result|{if status.try_get_untracked().is_none(){return;}if let Err(e)=result {status.set(e);}}),Err(e)=>status.set(e.to_string())}}}}>"Download full reference evidence"</button>
         </section>})}
         {move||checked.get().map(|r|view!{<section><h3>"Independent target comparison"</h3><p>{format!("Reference match: {} · complete within declared model: {}",r.assessment.target_matches,r.assessment.complete)}</p><ul>{r.assessment.findings.iter().map(|s|view!{<li>{s.clone()}</li>}).collect_view()}</ul></section>})}
     </section>}

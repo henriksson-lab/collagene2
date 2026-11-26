@@ -194,7 +194,7 @@ pub fn GoldenGatePanel(
                     }>{format!("Review Golden Gate candidate {}",index+1)}</button></article>}
                 }).collect_view()}
                 <Show when=move||{count>50}><p class="helper">{format!("Showing candidates {}–{} of {count}; download retains the full returned report. Capped enumeration remains explicitly incomplete.",start+1,(start+50).min(count))}</p><div class="gate-grid"><button class="button secondary" disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous candidates"</button><button class="button secondary" disabled=move||{(page.get()+1)*50>=count} on:click=move|_|page.update(|p|*p+=1)>"Next candidates"</button></div></Show>
-                <button class="button secondary full" on:click=move|_|match serde_json::to_vec_pretty(&download.report){Ok(bytes)=>if let Err(e)=crate::app::download("golden-gate-report.json","application/json",&bytes){status.set(e)},Err(e)=>status.set(e.to_string())}>"Download Golden Gate report"</button>
+                <button class="button secondary full" on:click=move|_|match serde_json::to_vec_pretty(&download.report){Ok(bytes)=>crate::app::download_with_completion("golden-gate-report.json","application/json",&bytes,move|result|{if status.try_get_untracked().is_none(){return;}if let Err(e)=result {status.set(e)}}),Err(e)=>status.set(e.to_string())}>"Download Golden Gate report"</button>
                 <p class="helper">"Review opens a typed proposal. Independently verify it in the Plan panel against the current target; importing a candidate grants no scientific status."</p>
             </section>}
         })}

@@ -2413,3 +2413,43 @@ native bounds and are not misreported as part of that comparison count.
 Public8082 remains the published restriction-fanout viewer; this UI awaits the
 next batched publication. No browser checks were run. Remaining full-product
 cloning, platform delivery and eventual GUI acceptance work stays active.
+
+
+### Next ordinary-cloning gap: overlap product reuse
+
+A read-only audit confirms that final `ProfiledOverlap` products retain sequence
+reference evidence but no private tracked duplex. Existing `FromRun` and PCR
+ancestry guards correctly refuse to promote them into material. Thus the ordinary
+assemble/save/reuse-plasmid workflow still requires a distinct physical homology
+assembly model with explicit strand resection/pairing/synthesis/sealing rules and
+modification/end-state propagation. Existing Gibson/HiFi/In-Fusion advisory
+profiles and whole-primer target agreement do not establish those rules. Keep
+historical semantics and negative ancestry fixtures intact; reconstruct actual
+material before checking the independent target. [Scope and code audit](HOMOLOGY_MATERIAL_SCOPE.md).
+
+
+### Combined cloning preview publication — 26 November 2026
+
+The frozen3d76629 source builds successfully through offline Trunk, including the
+main application, worker, WASM glue, stripping and immutable worker packaging.
+All793 tracked build inputs remain identical to the pre-build source hashes.
+The static staged snapshot has54 assets (432651537 bytes), active worker
+`d85a18f7249fbc4279155283cbaa0796a9fc2e68ab39e5d6e8e6cfa48ce4519f`
+and all14 previous worker versions for open tabs. Main/worker stripped WASM sizes
+are62256936/26203482 bytes. Four offline staging cases pass; referenced assets,
+SRI digests, WASM headers and complete worker triples validate.
+
+Public8082 now serves this snapshot. Exact new process arguments, working
+directory and listening-socket ownership were checked without application HTTP
+requests or browser checks. The restriction-fanout snapshot remains available
+for rollback. The bounded static asset allowance increased385→414MiB to retain
+old worker URLs; per-file/path restrictions and the absence of a filesystem API
+remain unchanged. An unused pre-consolidation generated native cache was removed
+after checking for live compiler references; the active lean cache was retained.
+
+The published controls include source/edit-bound six-oligo proposals, actual
+outer-PCR catalog digestion, whole-assembly exact/OE primer planning and the
+navigation fix. The frozen source commit also passes all four CI jobs
+(run45789901783): scientific Windows/macOS/Linux and web. This is publication evidence, not GUI acceptance. The original
+full-product goal remains active. Primary literature/vendor references for the
+next physical homology-material work are recorded in [sources](HOMOLOGY_MATERIAL_SOURCES.md).

@@ -17,7 +17,7 @@ from urllib.parse import unquote, urlsplit
 MAX_FILES = 4096
 MAX_FILE_BYTES = 128 * 1024 * 1024
 # Bounded immutable assets, including prior versioned workers for open tabs.
-MAX_TOTAL_BYTES = 385 * 1024 * 1024
+MAX_TOTAL_BYTES = 414 * 1024 * 1024
 
 
 def snapshot(directory):

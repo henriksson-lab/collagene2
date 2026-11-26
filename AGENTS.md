@@ -1,6 +1,7 @@
 # Repository rules
 
 - Fix or delete old, obsolete code. Never add compatibility scaffolding.
+- Prefer temporarily broken code during a refactor over scaffolding. Update the implementation, callers, and tests directly; intermediate builds do not need to stay green.
 - Keep one current implementation and one current internal plan/protocol representation. Update callers directly when changing an interface.
 - Do not preserve superseded development formats through legacy branches, adapters, aliases, fallback decoders, or migrations. Reject unsupported internal versions explicitly.
 - Remove tests whose only purpose is supporting obsolete implementations or encodings. Preserve meaningful scientific correctness, data integrity, resource bounds, and current-format validation tests.

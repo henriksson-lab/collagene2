@@ -201,6 +201,7 @@ fn validate_record(r: &RunRecord) -> Result<(), Error> {
     }
     if r.plan_schema < 15
         && (r.assessment.engine_version.ends_with("/science-20")
+            || r.assessment.engine_version.ends_with("/science-21")
             || r.plan
                 .steps
                 .iter()

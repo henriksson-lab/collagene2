@@ -2146,5 +2146,50 @@ hydrated declaration. Twelve focused native fixtures pass, covering versions1–
 internal edits, source alternatives, paired strands, actual closed run origins,
 source-free storage, exact historical references, hydration bounds, malformed
 cleanup and attachment-only atomicity. The frontend WASM check passes. Browser and
-HTTP application checks remain deferred. Public8082 remains on24e38a2 until the
-next batched publication; the full original project goal remains active.
+HTTP application checks remain deferred. This saved-design feature is now included
+in the science21/worker80 public preview described below; the full original project
+goal remains active.
+
+### PCR requires established intermediate template state
+
+Audit of the remaining overlap-extension workflow found a real verifier gap:
+legacy/profiled overlap operations produce sequence-only diagnostics with no
+private tracked strand/modification state, but downstream PCR previously allowed
+that missing state to fall back to a reference-template simulator. Both exact and
+intentional-mismatch PCR now require established private tracked state for Step
+inputs, before binding simulation. The existing staggered/nicked-template guards
+remain. Original Input template hypotheses stay supported. Final overlap sequence
+diagnostics remain available; they do not become physical intermediates merely
+because their letters match the independent target.
+
+This is science21 with worker80. No operation/recipe layout, candidate17 or native
+plan15 schema changes are introduced. Current scientific receipts and recorded
+runs require the new worker envelope; preceding science20 documents remain
+readable as historical data. Closed material-origin packages bind full product
+hashes, including engine stamps: a science20 package therefore fails closed when
+replayed under21. Re-finalize the originating plan and explicitly reselect its
+current-engine material before reuse. No metadata retagging, same-DNA substitution
+or silent authority migration is performed.
+
+Seventy-eight focused native checks pass across the new ancestry/version cases,
+original-input PCR, real physical PCR/mutagenic-PCR/PNK/circularization, inverse-PCR,
+run continuation/material reuse, real MCP material tools and44 relevant viewer/
+draft/staging fixtures. Negative cases retain the valid overlap diagnostic prefix
+without fabricating the requested PCR product. The final web/worker WASM check,
+full offline frontend/worker build, formatting and whitespace checks pass. Static
+integrity validation passes for48 immutable assets including13 retained worker
+versions. Public8082 now serves science21/worker80 and saved designs; exact process/
+socket metadata was verified without browser or HTTP application checks. The
+compiled source matches the frozen input hashes. A proper physical overlap-extension-PCR mechanism
+is still required for the common internal-mutated-insert multipart workflow; the
+unsupported reference-only shortcut is not used to fill that gap.
+
+The next physical extension geometry and bounded binary source gateway have been
+implemented as separate unregistered prototypes; neither is compiled, deployed or
+claimed complete by this checkpoint. The gateway reuses native download/DNS/
+redirect policies and requires same-origin host/access policy; generic Direct URLs
+remain rejected. Its source client/controller and hosting integration remain work.
+The overlap-extension prototype derives the actual heteroduplex from two supplied
+physical strands and reuses native fill-in; private tracked-state wrapping, recipe/
+operation/worker integration and fixtures remain to be completed. The full original
+project goal, including native safe-folder host/Tauri delivery, remains active.

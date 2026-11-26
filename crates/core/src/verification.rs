@@ -281,7 +281,7 @@ pub struct ReferenceStepReport {
     pub evidence: ReferenceStepEvidence,
 }
 
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-20");
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-21");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrDocument {
@@ -2533,13 +2533,14 @@ fn reconstruct(
                         }
                     }
                     Source::Step(i) => {
-                        if let Some(Some(duplex)) = physical.get(*i) {
-                            if duplex.bottom_start != 0
-                                || duplex.bottom.len() != duplex.top.len()
-                                || !duplex.nicks.is_empty()
-                            {
-                                return Err(Error::Unsupported("PCR of staggered or nicked physical templates is not yet modeled; a top-strand projection is insufficient".into()));
-                            }
+                        let duplex = physical.get(*i).and_then(Option::as_ref).ok_or_else(|| {
+                            Error::Unsupported("PCR requires an established physical template from the originating step; a reference-only assembly cannot be materialized by PCR".into())
+                        })?;
+                        if duplex.bottom_start != 0
+                            || duplex.bottom.len() != duplex.top.len()
+                            || !duplex.nicks.is_empty()
+                        {
+                            return Err(Error::Unsupported("PCR of staggered or nicked physical templates is not yet modeled; a top-strand projection is insufficient".into()));
                         }
                     }
                 }
@@ -2568,21 +2569,34 @@ fn reconstruct(
                 options,
             } => {
                 let substrate = resolve(template)?;
-                match template{
-                    Source::Input(_) if chemistry::has_unmapped_physical_evidence(substrate)=>return Err(Error::Unsupported("Mismatched PCR of imported physical evidence requires its originating graph".into())),
-                    Source::Step(i)=>if let Some(Some(duplex))=physical.get(*i){if duplex.bottom_start!=0||duplex.bottom.len()!=duplex.top.len()||!duplex.nicks.is_empty(){return Err(Error::Unsupported("Mismatched PCR of staggered/nicked templates is not modeled".into()));}},
-                    _=>{},
-                }
-                let report = if let Source::Step(i) = template {
-                    if let Some(Some(duplex)) = physical.get(*i) {
-                        crate::mutagenesis::simulate_pcr_reconstructed(
-                            substrate, duplex, forward, reverse, options,
-                        )?
-                    } else {
-                        crate::mutagenesis::simulate_pcr(substrate, forward, reverse, options)?
+                let physical_template = match template {
+                    Source::Input(_) => {
+                        if chemistry::has_unmapped_physical_evidence(substrate) {
+                            return Err(Error::Unsupported("Mismatched PCR of imported physical evidence requires its originating graph".into()));
+                        }
+                        None
                     }
-                } else {
-                    crate::mutagenesis::simulate_pcr(substrate, forward, reverse, options)?
+                    Source::Step(i) => {
+                        let duplex = physical.get(*i).and_then(Option::as_ref).ok_or_else(|| {
+                            Error::Unsupported("Mismatched PCR requires an established physical template from the originating step; a reference-only assembly cannot be materialized by PCR".into())
+                        })?;
+                        if duplex.bottom_start != 0
+                            || duplex.bottom.len() != duplex.top.len()
+                            || !duplex.nicks.is_empty()
+                        {
+                            return Err(Error::Unsupported(
+                                "Mismatched PCR of staggered/nicked templates is not modeled"
+                                    .into(),
+                            ));
+                        }
+                        Some(duplex)
+                    }
+                };
+                let report = match physical_template {
+                    Some(duplex) => crate::mutagenesis::simulate_pcr_reconstructed(
+                        substrate, duplex, forward, reverse, options,
+                    )?,
+                    None => crate::mutagenesis::simulate_pcr(substrate, forward, reverse, options)?,
                 };
                 findings.extend(
                     report

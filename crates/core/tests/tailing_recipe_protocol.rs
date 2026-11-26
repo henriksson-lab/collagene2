@@ -114,7 +114,6 @@ fn appended_worker156_result148_reconstructs_literal_ta_and_gc_with_old_operatio
     assert!(protocol::WORKER_SCHEMA_VERSION >= 70);
     assert!(protocol::CANDIDATE_SCHEMA_VERSION >= 16);
     assert!(workspace::PLAN_SCHEMA_VERSION >= 14);
-    assert!(verification::ENGINE_VERSION.ends_with("/science-20"));
     for gc in [false, true] {
         let (inputs, target, recipe) = fixture(gc);
         let expected = target.sequence.as_str().to_owned();
@@ -127,6 +126,10 @@ fn appended_worker156_result148_reconstructs_literal_ta_and_gc_with_old_operatio
         let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
         assert_eq!(tag, 148);
         value.validate_binding(&request.revision).unwrap();
+        assert_eq!(
+            value.verification.engine_version,
+            verification::ENGINE_VERSION
+        );
         assert!(value.preparation_complete);
         assert_eq!(
             value.verification.status,

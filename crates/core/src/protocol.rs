@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 79;
+pub const WORKER_SCHEMA_VERSION: u16 = 80;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 17;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -3073,6 +3073,9 @@ fn check_verification_report_version(
     Ok(())
 }
 fn check_scientific_report_version(bytes: &[u8], engine: &str) -> Result<(), Error> {
+    if engine.ends_with("/science-21") {
+        check_variant_version(bytes, 80)?;
+    }
     if engine.ends_with("/science-20") {
         check_variant_version(bytes, 73)?;
     }

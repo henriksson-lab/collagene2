@@ -186,6 +186,8 @@ mod read_review_view;
 mod read_source_library;
 #[cfg(target_arch = "wasm32")]
 mod reference_transfer_view;
+#[cfg(any(target_arch = "wasm32", test))]
+mod restriction_label_groups;
 #[cfg(target_arch = "wasm32")]
 mod restriction_map;
 #[cfg(target_arch = "wasm32")]

@@ -229,3 +229,23 @@ normalized length. Menu paste/insert use these same guards, including selected
 parts in their asynchronous freshness context. Annotated-reference paste retains
 its separate explicit preview/apply route. Four pure fixture groups cover scoped
 source/product copy, biological joins, rejected edits and normalized edits/bounds.
+
+
+## Restriction map correction after 26 November review
+
+The user rejected the current circular restriction-site presentation. The earlier
+horizontal-then-vertical leader route and prominent colored strand-cut rays do
+not match the supplied reference. Give this correction priority over additional
+cloning feature work: a short outward radial stem at the actual site, followed
+by diagonal fan-out to compact horizontal enzyme text; thin neutral default
+marks and leaders; dark label AND leader on hover. Keep precise paired-strand
+cut geometry in sequence/hover inspection rather than large colored default
+map spikes. Remove label background chips.
+
+Group sites that coincide at the current display scale, with a bounded total
+cluster span rather than transitive merging around the circle. Retain every
+member index and true source coordinate, use local name/+N summaries, and expose
+the complete group in inspection. Label budgets should follow viewport capacity,
+with explicit overflow and hover priority. Measured text, label hit boxes and
+leader paths must agree, including during rotation. Display rotation remains
+independent of exact range selection and sequence-origin edits.

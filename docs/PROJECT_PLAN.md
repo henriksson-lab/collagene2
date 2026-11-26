@@ -2242,3 +2242,64 @@ No browser checks, live provider requests, application HTTP smoke checks or new
 preview publication were performed. Port8082 retains its prior immutable build.
 Cross-platform CI is requested by the push; this local checkpoint does not claim
 a fresh Windows/macOS/Linux CI result.
+
+
+### Shared overlap-extension preparation and current map priority
+
+The shared recipe vocabulary now includes a flat manual overlap-extension PCR
+request: two independently supplied primer pairs on the same original source,
+reciprocal extension and a separately supplied outer-primer pair. Saved material
+adds its explicit source reconstruction prefix. Every branch and intermediate
+step is owned by its preparation row; digest-repair fields retain their original
+meaning. Ordered overlap, ligation and tailing compose the resulting actual
+prepared material through the existing verifier and independent target.
+
+The ordinary preparation editor keeps one active primer pair visible and retains
+all six oligos. Draft8 saves incomplete oligos and numeric fields without claiming
+successful preparation. Named designs retain exact historical source references,
+including closed saved-material origins. Worker82 versions the new recipe
+selectors, diagnostic stage and draft8; existing physical operations remain
+worker81/science22/candidate18/native-plan16 compatible. Automatic mutation-primer
+proposal remains outstanding; manual preparation does not complete F14.
+
+Focused preparation/native transport/MCP and draft persistence fixtures pass,
+including independent literal multipart products, reverse contributions, saved
+origin reuse, uncertainty propagation and wrong-target rejection. The earlier
+checkpoint91ba159 has passed Linux and web CI; macOS/Windows were still running
+at the latest observation.
+
+The user's renewed restriction-map criticism takes priority now. Replace the
+current L-shaped RE leaders and visually dominant colored cut rays with short
+outward stems, diagonal fan-out, compact text and subdued marks. Group only
+screen-coincident sites, retain their actual coordinates, expose complete groups
+and promote both hovered label and leader. See the updated visual contract.
+Browser acceptance remains deferred under the original user instruction.
+
+
+The revised RE renderer now uses the new native radial fan-out geometry,
+compact14–16px measured rows, true-site neutral ticks, local screen-density groups
+and complete cached group inspection. Default colored cut rays and label chips
+are removed from the circular overview; paired cut detail remains on actual
+site hover. Exact named sub-label hits override a whole-group fallback, so the
+local +N area is inspectable too. Tiny-circle secondary forks are suppressed
+while actual ticks remain. Rotation and source coordinates are unchanged.
+
+Seventy focused native preparation/persistence cases and fourteen radial/density
+cases pass. The preparation-only WASM check passed before the map edit. A full
+frontend/worker build is now running from frozen crate/build-input hashes for
+publication; visual acceptance and performance measurements are not inferred
+from numeric geometry checks. No browser/application HTTP checks are authorized
+at this stage.
+
+
+The final full offline frontend/worker build passed and matches774 frozen build
+input hashes, including embedded profile tables. Public8082 now serves the
+restriction fan-out correction and manual overlap-extension preparation editor.
+Static integrity validation covers51 immutable assets and14 worker versions.
+The development snapshot limit increased by1MiB (384→385MiB) to retain every
+previous worker URL; asset-root/path restrictions are unchanged. Exact new
+process arguments/cwd and listening-socket ownership were verified. No browser
+or application HTTP checks were run, so visual acceptance remains the user's
+review rather than a claim inferred from the build. The full original product
+objective and unfinished native safe-folder/Tauri, import-host integration and
+automatic primer-design work remain active.

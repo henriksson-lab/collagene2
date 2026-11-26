@@ -15,14 +15,14 @@ pub enum Database {
     Browser(web_sys::IdbDatabase),
     Native {
         state: Rc<Mutex<Native>>,
-        context: wire::library::LabContext,
+        context: Option<wire::library::LabContext>,
     },
 }
 impl Database {
     pub fn native_context(&self) -> Option<wire::library::LabContext> {
         match self {
             Self::Browser(_) => None,
-            Self::Native { context, .. } => Some(context.clone()),
+            Self::Native { context, .. } => context.clone(),
         }
     }
 
@@ -66,8 +66,8 @@ impl Transaction {
 }
 pub async fn open() -> Result<Database, String> {
     if desktop_rpc::is_desktop() {
-        match desktop_rpc::call(wire::Command::Bootstrap).await? {
-            wire::Success::Bootstrap(b) => Ok(Database::Native {
+        match desktop_rpc::call(wire::Command::BootstrapRecovery).await? {
+            wire::Success::BootstrapRecovery(b) => Ok(Database::Native {
                 state: Rc::new(Mutex::new(Native {
                     working: b.working.version,
                     preferences: b.preferences.version,

@@ -37,6 +37,7 @@ pub(crate) fn reference_export_guard(m: &Molecule) -> Result<(), Error> {
             || key.starts_with("restriction_catalog:")
             || key.starts_with("source:restriction_catalog:")
             || key.starts_with("source:material_derivation:")
+            || key.starts_with("source:ligation_outcomes:")
     });
     let protein_state = m.sequence.alphabet() == Alphabet::Protein
         && m.metadata.keys().any(|k| {

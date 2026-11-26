@@ -126,16 +126,23 @@ impl DesktopHost {
         request: &wire::Request,
         accepted: &std::sync::atomic::AtomicBool,
     ) -> HostResult<wire::Success> {
+        if !self.catalog_available() {
+            return Err(HostError::Invalid(
+                "Saved catalog is paused; editor recovery remains available.",
+            ));
+        }
+        let control = self.control.clone();
+        let catalog = self.catalog.as_mut().ok_or(HostError::Unavailable)?;
         if let Some(operation) = operation(request) {
-            self.repository
+            catalog
+                .repository
                 .reload()
                 .map_err(|_| HostError::Unavailable)?;
             let id = sync::MutationId::new(op.as_str().replacen("op-", "mut-", 1))
                 .map_err(|_| HostError::Wire)?;
             let mutation = sync::native::to_storage_mutation(&sync::Mutation { id, operation })
                 .map_err(|_| HostError::Wire)?;
-            let control = self.control.clone();
-            let outcome = self
+            let outcome = catalog
                 .repository
                 .mutate_local_reliable_with_gate(mutation, || {
                     crate::commit_gate(&control, access, op, accepted).is_ok()
@@ -164,10 +171,10 @@ impl DesktopHost {
         }
         use wire::{Request as R, Success as S};
         let result = match request {
-            R::Browse { parent, page } => self
+            R::Browse { parent, page } => catalog
                 .reads
                 .browse(
-                    &self.local_access,
+                    &catalog.local_access,
                     parent.as_ref().map(folder).transpose()?.as_ref(),
                     page.offset,
                     page.limit,
@@ -189,9 +196,10 @@ impl DesktopHost {
                         recursive: *recursive,
                     },
                 };
-                self.reads
+                catalog
+                    .reads
                     .search(
-                        &self.local_access,
+                        &catalog.local_access,
                         query.as_str(),
                         &scope,
                         page.offset,
@@ -204,10 +212,10 @@ impl DesktopHost {
                             .map_err(|_| store::Error::Corrupt("desktop metadata"))
                     })
             }
-            R::ListRevisions { id, page } => self
+            R::ListRevisions { id, page } => catalog
                 .reads
                 .revision_page(
-                    &self.local_access,
+                    &catalog.local_access,
                     &document(id)?,
                     page.offset,
                     page.limit,
@@ -224,7 +232,7 @@ impl DesktopHost {
             } => {
                 let local = document(id)?;
                 let result = (|| -> HostResult<S> {
-                    let current = self.repository.document(&local).map_err(|e| match e {
+                    let current = catalog.repository.document(&local).map_err(|e| match e {
                         collagene_repository::Error::Storage(store::Error::NotFound) => {
                             HostError::Library(public_error(
                                 wire::ErrorCode::NotFound,
@@ -239,11 +247,11 @@ impl DesktopHost {
                         .map(revision)
                         .transpose()?
                         .unwrap_or_else(|| current.head.id.clone());
-                    let metadata = self
+                    let metadata = catalog
                         .reads
-                        .revision(&self.local_access, &local, &selected)
+                        .revision(&catalog.local_access, &local, &selected)
                         .map_err(storage_error)?;
-                    let body = self
+                    let body = catalog
                         .repository
                         .open_document(&local, Some(&selected))
                         .map_err(|_| HostError::Unavailable)?;

@@ -167,6 +167,8 @@ mod golden_gate_pool_form;
 #[cfg(target_arch = "wasm32")]
 mod history_view;
 #[cfg(target_arch = "wasm32")]
+mod ligation_outcomes_view;
+#[cfg(target_arch = "wasm32")]
 mod literal_intent_view;
 #[cfg(target_arch = "wasm32")]
 mod map_labels;

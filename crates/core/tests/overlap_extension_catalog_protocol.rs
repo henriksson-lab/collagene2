@@ -151,7 +151,7 @@ fn compound_preparation11_requires84_but_compiled_operations_remain_candidate18_
         preview.compiled.rows[0].preparation.prepared_source,
         Source::Step(5)
     ));
-    assert!(preview.verification.engine_version.ends_with("/science-25"));
+    assert!(preview.verification.engine_version.ends_with("/science-26"));
     let candidate = Candidate::new(preview.compiled.plan);
     let encoded_candidate = transfer::save_candidate(&candidate).unwrap();
     assert_eq!(
@@ -159,15 +159,36 @@ fn compound_preparation11_requires84_but_compiled_operations_remain_candidate18_
         &protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
     );
     assert!(transfer::load_candidate(&encoded_candidate).is_ok());
-    // These existing operations still retain their historical candidate18 floor.
-    let mut historical_candidate = encoded_candidate;
+    // The newly compiled final operation includes outcome enumeration, so it
+    // requires the new candidate capability. The pre-existing ordered-only
+    // operations keep their independent historical candidate18 floor.
+    let mut old_header = encoded_candidate;
+    old_header[4..6].copy_from_slice(&18u16.to_le_bytes());
+    assert!(transfer::load_candidate(&old_header).is_err());
+    let mut historical_plan = candidate.plan.clone();
+    let Some(Operation::LigateWithOutcomes {
+        fragments,
+        circular,
+        allow_nicked,
+        ..
+    }) = historical_plan.steps.pop()
+    else {
+        panic!("new recipe must retain outcome-aware ligation")
+    };
+    historical_plan.steps.push(Operation::Ligate {
+        fragments,
+        circular,
+        allow_nicked,
+    });
+    let mut historical_candidate =
+        transfer::save_candidate(&Candidate::new(historical_plan.clone())).unwrap();
     historical_candidate[4..6].copy_from_slice(&18u16.to_le_bytes());
     assert!(transfer::load_candidate(&historical_candidate).is_ok());
     let verify = Request {
         id: 81,
         revision: target.revision(),
         job: AnalysisJob::Verify {
-            plan: candidate.plan,
+            plan: historical_plan,
             target,
         },
     };

@@ -11,6 +11,13 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
 };
+#[path = "catalog_activation.rs"]
+mod activation;
+pub use activation::catalog_activation_pending;
+pub(crate) use activation::{
+    CatalogLease, catalog_generation, catalog_session_status, check_catalog_connection,
+    current_catalog_path, startup_catalog_path,
+};
 const MAX_RECORD: usize = 64 * 1024;
 const MAX_OPERATIONS: usize = 4096;
 const MAX_PAGE: u16 = 200;
@@ -91,6 +98,7 @@ pub struct CatalogBackupService {
     recoveries: PathBuf,
     lab: store::LabId,
     library: store::Library,
+    database: PathBuf,
 }
 fn invalid(message: &'static str) -> HostError {
     HostError::Invalid(message)
@@ -263,14 +271,23 @@ fn file_hash(path: &Path, max: u64) -> HostResult<(base::Digest, u64)> {
 impl CatalogBackupService {
     pub fn open(root: impl AsRef<Path>, local_lab: &store::LabId) -> HostResult<Self> {
         let root = permissions::root(root.as_ref())?;
-        let database = root.join("repository.sqlite");
+        let lease = CatalogLease::acquire(&root)?;
+        Self::open_with_lease(&root, local_lab, lease)
+    }
+    pub(crate) fn open_with_lease(
+        root: impl AsRef<Path>,
+        local_lab: &store::LabId,
+        lease: std::sync::Arc<CatalogLease>,
+    ) -> HostResult<Self> {
+        let root = permissions::root(root.as_ref())?;
+        let database = current_catalog_path(&root)?;
         private(&database, false)?;
         if fs::metadata(&database).map_err(io)?.len() == 0 {
             return Err(invalid(
                 "Save a local catalog before creating its backup service.",
             ));
         }
-        let database = permissions::database(&root, "repository.sqlite")?;
+
         {
             let c = rusqlite::Connection::open_with_flags(
                 &database,
@@ -302,7 +319,8 @@ impl CatalogBackupService {
                 ));
             }
         }
-        let library = store::Library::open(&database).map_err(io)?;
+        let mut library = store::Library::open(&database).map_err(io)?;
+        library.retain_native_owner(lease).map_err(io)?;
         library.trusted_host_access(local_lab).map_err(io)?;
         let backups = root.join("backups");
         mkdir(&backups)?;
@@ -313,6 +331,7 @@ impl CatalogBackupService {
         mkdir(&recoveries)?;
         let service = Self {
             root,
+            database,
             backups,
             operations,
             recoveries,
@@ -327,7 +346,7 @@ impl CatalogBackupService {
         private(&self.backups, true)?;
         private(&self.operations, true)?;
         private(&self.recoveries, true)?;
-        private(&self.root.join("repository.sqlite"), false)
+        private(&self.database, false)
     }
     fn policy(&self) -> backup::Policy {
         backup::Policy::single_lab(self.lab.clone())
@@ -486,7 +505,7 @@ impl CatalogBackupService {
     }
     fn request_checkpoint(&self) -> HostResult<Option<base::Digest>> {
         let c = rusqlite::Connection::open_with_flags(
-            self.root.join("repository.sqlite"),
+            &self.database,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
         )
         .map_err(io)?;
@@ -502,6 +521,9 @@ impl CatalogBackupService {
             .map_err(io)
     }
     fn new_intent(&self, intent: &Intent) -> HostResult<()> {
+        if activation::activation_operation_in_use(&self.root, &intent.operation_id)? {
+            return Err(invalid("Operation ID already belongs to catalog adoption."));
+        }
         let all = self.intents()?;
         if all.len() >= MAX_OPERATIONS {
             return Err(invalid("Managed backup operation bound reached."));
@@ -554,6 +576,7 @@ impl CatalogBackupService {
     /// An existing creation intent never authorizes taking a later replacement
     /// snapshot. Only its already-published immutable artifact can complete retry.
     pub fn create(&mut self, op: &OperationId) -> HostResult<Receipt> {
+        check_catalog_connection(&self.root, &self.database)?;
         self.scope()?;
         let op = op.as_str();
         let intent_path = self.intent_path(op);
@@ -696,6 +719,7 @@ impl CatalogBackupService {
         backup_id: &str,
         expected_archive_hash: &base::Digest,
     ) -> HostResult<RecoveryReceipt> {
+        check_catalog_connection(&self.root, &self.database)?;
         self.scope()?;
         id::check(backup_id)?;
         let source = self.verify_pinned(backup_id, Some(expected_archive_hash))?;
@@ -770,8 +794,11 @@ impl CatalogBackupService {
 }
 /// Dedicated native raw-IPC lane, independent of the editor/working host mutex.
 pub struct DesktopCatalogBackups {
-    service: std::sync::Mutex<CatalogBackupService>,
+    service: std::sync::Mutex<Option<CatalogBackupService>>,
+    root: PathBuf,
+    generation: Option<u64>,
     control: HostControl,
+    _lease: std::sync::Arc<CatalogLease>,
 }
 fn backup_failure(error: HostError) -> collagene_desktop_protocol::Failure {
     crate::failure(match error {
@@ -825,14 +852,58 @@ impl CatalogBackupService {
     }
 }
 impl DesktopCatalogBackups {
+    /// Fresh durable admission for this exact process generation. Historical
+    /// retries and rejected requests must not themselves close a healthy session.
+    pub fn catalog_session_ready(&self) -> bool {
+        matches!(
+            catalog_session_status(&self.root, self.generation),
+            collagene_desktop_protocol::CatalogStatus::Ready { .. }
+        )
+    }
     pub fn open(
         root: impl AsRef<Path>,
         lab: &store::LabId,
         control: HostControl,
     ) -> HostResult<Self> {
+        let root = permissions::root(root.as_ref())?;
+        let lease = CatalogLease::acquire(&root)?;
+        Self::open_with_lease(root, lab, control, lease)
+    }
+    pub(crate) fn open_with_lease(
+        root: impl AsRef<Path>,
+        lab: &store::LabId,
+        control: HostControl,
+        lease: std::sync::Arc<CatalogLease>,
+    ) -> HostResult<Self> {
+        let root = permissions::root(root.as_ref())?;
+        let generation = Some(catalog_generation(&root)?);
+        let service = CatalogBackupService::open_with_lease(&root, lab, lease.clone())?;
         Ok(Self {
-            service: std::sync::Mutex::new(CatalogBackupService::open(root, lab)?),
+            service: std::sync::Mutex::new(Some(service)),
+            root,
+            generation,
             control,
+            _lease: lease,
+        })
+    }
+    /// Root-only control/status/cancellation remains available even when no catalog
+    /// connection or biological scope can be trusted. All data-bearing commands refuse.
+    pub(crate) fn open_recovery_with_lease(
+        root: impl AsRef<Path>,
+        lab: Option<&store::LabId>,
+        control: HostControl,
+        lease: std::sync::Arc<CatalogLease>,
+        generation: Option<u64>,
+    ) -> HostResult<Self> {
+        let root = permissions::root(root.as_ref())?;
+        let service = lab
+            .and_then(|lab| CatalogBackupService::open_with_lease(&root, lab, lease.clone()).ok());
+        Ok(Self {
+            service: std::sync::Mutex::new(service),
+            root,
+            generation,
+            control,
+            _lease: lease,
         })
     }
     fn execute(
@@ -841,8 +912,81 @@ impl DesktopCatalogBackups {
         command: &collagene_desktop_protocol::CatalogBackupCommand,
     ) -> HostResult<collagene_desktop_protocol::CatalogBackupSuccess> {
         use collagene_desktop_protocol::{CatalogBackupCommand as C, CatalogBackupSuccess as S};
-        let mut service = self.service.lock().map_err(io)?;
+        match command {
+            C::CancelActivation {
+                accepted_operation,
+                review_revision,
+                activation_generation,
+            } => {
+                return Ok(S::ActivationCancelled(activation::cancel_activation(
+                    &self.root,
+                    operation,
+                    accepted_operation,
+                    review_revision,
+                    *activation_generation,
+                )?));
+            }
+            C::AdoptRecovery { review }
+                if !matches!(
+                    catalog_session_status(&self.root, self.generation),
+                    collagene_desktop_protocol::CatalogStatus::Ready { .. }
+                ) =>
+            {
+                let prior=activation::replay_adoption(&self.root,operation,review)?.ok_or_else(||invalid("Restart before accepting another catalog selection; only an exact durable retry is allowed in this session."))?;
+                return Ok(S::AdoptionPending(prior));
+            }
+            C::ActivationStatus => {
+                let status = activation::activation_status(&self.root)?;
+                if matches!(
+                    status,
+                    collagene_desktop_protocol::CatalogActivationStatus::Cancelled(_)
+                ) {
+                    return Err(invalid(
+                        "Use recovery bootstrap to inspect the cancelled activation.",
+                    ));
+                }
+                return Ok(S::ActivationStatus(status));
+            }
+            _ => {}
+        }
+        let mut holder = self.service.lock().map_err(io)?;
+        let service=holder.as_mut().ok_or_else(||invalid("Saved catalog is unavailable; only recovery status and exact pending cancellation are permitted."))?;
+        if !matches!(command, C::AdoptRecovery { .. } | C::ListRecoveries { .. })
+            && !matches!(
+                catalog_session_status(&self.root, self.generation),
+                collagene_desktop_protocol::CatalogStatus::Ready { .. }
+            )
+        {
+            return Err(invalid(
+                "Catalog session is paused. Restart after resolving activation before using catalog data.",
+            ));
+        }
+        if !matches!(
+            command,
+            C::AdoptRecovery { .. } | C::ActivationStatus | C::ListRecoveries { .. }
+        ) {
+            check_catalog_connection(&service.root, &service.database)?;
+        }
         Ok(match command {
+            C::ListRecoveries {
+                offset,
+                limit,
+                expected_catalog,
+            } => S::RecoveriesListed(service.list_recoveries(
+                *offset,
+                *limit,
+                expected_catalog.as_ref(),
+            )?),
+            C::ReviewOriginal => S::Reviewed(service.review_original()?),
+            C::ReviewRecovery { id, expected_hash } => {
+                S::Reviewed(service.review_recovery(id, expected_hash)?)
+            }
+            C::AdoptRecovery { review } => {
+                S::AdoptionPending(service.adopt_recovery(operation, review)?)
+            }
+            C::ActivationStatus | C::CancelActivation { .. } => {
+                unreachable!("handled root-only commands")
+            }
             C::Create => S::Created(crate::convert(&service.create(operation)?)?),
             C::List {
                 offset,
@@ -877,8 +1021,53 @@ impl DesktopCatalogBackups {
         let wire::Command::CatalogBackup(command) = &request.command else {
             return Err(HostError::Wire);
         };
-        let service = self.service.lock().map_err(io)?;
+        if let (
+            C::CancelActivation {
+                accepted_operation,
+                review_revision,
+                activation_generation,
+            },
+            S::ActivationCancelled(_),
+        ) = (command, recorded)
+        {
+            let fresh = S::ActivationCancelled(activation::cancel_activation(
+                &self.root,
+                &request.operation_id,
+                accepted_operation,
+                review_revision,
+                *activation_generation,
+            )?);
+            return if &fresh == recorded {
+                Ok(())
+            } else {
+                Err(HostError::Corrupt)
+            };
+        }
+        if let (C::AdoptRecovery { review }, S::AdoptionPending(r)) = (command, recorded) {
+            let prior = activation::replay_adoption(&self.root, &request.operation_id, review)?
+                .ok_or(HostError::Corrupt)?;
+            return if &prior == r {
+                Ok(())
+            } else {
+                Err(HostError::Corrupt)
+            };
+        }
+        let holder = self.service.lock().map_err(io)?;
+        let service = holder
+            .as_ref()
+            .ok_or_else(|| invalid("Saved catalog remains paused; use recovery bootstrap."))?;
         let fresh = match (command, recorded) {
+            (C::AdoptRecovery { review }, S::AdoptionPending(_)) => {
+                S::AdoptionPending(service.adopt_recovery(&request.operation_id, review)?)
+            }
+            (C::ListRecoveries { .. }, S::RecoveriesListed(_)) => return Ok(()),
+            (C::ActivationStatus, S::ActivationStatus(_)) => {
+                S::ActivationStatus(service.activation_status()?)
+            }
+            (C::ReviewOriginal, S::Reviewed(_)) => S::Reviewed(service.review_original()?),
+            (C::ReviewRecovery { id, expected_hash }, S::Reviewed(_)) => {
+                S::Reviewed(service.review_recovery(id, expected_hash)?)
+            }
             (C::Create, S::Created(_)) => S::Created(crate::convert(
                 &service.verify(request.operation_id.as_str())?,
             )?),
@@ -945,7 +1134,14 @@ impl DesktopCatalogBackups {
                         .map_err(|_| HostError::Wire);
                 }
             };
-        let result = if matches!(command, wire::CatalogBackupCommand::List { .. }) {
+        let result = if matches!(
+            command,
+            wire::CatalogBackupCommand::ListRecoveries { .. }
+                | wire::CatalogBackupCommand::List { .. }
+                | wire::CatalogBackupCommand::ActivationStatus
+                | wire::CatalogBackupCommand::ReviewOriginal
+                | wire::CatalogBackupCommand::ReviewRecovery { .. }
+        ) {
             self.execute(&request.operation_id, command)
         } else {
             job.accept()
@@ -1116,7 +1312,9 @@ mod tests {
         (payload, selection)
     }
     fn setup(t: &Temp) -> (collagene_repository::Repository, store::LabId) {
-        let repo = crate::open_local_repository(&t.0).unwrap();
+        let root = permissions::root(&t.0).unwrap();
+        let path = permissions::database(&root, "repository.sqlite").unwrap();
+        let repo = collagene_repository::Repository::open(path).unwrap();
         let lab = store::LabId::parse(repo.local_context().unwrap().lab_id.as_str()).unwrap();
         (repo, lab)
     }
@@ -1366,6 +1564,379 @@ mod tests {
         symlink(&outside.0, t.0.join("backups")).unwrap();
         assert!(CatalogBackupService::open(&t.0, &lab).is_err());
         assert_eq!(fs::read_dir(&outside.0).unwrap().count(), 0);
+    }
+    #[test]
+    fn recovery_adoption_is_exact_idempotent_restart_bound_and_preserves_private_editor_and_original()
+     {
+        let t = Temp::new();
+        let (mut repo, lab) = setup(&t);
+        let (payload, selection) = native();
+        let original_archive = payload.bytes.clone();
+        let Applied::Imported(doc) = repo
+            .mutate_local(MutationOperation::ImportDocument {
+                folder: None,
+                name: "Saved native PCR".into(),
+                payload,
+            })
+            .unwrap()
+        else {
+            panic!("import")
+        };
+        let mut service = CatalogBackupService::open(&t.0, &lab).unwrap();
+        let backup = service.create(&op(300)).unwrap();
+        repo.mutate_local(MutationOperation::CreateFolder {
+            parent: None,
+            name: "Newer private branch folder".into(),
+        })
+        .unwrap();
+        service
+            .restore_copy(&op(301), &backup.id, &backup.archive_hash)
+            .unwrap();
+        let page = service.list_recoveries(0, 1, None).unwrap();
+        assert_eq!(page.entries.len(), 1);
+        let review = service
+            .review_recovery(&op(301), &backup.archive_hash)
+            .unwrap();
+        let accepted = service.adopt_recovery(&op(302), &review).unwrap();
+        assert_eq!(service.adopt_recovery(&op(302), &review).unwrap(), accepted);
+        assert!(service.adopt_recovery(&op(303), &review).is_err());
+        assert!(catalog_activation_pending(&t.0).unwrap());
+        assert!(check_catalog_connection(&t.0, &t.0.join("repository.sqlite")).is_err());
+        assert!(matches!(
+            service.activation_status().unwrap(),
+            collagene_desktop_protocol::CatalogActivationStatus::PendingRestart(_)
+        ));
+        // Editor state is a separate namespace; even opaque unsaved bytes are untouched.
+        let working = t.0.join("working.sqlite");
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        options
+            .open(&working)
+            .unwrap()
+            .write_all(b"independent editor recovery")
+            .unwrap();
+        drop(repo);
+        drop(service);
+        let lease = CatalogLease::acquire(&t.0).unwrap();
+        let selected = startup_catalog_path(&t.0, &lease).unwrap();
+        assert_eq!(
+            selected,
+            t.0.join("recoveries")
+                .join(op(301).as_str())
+                .join("library.sqlite")
+        );
+        assert_eq!(fs::read(&working).unwrap(), b"independent editor recovery");
+        assert!(t.0.join("repository.sqlite").is_file());
+        assert!(!catalog_activation_pending(&t.0).unwrap());
+        assert!(check_catalog_connection(&t.0, &t.0.join("repository.sqlite")).is_err());
+        assert!(check_catalog_connection(&t.0, &selected).is_ok());
+        let active = CatalogBackupService::open_with_lease(&t.0, &lab, lease.clone()).unwrap();
+        assert!(matches!(
+            active.activation_status().unwrap(),
+            collagene_desktop_protocol::CatalogActivationStatus::ActiveAfterRestart(_)
+        ));
+        let access = active.library.trusted_host_access(&lab).unwrap();
+        let bytes = active
+            .library
+            .payload(&access, &doc.id, &doc.head.id)
+            .unwrap()
+            .bytes;
+        assert_eq!(
+            bytes, original_archive,
+            "native IDs, private archives and run evidence remain exact"
+        );
+        let frame = workspace::load_workspace(&bytes).unwrap();
+        assert_eq!(
+            run_material::reconstruct(&frame, &selection)
+                .unwrap()
+                .reference()
+                .sequence
+                .as_str(),
+            "ACGACCCCGGGGTAAC"
+        );
+        // Legitimate writes to selected catalog survive a second restart: do not require
+        // immutable pre-activation bytes after it has become an ordinary writable catalog.
+        let mut restored = collagene_repository::Repository::open(&selected).unwrap();
+        restored
+            .mutate_local(MutationOperation::CreateFolder {
+                parent: None,
+                name: "Post-activation folder".into(),
+            })
+            .unwrap();
+        drop(restored);
+        drop(active);
+        drop(lease);
+        let lease = CatalogLease::acquire(&t.0).unwrap();
+        assert_eq!(startup_catalog_path(&t.0, &lease).unwrap(), selected);
+    }
+    #[test]
+    fn adoption_refuses_stale_review_and_changed_recovery_and_startup_rechecks_source() {
+        let t = Temp::new();
+        let (mut repo, lab) = setup(&t);
+        let mut service = CatalogBackupService::open(&t.0, &lab).unwrap();
+        let backup = service.create(&op(310)).unwrap();
+        service
+            .restore_copy(&op(311), &backup.id, &backup.archive_hash)
+            .unwrap();
+        let stale = service
+            .review_recovery(&op(311), &backup.archive_hash)
+            .unwrap();
+        repo.mutate_local(MutationOperation::CreateFolder {
+            parent: None,
+            name: "After review".into(),
+        })
+        .unwrap();
+        assert!(service.adopt_recovery(&op(312), &stale).is_err());
+        assert!(!catalog_activation_pending(&t.0).unwrap());
+        let fresh = service
+            .review_recovery(&op(311), &backup.archive_hash)
+            .unwrap();
+        service.adopt_recovery(&op(312), &fresh).unwrap();
+        // Simulate an unsupported old writer after acceptance. Startup must refuse rather
+        // than silently abandoning a newly committed source branch.
+        repo.mutate_local(MutationOperation::CreateFolder {
+            parent: None,
+            name: "Late old writer".into(),
+        })
+        .unwrap();
+        drop(repo);
+        drop(service);
+        let lease = CatalogLease::acquire(&t.0).unwrap();
+        assert!(startup_catalog_path(&t.0, &lease).is_err());
+        assert!(catalog_activation_pending(&t.0).unwrap());
+        assert!(t.0.join("repository.sqlite").is_file());
+    }
+    #[test]
+    fn activation_protocol_v3_refuses_older_headers_but_keeps_ordinary_prefixes() {
+        use collagene_desktop_protocol as w;
+        let request = w::RequestEnvelope {
+            request_id: 991,
+            operation_id: op(320),
+            command: w::Command::CatalogBackup(w::CatalogBackupCommand::ActivationStatus),
+        };
+        let bytes = w::encode_request(&request).unwrap();
+        assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), 3);
+        let mut old = bytes;
+        old[4..6].copy_from_slice(&2u16.to_le_bytes());
+        assert!(w::decode_request(&old).is_err());
+        let reply = w::ResponseEnvelope {
+            request_id: request.request_id,
+            operation_id: request.operation_id.clone(),
+            outcome: w::Outcome::Success(w::Success::CatalogBackup(
+                w::CatalogBackupSuccess::ActivationStatus(w::CatalogActivationStatus::None),
+            )),
+        };
+        let mut bytes = w::encode_response(&reply).unwrap();
+        bytes[4..6].copy_from_slice(&2u16.to_le_bytes());
+        assert!(w::decode_response(&bytes).is_err());
+        assert!(w::encode_response_for_request(&reply, &request, 2).is_err());
+        let q = w::RequestEnvelope {
+            request_id: 992,
+            operation_id: op(321),
+            command: w::Command::Bootstrap,
+        };
+        let mut old = w::encode_request(&q).unwrap();
+        old[4..6].copy_from_slice(&1u16.to_le_bytes());
+        assert!(w::decode_request(&old).is_ok());
+    }
+    #[test]
+    fn adopted_selection_never_falls_back_after_lost_intent_and_process_lease_is_exclusive() {
+        let t = Temp::new();
+        let (_repo, lab) = setup(&t);
+        let lease = CatalogLease::acquire(&t.0).unwrap();
+        assert!(CatalogLease::acquire(&t.0).is_err());
+        drop(lease);
+        let mut service = CatalogBackupService::open(&t.0, &lab).unwrap();
+        let backup = service.create(&op(330)).unwrap();
+        service
+            .restore_copy(&op(331), &backup.id, &backup.archive_hash)
+            .unwrap();
+        let review = service
+            .review_recovery(&op(331), &backup.archive_hash)
+            .unwrap();
+        let mut forged = review.clone();
+        forged.current_lab = base::LabId::new("lab-11111111111111111111111111111111").unwrap();
+        forged.review_revision = forged.revision().unwrap();
+        assert!(service.adopt_recovery(&op(332), &forged).is_err());
+        service.adopt_recovery(&op(332), &review).unwrap();
+        drop(service);
+        let lease = CatalogLease::acquire(&t.0).unwrap();
+        startup_catalog_path(&t.0, &lease).unwrap();
+        fs::remove_file(t.0.join("catalog-activation/00000000000000000001.accepted.json")).unwrap();
+        assert!(
+            startup_catalog_path(&t.0, &lease).is_err(),
+            "orphan applied receipt must not silently select original source"
+        );
+        assert!(t.0.join("repository.sqlite").is_file());
+    }
+    #[test]
+    fn escaped_repository_and_backup_connections_retain_the_catalog_session_lease() {
+        let t = Temp::new();
+        let host = crate::DesktopHost::open(&t.0).unwrap();
+        let mut repository = host.open_repository_connection().unwrap();
+        let backups = host.open_catalog_backup().unwrap();
+        // Both secondary handles share the original lock; construction must not
+        // try acquiring a second exclusive OS lease during ordinary startup.
+        drop(host);
+        assert!(crate::DesktopHost::open(&t.0).is_err());
+        let readonly = crate::open_local_repository(&t.0).unwrap();
+        assert_eq!(
+            readonly.local_context().unwrap(),
+            repository.local_context().unwrap()
+        );
+        drop(readonly);
+        repository
+            .mutate_local(MutationOperation::CreateFolder {
+                parent: None,
+                name: "Escaped live connection".into(),
+            })
+            .unwrap();
+        drop(repository);
+        assert!(
+            crate::DesktopHost::open(&t.0).is_err(),
+            "backup connection still owns lease"
+        );
+        drop(backups);
+        let reopened = crate::DesktopHost::open(&t.0).unwrap();
+        let second = reopened.open_repository_connection().unwrap();
+        drop(reopened);
+        assert!(
+            crate::DesktopHost::open(&t.0).is_err(),
+            "repository alone still owns lease"
+        );
+        drop(second);
+        assert!(crate::DesktopHost::open(&t.0).is_ok());
+    }
+
+    #[test]
+    fn memory_only_catalog_reads_coexist_with_desktop_but_cannot_mutate_or_initialize() {
+        let t = Temp::new();
+        let mut host = crate::DesktopHost::open(&t.0).unwrap();
+        let (payload, _) = native();
+        let Applied::Imported(doc) = host
+            .catalog
+            .as_mut()
+            .unwrap()
+            .repository
+            .mutate_local(MutationOperation::ImportDocument {
+                folder: None,
+                name: "MCP readable saved PCR".into(),
+                payload,
+            })
+            .unwrap()
+        else {
+            panic!("import")
+        };
+        let mut readonly = crate::open_local_repository(&t.0).unwrap();
+        assert_eq!(
+            readonly
+                .open_document(&doc.id, Some(&doc.head.id))
+                .unwrap()
+                .bytes,
+            host.catalog
+                .as_mut()
+                .unwrap()
+                .repository
+                .open_document(&doc.id, Some(&doc.head.id))
+                .unwrap()
+                .bytes
+        );
+        assert!(
+            readonly
+                .mutate_local(MutationOperation::CreateFolder {
+                    parent: None,
+                    name: "Forbidden MCP catalog mutation".into()
+                })
+                .is_err()
+        );
+        assert_eq!(
+            readonly.local_context().unwrap(),
+            host.catalog
+                .as_mut()
+                .unwrap()
+                .repository
+                .local_context()
+                .unwrap()
+        );
+        let missing = Temp::new();
+        assert!(crate::open_local_repository(&missing.0).is_err());
+        assert!(
+            !missing.0.join("repository.sqlite").exists(),
+            "read-only factory cannot create a database"
+        );
+    }
+    #[test]
+    fn repeated_adoption_and_rollback_keep_each_catalog_branch_and_generation() {
+        let t = Temp::new();
+        let (mut repo, lab) = setup(&t);
+        let mut service = CatalogBackupService::open(&t.0, &lab).unwrap();
+        let backup = service.create(&op(350)).unwrap();
+        repo.mutate_local(MutationOperation::CreateFolder {
+            parent: None,
+            name: "Original branch preserved".into(),
+        })
+        .unwrap();
+        service
+            .restore_copy(&op(351), &backup.id, &backup.archive_hash)
+            .unwrap();
+        let first = service
+            .review_recovery(&op(351), &backup.archive_hash)
+            .unwrap();
+        assert_eq!(first.activation_generation, 0);
+        let receipt = service.adopt_recovery(&op(352), &first).unwrap();
+        drop(service);
+        drop(repo);
+        let lease = CatalogLease::acquire(&t.0).unwrap();
+        let recovered = startup_catalog_path(&t.0, &lease).unwrap();
+        let mut branch = collagene_repository::Repository::open(&recovered).unwrap();
+        branch
+            .mutate_local(MutationOperation::CreateFolder {
+                parent: None,
+                name: "Recovery private branch preserved".into(),
+            })
+            .unwrap();
+        drop(branch);
+        drop(lease);
+        let service = CatalogBackupService::open(&t.0, &lab).unwrap();
+        let rollback = service.review_original().unwrap();
+        assert_eq!(rollback.activation_generation, 1);
+        assert_eq!(rollback.target_snapshot.folders, 1);
+        service.adopt_recovery(&op(353), &rollback).unwrap();
+        drop(service);
+        let lease = CatalogLease::acquire(&t.0).unwrap();
+        assert_eq!(
+            startup_catalog_path(&t.0, &lease).unwrap(),
+            t.0.join("repository.sqlite")
+        );
+        drop(lease);
+        let service = CatalogBackupService::open(&t.0, &lab).unwrap();
+        assert_eq!(
+            service.adopt_recovery(&op(352), &first).unwrap(),
+            receipt,
+            "historical exact retry is not a new transition"
+        );
+        let third = service
+            .review_recovery(&op(351), &backup.archive_hash)
+            .unwrap();
+        assert_eq!(third.activation_generation, 2);
+        assert_eq!(
+            third.target_snapshot.folders, 1,
+            "previous recovery writes were retained"
+        );
+        assert!(
+            service.adopt_recovery(&op(354), &first).is_err(),
+            "old generation cannot adopt a new operation"
+        );
+        service.adopt_recovery(&op(354), &third).unwrap();
+        drop(service);
+        let lease = CatalogLease::acquire(&t.0).unwrap();
+        assert_eq!(startup_catalog_path(&t.0, &lease).unwrap(), recovered);
+        assert!(t.0.join("repository.sqlite").is_file());
     }
 }
 

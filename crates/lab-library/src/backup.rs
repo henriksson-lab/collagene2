@@ -294,6 +294,7 @@ fn inspect_database(
     let library = Library {
         connection: c,
         options,
+        native_owner: None,
     };
     let mut st=library.connection.prepare("SELECT r.id,r.document_id,d.lab_id,r.number,r.parent_id FROM revisions r JOIN documents d ON d.id=r.document_id ORDER BY r.document_id,r.number")?;
     let mut previous: Option<(String, String, u64)> = None;

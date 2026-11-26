@@ -240,3 +240,5 @@ mod format_fidelity;
 
 pub mod material_derivation;
 pub mod material_pcr;
+
+pub mod ligation_outcomes;

@@ -1,0 +1,322 @@
+//! Intended target verification remains separate from retained alternative paths.
+use collagene_core::{
+    Molecule, Sequence, Topology,
+    analysis::Primer,
+    chemistry::{EndTreatment, Terminus},
+    cloning_outputs,
+    ligation_outcomes::{self, Limit},
+    physical_run_evidence,
+    run_lineage::{EventBinding, InputEventBinding},
+    run_material,
+    verification::{
+        self, DesignPlan, Operation, OrientedSource, PhysicalProcessingEvidence, PlanInput, Status,
+    },
+    workspace::{self, Workspace},
+};
+const INTENDED: &str = "AGTCCGGACTGA";
+const ALTERNATIVE: &str = "AGTCCGTCAGTC";
+fn fixture(target: &str) -> (Vec<Molecule>, DesignPlan) {
+    let a = Molecule::dna("Original vector stock", "AGTCCG", Topology::Linear).unwrap();
+    let b = Molecule::dna("Original insert stock", "GACTGA", Topology::Linear).unwrap();
+    let target = Molecule::dna(
+        "Independent explicitly declared circular target",
+        target,
+        Topology::Circular,
+    )
+    .unwrap();
+    let inputs = [("a", a.clone()), ("b", b.clone())]
+        .into_iter()
+        .map(|(id, molecule)| PlanInput {
+            id: id.into(),
+            revision: molecule.revision(),
+            molecule,
+        })
+        .collect();
+    let steps = vec![
+        Operation::Pcr {
+            template: verification::Source::Input("a".into()),
+            forward: Primer::new("Vector F", "AGT", "").unwrap(),
+            reverse: Primer::new("Vector R", "CGG", "").unwrap(),
+        },
+        Operation::TreatEnds {
+            template: verification::Source::Step(0),
+            treatment: EndTreatment::Phosphorylate,
+        },
+        Operation::Pcr {
+            template: verification::Source::Input("b".into()),
+            forward: Primer::new("Insert F", "GAC", "").unwrap(),
+            reverse: Primer::new("Insert R", "TCA", "").unwrap(),
+        },
+        Operation::TreatEnds {
+            template: verification::Source::Step(2),
+            treatment: EndTreatment::Phosphorylate,
+        },
+        ligation_outcomes::operation(
+            vec![
+                OrientedSource {
+                    source: verification::Source::Step(1),
+                    reverse: false,
+                },
+                OrientedSource {
+                    source: verification::Source::Step(3),
+                    reverse: false,
+                },
+            ],
+            true,
+            false,
+        ),
+    ];
+    let plan = DesignPlan {
+        name: "Intended blunt ligation with retained orientation alternative".into(),
+        target_revision: target.revision(),
+        inputs,
+        steps,
+    };
+    (vec![a, b, target], plan)
+}
+fn event(w: &Workspace, index: usize) -> EventBinding {
+    let d = &w.documents[index];
+    EventBinding {
+        document_id: d.id.clone(),
+        event_id: d.head_event.clone().unwrap(),
+        revision: d.head.clone(),
+    }
+}
+#[test]
+fn intended_and_alternative_stay_extractable_after_real_run_capture_reload_and_native_replay() {
+    let (docs, plan) = fixture(INTENDED);
+    let w = Workspace::from_documents("Original sources and independent intent", docs, 2).unwrap();
+    let report = verification::verify(&plan, w.head(&w.documents[2].id).unwrap());
+    assert_eq!(
+        report.status,
+        Status::ConsistentUnderAssumptions,
+        "{:?}",
+        report.findings
+    );
+    assert_eq!(report.products[4].sequence.as_str(), INTENDED);
+    let saved = cloning_outputs::finalize(
+        &w,
+        &plan,
+        event(&w, 2),
+        vec![
+            InputEventBinding {
+                input_id: "a".into(),
+                event: event(&w, 0),
+            },
+            InputEventBinding {
+                input_id: "b".into(),
+                event: event(&w, 1),
+            },
+        ],
+        &Default::default(),
+    )
+    .unwrap();
+    let restored =
+        workspace::load_workspace(&workspace::save_workspace(&saved.workspace).unwrap()).unwrap();
+    let historical = physical_run_evidence::load(&restored, &saved.receipt.run.run_id)
+        .unwrap()
+        .unwrap();
+    let PhysicalProcessingEvidence::LigationOutcomes(evidence) = &historical.steps[0].evidence
+    else {
+        panic!("missing retained outcomes")
+    };
+    assert_eq!(evidence.report.intended.sequence.as_str(), INTENDED);
+    assert_eq!(
+        evidence.report.alternatives[0].sequence.as_str(),
+        ALTERNATIVE
+    );
+    assert!(!evidence.report.intended.path[1].reverse);
+    assert!(evidence.report.alternatives[0].path[1].reverse);
+    evidence.validate_documentary().unwrap();
+    assert!(evidence.report.fasta().unwrap().contains(ALTERNATIVE));
+    // A legacy PCR job cannot hide operation29 inside its opaque saved-origin
+    // candidate, even when the enclosing selector itself predates worker92.
+    let selection = run_material::Selection {
+        run_id: saved.receipt.run.run_id.clone(),
+        step_index: 4,
+        event: saved.receipt.construct.clone(),
+    };
+    let capsule = run_material::capsule(&restored, &selection).unwrap();
+    let reference = restored.revisions[&selection.event.revision].clone();
+    let forward = Primer::new("Current F", "AGT", "").unwrap();
+    let reverse = Primer::new("Current R", "TCA", "").unwrap();
+    let origin = run_material::MaterialOrigin::Run(capsule);
+    let revision =
+        collagene_core::material_pcr::revision(&reference, &origin, &forward, &reverse).unwrap();
+    let request = collagene_core::protocol::Request {
+        id: 172,
+        revision,
+        job: collagene_core::protocol::AnalysisJob::MaterialPcrDocuments {
+            molecule: reference,
+            origin,
+            forward,
+            reverse,
+        },
+    };
+    let bytes = collagene_core::protocol::encode_request(&request).unwrap();
+    let mut old = bytes.clone();
+    old[4..6].copy_from_slice(&91u16.to_le_bytes());
+    assert_eq!(&old[6..], &bytes[6..]);
+    assert!(collagene_core::protocol::process_request(&old).is_err());
+    let response = collagene_core::protocol::process_request(&bytes).unwrap();
+    let response = collagene_core::protocol::decode_response(&response).unwrap();
+    assert!(matches!(
+        response.result,
+        collagene_core::protocol::AnalysisResult::MaterialPcrDocuments(_)
+    ));
+    let fresh = run_material::reconstruct(
+        &restored,
+        &run_material::Selection {
+            run_id: saved.receipt.run.run_id,
+            step_index: 4,
+            event: saved.receipt.construct,
+        },
+    )
+    .unwrap();
+    assert_eq!(fresh.reference().sequence.as_str(), INTENDED);
+    assert!(fresh.tracked().duplex.nicks.is_empty());
+    let html = verification::export_protocol_html(&plan, w.head(&w.documents[2].id).unwrap());
+    assert!(
+        html.contains(INTENDED)
+            && html.contains(ALTERNATIVE)
+            && html.contains("alternative_1")
+            && html.contains("Full typed outcome")
+    );
+    // A new attachment hash alone cannot replace alternative evidence under an
+    // unchanged product/run identity, even if the forged duplex is paired.
+    let mut altered = restored;
+    let key = altered
+        .attachments
+        .iter()
+        .find(|(_, a)| a.kind == physical_run_evidence::KIND)
+        .unwrap()
+        .0
+        .clone();
+    let mut asset = altered.attachments.remove(&key).unwrap();
+    let mut data = historical;
+    let PhysicalProcessingEvidence::LigationOutcomes(evidence) = &mut data.steps[0].evidence else {
+        panic!("outcomes")
+    };
+    evidence.report.alternatives[0].sequence = Sequence::dna("CCCCCCCCCCCC").unwrap();
+    evidence.report.alternatives[0].duplex.top = Sequence::dna("CCCCCCCCCCCC").unwrap();
+    evidence.report.alternatives[0].duplex.bottom = Sequence::dna("GGGGGGGGGGGG").unwrap();
+    asset.bytes = serde_json::to_vec(&data).unwrap();
+    altered
+        .attachments
+        .insert(blake3::hash(&asset.bytes).to_hex().to_string(), asset);
+    assert!(altered.validate().is_err());
+}
+#[test]
+fn matching_alternative_never_rescues_wrong_intended_target_and_capped_search_does_not_block_capture()
+ {
+    let (docs, plan) = fixture(ALTERNATIVE);
+    let report = verification::verify(&plan, &docs[2]);
+    assert_eq!(report.status, Status::Invalid);
+    assert_eq!(report.products.last().unwrap().sequence.as_str(), INTENDED);
+    let PhysicalProcessingEvidence::LigationOutcomes(evidence) =
+        &report.physical_processing_reports[0].evidence
+    else {
+        panic!("outcomes")
+    };
+    assert_eq!(
+        evidence.report.alternatives[0].sequence.as_str(),
+        ALTERNATIVE
+    );
+    let (docs, mut plan) = fixture(INTENDED);
+    let Operation::LigateWithOutcomes { options, .. } = plan.steps.last_mut().unwrap() else {
+        panic!("new default")
+    };
+    options.max_products = 1;
+    let w = Workspace::from_documents("Capped alternatives, complete intended material", docs, 2)
+        .unwrap();
+    let report = verification::verify(&plan, w.head(&w.documents[2].id).unwrap());
+    assert_eq!(
+        report.status,
+        Status::ConsistentUnderAssumptions,
+        "{:?}",
+        report.findings
+    );
+    let PhysicalProcessingEvidence::LigationOutcomes(evidence) =
+        &report.physical_processing_reports[0].evidence
+    else {
+        panic!("outcomes")
+    };
+    assert!(evidence.report.limits.contains(&Limit::Products));
+    assert!(!evidence.report.enumeration_complete);
+    assert_eq!(evidence.report.intended.sequence.as_str(), INTENDED);
+    assert!(
+        cloning_outputs::finalize(
+            &w,
+            &plan,
+            event(&w, 2),
+            vec![
+                InputEventBinding {
+                    input_id: "a".into(),
+                    event: event(&w, 0)
+                },
+                InputEventBinding {
+                    input_id: "b".into(),
+                    event: event(&w, 1)
+                }
+            ],
+            &Default::default()
+        )
+        .is_ok()
+    );
+}
+#[test]
+fn large_new_recipe_keeps_supported_native_ordered_ligation_instead_of_failing_outcome_enumeration()
+{
+    use collagene_core::{
+        assembly_recipe::{FragmentSpec, Preparation},
+        ligation_recipe,
+    };
+    let original = Molecule::dna("Original stock", "AG", Topology::Linear).unwrap();
+    let target = Molecule::dna(
+        "Independent33-copy declared intent",
+        &"AG".repeat(33),
+        Topology::Circular,
+    )
+    .unwrap();
+    let inputs = vec![PlanInput {
+        id: "stock".into(),
+        revision: original.revision(),
+        molecule: original,
+    }];
+    let recipe = ligation_recipe::Recipe {
+        name: "Explicit large ordered path".into(),
+        fragments: (0..33)
+            .map(|i| ligation_recipe::Fragment {
+                source: FragmentSpec {
+                    role: format!("row-{i}"),
+                    input_id: "stock".into(),
+                    preparation: Preparation::DeclaredDuplex {
+                        left: Terminus::CLEAVED,
+                        right: Terminus::CLEAVED,
+                    },
+                    reverse: false,
+                },
+                treatment: None,
+            })
+            .collect(),
+        circular: true,
+        allow_nicked: false,
+    };
+    let preview = ligation_recipe::preview(&inputs, &target, &recipe).unwrap();
+    assert!(matches!(
+        preview.compiled.plan.steps.last(),
+        Some(Operation::Ligate { .. })
+    ));
+    assert_eq!(
+        preview.verification.status,
+        Status::ConsistentUnderAssumptions,
+        "{:?}",
+        preview.verification.findings
+    );
+    assert_eq!(
+        preview.verification.products.last().unwrap().sequence,
+        target.sequence
+    );
+    assert!(preview.verification.physical_processing_reports.is_empty());
+    preview.validate_binding(&preview.context_revision).unwrap();
+}

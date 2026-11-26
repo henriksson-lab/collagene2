@@ -82,7 +82,9 @@ fn selection_parser_requires_exact_native_catalog_pins_and_empty_session_never_o
 #[tokio::test]
 async fn selected_saved_pcr_closure_replays_fromrun_without_private_documents_or_native_writes() {
     let root = Root::new();
-    let mut repo = collagene_desktop_host::open_local_repository(&root.0).unwrap();
+    let _desktop = collagene_desktop_host::DesktopHost::open(&root.0).unwrap();
+    let mut repo =
+        collagene_repository::Repository::open(root.0.join("repository.sqlite")).unwrap();
     let source = Molecule::dna(
         "Original source",
         "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA",
@@ -167,10 +169,13 @@ async fn selected_saved_pcr_closure_replays_fromrun_without_private_documents_or
         document: document.id.clone(),
         revision: document.head.id.clone(),
     };
+    let working_path = root.0.join("working.sqlite");
+    let working_before = std::fs::read(&working_path).unwrap();
     let session = create(&root.0, &[pin]).unwrap();
-    assert!(
-        !root.0.join("working.sqlite").exists(),
-        "MCP must never open GUI working storage"
+    assert_eq!(
+        std::fs::read(&working_path).unwrap(),
+        working_before,
+        "read-only MCP preload must preserve the live desktop working store"
     );
     let inventory = session.preloaded[0].inventory.as_ref().unwrap();
     assert!(!inventory.revisions.contains(&secret_revision));
@@ -223,7 +228,9 @@ async fn selected_saved_pcr_closure_replays_fromrun_without_private_documents_or
 #[tokio::test]
 async fn bare_native_snapshot_is_literal_and_failed_exact_selection_never_serves_partial_session() {
     let root = Root::new();
-    let mut repo = collagene_desktop_host::open_local_repository(&root.0).unwrap();
+    let desktop = collagene_desktop_host::DesktopHost::open(&root.0).unwrap();
+    let mut repo =
+        collagene_repository::Repository::open(root.0.join("repository.sqlite")).unwrap();
     let molecule =
         Molecule::dna("Literal native file", "AACCGGTTAACCGGTT", Topology::Linear).unwrap();
     let bytes = protocol::save_document(&molecule).unwrap();
@@ -251,9 +258,10 @@ async fn bare_native_snapshot_is_literal_and_failed_exact_selection_never_serves
     };
     // A GUI working database can contain unsaved private work. The MCP factory
     // must not even open it (the sentinel is intentionally not SQLite).
+    drop(desktop); // Close this fixture's real working store before replacing it.
     let working_path = root.0.join("working.sqlite");
     let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
+    options.write(true).truncate(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;

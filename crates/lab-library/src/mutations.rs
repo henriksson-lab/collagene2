@@ -376,6 +376,24 @@ impl Library {
             return Err(MutationError::Invalid("local namespace"));
         }
         valid_name(name)?;
+        if self.connection.is_readonly(rusqlite::DatabaseName::Main)? {
+            let version: u32 = self.connection.query_row(
+                "SELECT version FROM cg_reliable_schema WHERE singleton=1",
+                [],
+                |r| r.get(0),
+            )?;
+            if version != EXTENSION_VERSION {
+                return Err(MutationError::Version(version));
+            }
+            let id: String = self.connection.query_row(
+                "SELECT lab_id FROM cg_reliable_local_scopes WHERE namespace=?1",
+                [namespace],
+                |r| r.get(0),
+            )?;
+            let lab = LabId::parse(id)?;
+            ensure_lab(&self.connection, &lab)?;
+            return Ok(LabAccess { lab });
+        }
         let tx = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -514,9 +532,12 @@ impl Library {
         key: &CheckpointKey,
     ) -> Result<Option<Checkpoint>> {
         key.validate()?;
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let behavior = if self.connection.is_readonly(rusqlite::DatabaseName::Main)? {
+            TransactionBehavior::Deferred
+        } else {
+            TransactionBehavior::Immediate
+        };
+        let tx = self.connection.transaction_with_behavior(behavior)?;
         ensure_lab(&tx, &access.lab)?;
         extension(&tx)?;
         let value = read_checkpoint(&tx, &access.lab, key)?;

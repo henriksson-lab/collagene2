@@ -158,7 +158,10 @@ fn checked_roundtrip(
     };
     assert_eq!(tag(&request.job), job_tag);
     let bytes = protocol::encode_request(&request).unwrap();
-    assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), 90);
+    assert_eq!(
+        u16::from_le_bytes([bytes[4], bytes[5]]),
+        protocol::WORKER_SCHEMA_VERSION
+    );
     let mut old = bytes.clone();
     old[4..6].copy_from_slice(&89u16.to_le_bytes());
     assert_eq!(&old[6..], &bytes[6..]);
@@ -181,7 +184,7 @@ fn checked_roundtrip(
 }
 #[test]
 fn four_appended_worker_operations_reconstruct_literal_material_and_bind_outputs() {
-    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 91);
+    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 92);
     let (mut w, cap, pin) = digest_fixture();
     let selection = Some(MaterialSelection::Digest(pin.clone()));
     let revision = run_material::material_inspection_revision(&w, &pin, &selection).unwrap();
@@ -281,13 +284,13 @@ fn four_appended_worker_operations_reconstruct_literal_material_and_bind_outputs
 }
 #[test]
 fn candidate21_plan19_operation27_and_evidence6_remain_append_only() {
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 22);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 20);
+    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 23);
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 21);
     let (mut w, cap, pin) = digest_fixture();
     let (plan, target) = prepared_plan(&mut w, &cap, &pin);
     assert_eq!(tag(&plan.steps[0]), 27);
     let candidate = transfer::save_candidate(&transfer::Candidate::new(plan.clone())).unwrap();
-    assert_eq!(u16::from_le_bytes([candidate[4], candidate[5]]), 22);
+    assert_eq!(u16::from_le_bytes([candidate[4], candidate[5]]), 23);
     let mut old = candidate.clone();
     old[4..6].copy_from_slice(&20u16.to_le_bytes());
     assert_eq!(&old[6..], &candidate[6..]);
@@ -299,7 +302,7 @@ fn candidate21_plan19_operation27_and_evidence6_remain_append_only() {
         "{:?}",
         report.findings
     );
-    assert!(report.engine_version.ends_with("/science-25"));
+    assert!(report.engine_version.ends_with("/science-26"));
     assert_eq!(tag(&report.physical_processing_reports[0].evidence), 6);
     let request = protocol::Request {
         id: 27,
@@ -331,7 +334,13 @@ fn candidate21_plan19_operation27_and_evidence6_remain_append_only() {
     .unwrap();
     let mut record =
         collagene_core::run_lineage::load_run(&saved.workspace, &saved.receipt.run.run_id).unwrap();
-    assert_eq!(record.plan_schema, 20);
+    assert_eq!(record.plan_schema, workspace::PLAN_SCHEMA_VERSION);
+    // Retain the historical operation27 floor independently of today's
+    // scientific producer stamp, which has its own newer schema requirement.
+    record.assessment.engine_version = record
+        .assessment
+        .engine_version
+        .replace("/science-26", "/science-24");
     record.plan_schema = 18;
     let error = collagene_core::run_lineage::save_run_record(&record)
         .unwrap_err()
@@ -355,7 +364,7 @@ fn source_step_reconstruction_is_refused_before_material_can_be_recovered() {
     assert!(report.products.is_empty());
 }
 #[test]
-fn scientific24_requires_new_reply_floor_even_when_the_plan_only_contains_old_pcr() {
+fn current_and_historical_scientific_reply_floors_apply_even_to_old_pcr_operations() {
     let (_, cap, _) = digest_fixture();
     let origin = cap.record.request.origin;
     let plan = transfer::load_candidate(&origin.candidate).unwrap().plan;
@@ -365,14 +374,28 @@ fn scientific24_requires_new_reply_floor_even_when_the_plan_only_contains_old_pc
             .all(|s| matches!(s, Operation::Pcr { .. }))
     );
     let report = verification::verify(&plan, &origin.target);
-    assert!(report.engine_version.ends_with("/science-25"));
+    assert!(report.engine_version.ends_with("/science-26"));
     let response = protocol::Response {
         id: 1,
         revision: origin.target.revision(),
         result: AnalysisResult::Verification(report),
     };
-    protocol::decode_response(&wire(b"CGR\0", 90, &response)).unwrap();
-    assert!(protocol::decode_response(&wire(b"CGR\0", 89, &response)).is_err());
+    protocol::decode_response(&wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &response)).unwrap();
+    assert!(
+        protocol::decode_response(&wire(
+            b"CGR\0",
+            protocol::WORKER_SCHEMA_VERSION - 1,
+            &response
+        ))
+        .is_err()
+    );
+    let mut historical = response;
+    let AnalysisResult::Verification(report) = &mut historical.result else {
+        unreachable!()
+    };
+    report.engine_version = report.engine_version.replace("/science-26", "/science-24");
+    protocol::decode_response(&wire(b"CGR\0", 90, &historical)).unwrap();
+    assert!(protocol::decode_response(&wire(b"CGR\0", 89, &historical)).is_err());
 }
 #[test]
 fn original_search_job_and_result_prefix_survive_legacy_header() {

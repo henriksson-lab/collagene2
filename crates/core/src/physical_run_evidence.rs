@@ -86,6 +86,7 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
                     | Operation::ReconstructRunProduct { .. }
                     | Operation::ReconstructDigestFragment { .. }
                     | Operation::ReconstructMaterial { .. }
+                    | Operation::LigateWithOutcomes { .. }
                     | Operation::OverlapExtension { .. }
                     | Operation::HomologyAssembly { .. }
                     | Operation::ResectThreePrime { .. }
@@ -239,6 +240,43 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
                 continue;
             }
             (
+                Operation::LigateWithOutcomes {
+                    fragments,
+                    circular,
+                    allow_nicked,
+                    options,
+                },
+                crate::verification::PhysicalProcessingEvidence::LigationOutcomes(report),
+            ) => {
+                report.validate_for_operation(fragments, *circular, *allow_nicked, options)?;
+                if report.report.scientific_engine != r.assessment.engine_version {
+                    return Err(bad(
+                        "ligation outcome scientific engine differs from owning run",
+                    ));
+                }
+                for binding in &report.bindings {
+                    let revision = match &binding.source {
+                        Source::Input(id) => r
+                            .plan
+                            .inputs
+                            .iter()
+                            .find(|i| &i.id == id)
+                            .map(|i| i.revision.as_str()),
+                        Source::Step(prior) if *prior < index => r
+                            .products
+                            .iter()
+                            .find(|p| p.step_index == *prior)
+                            .map(|p| p.revision.as_str()),
+                        Source::Step(_) => None,
+                    }
+                    .ok_or_else(|| bad("ligation outcome source is unavailable or forward"))?;
+                    if revision != binding.source_revision {
+                        return Err(bad("ligation outcome exact source revision changed"));
+                    }
+                }
+                continue;
+            }
+            (
                 Operation::TopoActions { .. },
                 crate::verification::PhysicalProcessingEvidence::TopoActions(report),
             ) => report,
@@ -345,6 +383,74 @@ pub(crate) fn validate_workspace(w: &Workspace) -> Result<(), Error> {
             .get(&e.run_id)
             .ok_or_else(|| bad("graph attachment has no owning run"))?;
         validate(&e, r)?;
+        for step in &e.steps {
+            if let crate::verification::PhysicalProcessingEvidence::LigationOutcomes(evidence) =
+                &step.evidence
+            {
+                let product = r
+                    .products
+                    .iter()
+                    .find(|p| p.step_index == step.step_index)
+                    .ok_or_else(|| bad("ligation outcome product event missing"))?;
+                let molecule = w
+                    .revisions
+                    .get(&product.revision)
+                    .ok_or_else(|| bad("ligation outcome product revision missing"))?;
+                if molecule
+                    .metadata
+                    .get("source:ligation_outcomes:evidence_hash")
+                    != Some(&assembly_recipe::hash(evidence)?)
+                    || molecule.metadata.get("source:ligation_outcomes:context")
+                        != Some(&evidence.report.context_revision)
+                {
+                    return Err(bad(
+                        "ligation outcomes full evidence differs from its recorded product receipt",
+                    ));
+                }
+                let intended = &evidence.report.intended;
+                let stored: crate::modified_duplex::ModificationSummary = serde_json::from_str(
+                    molecule
+                        .metadata
+                        .get("tracked_modifications")
+                        .ok_or_else(|| bad("ligation product lost its modification receipt"))?,
+                )
+                .map_err(|_| bad("invalid ligation modification receipt"))?;
+                let duplex: crate::chemistry::DuplexSummary = serde_json::from_str(
+                    molecule
+                        .metadata
+                        .get("duplex_model")
+                        .ok_or_else(|| bad("ligation product lost its strand receipt"))?,
+                )
+                .map_err(|_| bad("invalid ligation duplex receipt"))?;
+                let actual = intended.duplex.summary()?;
+                if molecule.sequence != intended.sequence
+                    || molecule.topology != intended.topology
+                    || assembly_recipe::hash(&stored)?
+                        != assembly_recipe::hash(&intended.modifications)?
+                    || assembly_recipe::hash(&(
+                        duplex.top_length,
+                        duplex.bottom_length,
+                        duplex.bottom_start,
+                        duplex.topology,
+                        &duplex.ends,
+                        &duplex.nicks,
+                        duplex.covalently_closed_in_model,
+                    ))? != assembly_recipe::hash(&(
+                        actual.top_length,
+                        actual.bottom_length,
+                        actual.bottom_start,
+                        actual.topology,
+                        &actual.ends,
+                        &actual.nicks,
+                        actual.covalently_closed_in_model,
+                    ))?
+                {
+                    return Err(bad(
+                        "ligation outcomes intended product differs from owning native event",
+                    ));
+                }
+            }
+        }
     }
     for r in records.values() {
         if r.plan.steps.iter().any(|s| {
@@ -354,6 +460,7 @@ pub(crate) fn validate_workspace(w: &Workspace) -> Result<(), Error> {
                     | Operation::ReconstructRunProduct { .. }
                     | Operation::ReconstructDigestFragment { .. }
                     | Operation::ReconstructMaterial { .. }
+                    | Operation::LigateWithOutcomes { .. }
                     | Operation::OverlapExtension { .. }
                     | Operation::HomologyAssembly { .. }
                     | Operation::ResectThreePrime { .. }

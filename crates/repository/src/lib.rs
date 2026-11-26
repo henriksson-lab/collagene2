@@ -331,6 +331,11 @@ fn publish(payload: store::Payload) -> Result<(wire::Payload, NativePin)> {
     }
 }
 impl Repository {
+    /// Trusted native session lifetime, retained by the underlying SQLite handle.
+    pub fn retain_native_owner(&mut self, owner: std::sync::Arc<dyn Send + Sync>) -> Result<()> {
+        self.db.retain_native_owner(owner)?;
+        Ok(())
+    }
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let mut db = store::Library::open(path)?;
         let access = db.local_repository_access("offline-plasmids", "Local plasmid repository")?;
@@ -343,6 +348,22 @@ impl Repository {
         result.reload()?;
         if result.checkpoint.is_none() {
             result.commit(State::default(), vec![])?;
+        }
+        Ok(result)
+    }
+    /// Read-only native preload: existing identity/scope/state only, never initializes a catalog.
+    pub fn open_read_only(path: impl AsRef<Path>) -> Result<Self> {
+        let mut db = store::Library::open_read_only(path)?;
+        let access = db.local_repository_access("offline-plasmids", "Local plasmid repository")?;
+        let mut result = Self {
+            db,
+            access,
+            state: State::default(),
+            checkpoint: None,
+        };
+        result.reload()?;
+        if result.checkpoint.is_none() {
+            return Err(Error::Invalid("existing repository checkpoint required"));
         }
         Ok(result)
     }

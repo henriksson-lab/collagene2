@@ -152,7 +152,7 @@ fn worker86_job167_operation24_evidence3_and_portable_schemas_keep_explicit_poli
         "{:?}",
         preview.verification.findings
     );
-    assert!(preview.verification.engine_version.ends_with("/science-25"));
+    assert!(preview.verification.engine_version.ends_with("/science-26"));
     assert_eq!(
         preview
             .verification

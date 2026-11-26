@@ -300,6 +300,7 @@ fn operation_title(operation: &Operation) -> &'static str {
         Operation::RecombineReference { .. } => "Reference-only BP/LR exchange",
         Operation::TreatEnds { .. } => "Treat ends",
         Operation::RepairEnds { .. } => "Repair ends",
+        Operation::LigateWithOutcomes { .. } => "Ligation with bounded alternatives",
         Operation::Ligate { .. } => "Ligate",
         Operation::Tail3Prime { .. } => "3′ tailing",
         Operation::AnnealOligos { .. } => "Anneal oligos",

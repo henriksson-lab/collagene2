@@ -59,8 +59,9 @@ fn current_scientific_receipts_use_current_worker_and_historical20_stays_readabl
         report.findings
     );
     assert_eq!(report.engine_version, verification::ENGINE_VERSION);
-    assert!(report.engine_version.ends_with("/science-25"));
-    assert!(protocol::decode_response(&wire(91, &response)).is_ok());
+    assert!(report.engine_version.ends_with("/science-26"));
+    assert!(protocol::decode_response(&wire(protocol::WORKER_SCHEMA_VERSION, &response)).is_ok());
+    assert!(protocol::decode_response(&wire(91, &response)).is_err());
     assert!(protocol::decode_response(&wire(90, &response)).is_err());
     assert!(protocol::decode_response(&wire(89, &response)).is_err());
     assert!(protocol::decode_response(&wire(88, &response)).is_err());
@@ -77,7 +78,7 @@ fn current_scientific_receipts_use_current_worker_and_historical20_stays_readabl
         unreachable!()
     };
     let current = verification::ENGINE_VERSION;
-    let old = current.replace("/science-25", "/science-20");
+    let old = current.replace("/science-26", "/science-20");
     report.engine_version = old.clone();
     for product in &mut report.products {
         for value in product.metadata.values_mut() {

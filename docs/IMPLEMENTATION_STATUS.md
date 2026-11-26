@@ -4,21 +4,22 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-Current source uses worker91, candidate22, native plan20, science25 and187 MCP
-tools. The target-free material phase passes361 focused native/model/SDK cases,
-with19 ancestry/derivation/sharing/SDK cases rerun after the validation performance
-correction. The integrated web/worker WASM compiler check passes. The real depth8
-ancestry fixture remains enabled; its four-case suite fell from199.84s to44.48s
-by avoiding redundant nested validation, without changing resource limits. Desktop remote review messages use DSQ/DSR3, with compatible legacy
-prefix commands/replies and explicit version floors for new review controls.
-Saved-catalog backup commands use DTQ/DTR2 with legacy commands retaining their
-version-1 wire floor. The Tauri shell has a durable offline local library, explicit multi-remote
-synchronization, scoped native credentials, saved-branch review, embedded stdio
-MCP and authenticated URL-import adapters. All export controls now await native
-file receipts under the configured root, using a separate capability-based export
-service. Native SDK and UI WASM checks pass; focused backend/scientific fixtures
-pass. Installer workflow sources are present, but packaging, installation and
-graphical/offline acceptance remain unfinished.
+Current source uses worker92, candidate23, native plan21, science26 and187 MCP
+tools. Ligation outcomes retain the intended path and expose bounded alternatives
+in native history, HTML and PDF with extractable strand FASTA/JSON. Tauri recovery
+uses DTQ/DTR4 for editor-only bootstrap and exact pending-switch cancellation;
+legacy prefix commands retain their historical floors. Remote review remains
+DSQ/DSR3. Working recovery and file export remain available without a catalog,
+while library/sync access requires the actual native context and process generation.
+
+Focused native/model/SDK checks cover416 distinct cases for this increment.
+Integrated web/worker WASM and Linux Tauri shell compiler checks pass. New
+cross-platform CI remains pending. The desktop shell has a durable offline local
+library, explicit multi-remote synchronization, scoped native credentials,
+saved-branch review, embedded stdio MCP and authenticated URL imports. Export
+controls await native receipts under the configured root. Installer workflow
+sources exist; installation and graphical/offline acceptance remain unfinished.
+No browser or application HTTP checks were performed.
 
 The format checkpoint `73fd9d8` passes scientific tests, WASM, desktop builds/MCP
 and unsigned package builds on Windows/macOS/Linux. Desktop builds/MCP and WASM
@@ -1633,3 +1634,43 @@ Thirty-seven focused cases pass across repository, raw host protocol, review/UI
 models, backup/restore and related compatibility gates. Integrated UI/worker WASM
 and native SDK checks pass. No browser/application HTTP checks or live-user data
 backup/restore operations were performed.
+
+## Ligation outcomes and Tauri recovery integration
+
+Uncommitted source appends operation29 `LigateWithOutcomes` and evidence8, with
+worker92/candidate23/plan21/science26. New TA/GC, blunt and ordinary restriction
+ligation plans retain their intended order/orientation while exposing bounded
+one-copy alternatives. Enumeration does not choose the target. Native fresh
+material is retained privately, while full outcomes are bound to the recorded
+product and history. HTML exposes extractable JSON/strand FASTA; PDF includes
+complete printable outcomes plus embedded JSON/FASTA. Explicit resource refusal
+replaces silent omission. This is bounded one-copy full-fragment enumeration, not
+a reaction-mixture simulator: other copy numbers, vector-only self-ligation and
+partial assemblies remain outside its stated scope. Forty-four focused native
+core/SDK cases now pass, including native history replay, complete PDF extraction,
+legacy capability preservation and nested opaque-origin version floors.
+
+The isolated Tauri changes have been applied for combined validation. They add
+DTQ/DTR4 recovery bootstrap, exact review, repeated append-only restart-bound
+activation/rollback, native per-catalog admission and genuinely read-only MCP
+preload. Escaped writable repositories and backup services retain the desktop
+session lease; activation limits refuse before durable journal writes. Native
+recovery/host/protocol/MCP cases pass, as do the integrated web/worker WASM and
+Linux Tauri shell compiler checks. Catalog failure now leaves the
+working editor available without a fabricated lab context; exact pending-switch
+cancellation appends a terminal journal generation and requires restart. Corrupt
+journals block catalog access/cancellation while preserving editor startup. Shell
+admission observes durable session generation after every attempt; refused or
+historical cancellation requests do not themselves pause a healthy catalog.
+
+The requested [SciLifeLab assessment](SCILIFELAB_LLM_ASSESSMENT.md) is committed
+as `7eb3e22`. Native OpenAI-compatible HTTP planning is feasible; current model
+capabilities, data terms and desktop/public-web entitlement remain unconfirmed.
+No inference endpoint was contacted and no credentials or sequence data were sent.
+
+Material checkpoint `a9b0e4c` passes remote WASM compilation. Its scientific CI
+identified three stale current-version fixtures in `material_origin_protocol`:
+producer header90 versus91, scientific25 stamped into a schema19 diagnostic, and
+a scientific25 reply offered under worker90. Corrections now pass locally and
+separate current producer assertions from explicit historical capability tests. These findings do
+not waive the new-version gates or establish full cross-platform scientific success.

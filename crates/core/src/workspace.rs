@@ -30,7 +30,7 @@ const MAX_ENTRIES: usize = 50_000;
 const MAX_STACK: usize = 1000;
 const FORMAT: &str = "collagene-workspace";
 const VERSION: u32 = 1;
-pub const PLAN_SCHEMA_VERSION: u32 = 20;
+pub const PLAN_SCHEMA_VERSION: u32 = 21;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1073,6 +1073,7 @@ pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
                     | 18
                     | 19
                     | 20
+                    | 21
             )
         )
     {
@@ -1235,6 +1236,15 @@ pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
             });
         }
         let steps: Vec<Operation> = json_exact(get(&blobs, &record.steps)?)?;
+        if manifest.plan_schema < 21
+            && steps
+                .iter()
+                .any(|step| matches!(step, Operation::LigateWithOutcomes { .. }))
+        {
+            return Err(Error::Unsupported(
+                "Ligation outcomes require plan schema21".into(),
+            ));
+        }
         if manifest.plan_schema < 20
             && steps
                 .iter()

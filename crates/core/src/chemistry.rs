@@ -169,10 +169,10 @@ pub fn has_unmapped_physical_evidence(molecule: &Molecule) -> bool {
         || molecule
             .metadata
             .contains_key(crate::material_pcr::ORIGIN_METADATA)
-        || molecule
-            .metadata
-            .keys()
-            .any(|key| key.starts_with("source:material_derivation:"))
+        || molecule.metadata.keys().any(|key| {
+            key.starts_with("source:material_derivation:")
+                || key.starts_with("source:ligation_outcomes:")
+        })
         || molecule
             .metadata
             .get("source:legacy:chemistry_unmapped")

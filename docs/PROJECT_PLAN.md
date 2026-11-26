@@ -3217,3 +3217,18 @@ independent target. No model assertion grants material authority. Keep offline
 analysis independent, service secrets out of WASM/archives, and local binary IPC
 unchanged. This investigation made no inference requests or biological uploads.
 [Evidence and concrete integration proposal](SCILIFELAB_LLM_ASSESSMENT.md).
+
+The ligation integration now passes44 focused native core/SDK cases, including
+full JSON/FASTA retained in native history and independently extracted PDF text
+and attachments. It uses operation29/evidence8 and worker92/candidate23/plan21/
+science26. Whole-mixture products remain outside the explicitly bounded one-copy
+all-fragment search. Further alternatives such as vector-only/self-ligation and
+other copy counts must not be described as proven absent.
+
+The Tauri continuation adds DTQ4 editor-only bootstrap and exact append-only
+pending-switch cancellation. A bad source, target or selector cannot prevent
+working-editor startup; catalog/sync remain unavailable without a real native
+context. Cancelled transitions consume their generation and preserve both
+branches. Focused native recovery/host/protocol/MCP cases and integrated WASM/Linux Tauri
+shell compiler checks pass. New cross-platform CI is pending; installation and
+graphical acceptance remain separate, with browser checks deferred.

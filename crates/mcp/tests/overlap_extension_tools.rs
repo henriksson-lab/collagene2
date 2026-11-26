@@ -134,11 +134,9 @@ async fn sdk_proposal_verification_and_exports_use_actual_extension_not_target_s
         verified["status"], "ConsistentUnderAssumptions",
         "{verified}"
     );
-    assert!(
-        verified["engine_version"]
-            .as_str()
-            .unwrap()
-            .ends_with("/science-23")
+    assert_eq!(
+        verified["engine_version"].as_str(),
+        Some(collagene_core::verification::ENGINE_VERSION)
     );
     let products = verified["products"].as_array().unwrap();
     assert_eq!(products.len(), 4);

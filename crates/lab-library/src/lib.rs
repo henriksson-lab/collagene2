@@ -242,10 +242,41 @@ pub struct RevisionPage {
 pub struct Library {
     connection: Connection,
     options: StorageOptions,
+    // Drop after the SQLite connection: a trusted native host may retain its
+    // process/session lease for every escaped connection. Never serialized.
+    native_owner: Option<std::sync::Arc<dyn Send + Sync>>,
 }
 impl Library {
+    /// Retain a trusted native lifetime guard until this connection closes.
+    /// One-shot: replacing it could release an existing host lease too early.
+    pub fn retain_native_owner(&mut self, owner: std::sync::Arc<dyn Send + Sync>) -> Result<()> {
+        if self.native_owner.is_some() {
+            return Err(Error::Invalid("native owner already retained"));
+        }
+        self.native_owner = Some(owner);
+        Ok(())
+    }
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         Self::open_with_options(path, StorageOptions::default())
+    }
+    /// Existing native catalog only: no creation, migrations, WAL-mode changes or defaults.
+    pub fn open_read_only(path: impl AsRef<Path>) -> Result<Self> {
+        let connection =
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        connection.busy_timeout(Duration::from_secs(5))?;
+        connection.execute_batch(
+            "PRAGMA foreign_keys=ON; PRAGMA trusted_schema=OFF; PRAGMA query_only=ON;",
+        )?;
+        let version: i64 = connection.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        let application: i64 = connection.query_row("PRAGMA application_id", [], |r| r.get(0))?;
+        if version != SCHEMA_VERSION || application != APPLICATION_ID {
+            return Err(Error::UnsupportedDatabase);
+        }
+        Ok(Self {
+            connection,
+            options: StorageOptions::default(),
+            native_owner: None,
+        })
     }
     pub fn open_in_memory() -> Result<Self> {
         Self::open_in_memory_with_options(StorageOptions::default())
@@ -284,6 +315,7 @@ impl Library {
         Ok(Self {
             connection,
             options,
+            native_owner: None,
         })
     }
     /// Host administration only; do not expose this as unauthenticated lab creation.

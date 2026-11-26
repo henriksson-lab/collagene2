@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 #[cfg(any(target_os = "android", target_os = "ios"))]
 compile_error!("Collagene desktop supports Windows, macOS and Linux; mobile is deferred.");
+mod catalog_gate;
 mod policy;
 mod settings;
 use collagene_desktop_host::{
@@ -19,7 +20,8 @@ use tauri::Manager;
 #[derive(Clone)]
 struct NativeState {
     host: Arc<Mutex<DesktopHost>>,
-    sync: Arc<Mutex<SyncHost<ProductionAdapter>>>,
+    catalog_gate: Arc<catalog_gate::CatalogGate>,
+    sync: Option<Arc<Mutex<SyncHost<ProductionAdapter>>>>,
     exports: Arc<DesktopExports>,
     catalog_backups: Arc<collagene_desktop_host::catalog_backup::DesktopCatalogBackups>,
     backup_active: Arc<AtomicUsize>,
@@ -74,7 +76,46 @@ fn sync_failure(request: &sync::RequestEnvelope, cancelled: bool) -> sync::Respo
         }),
     }
 }
+fn catalog_admission_error(error: catalog_gate::Error) -> String {
+    match error {
+        catalog_gate::Error::Busy=>"A saved-library operation is in progress. Wait for it to finish before switching libraries.".into(),
+        catalog_gate::Error::PendingRestart=>"Saved-library access is paused. Check library recovery status before saving or synchronizing; working-editor autosave remains available.".into(),
+        catalog_gate::Error::Unavailable=>"Saved-library admission is unavailable. Retain local work and restart Collagene.".into(),
+    }
+}
+fn dispatch_catalog_backup(state: &NativeState, bytes: &[u8]) -> Result<Vec<u8>, String> {
+    use collagene_desktop_protocol::{self as wire, CatalogBackupCommand as Command};
+    let request =
+        wire::decode_request(bytes).map_err(|_| "Invalid catalog recovery frame.".to_owned())?;
+    let wire::Command::CatalogBackup(command) = &request.command else {
+        return Err("Expected a catalog backup command.".into());
+    };
+    if matches!(
+        command,
+        Command::AdoptRecovery { .. } | Command::CancelActivation { .. }
+    ) {
+        let adoption = state
+            .catalog_gate
+            .adoption()
+            .map_err(catalog_admission_error)?;
+        let result = state.catalog_backups.dispatch_raw(&state.access, bytes);
+        // Durable native state is authoritative even if response delivery fails.
+        // Fail closed on an unreadable selector; editor files remain available.
+        if !state.catalog_backups.catalog_session_ready() {
+            adoption.mark_pending();
+        }
+        return result.map_err(|_|"Catalog selection did not return a usable receipt. Check native recovery status before retrying; do not assume the library is active or the switch was cancelled.".into());
+    }
+    let _catalog = if matches!(command, Command::ActivationStatus) {
+        state.catalog_gate.status()
+    } else {
+        state.catalog_gate.read()
+    }
+    .map_err(catalog_admission_error)?;
+    state.catalog_backups.dispatch_raw(&state.access,bytes).map_err(|_|"Catalog backup could not complete; retain its operation ID and inspect known backup records before retrying.".into())
+}
 fn dispatch_sync(state: &NativeState, bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let _catalog = state.catalog_gate.read().map_err(catalog_admission_error)?;
     let request =
         sync::decode_request(bytes).map_err(|_| "Invalid native database frame.".to_owned())?;
     // Hash the whole validated frame, including its DSQ namespace. DTQ uses the
@@ -98,6 +139,10 @@ fn dispatch_sync(state: &NativeState, bytes: &[u8]) -> Result<Vec<u8>, String> {
     };
     let result = state
         .sync
+        .as_ref()
+        .ok_or_else(|| {
+            "Saved library is unavailable; working-editor autosave remains available.".to_owned()
+        })?
         .lock()
         .map_err(|_| "Native database service is unavailable.".to_owned())?
         .dispatch_raw(bytes, &mut || job.accept().is_ok());
@@ -209,7 +254,9 @@ async fn collagene_rpc(
     if bytes.len() > limit {
         return Err("Native request exceeds its binary protocol limit.".into());
     }
-    if !syncing {
+    // Backup/recovery tag12 has its own scoped dispatcher. The legacy small
+    // control decoder accepts only Cancel/Status and must not see that tag.
+    if !syncing && !backing_up {
         if let Some(response) = state
             .control
             .dispatch_raw(&state.access, bytes)
@@ -239,7 +286,7 @@ async fn collagene_rpc(
             return dispatch_sync(&state, &bytes);
         }
         if backing_up {
-            return state.catalog_backups.dispatch_raw(&state.access,&bytes).map_err(|_|"Catalog backup could not complete; retain its operation ID and inspect known backup records before retrying.".to_owned());
+            return dispatch_catalog_backup(&state, &bytes);
         }
         if exporting {
             return state
@@ -250,6 +297,11 @@ async fn collagene_rpc(
                         .to_owned()
                 });
         }
+        let _catalog = if collagene_desktop_protocol::library_request_hint(&bytes) {
+            Some(state.catalog_gate.read().map_err(catalog_admission_error)?)
+        } else {
+            None
+        };
         let mut host = state
             .host
             .lock()
@@ -277,20 +329,26 @@ fn run(options: settings::GuiOptions) -> Result<(), Box<dyn std::error::Error>> 
             let control = host.control();
             let exports = host.open_exports()?;
             let catalog_backups = host.open_catalog_backup()?;
-            let sync = SyncHost::production(
-                host.open_repository_connection()?,
-                collagene_repository::http::HttpOptions {
-                    allow_loopback_http,
-                    ..Default::default()
-                },
-            )?;
+            let catalog_available = host.catalog_available();
+            let sync = if catalog_available {
+                Some(Arc::new(Mutex::new(SyncHost::production(
+                    host.open_repository_connection()?,
+                    collagene_repository::http::HttpOptions {
+                        allow_loopback_http,
+                        ..Default::default()
+                    },
+                )?)))
+            } else {
+                None
+            };
             let mut source_scope = [0; 32];
             getrandom::fill(&mut source_scope)
                 .map_err(|_| "Cannot initialize private source scope")?;
             settings::persist(&configuration, &root)?;
             app.manage(NativeState {
                 host: Arc::new(Mutex::new(host)),
-                sync: Arc::new(Mutex::new(sync)),
+                catalog_gate: Arc::new(catalog_gate::CatalogGate::new(!catalog_available)),
+                sync,
                 exports: Arc::new(exports),
                 catalog_backups: Arc::new(catalog_backups),
                 backup_active: Arc::new(AtomicUsize::new(0)),

@@ -568,6 +568,119 @@ fn status_text(status: Status) -> &'static str {
     }
 }
 
+struct EmbeddedEvidence {
+    name: String,
+    mime: &'static [u8],
+    bytes: Vec<u8>,
+}
+struct EvidenceBytes {
+    bytes: Vec<u8>,
+    limit: usize,
+}
+impl io::Write for EvidenceBytes {
+    fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+        if self
+            .bytes
+            .len()
+            .checked_add(b.len())
+            .is_none_or(|n| n > self.limit)
+        {
+            return Err(io::Error::other("PDF evidence attachment bound"));
+        }
+        self.bytes
+            .try_reserve(b.len())
+            .map_err(|_| io::Error::other("PDF attachment allocation"))?;
+        self.bytes.extend_from_slice(b);
+        Ok(b.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+fn ligation_pdf_limit(e: Error) -> Error {
+    if matches!(e, Error::TooLarge) {
+        Error::Unsupported("Ligation alternatives exceed the bounded PDF text, page or file size. No partial protocol was produced; export the full reconstruction JSON instead.".into())
+    } else {
+        e
+    }
+}
+fn ligation_path(path: &[crate::ligation_outcomes::Placement]) -> String {
+    path.iter()
+        .map(|p| {
+            format!(
+                "{} ({})",
+                p.key,
+                if p.reverse { "reverse" } else { "forward" }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" -> ")
+}
+fn ligation_evidence_text(e: &verification::LigationOutcomeEvidence) -> Result<String, Error> {
+    use io::Write as _;
+    e.validate_documentary()?;
+    let r = &e.report;
+    let mut out = TopoText(Vec::new());
+    writeln!(out,"LIGATION INTENDED PATH AND ALTERNATIVES. Exactly one copy of every declared fragment, declared {:?} topology and explicit nick policy only. No partial assemblies, additional copy numbers, vector-only/self-ligation, multimers, concentrations, kinetics, yields or isolation. Alternatives do not establish target success. No probabilities are assigned.",r.intended.topology).map_err(|_|Error::TooLarge)?;
+    writeln!(out,"Scope: {} source fragments; enumeration fragment limit {}; checked paths {}; incompatible {}; unresolved {}; withheld products {}; enumeration complete {}; exhaustive within this scope only {}. Limits {:?}. Retained bases {}; work {}. Report context {}.",r.sources.len(),r.request.options.max_enumeration_fragments,r.paths_checked,r.incompatible_paths,r.unresolved_paths,r.withheld_products,r.enumeration_complete,r.exhaustive_within_scope,r.limits,r.retained_product_bases,r.work,r.context_revision).map_err(|_|Error::TooLarge)?;
+    writeln!(out,"Request limits: paths {}, products {}, product bases {}, report bytes {}, work {}. Full typed evidence and all retained product strands are embedded as JSON and FASTA attachments to this PDF. FASTA is sequence-only; topology, ends, nicks and modification state remain in the JSON and the text below.",r.request.options.max_path_checks,r.request.options.max_products,r.request.options.max_total_product_bases,r.request.options.max_report_bytes,r.request.options.max_work).map_err(|_|Error::TooLarge)?;
+    for b in &e.bindings {
+        writeln!(
+            out,
+            "Operand {}: {}; source revision {}; actual material state {}.",
+            b.key,
+            source_name(&b.source),
+            b.source_revision,
+            b.material_revision
+        )
+        .map_err(|_| Error::TooLarge)?;
+    }
+    for (i, p) in std::iter::once(&r.intended)
+        .chain(&r.alternatives)
+        .enumerate()
+    {
+        let label = if i == 0 {
+            "Intended path".into()
+        } else {
+            format!("Alternative {i}")
+        };
+        writeln!(
+            out,
+            "{label}: {}. {:?}; {} reference bases. {}",
+            ligation_path(&p.path),
+            p.topology,
+            p.sequence.len(),
+            p.duplex.summary()?.describe()
+        )
+        .map_err(|_| Error::TooLarge)?;
+        write!(out,"Actual modification state {}; known modified {}, unknown eligible {}, known unmodified {}. Generation provenance: ",p.modifications.state_revision,p.modifications.known_modified,p.modifications.unknown_eligible,p.modifications.known_unmodified).map_err(|_|Error::TooLarge)?;
+        out.json(&p.modifications.generation)?;
+        writeln!(out, ".").map_err(|_| Error::TooLarge)?;
+        writeln!(
+            out,
+            "Top strand 5prime to 3prime: {}
+Bottom strand 5prime to 3prime: {}",
+            p.duplex.top.as_str(),
+            p.duplex.bottom.as_str()
+        )
+        .map_err(|_| Error::TooLarge)?;
+    }
+    for x in &r.unresolved_examples {
+        writeln!(
+            out,
+            "Unresolved path {}: {}",
+            ligation_path(&x.path),
+            x.reason
+        )
+        .map_err(|_| Error::TooLarge)?;
+    }
+    writeln!(out,"Unresolved examples retained {} of {}; examples truncated {}. Unresolved paths and withheld products are not absent alternatives.",r.unresolved_examples.len(),r.unresolved_paths,r.unresolved_examples_truncated).map_err(|_|Error::TooLarge)?;
+    for w in &r.warnings {
+        writeln!(out, "Scope note: {w}").map_err(|_| Error::TooLarge)?;
+    }
+    out.finish()
+}
+
 struct Layout {
     face: Face<'static>,
     pages: Vec<Content>,
@@ -578,6 +691,7 @@ struct Layout {
     text_bytes: usize,
     status: Status,
     review_label: Option<String>,
+    attachments: Vec<EmbeddedEvidence>,
 }
 impl Layout {
     fn new(status: Status) -> Result<Self, Error> {
@@ -595,9 +709,67 @@ impl Layout {
             text_bytes: 0,
             status,
             review_label,
+            attachments: vec![],
         };
         layout.header()?;
         Ok(layout)
+    }
+    fn ligation_attachments(
+        &mut self,
+        step: usize,
+        e: &verification::LigationOutcomeEvidence,
+    ) -> Result<(), Error> {
+        use io::Write as _;
+        let used = self
+            .attachments
+            .iter()
+            .try_fold(0usize, |n, a| n.checked_add(a.bytes.len()))
+            .ok_or(Error::TooLarge)?;
+        let limit = MAX_PDF_BYTES
+            .checked_sub(FONT.len() + used)
+            .ok_or(Error::TooLarge)?;
+        let mut json = EvidenceBytes {
+            bytes: vec![],
+            limit,
+        };
+        serde_json::to_writer(&mut json, e).map_err(|_| Error::TooLarge)?;
+        let mut fasta = EvidenceBytes {
+            bytes: vec![],
+            limit: limit.checked_sub(json.bytes.len()).ok_or(Error::TooLarge)?,
+        };
+        for (i, p) in std::iter::once(&e.report.intended)
+            .chain(&e.report.alternatives)
+            .enumerate()
+        {
+            for (strand, sequence) in [("top", &p.duplex.top), ("bottom", &p.duplex.bottom)] {
+                writeln!(
+                    fasta,
+                    ">step_{}_{}_{}_{} topology={:?} strand_5prime_to_3prime bottom_start={}",
+                    step + 1,
+                    if i == 0 { "intended" } else { "alternative" },
+                    i,
+                    strand,
+                    p.topology,
+                    p.duplex.bottom_start
+                )
+                .map_err(|_| Error::TooLarge)?;
+                for bases in sequence.as_str().as_bytes().chunks(80) {
+                    fasta.write_all(bases).map_err(|_| Error::TooLarge)?;
+                    fasta.write_all(b"\n").map_err(|_| Error::TooLarge)?;
+                }
+            }
+        }
+        self.attachments.push(EmbeddedEvidence {
+            name: format!("ligation-step-{:04}.json", step + 1),
+            mime: b"application/json",
+            bytes: json.bytes,
+        });
+        self.attachments.push(EmbeddedEvidence {
+            name: format!("ligation-step-{:04}.fasta", step + 1),
+            mime: b"text/plain",
+            bytes: fasta.bytes,
+        });
+        Ok(())
     }
     fn header(&mut self) -> Result<(), Error> {
         if let Some(label) = self.review_label.clone() {
@@ -1000,7 +1172,36 @@ impl Layout {
         let cmap_id = Ref::new(7);
         let gid_map_id = Ref::new(8);
         let info = Ref::new(9);
-        pdf.catalog(catalog).pages(pages).lang(TextStr("en"));
+        let mut attachment_ids = Vec::new();
+        for i in 0..self.attachments.len() {
+            attachment_ids.push((
+                Ref::new(10 + count as i32 * 2 + i as i32 * 2),
+                Ref::new(11 + count as i32 * 2 + i as i32 * 2),
+            ));
+        }
+        {
+            let mut cat = pdf.catalog(catalog);
+            cat.pages(pages).lang(TextStr("en"));
+            if !self.attachments.is_empty() {
+                let mut names = cat.names();
+                let mut tree = names.embedded_files();
+                let mut entries = tree.names();
+                let mut ordered: Vec<_> = self.attachments.iter().zip(&attachment_ids).collect();
+                ordered.sort_by(|a, b| a.0.name.cmp(&b.0.name));
+                for (a, (spec, _)) in ordered {
+                    entries.insert(Str(a.name.as_bytes()), *spec);
+                }
+            }
+        }
+        let mut attachment_bytes = 0usize;
+        for (a, (spec, data)) in self.attachments.iter().zip(&attachment_ids) {
+            attachment_bytes = attachment_bytes
+                .checked_add(a.bytes.len())
+                .filter(|n| *n <= MAX_PDF_BYTES - FONT.len())
+                .ok_or(Error::TooLarge)?;
+            pdf.file_spec(*spec).path(Str(a.name.as_bytes())).unic_file(TextStr(&a.name)).description(TextStr("Ligation documentary alternatives; sequence-only FASTA does not convey material authority")).embedded_file_with_unicode(*data);
+            pdf.embedded_file(*data, &a.bytes).subtype(Name(a.mime));
+        }
         let subject = self
             .review_label
             .as_deref()
@@ -1018,7 +1219,7 @@ impl Layout {
         pdf.pages(pages)
             .kids(page_ids.iter().copied())
             .count(count as i32);
-        let mut page_bytes = 0usize;
+        let mut page_bytes = attachment_bytes;
         for (i, content) in self.pages.into_iter().enumerate() {
             let content_id = Ref::new(11 + i as i32 * 2);
             let mut page = pdf.page(page_ids[i]);
@@ -1189,6 +1390,22 @@ pub fn export_protocol_pdf(plan: &DesignPlan, target: &Molecule) -> Result<PdfRe
 }
 /// Only a fresh in-process native reconstruction can supply this shared renderer.
 pub(crate) fn export_protocol_pdf_checked(
+    checked: &verification::CheckedProtocol<'_>,
+) -> Result<PdfReport, Error> {
+    export_protocol_pdf_checked_inner(checked).map_err(|error| {
+        if checked
+            .plan()
+            .steps
+            .iter()
+            .any(|step| matches!(step, Operation::LigateWithOutcomes { .. }))
+        {
+            ligation_pdf_limit(error)
+        } else {
+            error
+        }
+    })
+}
+fn export_protocol_pdf_checked_inner(
     checked: &verification::CheckedProtocol<'_>,
 ) -> Result<PdfReport, Error> {
     let plan = checked.plan();
@@ -1545,6 +1762,31 @@ pub(crate) fn export_protocol_pdf_checked(
                 candidate_index,
                 serde_json::to_string(options).map_err(|e| Error::Format(e.to_string()))?
             ),
+            Operation::LigateWithOutcomes {
+                fragments,
+                circular,
+                allow_nicked,
+                options,
+            } => format!(
+                "Ordered intended ligation plus bounded alternative enumeration: {}. {} topology; nicks allowed {}. Exactly one copy of every declared fragment. Up to {} operands are enumerated with at most {} paths, {} retained products, {} product bases, {} report bytes and {} work units. Intended material remains distinct from alternatives; no product isolation, probabilities or experimental success is inferred.",
+                fragments
+                    .iter()
+                    .map(|f| format!(
+                        "{} ({})",
+                        source_name(&f.source),
+                        if f.reverse { "reverse" } else { "forward" }
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                if *circular { "circular" } else { "linear" },
+                allow_nicked,
+                options.max_enumeration_fragments,
+                options.max_path_checks,
+                options.max_products,
+                options.max_total_product_bases,
+                options.max_report_bytes,
+                options.max_work
+            ),
             Operation::Ligate {
                 fragments,
                 circular,
@@ -1626,6 +1868,16 @@ pub(crate) fn export_protocol_pdf_checked(
             .find(|entry| entry.step_index == index)
         {
             match &entry.evidence {
+                verification::PhysicalProcessingEvidence::LigationOutcomes(evidence) => {
+                    let text = ligation_evidence_text(evidence).map_err(ligation_pdf_limit)?;
+                    layout
+                        .ligation_attachments(index, evidence)
+                        .map_err(ligation_pdf_limit)?;
+                    layout
+                        .paragraph_size(&text, 9.0, INK)
+                        .map_err(ligation_pdf_limit)?;
+                }
+
                 verification::PhysicalProcessingEvidence::SavedDigestOrigin(evidence) => {
                     evidence.validate_documentary()?;
                     layout.paragraph_size(&format!("Fresh saved-digest origin reconstruction: source event {}, exact fragment event {}, selected fragment {}. Actual top/bottom lengths {}/{} nt, bottom start {}, retained nicks {}. Modified / chemically unknown eligible / known unmodified bases: {} / {} / {}. Origin incomplete: {}. Material identity {}. This documentary summary does not grant imported chemical authority, isolation or a newly performed historical reaction.", evidence.origin.record.request.source.event_id, evidence.origin.record.product.event_id, evidence.origin.record.request.fragment_index + 1, evidence.duplex.top_length, evidence.duplex.bottom_length, evidence.duplex.bottom_start, evidence.duplex.nicks.len(), evidence.modifications.known_modified, evidence.modifications.unknown_eligible, evidence.modifications.known_unmodified, evidence.origin_incomplete, evidence.material_revision), 9.0, INK)?;
@@ -1773,8 +2025,20 @@ pub(crate) fn export_protocol_pdf_checked(
         layout.heading("PDF text rendering limits")?;
         layout.paragraph("Some Unicode scalars need shaping or a different font. They are visibly written as [U+XXXX] escapes, never silently removed. Full Unicode names remain in the original sequence documents and PDF title metadata. This export is not tagged PDF, PDF/A, or a claim of complete script shaping.")?;
     }
-    let (bytes, pages, mut warnings) =
-        layout.finish(&plan.name, &report.plan_revision, &report.target_revision)?;
+    let (bytes, pages, mut warnings) = layout
+        .finish(&plan.name, &report.plan_revision, &report.target_revision)
+        .map_err(|e| {
+            if report.physical_processing_reports.iter().any(|r| {
+                matches!(
+                    &r.evidence,
+                    verification::PhysicalProcessingEvidence::LigationOutcomes(_)
+                )
+            }) {
+                ligation_pdf_limit(e)
+            } else {
+                e
+            }
+        })?;
     warnings.extend(map_warnings);
     Ok(PdfReport {
         bytes,

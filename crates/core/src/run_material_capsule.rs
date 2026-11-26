@@ -436,6 +436,17 @@ fn walk_enclosed_mixed<'a>(
                 let candidate = transfer::decode_candidate_shallow(&origin.candidate)?;
                 let version = u16::from_le_bytes([origin.candidate[4], origin.candidate[5]]);
                 let enclosing = Some(enclosing.map_or(version, |prior| prior.min(version)));
+                if enclosing.is_some_and(|version| version < 23)
+                    && candidate
+                        .plan
+                        .steps
+                        .iter()
+                        .any(|step| matches!(step, Operation::LigateWithOutcomes { .. }))
+                {
+                    return Err(bad(
+                        "ligation outcomes require candidate schema23 in every enclosing native capsule",
+                    ));
+                }
                 if enclosing.is_some_and(|version| version < 21)
                     && candidate
                         .plan

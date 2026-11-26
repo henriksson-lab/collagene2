@@ -4,7 +4,7 @@
 pub use collagene_library_protocol as library;
 use library::{Blob, Digest, LabContext, Text};
 use serde::{Deserialize, Serialize};
-pub const SCHEMA_VERSION: u16 = 2;
+pub const SCHEMA_VERSION: u16 = 4;
 mod catalog_backup;
 pub use catalog_backup::*;
 pub const HEADER_BYTES: usize = 42;
@@ -97,18 +97,59 @@ dto! {pub enum Command{
     OperationStatus{operation_id:OperationId},
     ExportFile{suggested_name:Text<256>,bytes:Blob<MAX_EXPORT_BYTES>},
     CatalogBackup(CatalogBackupCommand),
+    BootstrapRecovery,
 }}
 dto! {pub struct RequestEnvelope{pub request_id:u64,pub operation_id:OperationId,pub command:Command}}
 dto! {pub struct SlotMetadata{pub archive_hash:Digest,pub bytes:u64}}
 dto! {pub struct WorkingMetadata{pub version:Option<Digest>,pub current:Option<SlotMetadata>,pub previous:Option<SlotMetadata>}}
 dto! {pub struct Preferences{pub version:Option<Digest>,pub bytes:Blob<MAX_PREFERENCE_BYTES>}}
 dto! {pub struct Bootstrap{pub library_context:LabContext,pub working:WorkingMetadata,pub preferences:Preferences}}
+dto! {pub enum CatalogStatus {Ready{activation:CatalogActivationStatus},Paused{message:Text<1024>,activation:Option<CatalogActivationStatus>}}}
+dto! {pub struct BootstrapRecovery {pub library_context:Option<LabContext>,pub working:WorkingMetadata,pub preferences:Preferences,pub catalog:CatalogStatus}}
+impl BootstrapRecovery {
+    pub fn validate(&self) -> Result<(), Error> {
+        self.working.validate()?;
+        self.preferences.validate()?;
+        match (&self.catalog, &self.library_context) {
+            (CatalogStatus::Ready { activation }, Some(context)) => {
+                library::validate_name(&context.name)?;
+                activation.validate()?;
+                let expected_lab = match activation {
+                    CatalogActivationStatus::ActiveAfterRestart(r) => Some(&r.review.current_lab),
+                    CatalogActivationStatus::Cancelled(r) => Some(&r.accepted.review.current_lab),
+                    _ => None,
+                };
+                if expected_lab.is_some_and(|lab| lab != &context.lab_id) {
+                    return Err(Error::Mismatch);
+                }
+                if matches!(activation, CatalogActivationStatus::PendingRestart(_)) {
+                    return Err(Error::Mismatch);
+                }
+            }
+            (
+                CatalogStatus::Paused {
+                    message: text,
+                    activation,
+                },
+                None,
+            ) => {
+                message(text)?;
+                if let Some(a) = activation {
+                    a.validate()?
+                }
+            }
+            _ => return Err(Error::Mismatch),
+        }
+        Ok(())
+    }
+}
 dto! {pub enum Success{
     Bootstrap(Bootstrap),Library(library::Success),WorkingMetadata(WorkingMetadata),
     WorkingArchive{slot:WorkingSlot,version:Digest,archive:Blob<MAX_ARCHIVE_BYTES>},
     Preferences(Preferences),Cancelled{operation_id:OperationId,status:OperationState},Status{operation_id:OperationId,status:OperationState},
     Exported{name:Text<256>,hash:Digest,bytes:u64},
     CatalogBackup(CatalogBackupSuccess),
+    BootstrapRecovery(BootstrapRecovery),
 }}
 dto! {pub enum Conflict{Working(WorkingMetadata),Preferences(Preferences)}}
 dto! {pub enum Failure{Invalid{message:Text<1024>},Conflict{current:Conflict},Cancelled,Unavailable,Library(library::Failure)}}
@@ -238,6 +279,7 @@ impl Bootstrap {
 impl Success {
     pub fn validate(&self) -> Result<(), Error> {
         match self {
+            Self::BootstrapRecovery(s) => s.validate()?,
             Self::CatalogBackup(s) => s.validate()?,
 
             Self::Exported { name, bytes, .. } => {
@@ -332,6 +374,7 @@ impl ResponseEnvelope {
                     && *hash == Digest::of(bytes)
                     && *size == bytes.len() as u64
             }
+            (Command::BootstrapRecovery, Outcome::Success(Success::BootstrapRecovery(_))) => true,
             (Command::Bootstrap, Outcome::Success(Success::Bootstrap(_))) => true,
             (Command::Library(r), Outcome::Success(Success::Library(s))) => library_matches(r, s),
             (Command::WorkingMetadata, Outcome::Success(Success::WorkingMetadata(_))) => true,
@@ -739,6 +782,19 @@ pub fn decode_control(bytes: &[u8]) -> Result<Option<ControlRequest>, Error> {
     if request_id == 0 || !operation_id(id) {
         return Err(Error::Invalid("control prefix"));
     }
+    if tag == 13 {
+        // Recovery bootstrap has no large fields. Fully check its small frame and
+        // new capability floor without treating an unknown selector as normal work.
+        if bytes.len() > MAX_CONTROL_BYTES {
+            return Err(Error::TooLarge);
+        }
+        let request = decode_request(bytes)?;
+        return if matches!(request.command, Command::BootstrapRecovery) {
+            Ok(None)
+        } else {
+            Err(Error::Malformed)
+        };
+    }
     if tag < 9 || tag == 11 {
         return Ok(None);
     }
@@ -762,14 +818,56 @@ pub fn decode_control(bytes: &[u8]) -> Result<Option<ControlRequest>, Error> {
 }
 
 fn request_version(c: &Command) -> u16 {
-    if matches!(c, Command::CatalogBackup(_)) {
+    if matches!(
+        c,
+        Command::BootstrapRecovery
+            | Command::CatalogBackup(CatalogBackupCommand::CancelActivation { .. })
+    ) {
+        return 4;
+    }
+    if matches!(
+        c,
+        Command::CatalogBackup(
+            CatalogBackupCommand::ReviewOriginal
+                | CatalogBackupCommand::ListRecoveries { .. }
+                | CatalogBackupCommand::ReviewRecovery { .. }
+                | CatalogBackupCommand::AdoptRecovery { .. }
+                | CatalogBackupCommand::ActivationStatus
+        )
+    ) {
+        3
+    } else if matches!(c, Command::CatalogBackup(_)) {
         2
     } else {
         1
     }
 }
 fn response_version(o: &Outcome) -> u16 {
-    if matches!(o, Outcome::Success(Success::CatalogBackup(_))) {
+    if matches!(
+        o,
+        Outcome::Success(
+            Success::BootstrapRecovery(_)
+                | Success::CatalogBackup(
+                    CatalogBackupSuccess::ActivationCancelled(_)
+                        | CatalogBackupSuccess::ActivationStatus(
+                            CatalogActivationStatus::Cancelled(_)
+                        )
+                )
+        )
+    ) {
+        return 4;
+    }
+    if matches!(
+        o,
+        Outcome::Success(Success::CatalogBackup(
+            CatalogBackupSuccess::RecoveriesListed(_)
+                | CatalogBackupSuccess::Reviewed(_)
+                | CatalogBackupSuccess::AdoptionPending(_)
+                | CatalogBackupSuccess::ActivationStatus(_)
+        ))
+    ) {
+        3
+    } else if matches!(o, Outcome::Success(Success::CatalogBackup(_))) {
         2
     } else {
         1
@@ -802,4 +900,14 @@ pub fn catalog_backup_request_hint(bytes: &[u8]) -> bool {
         return false;
     };
     postcard::take_from_bytes::<(u64, &str, u32)>(raw).is_ok_and(|((_, _, tag), _)| tag == 12)
+}
+
+/// Untrusted lane hint; the host must still fully validate the request.
+pub fn library_request_hint(bytes: &[u8]) -> bool {
+    if bytes.len() < HEADER_BYTES || bytes.len() > MAX_REQUEST_BYTES || &bytes[..4] != REQUEST_MAGIC
+    {
+        return false;
+    }
+    postcard::take_from_bytes::<(u64, &str, u32)>(&bytes[HEADER_BYTES..])
+        .is_ok_and(|((id, op, tag), _)| id != 0 && operation_id(op) && tag == 1)
 }

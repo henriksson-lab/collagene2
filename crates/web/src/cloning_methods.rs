@@ -1093,7 +1093,8 @@ pub fn CloningMethodsPanel(
                     return;
                 }
             };
-            steps.push(Operation::Ligate {
+            steps.push(Operation::LigateWithOutcomes {
+                options: Default::default(),
                 fragments: vec![
                     OrientedSource {
                         source: vector,

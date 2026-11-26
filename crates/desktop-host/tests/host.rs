@@ -614,7 +614,13 @@ fn unix_new_roots_and_sqlite_files_are_private_and_insecure_existing_storage_is_
     std::fs::set_permissions(&disk.0, std::fs::Permissions::from_mode(0o700)).unwrap();
     let file = disk.0.join("repository.sqlite");
     std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
-    assert!(DesktopHost::open(&disk.0).is_err());
+    let paused = DesktopHost::open(&disk.0)
+        .expect("unsafe catalog permissions must leave private working recovery accessible");
+    assert!(
+        !paused.catalog_available(),
+        "unsafe catalog is never opened as authoritative material"
+    );
+    drop(paused);
     std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
     assert!(DesktopHost::open(&disk.0).is_ok());
 }

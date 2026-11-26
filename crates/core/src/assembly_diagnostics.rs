@@ -47,7 +47,7 @@ fn stage(op: &Operation) -> Result<Stage, Error> {
         Operation::ProfiledOverlap { .. }
         | Operation::HomologyAssembly { .. }
         | Operation::HomologyAnnealing { .. } => Stage::OverlapAssembly,
-        Operation::Ligate { .. } => Stage::LigationAssembly,
+        Operation::Ligate { .. } | Operation::LigateWithOutcomes { .. } => Stage::LigationAssembly,
         _ => return Err(bad("operation is outside shared recipe compiler scope")),
     })
 }

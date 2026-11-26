@@ -190,7 +190,7 @@ fn validate_record(r: &RunRecord) -> Result<(), Error> {
     if r.schema_version != 1
         || !matches!(
             r.plan_schema,
-            3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20
+            3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21
         )
         || !digest(&r.run_id)
         || r.assessment.engine_version.is_empty()
@@ -198,6 +198,15 @@ fn validate_record(r: &RunRecord) -> Result<(), Error> {
         || r.assessment.status == Status::Invalid
     {
         return Err(bad("invalid schema or assessment"));
+    }
+    if r.plan_schema < 21
+        && (r.assessment.engine_version.ends_with("/science-26")
+            || r.plan
+                .steps
+                .iter()
+                .any(|step| matches!(step, Operation::LigateWithOutcomes { .. })))
+    {
+        return Err(bad("Ligation outcomes require plan schema21"));
     }
     if r.plan_schema < 20
         && (r.assessment.engine_version.ends_with("/science-25")

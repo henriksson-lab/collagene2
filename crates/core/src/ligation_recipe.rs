@@ -234,11 +234,11 @@ pub fn compile(
         });
     }
     let ligation_step = steps.len();
-    steps.push(Operation::Ligate {
+    steps.push(crate::ligation_outcomes::operation(
         fragments,
-        circular: recipe.circular,
-        allow_nicked: recipe.allow_nicked,
-    });
+        recipe.circular,
+        recipe.allow_nicked,
+    ));
     let compiled = Compiled {
         plan: DesignPlan {
             name: recipe.name.clone(),
@@ -439,13 +439,28 @@ impl Preview {
         {
             return Err(bad("verification plan/target binding mismatch"));
         }
-        let Some(Operation::Ligate {
-            fragments,
-            circular,
-            ..
-        }) = self.compiled.plan.steps.last()
-        else {
-            return Err(bad("preview has no final ordered ligation operation"));
+        let (fragments, circular, _allow_nicked) = match self.compiled.plan.steps.last() {
+            Some(Operation::LigateWithOutcomes {
+                fragments,
+                circular,
+                allow_nicked,
+                options,
+            }) if rows <= crate::ligation_outcomes::MAX_FRAGMENTS => {
+                if preparation::hash(options)?
+                    != preparation::hash(&crate::ligation_outcomes::Options::default())?
+                {
+                    return Err(bad("compiled outcome bounds changed"));
+                }
+                (fragments, circular, allow_nicked)
+            }
+            Some(Operation::Ligate {
+                fragments,
+                circular,
+                allow_nicked,
+            }) if rows > crate::ligation_outcomes::MAX_FRAGMENTS => {
+                (fragments, circular, allow_nicked)
+            }
+            _ => return Err(bad("preview final ligation/outcomes profile changed")),
         };
         if fragments.len() != rows
             || self.compiled.plan.steps[..self.compiled.ligation_step]

@@ -308,6 +308,11 @@ fn geometry(
             fragments,
             circular,
             ..
+        }
+        | Operation::LigateWithOutcomes {
+            fragments,
+            circular,
+            ..
         } => {
             if fragments.is_empty() || fragments.len() > 1000 {
                 return Err(Error::TooLarge);

@@ -6,8 +6,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 91;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 22;
+pub const WORKER_SCHEMA_VERSION: u16 = 92;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 23;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
@@ -3401,6 +3401,10 @@ fn check_verification_report_version(
                 ));
             }
             match &step.evidence {
+                crate::verification::PhysicalProcessingEvidence::LigationOutcomes(r) => {
+                    check_variant_version(bytes, 92)?;
+                    r.validate_documentary()?;
+                }
                 crate::verification::PhysicalProcessingEvidence::DerivedOrigin(r) => {
                     check_variant_version(bytes, 91)?;
                     r.validate_documentary()?;
@@ -3465,6 +3469,9 @@ fn check_verification_report_version(
     Ok(())
 }
 fn check_scientific_report_version(bytes: &[u8], engine: &str) -> Result<(), Error> {
+    if engine.ends_with("/science-26") {
+        check_variant_version(bytes, 92)?;
+    }
     if engine.ends_with("/science-25") {
         check_variant_version(bytes, 91)?;
     }
@@ -3562,6 +3569,8 @@ mod preparation_shape {
     }
     fn variant(worker: u16, name: &str, variant: &str) -> Result<(), Found> {
         let minimum = match (name, variant) {
+            ("Operation", "LigateWithOutcomes")
+            | ("PhysicalProcessingEvidence", "LigationOutcomes") => 92,
             ("Preparation", "FromDerived")
             | ("Operation", "ReconstructMaterial")
             | ("PhysicalProcessingEvidence", "DerivedOrigin")
@@ -3799,7 +3808,7 @@ mod preparation_shape {
 }
 fn check_preparation_version(bytes: &[u8], value: &impl Serialize) -> Result<(), Error> {
     let worker = u16::from_le_bytes([bytes[4], bytes[5]]);
-    if worker < 91 {
+    if worker < WORKER_SCHEMA_VERSION {
         value
             .serialize(preparation_shape::Visitor {
                 worker,
@@ -4054,6 +4063,7 @@ fn plan_worker_version(plan: &crate::verification::DesignPlan) -> u16 {
     plan.steps
         .iter()
         .map(|step| match step {
+            crate::verification::Operation::LigateWithOutcomes { .. } => 92,
             crate::verification::Operation::ReconstructMaterial { .. } => 91,
             crate::verification::Operation::ReconstructDigestFragment { .. } => 90,
             crate::verification::Operation::ResectThreePrime { .. }

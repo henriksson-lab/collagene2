@@ -96,7 +96,7 @@ fn installed() -> (Workspace, EventBinding) {
 }
 #[test]
 fn worker91_install177_reply167_and_digest178_reply168_bind_actual_material() {
-    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 91);
+    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 92);
     let (w, product) = installed();
     let source = w.revisions[&product.revision].clone();
     let origin = native::SourceOrigin::Saved(MaterialOrigin::Derived(
@@ -157,10 +157,10 @@ fn operation28_evidence7_candidate22_and_plan20_are_explicit_and_replayable() {
         }],
     };
     assert_eq!(tag(&plan.steps[0]), 28);
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 22);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 20);
+    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 23);
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 21);
     let bytes = transfer::save_candidate(&transfer::Candidate::new(plan.clone())).unwrap();
-    assert_eq!(&bytes[4..6], &22u16.to_le_bytes());
+    assert_eq!(&bytes[4..6], &23u16.to_le_bytes());
     let mut old = bytes.clone();
     old[4..6].copy_from_slice(&21u16.to_le_bytes());
     assert_eq!(&old[6..], &bytes[6..]);
@@ -172,7 +172,7 @@ fn operation28_evidence7_candidate22_and_plan20_are_explicit_and_replayable() {
         "{:?}",
         report.findings
     );
-    assert!(report.engine_version.ends_with("/science-25"));
+    assert!(report.engine_version.ends_with("/science-26"));
     assert_eq!(tag(&report.physical_processing_reports[0].evidence), 7);
 }
 #[test]

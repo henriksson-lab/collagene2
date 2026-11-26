@@ -30,7 +30,7 @@ const MAX_ENTRIES: usize = 50_000;
 const MAX_STACK: usize = 1000;
 const FORMAT: &str = "collagene-workspace";
 const VERSION: u32 = 1;
-pub const PLAN_SCHEMA_VERSION: u32 = 15;
+pub const PLAN_SCHEMA_VERSION: u32 = 16;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1051,7 +1051,7 @@ pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
         || header.get("molecule_schema").and_then(|v| v.as_u64()) != Some(1)
         || !matches!(
             header.get("plan_schema").and_then(|v| v.as_u64()),
-            Some(1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15)
+            Some(1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16)
         )
     {
         return Err(Error::Unsupported(
@@ -1213,6 +1213,15 @@ pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
             });
         }
         let steps: Vec<Operation> = json_exact(get(&blobs, &record.steps)?)?;
+        if manifest.plan_schema < 16
+            && steps
+                .iter()
+                .any(|s| matches!(s, Operation::OverlapExtension { .. }))
+        {
+            return Err(Error::Unsupported(
+                "Physical overlap extension requires plan schema16".into(),
+            ));
+        }
         if manifest.plan_schema < 15
             && steps
                 .iter()

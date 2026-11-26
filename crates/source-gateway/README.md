@@ -104,9 +104,9 @@ The package is registered in workspace members. Offline Cargo metadata resolved
 the existing dependencies and added `httpdate1.0.3` for Hyper's server feature;
 no dependency versions were refreshed.
 
-Seven fixture groups are written for binary envelope bounds/redaction, explicit
+Native compilation and seven fixture groups pass for binary envelope bounds/redaction, explicit
 remote configuration, scoped immutable catalog selection, cancellation/admission,
 same-origin document exchange, rejected generic/private URLs and authorization.
-They use only fake backends and in-process HTTP values. They have **not** been
-compiled or run. Frontend/controller integration, serving-host integration,
-actual native/WASM checks and deployment remain parent work.
+They use only fake backends and in-process HTTP values. Frontend/controller
+integration, serving-host integration and deployment remain outstanding; these
+checks do not complete the browser-import workflow.

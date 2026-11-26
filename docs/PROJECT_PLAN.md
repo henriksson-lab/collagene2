@@ -2193,3 +2193,52 @@ The overlap-extension prototype derives the actual heteroduplex from two supplie
 physical strands and reuses native fill-in; private tracked-state wrapping, recipe/
 operation/worker integration and fixtures remain to be completed. The full original
 project goal, including native safe-folder host/Tauri delivery, remains active.
+
+
+### Reciprocal overlap-extension foundation — 26 November 2026
+
+The new physical operation explicitly denatures two intact linear duplexes,
+pairs the selected left top/right bottom strands and extends their paired 3′
+ends. It consumes actual reconstructed material, preserves retained-strand
+modifications and terminal chemistry, and marks synthesized complements as
+unmodified under the declared synthesis assumption. Its geometry has no intended
+target parameter. Bounded alternative terminal pairings remain diagnostic;
+nonunique/incomplete searches keep the whole plan incomplete, including after
+outer-primer PCR. The typed operation and retained geometry are independently
+versioned through worker81, candidate18, native plan16 and science22.
+
+This is the physical foundation for mutating an internal insert during assembly.
+Automatic primer proposal, a flat preparation recipe compiler and ordinary dock
+integration remain outstanding; a core operation is not completion of F14.
+HTML/PDF instructions and MCP-authored typed plans use the same operation.
+
+A native source gateway crate is registered for the browser-import CORS gap.
+It reuses the existing bounded native provider client and exposes a versioned
+binary same-origin route. Browser controller/hosting and Tauri integration remain
+outstanding. This registration does not complete browser Addgene import.
+
+The user reaffirmed rotation of the right circular overview: dragging rotates
+its display; exact base ranges belong in the sequence pane or coordinate entry.
+Visual acceptance remains deferred until the full in-scope implementation is done.
+
+
+The next F14 integration must preserve the preparation graph rather than pretending
+reciprocal extension is one linear PCR. One source contributes two independently
+specified PCR products, followed by extension and outer-primer PCR. The existing
+prepared-row ownership checker currently recognizes linear chains; extend it to
+account for both PCR branches and every intermediate operation. `FromRun` adds an
+explicit reconstruction prefix. Increase the bounded per-row operation budget
+accordingly, keep the selected prepared source bound to the actual final PCR,
+and retain original-source event pins. Primer proposals remain separate from the
+independent edit intent and are checked by the same native reconstruction. Do not
+repurpose a digest-repair field or a sequence-only assembly to conceal that graph.
+
+
+Checkpoint validation passes 47 focused native cases: geometry/tracking,
+binary plans and closed-origin archive round trips, retained uncertainty after
+outer PCR, physical-template ancestry, real MCP SDK flows and seven in-process
+gateway groups. The web and gateway WASM compiler check and formatting pass.
+No browser checks, live provider requests, application HTTP smoke checks or new
+preview publication were performed. Port8082 retains its prior immutable build.
+Cross-platform CI is requested by the push; this local checkpoint does not claim
+a fresh Windows/macOS/Linux CI result.

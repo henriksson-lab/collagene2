@@ -182,6 +182,13 @@ pub enum Operation {
         template: Source,
         origin: crate::run_material::Capsule,
     },
+    /// Explicit reciprocal polymerase extension of two intact overlapping duplexes.
+    /// Products arise from the selected physical strands, never the intended target.
+    OverlapExtension {
+        left: OrientedSource,
+        right: OrientedSource,
+        options: crate::overlap_extension::Options,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -257,6 +264,7 @@ pub struct ProcessedTopoStepReport {
 pub enum PhysicalProcessingEvidence {
     TopoActions(crate::topo_actions::Report),
     RunProduct(crate::run_material::ReplayEvidence),
+    OverlapExtension(crate::overlap_extension::Geometry),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -281,7 +289,7 @@ pub struct ReferenceStepReport {
     pub evidence: ReferenceStepEvidence,
 }
 
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-21");
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-22");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrDocument {
@@ -1026,6 +1034,7 @@ pub fn operation_sources(op: &Operation) -> Vec<&Source> {
         Operation::Ligate { fragments, .. } | Operation::ProfiledOverlap { fragments, .. } => {
             fragments.iter().map(|f| &f.source).collect()
         }
+        Operation::OverlapExtension { left, right, .. } => vec![&left.source, &right.source],
         Operation::AnnealOligos { top, bottom, .. } => vec![top, bottom],
     }
 }
@@ -1064,6 +1073,9 @@ pub fn operation_sources_mut(op: &mut Operation) -> Vec<&mut Source> {
         } => fragments.iter_mut().collect(),
         Operation::Ligate { fragments, .. } | Operation::ProfiledOverlap { fragments, .. } => {
             fragments.iter_mut().map(|f| &mut f.source).collect()
+        }
+        Operation::OverlapExtension { left, right, .. } => {
+            vec![&mut left.source, &mut right.source]
         }
         Operation::AnnealOligos { top, bottom, .. } => vec![top, bottom],
     }
@@ -2120,6 +2132,57 @@ fn reconstruct(
             |source: &Source| -> Result<Duplex, Error> { Ok(resolve_tracked(source)?.duplex) };
         let mut next_physical = None;
         let mut product = match step {
+            Operation::OverlapExtension {
+                left,
+                right,
+                options,
+            } => {
+                if physical_processing_reports.len() >= 64 {
+                    return Err(Error::TooLarge);
+                }
+                let mut a = resolve_tracked(&left.source)?;
+                let mut b = resolve_tracked(&right.source)?;
+                if left.reverse {
+                    a = a.reverse()?;
+                }
+                if right.reverse {
+                    b = b.reverse()?;
+                }
+                let (extended, geometry) = a.overlap_extend(&b, options)?;
+                let mut product = extended
+                    .duplex
+                    .molecule(format!("Overlap extension {}", index + 1))?;
+                let offset = a.duplex.top.len() - options.overlap;
+                for (oriented, destination_start) in [(left, 0), (right, offset)] {
+                    let source = resolve(&oriented.source)?;
+                    project_into(
+                        source,
+                        &[MappingSegment {
+                            source_start: 0,
+                            source_end: source.sequence.len(),
+                            destination_start,
+                            reverse: oriented.reverse,
+                        }],
+                        &mut product,
+                        findings,
+                    )?;
+                }
+                findings.extend(geometry.warnings.iter().take(100).cloned());
+                findings.push(format!("Step {} denatures two intact duplexes, pairs the left top strand with the right bottom strand over {} bp and extends their paired 3′ ends. Retained strands preserve modifications; synthesized complements are assumed unmodified. Selection does not prove isolation, amplification efficiency or reaction-mixture uniqueness.", index+1, options.overlap));
+                if !geometry.terminal_pairings.complete || !geometry.terminal_pairings.unique {
+                    incomplete.push(format!("Step {} selected terminal pairing is not uniquely established within the bounded terminal-pair model; alternative products remain possible.", index+1));
+                }
+                step_evidence_bytes = step_evidence_bytes
+                    .checked_add(evidence_bytes(&geometry, 32 * 1024 * 1024)?)
+                    .filter(|n| *n <= 32 * 1024 * 1024)
+                    .ok_or(Error::TooLarge)?;
+                physical_processing_reports.push(PhysicalProcessingStepReport {
+                    step_index: index,
+                    evidence: PhysicalProcessingEvidence::OverlapExtension(geometry),
+                });
+                next_physical = Some(extended);
+                product
+            }
             Operation::ReconstructRunProduct { template, origin } => {
                 if !matches!(template, Source::Input(_)) {
                     return Err(Error::Unsupported("Saved material reconstruction requires an explicit saved input event, not an enclosing step projection".into()));
@@ -3399,6 +3462,9 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
     };
     for (step_index, step) in plan.steps.iter().enumerate() {
         match step {
+            Operation::OverlapExtension { left, right, options } => {
+                body.push_str(&format!("<li>Denature overlapping duplexes {} ({}) and {} ({}), reanneal left top/right bottom strands across {} bp, and extend both paired 3′ ends. Minimum terminal pairing {} bp. Complementary synthesis is assumed unmodified; selected geometry does not establish isolation or experimental success.</li>", source(&left.source), if left.reverse {"reverse complement"} else {"forward"}, source(&right.source), if right.reverse {"reverse complement"} else {"forward"}, options.overlap, options.min_paired_bases));
+            },
             Operation::ReconstructRunProduct { template, origin } => {
                 body.push_str(&format!("<li>Use saved material {} by reconstructing run <code>{}</code>, product {} against its unchanged original target <code>{}</code>. Preserve actual nicks, termini and positional modifications. Complete origin evidence is retained; this is not a newly performed reaction, inferred repair or proof of isolation.</li>", source(template), e(&origin.selection.run_id), origin.selection.step_index+1, e(&origin.target_event.revision)));
             },
@@ -3550,6 +3616,9 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
         body.push_str("<h2>Accounted physical processing evidence</h2><ul>");
         for step in &report.physical_processing_reports {
             match &step.evidence {
+                PhysicalProcessingEvidence::OverlapExtension(geometry) => {
+                    body.push_str(&format!("<li>Step {} reciprocal extension: selected homology {} bp; retained terminal pairings {:?}; complete search {}; unique within terminal model {}; {} comparisons. Original source geometry revisions: {} / {}. Exact copied/synthesized strand mappings remain in the reconstruction report.</li>", step.step_index+1, geometry.options.overlap, geometry.terminal_pairings.overlaps, geometry.terminal_pairings.complete, geometry.terminal_pairings.unique, geometry.terminal_pairings.comparisons, e(&geometry.source_geometry_revisions[0]), e(&geometry.source_geometry_revisions[1])));
+                }
                 PhysicalProcessingEvidence::RunProduct(evidence) => {
                     body.push_str(&format!("<li>Step {}: saved run <code>{}</code>, product {}, actual material summary <code>{}</code>. Full originating report is retained with the reconstruction recipe.<ul>", step.step_index+1, e(&evidence.origin.selection.run_id), evidence.origin.selection.step_index+1, e(&evidence.material_revision)));
                     if let Ok(origin_report) = evidence.decode_report() {

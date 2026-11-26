@@ -335,7 +335,9 @@ fn from_pieces(
     out.validate()?;
     Ok(out)
 }
-fn provenance(sources: &[TrackedDuplex]) -> Result<Vec<GenerationRecord>, Error> {
+fn provenance<'a>(
+    sources: impl IntoIterator<Item = &'a TrackedDuplex>,
+) -> Result<Vec<GenerationRecord>, Error> {
     let mut records = vec![];
     for source in sources {
         for record in &source.generation {
@@ -537,6 +539,54 @@ impl TrackedDuplex {
             }
         }
         from_pieces(report.duplex, &pieces, &synth, self.generation.clone())
+    }
+    /// Explicitly denature/reanneal A.top with B.bottom and extend both paired
+    /// 3′ ends. Only the selected strands retain their modification coverage;
+    /// complementary synthesis uses the standard-unmodified assumption.
+    ///
+    /// The geometry is freshly reconstructed from these actual operands, never
+    /// accepted from a serialized report or an intended reference sequence.
+    /// Terminal-pair search completeness and uniqueness remain explicit in the
+    /// returned report and must be assessed before claiming a determined product.
+    pub fn overlap_extend(
+        &self,
+        other: &Self,
+        options: &crate::overlap_extension::Options,
+    ) -> Result<(Self, crate::overlap_extension::Geometry), Error> {
+        self.validate()?;
+        other.validate()?;
+        let geometry = crate::overlap_extension::geometry(&self.duplex, &other.duplex, options)?;
+        let pieces = [
+            Piece {
+                source: self,
+                strand: Strand::Top,
+                start: 0,
+                len: self.duplex.top.len(),
+                destination: Strand::Top,
+                offset: 0,
+            },
+            Piece {
+                source: other,
+                strand: Strand::Bottom,
+                start: 0,
+                len: other.duplex.bottom.len(),
+                destination: Strand::Bottom,
+                offset: 0,
+            },
+        ];
+        let annealed = from_pieces(
+            geometry.annealed.clone(),
+            &pieces,
+            &[],
+            provenance([self, other])?,
+        )?;
+        let extended = annealed.repair(EndRepairMethod::FillFivePrimeOverhangs)?;
+        if extended.duplex != geometry.fill.duplex {
+            return Err(bad(
+                "tracked reciprocal extension differs from freshly computed native geometry",
+            ));
+        }
+        Ok((extended, geometry))
     }
     pub fn tail(&self, base: TailingBase) -> Result<Self, Error> {
         self.validate()?;

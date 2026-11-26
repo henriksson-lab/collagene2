@@ -6,8 +6,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 80;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 17;
+pub const WORKER_SCHEMA_VERSION: u16 = 81;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 18;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
@@ -3044,12 +3044,20 @@ fn check_verification_report_version(
                 crate::verification::PhysicalProcessingEvidence::RunProduct(r) => {
                     check_variant_version(bytes, 73)?;
                     r.validate_documentary()?;
-                    // Documentary shape only. Schema73 already includes every
-                    // nested capability floor; no recursive replay or imported
-                    // freshness is conferred by a retained inner report.
+                    check_capsule_candidate_version(
+                        u16::from_le_bytes([bytes[4], bytes[5]]),
+                        &r.origin.candidate,
+                    )?;
+                    // Inspect the retained scientific stamp without replaying or
+                    // conferring freshness on this documentary report.
+                    check_scientific_report_version(bytes, &r.decode_report()?.engine_version)?;
                 }
                 crate::verification::PhysicalProcessingEvidence::TopoActions(r) => {
                     r.validate_binding(&r.context_revision)?
+                }
+                crate::verification::PhysicalProcessingEvidence::OverlapExtension(r) => {
+                    check_variant_version(bytes, 81)?;
+                    r.validate_documentary()?;
                 }
             }
         }
@@ -3073,6 +3081,9 @@ fn check_verification_report_version(
     Ok(())
 }
 fn check_scientific_report_version(bytes: &[u8], engine: &str) -> Result<(), Error> {
+    if engine.ends_with("/science-22") {
+        check_variant_version(bytes, 81)?;
+    }
     if engine.ends_with("/science-21") {
         check_variant_version(bytes, 80)?;
     }
@@ -3154,9 +3165,12 @@ mod preparation_shape {
     }
     pub struct Visitor {
         pub worker: u16,
+        pub candidate: bool,
     }
     fn variant(worker: u16, name: &str, variant: &str) -> Result<(), Found> {
         let minimum = match (name, variant) {
+            ("Operation", "OverlapExtension")
+            | ("PhysicalProcessingEvidence", "OverlapExtension") => 81,
             ("Preparation", "AnnealedOligos") => 71,
             ("Preparation", "FromRun") => 74,
             ("Preparation", "MismatchPcr") | ("RunPreparation", "MismatchPcr") => 76,
@@ -3201,15 +3215,22 @@ mod preparation_shape {
             serialize_f32(f32),
             serialize_f64(f64),
             serialize_char(char),
-            serialize_str(&str),
-            serialize_bytes(&[u8])
+            serialize_str(&str)
         );
+        fn serialize_bytes(self, bytes: &[u8]) -> Result<(), Found> {
+            if self.candidate {
+                super::check_capsule_candidate_version(self.worker, bytes)
+                    .map_err(|_| Found(81))?;
+            }
+            Ok(())
+        }
         fn serialize_none(self) -> Result<(), Found> {
             Ok(())
         }
         fn serialize_some<T: ?Sized + Serialize>(self, v: &T) -> Result<(), Found> {
             v.serialize(Self {
                 worker: self.worker,
+                candidate: false,
             })
         }
         fn serialize_unit(self) -> Result<(), Found> {
@@ -3233,6 +3254,7 @@ mod preparation_shape {
         ) -> Result<(), Found> {
             v.serialize(Self {
                 worker: self.worker,
+                candidate: false,
             })
         }
         fn serialize_newtype_variant<T: ?Sized + Serialize>(
@@ -3250,6 +3272,7 @@ mod preparation_shape {
             }
             value.serialize(Self {
                 worker: self.worker,
+                candidate: false,
             })
         }
         fn serialize_seq(self, _: Option<usize>) -> Result<Self, Found> {
@@ -3299,6 +3322,7 @@ mod preparation_shape {
                 fn $method<T: ?Sized + Serialize>(&mut self, v: &T) -> Result<(), Found> {
                     v.serialize(Visitor {
                         worker: self.worker,
+                        candidate: false,
                     })
                 }
                 fn end(self) -> Result<(), Found> {
@@ -3317,11 +3341,13 @@ mod preparation_shape {
         fn serialize_key<T: ?Sized + Serialize>(&mut self, v: &T) -> Result<(), Found> {
             v.serialize(Visitor {
                 worker: self.worker,
+                candidate: false,
             })
         }
         fn serialize_value<T: ?Sized + Serialize>(&mut self, v: &T) -> Result<(), Found> {
             v.serialize(Visitor {
                 worker: self.worker,
+                candidate: false,
             })
         }
         fn end(self) -> Result<(), Found> {
@@ -3343,6 +3369,7 @@ mod preparation_shape {
                     } else {
                         v.serialize(Visitor {
                             worker: self.worker,
+                            candidate: key == "candidate",
                         })
                     }
                 }
@@ -3357,9 +3384,12 @@ mod preparation_shape {
 }
 fn check_preparation_version(bytes: &[u8], value: &impl Serialize) -> Result<(), Error> {
     let worker = u16::from_le_bytes([bytes[4], bytes[5]]);
-    if worker < 78 {
+    if worker < 81 {
         value
-            .serialize(preparation_shape::Visitor { worker })
+            .serialize(preparation_shape::Visitor {
+                worker,
+                candidate: false,
+            })
             .map_err(|e| Error::Format(e.to_string()))?;
     }
     Ok(())
@@ -3397,6 +3427,7 @@ fn check_workspace_version(
     }
     for candidate in &workspace.candidates {
         check_variant_version(bytes, plan_worker_version(&candidate.plan))?;
+        check_preparation_version(bytes, &candidate.plan)?;
     }
     for attachment in workspace.attachments.values() {
         if attachment.kind == "assembly-draft-v7" {
@@ -3411,6 +3442,10 @@ fn check_workspace_version(
             check_variant_version(bytes, 12)?;
             let record = crate::run_lineage::load_run_record(&attachment.bytes)?;
             check_variant_version(bytes, plan_worker_version(&record.plan))?;
+            check_preparation_version(bytes, &record.plan)?;
+            if record.plan_schema >= 16 {
+                check_variant_version(bytes, 81)?;
+            }
             if record.plan_schema >= 15 {
                 check_variant_version(bytes, 73)?;
             }
@@ -3467,6 +3502,37 @@ fn check_workspace_version(
             check_variant_version(bytes, 19)?;
         } else if attachment.kind == "read-assembly-v1" {
             check_variant_version(bytes, 15)?;
+        }
+    }
+    Ok(())
+}
+// Closed run origins retain typed plans in compact candidate envelopes. Walk
+// those packages iteratively so a new operation cannot hide under an old worker
+// envelope. This is capability validation only, never scientific replay.
+fn check_capsule_candidate_version(worker: u16, first: &[u8]) -> Result<(), Error> {
+    if first.len() > crate::run_material_capsule::MAX_CAPSULE_BYTES {
+        return Err(Error::TooLarge);
+    }
+    let mut pending = vec![(first.to_vec(), 0usize)];
+    let mut total = 0usize;
+    while let Some((bytes, depth)) = pending.pop() {
+        total = total.checked_add(bytes.len()).ok_or(Error::TooLarge)?;
+        if total > crate::run_material_capsule::MAX_CAPSULE_BYTES
+            || depth > crate::run_material_capsule::MAX_NESTING
+        {
+            return Err(Error::TooLarge);
+        }
+        let candidate = crate::transfer::decode_candidate_shallow(&bytes)?;
+        if worker < plan_worker_version(&candidate.plan) {
+            return Err(Error::Unsupported(
+                "nested origin requires a newer worker schema".into(),
+            ));
+        }
+        for operation in candidate.plan.steps {
+            if let crate::verification::Operation::ReconstructRunProduct { origin, .. } = operation
+            {
+                pending.push((origin.candidate, depth + 1));
+            }
         }
     }
     Ok(())
@@ -3533,6 +3599,7 @@ fn plan_worker_version(plan: &crate::verification::DesignPlan) -> u16 {
     plan.steps
         .iter()
         .map(|step| match step {
+            crate::verification::Operation::OverlapExtension { .. } => 81,
             crate::verification::Operation::ReconstructRunProduct { .. } => 73,
             crate::verification::Operation::MultiSiteRecombineReference { .. } => 68,
             step if crate::verification::topo_uses_step_source(step) => 67,

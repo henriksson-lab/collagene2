@@ -1231,6 +1231,27 @@ pub(crate) fn export_protocol_pdf_checked(
     layout.heading("Cloning steps")?;
     for (index, step) in plan.steps.iter().enumerate() {
         let body = match step {
+            Operation::OverlapExtension {
+                left,
+                right,
+                options,
+            } => format!(
+                "Denature overlapping duplexes {} ({}) and {} ({}), reanneal left top/right bottom over {} bp, and extend both paired 3prime ends. Minimum terminal pairing {} bp. Retained strands preserve positional modifications; complementary synthesis is assumed unmodified. The selected geometry does not establish isolation, amplification efficiency or experimental success.",
+                source_name(&left.source),
+                if left.reverse {
+                    "reverse complement"
+                } else {
+                    "forward"
+                },
+                source_name(&right.source),
+                if right.reverse {
+                    "reverse complement"
+                } else {
+                    "forward"
+                },
+                options.overlap,
+                options.min_paired_bases
+            ),
             Operation::ReconstructRunProduct { template, origin } => format!(
                 "Reconstruct already-prepared saved material {} from complete origin run {}, step {}. Exact source event {}; original independent target {} (event {}). Replay uses the retained origin plan unchanged, including its separate target and source declarations. Historical status and imported strand summaries do not grant chemical authority. This is material reuse, not a new execution of historical laboratory reactions, isolation or a supplier guarantee; all origin assumptions and incomplete findings remain applicable.",
                 source_name(template),
@@ -1550,6 +1571,10 @@ pub(crate) fn export_protocol_pdf_checked(
             .find(|entry| entry.step_index == index)
         {
             match &entry.evidence {
+                verification::PhysicalProcessingEvidence::OverlapExtension(geometry) => {
+                    geometry.validate_documentary()?;
+                    layout.paragraph_size(&format!("Reciprocal extension evidence: selected homology {} bp; retained terminal pairings {:?}; complete {}; unique within terminal model {}; {} comparisons. Source geometry revisions {} / {}. Exact copied/synthesized strand mappings are retained in the reconstruction report.", geometry.options.overlap, geometry.terminal_pairings.overlaps, geometry.terminal_pairings.complete, geometry.terminal_pairings.unique, geometry.terminal_pairings.comparisons, geometry.source_geometry_revisions[0], geometry.source_geometry_revisions[1]), 9.0, INK)?;
+                }
                 verification::PhysicalProcessingEvidence::TopoActions(evidence) => {
                     layout.paragraph_size(&topo_actions_evidence_text(evidence)?, 9.0, INK)?
                 }

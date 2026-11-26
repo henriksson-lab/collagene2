@@ -22,6 +22,16 @@ fn source_label(source: &Source) -> String {
 }
 pub(crate) fn operation_label(operation: &Operation) -> String {
     match operation {
+        Operation::OverlapExtension {
+            left,
+            right,
+            options,
+        } => format!(
+            "Reciprocal overlap extension of {} / {} · {} bp terminal pairing",
+            source_label(&left.source),
+            source_label(&right.source),
+            options.overlap
+        ),
         Operation::Pcr {
             template,
             forward,

@@ -44,7 +44,9 @@ fn reference_count(op: &Operation) -> usize {
         Operation::Ligate { fragments, .. } | Operation::ProfiledOverlap { fragments, .. } => {
             fragments.len()
         }
-        Operation::RecombineReference { .. } | Operation::AnnealOligos { .. } => 2,
+        Operation::RecombineReference { .. }
+        | Operation::AnnealOligos { .. }
+        | Operation::OverlapExtension { .. } => 2,
         Operation::ReconstructRunProduct { .. }
         | Operation::Pcr { .. }
         | Operation::PcrWithMismatches { .. }

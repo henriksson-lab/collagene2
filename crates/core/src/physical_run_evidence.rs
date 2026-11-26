@@ -82,7 +82,9 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
         .filter_map(|(i, s)| {
             matches!(
                 s,
-                Operation::TopoActions { .. } | Operation::ReconstructRunProduct { .. }
+                Operation::TopoActions { .. }
+                    | Operation::ReconstructRunProduct { .. }
+                    | Operation::OverlapExtension { .. }
             )
             .then_some(i)
         })
@@ -95,6 +97,19 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
             return Err(bad("processed step order changed"));
         }
         let report = match (&r.plan.steps[index], &step.evidence) {
+            (
+                Operation::OverlapExtension { options, .. },
+                crate::verification::PhysicalProcessingEvidence::OverlapExtension(geometry),
+            ) => {
+                geometry.validate_documentary()?;
+                if options != &geometry.options {
+                    return Err(bad("overlap-extension declaration changed"));
+                }
+                // Run/event bindings retain the exact source and product identities.
+                // This documentary geometry never restores physical material;
+                // fresh plan replay against those sources is required for reuse.
+                continue;
+            }
             (
                 Operation::ReconstructRunProduct { template, origin },
                 crate::verification::PhysicalProcessingEvidence::RunProduct(replay),

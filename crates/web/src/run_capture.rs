@@ -283,6 +283,7 @@ fn operation_title(operation: &Operation) -> &'static str {
         Operation::CatalogDigest { .. } => "Catalog-pinned digest",
         Operation::DeclareSourceTermini { .. } => "Declare original source termini",
         Operation::Pcr { .. } => "PCR",
+        Operation::OverlapExtension { .. } => "Reciprocal overlap extension",
         Operation::PcrWithMismatches { .. } => "PCR with mismatches",
         Operation::Digest { .. } => "Digest under cleavage assumptions",
         Operation::DeclareSourceModifications { .. } => "Declare original source modifications",

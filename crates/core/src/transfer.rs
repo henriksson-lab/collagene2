@@ -134,6 +134,17 @@ pub fn load_candidate(bytes: &[u8]) -> Result<Candidate, Error> {
 /// Candidate::validate through nested origins.
 pub(crate) fn decode_candidate_shallow(bytes: &[u8]) -> Result<Candidate, Error> {
     let candidate: Candidate = protocol::decode(b"CGP\0", bytes)?;
+    if u16::from_le_bytes([bytes[4], bytes[5]]) < 18
+        && candidate
+            .plan
+            .steps
+            .iter()
+            .any(|s| matches!(s, crate::verification::Operation::OverlapExtension { .. }))
+    {
+        return Err(Error::Unsupported(
+            "Physical overlap extension requires candidate schema18".into(),
+        ));
+    }
     if u16::from_le_bytes([bytes[4], bytes[5]]) < 17
         && candidate.plan.steps.iter().any(|s| {
             matches!(

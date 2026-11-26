@@ -20,6 +20,7 @@ fn title(op: &Operation) -> &'static str {
     match op {
         Operation::ReconstructRunProduct { .. } => "Reuse saved cloning material",
         Operation::Pcr { .. } => "PCR",
+        Operation::OverlapExtension { .. } => "Reciprocal overlap extension",
         Operation::PcrWithMismatches { .. } => "PCR with mismatches",
         Operation::Digest { .. } => "Restriction digest",
         Operation::CatalogDigest { .. } => "Catalog-pinned digest",

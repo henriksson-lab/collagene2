@@ -1022,7 +1022,7 @@ pub struct Proposal {
     /// Independent desired target. Never inferred from a candidate product.
     pub target: DocumentRef,
     pub inputs: Vec<BoundInput>,
-    /// Typed PCR, overlap, digest, terminal treatment or ligation operations. Sources refer to input IDs or earlier steps.
+    /// Typed operations refer to input IDs or earlier steps. OverlapExtension explicitly denatures/reanneals two intact linear tracked duplexes and extends their selected terminal pairing; use actual PCR oligos before and after it. Reference overlap assemblies cannot substitute for physical PCR templates.
     pub steps: Vec<Operation>,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -6470,7 +6470,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Save an immutable candidate plan binding an independent target and input revisions. DeclareSourceModifications accepts only an explicit Input source with Dam/Dcm/CpG generation assumptions; CheckedDigest pins the positional profile revision from list_enzymes and consumes freshly reconstructed tracked strand state. DeclareSourceTermini requires an original intact linear DNA Input and explicit left/right5-prime/3-prime assumptions; it cannot promote Step, ssDNA, circular, imported physical or reference-only states, infer chemistry from metadata or repair a graph. Saving never verifies or applies a plan. Duplicate submissions are idempotent."
+        description = "Save an immutable candidate plan binding an independent target and input revisions. DeclareSourceModifications accepts only an explicit Input source with Dam/Dcm/CpG generation assumptions; CheckedDigest pins the positional profile revision from list_enzymes and consumes freshly reconstructed tracked strand state. DeclareSourceTermini requires an original intact linear DNA Input and explicit left/right5-prime/3-prime assumptions; it cannot promote Step, ssDNA, circular, imported physical or reference-only states, infer chemistry from metadata or repair a graph. OverlapExtension requires two freshly reconstructed intact linear duplexes, explicit orientations and terminal pairing/search options; it reciprocally extends A.top/B.bottom and can feed actual outer-primer PCR. A sequence-only Overlap/ProfiledOverlap cannot supply that physical template. Saving never verifies or applies a plan. Duplicate submissions are idempotent."
     )]
     fn propose_plan(
         &self,
@@ -6592,7 +6592,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Reconstruct an exact saved plan revision against its separately bound target with the scientific core. Returns findings, assumptions and bounded product summaries. Never trusts AI claimed products or status."
+        description = "Reconstruct an exact saved plan revision against its separately bound target with the scientific core. Returns findings, assumptions and bounded product summaries. OverlapExtension freshly reconstructs the selected reciprocal extension; competing or unsearched terminal pairings remain explicit findings. Never trusts AI claimed products or status."
     )]
     async fn verify_plan(
         &self,

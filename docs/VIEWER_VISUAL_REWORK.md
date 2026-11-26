@@ -29,7 +29,8 @@ The same cached lanes and label boxes drive rendering and hit testing. Feature
 text remains readable with deliberate abbreviation rather than arbitrary word
 breaks.
 
-Dragging the right-hand circular map rotates only the display, preserving the
+The user reaffirmed on 2026-11-26 that coarse range selection on the right-hand
+map is not useful. Dragging that circular map rotates only the display, preserving the
 sequence origin and any exact sequence selection. Precise base ranges are selected
 in the left-hand Sequence view or entered as coordinates; the overview does not
 offer approximate range selection. The main viewer explicitly disables map range

@@ -130,6 +130,8 @@ pub fn LibraryPane(
     on_open: Callback<Opened, LocalResult<LocalDocument>>,
     on_binding: Callback<(u64, Binding), Result<(), String>>,
     locked: Memo<bool>,
+    #[prop(optional)] refresh: Option<RwSignal<u64>>,
+    #[prop(optional)] on_folder: Option<Callback<Option<wire::FolderId>>>,
 ) -> impl IntoView {
     let local = client.is_local();
     let initial_context = client.context();
@@ -144,6 +146,13 @@ pub fn LibraryPane(
     let entries = RwSignal::new(Vec::<wire::Entry>::new());
     let next_offset = RwSignal::new(None::<u32>);
     let search = RwSignal::new(String::new());
+    Effect::new(move |_| {
+        if local {
+            if let Some(callback) = on_folder {
+                callback.run(navigation.with(Navigation::parent));
+            }
+        }
+    });
     let editor = RwSignal::new(None::<NameEditor>);
     let name = RwSignal::new(String::new());
     let moving = RwSignal::new(None::<wire::Entry>);
@@ -408,6 +417,25 @@ pub fn LibraryPane(
     if local || connected.with_untracked(Option::is_some) {
         send.run(Command::Browse(Navigation::default()));
     }
+    let observed_refresh = StoredValue::new_local(0u64);
+    Effect::new(move |_| {
+        let Some(refresh) = refresh else {
+            return;
+        };
+        let generation = refresh.get();
+        if generation == observed_refresh.get_value()
+            || busy.get()
+            || locked.get()
+            || connected.get().is_none()
+        {
+            return;
+        }
+        observed_refresh.set_value(generation);
+        let mut nav = navigation.get_untracked();
+        nav.offset = 0;
+        nav.generation = None;
+        send.run(Command::Browse(nav));
+    });
     let connect = Callback::new(move |()| {
         let result = session.with_value(|session| session.connect(key.get_untracked()));
         key.set(String::new());

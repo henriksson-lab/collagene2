@@ -13,9 +13,19 @@ use std::{
 #[derive(Clone)]
 pub enum Database {
     Browser(web_sys::IdbDatabase),
-    Native(Rc<Mutex<Native>>),
+    Native {
+        state: Rc<Mutex<Native>>,
+        context: wire::library::LabContext,
+    },
 }
 impl Database {
+    pub fn native_context(&self) -> Option<wire::library::LabContext> {
+        match self {
+            Self::Browser(_) => None,
+            Self::Native { context, .. } => Some(context.clone()),
+        }
+    }
+
     pub fn close(&self) {
         if let Self::Browser(db) = self {
             db.close();
@@ -57,10 +67,13 @@ impl Transaction {
 pub async fn open() -> Result<Database, String> {
     if desktop_rpc::is_desktop() {
         match desktop_rpc::call(wire::Command::Bootstrap).await? {
-            wire::Success::Bootstrap(b) => Ok(Database::Native(Rc::new(Mutex::new(Native {
-                working: b.working.version,
-                preferences: b.preferences.version,
-            })))),
+            wire::Success::Bootstrap(b) => Ok(Database::Native {
+                state: Rc::new(Mutex::new(Native {
+                    working: b.working.version,
+                    preferences: b.preferences.version,
+                })),
+                context: b.library_context,
+            }),
             _ => Err("Unexpected local repository bootstrap".into()),
         }
     } else {
@@ -70,7 +83,7 @@ pub async fn open() -> Result<Database, String> {
 pub async fn load(db: &Database) -> Result<Option<Vec<u8>>, String> {
     match db {
         Database::Browser(db) => browser::load(db).await,
-        Database::Native(state) => {
+        Database::Native { state, .. } => {
             let mut state = state.lock().await;
             let meta = match desktop_rpc::call(wire::Command::WorkingMetadata).await? {
                 wire::Success::WorkingMetadata(m) => m,
@@ -100,7 +113,7 @@ pub async fn load(db: &Database) -> Result<Option<Vec<u8>>, String> {
 pub async fn load_previous(db: &Database) -> Result<Option<Vec<u8>>, String> {
     match db {
         Database::Browser(db) => browser::load_previous(db).await,
-        Database::Native(state) => {
+        Database::Native { state, .. } => {
             let state = state.lock().await;
             // Do not advance this window's write baseline when reading recovery.
             let meta = match desktop_rpc::call(wire::Command::WorkingMetadata).await? {
@@ -135,7 +148,7 @@ pub async fn save(
             guard()?;
             browser::save(db, bytes).await
         }
-        Database::Native(state) => {
+        Database::Native { state, .. } => {
             let mut state = state.lock().await;
             let archive = wire::library::Blob::new(bytes.to_vec()).map_err(|e| e.to_string())?;
             let request = desktop_rpc::request(wire::Command::SaveCurrent {
@@ -170,7 +183,7 @@ pub async fn replace_workspace_cancellable(
         Database::Browser(db) => {
             browser::replace_workspace_cancellable(db, current, previous, pending).await
         }
-        Database::Native(state) => {
+        Database::Native { state, .. } => {
             let mut request = desktop_rpc::request(wire::Command::ReplaceWorking {
                 expected_version: None,
                 current: wire::library::Blob::new(current.to_vec()).map_err(|e| e.to_string())?,
@@ -210,7 +223,7 @@ pub async fn replace_workspace_cancellable(
 pub async fn load_view_preferences(db: &Database) -> Result<Option<Vec<u8>>, String> {
     match db {
         Database::Browser(db) => browser::load_view_preferences(db).await,
-        Database::Native(state) => {
+        Database::Native { state, .. } => {
             let mut state = state.lock().await;
             match desktop_rpc::call(wire::Command::ReadPreferences).await? {
                 wire::Success::Preferences(p) => {
@@ -225,7 +238,7 @@ pub async fn load_view_preferences(db: &Database) -> Result<Option<Vec<u8>>, Str
 pub async fn save_view_preferences(db: &Database, bytes: &[u8]) -> Result<(), String> {
     match db {
         Database::Browser(db) => browser::save_view_preferences(db, bytes).await,
-        Database::Native(state) => {
+        Database::Native { state, .. } => {
             let mut state = state.lock().await;
             match desktop_rpc::call(wire::Command::SavePreferences {
                 expected_version: state.preferences.clone(),

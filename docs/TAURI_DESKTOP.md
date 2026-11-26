@@ -39,8 +39,13 @@ native dataset-storage adapter is added.
 The desktop program accepts only:
 
 ```text
-collagene-desktop [--storage-root DIRECTORY]
+collagene-desktop [--storage-root DIRECTORY] [--allow-loopback-http]
 ```
+
+Remote databases normally require HTTPS. The explicit per-launch
+`--allow-loopback-http` flag additionally permits literal loopback addresses for
+local development or SSH forwarding; DNS names and ordinary LAN HTTP still fail
+transport validation. This flag does not relax expected-lab or credential scoping.
 
 Without an override it uses the persistent configured root, or initializes a
 repository under the application's private app-data directory. The native host
@@ -116,3 +121,25 @@ rustc --edition 2024 --test crates/desktop/tests/assets_guard.rs -o /tmp/collage
 They exercise the actually referenced native main (including a streaming-buffer
 boundary), rejection of a marker found only in a worker/stale sibling, and exact
 Trunk bootstrap/preload agreement. They do not instantiate WASM or launch a GUI.
+
+
+## Native remote controls and independent saves
+
+The shell routes both DTQ working/catalog operations and DSQ remote controls
+through `collagene_rpc`, preserving the one approved main-window capability.
+Each namespace has its own bounded admission counter and frontend request lane.
+DSQ uses a separate native repository connection; HTTPS never holds the
+working-state host mutex or a working SQLite transaction. Intervening local
+catalog edits are checked by immutable-head and repository-checkpoint CAS.
+Cancellation/status still share the branded window operation registry.
+
+The desktop interface exposes a `Databases` accordion beside the local library.
+Remote keys may remain in session memory or be explicitly remembered in the
+OS vault; no key belongs in a plasmid, exported workspace or repository setting.
+Clone and pull update the local catalog. Users reopen those records to review
+them; sync never silently replaces the active working editor.
+
+Tauri 2.11.5 is pinned with its matching runtime 2.11.3/runtime-wry 2.11.4,
+macros/codegen 2.6.3 and utils 2.9.3 family. Newer runtime/macro releases selected
+by their broad transitive constraints currently use APIs absent from that exact
+facade version. Upgrade this cohort together and retain the lockfile.

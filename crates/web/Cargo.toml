@@ -10,6 +10,7 @@ collagene-core = { path = "../core" }
 collagene-view-layout = { path = "../view-layout" }
 collagene-map-label-layout = { path = "../map-label-layout" }
 collagene-sources = { path = "../sources" }
+collagene-desktop-sync-protocol = { path = "../desktop-sync-protocol" }
 collagene-desktop-protocol = { path = "../desktop-protocol" }
 collagene-library-protocol = { path = "../library-protocol" }
 collagene-library-sharing = { path = "../library-sharing" }

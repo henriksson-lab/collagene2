@@ -222,3 +222,67 @@ and private native archives:
 
 No GUI, browser, HTTP or application smoke checks are used. Source is formatted
 and frozen for the parent's focused native host/protocol checks.
+
+## Scoped external native jobs
+
+The same branded window authority and bounded operation registry can supervise a
+separate validated native protocol, such as DSQ synchronization, without sharing
+the local repository/working-file mutex:
+
+```rust,ignore
+match control.begin_job(&access, &operation_id, validated_frame_digest)? {
+    JobStart::Cached(checked_reply) => return Ok(checked_reply),
+    JobStart::Run(job) => {
+        // Reversible planning/validation may happen before acceptance.
+        // The service calls job.accept() at its indivisible acceptance boundary.
+        // It must retain durable pending/outcome state if remote effects are unknown.
+        let checked_secret_free_reply = run_with_gate(|| job.accept().is_ok())?;
+        job.finish(OperationState::Completed, &checked_secret_free_reply)?;
+    }
+}
+```
+
+`JobStart` and `ScopedJob` are exported native types, not wire authority. The
+caller must validate its protocol framing, pins and request first, and bind the
+supplied digest to the complete frame **including its protocol namespace**.
+A different frame under an already used operation ID cannot replace the original
+entry or cached reply. `ScopedJob` has no public constructor, Clone, Debug or
+serialization implementation. Its only authority is one existing branded
+window, operation ID and validated intent digest.
+
+`accept(&self)` linearizes with cancellation and window revocation under the
+registry lock and records acceptance. Repeated acceptance of the same guard is
+idempotent. Pre-accept cancellation/revocation prevents acceptance;
+`cancelled_before_acceptance()` lets a service discard an unaccepted proposal.
+After acceptance, a late cancellation/revocation cannot relabel a committed or
+possibly remote effect as rolled back. `accepted()` records that distinction.
+
+`finish(self, terminal_state, checked_secret_free_reply)` permits only Completed,
+Failed or pre-accept Cancelled. The caller has already checked its response
+protocol and excluded credentials; the generic registry does not parse DSQ or
+hold a password/URL/path service. An accepted job cannot finish as Cancelled.
+Dropping an unfinished guard terminalizes known pre-accept cancellation as
+Cancelled and other abandoned jobs as Failed. Failed after acceptance describes
+an unconfirmed outcome; it does not claim that an accepted effect was undone.
+Native durable receipts/outboxes remain authoritative across restart.
+
+The registry stays bounded to the existing 2,048 entries and 4 MiB total cached
+reply bytes; only replies up to 32 KiB are cached. Oversized checked replies still
+get a terminal state but no retained data copy. Completed records can be evicted,
+so this in-memory facility does not replace durable mutation receipts. Revoked
+terminal records and unseen cancellation tombstones are discarded; in-flight
+accepted records remain until their owner completes, then normal eviction can
+reclaim them. DTQ Cancel/OperationStatus addresses DTQ and DSQ jobs uniformly,
+within the same window scope.
+
+The shell uses separate ordinary local-DTQ and remote-DSQ admission lanes. A slow
+remote request must not prevent separate `working.sqlite` autosaves. The external
+service owns a separate Repository connection; SQL revision/checkpoint CAS still
+rejects intervening edits rather than permitting stale catalog overwrites. No
+additional frontend command, filesystem grant or OS-vault access follows from
+this job guard.
+
+Focused native unit fixtures exercise cross-protocol cancellation, pre-accept
+revocation, post-accept cancellation/revocation, foreign-window denial,
+changed-intent replay protection, abandoned guards and the existing cache bounds.
+They need no HTTP, GUI, browser or live vault.

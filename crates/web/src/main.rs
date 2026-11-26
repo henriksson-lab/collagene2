@@ -252,6 +252,8 @@ mod compare;
 #[cfg(target_arch = "wasm32")]
 mod desktop_rpc;
 #[cfg(target_arch = "wasm32")]
+mod desktop_sync_client;
+#[cfg(target_arch = "wasm32")]
 mod editors;
 #[cfg(target_arch = "wasm32")]
 mod gel;
@@ -307,6 +309,8 @@ mod primer_reference_capture_view;
 mod primers;
 #[cfg(target_arch = "wasm32")]
 mod recombination;
+#[cfg(target_arch = "wasm32")]
+mod remote_library_view;
 #[cfg(target_arch = "wasm32")]
 mod renderer;
 #[cfg(target_arch = "wasm32")]

@@ -1402,6 +1402,7 @@ pub fn App() -> impl IntoView {
     });
 
     let db = StoredValue::new_local(None::<crate::storage::Database>);
+    let native_library_context = RwSignal::new(None::<collagene_library_protocol::LabContext>);
     let loaded = RwSignal::new(false);
     let save_status = RwSignal::new("Opening local storage…".to_string());
     let save_generation = RwSignal::new(0u64);
@@ -1897,6 +1898,32 @@ pub fn App() -> impl IntoView {
     let library_bindings = Memo::new(move |_| {
         attachments.with(|assets| crate::library_documents::bindings(assets).unwrap_or_default())
     });
+    let native_catalog_refresh = RwSignal::new(0u64);
+    let native_destination = RwSignal::new(None::<collagene_library_protocol::FolderId>);
+    let native_destination_memo = Memo::new(move |_| native_destination.get());
+    let native_folder_changed = Callback::new(move |folder| native_destination.set(folder));
+    let native_catalog_changed = Callback::new(move |()| {
+        native_catalog_refresh.update(|generation| *generation = generation.wrapping_add(1));
+    });
+    let native_saved = Memo::new(move |_| {
+        let _ = loaded.get();
+        let _ = native_catalog_refresh.get();
+        let context = native_library_context.get()?;
+        let current = library_current.get()?;
+        let remote = crate::library_bindings::Remote {
+            server: "collagene-desktop://local".into(),
+            lab: context.lab_id,
+        };
+        let binding =
+            library_bindings.with(|bindings| bindings.get(&remote, &current.id).cloned())?;
+        Some(crate::remote_library_view::SavedLocalDocument {
+            id: binding.remote_document,
+            revision: binding.remote_revision,
+            name: current.name,
+            dirty: binding.local_revision != current.revision
+                || binding.local_head_event != current.head_event,
+        })
+    });
     let library_snapshot = Callback::new(move |()| {
         documents.with_untracked(|docs| {
             workspace_snapshot(
@@ -2120,6 +2147,7 @@ pub fn App() -> impl IntoView {
     spawn_local(async move {
         match storage::open().await {
             Ok(database) => {
+                native_library_context.set(database.native_context());
                 db.set_value(Some(database.clone()));
                 match storage::load(&database).await {
                     Ok(Some(bytes)) => {
@@ -5829,7 +5857,7 @@ pub fn App() -> impl IntoView {
                                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/></svg>
                             </button>
                         </nav>
-                        <div class="explorer-frame" id="document-explorer-pane"><Show when=crate::library_view::enabled><crate::library_view::LibraryPane client=crate::library_client::browser() current=library_current bindings=library_bindings capture=library_capture on_open=library_open on_binding=library_record_binding locked=explorer_locked/></Show><crate::document_explorer::DocumentExplorer documents=explorer_documents active_document=explorer_active locked=explorer_locked on_activate=explorer_activate on_open=Callback::new(move|()|if let Some(input)=file_input.get(){input.click();})/><Show when=move||!hidden_products.with(|ids|ids.is_empty())><label class="preparation-visibility"><input type="checkbox" prop:checked=move||show_prepared_history.get() on:change=move|e|show_prepared_history.set(event_target::<HtmlInputElement>(&e).checked())/>{move||format!("Show preparation history ({})",hidden_products.with(|ids|ids.len()))}</label></Show><crate::workspace_layout::PaneResize layout=layout pane=crate::workspace_layout::Pane::Documents/></div>
+                        <div class="explorer-frame" id="document-explorer-pane"><Show when=crate::library_view::enabled><crate::library_view::LibraryPane client=crate::library_client::browser() current=library_current bindings=library_bindings capture=library_capture on_open=library_open on_binding=library_record_binding locked=explorer_locked refresh=native_catalog_refresh on_folder=native_folder_changed/></Show><Show when=crate::desktop_rpc::is_desktop><crate::remote_library_view::RemoteLibraryPane client=crate::desktop_rpc::sync_client() native=true saved=native_saved destination=native_destination_memo locked=explorer_locked on_local_change=native_catalog_changed/></Show><crate::document_explorer::DocumentExplorer documents=explorer_documents active_document=explorer_active locked=explorer_locked on_activate=explorer_activate on_open=Callback::new(move|()|if let Some(input)=file_input.get(){input.click();})/><Show when=move||!hidden_products.with(|ids|ids.is_empty())><label class="preparation-visibility"><input type="checkbox" prop:checked=move||show_prepared_history.get() on:change=move|e|show_prepared_history.set(event_target::<HtmlInputElement>(&e).checked())/>{move||format!("Show preparation history ({})",hidden_products.with(|ids|ids.len()))}</label></Show><crate::workspace_layout::PaneResize layout=layout pane=crate::workspace_layout::Pane::Documents/></div>
                         <main>
                             <crate::document_explorer::DocumentTabs documents=tab_items active_document=explorer_active locked=explorer_locked on_activate=explorer_activate on_close=close_document_tab/>
                             <Show when=move||!has_open_document.get()><section class="empty-document-view" id="no-open-documents" tabindex="-1" aria-label="No open documents"><h2>"No documents open"</h2><p>"Choose a sequence from Documents, or import a file. Closing a tab keeps its document and history in the workspace."</p><div class="empty-document-actions"><button class="button primary" disabled=move||workspace_restoring.get() on:click=move|_|if let Some(input)=file_input.get(){input.click();}>"Open sequence…"</button><button class="button secondary" disabled=move||workspace_restoring.get() on:click=move|_|{modal_error.set(String::new());modal.set("url");}>"Import from URL…"</button></div></section></Show>

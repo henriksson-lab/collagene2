@@ -1,0 +1,142 @@
+name: Desktop build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "Trunk.toml"
+      - "crates/**"
+      - ".github/workflows/desktop.yml"
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "Trunk.toml"
+      - "crates/**"
+      - ".github/workflows/desktop.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_BUILD_JOBS: "2"
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+  NO_COLOR: "true"
+
+jobs:
+  frontend:
+    name: Fresh offline desktop frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: desktop-frontend
+      - name: Install pinned prebuilt frontend tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: trunk@0.21.14,wasm-bindgen-cli@0.2.128
+          fallback: none
+          checksum: true
+      # The post-build hook is cargo --offline. Populate locked metadata for
+      # every target before running it, and compile its native helper once.
+      - run: cargo fetch --locked
+      - run: cargo build --locked -p collagene-web-assets
+      - name: Build current main frontend and current worker
+        run: |
+          rm -rf dist
+          trunk build --locked true --offline true --skip-version-check
+      - name: Bound the fresh artifact before uploading
+        shell: python
+        run: |
+          from pathlib import Path
+          import stat
+          root = Path("dist")
+          if not (root / "index.html").is_file():
+              raise SystemExit("missing frontend index")
+          count = total = 0
+          for path in root.rglob("*"):
+              info = path.lstat()
+              if stat.S_ISLNK(info.st_mode):
+                  raise SystemExit("frontend symlinks forbidden")
+              if len(path.relative_to(root).parts) > 16:
+                  raise SystemExit("frontend depth limit")
+              if stat.S_ISREG(info.st_mode):
+                  count += 1
+                  total += info.st_size
+                  if info.st_size > 128 * 1024 * 1024:
+                      raise SystemExit("frontend file exceeds 128 MiB")
+              elif not stat.S_ISDIR(info.st_mode):
+                  raise SystemExit("frontend special files forbidden")
+          if count > 512 or total > 256 * 1024 * 1024:
+              raise SystemExit("frontend artifact exceeds snapshot limits")
+          workers = root / "workers"
+          if not workers.is_dir() or len(list(workers.iterdir())) != 1:
+              raise SystemExit("expected exactly one current worker bundle")
+          print(f"Fresh frontend: {count} files, {total} bytes")
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-frontend-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  native:
+    name: Desktop / ${{ matrix.os }}
+    needs: frontend
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            executable: collagene-desktop
+          - os: windows-latest
+            executable: collagene-desktop.exe
+          - os: macos-latest
+            executable: collagene-desktop
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: desktop-native
+      - name: Install Linux native WebView SDK prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev \
+            librsvg2-dev pkg-config
+      - uses: actions/download-artifact@v8
+        with:
+          name: desktop-frontend-${{ github.sha }}
+          path: dist
+      # build.rs checks the actual referenced main WASM for its native bridge,
+      # confined snapshot bounds, and absence of historical worker bundles.
+      - run: cargo build --locked -p collagene-desktop
+      - name: Retain native build output for inspection
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-native-${{ matrix.os }}-${{ github.sha }}
+          path: target/debug/${{ matrix.executable }}
+          if-no-files-found: error
+          retention-days: 7

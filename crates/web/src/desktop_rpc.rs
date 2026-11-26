@@ -5,6 +5,8 @@ use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 thread_local! { static NEXT: Cell<u64> = const { Cell::new(0) }; }
 thread_local! {
+    static SYNC_LANE: std::rc::Rc<futures_util::lock::Mutex<()>> =
+        std::rc::Rc::new(futures_util::lock::Mutex::new(()));
     static LANE: std::rc::Rc<futures_util::lock::Mutex<()>> =
         std::rc::Rc::new(futures_util::lock::Mutex::new(()));
 }
@@ -84,9 +86,9 @@ pub async fn dispatch_guarded(
     request: &wire::RequestEnvelope,
     guard: impl Fn() -> Result<(), String>,
 ) -> Result<wire::Outcome, String> {
-    // All native catalog, working-file and preference operations share the
-    // host's single admission lane. Cancellation must bypass it so a pending
-    // replacement can be stopped while another request occupies the host.
+    // Local catalog, working-file and preference operations serialize. Remote
+    // HTTP sync uses a separate lane so it cannot delay local autosaves.
+    // Cancellation bypasses both lanes.
     let lane = LANE.with(Clone::clone);
     let _guard = if matches!(
         request.command,
@@ -98,30 +100,61 @@ pub async fn dispatch_guarded(
     };
     guard()?;
     let bytes = wire::encode_request(request).map_err(|e| e.to_string())?;
+    let bytes = invoke_frame(&bytes, wire::HEADER_BYTES + wire::MAX_RESPONSE_BYTES).await?;
+    Ok(wire::decode_response_for(&bytes, request)
+        .map_err(|e| e.to_string())?
+        .outcome)
+}
+async fn invoke_frame(bytes: &[u8], response_limit: usize) -> Result<Vec<u8>, String> {
     let (core, function) = invoke()?;
     let promise = function
         .call2(
             &core,
             &"collagene_rpc".into(),
-            &js_sys::Uint8Array::from(bytes.as_slice()),
+            &js_sys::Uint8Array::from(bytes),
         )
         .map_err(|_| "Cannot dispatch desktop operation")?
         .dyn_into::<js_sys::Promise>()
         .map_err(|_| "Desktop IPC did not return a promise")?;
-    let result = JsFuture::from(promise)
-        .await
-        .map_err(|_| "The local repository reply was interrupted. Preserve unsaved changes before reloading.")?;
+    let result = JsFuture::from(promise).await.map_err(|_| "The local repository reply was interrupted. Preserve unsaved changes before reloading.")?;
     if !result.is_instance_of::<js_sys::ArrayBuffer>() {
         return Err("Desktop IPC did not return binary data".into());
     }
     let bytes = js_sys::Uint8Array::new(&result);
-    if bytes.length() as usize > wire::HEADER_BYTES + wire::MAX_RESPONSE_BYTES {
+    if bytes.length() as usize > response_limit {
         return Err("Desktop response exceeds its limit".into());
     }
-    Ok(wire::decode_response_for(&bytes.to_vec(), request)
-        .map_err(|e| e.to_string())?
-        .outcome)
+    Ok(bytes.to_vec())
 }
+/// Metadata-only remote operations have their own bounded native lane. They can
+/// wait for HTTPS while local working-file and catalog operations keep running.
+pub fn sync_client() -> crate::desktop_sync_client::Client {
+    use collagene_desktop_sync_protocol as sync;
+    crate::desktop_sync_client::Client::new(
+        std::rc::Rc::new(|command| {
+            let pin = request(wire::Command::Bootstrap)?;
+            Ok(sync::RequestEnvelope {
+                request_id: pin.request_id,
+                operation_id: pin.operation_id,
+                command,
+            })
+        }),
+        std::rc::Rc::new(|bytes| {
+            Box::pin(async move {
+                if !is_desktop()
+                    || bytes.len() > sync::MAX_REQUEST_BYTES
+                    || bytes.get(..4) != Some(b"DSQ\0".as_slice())
+                {
+                    return Err("Invalid native database request".into());
+                }
+                let lane = SYNC_LANE.with(Clone::clone);
+                let _guard = lane.lock().await;
+                invoke_frame(&bytes, sync::MAX_RESPONSE_BYTES).await
+            })
+        }),
+    )
+}
+
 pub async fn call(command: wire::Command) -> Result<wire::Success, String> {
     match dispatch(&request(command)?).await? {
         wire::Outcome::Success(success) => Ok(success),

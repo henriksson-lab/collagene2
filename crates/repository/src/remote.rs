@@ -145,8 +145,34 @@ impl Repository {
     /// Queue immutable publication bytes before touching the transport. Private
     /// unrelated documents, local UI and repository checkpoints are not sent.
     pub fn queue_push(&mut self, id: &store::DocumentId, remote_id: &str) -> Result<String> {
+        self.queue_push_inner(id, remote_id, None)
+    }
+    /// Bind a native UI push to the saved local head it actually displayed.
+    /// The service captures its checkpoint internally; clients supply no authority.
+    pub fn queue_push_pinned(
+        &mut self,
+        id: &store::DocumentId,
+        expected_local: &store::RevisionId,
+        remote_id: &str,
+        expected_checkpoint: &Option<store::Digest>,
+    ) -> Result<String> {
+        self.reload()?;
+        if &self.checkpoint != expected_checkpoint {
+            return Err(Error::Stale);
+        }
+        self.queue_push_inner(id, remote_id, Some(expected_local))
+    }
+    fn queue_push_inner(
+        &mut self,
+        id: &store::DocumentId,
+        remote_id: &str,
+        expected_local: Option<&store::RevisionId>,
+    ) -> Result<String> {
         let remote = self.remote(remote_id)?;
         let doc = self.db.document(&self.access, id)?;
+        if expected_local.is_some_and(|expected| expected != &doc.head.id) {
+            return Err(Error::Stale);
+        }
         let payload = self.db.payload(&self.access, id, &doc.head.id)?;
         let (payload, native) = publish(payload)?;
         let operation = if let Some(binding) = self.document_binding(id, remote_id) {
@@ -605,6 +631,33 @@ impl Repository {
         options: &ImportOptions,
         transport: &mut T,
     ) -> Result<store::Document> {
+        self.pull_inner(id, remote_id, options, transport, None)
+    }
+    /// Check the displayed saved head before any remote request. A later local
+    /// mutation is still rejected by the existing immutable-head/checkpoint CAS.
+    pub fn pull_pinned<T: RemoteTransport>(
+        &mut self,
+        id: &store::DocumentId,
+        expected_local: &store::RevisionId,
+        remote_id: &str,
+        options: &ImportOptions,
+        transport: &mut T,
+        expected_checkpoint: &Option<store::Digest>,
+    ) -> Result<store::Document> {
+        self.reload()?;
+        if &self.checkpoint != expected_checkpoint {
+            return Err(Error::Stale);
+        }
+        self.pull_inner(id, remote_id, options, transport, Some(expected_local))
+    }
+    fn pull_inner<T: RemoteTransport>(
+        &mut self,
+        id: &store::DocumentId,
+        remote_id: &str,
+        options: &ImportOptions,
+        transport: &mut T,
+        expected_local: Option<&store::RevisionId>,
+    ) -> Result<store::Document> {
         if self.busy(&Target::Document(id.as_str().into()), remote_id) {
             return Err(Error::Pending);
         }
@@ -614,6 +667,9 @@ impl Repository {
             .cloned()
             .ok_or(Error::Invalid("unbound document"))?;
         let current = self.db.document(&self.access, id)?;
+        if expected_local.is_some_and(|expected| expected != &current.head.id) {
+            return Err(Error::Stale);
+        }
         let local = self.db.payload(&self.access, id, &current.head.id)?;
         let (remote_doc, incoming) = self.remote_document(&remote, binding.remote.id, transport)?;
         let incoming = stored_payload(incoming)?;

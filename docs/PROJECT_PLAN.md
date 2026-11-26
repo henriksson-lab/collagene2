@@ -2734,3 +2734,41 @@ Three native host unit cases also pass, including real transaction rollback and
 committed-result handling after window revocation. Tauri packaging and a fresh
 native-capable frontend publication remain in progress. No application HTTP/browser
 checks were run.
+
+
+### Native sync controls and OS credential adapter checkpoint — 26 November 2026
+
+Native UI now contains a `Databases` accordion with configured database selection,
+scoped session/remembered credentials, remote folder/search/history views, clone,
+explicit saved-head push/pull, retained pending uploads and bounded tree-copy
+steps. Clone/pull update the local catalog and refresh it; they do not replace the
+working editor. Push/pull pin the displayed saved library revision. Unsaved working
+edits require a local save first, and divergent pulls retain full branch bookmarks.
+The native UI passes its WASM compiler check.
+
+DSQ/DSR metadata-only IPC uses the same approved Tauri command and window
+capability as DTQ, with separate request/admission lanes. Remote HTTPS operates
+on a separate repository connection and never holds the working-state host mutex.
+Local autosaves therefore keep running while remote requests wait. Shared scoped
+job guards preserve accepted outcomes across cancellation and window revocation.
+
+The real credential adapter supports Windows credentials, macOS Keychain and an
+existing local Linux Secret Service. Keys remain in session memory or the native
+vault, outside biological archives and repository configuration. Vaults are lazy;
+startup/local work needs neither a vault nor a server. Tests use an injected vault
+and native in-process library/sync routes; no live user vault was read or written.
+The integrated Linux Tauri/compiler check passes with a coherent SDK cohort.
+
+Eighty focused native integration cases and fifteen native unit cases pass. A
+retained rejection summary previously attempted to validate as a fresh server
+response without lab context; the fix validates the summary's exact fields and
+conflict record, preserving full live-response/context checks. A dedicated
+regression fixture covers this distinction. The published977ecbf checkpoint's
+Windows/macOS/Linux and web jobs all pass after fixing a Windows test temporary-
+folder collision; concurrency assertions remain unchanged.
+
+Desktop build CI now produces a fresh current-worker frontend once, then reuses
+that artifact to build Windows/macOS/Linux binaries independently. It performs no
+GUI, browser, live-vault or application HTTP checks. Full native packaging, actual
+installation/GUI/vault acceptance, embedded MCP/import-host integration and other
+remaining project milestones are still required. The full objective remains active.

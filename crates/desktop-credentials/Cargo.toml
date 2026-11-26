@@ -1,0 +1,27 @@
+[package]
+name = "collagene-desktop-credentials"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.88"
+description = "Scoped native OS-vault credentials for Collagene remote transport"
+
+
+[dependencies]
+collagene-repository = { path = "../repository" }
+collagene-library-protocol = { path = "../library-protocol" }
+blake3 = { version = "1", default-features = false, features = ["pure", "std"] }
+url = "=2.5.8"
+zeroize = "1.9"
+thiserror = "2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = { version = "=5.19.0", default-features = false, features = ["async-io", "blocking-api"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "=3.7.0"
+security-framework-sys = "=2.17.0"
+core-foundation = "=0.10.1"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security_Credentials"] }

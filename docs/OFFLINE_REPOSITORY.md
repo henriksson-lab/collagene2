@@ -8,8 +8,8 @@ remote service for cloning analysis. Tauri IPC, asynchronous UI orchestration an
 OS credential-store integration are separate adapters.
 
 The repository is registered in the native workspace and used by the desktop
-host. The Tauri shell remains a separate packaging integration until its fresh
-frontend and native build are verified.
+host. The Tauri shell and native remote-control service use separate repository
+connections, keeping slow remote requests independent from editor recovery saves.
 See [reliable mutations](LIBRARY_RELIABLE_MUTATIONS.md),
 [sync protocol](LIBRARY_SYNC_PROTOCOL.md), and
 [native closure import](LAB_LIBRARY_IMPORT.md) for their separate contracts.
@@ -278,3 +278,18 @@ header pins on both channels and a mismatched sync lab pin rejected before
 credential access, and bounded unknown/lying/truncated body lengths and expired
 deadlines. They perform **no
 real HTTP request, listener, DNS, TLS handshake or browser smoke check**.
+
+
+## Saved-head guards for native controls
+
+`local_context` reads the owned database identity; it does not grant authority to
+a message. `checkpoint_version` is an internal service snapshot pin. Token-free
+`outbox_metadata` exposes IDs, saved source revisions, attempted status and durable
+rejections without exposing upload frames or archive bytes.
+
+`queue_push_pinned` and `pull_pinned` check the saved library revision displayed
+by the native UI before selecting source payloads or starting remote requests.
+The native service captures the checkpoint itself. Helpers reload and check that
+internal checkpoint, then retain the existing transaction/CAS checks so a writer
+that intervenes during network I/O cannot overwrite newer local work. No global
+checkpoint is required from the frontend for ordinary reads.

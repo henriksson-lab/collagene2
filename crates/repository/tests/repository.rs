@@ -713,3 +713,122 @@ fn explicit_snapshot_pull_bookmarks_eventless_private_body_without_inventing_anc
     );
     assert!(current.selection.is_none());
 }
+
+struct NoNetwork {
+    calls: usize,
+}
+impl RemoteTransport for NoNetwork {
+    fn exchange(
+        &mut self,
+        _: &RemoteConfig,
+        _: Channel,
+        _: &[u8],
+    ) -> Result<Vec<u8>, TransportError> {
+        self.calls += 1;
+        Err(TransportError::Unavailable)
+    }
+}
+
+#[test]
+fn native_saved_head_guards_precede_network_and_outbox_views_survive_restart() {
+    let disk = Disk::new();
+    let mut repo = Repository::open(&disk.0).unwrap();
+    let context = repo.local_context().unwrap();
+    let mut remote = NativeRemote::new();
+    let config = remote.config(&mut repo);
+    let mut frame = base();
+    let original = import(&mut repo, &frame, "Guarded plasmid", None);
+    let checkpoint = repo.checkpoint_version();
+    let first = repo
+        .queue_push_pinned(&original.id, &original.head.id, &config.id, &checkpoint)
+        .unwrap();
+    assert!(matches!(
+        repo.resume_push(&first, &mut remote).unwrap(),
+        SyncResult::Applied(_)
+    ));
+    edit(&mut frame, "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCAGG");
+    let current = save(&mut repo, &original, &frame);
+    let checkpoint = repo.checkpoint_version();
+    assert!(matches!(
+        repo.queue_push_pinned(&current.id, &original.head.id, &config.id, &checkpoint),
+        Err(repository::Error::Stale)
+    ));
+    let mut network = NoNetwork { calls: 0 };
+    assert!(matches!(
+        repo.pull_pinned(
+            &current.id,
+            &original.head.id,
+            &config.id,
+            &ImportOptions::default(),
+            &mut network,
+            &checkpoint,
+        ),
+        Err(repository::Error::Stale)
+    ));
+    assert_eq!(network.calls, 0);
+    assert!(repo.outbox_metadata().unwrap().is_empty());
+    let job = repo
+        .queue_push_pinned(&current.id, &current.head.id, &config.id, &checkpoint)
+        .unwrap();
+    let pending = repo.outbox_metadata().unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].id, job);
+    assert_eq!(pending[0].remote_id, config.id);
+    assert_eq!(pending[0].local_revision.as_ref(), Some(&current.head.id));
+    assert!(
+        matches!(&pending[0].target, repository::OutboxTarget::Document(id) if id == &current.id)
+    );
+    assert!(!pending[0].attempted);
+    assert!(pending[0].rejection.is_none());
+    assert!(repo.resume_push(&job, &mut network).is_err());
+    assert!(network.calls > 0);
+    drop(repo);
+    let reopened = Repository::open(&disk.0).unwrap();
+    assert_eq!(reopened.local_context().unwrap(), context);
+    assert_eq!(
+        reopened.document(&current.id).unwrap().head.id,
+        current.head.id
+    );
+    let pending = reopened.outbox_metadata().unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].id, job);
+    assert!(pending[0].attempted);
+    assert_eq!(pending[0].local_revision.as_ref(), Some(&current.head.id));
+}
+
+#[test]
+fn native_internal_checkpoint_rejects_intervening_writer_without_changing_displayed_head() {
+    let disk = Disk::new();
+    let mut repo = Repository::open(&disk.0).unwrap();
+    let remote = NativeRemote::new();
+    let config = remote.config(&mut repo);
+    let document = import(&mut repo, &base(), "Original label", None);
+    let checkpoint = repo.checkpoint_version();
+    let mut writer = Repository::open(&disk.0).unwrap();
+    writer
+        .mutate_local(durable::MutationOperation::RenameDocument {
+            id: document.id.clone(),
+            expected_generation: document.generation,
+            name: "Renamed in another window".into(),
+        })
+        .unwrap();
+    assert!(matches!(
+        repo.queue_push_pinned(&document.id, &document.head.id, &config.id, &checkpoint),
+        Err(repository::Error::Stale)
+    ));
+    assert!(repo.outbox_metadata().unwrap().is_empty());
+    assert_eq!(
+        repo.document(&document.id).unwrap().head.id,
+        document.head.id
+    );
+    let refreshed_checkpoint = repo.checkpoint_version();
+    assert_ne!(checkpoint, refreshed_checkpoint);
+    repo.queue_push_pinned(
+        &document.id,
+        &document.head.id,
+        &config.id,
+        &refreshed_checkpoint,
+    )
+    .unwrap();
+    assert_eq!(repo.outbox_metadata().unwrap().len(), 1);
+}

@@ -143,6 +143,23 @@ struct State {
     #[serde(default)]
     snapshot_bookmarks: Vec<SnapshotBookmark>,
 }
+/// Token-free native outbox projection. Frames, archive bytes and credentials
+/// remain private implementation details and are never exposed by this view.
+#[derive(Debug, Clone)]
+pub enum OutboxTarget {
+    Document(store::DocumentId),
+    Folder(store::FolderId),
+    DeletedFolder(store::FolderId),
+}
+#[derive(Debug, Clone)]
+pub struct OutboxMetadata {
+    pub id: String,
+    pub remote_id: String,
+    pub target: OutboxTarget,
+    pub local_revision: Option<store::RevisionId>,
+    pub attempted: bool,
+    pub rejection: Option<sync::Receipt>,
+}
 pub struct Repository {
     db: store::Library,
     access: store::LabAccess,
@@ -521,6 +538,45 @@ impl Repository {
         next.remotes.insert(id, remote.clone());
         self.commit(next, vec![])?;
         Ok(remote)
+    }
+    /// Context is obtained from the owned native database, never from IPC data.
+    pub fn local_context(&self) -> Result<wire::LabContext> {
+        let lab = self.db.lab(&self.access)?;
+        Ok(wire::LabContext {
+            lab_id: wire::LabId::new(lab.id.as_str())
+                .map_err(|_| Error::Invalid("local context"))?,
+            name: wire::Text::new(lab.name).map_err(|_| Error::Invalid("local context"))?,
+        })
+    }
+    /// Internal read/write snapshot pin for a trusted native service. This is
+    /// synchronization metadata, not a credential or biological document hash.
+    pub fn checkpoint_version(&self) -> Option<store::Digest> {
+        self.checkpoint.clone()
+    }
+    pub fn outbox_metadata(&self) -> Result<Vec<OutboxMetadata>> {
+        self.state
+            .pending
+            .values()
+            .map(|pending| {
+                let target = match &pending.target {
+                    Target::Document(id) => {
+                        OutboxTarget::Document(store::DocumentId::parse(id.clone())?)
+                    }
+                    Target::Folder(id) => OutboxTarget::Folder(store::FolderId::parse(id.clone())?),
+                    Target::DeleteFolder(id) => {
+                        OutboxTarget::DeletedFolder(store::FolderId::parse(id.clone())?)
+                    }
+                };
+                Ok(OutboxMetadata {
+                    id: pending.id.as_str().into(),
+                    remote_id: pending.remote.id.clone(),
+                    target,
+                    local_revision: pending.local_revision.clone(),
+                    attempted: pending.attempted,
+                    rejection: pending.rejection.clone(),
+                })
+            })
+            .collect()
     }
     pub fn remotes(&self) -> impl Iterator<Item = &RemoteConfig> {
         self.state.remotes.values()

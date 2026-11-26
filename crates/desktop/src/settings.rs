@@ -15,14 +15,32 @@ struct Settings {
 }
 
 pub fn command_line() -> Result<Option<PathBuf>> {
-    let args = std::env::args_os().skip(1).collect::<Vec<_>>();
+    let mut args = std::env::args_os().skip(1).collect::<Vec<_>>();
+    if args
+        .iter()
+        .filter(|arg| *arg == "--allow-loopback-http")
+        .count()
+        > 1
+    {
+        return Err("Loopback HTTP may be enabled only once".into());
+    }
+    args.retain(|arg| arg != "--allow-loopback-http");
     match args.as_slice() {
         [] => Ok(None),
         [option, path] if option == "--storage-root" && !path.is_empty() => {
             Ok(Some(PathBuf::from(path)))
         }
-        _ => Err("Usage: collagene-desktop [--storage-root DIRECTORY]".into()),
+        _ => Err(
+            "Usage: collagene-desktop [--storage-root DIRECTORY] [--allow-loopback-http]".into(),
+        ),
     }
+}
+/// Explicit per-launch permission for literal loopback HTTP development hosts.
+/// Ordinary remote hosts always require HTTPS in HttpRemoteTransport.
+pub fn allow_loopback_http() -> bool {
+    std::env::args_os()
+        .skip(1)
+        .any(|arg| arg == "--allow-loopback-http")
 }
 pub fn select(
     config_dir: &Path,

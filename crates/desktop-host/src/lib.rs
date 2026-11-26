@@ -7,10 +7,10 @@ mod library;
 mod permissions;
 mod working;
 use collagene_desktop_protocol as wire;
-pub use collagene_desktop_protocol::{MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES};
+pub use collagene_desktop_protocol::{MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES, OperationState};
 use collagene_lab_library as store;
 use collagene_library_protocol as base;
-pub use control::{HostControl, WindowAccess};
+pub use control::{HostControl, JobStart, ScopedJob, WindowAccess};
 use serde::{Serialize, de::DeserializeOwned};
 use std::{
     io::Write,
@@ -135,6 +135,12 @@ impl DesktopHost {
     }
     pub fn authorize_window(&mut self) -> HostResult<WindowAccess> {
         self.control.authorize()
+    }
+    /// A second trusted native connection permits remote I/O to proceed without
+    /// owning the working-file host mutex. IPC cannot choose this fixed path.
+    pub fn open_repository_connection(&self) -> HostResult<collagene_repository::Repository> {
+        collagene_repository::Repository::open(self._root.join("repository.sqlite"))
+            .map_err(|_| HostError::Unavailable)
     }
     pub fn control(&self) -> HostControl {
         self.control.clone()

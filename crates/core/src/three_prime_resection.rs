@@ -139,3 +139,80 @@ pub fn replay(source: &Duplex, cuts: &Cuts, report: &Report) -> Result<(), Error
     }
     Ok(())
 }
+
+impl Report {
+    /// Bounded internal documentary correspondence only. This neither resolves
+    /// an original source nor reconstructs private material from imported data.
+    pub fn validate_documentary(&self) -> Result<(), Error> {
+        let p = &self.product;
+        if self.engine_version != ENGINE_VERSION
+            || self.source_geometry_revision.len() != 64
+            || !self
+                .source_geometry_revision
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
+            return Err(bad("report engine/source geometry identity"));
+        }
+        let top = p
+            .top
+            .len()
+            .checked_add(self.cuts.right)
+            .ok_or(Error::TooLarge)?;
+        let bottom = p
+            .bottom
+            .len()
+            .checked_add(self.cuts.left)
+            .ok_or(Error::TooLarge)?;
+        if top.checked_add(bottom).is_none_or(|n| n > MAX_SOURCE_BASES)
+            || self.warnings.len() > 1000
+            || self.warnings.iter().any(|s| s.len() > 4096)
+        {
+            return Err(Error::TooLarge);
+        }
+        if p.topology != Topology::Linear
+            || !p.nicks.is_empty()
+            || (self.cuts.left > 0 && p.left.three_prime != ThreePrime::Hydroxyl)
+            || (self.cuts.right > 0 && p.right.three_prime != ThreePrime::Hydroxyl)
+        {
+            return Err(bad("documentary product topology/nick/end-group mismatch"));
+        }
+        p.validate()?;
+        if self.mappings.len() != 2
+            || self.removed.len()
+                != usize::from(self.cuts.right > 0) + usize::from(self.cuts.left > 0)
+        {
+            return Err(bad("copy/removal mapping count differs"));
+        }
+        for (i, (strand, end)) in [(Strand::Top, p.top.len()), (Strand::Bottom, p.bottom.len())]
+            .into_iter()
+            .enumerate()
+        {
+            let m = &self.mappings[i];
+            if m.source_strand != strand
+                || m.product_strand != strand
+                || m.source_start != 0
+                || m.source_end != end
+                || m.product_start != 0
+                || m.product_end != end
+                || m.reverse
+                || m.synthesized
+            {
+                return Err(bad("report claims non-copy strand ancestry"));
+            }
+        }
+        let expected = [
+            (Strand::Top, p.top.len(), top),
+            (Strand::Bottom, p.bottom.len(), bottom),
+        ]
+        .into_iter()
+        .filter(|(_, a, b)| a < b)
+        .map(|(strand, start, end)| Removed { strand, start, end })
+        .collect::<Vec<_>>();
+        if self.removed != expected {
+            return Err(bad("removed spans differ from explicit cuts"));
+        }
+        revision(self)?;
+        Ok(())
+    }
+}

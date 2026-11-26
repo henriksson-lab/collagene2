@@ -713,6 +713,94 @@ impl HomologyForm {
         Ok(policy)
     }
 }
+/// Editable explicit 3′ cuts. No gap-fill, nick-seal or host-rescue assumption.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnnealingForm {
+    pub enabled: bool,
+    pub cuts: String,
+    pub min_paired_bases: String,
+    pub max_comparisons: String,
+    pub max_candidates: String,
+}
+impl Default for AnnealingForm {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            cuts: String::new(),
+            min_paired_bases: "12".into(),
+            max_comparisons: "20000000".into(),
+            max_candidates: "100".into(),
+        }
+    }
+}
+impl AnnealingForm {
+    pub(crate) fn validate_raw(&self) -> Result<(), String> {
+        if self.cuts.len() > 1024
+            || [
+                &self.min_paired_bases,
+                &self.max_comparisons,
+                &self.max_candidates,
+            ]
+            .iter()
+            .any(|s| s.len() > 20)
+        {
+            return Err("3′ annealing settings exceed their editable field bounds.".into());
+        }
+        Ok(())
+    }
+    pub(crate) fn policy(
+        &self,
+        overlaps: Vec<usize>,
+        circular: bool,
+        rows: usize,
+    ) -> Result<collagene_core::homology_annealing::Options, String> {
+        use collagene_core::{Topology, homology_annealing::Options, three_prime_resection::Cuts};
+        self.validate_raw()?;
+        if rows == 1 && !circular {
+            return Err("A single linear source has no annealing junction. Use an explicit 3′ resection step for standalone source processing.".into());
+        }
+        let number = |s: &str| -> Result<usize, String> {
+            if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+                return Err(
+                    "Complete 3′ cuts and annealing limits with nonnegative whole numbers.".into(),
+                );
+            }
+            s.parse()
+                .map_err(|_| "A 3′ annealing number is too large.".into())
+        };
+        let cuts =
+            self.cuts
+                .split(',')
+                .map(|pair| {
+                    let (left, right) = pair.trim().split_once(':').ok_or(
+                        "Supply one left:right 3′ cut pair per oriented prepared fragment.",
+                    )?;
+                    Ok(Cuts {
+                        left: number(left.trim())?,
+                        right: number(right.trim())?,
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+        if cuts.len() != rows {
+            return Err("Supply exactly one 3′ cut pair per oriented prepared fragment.".into());
+        }
+        let policy = Options {
+            overlaps,
+            topology: if circular {
+                Topology::Circular
+            } else {
+                Topology::Linear
+            },
+            cuts,
+            min_paired_bases: number(&self.min_paired_bases)?,
+            max_comparisons: number(&self.max_comparisons)?,
+            max_candidates: number(&self.max_candidates)?,
+        };
+        policy.validate_shape(rows).map_err(|e| e.to_string())?;
+        Ok(policy)
+    }
+}
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MethodsState {
     pub mode: Mode,
@@ -742,6 +830,8 @@ pub struct MethodsState {
     pub source_roles: Option<Vec<Role>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub homology: Option<HomologyForm>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annealing: Option<AnnealingForm>,
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GoldenGateForm {
@@ -870,10 +960,21 @@ impl Default for MethodsState {
             multisite: None,
             source_roles: None,
             homology: None,
+            annealing: None,
         }
     }
 }
 impl MethodsState {
+    pub(crate) fn validate_processing_selection(&self) -> Result<(), String> {
+        if self.homology.as_ref().is_some_and(|f| f.enabled)
+            && self.annealing.as_ref().is_some_and(|f| f.enabled)
+        {
+            return Err(
+                "Choose one explicit processing route: 5′ reconstruction or 3′ annealing.".into(),
+            );
+        }
+        Ok(())
+    }
     pub(crate) fn bottom_input_id(&self, row: usize) -> Result<String, String> {
         if self
             .rows
@@ -1277,5 +1378,58 @@ mod homology_tests {
         assert!(form.policy(vec![16, 16], true, 2).is_ok());
         let legacy = serde_json::to_value(MethodsState::default()).unwrap();
         assert!(legacy.get("homology").is_none());
+    }
+}
+
+#[cfg(test)]
+mod annealing_tests {
+    use super::*;
+    #[test]
+    fn explicit_three_prime_policy_keeps_cut_orientation_and_never_invents_cuts() {
+        let mut form = AnnealingForm::default();
+        assert!(form.policy(vec![16], false, 2).is_err());
+        form.cuts = "2:19, 17:3".into();
+        let policy = form.policy(vec![16], false, 2).unwrap();
+        assert_eq!(policy.topology, collagene_core::Topology::Linear);
+        assert_eq!(policy.overlaps, vec![16]);
+        assert_eq!((policy.cuts[0].left, policy.cuts[0].right), (2, 19));
+        assert_eq!((policy.cuts[1].left, policy.cuts[1].right), (17, 3));
+        assert_eq!(policy.min_paired_bases, 12);
+        assert!(form.policy(vec![16, 16], true, 2).is_ok());
+        assert!(form.policy(vec![16], true, 2).is_err());
+        assert!(form.policy(vec![], false, 1).is_err());
+        form.cuts = "16:16".into();
+        assert!(form.policy(vec![16], true, 1).is_ok());
+        form.cuts = "2:unfinished,17:3".into();
+        assert!(form.validate_raw().is_ok());
+        assert!(form.policy(vec![16], false, 2).is_err());
+    }
+    #[test]
+    fn three_prime_work_limits_and_saved_conflicting_modes_fail_closed() {
+        let mut form = AnnealingForm::default();
+        form.cuts = "0:16,16:0".into();
+        for limit in ["0", "-1", "1.5", "100000001", "999999999999999999999"] {
+            form.max_comparisons = limit.into();
+            assert!(form.policy(vec![16], false, 2).is_err());
+        }
+        form.max_comparisons = "20000000".into();
+        form.max_candidates = "0".into();
+        assert!(form.policy(vec![16], false, 2).is_err());
+        form.max_candidates = "100".into();
+        form.min_paired_bases = "17".into();
+        assert!(form.policy(vec![16], false, 2).is_err());
+        let mut state = MethodsState::default();
+        assert!(
+            serde_json::to_value(&state)
+                .unwrap()
+                .get("annealing")
+                .is_none()
+        );
+        state.annealing = Some(AnnealingForm::default());
+        assert!(state.validate_processing_selection().is_ok());
+        state.homology = Some(HomologyForm::default());
+        assert!(state.validate_processing_selection().is_err());
+        state.annealing.as_mut().unwrap().enabled = false;
+        assert!(state.validate_processing_selection().is_ok());
     }
 }

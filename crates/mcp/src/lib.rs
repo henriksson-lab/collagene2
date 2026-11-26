@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 179;
+pub const CURRENT_TOOL_COUNT: usize = 180;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -1094,6 +1094,17 @@ pub struct HomologyRecipePreviewQuery {
     pub recipe: collagene_core::assembly_recipe::Recipe,
     /// Explicit native strand resection/fill/sealing policy; not inferred from a vendor label.
     pub policy: collagene_core::homology_assembly::Options,
+    #[serde(default)]
+    pub origin_workspaces: Vec<EditedOverlapOriginWorkspace>,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AnnealingRecipePreviewQuery {
+    pub inputs: Vec<BoundInput>,
+    pub target: DocumentRef,
+    pub recipe: collagene_core::assembly_recipe::Recipe,
+    /// Explicit native 3′ resection/annealing policy, with no fill or sealing; not inferred from a vendor label.
+    pub policy: collagene_core::homology_annealing::Options,
     #[serde(default)]
     pub origin_workspaces: Vec<EditedOverlapOriginWorkspace>,
 }
@@ -6428,6 +6439,90 @@ impl CollageneServer {
                 "findings_truncated":preview.verification.findings.len()>100||preview.verification.findings.iter().take(100).any(|s|s.chars().count()>1024),
                 "policy":args.policy,"diagnostics":diagnostics,"artifact_id":artifact,"plan_artifact_path":"preview.compiled.plan",
                 "authority":"Fresh explicit physical-model preview and independent-target comparison only. Paired reference DNA can remain diagnostic when joining termini cannot seal; it does not grant reusable material. Eligible material requires fresh native reconstruction under the same policy and explicit saved-origin replay for reuse. This response saves no candidate or product and makes no experimental-success, isolation or mixture-uniqueness claim."
+            }))
+        }).await
+    }
+    #[tool(
+        description = "Preview explicit 3-prime resection and homology annealing from original immutable sources and an independent target. Requires actual preparations, per-source left/right strand cuts, explicit junction lengths and bounded pairing search. Preserves remaining strands, source coordinates, unfilled gaps and unsealed nicks. The joined reference always remains incomplete and cannot confer reusable assembled material; no polymerase, ligase or host processing is inferred. FromRun roles require exact native workspace attestations and fresh closed-origin replay. Returns complete bounded typed plan, physical and junction evidence without saving any candidate or document."
+    )]
+    async fn preview_annealing_recipe(
+        &self,
+        Parameters(args): Parameters<AnnealingRecipePreviewQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.inputs.is_empty()
+            || args.inputs.len() > collagene_core::assembly_recipe::MAX_ROWS
+            || args.origin_workspaces.len() > collagene_core::assembly_recipe::MAX_ROWS
+        {
+            return Err(bad(
+                "homology recipe sources/workspace bindings exceed their bounded row scope",
+            ));
+        }
+        let origins = args
+            .recipe
+            .fragments
+            .iter()
+            .filter(|fragment| {
+                matches!(
+                    fragment.preparation,
+                    collagene_core::assembly_recipe::Preparation::FromRun { .. }
+                )
+            })
+            .count();
+        if origins != args.origin_workspaces.len() {
+            return Err(bad(
+                "supply exactly one native workspace for each saved-source role",
+            ));
+        }
+        let mut seen = BTreeSet::new();
+        for binding in &args.origin_workspaces {
+            if binding.role.is_empty()
+                || binding.role.len() > 128
+                || !seen.insert(binding.role.as_str())
+                || !args.recipe.fragments.iter().any(|fragment| {
+                    fragment.role == binding.role
+                        && matches!(
+                            fragment.preparation,
+                            collagene_core::assembly_recipe::Preparation::FromRun { .. }
+                        )
+                })
+            {
+                return Err(bad(
+                    "homology origin workspace role is invalid, duplicated or unused",
+                ));
+            }
+        }
+        let server = self.clone();
+        self.compute(move||{
+            let(inputs,target)={let store=server.store.lock().unwrap();let target=store.document(&args.target)?;let mut ids=BTreeSet::new();let mut sources=Vec::with_capacity(args.inputs.len());
+                for input in &args.inputs {if input.id.trim().is_empty()||input.id.len()>128||!ids.insert(input.id.as_str()){return Err(bad("invalid or duplicate original source ID"));}sources.push((input.id.as_str(),store.document(&input.document)?));}
+                collagene_core::assembly_recipe::annealing_source_preflight(&sources,target,&args.recipe,&args.policy).map_err(bad)?;
+                (sources.into_iter().map(|(id,m)|PlanInput{id:id.into(),revision:m.revision(),molecule:m.clone()}).collect::<Vec<_>>(),target.clone())};
+            for fragment in &args.recipe.fragments {
+                if let collagene_core::assembly_recipe::Preparation::FromRun{origin,..}=&fragment.preparation {
+                    let workspace=args.origin_workspaces.iter().find(|binding|binding.role==fragment.role).ok_or_else(||bad("saved homology source has no exact workspace binding"))?;
+                    let source=inputs.iter().find(|input|input.id==fragment.input_id).ok_or_else(||bad("saved homology source input unavailable"))?;
+                    server.attest_run_source(&workspace.workspace,origin,&source.molecule)?;
+                }
+            }
+            let preview=collagene_core::assembly_recipe::preview_annealing(&inputs,&target,&args.recipe,&args.policy).map_err(bad)?;
+            let context=collagene_core::assembly_recipe::annealing_preview_revision(&inputs,&target,&args.recipe,&args.policy).map_err(bad)?;
+            preview.validate_binding(&context).map_err(bad)?;
+            let diagnostics=collagene_core::assembly_diagnostics::overlap(&preview).map_err(bad)?;
+            #[derive(Serialize)]
+            struct Evidence<'a>{inputs:&'a[BoundInput],target:&'a DocumentRef,recipe:&'a collagene_core::assembly_recipe::Recipe,policy:&'a collagene_core::homology_annealing::Options,origin_workspaces:&'a[EditedOverlapOriginWorkspace],preview:&'a collagene_core::assembly_recipe::Preview,diagnostics:&'a collagene_core::assembly_diagnostics::Report}
+            let evidence=Evidence{inputs:&args.inputs,target:&args.target,recipe:&args.recipe,policy:&args.policy,origin_workspaces:&args.origin_workspaces,preview:&preview,diagnostics:&diagnostics};
+            let artifact=server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","three-prime-annealing-recipe.json")?;
+            let product=(preview.verification.products.len()==preview.compiled.plan.steps.len()).then(||preview.verification.products.last()).flatten();
+            let physical=preview.verification.physical_processing_reports.iter().find_map(|step|match &step.evidence{verification::PhysicalProcessingEvidence::HomologyAnnealing(report) if step.step_index==preview.compiled.assembly_step=>Some(report),_=>None});
+            output(json!({"state":"preview","verified":false,"candidate_saved":false,"inputs":args.inputs,"target":args.target,
+                "context_revision":context,"plan_revision":preview.verification.plan_revision,"target_revision":preview.verification.target_revision,
+                "engine_version":preview.verification.engine_version,"status":preview.verification.status,"preparation_complete":preview.preparation_complete,
+                "product":product.map(|m|json!({"revision":m.revision(),"length":m.sequence.len(),"topology":m.topology})),
+                "physical":physical.map(|report|json!({"engine_version":report.engine_version,"paired_diagnostic_available":report.paired_diagnostic.is_some(),"reusable_material_available":false,"terminal_search_complete":report.terminal_search_complete,"incomplete":report.incomplete,"comparisons":report.comparisons,"source_geometry_revisions":report.source_geometry_revisions})),
+                "findings":preview.verification.findings.iter().take(100).map(|s|s.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),
+                "findings_truncated":preview.verification.findings.len()>100||preview.verification.findings.iter().take(100).any(|s|s.chars().count()>1024),
+                "policy":args.policy,"diagnostics":diagnostics,"artifact_id":artifact,"plan_artifact_path":"preview.compiled.plan",
+                "authority":"Fresh 3-prime resection and homology-annealing preview against an independent target. The joined reference remains incomplete and documentary; all gaps and nicks remain, no fill, sealing or host activity is inferred, and no reusable assembled physical material is created. This response saves no candidate or product and makes no experimental-success, isolation or mixture-uniqueness claim."
             }))
         }).await
     }

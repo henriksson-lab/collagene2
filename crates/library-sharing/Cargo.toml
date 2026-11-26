@@ -7,6 +7,7 @@ rust-version.workspace = true
 description = "Exact selected-document publication closure for native Collagene workspaces"
 
 [dependencies]
+blake3.workspace = true
 collagene-core = { path = "../core" }
 collagene-design-exchange = { path = "../design-exchange" }
 serde.workspace = true

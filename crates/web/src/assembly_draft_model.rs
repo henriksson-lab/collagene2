@@ -460,6 +460,9 @@ pub(crate) fn validate_controls(
     if let Some(form) = &methods.homology {
         form.validate_raw()?;
     }
+    if let Some(form) = &methods.annealing {
+        form.validate_raw()?;
+    }
     methods.all_input_ids()?;
     Ok(())
 }
@@ -700,6 +703,15 @@ impl Draft {
         next.validate()?;
         Ok(next)
     }
+    fn uses_annealing_fields(&self) -> bool {
+        self.methods.annealing.is_some()
+            || self.alternatives.as_ref().is_some_and(|library| {
+                library
+                    .rows
+                    .iter()
+                    .any(|saved| saved.edits.methods.annealing.is_some())
+            })
+    }
     fn uses_homology_fields(&self) -> bool {
         self.methods.homology.is_some()
             || self.alternatives.as_ref().is_some_and(|library| {
@@ -808,12 +820,15 @@ impl Draft {
     /// Structural/bounded source consistency only. Historical event IDs require
     /// the host workspace to attest them before installing any candidate.
     pub fn validate(&self) -> Result<(), String> {
-        if !matches!(self.version, 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10)
+        if !matches!(self.version, 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11)
             || self.version == 1 && self.alternatives.is_some()
         {
             return Err(
                 "Unsupported assembly draft version or alternatives in a legacy draft.".into(),
             );
+        }
+        if self.uses_annealing_fields() && self.version < 11 {
+            return Err("Explicit 3′ annealing settings require assembly draft version11.".into());
         }
         if self.uses_homology_fields() && self.version < 10 {
             return Err(
@@ -1054,6 +1069,9 @@ impl Draft {
         if self.uses_homology_fields() {
             self.version = self.version.max(10);
         }
+        if self.uses_annealing_fields() {
+            self.version = self.version.max(11);
+        }
     }
 }
 
@@ -1064,8 +1082,8 @@ pub fn encode(draft: &Draft) -> Result<Vec<u8>, String> {
 }
 /// Encode current editable state without promoting working fields into saved rows.
 pub fn encode_raw(draft: &Draft) -> Result<Vec<u8>, String> {
-    if !matches!(draft.version, 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10) {
-        return Err("Raw assembly persistence requires draft version3–10.".into());
+    if !matches!(draft.version, 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11) {
+        return Err("Raw assembly persistence requires draft version3–11.".into());
     }
     draft.validate()?;
     let mut writer = Bounded { bytes: Vec::new() };
@@ -2523,6 +2541,34 @@ mod extension_draft_tests {
         assert!(downgraded.validate().is_err());
         assert!(decode_version(&encode_raw(&draft).unwrap(), 9).is_err());
         draft.methods.homology.as_mut().unwrap().cuts = "x".repeat(1025);
+        assert!(encode_raw(&draft).is_err());
+    }
+    #[test]
+    fn three_prime_working_settings_require11_without_reinterpreting_legacy_routes() {
+        let mut draft = Draft::default();
+        assert!(draft.methods.annealing.is_none());
+        draft.methods.homology = Some(crate::cloning_methods_model::HomologyForm::default());
+        draft.sync_rows();
+        assert_eq!(draft.version, 10);
+        let legacy = decode_version(&encode_raw(&draft).unwrap(), 10).unwrap();
+        assert!(legacy.methods.annealing.is_none());
+        assert!(legacy.methods.homology.as_ref().unwrap().enabled);
+        let mut form = crate::cloning_methods_model::AnnealingForm::default();
+        form.enabled = false;
+        form.cuts = "0:unfinished, 20:".into();
+        form.max_candidates = "partial".into();
+        draft.methods.annealing = Some(form);
+        draft.sync_rows();
+        assert_eq!(draft.version, 11);
+        let restored = decode_version(&encode_raw(&draft).unwrap(), 11).unwrap();
+        assert!(restored == draft);
+        assert!(restored.methods.homology.as_ref().unwrap().enabled);
+        assert!(!restored.methods.annealing.as_ref().unwrap().enabled);
+        let mut downgraded = restored.clone();
+        downgraded.version = 10;
+        assert!(downgraded.validate().is_err());
+        assert!(decode_version(&encode_raw(&draft).unwrap(), 10).is_err());
+        draft.methods.annealing.as_mut().unwrap().cuts = "x".repeat(1025);
         assert!(encode_raw(&draft).is_err());
     }
     #[test]

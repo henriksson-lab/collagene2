@@ -4,7 +4,7 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-Current source uses worker87, candidate19, native plan17, science22 and179 MCP
+Current source uses worker88, candidate20, native plan18, science23 and180 MCP
 tools. The Tauri shell has a durable offline local library, explicit multi-remote
 synchronization, scoped native credentials, saved-branch review, embedded stdio
 MCP and authenticated URL-import adapters. All export controls now await native
@@ -13,23 +13,33 @@ service. Native SDK and UI WASM checks pass; focused backend/scientific fixtures
 pass. Installer workflow sources are present, but packaging, installation and
 graphical/offline acceptance remain unfinished.
 
-The native export checkpoint `3020c0a` passes all scientific/web CI jobs on
-Windows/macOS/Linux, and its desktop build/MCP jobs pass on Windows and macOS.
-Linux desktop setup failed when an unrelated preinstalled Microsoft apt feed
-returned403; the prerequisite script now selects the runner's Ubuntu sources.
-Unsigned package builds compiled all three native binaries but found an invalid
-bundle category. The configuration now uses the documented `Education` category;
-actual package creation still needs a fresh successful run.
+The format checkpoint `73fd9d8` passes desktop build and embedded-MCP jobs on
+Windows/macOS/Linux. Its scientific tests on all three systems and WASM check
+also pass. Unsigned Linux and macOS package jobs pass; Windows packaging is
+still running.
+The earlier Linux apt-feed failure and invalid bundle category have source fixes;
+Windows installer creation, installation and graphical acceptance remain
+separate gates.
 
 The parallel format batch adds annotated GenPept/UniProt, PHYLIP/MSF/NEXUS and
 PIR/GDE/SELEX alignment exchange, plus an independent SBOL3.1 structural JSON-LD
 crate and component/sequence review. Source data, exact labels/coordinates,
 explicit losses and native history remain separate from physical authority.
-Known profiles have focused fixtures and native/worker/WASM checks; original-SBOL
-publication refuses unselected or unsupported graph content. Subset sharing with
-reviewed omission receipts remains unfinished. New kernel APIs also model explicit
-3′ shortening and unsealed homology annealing; verifier/recipe/UI integration is
-still required. The full product goal remains active.
+Known profiles have focused fixtures and native/worker/WASM checks. SBOL sharing
+now supports an explicitly reviewed canonical structural subset, a new hash and
+an omission receipt while retaining the exact original locally. Native identities
+and source hashes remain unchanged. The receiver independently validates the
+minimal graph and claim coverage; missing-original receipts remain documentary.
+Reachable alternative sequences require explicit choices. Native sharing fixtures
+include real run/capsule/PCR reuse. [Subset contract](SBOL_DOCUMENTARY_SUBSETS.md).
+
+Explicit 3′ shortening and unsealed homology annealing now connect to typed
+verifier operations, source-bound assembly recipes, worker/MCP previews, draft11
+persistence and physical strand/gap/nick review. Standalone resection retains its
+actual shortened duplex; joined annealing remains incomplete and cannot supply
+reusable assembled material. Focused scientific, sharing and MCP fixtures,
+integrated UI/worker WASM checking and the native SDK check pass. All57 focused cases pass, including draft11
+roundtrip/migration. The full product goal remains active.
 
 The latest recorded public8082 publication is the immutable `334f4b8` frontend
 with worker86, hash `3fb7ed14ce8175df3fd728c4f1db25727c7d215d37f3321ccea3231a1a24ebff`.

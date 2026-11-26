@@ -196,6 +196,18 @@ pub enum Operation {
         options: crate::overlap_profiles::ProfileOptions,
         policy: crate::homology_assembly::Options,
     },
+    /// Explicit hydrolytic3′ shortening of an actual intact tracked operand.
+    ResectThreePrime {
+        source: Source,
+        cuts: crate::three_prime_resection::Cuts,
+    },
+    /// Generic3′ processing/exposed5′tail annealing only. Every joined strand
+    /// remains separate; no polymerase, ligase or cellular rescue is inferred.
+    HomologyAnnealing {
+        fragments: Vec<OrientedSource>,
+        options: crate::overlap_profiles::ProfileOptions,
+        policy: crate::homology_annealing::Options,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -273,6 +285,8 @@ pub enum PhysicalProcessingEvidence {
     RunProduct(crate::run_material::ReplayEvidence),
     OverlapExtension(crate::overlap_extension::Geometry),
     HomologyAssembly(crate::homology_assembly::Report),
+    ThreePrimeResection(crate::three_prime_resection::Report),
+    HomologyAnnealing(crate::homology_annealing::Report),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -297,7 +311,7 @@ pub struct ReferenceStepReport {
     pub evidence: ReferenceStepEvidence,
 }
 
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-22");
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-23");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrDocument {
@@ -809,6 +823,37 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
     };
     let mut count = 0usize;
     for step in &plan.steps {
+        if let Operation::ResectThreePrime { cuts, .. } = step {
+            count += 1;
+            if count > 64
+                || cuts.left > crate::three_prime_resection::MAX_SOURCE_BASES / 2
+                || cuts.right > crate::three_prime_resection::MAX_SOURCE_BASES / 2
+            {
+                return Err(Error::TooLarge);
+            }
+        }
+        if let Operation::HomologyAnnealing {
+            fragments,
+            options,
+            policy,
+        } = step
+        {
+            count += 1;
+            if count > 64 {
+                return Err(Error::TooLarge);
+            }
+            policy.validate_shape(fragments.len())?;
+            options.validate()?;
+            if fragments.len() == 1 && policy.topology != Topology::Circular {
+                return Err(Error::Unsupported("Single linear3′ processing uses ResectThreePrime, not a joining assembly operation".into()));
+            }
+            if fragments
+                .iter()
+                .any(|f| matches!(&f.source,Source::Input(id)if id.trim().is_empty()||id.len()>128))
+            {
+                return Err(Error::Format("Invalid annealing source identity".into()));
+            }
+        }
         if let Operation::HomologyAssembly {
             fragments,
             options,
@@ -1003,6 +1048,8 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
                     | Operation::CatalogDigest { .. }
                     | Operation::SelectedGoldenGate { .. }
                     | Operation::HomologyAssembly { .. }
+                    | Operation::ResectThreePrime { .. }
+                    | Operation::HomologyAnnealing { .. }
             )
         })
     {
@@ -1054,6 +1101,7 @@ pub fn operation_sources(op: &Operation) -> Vec<&Source> {
         | Operation::RepairEnds { template, .. }
         | Operation::Tail3Prime { template, .. } => vec![template],
         Operation::ReconstructRunProduct { template, .. } => vec![template],
+        Operation::ResectThreePrime { source, .. } => vec![source],
         Operation::Overlap { fragments, .. }
         | Operation::GoldenGate {
             templates: fragments,
@@ -1065,7 +1113,8 @@ pub fn operation_sources(op: &Operation) -> Vec<&Source> {
         } => fragments.iter().collect(),
         Operation::Ligate { fragments, .. }
         | Operation::ProfiledOverlap { fragments, .. }
-        | Operation::HomologyAssembly { fragments, .. } => {
+        | Operation::HomologyAssembly { fragments, .. }
+        | Operation::HomologyAnnealing { fragments, .. } => {
             fragments.iter().map(|f| &f.source).collect()
         }
         Operation::OverlapExtension { left, right, .. } => vec![&left.source, &right.source],
@@ -1096,6 +1145,7 @@ pub fn operation_sources_mut(op: &mut Operation) -> Vec<&mut Source> {
         | Operation::RepairEnds { template, .. }
         | Operation::Tail3Prime { template, .. } => vec![template],
         Operation::ReconstructRunProduct { template, .. } => vec![template],
+        Operation::ResectThreePrime { source, .. } => vec![source],
         Operation::Overlap { fragments, .. }
         | Operation::GoldenGate {
             templates: fragments,
@@ -1107,7 +1157,8 @@ pub fn operation_sources_mut(op: &mut Operation) -> Vec<&mut Source> {
         } => fragments.iter_mut().collect(),
         Operation::Ligate { fragments, .. }
         | Operation::ProfiledOverlap { fragments, .. }
-        | Operation::HomologyAssembly { fragments, .. } => {
+        | Operation::HomologyAssembly { fragments, .. }
+        | Operation::HomologyAnnealing { fragments, .. } => {
             fragments.iter_mut().map(|f| &mut f.source).collect()
         }
         Operation::OverlapExtension { left, right, .. } => {
@@ -1222,6 +1273,8 @@ fn evaluate_captured(
                     | Operation::CatalogDigest { .. }
                     | Operation::SelectedGoldenGate { .. }
                     | Operation::HomologyAssembly { .. }
+                    | Operation::ResectThreePrime { .. }
+                    | Operation::HomologyAnnealing { .. }
             )
         }) {
             let mut models = plan.inputs.iter().map(|i| &i.molecule).collect::<Vec<_>>();
@@ -2145,7 +2198,14 @@ fn reconstruct(
         {
             return Err(Error::Unsupported("Reference-only ancestry cannot establish a physical PCR/annealing/TOPO substrate. Its full originating graph must be consumed by an explicit supported physical operation; no materialization or graph repair is inferred.".into()));
         }
-        if inherited_reference_only && matches!(step, Operation::HomologyAssembly { .. }) {
+        if inherited_reference_only
+            && matches!(
+                step,
+                Operation::HomologyAssembly { .. }
+                    | Operation::HomologyAnnealing { .. }
+                    | Operation::ResectThreePrime { .. }
+            )
+        {
             return Err(Error::Unsupported("Reference-only ancestry cannot provide a physical homology substrate; reconstruct actual original strands first.".into()));
         }
         let resolve = |source: &Source| -> Result<&Molecule, Error> {
@@ -2173,6 +2233,144 @@ fn reconstruct(
         let mut next_physical = None;
         let mut diagnostic_reference_only = false;
         let mut product = match step {
+            Operation::ResectThreePrime { source, cuts } => {
+                if physical_processing_reports.len() >= 64 {
+                    return Err(Error::TooLarge);
+                }
+                let source_model = resolve(source)?;
+                let tracked = resolve_tracked(source)?;
+                let (processed, geometry) = tracked.resect_three_prime(cuts)?;
+                geometry.validate_documentary()?;
+                let mut product = processed
+                    .duplex
+                    .molecule(format!("3′-resected operand {}", index + 1))?;
+                let top_end = product.sequence.len();
+                if source_model.sequence.as_str().get(..top_end) != Some(product.sequence.as_str())
+                {
+                    return Err(Error::Format(
+                        "Resected top reference does not match the actual original source domain"
+                            .into(),
+                    ));
+                }
+                project_into(
+                    source_model,
+                    &[MappingSegment {
+                        source_start: 0,
+                        source_end: top_end,
+                        destination_start: 0,
+                        reverse: false,
+                    }],
+                    &mut product,
+                    findings,
+                )?;
+                carry_unmapped_evidence(source_model, &mut product);
+                findings.extend(geometry.warnings.iter().take(100).cloned());
+                findings.push(format!("Step {} removes bottom3′ suffix {} nt and top3′ suffix {} nt. Original5′ end groups and every surviving strand/modification remain; any bottom5′ extension beyond the displayed top reference stays in the actual duplex. No filling, nick sealing or host repair is inferred.",index+1,cuts.left,cuts.right));
+                step_evidence_bytes = step_evidence_bytes
+                    .checked_add(evidence_bytes(&geometry, 16 * 1024 * 1024)?)
+                    .filter(|n| *n <= 32 * 1024 * 1024)
+                    .ok_or(Error::TooLarge)?;
+                physical_processing_reports.push(PhysicalProcessingStepReport {
+                    step_index: index,
+                    evidence: PhysicalProcessingEvidence::ThreePrimeResection(geometry),
+                });
+                next_physical = Some(processed);
+                product
+            }
+            Operation::HomologyAnnealing {
+                fragments,
+                options,
+                policy,
+            } => {
+                if physical_processing_reports.len() >= 64 {
+                    return Err(Error::TooLarge);
+                }
+                policy.validate_shape(fragments.len())?;
+                options.validate()?;
+                if fragments.len() == 1 && policy.topology != Topology::Circular {
+                    return Err(Error::Unsupported("Single linear3′ processing uses ResectThreePrime, not a joining assembly operation".into()));
+                }
+                let mut tracked = Vec::with_capacity(fragments.len());
+                let mut oriented = Vec::with_capacity(fragments.len());
+                for fragment in fragments {
+                    let material = resolve_tracked(&fragment.source)?;
+                    tracked.push(if fragment.reverse {
+                        material.reverse()?
+                    } else {
+                        material
+                    });
+                    let source = resolve(&fragment.source)?;
+                    if fragment.reverse {
+                        let mut model = Molecule::dna(
+                            format!("Oriented {}", source.name),
+                            source.sequence.reverse_complement()?.as_str(),
+                            source.topology,
+                        )?;
+                        project_into(
+                            source,
+                            &[MappingSegment {
+                                source_start: 0,
+                                source_end: source.sequence.len(),
+                                destination_start: 0,
+                                reverse: true,
+                            }],
+                            &mut model,
+                            findings,
+                        )?;
+                        carry_unmapped_evidence(source, &mut model);
+                        oriented.push(model);
+                    } else {
+                        oriented.push(source.clone());
+                    }
+                }
+                let (_separate_processed_operands, geometry) =
+                    modified_duplex::homology_anneal(&tracked.iter().collect::<Vec<_>>(), policy)?;
+                geometry.validate_documentary()?;
+                let mut product = assemble_overlap(
+                    &oriented.iter().collect::<Vec<_>>(),
+                    &policy.overlaps,
+                    policy.topology == Topology::Circular,
+                    index,
+                    findings,
+                )?;
+                if product.sequence != geometry.reference || product.topology != policy.topology {
+                    return Err(Error::Format("Annotated source-derived contour differs from independently annealed strand reference".into()));
+                }
+                product.name = format!("Annealed reference {}", index + 1);
+                product.metadata.insert(
+                    "homology_annealing:policy".into(),
+                    serde_json::to_string(policy).map_err(|e| Error::Format(e.to_string()))?,
+                );
+                product.metadata.insert(
+                    "homology_annealing:profile".into(),
+                    serde_json::to_string(options).map_err(|e| Error::Format(e.to_string()))?,
+                );
+                findings.extend(
+                    geometry
+                        .warnings
+                        .iter()
+                        .chain(&geometry.limits)
+                        .take(100)
+                        .cloned(),
+                );
+                incomplete.push(format!("Step {} retains {} separate source strands and {} unsealed joining discontinuities. This is a diagnostic sequence contour only: no synthesis, ligation or cellular rescue establishes a reusable assembled product.",index+1,geometry.segments.len(),2*geometry.junctions.len()));
+                if !geometry.terminal_search_complete {
+                    incomplete.push(format!(
+                        "Step {} bounded exposed-terminal alternative search is incomplete.",
+                        index + 1
+                    ));
+                }
+                step_evidence_bytes = step_evidence_bytes
+                    .checked_add(evidence_bytes(&geometry, 16 * 1024 * 1024)?)
+                    .filter(|n| *n <= 32 * 1024 * 1024)
+                    .ok_or(Error::TooLarge)?;
+                physical_processing_reports.push(PhysicalProcessingStepReport {
+                    step_index: index,
+                    evidence: PhysicalProcessingEvidence::HomologyAnnealing(geometry),
+                });
+                diagnostic_reference_only = true;
+                product
+            }
             Operation::HomologyAssembly {
                 fragments,
                 options,
@@ -3647,6 +3845,12 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
     };
     for (step_index, step) in plan.steps.iter().enumerate() {
         match step {
+            Operation::ResectThreePrime { source: operand, cuts } => {
+                body.push_str(&format!("<li>Explicit3′→5′ resection of {}: remove {} nt from bottom3′ left end and {} nt from top3′ right end. Positive cuts require accessible3′OH; original5′ groups and surviving modifications stay unchanged. No fill, ligase, unblocking or host repair.</li>",source(operand),cuts.left,cuts.right));
+            },
+            Operation::HomologyAnnealing {fragments,options,policy} => {
+                body.push_str(&format!("<li>Generic3′ processing and exposed5′tail annealing of ordered substrates {}. Explicit policy <code>{}</code>; advisory profile <code>{}</code>. Every nick/gap retains separate covalent strands. The reference contour does not establish a reusable assembled molecule or proprietary In-Fusion/cellular rescue.</li>",fragments.iter().map(|f|format!("{} ({})",source(&f.source),if f.reverse{"reverse complement"}else{"forward"})).collect::<Vec<_>>().join(", "),e(&serde_json::to_string(policy).unwrap_or_default()),e(&serde_json::to_string(options).unwrap_or_default())));
+            },
             Operation::HomologyAssembly { fragments, options, policy } => {
                 body.push_str(&format!("<li>Physical homology assembly of ordered substrates {}. Declared geometry and 5′ processing/fill/sealing policy: <code>{}</code>. Advisory sequence profile: <code>{}</code>. Surviving source strands retain modifications; only actual template-supported synthesis is unmodified. Eligible paired 3′OH/5′P nicks may seal; unresolved chemistry stays explicit. Linear outer-end processing is retained, not silently blunted. This model does not establish experimental success or a proprietary formulation.</li>",fragments.iter().map(|f|format!("{} ({})",source(&f.source),if f.reverse{"reverse complement"}else{"forward"})).collect::<Vec<_>>().join(", "),e(&serde_json::to_string(policy).unwrap_or_default()),e(&serde_json::to_string(options).unwrap_or_default())));
             },
@@ -3804,6 +4008,16 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
         body.push_str("<h2>Accounted physical processing evidence</h2><ul>");
         for step in &report.physical_processing_reports {
             match &step.evidence {
+                PhysicalProcessingEvidence::ThreePrimeResection(geometry) => {
+                    body.push_str(&format!("<li>Step {} actual3′ resection: bottom left {} nt / top right {} nt; retained top {} nt, bottom {} nt at offset {}. Exact copied/removed source spans and unchanged5′ groups remain in JSON evidence.</li>",step.step_index+1,geometry.cuts.left,geometry.cuts.right,geometry.product.top.len(),geometry.product.bottom.len(),geometry.product.bottom_start));
+                }
+                PhysicalProcessingEvidence::HomologyAnnealing(geometry) => {
+                    body.push_str(&format!("<li>Step {} annealed diagnostic: {} actual surviving strands, {} junctions; paired gapless diagnostic {}; terminal search complete {}. No joining bond is sealed and no host repair is assumed.<ul>",step.step_index+1,geometry.segments.len(),geometry.junctions.len(),geometry.paired_diagnostic.is_some(),geometry.terminal_search_complete));
+                    for j in &geometry.junctions {
+                        body.push_str(&format!("<li>Sources {} → {}: {} bp homology; top discontinuity [{}, {}) 3′ {:?}/5′ {:?}; bottom [{}, {}) 5′ {:?}/3′ {:?}. Equal boundaries mean an unsealed nick; nonempty intervals remain unfilled gaps.</li>",j.left_source+1,j.right_source+1,j.overlap,j.top.start,j.top.end,j.top.three_prime,j.top.five_prime,j.bottom.start,j.bottom.end,j.bottom.five_prime,j.bottom.three_prime));
+                    }
+                    body.push_str("</ul></li>");
+                }
                 PhysicalProcessingEvidence::HomologyAssembly(geometry) => {
                     body.push_str(&format!("<li>Step {} physical homology assembly: {} junctions, {} resected strand spans; paired diagnostic product available {}; incomplete {}; terminal search complete {}; {} comparisons.<ul>",step.step_index+1,geometry.junctions.len(),geometry.resected.len(),geometry.product.is_some(),geometry.incomplete,geometry.terminal_search_complete,geometry.comparisons));
                     for junction in &geometry.junctions {

@@ -153,3 +153,9 @@ seals so faithfully represented products can be saved and reused through their
 original run. Unsealed diagnostic products remain unavailable as material.
 [Model and limits](docs/HOMOLOGY_ASSEMBLY.md). These controls await the next public
 preview build; existing reference-only overlap behavior remains available.
+
+Explicit 3′ resection and homology annealing are a separate assembly route with
+per-source cuts and actual strand/gap/nick review. No filling, sealing or cellular
+rescue is inferred; the annealed joined reference remains incomplete. MCP exposes
+`preview_annealing_recipe` alongside the existing 5′ physical preview. Draft11
+preserves both routes' settings. [3′ processing contract](docs/THREE_PRIME_HOMOLOGY.md).

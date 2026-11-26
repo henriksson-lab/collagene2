@@ -1529,6 +1529,106 @@ pub fn preview_homology(
     finish_preview(context, compiled, target, recipe)
 }
 
+/// Separate generic3′ processing/annealing; no in-vitro sealing or cellular rescue.
+pub fn annealing_source_preflight(
+    inputs: &[(&str, &Molecule)],
+    target: &Molecule,
+    recipe: &Recipe,
+    policy: &crate::homology_annealing::Options,
+) -> Result<(), Error> {
+    policy.validate_shape(recipe.fragments.len())?;
+    if recipe.fragments.len() == 1 && policy.topology != Topology::Circular {
+        return Err(bad(
+            "Single linear3′ resection uses a standalone ResectThreePrime operation; an annealing recipe must join2+ sources or self-circularize one source",
+        ));
+    }
+    if policy.overlaps != recipe.overlaps
+        || policy.topology
+            != if recipe.circular {
+                Topology::Circular
+            } else {
+                Topology::Linear
+            }
+    {
+        return Err(bad(
+            "physical policy geometry differs from the declared recipe",
+        ));
+    }
+    source_preflight(inputs, target, recipe)
+}
+pub fn annealing_preflight(
+    inputs: &[PlanInput],
+    target: &Molecule,
+    recipe: &Recipe,
+    policy: &crate::homology_annealing::Options,
+) -> Result<(), Error> {
+    annealing_source_preflight(
+        &inputs
+            .iter()
+            .map(|i| (i.id.as_str(), &i.molecule))
+            .collect::<Vec<_>>(),
+        target,
+        recipe,
+        policy,
+    )?;
+    preflight(inputs, target, recipe)
+}
+pub fn annealing_preview_revision(
+    inputs: &[PlanInput],
+    target: &Molecule,
+    recipe: &Recipe,
+    policy: &crate::homology_annealing::Options,
+) -> Result<String, Error> {
+    annealing_preflight(inputs, target, recipe, policy)?;
+    bound_revisions(inputs, target)?;
+    hash(&(
+        ENGINE_VERSION,
+        crate::homology_annealing::ENGINE_VERSION,
+        "three-prime-annealing-preview",
+        inputs,
+        target,
+        recipe,
+        policy,
+    ))
+}
+pub fn compile_annealing(
+    inputs: &[PlanInput],
+    target: &Molecule,
+    recipe: &Recipe,
+    policy: &crate::homology_annealing::Options,
+) -> Result<Compiled, Error> {
+    annealing_preflight(inputs, target, recipe, policy)?;
+    let mut compiled = compile(inputs, target, recipe)?;
+    let last = compiled
+        .plan
+        .steps
+        .last_mut()
+        .ok_or_else(|| bad("missing assembly operation"))?;
+    let Operation::ProfiledOverlap {
+        fragments, options, ..
+    } = last
+    else {
+        return Err(bad("unexpected final preparation operation"));
+    };
+    *last = Operation::HomologyAnnealing {
+        fragments: fragments.clone(),
+        options: options.clone(),
+        policy: policy.clone(),
+    };
+    hash(&compiled)?;
+    Ok(compiled)
+}
+pub fn preview_annealing(
+    inputs: &[PlanInput],
+    target: &Molecule,
+    recipe: &Recipe,
+    policy: &crate::homology_annealing::Options,
+) -> Result<Preview, Error> {
+    let context = annealing_preview_revision(inputs, target, recipe, policy)?;
+    let compiled = compile_annealing(inputs, target, recipe, policy)?;
+    finish_preview(context, compiled, target, recipe)
+}
+
 impl Preview {
     /// Readonly shape/binding checks only. No reconstruction or authority restoration.
     pub fn validate(&self) -> Result<(), Error> {
@@ -1620,6 +1720,40 @@ impl Preview {
                 policy,
             }) => {
                 policy.validate_shape(fragments.len())?;
+                (
+                    fragments,
+                    &policy.overlaps,
+                    policy.topology == Topology::Circular,
+                    options,
+                )
+            }
+            Some(Operation::HomologyAnnealing {
+                fragments,
+                options,
+                policy,
+            }) => {
+                policy.validate_shape(fragments.len())?;
+                if fragments.len() == 1 && policy.topology != Topology::Circular {
+                    return Err(bad("single-linear processing is not an annealing assembly"));
+                }
+                if self.verification.products.len() == self.compiled.plan.steps.len() {
+                    let actual = self
+                        .verification
+                        .products
+                        .last()
+                        .ok_or_else(|| bad("missing annealing diagnostic reference"))?;
+                    let evidence=self.verification.physical_processing_reports.iter().find_map(|step|if step.step_index==self.compiled.assembly_step{match &step.evidence{crate::verification::PhysicalProcessingEvidence::HomologyAnnealing(report)=>Some(report),_=>None}}else{None}).ok_or_else(||bad("missing exact annealing strand evidence"))?;
+                    evidence.validate_documentary()?;
+                    if hash(policy)? != hash(&evidence.options)?
+                        || evidence.preparations.len() != fragments.len()
+                        || evidence.reference != actual.sequence
+                        || policy.topology != actual.topology
+                        || self.verification.status
+                            == crate::verification::Status::ConsistentUnderAssumptions
+                    {
+                        return Err(bad("annealing diagnostic/policy/status binding differs"));
+                    }
+                }
                 (
                     fragments,
                     &policy.overlaps,

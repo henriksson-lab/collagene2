@@ -343,3 +343,251 @@ pub fn replay(sources: &[Duplex], options: &Options, report: &Report) -> Result<
     }
     Ok(())
 }
+
+impl Report {
+    /// Linear bounded literal/shape checks, without source recovery, terminal
+    /// search, polymerase work or any conversion into private tracked material.
+    pub fn validate_documentary(&self) -> Result<(), Error> {
+        let n = self.preparations.len();
+        self.options.validate_shape(n)?;
+        if self.engine_version != ENGINE_VERSION
+            || self.source_geometry_revisions.len() != n
+            || self.segments.len() != 2 * n
+            || self.junctions.len() != self.options.overlaps.len()
+            || self.reference.alphabet() != crate::Alphabet::Dna
+            || self.reference.len() > MAX_SOURCE_BASES / 2
+            || self.comparisons > self.options.max_comparisons
+            || self.warnings.len() > 1000
+            || self.limits.len() > 1000
+            || self
+                .warnings
+                .iter()
+                .chain(&self.limits)
+                .any(|s| s.len() > 4096)
+        {
+            return Err(bad("report engine/shape/bounds mismatch"));
+        }
+        let mut lengths = Vec::with_capacity(n);
+        let mut total = 0usize;
+        for (i, p) in self.preparations.iter().enumerate() {
+            let length = p
+                .product
+                .top
+                .len()
+                .checked_add(p.cuts.right)
+                .ok_or(Error::TooLarge)?;
+            if p.product.bottom.len().checked_add(p.cuts.left) != Some(length)
+                || p.product.bottom_start != p.cuts.left as i64
+                || p.cuts != self.options.cuts[i]
+                || p.source_geometry_revision != self.source_geometry_revisions[i]
+            {
+                return Err(bad(
+                    "preparation geometry differs from original blunt-source profile",
+                ));
+            }
+            total = total
+                .checked_add(length.checked_mul(2).ok_or(Error::TooLarge)?)
+                .filter(|n| *n <= MAX_SOURCE_BASES)
+                .ok_or(Error::TooLarge)?;
+            lengths.push(length);
+        }
+        for p in &self.preparations {
+            p.validate_documentary()?;
+        }
+        let circular = self.options.topology == Topology::Circular;
+        let mut offsets = vec![0usize; n];
+        for (i, &h) in self.options.overlaps.iter().enumerate() {
+            let j = (i + 1) % n;
+            if h >= lengths[i].min(lengths[j])
+                || self.options.cuts[i].right < h
+                || self.options.cuts[j].left < h
+            {
+                return Err(bad("report homology exposure differs"));
+            }
+        }
+        for i in 1..n {
+            offsets[i] = offsets[i - 1] + lengths[i - 1] - self.options.overlaps[i - 1];
+        }
+        let length = offsets[n - 1] + lengths[n - 1]
+            - if circular {
+                self.options.overlaps[n - 1]
+            } else {
+                0
+            };
+        if length == 0 || self.reference.len() != length {
+            return Err(bad("reference contour length differs from copied sources"));
+        }
+        let reference = self.reference.as_str().as_bytes();
+        for i in 0..n {
+            let p = &self.preparations[i].product;
+            for (part, strand, sequence, start, end, five, three) in [
+                (
+                    0,
+                    Strand::Top,
+                    &p.top,
+                    offsets[i],
+                    offsets[i] + p.top.len(),
+                    p.left.five_prime,
+                    p.right.three_prime,
+                ),
+                (
+                    1,
+                    Strand::Bottom,
+                    &p.bottom,
+                    offsets[i] + self.options.cuts[i].left,
+                    offsets[i] + lengths[i],
+                    p.right.five_prime,
+                    p.left.three_prime,
+                ),
+            ] {
+                let s = &self.segments[2 * i + part];
+                if s.source != i
+                    || s.strand != strand
+                    || s.source_start != 0
+                    || s.source_end != sequence.len()
+                    || s.sequence != *sequence
+                    || s.reference_start != start
+                    || s.reference_end != end
+                    || s.five_prime != five
+                    || s.three_prime != three
+                {
+                    return Err(bad("surviving strand segment changed"));
+                }
+                for (k, &b) in sequence.as_str().as_bytes().iter().enumerate() {
+                    let at = if strand == Strand::Top {
+                        start + k
+                    } else {
+                        end - 1 - k
+                    };
+                    if (!circular && at >= length)
+                        || if strand == Strand::Top {
+                            reference[at % length] != b
+                        } else {
+                            crate::model::complement(reference[at % length], crate::Alphabet::Dna)
+                                != b
+                        }
+                    {
+                        return Err(bad(
+                            "coordinate reference differs from an actual surviving source strand",
+                        ));
+                    }
+                }
+            }
+        }
+        let mut retained = 0usize;
+        let mut all_complete = true;
+        let mut gapless = true;
+        for (i, junction) in self.junctions.iter().enumerate() {
+            let j = (i + 1) % n;
+            let h = self.options.overlaps[i];
+            let right = if j == 0 { length } else { offsets[j] };
+            let left = offsets[i] + lengths[i];
+            let top = Discontinuity {
+                strand: Strand::Top,
+                start: left - self.options.cuts[i].right,
+                end: right,
+                five_prime: self.preparations[j].product.left.five_prime,
+                three_prime: self.preparations[i].product.right.three_prime,
+            };
+            let bottom = Discontinuity {
+                strand: Strand::Bottom,
+                start: left,
+                end: right + self.options.cuts[j].left,
+                five_prime: self.preparations[i].product.right.five_prime,
+                three_prime: self.preparations[j].product.left.three_prime,
+            };
+            if junction.left_source != i
+                || junction.right_source != j
+                || junction.overlap != h
+                || junction.homology_start != right
+                || junction.homology_end != left
+                || junction.top != top
+                || junction.bottom != bottom
+                || junction.homology != self.preparations[j].product.top.as_str()[..h]
+            {
+                return Err(bad("junction/nick/gap declaration changed"));
+            }
+            let a = &self.preparations[i].product.bottom.as_str().as_bytes()[..h];
+            if a.iter()
+                .zip(junction.homology.as_bytes().iter().rev())
+                .any(|(&a, &b)| a != crate::model::complement(b, crate::Alphabet::Dna))
+            {
+                return Err(bad("declared homology differs from actual exposed tails"));
+            }
+            let maximum = self.options.cuts[i]
+                .right
+                .min(self.options.cuts[j].left)
+                .min(lengths[i].min(lengths[j]) - 1);
+            if junction
+                .alternatives
+                .iter()
+                .any(|v| *v < self.options.min_paired_bases || *v > maximum || *v == h)
+                || junction.alternatives.windows(2).any(|p| p[0] >= p[1])
+            {
+                return Err(bad("invalid terminal alternative lengths"));
+            }
+            retained = retained
+                .checked_add(junction.alternatives.len())
+                .filter(|n| *n <= self.options.max_candidates)
+                .ok_or(Error::TooLarge)?;
+            all_complete &= junction.terminal_search_complete;
+            gapless &= top.start == top.end && bottom.start == bottom.end;
+        }
+        if self.terminal_search_complete != all_complete
+            || self.incomplete != (!self.junctions.is_empty() || !all_complete)
+            || self.paired_diagnostic.is_some() != gapless
+        {
+            return Err(bad("report completeness/diagnostic scope changed"));
+        }
+        if let Some(d) = &self.paired_diagnostic {
+            let left = if circular {
+                0
+            } else {
+                self.options.cuts[0].left
+            };
+            let right = if circular {
+                0
+            } else {
+                self.options.cuts[n - 1].right
+            };
+            if d.topology != self.options.topology
+                || d.bottom_start != left as i64
+                || d.top.as_str() != &self.reference.as_str()[..length - right]
+                || d.bottom.len() != length - left
+                || d.left != self.preparations[0].product.left
+                || d.right != self.preparations[n - 1].product.right
+                || d.nicks.len() != 2 * self.junctions.len()
+            {
+                return Err(bad(
+                    "diagnostic duplex domain differs from retained strands",
+                ));
+            }
+            if d.bottom
+                .as_str()
+                .bytes()
+                .zip(reference[left..].iter().rev())
+                .any(|(a, &b)| a != crate::model::complement(b, crate::Alphabet::Dna))
+            {
+                return Err(bad("diagnostic bottom sequence changed"));
+            }
+            for (i, j) in self.junctions.iter().enumerate() {
+                if d.nicks[2 * i]
+                    != (Nick {
+                        strand: Strand::Top,
+                        position: projection_point(j.top.start, length, circular) as i64,
+                    })
+                    || d.nicks[2 * i + 1]
+                        != (Nick {
+                            strand: Strand::Bottom,
+                            position: projection_point(j.bottom.start, length, circular) as i64,
+                        })
+                {
+                    return Err(bad("diagnostic joining nicks changed or were sealed"));
+                }
+            }
+            d.validate()?;
+        }
+        resection::revision(self)?;
+        Ok(())
+    }
+}

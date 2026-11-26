@@ -43,11 +43,13 @@ fn reference_count(op: &Operation) -> usize {
         } => fragments.len(),
         Operation::Ligate { fragments, .. }
         | Operation::ProfiledOverlap { fragments, .. }
-        | Operation::HomologyAssembly { fragments, .. } => fragments.len(),
+        | Operation::HomologyAssembly { fragments, .. }
+        | Operation::HomologyAnnealing { fragments, .. } => fragments.len(),
         Operation::RecombineReference { .. }
         | Operation::AnnealOligos { .. }
         | Operation::OverlapExtension { .. } => 2,
-        Operation::ReconstructRunProduct { .. }
+        Operation::ResectThreePrime { .. }
+        | Operation::ReconstructRunProduct { .. }
         | Operation::Pcr { .. }
         | Operation::PcrWithMismatches { .. }
         | Operation::Digest { .. }

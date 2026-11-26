@@ -295,6 +295,9 @@ fn method_label(method: Option<&Method>) -> &'static str {
         Some(Method::Overlap) => "Overlap junctions",
         Some(Method::ProfiledOverlap) => "Profiled overlap junctions",
         Some(Method::HomologyAssembly) => "Physical homology assembly",
+        Some(Method::HomologyAnnealing) => {
+            "Unsealed 5′-tail annealing junctions · incomplete reference"
+        }
         Some(Method::GoldenGate { .. }) => "Selected Golden Gate path junctions",
         None => "Junction method unavailable",
     }

@@ -1,10 +1,10 @@
 # Explicit 3′ resection and homology annealing
 
-This native scientific foundation models **declared hydrolytic 3′ shortening and
-exact pairing of exposed 5′ tails**. It is separate from the existing
-`homology_assembly` 5′ resection/filling/ligation kernel. No existing physical
-operation, In-Fusion profile, source authority, transport schema or user workflow
-changes merely because this module exists.
+This scientific workflow models **declared hydrolytic 3′ shortening and exact
+pairing of exposed 5′ tails**. It is separate from the existing
+`homology_assembly` 5′ resection/filling/ligation kernel. New append-only plan,
+recipe and transport operations expose the mechanism while preserving the
+semantics and source-authority restrictions of existing operations and profiles.
 
 ## Primary source boundary
 
@@ -104,11 +104,40 @@ returns **the separate processed tracked operands plus the diagnostic report**,
 not a fictitious covalently assembled molecule. Original source objects are
 unchanged.
 
-These APIs are a native kernel foundation. A later append-only verifier/recipe
-operation, versioned worker/MCP transport and compact preparation review must
-resolve exact tracked sources and preserve independent intended-target checking.
-The ordinary In-Fusion reference route remains valid and unchanged; enabling
-this kernel cannot mean a completed proprietary In-Fusion/host-rescue model.
+The appended `Operation::ResectThreePrime { source, cuts }` resolves an actual
+tracked operand and applies the source-bound transform. Its returned top
+reference covers exactly original source[0..L-rightcut]; annotations are clipped
+to that domain and interrupted features retain review flags. Bottom5′ extensions
+remain present in the actual duplex and complete processing evidence even when
+they extend beyond the displayed top sequence. A saved standalone product can
+supply an exact fresh FromRun reconstruction and an explicit downstream fill-in.
+
+The separate `Operation::HomologyAnnealing { fragments, options, policy }` resolves
+ordered oriented tracked sources and independently derives its coordinate
+reference and annotations. It always marks joined output as reference-only and
+Incomplete, including exact-H, gapless and already5′-phosphorylated operands.
+No reference DNA can be promoted to assembled material by subsequent PCR,
+resection, source-terminal declaration or FromRun recovery. A one-source linear
+transform uses the standalone operation; the assembly operation requires2+
+ordered sources or an explicitly circular single-source join.
+
+`assembly_recipe::{annealing_source_preflight,annealing_preflight,
+annealing_preview_revision,compile_annealing,preview_annealing}` preserve the
+original preparation recipe and separate intended target. Policy overlaps and
+topology must agree literally with the recipe; neither target letters nor a
+matching reference chooses a physical path or authorizes filling/sealing. The
+readonly preview validator checks native diagnostic/policy/status binding without
+repeating scientific reconstruction. Documentary physical reports validate
+bounded literal strand/cut/gap/nick correspondence and cannot restore authority.
+
+Scientific engine23, candidate20 and native-plan18 contain the new operations;
+worker88/MCP180 and web draft11 expose the explicit separate route. Historical
+versions cannot carry new operation variants. Saved physical-evidence attachments
+remain exactly bound to the run, original source and independent-target events.
+HTML/PDF protocols describe explicit cut counts, unsealed nicks and remaining
+unfilled gaps. The existing5′ operation continues rejecting In-Fusion, while the
+old In-Fusion reference route remains available. The new generic mechanism is
+not a completed proprietary formulation or host-rescue model.
 
 ## Bounds and scientific fixtures
 
@@ -129,3 +158,17 @@ staggered ends; a paired unsealed circle; asymmetric gaps and real linear outer
 versus self-circularization; and retained/removed/reversed modification calls with
 a tracked-operand bridge. No experimental yield, cellular repair or proprietary
 activity is inferred from those fixtures.
+
+
+## Integrated workflow fixtures
+
+`tests/three_prime_recipe.rs` adds eight independent ordinary-cloning groups:
+PCR5′OH circle annealing with retained nicks; a wrong independent target that
+cannot alter the physical path; asymmetric gaps and bounded terminal search;
+saved diagnostic ancestry refusing PCR/resection/FromRun; actual shortened
+material with clipped annotation/extruded bottom tail and saved-origin fill-in;
+unknown/blocked3′ ends and single-linear versus self-circle policy; exact recipe
+binding/legacy route/typed graph edits; and printable HTML/PDF processing
+instructions. `three_prime_recipe_protocol` and MCP fixtures separately exercise
+versioned transport. The coordinated verification batch, rather than author-side
+browser checks, supplies execution evidence.

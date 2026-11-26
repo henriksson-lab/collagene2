@@ -3,6 +3,7 @@
 //! This module computes documentary dependency scope, not scientific authority.
 pub mod import;
 mod sbol_source;
+pub mod sbol_subset;
 pub use sbol_source::KIND as SBOL_SOURCE_ATTACHMENT_KIND;
 
 use collagene_core::{
@@ -98,6 +99,7 @@ fn presentation(kind: &str) -> bool {
             | "assembly-draft-v8"
             | "assembly-draft-v9"
             | "assembly-draft-v10"
+            | "assembly-draft-v11"
             // Named working designs, unfinished primer text and visibility
             // preferences produce no immutable plasmid/run event themselves.
             | "assembly-design-v1"
@@ -186,7 +188,10 @@ impl<'a> Graph<'a> {
                     .entry(owner.run_id)
                     .or_default()
                     .push(hash.clone());
-            } else if a.kind == sbol_source::KIND {
+            } else if matches!(
+                a.kind.as_str(),
+                sbol_source::KIND | sbol_subset::SUBSET_KIND | sbol_subset::RECEIPT_KIND
+            ) {
                 // Ownership is derived later from retained native revisions.
                 // An unrelated documentary original must not block publication.
             } else if !presentation(&a.kind) {
@@ -312,7 +317,7 @@ impl<'a> Graph<'a> {
         }
         Ok(())
     }
-    fn inventory(mut self, selection: &Selection) -> Result<Inventory, Error> {
+    fn inventory(mut self, selection: &Selection, documentary: bool) -> Result<Inventory, Error> {
         let selected = self
             .source
             .documents
@@ -327,17 +332,19 @@ impl<'a> Graph<'a> {
             self.event(event)?;
         }
         self.resolve()?;
-        let (sbol_assets, used) = sbol_source::required_assets(
-            self.source,
-            &self.kept_revisions,
-            MAX_REFERENCE_EDGES.saturating_sub(self.edges),
-        )?;
-        self.edges = self
-            .edges
-            .checked_add(used)
-            .filter(|n| *n <= MAX_REFERENCE_EDGES)
-            .ok_or(Error::TooLarge)?;
-        self.kept_assets.extend(sbol_assets);
+        if documentary {
+            let (sbol_assets, used) = sbol_source::required_assets(
+                self.source,
+                &self.kept_revisions,
+                MAX_REFERENCE_EDGES.saturating_sub(self.edges),
+            )?;
+            self.edges = self
+                .edges
+                .checked_add(used)
+                .filter(|n| *n <= MAX_REFERENCE_EDGES)
+                .ok_or(Error::TooLarge)?;
+            self.kept_assets.extend(sbol_assets);
+        }
         let mut document_heads: BTreeMap<String, HeadPin> = BTreeMap::new();
         // Choose a stable retained head, rather than a dependency document's
         // possibly unrelated current/private branch. Keep all required events.
@@ -393,7 +400,7 @@ pub fn inspect_document_closure(
     source: &Workspace,
     selection: &Selection,
 ) -> Result<Inventory, Error> {
-    Graph::new(source)?.inventory(selection)
+    Graph::new(source)?.inventory(selection, true)
 }
 
 /// Export a fresh view; the caller's local library, history and unpublished
@@ -403,6 +410,19 @@ pub fn project_document_closure(
     selection: &Selection,
 ) -> Result<Projection, Error> {
     let inventory = inspect_document_closure(source, selection)?;
+    project_inventory(source, selection, inventory)
+}
+pub(crate) fn inspect_native_closure(
+    source: &Workspace,
+    selection: &Selection,
+) -> Result<Inventory, Error> {
+    Graph::new(source)?.inventory(selection, false)
+}
+pub(crate) fn project_inventory(
+    source: &Workspace,
+    selection: &Selection,
+    inventory: Inventory,
+) -> Result<Projection, Error> {
     let documents = inventory
         .document_heads
         .iter()

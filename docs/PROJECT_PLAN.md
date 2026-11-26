@@ -2835,7 +2835,7 @@ installer build/install or release signing is claimed from configuration alone;
 hosted packaging, release-mode Windows stdio and real installation/runtime
 acceptance remain required. See [packaging](DESKTOP_PACKAGING.md).
 
-### Declared 3′ resection and homology-annealing kernel — 26 November 2026
+### Declared 3′ resection and diagnostic annealing workflow — 26 November 2026
 
 The new `three_prime_resection` and `homology_annealing` modules implement
 explicit hydrolytic shortening and ordered pairing of exposed 5′ tails. They
@@ -2847,13 +2847,26 @@ Eight focused scientific fixture groups pass against literal expected strands,
 cut boundaries, gap/nick geometry, chemistry and modification calls. Source-count
 bounds are also checked before allocating borrowed-source lists.
 
-This is the missing mechanistic foundation for a future explicit In-Fusion-style
-preparation route, not a claim about proprietary formulations or cellular repair.
-No joined complex becomes reusable sealed material. The existing 5′ assembly
-route and In-Fusion reference profile retain their semantics. Append-only
-verifier/recipe operations, retained event/target evidence, worker/MCP transport
-and compact workflow controls still need integration. See the
-[scientific contract and primary sources](THREE_PRIME_HOMOLOGY.md).
+The mechanism is now connected to append-only `ResectThreePrime` and
+`HomologyAnnealing` plan operations and `compile_annealing`/`preview_annealing`
+recipe helpers. Explicit standalone shortening retains actual tracked material,
+including extruded bottom5′ tails beyond the displayed top reference, and clips
+annotations to the surviving top domain. Its exact saved run can be replayed for
+subsequent supported physical operations. Joined complexes remain separate at
+every nick/gap: independent-target agreement yields an explicitly incomplete,
+reference-only diagnostic and cannot supply PCR, resection or FromRun material.
+No cellular filling/sealing or proprietary In-Fusion performance is inferred.
+
+Scientific engine23/candidate20/native-plan18, worker88/MCP180 and draft11 carry
+the separate policy without rewriting old5′ assembly or In-Fusion reference
+semantics. Full ordered strand/cut/gap/nick evidence, source/target events and
+HTML/PDF protocol descriptions remain retained. One-source linear processing uses
+the standalone operation; the new assembly operation joins2+ ordered sources or
+explicitly self-circularizes one source. The eight integrated recipe groups, two transport groups and real MCP preview
+fixture pass in addition to the earlier eight kernel groups. Historical 5′ and
+physical-PCR receipts remain readable under their declared floors. UI/worker WASM
+and native SDK checks pass; native draft11 roundtrip/migration checks also pass.
+See the [scientific contract and primary sources](THREE_PRIME_HOMOLOGY.md).
 
 ### Native export acknowledgments — 26 November 2026
 
@@ -2921,3 +2934,23 @@ the unsigned package overlay uses the supported `Education` bundle category afte
 all three real native builds reached bundling and rejected `Science`. Neither fix
 weakens package signature checks or scientific criteria. Hosted package creation
 and installation still need verification.
+
+
+### Reviewed SBOL subset publication — 26 November 2026
+
+The selected-document sharing path can now prepare an explicit structural subset
+when an original SBOL file contains unrelated designs. An opaque local review
+acknowledgement binds the native closure, selected source pairs, explicit sequence
+alternatives, original/subset hashes and omission counts. The web UI requires a
+separate approval before encoding or sending that projection; source/head,
+workspace, session or destination changes invalidate it. The complete original
+stays local and native revision/event/capsule identities are unchanged.
+
+Receivers independently validate canonical minimal structural scope, hash/policy
+pins and complete nonoverlapping native-claim coverage. A missing-original receipt
+cannot prove its derivation or omission counts and adds no scientific authority.
+Unknown selected properties, forced unselected alternatives, extra public objects
+and references into omitted original graph objects are rejected. Retained text is
+not redacted. Broader SBOL/RDF profiles remain outside this adapter. Six structural
+and ten new/legacy native sharing fixture groups pass, including actual saved-run
+and fresh capsule-PCR reuse. [Contract](SBOL_DOCUMENTARY_SUBSETS.md).

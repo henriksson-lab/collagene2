@@ -102,7 +102,7 @@ fn real_binary_pcr_extension_outer_pcr_matches_independent_target_and_exports() 
         "{:?}",
         report.findings
     );
-    assert!(report.engine_version.ends_with("/science-22"));
+    assert!(report.engine_version.ends_with("/science-23"));
     assert_eq!(report.products.len(), 4);
     let extension = report
         .physical_processing_reports

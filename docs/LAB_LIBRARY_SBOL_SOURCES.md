@@ -77,21 +77,16 @@ the same closure rule. A supplied archive containing extra SBOL assets still
 fails the host's actual-versus-permitted inventory comparison. No additional
 whole-workspace sharing permission is inferred from a source attachment.
 
-## Remaining active workflow gap
+## Explicit reviewed selected-subset publication
 
-This is the exact-original subset of safe publication, not complete SBOL source
-sharing. Ordinary multi-component SBOL imports can be retained locally but may
-still be refused when one projected plasmid is published. A canonical selected
-SBOL subgraph, or explicit reviewed omission of documentary graph data, remains
-active work.
-
-A future subgraph/omission path must preserve immutable native pins and retain
-the original source hash as documentary provenance. A smaller graph has a new
-hash and must not impersonate the original file. It needs an explicit typed
-publication mapping/loss receipt and user review, plus independent host checking
-that no unrelated graph objects were added. An omission policy must not silently
-flatten native runs or alter their source ancestry. The current adapter provides
-no automatic omission, source-hash rewriting or whole-file fallback.
+The exact-original path remains strict. An explicit alternative now exists in
+`library_sharing::sbol_subset`; see [SBOL documentary subsets](SBOL_DOCUMENTARY_SUBSETS.md).
+It creates a new selected archive containing canonical structural SBOL bytes and
+a separate omission receipt. It never rewrites a native molecule, revision,
+event, capsule or original `sbol:source_hash`. The original file remains local.
+Original-absent receiving checks establish exact scope and bytes, not proof of
+derivation from the absent original or scientific correctness. Unsupported
+selected properties/classes and forced unselected alternatives remain errors.
 
 ## Verification fixtures and bounds
 

@@ -58,7 +58,7 @@ impl Options {
 }
 dto! {#[derive(PartialEq,Eq)] pub struct Range {pub start:usize,pub end:usize}}
 dto! {pub struct GoldenGatePart {pub path_index:usize,pub pool_fragment:usize,pub template_index:usize,pub template:Source,pub template_revision:String,pub template_length:usize,pub fragment_index:usize,pub top_start:usize,pub bottom_start:i64,pub reverse:bool,pub top_length:usize,pub bottom_length:usize,pub output_start:usize,pub output_end:usize,pub left_end:Option<End>,pub right_end:Option<End>}}
-dto! {pub enum Method {Ligate,Overlap,ProfiledOverlap,GoldenGate{candidate_index:usize,path:Vec<GoldenGatePart>,enumeration_complete:bool,states_examined:usize,truncation_reasons:Vec<String>},HomologyAssembly}}
+dto! {pub enum Method {Ligate,Overlap,ProfiledOverlap,GoldenGate{candidate_index:usize,path:Vec<GoldenGatePart>,enumeration_complete:bool,states_examined:usize,truncation_reasons:Vec<String>},HomologyAssembly,HomologyAnnealing}}
 dto! {pub struct Window {pub parts:Vec<Range>,pub dna:String,pub boundary_offset:usize,pub left_bases:usize,pub right_bases:usize,pub clipped:bool}}
 dto! {pub struct Codon {pub dna:String,pub amino_acid:char,/// Offset in the selected frame's oriented WINDOW, not the full product.
 pub window_start:usize}}
@@ -398,6 +398,47 @@ fn geometry(
             *circular,
             Method::Overlap,
         ),
+        Operation::HomologyAnnealing {
+            fragments, policy, ..
+        } => {
+            let step = plan
+                .steps
+                .len()
+                .checked_sub(1)
+                .ok_or_else(|| bad("empty annealing plan"))?;
+            let native = verification
+                .physical_processing_reports
+                .iter()
+                .find_map(|entry| {
+                    if entry.step_index == step {
+                        match &entry.evidence {
+                            verification::PhysicalProcessingEvidence::HomologyAnnealing(report) => {
+                                Some(report)
+                            }
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| bad("annealing physical strand evidence is unavailable"))?;
+            native.validate_documentary()?;
+            if assembly_recipe::hash(&native.options)? != assembly_recipe::hash(policy)?
+                || native.reference != product.sequence
+                || policy.topology != product.topology
+            {
+                return Err(bad("annealing junction reference/policy differs"));
+            }
+            overlap_geometry(
+                plan,
+                verification,
+                product,
+                fragments,
+                &policy.overlaps,
+                policy.topology == Topology::Circular,
+                Method::HomologyAnnealing,
+            )
+        }
         Operation::HomologyAssembly {
             fragments, policy, ..
         } => {

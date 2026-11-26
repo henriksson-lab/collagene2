@@ -31,6 +31,10 @@ fn title(op: &Operation) -> &'static str {
         Operation::Ligate { .. } => "Ordered ligation",
         Operation::AnnealOligos { .. } => "Oligo annealing",
         Operation::HomologyAssembly { .. } => "Physical homology assembly",
+        Operation::ResectThreePrime { .. } => "Explicit 3′ source resection",
+        Operation::HomologyAnnealing { .. } => {
+            "3′ resection and unsealed 5′-tail annealing · incomplete reference"
+        }
         Operation::Overlap { .. } | Operation::ProfiledOverlap { .. } => "Overlap assembly",
         Operation::GoldenGate { .. } | Operation::SelectedGoldenGate { .. } => "Golden Gate",
         Operation::DeclareSourceModifications { .. } => "Source modification assumptions",

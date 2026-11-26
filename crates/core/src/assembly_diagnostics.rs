@@ -39,12 +39,12 @@ fn stage(op: &Operation) -> Result<Stage, Error> {
         Operation::OverlapExtension { .. } => Stage::OverlapExtension,
         Operation::AnnealOligos { .. } => Stage::Annealing,
         Operation::Digest { .. } | Operation::CatalogDigest { .. } => Stage::Digest,
-        Operation::RepairEnds { .. } => Stage::Repair,
+        Operation::RepairEnds { .. } | Operation::ResectThreePrime { .. } => Stage::Repair,
         Operation::TreatEnds { .. } => Stage::EndTreatment,
         Operation::DeclareSourceTermini { .. } => Stage::SourceDeclaration,
-        Operation::ProfiledOverlap { .. } | Operation::HomologyAssembly { .. } => {
-            Stage::OverlapAssembly
-        }
+        Operation::ProfiledOverlap { .. }
+        | Operation::HomologyAssembly { .. }
+        | Operation::HomologyAnnealing { .. } => Stage::OverlapAssembly,
         Operation::Ligate { .. } => Stage::LigationAssembly,
         _ => return Err(bad("operation is outside shared recipe compiler scope")),
     })
@@ -373,6 +373,13 @@ pub fn overlap(p: &assembly_recipe::Preview) -> Result<Report, Error> {
             ..
         } => (fragments, *circular, overlaps),
         Operation::HomologyAssembly {
+            fragments, policy, ..
+        } => (
+            fragments,
+            policy.topology == crate::Topology::Circular,
+            &policy.overlaps,
+        ),
+        Operation::HomologyAnnealing {
             fragments, policy, ..
         } => (
             fragments,

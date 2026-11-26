@@ -136,6 +136,18 @@ pub(crate) fn operation_label(operation: &Operation) -> String {
             },
             policy.overlaps
         ),
+        Operation::ResectThreePrime { cuts, .. } => format!(
+            "Explicit 3′ resection · left bottom suffix {} bp · right top suffix {} bp",
+            cuts.left, cuts.right
+        ),
+        Operation::HomologyAnnealing {
+            fragments, policy, ..
+        } => format!(
+            "3′ processing and unsealed 5′-tail annealing · {} fragments · {:?} · homology {:?} bp",
+            fragments.len(),
+            policy.topology,
+            policy.overlaps
+        ),
         Operation::ProfiledOverlap {
             fragments,
             circular,

@@ -1,6 +1,7 @@
 //! Explicit structural SBOL3.1 JSON-LD profile; no remote context fetches.
 mod jsonld;
 mod project;
+pub mod subset;
 mod write;
 pub use collagene_model::{Alphabet, Feature, Location, Molecule, Sequence, Topology};
 pub use project::{Projection, ProjectionPolicy, Selection};

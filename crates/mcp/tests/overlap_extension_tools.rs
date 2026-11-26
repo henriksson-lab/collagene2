@@ -138,7 +138,7 @@ async fn sdk_proposal_verification_and_exports_use_actual_extension_not_target_s
         verified["engine_version"]
             .as_str()
             .unwrap()
-            .ends_with("/science-22")
+            .ends_with("/science-23")
     );
     let products = verified["products"].as_array().unwrap();
     assert_eq!(products.len(), 4);

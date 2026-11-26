@@ -271,9 +271,7 @@ pub fn AssemblyProductView(
                 }/>
             </Show>
         </details>
-        {snapshot.with_value(|s|s.report.physical_processing_reports.iter().filter_map(|step|match &step.evidence {
-            collagene_core::verification::PhysicalProcessingEvidence::HomologyAssembly(report)=>Some(homology_processing_view(step.step_index,report)),_=>None,
-        }).collect_view())}
+        {snapshot.with_value(|s|processing_views(&s.report))}
         <details class="assembly-product-details"><summary>"Sources, preparation history and verification findings"</summary>
             <p>{snapshot.with_value(|s|format!("Scientific engine: {}",s.report.engine_version))}</p>
             <p>{snapshot.with_value(|s|format!("Plan {} · independent target {} ({})",s.plan_revision,clip(&s.target.name,120),s.target_revision))}</p>
@@ -696,5 +694,88 @@ pub(crate) fn homology_processing_view(
         {physical.map(|summary|view!{<details><summary>"Remaining product nicks and outer termini"</summary>{crate::end_view::summary(&summary)}</details>})}
         <details><summary>"Processing findings and limits"</summary>{report.warnings.iter().chain(&report.limits).map(|finding|view!{<p>{finding.clone()}</p>}).collect_view()}</details>
         <p class="helper">{if reusable{"Save the actual reconstructed final product with its run, then select that exact saved material for later cloning. Imported or detached strand summaries cannot establish physical material."}else{"Diagnostic DNA and processing evidence can be inspected and retained. This outcome does not establish reusable material for a later cloning step."}}</p>
+    </details>}.into_any()
+}
+
+pub(crate) fn processing_views(
+    report: &collagene_core::verification::VerificationReport,
+) -> AnyView {
+    use collagene_core::verification::PhysicalProcessingEvidence as Evidence;
+    report
+        .physical_processing_reports
+        .iter()
+        .filter_map(|step| match &step.evidence {
+            Evidence::HomologyAssembly(report) => {
+                Some(homology_processing_view(step.step_index, report))
+            }
+            Evidence::ThreePrimeResection(report) => {
+                Some(three_prime_processing_view(step.step_index, report))
+            }
+            Evidence::HomologyAnnealing(report) => {
+                Some(annealing_processing_view(step.step_index, report))
+            }
+            _ => None,
+        })
+        .collect_view()
+        .into_any()
+}
+fn strand_name(s: collagene_core::chemistry::Strand) -> &'static str {
+    match s {
+        collagene_core::chemistry::Strand::Top => "top",
+        collagene_core::chemistry::Strand::Bottom => "bottom",
+    }
+}
+fn terminal_groups(
+    five: collagene_core::chemistry::FivePrime,
+    three: collagene_core::chemistry::ThreePrime,
+) -> String {
+    use collagene_core::chemistry::{FivePrime, ThreePrime};
+    format!(
+        "5′ {} / 3′ {}",
+        match five {
+            FivePrime::Phosphate => "phosphate",
+            FivePrime::Hydroxyl => "hydroxyl",
+            FivePrime::Unknown => "unknown",
+        },
+        match three {
+            ThreePrime::Hydroxyl => "hydroxyl",
+            ThreePrime::Blocked => "blocked",
+            ThreePrime::Unknown => "unknown",
+        }
+    )
+}
+pub(crate) fn three_prime_processing_view(
+    step_index: usize,
+    report: &collagene_core::three_prime_resection::Report,
+) -> AnyView {
+    let physical = report.product.summary().ok();
+    view!{<details class="assembly-product-details"><summary>{format!("Step {} · explicit 3′ source resection",step_index+1)}</summary>
+        <p>{format!("Left bottom-strand 3′ cut: {} bp · right top-strand 3′ cut: {} bp",report.cuts.left,report.cuts.right)}</p>
+        <p class="helper">"Only accessible 3′ suffixes were shortened as declared. Original 5′ groups remain; no polymerase fill, nick seal or host activity was added."</p>
+        <table><thead><tr><th>"Removed strand"</th><th>"Stored 5′→3′ source interval · zero-based half-open"</th></tr></thead><tbody>{report.removed.iter().map(|r|view!{<tr><td>{strand_name(r.strand)}</td><td>{format!("{}..{}",r.start,r.end)}</td></tr>}).collect_view()}</tbody></table>
+        {physical.map(|summary|crate::end_view::summary(&summary))}
+        <details><summary>"Processing findings"</summary>{report.warnings.iter().map(|w|view!{<p>{w.clone()}</p>}).collect_view()}</details>
+    </details>}.into_any()
+}
+pub(crate) fn annealing_processing_view(
+    step_index: usize,
+    report: &collagene_core::homology_annealing::Report,
+) -> AnyView {
+    view!{<details class="assembly-product-details"><summary>{format!("Step {} · 3′ resection and unsealed 5′-tail annealing",step_index+1)}</summary>
+        <p>"Surviving covalent strands remain separate. This is an annealed reference layout with its actual gaps and nicks; no fill, sealing or host rescue is inferred."</p>
+        <p>{format!("{} source fragments · {:?} reference contour · {} reference bases · {} comparisons · terminal enumeration {}",report.preparations.len(),report.options.topology,report.reference.len(),report.comparisons,if report.terminal_search_complete{"complete within declared adjacent-pair bounds"}else{"incomplete"})}</p>
+        <p class="helper">"Reference coordinates below are zero-based and half-open. Circle-closing intervals remain unwrapped so a gap length is preserved."</p>
+        <details><summary>"Separate retained covalent strands"</summary><table><thead><tr><th>"Fragment / strand"</th><th>"Original stored-strand interval"</th><th>"Reference interval"</th><th>"Termini"</th></tr></thead><tbody>{report.segments.iter().map(|s|view!{<tr><td>{format!("{} / {}",s.source+1,strand_name(s.strand))}</td><td>{format!("{}..{}",s.source_start,s.source_end)}</td><td>{format!("{}..{}",s.reference_start,s.reference_end)}</td><td>{terminal_groups(s.five_prime,s.three_prime)}</td></tr>}).collect_view()}</tbody></table>
+            {report.segments.iter().map(|s|view!{<details><summary>{format!("Fragment {} · {} strand · {} stored bases",s.source+1,strand_name(s.strand),s.sequence.len())}</summary><pre>{clip(s.sequence.as_str(),300)}</pre></details>}).collect_view()}
+            <p class="helper">"Each sequence is stored 5′→3′. Bottom-strand storage runs opposite the increasing top-reference coordinates. Previews show at most 300 symbols; complete strands remain in the native processing report."</p>
+        </details>
+        {report.junctions.iter().enumerate().map(|(i,j)|view!{<details><summary>{format!("Junction {} · fragment {} → {} · {} paired homology bases",i+1,j.left_source+1,j.right_source+1,j.overlap)}</summary>
+            <pre>{clip(&j.homology,300)}</pre><p>{format!("Reference homology {}..{}",j.homology_start,j.homology_end)}</p>
+            {[&j.top,&j.bottom].into_iter().map(|d|view!{<p>{format!("{} strand: {} at {}..{} · {} separate strand ends",strand_name(d.strand),if d.start==d.end{"unsealed nick"}else{"unfilled gap"},d.start,d.end,terminal_groups(d.five_prime,d.three_prime))}</p>}).collect_view()}
+            <p>{format!("Adjacent terminal search {} · alternative lengths {:?}",if j.terminal_search_complete{"complete within declared bounds"}else{"incomplete"},j.alternatives)}</p>
+        </details>}).collect_view()}
+        {report.preparations.iter().enumerate().map(|(i,r)|three_prime_processing_view(i,r)).collect_view()}
+        <details><summary>"Gaps, nicks and scope limits"</summary>{report.warnings.iter().chain(&report.limits).map(|w|view!{<p>{w.clone()}</p>}).collect_view()}</details>
+        <p class="helper">"The final annealed reference remains incomplete and cannot be selected as reusable assembled physical material. Save the diagnostic report for review; downstream host processing is outside this model."</p>
     </details>}.into_any()
 }

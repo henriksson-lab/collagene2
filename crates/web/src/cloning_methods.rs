@@ -876,44 +876,67 @@ pub fn CloningMethodsPanel(
                     let _ = (overlaps, options); // shared recipe reuses the exact parsed profile.
                     let (bound_inputs, recipe) =
                         overlap_request(&state, inputs, &bound_target_molecule)?;
-                    let policy = state
-                        .homology
-                        .as_ref()
-                        .filter(|form| form.enabled)
-                        .map(|form| {
-                            form.policy(
-                                recipe.overlaps.clone(),
-                                recipe.circular,
-                                recipe.fragments.len(),
-                            )
-                        })
-                        .transpose()?;
-                    let revision = match &policy {
-                        Some(policy) => collagene_core::assembly_recipe::homology_preview_revision(
+                    let (revision, job) = if let Some(form) =
+                        state.annealing.as_ref().filter(|f| f.enabled)
+                    {
+                        let policy = form.policy(
+                            recipe.overlaps.clone(),
+                            recipe.circular,
+                            recipe.fragments.len(),
+                        )?;
+                        let revision = collagene_core::assembly_recipe::annealing_preview_revision(
                             &bound_inputs,
                             &bound_target_molecule,
                             &recipe,
-                            policy,
-                        ),
-                        None => collagene_core::assembly_recipe::preview_revision(
+                            &policy,
+                        )
+                        .map_err(|e| e.to_string())?;
+                        (
+                            revision,
+                            AnalysisJob::PreviewAnnealingRecipe {
+                                inputs: bound_inputs,
+                                target: bound_target_molecule,
+                                recipe,
+                                policy,
+                            },
+                        )
+                    } else if let Some(form) = state.homology.as_ref().filter(|f| f.enabled) {
+                        let policy = form.policy(
+                            recipe.overlaps.clone(),
+                            recipe.circular,
+                            recipe.fragments.len(),
+                        )?;
+                        let revision = collagene_core::assembly_recipe::homology_preview_revision(
                             &bound_inputs,
                             &bound_target_molecule,
                             &recipe,
-                        ),
-                    }
-                    .map_err(|e| e.to_string())?;
-                    let job = match policy {
-                        Some(policy) => AnalysisJob::PreviewHomologyRecipe {
-                            inputs: bound_inputs,
-                            target: bound_target_molecule,
-                            recipe,
-                            policy,
-                        },
-                        None => AnalysisJob::PreviewOverlapRecipe {
-                            inputs: bound_inputs,
-                            target: bound_target_molecule,
-                            recipe,
-                        },
+                            &policy,
+                        )
+                        .map_err(|e| e.to_string())?;
+                        (
+                            revision,
+                            AnalysisJob::PreviewHomologyRecipe {
+                                inputs: bound_inputs,
+                                target: bound_target_molecule,
+                                recipe,
+                                policy,
+                            },
+                        )
+                    } else {
+                        let revision = collagene_core::assembly_recipe::preview_revision(
+                            &bound_inputs,
+                            &bound_target_molecule,
+                            &recipe,
+                        )
+                        .map_err(|e| e.to_string())?;
+                        (
+                            revision,
+                            AnalysisJob::PreviewOverlapRecipe {
+                                inputs: bound_inputs,
+                                target: bound_target_molecule,
+                                recipe,
+                            },
+                        )
                     };
                     let response = ask(&worker, job, revision.clone(), token).await?;
                     if let AnalysisResult::OverlapRecipePreview(preview) = response {
@@ -1110,7 +1133,23 @@ pub fn CloningMethodsPanel(
                     return;
                 }
             };
-            let compiled = if let Some(form) = state.homology.as_ref().filter(|form| form.enabled) {
+            let compiled = if let Some(form) = state.annealing.as_ref().filter(|form| form.enabled)
+            {
+                form.policy(
+                    recipe.overlaps.clone(),
+                    recipe.circular,
+                    recipe.fragments.len(),
+                )
+                .and_then(|policy| {
+                    collagene_core::assembly_recipe::compile_annealing(
+                        &bound,
+                        &current_target,
+                        &recipe,
+                        &policy,
+                    )
+                    .map_err(|e| e.to_string())
+                })
+            } else if let Some(form) = state.homology.as_ref().filter(|form| form.enabled) {
                 form.policy(
                     recipe.overlaps.clone(),
                     recipe.circular,
@@ -1358,7 +1397,7 @@ pub fn CloningMethodsPanel(
             {proof.tailing.as_ref().map(|preview|view!{<article class="tail-evidence"><h3>"Reconstructed tailing and ligation"</h3><p>{format!("Preparation reconstructed: {} · independent-target assessment: {}",preview.preparation_complete,method_status(&preview.verification.status))}</p><p class="helper">"Ends are reconstructed from the pinned originals, then tailed and treated as declared. Junction bases are compared with your separately reviewed intended DNA."</p>{preview.junctions.iter().map(|junction|view!{<details><summary>{format!("Junction {} · fragment {} → {}{}",junction.index+1,junction.upstream+1,junction.downstream+1,if junction.closing{" · circle closure"}else{""})}</summary><div class="physical-junction-ends"><section><h4>"Upstream right end"</h4>{crate::end_view::right(junction.upstream_end.as_ref())}</section><section><h4>"Downstream left end"</h4>{crate::end_view::left(junction.downstream_end.as_ref())}</section></div></details>}).collect_view()}{preview.verification.findings.iter().map(|finding|view!{<p>{finding.clone()}</p>}).collect_view()}</article>})}
             {proof.tails.iter().enumerate().map(|(i,preview)|{let opened=preview.molecule.clone();view!{<article class="tail-evidence"><h3>{format!("{} · {}-tailed duplex",if i==0{"Vector"}else{"Insert"},preview.base.as_str())}</h3><pre>{format!("Top 5′→3′: {}\nBottom 5′→3′: {}\n{}",short(preview.tailing.duplex.top.as_str()),short(preview.tailing.duplex.bottom.as_str()),preview.tailing.duplex.summary().map(|s|s.describe()).unwrap_or_else(|e|e.to_string()))}</pre><details><summary>"Source, additions and assumptions"</summary><pre>{format!("Source top 5′→3′: {}\nSource bottom 5′→3′: {}",short(preview.tailing.source.top.as_str()),short(preview.tailing.source.bottom.as_str()))}</pre>{preview.tailing.additions.iter().map(|a|view!{<p>{format!("New {:?} residue {}–{}: {} (no template ancestry)",a.strand,a.product_start+1,a.product_end,a.sequence)}</p>}).collect_view()}{preview.findings.iter().chain(&preview.tailing.warnings).map(|w|view!{<p>{w.clone()}</p>}).collect_view()}</details><button class="button secondary full" on:click=move|_|match on_products.run(vec![opened.clone()]){Ok(())=>status.set("Reference preview opened; reconstruct its original graph for later physical operations.".into()),Err(e)=>status.set(e)}>{format!("Open {} reference preview",if i==0{"vector"}else{"insert"})}</button></article>}}).collect_view()}
             {proof.ligation.as_ref().map(|preview|view!{<article class="ordered-ligation-evidence"><h3>"Reconstructed ligation evidence"</h3><p>{format!("Preparation reconstructed: {} · independent-target assessment: {}",preview.preparation_complete,method_status(&preview.verification.status))}</p><p class="helper">"These ends and junctions were freshly reconstructed from the original source operations. An end-compatible ordered candidate is not a unique mixture product or demonstrated reaction outcome."</p>{preview.prepared.iter().enumerate().map(|(i,fragment)|view!{<details><summary>{format!("Fragment {} · {} bp · {}",i+1,fragment.sequence.len(),proof.config.rows.get(i).map(OverlapInput::summary).unwrap_or_default())}</summary><pre>{format!("Prepared source before orientation: {}",short(fragment.sequence.as_str()))}</pre>{preview.physical.get(i).and_then(Option::as_ref).map(crate::end_view::summary)}<p>{preview.physical.get(i).and_then(Option::as_ref).map(method_duplex).unwrap_or_else(||"Physical end geometry unavailable; no chemistry inferred".into())}</p><p class="helper">"End summary is in assembly orientation, after any explicit terminal treatment."</p></details>}).collect_view()}{preview.junctions.iter().map(|junction|view!{<details><summary>{format!("Junction {} · fragment {} → {}{}",junction.index+1,junction.upstream+1,junction.downstream+1,if junction.closing{" · circle closure"}else{""})}</summary><div class="physical-junction-ends"><section><h4>"Upstream fragment: right end"</h4>{crate::end_view::right(junction.upstream_end.as_ref())}</section><section><h4>"Downstream fragment: left end"</h4>{crate::end_view::left(junction.downstream_end.as_ref())}</section></div><p>{format!("Upstream right: {}",method_end(junction.upstream_end.as_ref()))}</p><p>{format!("Downstream left: {}",method_end(junction.downstream_end.as_ref()))}</p></details>}).collect_view()}{preview.product_physical.as_ref().map(|physical|view!{<section><h4>"Reconstructed product"</h4><p>{method_duplex(physical)}</p>{physical.nicks.iter().map(|nick|view!{<p>{format!("Retained {} strand nick at top-reference boundary {}",match nick.strand{collagene_core::chemistry::Strand::Top=>"top",collagene_core::chemistry::Strand::Bottom=>"bottom"},nick.position)}</p>}).collect_view()}</section>})}{preview.verification.findings.iter().map(|finding|view!{<p>{finding.clone()}</p>}).collect_view()}</article>})}
-            {proof.overlap.as_ref().map(|preview|view!{<article class="overlap-preparation-evidence"><h3>"Prepared fragments from original sources"</h3><p>{format!("Preparation reconstructed: {} · independent-target assessment: {}",preview.preparation_complete,method_status(&preview.verification.status))}</p><p class="helper">"Prepared reference sequences below are reconstructed from the declared originals. They are not substituted as plan inputs, confirmed amplicons or physical reaction outcomes."</p>{preview.prepared.iter().enumerate().map(|(i,fragment)|view!{<details><summary>{format!("Fragment {} · {} bp · {}",i+1,fragment.sequence.len(),proof.config.rows.get(i).map(OverlapInput::summary).unwrap_or_default())}</summary><pre>{format!("Prepared source 5′→3′ (before orientation): {}",short(fragment.sequence.as_str()))}</pre></details>}).collect_view()}{preview.verification.findings.iter().map(|finding|view!{<p>{finding.clone()}</p>}).collect_view()}</article>})}
+            {proof.overlap.as_ref().map(|preview|view!{<article class="overlap-preparation-evidence"><h3>"Prepared fragments from original sources"</h3>{crate::assembly_product_view::processing_views(&preview.verification)}<p>{format!("Preparation reconstructed: {} · independent-target assessment: {}",preview.preparation_complete,method_status(&preview.verification.status))}</p><p class="helper">"Prepared reference sequences below are reconstructed from the declared originals. They are not substituted as plan inputs, confirmed amplicons or physical reaction outcomes."</p>{preview.prepared.iter().enumerate().map(|(i,fragment)|view!{<details><summary>{format!("Fragment {} · {} bp · {}",i+1,fragment.sequence.len(),proof.config.rows.get(i).map(OverlapInput::summary).unwrap_or_default())}</summary><pre>{format!("Prepared source 5′→3′ (before orientation): {}",short(fragment.sequence.as_str()))}</pre></details>}).collect_view()}{preview.verification.findings.iter().map(|finding|view!{<p>{finding.clone()}</p>}).collect_view()}</article>})}
             {proof.profile.as_ref().map(|p|view!{<article class="overlap-profile-evidence"><h3>"Overlap evidence"</h3><p>{format!("Geometry consistent: {} · analysis complete: {} · published length guidance: {}",p.geometry_valid,p.complete,match p.recommendation_compliant{Some(true)=>"met",Some(false)=>"outside published guidance",None=>"not established"})}</p><p class="helper">{format!("{} comparisons; no exhaustive alternative-product search",p.comparisons)}</p>{p.junctions.iter().map(|j|view!{<details class="profile-junction"><summary>{format!("Junction {} · {}bp · {}",j.index+1,j.overlap_bases,if j.exact_match{"exact end homology"}else{"incompatible homology"})}</summary><pre>{format!("Upstream {}\nDownstream {}",j.homology,j.downstream_homology)}</pre><p>{format!("GC: {} · advisory length: {} · repeat search complete: {}",j.gc_fraction.map(|f|format!("{:.1}%",f*100.)).unwrap_or_else(||"unavailable".into()),guidance(j.recommended_min,j.recommended_max),j.repeat_search_complete)}</p>{j.occurrences.iter().take(40).map(|o|view!{<p>{format!("Source {} · {}–{}{}{}",o.fragment+1,o.start+1,o.end,if o.reverse{" reverse"}else{" forward"},if o.assigned_junction{" · assigned end"}else{" · additional occurrence"})}</p>}).collect_view()}<p class="helper">"Up to 40 occurrence positions shown; full evidence download retains every reported position."</p></details>}).collect_view()}<details><summary>"Profile findings and assumptions"</summary>{p.findings.iter().chain(&p.warnings).map(|w|view!{<p>{w.clone()}</p>}).collect_view()}</details></article>})}
             <button class="button primary full" on:click=move|_|review.run(())>"Review method candidate"</button><button class="button secondary full" on:click=move|_|{let result=if let Some(preview)=&report.tailing{serde_json::to_vec_pretty(preview)}else if let Some(preview)=&report.ligation{serde_json::to_vec_pretty(preview)}else if let Some(preview)=&report.overlap{serde_json::to_vec_pretty(preview)}else if let Some(profile)=&report.profile{serde_json::to_vec_pretty(profile)}else{serde_json::to_vec_pretty(&report.tails)};match result{Ok(bytes)=>crate::app::download_with_completion("cloning-method-evidence.json","application/json",&bytes,move|result|{if status.try_get_untracked().is_none(){return;}if let Err(e)=result {status.set(e)}}),Err(e)=>status.set(e.to_string())}}>"Download method evidence"</button>
         </div>}})}
@@ -1486,6 +1525,7 @@ fn overlap_request(
     target: &Molecule,
 ) -> Result<(Vec<PlanInput>, collagene_core::assembly_recipe::Recipe), String> {
     use collagene_core::assembly_recipe::Recipe;
+    state.validate_processing_selection()?;
     let (overlaps, options) = state.profile()?;
     let (ids, fragments) = prepared_rows(state, inputs.len())?;
     let recipe = Recipe {
@@ -1500,7 +1540,17 @@ fn overlap_request(
         .zip(&inputs)
         .map(|(id, m)| (id.as_str(), m))
         .collect::<Vec<_>>();
-    if let Some(form) = state.homology.as_ref().filter(|form| form.enabled) {
+    if let Some(form) = state.annealing.as_ref().filter(|form| form.enabled) {
+        let policy = form.policy(
+            recipe.overlaps.clone(),
+            recipe.circular,
+            recipe.fragments.len(),
+        )?;
+        collagene_core::assembly_recipe::annealing_source_preflight(
+            &borrowed, target, &recipe, &policy,
+        )
+        .map_err(|e| e.to_string())?;
+    } else if let Some(form) = state.homology.as_ref().filter(|form| form.enabled) {
         let policy = form.policy(
             recipe.overlaps.clone(),
             recipe.circular,
@@ -2441,10 +2491,15 @@ fn PoolCandidateDetails(bound: Arc<PoolEvidence>, index: usize) -> impl IntoView
 fn HomologyControls(config: RwSignal<MethodsState>) -> impl IntoView {
     let form = move || config.with(|c| c.homology.clone().unwrap_or_default());
     view! {<details class="assembly-fragment-options"><summary>"Reconstruct product strands"</summary>
-        <p class="helper">"Choose a generic 5′ resection, annealing, gap-fill and ligation model when you need a reconstructed duplex for later cloning steps. This is a declared reaction model, not a vendor formulation or a prediction of experimental completion."</p>
-        <Show when=move||config.with(|c|c.method==OverlapMethod::InFusion)><p class="helper">"In-Fusion uses a different processing/host-repair mechanism; leave physical reconstruction off and use the reference check."</p></Show>
-        <Show when=move||config.with(|c|c.rows.len()==1&&!c.circular)><p class="helper">"A single linear fragment has no joining boundary. Leave junction homology empty; outer-end processing remains explicit below."</p></Show>
-        <label class="checkbox-label"><input type="checkbox" prop:checked=move||config.with(|c|c.homology.as_ref().is_some_and(|f|f.enabled)) on:change=move|e|config.update(|c|c.homology.get_or_insert_with(Default::default).enabled=event_target_checked(&e))/>"Reconstruct physical strands under these assumptions"</label>
+        <p class="helper">"Choose the processing assumptions separately from the published homology-length guidance. Reference checks do not process strands."</p>
+        <label>"Strand processing"<select aria-label="Assembly strand processing route" prop:value=move||config.with(|c|match(c.homology.as_ref().is_some_and(|f|f.enabled),c.annealing.as_ref().is_some_and(|f|f.enabled)){(true,false)=>"five",(false,true)=>"three",(false,false)=>"reference",_=>"conflict"}) on:change=move|e|{let mode=event_target_value(&e);config.update(|c|{
+            if let Some(form)=&mut c.homology{form.enabled=false;}
+            if let Some(form)=&mut c.annealing{form.enabled=false;}
+            match mode.as_str(){"five"=>c.homology.get_or_insert_with(Default::default).enabled=true,"three"=>c.annealing.get_or_insert_with(Default::default).enabled=true,_=>{}}
+        });}><option value="reference">"Reference-only overlap check"</option><option value="five">"5′ resection → annealing, fill and eligible nick sealing"</option><option value="three">"3′ resection → 5′-tail annealing (unsealed)"</option><option value="conflict" disabled>"Conflicting saved modes — choose one"</option></select></label>
+        <Show when=move||config.with(|c|c.method==OverlapMethod::InFusion)><p class="helper">"In-Fusion length guidance may be paired with the explicit 3′ resection route or the reference-only check. The generic 5′ fill/seal route does not establish In-Fusion chemistry; cellular rescue is not modeled."</p></Show>
+        <Show when=move||config.with(|c|c.rows.len()==1&&!c.circular&&c.homology.as_ref().is_some_and(|f|f.enabled))><p class="helper">"A single linear fragment has no joining boundary. Leave junction homology empty; outer-end processing remains explicit below."</p></Show>
+
         <Show when=move||form().enabled&&config.with(|c|c.homology.is_some())>
             <label>"5′ resection at joining ends"<select prop:value=move||if form().exact_homology{"homology"}else{"explicit"} on:change=move|e|config.update(|c|c.homology.get_or_insert_with(Default::default).exact_homology=event_target_value(&e)=="homology")><option value="homology">"Exactly the declared junction homology"</option><option value="explicit">"Explicit cuts for every fragment"</option></select></label>
             <Show when=move||!form().exact_homology><label>"5′ cuts, left:right per oriented fragment"<input type="text" placeholder="20:20, 20:20" prop:value=move||form().cuts on:input=move|e|config.update(|c|c.homology.get_or_insert_with(Default::default).cuts=event_target_value(&e))/></label><p class="helper">"One comma-separated pair per prepared fragment, in product order. Left removes the top-strand 5′ end; right removes the bottom-strand 5′ end. Values refer to the oriented prepared fragment."</p></Show>
@@ -2456,5 +2511,23 @@ fn HomologyControls(config: RwSignal<MethodsState>) -> impl IntoView {
             </div></details>
             <p class="helper">"Review every removed 5′ segment, joining nick and gap below. Unsupported gaps withhold a reusable product. Save a reconstructed product with its run history, then choose that exact saved material in a later preparation."</p>
         </Show>
+        <Show when=move||config.with(|c|c.annealing.as_ref().is_some_and(|f|f.enabled))><AnnealingControls config/></Show>
     </details>}
+}
+
+#[component]
+fn AnnealingControls(config: RwSignal<MethodsState>) -> impl IntoView {
+    let form = move || config.with(|c| c.annealing.clone().unwrap_or_default());
+    view! {<section class="three-prime-annealing-options">
+        <p class="helper">"Shorten declared accessible 3′ ends, then pair the exposed 5′ homology tails. Surviving covalent strands remain separate. No gap fill, nick sealing or host rescue is performed."</p>
+        <label>"3′ cuts, left:right per oriented prepared fragment"<input type="text" maxlength="1024" aria-label="Explicit 3 prime resection source cuts" placeholder="0:20, 20:0" prop:value=move||form().cuts on:input=move|e|config.update(|c|c.annealing.get_or_insert_with(Default::default).cuts=event_target_value(&e))/></label>
+        <p class="helper">"One pair per fragment in product order. Left shortens the stored bottom-strand 3′ suffix; right shortens the stored top-strand 3′ suffix. Include any outer-end cuts explicitly. Original 5′ groups are retained; positive cuts require an accessible 3′ hydroxyl."</p>
+        <details><summary>"Annealing and work limits"</summary><div class="primer-grid">
+            <label>"Minimum paired terminal bases"<input type="text" maxlength="20" prop:value=move||form().min_paired_bases on:input=move|e|config.update(|c|c.annealing.get_or_insert_with(Default::default).min_paired_bases=event_target_value(&e))/></label>
+            <label>"Terminal comparison limit"<input type="text" maxlength="20" prop:value=move||form().max_comparisons on:input=move|e|config.update(|c|c.annealing.get_or_insert_with(Default::default).max_comparisons=event_target_value(&e))/></label>
+            <label>"Retained terminal candidates"<input type="text" maxlength="20" prop:value=move||form().max_candidates on:input=move|e|config.update(|c|c.annealing.get_or_insert_with(Default::default).max_candidates=event_target_value(&e))/></label>
+        </div></details>
+        <Show when=move||config.with(|c|c.rows.len()==1&&!c.circular)><p role="alert">"An annealing recipe needs two or more fragments, or one fragment for self-circularization. A standalone linear 3′ resection is a separate source-processing operation."</p></Show>
+        <p class="helper">"This ordered model accepts intact, initially blunt linear sources. It reports separate strands, gaps and nicks against a source-derived reference. The assembled reference stays incomplete and cannot be reused as physical material."</p>
+    </section>}
 }

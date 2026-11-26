@@ -3,7 +3,7 @@
 `collagene-desktop-mcp` prepares a memory-only MCP session from explicitly
 selected **saved local catalog revisions**. The desktop executable can serve that
 session over stdio in the same process; it neither launches the GUI nor runs an
-external scientific executable. The existing 179-tool MCP surface is unchanged.
+external scientific executable. The same 180-tool registry is available in standalone and embedded sessions.
 
 The shell/operator chooses selections as `doc-32hex@revision64hex`. The revision
 is an immutable local library revision ID, not a molecule content revision or a

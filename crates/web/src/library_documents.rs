@@ -100,17 +100,98 @@ pub fn current(frame: &Workspace, epoch: u64) -> Result<LocalDocument, String> {
     })
 }
 
-pub async fn capture(frame: Workspace, epoch: u64) -> Result<Captured, String> {
+#[derive(Clone, Default)]
+pub struct CaptureRequest {
+    pub choices: collagene_library_sharing::sbol_subset::PublicationChoices,
+    pub approved: Option<collagene_library_sharing::sbol_subset::ReviewedPublication>,
+    pub expected: Option<LocalDocument>,
+}
+#[derive(Clone)]
+pub struct CaptureReview {
+    pub local: LocalDocument,
+    pub review: collagene_library_sharing::sbol_subset::PublicationReview,
+}
+pub enum CaptureOutcome {
+    Ready(Captured),
+    ReviewRequired(CaptureReview),
+    ChoicesRequired {
+        local: LocalDocument,
+        requirements: Vec<collagene_library_sharing::sbol_subset::ChoiceRequirement>,
+    },
+}
+
+pub async fn capture(
+    frame: Workspace,
+    epoch: u64,
+    request: CaptureRequest,
+) -> Result<CaptureOutcome, String> {
     // Malformed saved links cannot silently turn a revision push into a new import.
     bindings(&frame.attachments)?;
     let local = current(&frame, epoch)?;
+    if request.approved.is_some() && request.expected.is_none() {
+        return Err(
+            "Reviewed publication requires its exact local document and workspace epoch pin."
+                .into(),
+        );
+    }
+    if request
+        .expected
+        .as_ref()
+        .is_some_and(|expected| expected != &local)
+    {
+        return Err(
+            "The selected plasmid changed; prepare a new publication review. Nothing was sent."
+                .into(),
+        );
+    }
     let selection = Selection {
         document_id: local.id.clone(),
         revision: local.revision.as_str().into(),
         head_event: local.head_event.clone(),
     };
-    let projected = collagene_library_sharing::project_document_closure(&frame, &selection)
-        .map_err(|error| format!("Cannot share this plasmid's history: {error}"))?;
+    let projected = if let Some(approved) = &request.approved {
+        collagene_library_sharing::sbol_subset::project_document_closure_reviewed(
+            &frame, &selection, approved,
+        )
+        .map_err(|error| format!("Publication review no longer matches this workspace: {error}"))?
+    } else {
+        match collagene_library_sharing::project_document_closure(&frame, &selection) {
+            Ok(projected) => projected,
+            Err(_) => {
+                let requirements =
+                    collagene_library_sharing::sbol_subset::choice_requirements(&frame, &selection)
+                        .map_err(|error| {
+                            format!("Cannot inspect reachable SBOL sequence choices: {error}")
+                        })?;
+                let missing = requirements.iter().any(|requirement| {
+                    requirement.required_sequences.is_empty()
+                        && request
+                            .choices
+                            .get(&requirement.original_hash)
+                            .and_then(|choices| choices.get(&requirement.component_iri))
+                            .is_none()
+                });
+                if missing {
+                    return Ok(CaptureOutcome::ChoicesRequired {
+                        local,
+                        requirements,
+                    });
+                }
+                let review = collagene_library_sharing::sbol_subset::prepare_documentary_subset(
+                    &frame,
+                    &selection,
+                    &request.choices,
+                )
+                .map_err(|error| format!("Cannot prepare this plasmid's publication: {error}"))?;
+                // No archive is encoded and no request is sent until the user
+                // explicitly approves this exact, source-bound documentary review.
+                return Ok(CaptureOutcome::ReviewRequired(CaptureReview {
+                    local,
+                    review,
+                }));
+            }
+        }
+    };
     let bytes = crate::app::encode_workspace(projected.workspace, u32::MAX - 301).await?;
     let payload = wire::Payload {
         kind: wire::PayloadKind::WorkspaceArchive,
@@ -129,7 +210,7 @@ pub async fn capture(frame: Workspace, epoch: u64) -> Result<Captured, String> {
         sharing: Some(wire::WorkspaceSharing::DocumentClosure),
     };
     payload.validate().map_err(|error| error.to_string())?;
-    Ok(Captured { local, payload })
+    Ok(CaptureOutcome::Ready(Captured { local, payload }))
 }
 
 pub struct Decoded {
@@ -313,4 +394,94 @@ fn retain_branch(
         "Retained local library branches",
         bytes,
     )
+}
+
+#[cfg(test)]
+mod documentary_review_tests {
+    use super::*;
+    use collagene_core::{Molecule, Topology};
+    use collagene_design_exchange as sbol;
+    use serde_json::json;
+    use std::{
+        future::Future,
+        pin::pin,
+        task::{Context, Poll, Waker},
+    };
+
+    fn fixture() -> Workspace {
+        let raw=serde_json::to_vec(&json!({"@context":{"sbol":sbol::SBOL},"@graph":[
+            {"@id":"https://example.test/c","@type":"sbol:Component","sbol:hasNamespace":{"@id":"https://example.test"},"sbol:type":[{"@id":sbol::DNA},{"@id":sbol::LINEAR}],"sbol:hasSequence":{"@id":"https://example.test/s"}},
+            {"@id":"https://example.test/s","@type":"sbol:Sequence","sbol:hasNamespace":{"@id":"https://example.test"},"sbol:encoding":{"@id":sbol::NUCLEIC_ENCODING},"sbol:elements":"AGTCCGATGCTACGTAGGACTTCA"},
+            {"@id":"https://example.test/private-activity","@type":"https://example.test/Activity","https://example.test/note":"PRIVATE-NEVER-PUBLISHED"}
+        ]})).unwrap();
+        let stock = sbol::import(&raw)
+            .unwrap()
+            .project(
+                &sbol::Selection {
+                    component: "https://example.test/c".into(),
+                    sequence: "https://example.test/s".into(),
+                    topology: Some(Topology::Linear),
+                },
+                sbol::ProjectionPolicy::AllowOmissions,
+            )
+            .unwrap()
+            .molecule;
+        let mut workspace = Workspace::from_documents(
+            "Private local workspace",
+            vec![
+                stock,
+                Molecule::dna(
+                    "Private unrelated plasmid",
+                    "CCCGGGTTTAAA",
+                    Topology::Circular,
+                )
+                .unwrap(),
+            ],
+            0,
+        )
+        .unwrap();
+        workspace.attachments.insert(
+            blake3::hash(&raw).to_hex().to_string(),
+            WorkspaceAttachment {
+                kind: collagene_library_sharing::SBOL_SOURCE_ATTACHMENT_KIND.into(),
+                name: "original-design.sbol.jsonld".into(),
+                media_type: "application/ld+json".into(),
+                bytes: raw,
+            },
+        );
+        workspace
+    }
+    #[test]
+    fn unapproved_subset_capture_returns_review_before_archive_worker_or_transport() {
+        let workspace = fixture();
+        let original = collagene_core::workspace::save_workspace(&workspace).unwrap();
+        let mut future = pin!(capture(workspace.clone(), 7, CaptureRequest::default()));
+        let Poll::Ready(Ok(CaptureOutcome::ReviewRequired(review))) = future
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+        else {
+            panic!("Unapproved publication must return review before awaiting archive encoding");
+        };
+        assert_eq!(review.local, current(&workspace, 7).unwrap());
+        assert_eq!(review.review.entries().len(), 1);
+        let entry = &review.review.entries()[0];
+        assert_eq!(entry.omissions.unrelated_objects, 1);
+        assert_ne!(entry.original_hash, entry.subset_hash);
+        assert_eq!(review.review.inventory().documents.len(), 1);
+        assert_eq!(
+            original,
+            collagene_core::workspace::save_workspace(&workspace).unwrap()
+        );
+        // A valid backend acknowledgement cannot authorize a different UI epoch.
+        let request = CaptureRequest {
+            approved: Some(review.review.approve()),
+            expected: Some(review.local),
+            ..Default::default()
+        };
+        let mut stale = pin!(capture(workspace, 8, request));
+        assert!(matches!(
+            stale.as_mut().poll(&mut Context::from_waker(Waker::noop())),
+            Poll::Ready(Err(_))
+        ));
+    }
 }

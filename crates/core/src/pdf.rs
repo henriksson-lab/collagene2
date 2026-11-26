@@ -1231,6 +1231,27 @@ pub(crate) fn export_protocol_pdf_checked(
     layout.heading("Cloning steps")?;
     for (index, step) in plan.steps.iter().enumerate() {
         let body = match step {
+            Operation::ResectThreePrime { source, cuts } => format!(
+                "Explicit3′→5′ shortening of {}: bottom3′ left {} nt, top3′ right {} nt. Original5′ groups and surviving source modifications remain; no unblocking, synthesis, ligation or host repair. The actual bottom5′ extension remains physical even beyond the displayed top reference.",
+                source_name(source),
+                cuts.left,
+                cuts.right
+            ),
+            Operation::HomologyAnnealing {
+                fragments,
+                options,
+                policy,
+            } => format!(
+                "Generic3′ processing/exposed5′tail annealing of {} ordered operands with {:?} advisory guidance. Explicit overlaps {:?}, cuts {:?}, topology {:?}, minimum paired {} bases, comparison/candidate bounds {}/{}. Every joining strand remains separate at a nick or gap: no cellular rescue, filling, sealing or reusable assembled material is inferred.",
+                fragments.len(),
+                options.method,
+                policy.overlaps,
+                policy.cuts,
+                policy.topology,
+                policy.min_paired_bases,
+                policy.max_comparisons,
+                policy.max_candidates
+            ),
             Operation::HomologyAssembly {
                 fragments,
                 options,
@@ -1593,6 +1614,17 @@ pub(crate) fn export_protocol_pdf_checked(
             .find(|entry| entry.step_index == index)
         {
             match &entry.evidence {
+                verification::PhysicalProcessingEvidence::ThreePrimeResection(geometry) => {
+                    geometry.validate_documentary()?;
+                    layout.paragraph_size(&format!("Actual3′ resection left/right {}/{} nt. Retained top/bottom {}/{} nt; bottom start {}. Unchanged5′ groups left/right {:?}/{:?};3′ groups {:?}/{:?}. Complete literal copied/removed strand mappings remain in JSON, not synthesized DNA.",geometry.cuts.left,geometry.cuts.right,geometry.product.top.len(),geometry.product.bottom.len(),geometry.product.bottom_start,geometry.product.left.five_prime,geometry.product.right.five_prime,geometry.product.left.three_prime,geometry.product.right.three_prime),9.0,INK)?;
+                }
+                verification::PhysicalProcessingEvidence::HomologyAnnealing(geometry) => {
+                    geometry.validate_documentary()?;
+                    layout.paragraph_size(&format!("Annealed diagnostic: {} separate surviving strands, {} junctions; gapless paired view {}, terminal search complete {}. No assembled private material. Missing strand intervals remain gaps, not filled bases.",geometry.segments.len(),geometry.junctions.len(),geometry.paired_diagnostic.is_some(),geometry.terminal_search_complete),9.0,INK)?;
+                    for j in &geometry.junctions {
+                        layout.paragraph_size(&format!("Sources {} → {}, homology {} bp. Unsealed top [{}..{})3′{:?}/5′{:?}, bottom [{}..{})5′{:?}/3′{:?}. Equal boundaries are nicks. Circular coordinates are unwrapped to preserve actual gap lengths.",j.left_source+1,j.right_source+1,j.overlap,j.top.start,j.top.end,j.top.three_prime,j.top.five_prime,j.bottom.start,j.bottom.end,j.bottom.five_prime,j.bottom.three_prime),9.0,INK)?;
+                    }
+                }
                 verification::PhysicalProcessingEvidence::HomologyAssembly(geometry) => {
                     geometry.validate_documentary()?;
                     layout.paragraph_size(&format!("Homology assembly physical evidence: selected product top length {:?}; terminal search complete {}; incomplete {}; comparisons {}. Source geometry identities: {}. Full strand/resection/mapping evidence remains in the retained report.", geometry.product.as_ref().map(|product|product.top.len()), geometry.terminal_search_complete, geometry.incomplete, geometry.comparisons, geometry.source_geometry_revisions.join(" / ")), 9.0, INK)?;

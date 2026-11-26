@@ -86,6 +86,8 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
                     | Operation::ReconstructRunProduct { .. }
                     | Operation::OverlapExtension { .. }
                     | Operation::HomologyAssembly { .. }
+                    | Operation::ResectThreePrime { .. }
+                    | Operation::HomologyAnnealing { .. }
             )
             .then_some(i)
         })
@@ -98,6 +100,26 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
             return Err(bad("processed step order changed"));
         }
         let report = match (&r.plan.steps[index], &step.evidence) {
+            (
+                Operation::ResectThreePrime { cuts, .. },
+                crate::verification::PhysicalProcessingEvidence::ThreePrimeResection(geometry),
+            ) => {
+                geometry.validate_documentary()?;
+                if cuts != &geometry.cuts {
+                    return Err(bad("3′ resection cuts changed"));
+                }
+                continue;
+            }
+            (
+                Operation::HomologyAnnealing { policy, .. },
+                crate::verification::PhysicalProcessingEvidence::HomologyAnnealing(geometry),
+            ) => {
+                geometry.validate_documentary()?;
+                if assembly_recipe::hash(policy)? != assembly_recipe::hash(&geometry.options)? {
+                    return Err(bad("3′ annealing policy changed"));
+                }
+                continue;
+            }
             (
                 Operation::HomologyAssembly { policy, .. },
                 crate::verification::PhysicalProcessingEvidence::HomologyAssembly(geometry),
@@ -266,6 +288,8 @@ pub(crate) fn validate_workspace(w: &Workspace) -> Result<(), Error> {
                     | Operation::ReconstructRunProduct { .. }
                     | Operation::OverlapExtension { .. }
                     | Operation::HomologyAssembly { .. }
+                    | Operation::ResectThreePrime { .. }
+                    | Operation::HomologyAnnealing { .. }
             )
         }) && !found.contains(&r.run_id)
         {

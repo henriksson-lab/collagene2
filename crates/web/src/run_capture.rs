@@ -304,6 +304,10 @@ fn operation_title(operation: &Operation) -> &'static str {
         Operation::GoldenGate { .. } => "Golden Gate",
         Operation::SelectedGoldenGate { .. } => "Golden Gate with exact candidate keys",
         Operation::HomologyAssembly { .. } => "Physical homology assembly",
+        Operation::ResectThreePrime { .. } => "Explicit 3′ source resection",
+        Operation::HomologyAnnealing { .. } => {
+            "3′ resection and unsealed 5′-tail annealing · incomplete reference"
+        }
         Operation::Overlap { .. } | Operation::ProfiledOverlap { .. } => "Overlap assembly",
     }
 }

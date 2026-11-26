@@ -18,6 +18,8 @@ pub trait LibraryClient {
     }
     fn remote_key(&self) -> String;
     fn context(&self) -> Option<wire::LabContext>;
+    /// Changes whenever this login is invalidated, including a reconnect to the same lab.
+    fn publication_epoch(&self) -> u64;
     fn connect(&self, key: String) -> Result<(), String>;
     fn disconnect(&self);
     fn request(
@@ -63,6 +65,9 @@ impl LibraryClient for Session {
     }
     fn context(&self) -> Option<wire::LabContext> {
         Session::context(self)
+    }
+    fn publication_epoch(&self) -> u64 {
+        self.0.borrow().epoch
     }
     fn connect(&self, key: String) -> Result<(), String> {
         Session::connect(self, key)
@@ -472,6 +477,9 @@ impl LibraryClient for DesktopSession {
     }
     fn context(&self) -> Option<wire::LabContext> {
         self.context.borrow().clone()
+    }
+    fn publication_epoch(&self) -> u64 {
+        self.epoch.get()
     }
     fn connect(&self, _key: String) -> Result<(), String> {
         Ok(())

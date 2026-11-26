@@ -11,7 +11,8 @@ const SOURCE_KEYS: [&str; 4] = [
     "sbol:source_hash",
     "sbol:exchange_profile",
 ];
-type Selections = BTreeMap<String, BTreeSet<String>>;
+pub(crate) type Selections = BTreeMap<String, BTreeSet<String>>;
+pub(crate) type Claims = BTreeMap<String, Selections>;
 #[derive(Clone, Copy)]
 enum Expected {
     Component,
@@ -123,11 +124,11 @@ impl<'a> Closure<'a> {
 /// Read claims from exactly the already-derived native revision closure. A
 /// source hash is documentary provenance, not proof that current edited DNA is
 /// still the original SBOL sequence, and never an executable/material receipt.
-pub(crate) fn required_assets(
+pub(crate) fn claims(
     source: &Workspace,
     revisions: &BTreeSet<String>,
     edge_limit: usize,
-) -> Result<(BTreeSet<String>, usize), Error> {
+) -> Result<(Claims, usize), Error> {
     let mut claims: BTreeMap<String, Selections> = BTreeMap::new();
     let mut edges = 0usize;
     for revision in revisions {
@@ -175,9 +176,30 @@ pub(crate) fn required_assets(
             .or_default()
             .insert(sequence.clone());
     }
+    Ok((claims, edges))
+}
+pub(crate) fn required_assets(
+    source: &Workspace,
+    revisions: &BTreeSet<String>,
+    edge_limit: usize,
+) -> Result<(BTreeSet<String>, usize), Error> {
+    let (claims, mut edges) = claims(source, revisions, edge_limit)?;
     let mut assets = BTreeSet::new();
     for (hash, selections) in claims {
-        let attachment=source.attachments.get(&hash).ok_or_else(||denied("the exact original SBOL source attachment is absent; omission requires a separate explicit reviewed contract"))?;
+        let Some(attachment) = source.attachments.get(&hash) else {
+            let (required, used) = crate::sbol_subset::received_assets(
+                source,
+                &hash,
+                &selections,
+                edge_limit.saturating_sub(edges),
+            )?;
+            assets.extend(required);
+            edges = edges
+                .checked_add(used)
+                .filter(|v| *v <= edge_limit)
+                .ok_or(Error::TooLarge)?;
+            continue;
+        };
         if attachment.kind != KIND || attachment.media_type != "application/ld+json" {
             return Err(denied(
                 "SBOL source hash refers to a different attachment contract",

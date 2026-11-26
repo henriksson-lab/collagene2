@@ -6,8 +6,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 87;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 19;
+pub const WORKER_SCHEMA_VERSION: u16 = 88;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 20;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
@@ -948,6 +948,12 @@ pub enum AnalysisJob {
         recipe: crate::assembly_recipe::Recipe,
         policy: crate::homology_assembly::Options,
     },
+    PreviewAnnealingRecipe {
+        inputs: Vec<crate::verification::PlanInput>,
+        target: Molecule,
+        recipe: crate::assembly_recipe::Recipe,
+        policy: crate::homology_annealing::Options,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1348,6 +1354,21 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         crate::pairwise_context::preflight(report, reference, query, *translate)?;
     }
     match &r.job {
+        AnalysisJob::PreviewAnnealingRecipe {
+            inputs,
+            target,
+            recipe,
+            policy,
+        } => {
+            if inputs.len() > crate::assembly_recipe::MAX_ROWS {
+                return Err(Error::TooLarge);
+            }
+            let sources = inputs
+                .iter()
+                .map(|input| (input.id.as_str(), &input.molecule))
+                .collect::<Vec<_>>();
+            crate::assembly_recipe::annealing_source_preflight(&sources, target, recipe, policy)?;
+        }
         AnalysisJob::PreviewHomologyRecipe {
             inputs,
             target,
@@ -1593,6 +1614,7 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::ExportCombinatorialOutputs { .. }
             | AnalysisJob::InspectCombinatorialMultiSite { .. }
             | AnalysisJob::InspectRunMaterial { .. }
+            | AnalysisJob::PreviewAnnealingRecipe { .. }
     ) {
         MAX_WORKSPACE_MESSAGE_BYTES
     } else {
@@ -2977,6 +2999,14 @@ fn preflight_homology_recipe_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error
     }
     Ok(())
 }
+fn preflight_annealing_recipe_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 88)?;
+    }
+    Ok(())
+}
 fn preflight_edited_overlap_primer_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
@@ -3206,6 +3236,14 @@ fn check_verification_report_version(
                     check_variant_version(bytes, 81)?;
                     r.validate_documentary()?;
                 }
+                crate::verification::PhysicalProcessingEvidence::ThreePrimeResection(report) => {
+                    check_variant_version(bytes, 88)?;
+                    report.validate_documentary()?;
+                }
+                crate::verification::PhysicalProcessingEvidence::HomologyAnnealing(report) => {
+                    check_variant_version(bytes, 88)?;
+                    report.validate_documentary()?;
+                }
                 crate::verification::PhysicalProcessingEvidence::HomologyAssembly(report) => {
                     check_variant_version(bytes, 86)?;
                     report.validate_documentary()?;
@@ -3232,6 +3270,9 @@ fn check_verification_report_version(
     Ok(())
 }
 fn check_scientific_report_version(bytes: &[u8], engine: &str) -> Result<(), Error> {
+    if engine.ends_with("/science-23") {
+        check_variant_version(bytes, 88)?;
+    }
     if engine.ends_with("/science-22") {
         check_variant_version(bytes, 81)?;
     }
@@ -3320,6 +3361,11 @@ mod preparation_shape {
     }
     fn variant(worker: u16, name: &str, variant: &str) -> Result<(), Found> {
         let minimum = match (name, variant) {
+            ("Operation", "ResectThreePrime")
+            | ("Operation", "HomologyAnnealing")
+            | ("PhysicalProcessingEvidence", "ThreePrimeResection")
+            | ("PhysicalProcessingEvidence", "HomologyAnnealing")
+            | ("Method", "HomologyAnnealing") => 88,
             ("Operation", "HomologyAssembly")
             | ("PhysicalProcessingEvidence", "HomologyAssembly")
             | ("Method", "HomologyAssembly") => 86,
@@ -3543,7 +3589,7 @@ mod preparation_shape {
 }
 fn check_preparation_version(bytes: &[u8], value: &impl Serialize) -> Result<(), Error> {
     let worker = u16::from_le_bytes([bytes[4], bytes[5]]);
-    if worker < 86 {
+    if worker < 88 {
         value
             .serialize(preparation_shape::Visitor {
                 worker,
@@ -3613,6 +3659,8 @@ fn check_workspace_version(
         if attachment.kind == crate::alignment_formats::WORKSPACE_ATTACHMENT_KIND {
             let document = crate::alignment_formats::load_alignment(&attachment.bytes)?;
             check_variant_version(bytes, alignment_document_worker_version(&document))?;
+        } else if attachment.kind == "assembly-draft-v11" {
+            check_variant_version(bytes, 88)?;
         } else if attachment.kind == "assembly-draft-v10" {
             check_variant_version(bytes, 86)?;
         } else if attachment.kind == "assembly-draft-v9" {
@@ -3632,6 +3680,9 @@ fn check_workspace_version(
             let record = crate::run_lineage::load_run_record(&attachment.bytes)?;
             check_variant_version(bytes, plan_worker_version(&record.plan))?;
             check_preparation_version(bytes, &record.plan)?;
+            if record.plan_schema >= 18 {
+                check_variant_version(bytes, 88)?;
+            }
             if record.plan_schema >= 17 {
                 check_variant_version(bytes, 86)?;
             }
@@ -3791,6 +3842,8 @@ fn plan_worker_version(plan: &crate::verification::DesignPlan) -> u16 {
     plan.steps
         .iter()
         .map(|step| match step {
+            crate::verification::Operation::ResectThreePrime { .. }
+            | crate::verification::Operation::HomologyAnnealing { .. } => 88,
             crate::verification::Operation::HomologyAssembly { .. } => 86,
             crate::verification::Operation::OverlapExtension { .. } => 81,
             crate::verification::Operation::ReconstructRunProduct { .. } => 73,
@@ -3844,6 +3897,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             (149, 65),
             (155, 69),
             (158, 74),
+            (168, 88),
         ],
     )?;
     preflight_codon_tag(bytes, &[44, 45])?;
@@ -3907,6 +3961,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_overlap_extension_digest_tag(bytes, &[165])?;
     preflight_edited_overlap_primer_tag(bytes, &[166])?;
     preflight_homology_recipe_tag(bytes, &[167])?;
+    preflight_annealing_recipe_tag(bytes, &[168])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -3914,6 +3969,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::PreviewAnnealingRecipe { .. } => 88,
         AnalysisJob::PreviewHomologyRecipe { .. } => 86,
         AnalysisJob::DesignEditedOverlapPrimers { .. } => 85,
         AnalysisJob::InspectOverlapExtensionDigest { .. } => 84,
@@ -4365,6 +4421,19 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
                     "Mismatch PCR digest original source/origin/policy/catalog context changed"
                         .into(),
                 ));
+            }
+            None
+        }
+        AnalysisJob::PreviewAnnealingRecipe {
+            inputs,
+            target,
+            recipe,
+            policy,
+        } => {
+            if crate::assembly_recipe::annealing_preview_revision(inputs, target, recipe, policy)?
+                != r.revision
+            {
+                return Err(Error::Format("3-prime resection/annealing recipe source, target, preparation or explicit physical policy changed".into()));
             }
             None
         }
@@ -5643,6 +5712,13 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             request,
         } => crate::mismatch_pcr_digest_inspection::inspect(&molecule, origin.as_ref(), &request)
             .map(AnalysisResult::MismatchPcrDigestInspection),
+        AnalysisJob::PreviewAnnealingRecipe {
+            inputs,
+            target,
+            recipe,
+            policy,
+        } => crate::assembly_recipe::preview_annealing(&inputs, &target, &recipe, &policy)
+            .map(AnalysisResult::OverlapRecipePreview),
         AnalysisJob::PreviewHomologyRecipe {
             inputs,
             target,

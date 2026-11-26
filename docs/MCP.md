@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current registry has 174 tools. Selected-construct design and batch operations
+The current registry has 180 tools. Selected-construct design and batch operations
 add exact-version matrix paging, native inspection, historical capture/list/open
 and explicit fresh replay. [Batch contracts](COMBINATORIAL_BATCHES.md).
 Reference recombination retains explicit profile discovery, source inspection,
@@ -896,3 +896,24 @@ outcomes with no DNA contour. These use the existing artifact field alongside
 newer processed, physical and reference evidence. A plain plan with no typed
 step-evidence arrays keeps its existing response. Artifacts remain documentary;
 no intermediate or graph-only result is published as a molecule by verification.
+
+## Explicit physical overlap previews
+
+`preview_homology_recipe` binds immutable original `inputs`, a separate `target`,
+an explicit preparation `recipe`, and a `homology_assembly::Options` policy. It
+reconstructs declared 5′ resection, template-supported fill and eligible sealing.
+`preview_annealing_recipe` takes the same source/target/recipe bindings and a
+`homology_annealing::Options` policy with explicit per-oriented-source left/right
+3′ cuts, junction lengths, topology and pairing-search limits. Neither operation
+infers its physical policy from a vendor profile or selects source sequence to
+match the target. Every saved `FromRun` role additionally requires its exact
+`origin_workspaces` binding and fresh closed-origin replay.
+
+Both previews save no candidate or product; their bounded JSON artifacts include
+complete typed plans and physical/junction evidence. A client can explicitly
+propose the retained operations with `propose_plan` and verify them separately.
+The 3′ annealing route retains actual separate strands, missing bases and unsealed
+nicks. Its joined reference always remains incomplete and cannot be recovered as
+reusable assembled physical material. Standalone `ResectThreePrime` is available
+as a typed plan operation and preserves its actual shortened substrate for later
+explicit processing. [Scientific contract](THREE_PRIME_HOMOLOGY.md).

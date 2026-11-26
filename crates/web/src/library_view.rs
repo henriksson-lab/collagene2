@@ -89,8 +89,17 @@ enum Command {
     Browse(Navigation),
     Request(wire::Request, String),
     Open(wire::Document, Option<wire::RevisionId>),
-    Publish,
+    Publish(crate::library_documents::CaptureRequest),
 }
+#[derive(Clone)]
+struct PendingPublication {
+    capture: crate::library_documents::CaptureReview,
+    context: wire::LabContext,
+    parent: Option<wire::FolderId>,
+    sequence: u64,
+    session_epoch: u64,
+}
+
 #[derive(Clone)]
 struct HistoryPage {
     document: wire::Document,
@@ -126,7 +135,10 @@ pub fn LibraryPane(
     client: Client,
     current: Memo<Option<LocalDocument>>,
     bindings: Memo<Bindings>,
-    capture: Callback<(), LocalResult<Captured>>,
+    capture: Callback<
+        crate::library_documents::CaptureRequest,
+        LocalResult<crate::library_documents::CaptureOutcome>,
+    >,
     on_open: Callback<Opened, LocalResult<LocalDocument>>,
     on_binding: Callback<(u64, Binding), Result<(), String>>,
     locked: Memo<bool>,
@@ -193,6 +205,14 @@ pub fn LibraryPane(
     let name = RwSignal::new(String::new());
     let moving = RwSignal::new(None::<wire::Entry>);
     let history = RwSignal::new(None::<HistoryPage>);
+    let publication = RwSignal::new(None::<PendingPublication>);
+    let publication_choices = RwSignal::new(String::new());
+    let sequence_requirements = RwSignal::new(
+        None::<(
+            LocalDocument,
+            Vec<collagene_library_sharing::sbol_subset::ChoiceRequirement>,
+        )>,
+    );
     let runner = StoredValue::new_local(None::<Callback<Command>>);
     let origin = StoredValue::new(server_key);
     on_cleanup(move || {
@@ -215,13 +235,35 @@ pub fn LibraryPane(
             return;
         }
         let client = session.get_value();
+        if let Command::Publish(request) = &command {
+            if request.approved.is_some() {
+                let valid = publication.with_untracked(|pending| {
+                    pending.as_ref().is_some_and(|pending| {
+                        current.get_untracked().as_ref() == Some(&pending.capture.local)
+                            && client.context().as_ref() == Some(&pending.context)
+                            && client.publication_epoch() == pending.session_epoch
+                            && life.with_value(|life| life.get()) == pending.sequence
+                            && navigation.with_untracked(Navigation::parent) == pending.parent
+                    })
+                });
+                if !valid {
+                    publication.set(None);
+                    status.set("Publication source or library destination changed; review it again. Nothing was sent.".into());
+                    return;
+                }
+            }
+        }
+        publication.set(None);
+        sequence_requirements.set(None);
+        let context_before = client.context();
+        let session_epoch_before = client.publication_epoch();
         let life = life.get_value();
         let sequence = life.get().wrapping_add(1);
         life.set(sequence);
         busy.set(true);
         status.set(
             match &command {
-                Command::Publish => "Preparing plasmid history…",
+                Command::Publish(_) => "Preparing plasmid history…",
                 Command::Open(..) => "Opening library revision…",
                 _ => "Loading library…",
             }
@@ -238,11 +280,34 @@ pub fn LibraryPane(
                         id: document.id.clone(),
                         revision: revision.clone(),
                     },
-                    Command::Publish => {
-                        let value = capture.run(()).await?;
+                    Command::Publish(request) => {
+                        let outcome = capture.run(request.clone()).await?;
+                        if client.context() != context_before || client.publication_epoch() != session_epoch_before {
+                            return Err("Library login changed while preparing publication. Nothing was sent.".into());
+                        }
                         if life.get() != sequence {
                             return Err("Library session changed.".into());
                         }
+                        let value = match outcome {
+                            crate::library_documents::CaptureOutcome::Ready(value) => value,
+                            crate::library_documents::CaptureOutcome::ChoicesRequired { local, requirements } => {
+                                if current.get_untracked().as_ref() != Some(&local) {
+                                    return Err("Plasmid changed while inspecting SBOL choices. Nothing was sent.".into());
+                                }
+                                sequence_requirements.set(Some((local, requirements)));
+                                status.set("Reachable SBOL components need explicit sequence choices. Fill the declarations below, then prepare publication again. Nothing was sent.".into());
+                                return Ok(());
+                            }
+                            crate::library_documents::CaptureOutcome::ReviewRequired(review) => {
+                                if current.get_untracked().as_ref() != Some(&review.local) {
+                                    return Err("Plasmid changed while preparing documentary review. Nothing was sent.".into());
+                                }
+                                let context = client.context().ok_or("Connect to the library before reviewing publication.")?;
+                                publication.set(Some(PendingPublication { capture: review, context, parent: nav.parent(), sequence, session_epoch: session_epoch_before }));
+                                status.set("Review the documentary subset below. No archive has been encoded or sent.".into());
+                                return Ok(());
+                            }
+                        };
                         let selected = value
                             .payload
                             .selection
@@ -472,6 +537,59 @@ pub fn LibraryPane(
         nav.generation = None;
         send.run(Command::Browse(nav));
     });
+    Effect::new(move |_| {
+        let selected = current.get();
+        let context = connected.get();
+        let blocked = locked.get();
+        if publication.with(|pending| {
+            pending.as_ref().is_some_and(|pending| {
+                blocked
+                    || selected.as_ref() != Some(&pending.capture.local)
+                    || context.as_ref() != Some(&pending.context)
+            })
+        }) {
+            publication.set(None);
+        }
+        if sequence_requirements.with(|requirements| {
+            requirements
+                .as_ref()
+                .is_some_and(|(local, _)| blocked || selected.as_ref() != Some(local))
+        }) {
+            sequence_requirements.set(None);
+        }
+    });
+    let prepare_publication = Callback::new(move |()| {
+        let text = publication_choices.get_untracked();
+        if text.len() > 16 * 1024 {
+            status.set("Alternative sequence declarations exceed 16 KiB.".into());
+            return;
+        }
+        let choices = if text.trim().is_empty() {
+            Ok(Default::default())
+        } else {
+            serde_json::from_str::<collagene_library_sharing::sbol_subset::PublicationChoices>(&text)
+                .map_err(|_| "Use a JSON object mapping original file hash → component IRI → array of explicitly chosen sequence IRIs.".to_string())
+        };
+        match choices {
+            Ok(choices) => send.run(Command::Publish(crate::library_documents::CaptureRequest {
+                choices,
+                expected: current.get_untracked(),
+                ..Default::default()
+            })),
+            Err(error) => status.set(error),
+        }
+    });
+    let approve_publication = Callback::new(move |()| {
+        let Some(pending) = publication.get_untracked() else {
+            return;
+        };
+        let approved = pending.capture.review.approve();
+        send.run(Command::Publish(crate::library_documents::CaptureRequest {
+            approved: Some(approved),
+            expected: Some(pending.capture.local),
+            ..Default::default()
+        }));
+    });
     let connect = Callback::new(move |()| {
         let result = session.with_value(|session| session.connect(key.get_untracked()));
         key.set(String::new());
@@ -553,7 +671,15 @@ pub fn LibraryPane(
                     <input type="search" aria-label="Search lab plasmids and folders" placeholder={if local { "Search local library" } else { "Search lab library" }} prop:value=move||search.get() on:input=move|event|search.set(event_target_value(&event))/><button type="submit" class="text-tool" disabled=move||busy.get()>"Find"</button>
                 </form>
                 <div class="library-actions"><button class="text-tool" disabled=move||busy.get()||locked.get() on:click=move|_|{name.set(String::new());editor.set(Some(NameEditor::Folder));}>"New folder"</button>
-                    <button class="text-tool" disabled=move||busy.get()||locked.get()||current.with(Option::is_none) on:click=move|_|send.run(Command::Publish)>{move||if local { if current_binding.get().is_some(){"Save plasmid revision"}else{"Save current plasmid"} } else if current_binding.get().is_some(){"Push plasmid revision"}else{"Share current plasmid"}}</button>
+                    <button class="text-tool" disabled=move||busy.get()||locked.get()||current.with(Option::is_none) on:click=move|_|prepare_publication.run(())>{move||if local { if current_binding.get().is_some(){"Save plasmid revision"}else{"Save current plasmid"} } else if current_binding.get().is_some(){"Push plasmid revision"}else{"Share current plasmid"}}</button>
+                    <details><summary>"SBOL sequence alternatives"</summary><p class="helper">"Only needed when a reachable SBOL component has alternative sequences. Declare choices explicitly as original file hash → component IRI → sequence IRI array. No alternative is automatically selected."</p><textarea aria-label="Explicit SBOL sequence alternative declarations" maxlength="16384" prop:value=move||publication_choices.get() disabled=move||busy.get() on:input=move|event|{publication_choices.set(event_target_value(&event));publication.set(None);}/></details>
+                    {move||sequence_requirements.get().map(|(_,requirements)|view!{<details open><summary>"Reachable SBOL sequence choices"</summary><p class="helper">"These identifiers belong to selected structural dependencies. For each component with no required sequence, explicitly declare one or more available sequences using the JSON field above. Required native source sequences must remain included. No first alternative is chosen."</p>{requirements.into_iter().map(|r|view!{<div><p>"Original file: "<code>{r.original_hash}</code></p><p>"Component: "<code>{r.component_iri}</code></p><p>{format!("Required by native source: {:?}",r.required_sequences)}</p><ul>{r.available_sequences.into_iter().map(|id|view!{<li><code>{id}</code></li>}).collect_view()}</ul></div>}).collect_view()}</details>})}
+                    {move||publication.get().map(|pending|view!{<section class="library-publication-review" aria-label="Documentary subset publication review">
+                        <h4>"Review SBOL documentary publication"</h4><p>{format!("Plasmid {} · native revision {}",pending.capture.local.name,pending.capture.local.revision.as_str())}</p>
+                        <p class="helper">"The exact original SBOL file stays private in your local workspace. Only the reviewed structural subset and a counts-only omission receipt will accompany this plasmid. Native sequence identities, source history and physical verification are unchanged; this documentary projection adds no scientific authority. Retained annotations, descriptions and vocabulary remain included; review their content before sharing."</p>
+                        {pending.capture.review.entries().iter().map(|entry|view!{<div><p>"Original file omitted: "<code>{entry.original_hash.clone()}</code></p><p>"Published subset: "<code>{entry.subset_hash.clone()}</code></p><p>{format!("{} retained objects · {} unrelated objects omitted · {} alternative sequence edges omitted",entry.retained_objects,entry.omissions.unrelated_objects,entry.omissions.alternative_sequence_edges)}</p></div>}).collect_view()}
+                        <button class="button secondary" disabled=move||busy.get()||locked.get() on:click=move|_|approve_publication.run(())>"Approve subset and save plasmid"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|{publication.set(None);status.set("Documentary publication cancelled. Nothing was sent.".into());}>"Cancel"</button>
+                    </section>})}
                     <button class="text-tool" disabled=move||busy.get() on:click=move|_|send.run(Command::Browse(navigation.get_untracked().refresh("Library refreshed.".into())))>"Refresh"</button>
                 </div>
                 {move||editor.get().map(|_|view!{<form class="library-name-editor" on:submit=move|event|{event.prevent_default();submit_name();}><label>"Name"<input autofocus=true prop:value=move||name.get() on:input=move|event|name.set(event_target_value(&event))/></label><button class="text-tool" disabled=move||busy.get()||locked.get() type="submit">"Save"</button><button class="text-tool" type="button" on:click=move|_|editor.set(None)>"Cancel"</button></form>})}

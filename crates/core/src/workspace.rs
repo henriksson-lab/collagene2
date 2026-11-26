@@ -30,7 +30,7 @@ const MAX_ENTRIES: usize = 50_000;
 const MAX_STACK: usize = 1000;
 const FORMAT: &str = "collagene-workspace";
 const VERSION: u32 = 1;
-pub const PLAN_SCHEMA_VERSION: u32 = 14;
+pub const PLAN_SCHEMA_VERSION: u32 = 15;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -328,12 +328,14 @@ impl Workspace {
         }
         let mut plans = BTreeSet::new();
         for candidate in &self.candidates {
+            crate::run_material::plan_preflight(&candidate.plan)?;
             charge(
                 &mut expanded,
                 json_size(&candidate.plan, MAX_ENTRY_BYTES)?,
                 MAX_EXPANDED_BYTES,
             )?;
             candidate.validate()?;
+            crate::run_material::validate_plan_origins(self, &candidate.plan)?;
             if !plans.insert(candidate.plan_revision.as_str()) {
                 return Err(bad("duplicate workspace candidate revision"));
             }
@@ -1049,7 +1051,7 @@ pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
         || header.get("molecule_schema").and_then(|v| v.as_u64()) != Some(1)
         || !matches!(
             header.get("plan_schema").and_then(|v| v.as_u64()),
-            Some(1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14)
+            Some(1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15)
         )
     {
         return Err(Error::Unsupported(
@@ -1211,6 +1213,15 @@ pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
             });
         }
         let steps: Vec<Operation> = json_exact(get(&blobs, &record.steps)?)?;
+        if manifest.plan_schema < 15
+            && steps
+                .iter()
+                .any(|s| matches!(s, Operation::ReconstructRunProduct { .. }))
+        {
+            return Err(Error::Unsupported(
+                "Reconstructing a retained run product requires plan schema15".into(),
+            ));
+        }
         if manifest.plan_schema < 14
             && steps
                 .iter()

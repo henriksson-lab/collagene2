@@ -140,8 +140,8 @@ fn request(w: Workspace, d: Design, row: SelectedConstruct) -> Request {
 }
 #[test]
 fn method_in_design_or_ready_override_requires69_but_old_ligation_matrix_stays_readable() {
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 16);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 14);
+    assert!(protocol::CANDIDATE_SCHEMA_VERSION >= 16);
+    assert!(workspace::PLAN_SCHEMA_VERSION >= 14);
     assert!(protocol::WORKER_SCHEMA_VERSION >= 69);
     for in_override in [false, true] {
         let (w, mut d, mut row) = fixture();
@@ -274,7 +274,9 @@ fn nested_method_in_immutable_batch_workspace_is_gated_on_save_load_and_capture_
         if method {
             assert!(protocol::process_request(&bytes).is_err());
         } else {
-            protocol::process_request(&bytes).unwrap();
+            // This is a newly computed science20 record, not historical68 data.
+            assert!(protocol::process_request(&bytes).is_err());
+            protocol::process_request(&protocol::encode_request(&save).unwrap()).unwrap();
         }
         let archive = workspace::save_workspace(&saved.workspace).unwrap();
         let load = Request {
@@ -285,20 +287,22 @@ fn nested_method_in_immutable_batch_workspace_is_gated_on_save_load_and_capture_
         if method {
             assert!(protocol::process_request(&wire(b"CGQ\0", 68, &load)).is_err());
         } else {
-            protocol::process_request(&wire(b"CGQ\0", 68, &load)).unwrap();
+            assert!(protocol::process_request(&wire(b"CGQ\0", 68, &load)).is_err());
+            protocol::process_request(&protocol::encode_request(&load).unwrap()).unwrap();
         }
         let response = Response {
             id: 3,
             revision: saved.capture_revision.clone(),
             result: AnalysisResult::CombinatorialBatchCaptured(saved),
         };
-        let current = wire(b"CGR\0", 69, &response);
+        let current = wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &response);
         protocol::decode_response(&current).unwrap();
         let old = wire(b"CGR\0", 68, &response);
         if method {
             assert!(protocol::decode_response(&old).is_err());
         } else {
-            protocol::decode_response(&old).unwrap();
+            // The method is old; the actual captured report is science20.
+            assert!(protocol::decode_response(&old).is_err());
         }
     }
 }

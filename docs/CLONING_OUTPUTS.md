@@ -70,10 +70,10 @@ available so assumptions, incomplete findings and unselected components are not
 erased. Its selected reference retains a checked presentation name. Returning a
 summary over MCP or the worker protocol cannot restore this in-process receipt.
 
-This native foundation does not yet change ordinary source selection or enable a
-saved product in the assembly dock. The next handoff must persist executable
-origin declarations, retain source-event bindings and independently verify the
-downstream target. Simply concatenating plans is insufficient: changing a plan
+Ordinary source selection in the assembly dock is still to be connected. The
+durable native handoff below now persists executable origin declarations, retains
+source-event bindings and independently verifies the downstream target. Simply
+concatenating plans is insufficient: changing a plan
 changes intermediate reference revisions, invalidating revision-pinned TOPO and
 reference-network selections. Preserve their originating reconstruction boundary.
 Never turn a saved duplex summary into an original-input declaration, reapply
@@ -81,19 +81,40 @@ source-generation assumptions to descendants, or infer nick repair from a matchi
 reference sequence. Existing PCR restrictions for staggered/nicked templates still
 apply. No external scientific executable is involved.
 
-For the durable continuation, use the existing candidate/typed-plan encoding for
-the unchanged origin, with an appended explicit reconstruction operation. Check
-aggregate nesting depth, decoded steps, source bases, bytes and work before
-reconstruction. Retain the original target and exact source/run/product events.
-The outer operation consumes the selected saved source event; origin targets are
-acceptance evidence, not nucleotide parents. Preserve incomplete inner findings
-in the enclosing verdict. Candidate verification reconstructs declared science;
-workspace adoption must separately attest every retained origin event. This is
-planned continuation work, not a new supported serialized operation in this
-increment.
+`run_material::capsule` packages the unchanged origin using the existing typed
+candidate encoding. `Operation::ReconstructRunProduct` consumes the selected saved
+input reference and freshly evaluates that closed origin against its own target.
+Existing downstream PCR, digest, repair and ligation operations consume its actual
+tracked step material. Selected origin targets remain acceptance evidence, not
+nucleotide parents. Incomplete inner findings remain incomplete in the enclosing
+verdict. The complete typed originating report is retained as bounded documentary
+`PhysicalProcessingEvidence::RunProduct`, including graph evidence and byproducts.
+
+Iterative preflight checks at most eight origin generations, 1,000 aggregate steps,
+8 MiB of embedded candidate bytes and 8 MiB of aggregate input/target bases before
+hashing or science. A retained origin report is limited to 32 MiB. Nested candidate
+bytes are raw in binary communications and base64 in JSON archives/MCP, avoiding
+JSON integer-array expansion. Saved reports have the same compact byte handling.
+
+Candidate verification reconstructs declared science. Native workspace adoption
+separately attests every retained origin run, input, target and product event, and
+the outer source binding must equal the explicitly selected saved event. An
+unrelated equal-content alias is rejected. No serialized graph or tracked summary
+is used to supply material. Replayed origin primers belong to already-prepared
+material and are excluded from new primer orders; explicit downstream PCR primers
+remain orderable. HTML/PDF protocols identify the origin and retain its limitations.
+Manual plan review exposes the reconstruction dependency and immutable origin;
+the ordinary preparation picker and dedicated MCP origin-discovery/creation tools
+remain subsequent integration work.
 
 Validation includes a named 40 bp circle assembled from two PCR fragments, with
 phosphorylation explicitly applied to one. Fresh reconstruction retains the top
 nick at 20 and bottom nick at 0; it never upgrades the circular reference to a
 covalently closed molecule. Circular outer-end fields remain non-terminal
 placeholders, not evidence of nick chemistry.
+
+Reusing material does not extend the downstream reaction model. In particular,
+PCR of a nicked/staggered template and digest propagation of existing nicks remain
+withheld by the current engines. The replayed material and its nicks remain in
+the reconstructed prefix; an unsupported downstream step cannot produce or
+finalize a silently repaired product.

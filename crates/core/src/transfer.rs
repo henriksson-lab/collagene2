@@ -44,7 +44,9 @@ pub struct Candidate {
 impl Candidate {
     pub fn new(plan: DesignPlan) -> Self {
         Self {
-            plan_revision: if crate::verification::validate_reference_steps(&plan).is_ok() {
+            plan_revision: if crate::run_material::plan_preflight(&plan).is_ok()
+                && crate::verification::validate_reference_steps(&plan).is_ok()
+            {
                 plan_revision(&plan)
             } else {
                 String::new()
@@ -54,6 +56,7 @@ impl Candidate {
     }
     pub fn validate(&self) -> Result<(), Error> {
         let plan = &self.plan;
+        crate::run_material::plan_preflight(plan)?;
         crate::verification::validate_reference_steps(plan)?;
         if plan.name.trim().is_empty()
             || plan.name.len() > 1024
@@ -122,7 +125,27 @@ pub fn save_candidate(candidate: &Candidate) -> Result<Vec<u8>, Error> {
     protocol::encode(b"CGP\0", candidate)
 }
 pub fn load_candidate(bytes: &[u8]) -> Result<Candidate, Error> {
+    let candidate = decode_candidate_shallow(bytes)?;
+    candidate.validate()?;
+    Ok(candidate)
+}
+/// Decode only the bounded CGP envelope and operation capability floors. The
+/// iterative capsule walker must validate plans without recursively reentering
+/// Candidate::validate through nested origins.
+pub(crate) fn decode_candidate_shallow(bytes: &[u8]) -> Result<Candidate, Error> {
     let candidate: Candidate = protocol::decode(b"CGP\0", bytes)?;
+    if u16::from_le_bytes([bytes[4], bytes[5]]) < 17
+        && candidate.plan.steps.iter().any(|s| {
+            matches!(
+                s,
+                crate::verification::Operation::ReconstructRunProduct { .. }
+            )
+        })
+    {
+        return Err(Error::Unsupported(
+            "Reconstructing a retained run product requires candidate schema17".into(),
+        ));
+    }
     if u16::from_le_bytes([bytes[4], bytes[5]]) < 16
         && candidate.plan.steps.iter().any(|s| {
             matches!(
@@ -305,6 +328,5 @@ pub fn load_candidate(bytes: &[u8]) -> Result<Candidate, Error> {
             "physical candidate operations require binary schema 2 or later".into(),
         ));
     }
-    candidate.validate()?;
     Ok(candidate)
 }

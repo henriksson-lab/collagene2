@@ -85,7 +85,7 @@ fn wire(magic: &[u8; 4], version: u16, value: &impl serde::Serialize) -> Vec<u8>
 #[test]
 fn all_three_recipe_requests_reject_downgraded_preparation_and_preview_rows_require71() {
     assert!(protocol::WORKER_SCHEMA_VERSION >= 71);
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 16);
+    assert!(protocol::CANDIDATE_SCHEMA_VERSION >= 16);
     let (inputs, target, recipe) = fixture();
     let request = Request {
         id: 1,
@@ -185,7 +185,9 @@ fn ordinary_existing_recipe_and_generic_annealing_plan_keep_old70_compatibility(
     assert!(protocol::process_request(&wire(b"CGQ\0", 70, &request)).is_ok());
     let bytes = protocol::process_request(&protocol::encode_request(&request).unwrap()).unwrap();
     let response: Response = protocol::decode_response(&bytes).unwrap();
-    assert!(protocol::decode_response(&wire(b"CGR\0", 70, &response)).is_ok());
+    // Ordinary requests retain their old capability floor. Fresh science20
+    // reports require worker73 even when they contain no new preparation.
+    assert!(protocol::decode_response(&wire(b"CGR\0", 70, &response)).is_err());
 }
 #[test]
 fn paired_editable_draft_attachment_cannot_claim_old70_workspace_transport() {

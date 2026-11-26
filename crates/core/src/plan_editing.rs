@@ -45,7 +45,8 @@ fn reference_count(op: &Operation) -> usize {
             fragments.len()
         }
         Operation::RecombineReference { .. } | Operation::AnnealOligos { .. } => 2,
-        Operation::Pcr { .. }
+        Operation::ReconstructRunProduct { .. }
+        | Operation::Pcr { .. }
         | Operation::PcrWithMismatches { .. }
         | Operation::Digest { .. }
         | Operation::CatalogDigest { .. }

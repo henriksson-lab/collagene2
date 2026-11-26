@@ -79,18 +79,63 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
         .steps
         .iter()
         .enumerate()
-        .filter_map(|(i, s)| matches!(s, Operation::TopoActions { .. }).then_some(i))
+        .filter_map(|(i, s)| {
+            matches!(
+                s,
+                Operation::TopoActions { .. } | Operation::ReconstructRunProduct { .. }
+            )
+            .then_some(i)
+        })
         .collect();
     if expected.len() != e.steps.len() {
         return Err(bad("processed step evidence is missing or duplicated"));
     }
     for (index, step) in expected.into_iter().zip(&e.steps) {
-        let crate::verification::PhysicalProcessingEvidence::TopoActions(report) = &step.evidence;
         if step.step_index != index {
             return Err(bad("processed step order changed"));
         }
+        let report = match (&r.plan.steps[index], &step.evidence) {
+            (
+                Operation::ReconstructRunProduct { template, origin },
+                crate::verification::PhysicalProcessingEvidence::RunProduct(replay),
+            ) => {
+                origin.validate_documentary()?;
+                replay.validate_documentary()?;
+                if assembly_recipe::hash(origin)? != assembly_recipe::hash(&replay.origin)? {
+                    return Err(bad("saved-material origin declaration changed"));
+                }
+                let revision = match template {
+                    Source::Input(id) => r
+                        .plan
+                        .inputs
+                        .iter()
+                        .find(|i| &i.id == id)
+                        .map(|i| i.revision.as_str()),
+                    Source::Step(prior) if *prior < index => r
+                        .products
+                        .iter()
+                        .find(|p| p.step_index == *prior)
+                        .map(|p| p.revision.as_str()),
+                    Source::Step(_) => None,
+                }
+                .ok_or_else(|| bad("saved-material source is unavailable or forward"))?;
+                if revision != origin.selection.event.revision {
+                    return Err(bad("saved-material exact source revision changed"));
+                }
+                continue;
+            }
+            (
+                Operation::TopoActions { .. },
+                crate::verification::PhysicalProcessingEvidence::TopoActions(report),
+            ) => report,
+            _ => {
+                return Err(bad(
+                    "historical processing evidence variant does not match its operation",
+                ));
+            }
+        };
         let Operation::TopoActions { sources, request } = &r.plan.steps[index] else {
-            unreachable!()
+            return Err(bad("historical processing declaration changed"));
         };
         if assembly_recipe::hash(request)? != assembly_recipe::hash(&report.request)?
             || sources.len() != report.sources.len()
@@ -188,11 +233,12 @@ pub(crate) fn validate_workspace(w: &Workspace) -> Result<(), Error> {
         validate(&e, r)?;
     }
     for r in records.values() {
-        if r.plan
-            .steps
-            .iter()
-            .any(|s| matches!(s, Operation::TopoActions { .. }))
-            && !found.contains(&r.run_id)
+        if r.plan.steps.iter().any(|s| {
+            matches!(
+                s,
+                Operation::TopoActions { .. } | Operation::ReconstructRunProduct { .. }
+            )
+        }) && !found.contains(&r.run_id)
         {
             return Err(bad(
                 "processed run is missing its historical graph attachment",

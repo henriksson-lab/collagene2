@@ -112,9 +112,9 @@ fn circle_eq(a: &str, b: &str) -> bool {
 #[test]
 fn appended_worker156_result148_reconstructs_literal_ta_and_gc_with_old_operations() {
     assert!(protocol::WORKER_SCHEMA_VERSION >= 70);
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 16);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 14);
-    assert!(verification::ENGINE_VERSION.ends_with("/science-19"));
+    assert!(protocol::CANDIDATE_SCHEMA_VERSION >= 16);
+    assert!(workspace::PLAN_SCHEMA_VERSION >= 14);
+    assert!(verification::ENGINE_VERSION.ends_with("/science-20"));
     for gc in [false, true] {
         let (inputs, target, recipe) = fixture(gc);
         let expected = target.sequence.as_str().to_owned();
@@ -240,5 +240,7 @@ fn existing_ligation_selectors_remain_valid_under_schema69() {
         value.verification.status,
         Status::ConsistentUnderAssumptions
     );
-    protocol::decode_response(&wire(b"CGR\0", 69, &response)).unwrap();
+    // The old request remains valid, but its freshly produced science20
+    // evidence cannot claim a historical worker69 envelope.
+    assert!(protocol::decode_response(&wire(b"CGR\0", 69, &response)).is_err());
 }

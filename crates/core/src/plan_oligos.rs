@@ -208,6 +208,10 @@ pub fn preflight(plan: &DesignPlan, target: &Molecule, _options: &Options) -> Re
                 primer_guard(forward)?;
                 primer_guard(reverse)?;
             }
+            Operation::ReconstructRunProduct { template, origin } => {
+                source_guard(template, index, &ids)?;
+                origin.validate_documentary()?;
+            }
             Operation::AnnealOligos { top, bottom, .. } => {
                 source_guard(top, index, &ids)?;
                 source_guard(bottom, index, &ids)?;
@@ -552,6 +556,15 @@ pub fn build(plan: &DesignPlan, target: &Molecule, options: &Options) -> Result<
                     options.bottom_chemistry,
                 )?;
             }
+            Operation::ReconstructRunProduct { origin, .. } => warning(
+                &mut builder.warnings,
+                format!(
+                    "Step {} reuses already-prepared material from saved run {}, step {}. Historical origin PCR primers and annealed oligos are deliberately excluded from this new order; only separately declared downstream preparation contributes new orderable oligos. The full originating plan remains retained for provenance.",
+                    index + 1,
+                    origin.selection.run_id,
+                    origin.selection.step_index + 1
+                ),
+            ),
             Operation::MultiSiteRecombineReference { .. } => warning(
                 &mut builder.warnings,
                 format!(

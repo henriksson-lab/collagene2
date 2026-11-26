@@ -12,6 +12,10 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
+pub use crate::run_material_capsule::{
+    Capsule, ReplayEvidence, capsule, plan_preflight, validate_input_origins, validate_plan_origins,
+};
+
 pub const ENGINE_VERSION: &str = "run-material-1";
 
 /// An exact saved event and its explicitly selected originating run step.
@@ -67,13 +71,13 @@ fn digest(value: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
-fn shape(selection: &Selection) -> Result<(), Error> {
+pub(crate) fn shape(selection: &Selection) -> Result<(), Error> {
     if !digest(&selection.run_id) || selection.step_index >= 1000 {
         return Err(bad("invalid run, step or exact event binding"));
     }
     event_shape(&selection.event)
 }
-fn event_shape(event: &EventBinding) -> Result<(), Error> {
+pub(crate) fn event_shape(event: &EventBinding) -> Result<(), Error> {
     if event.document_id.is_empty()
         || event.document_id.len() > 128
         || !digest(&event.revision)
@@ -84,7 +88,10 @@ fn event_shape(event: &EventBinding) -> Result<(), Error> {
     Ok(())
 }
 
-fn resolve<'a>(workspace: &'a Workspace, event: &EventBinding) -> Result<&'a Molecule, Error> {
+pub(crate) fn resolve<'a>(
+    workspace: &'a Workspace,
+    event: &EventBinding,
+) -> Result<&'a Molecule, Error> {
     let actual = workspace
         .history
         .iter()
@@ -101,7 +108,7 @@ fn resolve<'a>(workspace: &'a Workspace, event: &EventBinding) -> Result<&'a Mol
 
 /// Follow only an unambiguous name-only lineage. Matching DNA at the endpoints
 /// does not erase an intervening edit, metadata change or ambiguous merged parent.
-fn name_only_ancestors<'a>(
+pub(crate) fn name_only_ancestors<'a>(
     workspace: &'a Workspace,
     selected: &'a str,
     reference: &Molecule,

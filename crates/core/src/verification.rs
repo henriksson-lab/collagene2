@@ -176,6 +176,12 @@ pub enum Operation {
         request: crate::multisite_recombination::Request,
         selection: crate::recombination::Selection,
     },
+    /// Reexecute a saved product's closed origin scope. Metadata on the selected
+    /// input never restores material; the private tracked state is freshly built.
+    ReconstructRunProduct {
+        template: Source,
+        origin: crate::run_material::Capsule,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -250,6 +256,7 @@ pub struct ProcessedTopoStepReport {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum PhysicalProcessingEvidence {
     TopoActions(crate::topo_actions::Report),
+    RunProduct(crate::run_material::ReplayEvidence),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -274,7 +281,7 @@ pub struct ReferenceStepReport {
     pub evidence: ReferenceStepEvidence,
 }
 
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-19");
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-20");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrDocument {
@@ -732,6 +739,7 @@ pub fn declared_source_termini_preflight(source: &Molecule) -> Result<(), Error>
 }
 
 pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
+    crate::run_material::plan_preflight(plan)?;
     if plan.steps.len() > 1000 || plan.inputs.len() > 1000 {
         return Err(Error::TooLarge);
     }
@@ -966,6 +974,7 @@ pub fn operation_sources(op: &Operation) -> Vec<&Source> {
         | Operation::TreatEnds { template, .. }
         | Operation::RepairEnds { template, .. }
         | Operation::Tail3Prime { template, .. } => vec![template],
+        Operation::ReconstructRunProduct { template, .. } => vec![template],
         Operation::Overlap { fragments, .. }
         | Operation::GoldenGate {
             templates: fragments,
@@ -1004,6 +1013,7 @@ pub fn operation_sources_mut(op: &mut Operation) -> Vec<&mut Source> {
         | Operation::TreatEnds { template, .. }
         | Operation::RepairEnds { template, .. }
         | Operation::Tail3Prime { template, .. } => vec![template],
+        Operation::ReconstructRunProduct { template, .. } => vec![template],
         Operation::Overlap { fragments, .. }
         | Operation::GoldenGate {
             templates: fragments,
@@ -2071,6 +2081,30 @@ fn reconstruct(
             |source: &Source| -> Result<Duplex, Error> { Ok(resolve_tracked(source)?.duplex) };
         let mut next_physical = None;
         let mut product = match step {
+            Operation::ReconstructRunProduct { template, origin } => {
+                if !matches!(template, Source::Input(_)) {
+                    return Err(Error::Unsupported("Saved material reconstruction requires an explicit saved input event, not an enclosing step projection".into()));
+                }
+                let fresh = crate::run_material_capsule::replay(origin, resolve(template)?)?;
+                let bytes = evidence_bytes(
+                    &fresh.evidence,
+                    crate::run_material_capsule::MAX_REPORT_BYTES,
+                )?;
+                step_evidence_bytes = step_evidence_bytes
+                    .checked_add(bytes)
+                    .filter(|n| *n <= 32 * 1024 * 1024)
+                    .ok_or(Error::TooLarge)?;
+                findings.push(format!("Step {} freshly reconstructed saved run {} product {} against its original independent target; strands, nicks, termini, positional modifications and generation provenance remain actual tracked state. The selected event is a declared source, not proof of isolation or experimental success.", index+1, origin.selection.run_id, origin.selection.step_index+1));
+                if fresh.incomplete {
+                    incomplete.push(format!("Step {} originating run retains incomplete findings; material reuse does not upgrade that assessment. Complete originating evidence is retained.", index+1));
+                }
+                physical_processing_reports.push(PhysicalProcessingStepReport {
+                    step_index: index,
+                    evidence: PhysicalProcessingEvidence::RunProduct(fresh.evidence),
+                });
+                next_physical = Some(fresh.tracked);
+                fresh.reference
+            }
             Operation::MultiSiteRecombineReference {
                 sources,
                 request,
@@ -3312,6 +3346,9 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
     };
     for (step_index, step) in plan.steps.iter().enumerate() {
         match step {
+            Operation::ReconstructRunProduct { template, origin } => {
+                body.push_str(&format!("<li>Use saved material {} by reconstructing run <code>{}</code>, product {} against its unchanged original target <code>{}</code>. Preserve actual nicks, termini and positional modifications. Complete origin evidence is retained; this is not a newly performed reaction, inferred repair or proof of isolation.</li>", source(template), e(&origin.selection.run_id), origin.selection.step_index+1, e(&origin.target_event.revision)));
+            },
             Operation::TopoActions{sources,request}=>{
                 body.push_str(&format!("<li>Accounted TOPO chemical actions from original roles {}. Every original base and excised fragment remains in the full graph. Explicit selected component {} and source seed strand {}, index {} (zero-based); component selection is not isolation. Ideal hydrolytic profiles are declared model assumptions, not a named nuclease, kit or host-repair guarantee.<ul>",sources.iter().map(|r|format!("{} = {}",e(&r.role),source(&r.source))).collect::<Vec<_>>().join(", "),request.selection.component,request.selection.reference_seed.strand,request.selection.reference_seed.index));
                 for action in &request.processing.actions {body.push_str(&format!("<li>{}</li>",e(&format!("{action:?}"))));}
@@ -3460,6 +3497,20 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
         body.push_str("<h2>Accounted physical processing evidence</h2><ul>");
         for step in &report.physical_processing_reports {
             match &step.evidence {
+                PhysicalProcessingEvidence::RunProduct(evidence) => {
+                    body.push_str(&format!("<li>Step {}: saved run <code>{}</code>, product {}, actual material summary <code>{}</code>. Full originating report is retained with the reconstruction recipe.<ul>", step.step_index+1, e(&evidence.origin.selection.run_id), evidence.origin.selection.step_index+1, e(&evidence.material_revision)));
+                    if let Ok(origin_report) = evidence.decode_report() {
+                        body.push_str(&format!("<li>Origin assessment: {:?}; engine {}. Reuse does not upgrade incomplete findings.</li>", origin_report.status,e(&origin_report.engine_version)));
+                        for finding in origin_report
+                            .findings
+                            .iter()
+                            .chain(&origin_report.assumptions)
+                        {
+                            body.push_str(&format!("<li>{}</li>", e(finding)));
+                        }
+                    }
+                    body.push_str("</ul></li>");
+                }
                 PhysicalProcessingEvidence::TopoActions(report) => {
                     let graph = &report.projection.processing.product;
                     body.push_str(&format!("<li>Step {}: {} original source calls remain across {} components, {} chains and {} unpaired calls. Faithful selected duplex available: {}. Excised material is retained, not discarded from evidence.<ul>",step.step_index+1,report.projection.processing.source_bases,graph.components.len(),graph.chains.len(),graph.unpaired.iter().map(|r|r.end-r.start).sum::<usize>(),report.tracked.is_some()));

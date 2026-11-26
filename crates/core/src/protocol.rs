@@ -6,8 +6,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 72;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 16;
+pub const WORKER_SCHEMA_VERSION: u16 = 73;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 17;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
@@ -2837,6 +2837,13 @@ fn check_verification_report_version(
                 ));
             }
             match &step.evidence {
+                crate::verification::PhysicalProcessingEvidence::RunProduct(r) => {
+                    check_variant_version(bytes, 73)?;
+                    r.validate_documentary()?;
+                    // Documentary shape only. Schema73 already includes every
+                    // nested capability floor; no recursive replay or imported
+                    // freshness is conferred by a retained inner report.
+                }
                 crate::verification::PhysicalProcessingEvidence::TopoActions(r) => {
                     r.validate_binding(&r.context_revision)?
                 }
@@ -2862,6 +2869,9 @@ fn check_verification_report_version(
     Ok(())
 }
 fn check_scientific_report_version(bytes: &[u8], engine: &str) -> Result<(), Error> {
+    if engine.ends_with("/science-20") {
+        check_variant_version(bytes, 73)?;
+    }
     if engine.ends_with("/science-19") {
         check_variant_version(bytes, 68)?;
     }
@@ -3156,6 +3166,9 @@ fn check_workspace_version(
             check_variant_version(bytes, 12)?;
             let record = crate::run_lineage::load_run_record(&attachment.bytes)?;
             check_variant_version(bytes, plan_worker_version(&record.plan))?;
+            if record.plan_schema >= 15 {
+                check_variant_version(bytes, 73)?;
+            }
             if record.plan_schema >= 14 {
                 check_variant_version(bytes, 68)?;
             }
@@ -3275,6 +3288,7 @@ fn plan_worker_version(plan: &crate::verification::DesignPlan) -> u16 {
     plan.steps
         .iter()
         .map(|step| match step {
+            crate::verification::Operation::ReconstructRunProduct { .. } => 73,
             crate::verification::Operation::MultiSiteRecombineReference { .. } => 68,
             step if crate::verification::topo_uses_step_source(step) => 67,
             crate::verification::Operation::TopoActions { .. } => 66,

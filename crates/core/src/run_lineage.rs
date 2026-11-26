@@ -131,6 +131,7 @@ fn resolve<'a>(w: &'a Workspace, b: &EventBinding) -> Result<&'a Molecule, Error
         .ok_or_else(|| bad("revision unavailable"))
 }
 fn validate_plan(plan: &DesignPlan) -> Result<(), Error> {
+    crate::run_material::plan_preflight(plan)?;
     verification::validate_reference_steps(plan)?;
     encoded(plan)?;
     Candidate::new(plan.clone()).validate()?;
@@ -189,7 +190,7 @@ fn validate_record(r: &RunRecord) -> Result<(), Error> {
     if r.schema_version != 1
         || !matches!(
             r.plan_schema,
-            3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14
+            3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15
         )
         || !digest(&r.run_id)
         || r.assessment.engine_version.is_empty()
@@ -197,6 +198,17 @@ fn validate_record(r: &RunRecord) -> Result<(), Error> {
         || r.assessment.status == Status::Invalid
     {
         return Err(bad("invalid schema or assessment"));
+    }
+    if r.plan_schema < 15
+        && (r.assessment.engine_version.ends_with("/science-20")
+            || r.plan
+                .steps
+                .iter()
+                .any(|s| matches!(s, Operation::ReconstructRunProduct { .. })))
+    {
+        return Err(bad(
+            "Reconstructing a retained run product requires plan schema15",
+        ));
     }
     if r.plan_schema < 14
         && (r.assessment.engine_version.ends_with("/science-19")
@@ -384,6 +396,8 @@ fn parents(r: &RunRecord, i: usize) -> Result<Vec<String>, Error> {
     Ok(out)
 }
 fn crossrefs(w: &Workspace, r: &RunRecord) -> Result<(), Error> {
+    crate::run_material::validate_plan_origins(w, &r.plan)?;
+    crate::run_material::validate_input_origins(&r.plan, &r.inputs)?;
     resolve(w, &r.target)?;
     for (b, input) in r.inputs.iter().zip(&r.plan.inputs) {
         let m = resolve(w, &b.event)?;
@@ -489,6 +503,9 @@ pub fn record_run(
     input_bindings: Vec<InputEventBinding>,
     allow_incomplete: bool,
 ) -> Result<RunCommit, Error> {
+    crate::run_material::plan_preflight(plan)?;
+    crate::run_material::validate_plan_origins(w, plan)?;
+    crate::run_material::validate_input_origins(plan, &input_bindings)?;
     let fingerprint = workspace_fingerprint(w)?;
     validate_plan(plan)?;
     let target = resolve(w, &target_binding)?;

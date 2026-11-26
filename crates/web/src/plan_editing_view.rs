@@ -18,6 +18,7 @@ use std::{
 
 fn title(op: &Operation) -> &'static str {
     match op {
+        Operation::ReconstructRunProduct { .. } => "Reuse saved cloning material",
         Operation::Pcr { .. } => "PCR",
         Operation::PcrWithMismatches { .. } => "PCR with mismatches",
         Operation::Digest { .. } => "Restriction digest",
@@ -616,6 +617,7 @@ fn OperationEditor(
             {text_field(fields,"Forward primer name",|f|&f.forward_name,|f,v|f.forward_name=v)}{text_field(fields,"Forward annealing domain (5′→3′)",|f|&f.forward_domain,|f,v|f.forward_domain=v)}{text_field(fields,"Forward 5′ tail",|f|&f.forward_tail,|f,v|f.forward_tail=v)}
             {text_field(fields,"Reverse primer name",|f|&f.reverse_name,|f,v|f.reverse_name=v)}{text_field(fields,"Reverse annealing domain (5′→3′)",|f|&f.reverse_domain,|f,v|f.reverse_domain=v)}{text_field(fields,"Reverse 5′ tail",|f|&f.reverse_tail,|f,v|f.reverse_tail=v)}
         </div>}.into_any(),
+        Operation::ReconstructRunProduct{origin,..}=>view!{<div class="helper"><p>{format!("Immutable originating run {} · step {} · selected source event {}",origin.selection.run_id,origin.selection.step_index+1,origin.selection.event.event_id)}</p><p>{format!("Original independent target: {} · event {}",origin.target.name,origin.target_event.event_id)}</p><p>"The retained origin plan is reconstructed against its own target. Origin parameters and historical selections are preserved; this editor changes only the outer dependency. A different event cannot acquire material authority through matching DNA or imported summaries. Historical primers are not added to a new order."</p></div>}.into_any(),
         Operation::Digest{..}=>view!{<div>{text_field(fields,"Restriction enzymes (comma separated)",|f|&f.enzymes,|f,v|f.enzymes=v)}{text_field(fields,"Digest fragment index (zero based)",|f|&f.index,|f,v|f.index=v)}</div>}.into_any(),
         Operation::TreatEnds{..}=>choice_field(fields,"End treatment",|f|&f.mode,|f,v|f.mode=v,vec![("phosphorylate","Phosphorylate 5′ ends"),("dephosphorylate","Dephosphorylate 5′ ends")]),
         Operation::RepairEnds{..}=>choice_field(fields,"End repair",|f|&f.mode,|f,v|f.mode=v,vec![("fill","Fill 5′ overhangs"),("remove","Remove 3′ overhangs"),("blunt","Blunt ends")]),
@@ -753,7 +755,8 @@ fn OperationEditor(
         | Operation::TopoActions { sources, .. } => {
             sources.iter().map(|source| source.role.clone()).collect()
         }
-        Operation::Pcr { .. }
+        Operation::ReconstructRunProduct { .. }
+        | Operation::Pcr { .. }
         | Operation::PcrWithMismatches { .. }
         | Operation::Digest { .. }
         | Operation::CatalogDigest { .. }

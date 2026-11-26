@@ -1645,3 +1645,30 @@ material. The initial all-hydroxyl circularization fixture correctly failed for
 lack of any sealable bond and was corrected to explicit partial phosphorylation;
 production chemistry was unchanged. The WASM core check with JSON schemas passed.
 No frontend rebuild, browser check or HTTP application check was performed.
+
+### Durable saved-product continuation plans
+
+A typed `ReconstructRunProduct` operation now keeps an originating candidate and
+independent target intact, freshly reconstructs its selected material and feeds
+existing downstream operations. This preserves context-pinned physical graph
+selections, actual nicks/termini/modifications and all incomplete findings. Complete
+originating reports remain bounded documentary evidence in retained runs and
+HTML/PDF output. New orders exclude already-prepared origin primers.
+
+Worker 73/candidate 17/native plan 15/science 20 gate the appended operation and
+evidence variant. Nested candidate decoding is iterative with aggregate bounds;
+JSON uses compact base64 and worker communication retains raw binary bytes.
+Workspace adoption checks the exact selected parent event and every retained
+origin source/target/product, independently of a standalone scientific verdict.
+Ordinary preparation source selection and dedicated MCP discovery/build tools
+remain to be connected. No browser checks or public preview update are implied by
+this native/transport increment; full project scope remains active.
+
+Validation: 51 distinct targeted native tests passed across continuation, original
+material replay, processed TOPO, plan editing/oligos, output capture and affected
+protocol gates. The successful continuation fixture additionally saved/reopened
+a native workspace ZIP and reconstructed its named output with retained origin
+evidence. Web/worker WASM checks and the native MCP compiler check passed.
+Formatting and whitespace checks passed. Existing unsupported nicked-substrate
+PCR/digest paths withhold downstream products; no repair is inferred. No browser
+or HTTP application checks, full frontend build or preview update were performed.

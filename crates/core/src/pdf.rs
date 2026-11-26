@@ -1231,6 +1231,15 @@ pub(crate) fn export_protocol_pdf_checked(
     layout.heading("Cloning steps")?;
     for (index, step) in plan.steps.iter().enumerate() {
         let body = match step {
+            Operation::ReconstructRunProduct { template, origin } => format!(
+                "Reconstruct already-prepared saved material {} from complete origin run {}, step {}. Exact source event {}; original independent target {} (event {}). Replay uses the retained origin plan unchanged, including its separate target and source declarations. Historical status and imported strand summaries do not grant chemical authority. This is material reuse, not a new execution of historical laboratory reactions, isolation or a supplier guarantee; all origin assumptions and incomplete findings remain applicable.",
+                source_name(template),
+                origin.selection.run_id,
+                origin.selection.step_index + 1,
+                origin.selection.event.event_id,
+                origin.target.name,
+                origin.target_event.event_id
+            ),
             Operation::DeclareSourceTermini {
                 template,
                 left,
@@ -1543,6 +1552,21 @@ pub(crate) fn export_protocol_pdf_checked(
             match &entry.evidence {
                 verification::PhysicalProcessingEvidence::TopoActions(evidence) => {
                     layout.paragraph_size(&topo_actions_evidence_text(evidence)?, 9.0, INK)?
+                }
+                verification::PhysicalProcessingEvidence::RunProduct(evidence) => {
+                    evidence.validate_documentary()?;
+                    let origin_report = evidence.decode_report()?;
+                    layout.paragraph_size(&format!("Fresh originating reconstruction: {:?}, engine {}, plan {}, target {}. Selected originating step {} of {}; material revision {}. Complete origin products and typed graph evidence are retained in the reconstruction report. No component isolation or newly performed historical reaction is inferred.",origin_report.status,origin_report.engine_version,origin_report.plan_revision,origin_report.target_revision,evidence.origin.selection.step_index+1,origin_report.products.len(),evidence.material_revision),9.0,INK)?;
+                    for finding in &origin_report.findings {
+                        layout.paragraph_size(&format!("Origin finding: {finding}"), 9.0, INK)?;
+                    }
+                    for assumption in &origin_report.assumptions {
+                        layout.paragraph_size(
+                            &format!("Origin assumption: {assumption}"),
+                            9.0,
+                            INK,
+                        )?;
+                    }
                 }
             }
         }

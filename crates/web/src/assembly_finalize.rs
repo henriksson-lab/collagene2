@@ -1,6 +1,6 @@
 //! Explicit output presentation choices followed by fresh reconstruction and one
 //! atomic recovery commit. Imported receipts never authorize installation.
-use crate::worker::CachedWorker;
+use crate::{assembly_output_model::PrimerCapability, worker::CachedWorker};
 use collagene_core::{
     cloning_outputs::{self, Options},
     protocol::{AnalysisJob, AnalysisResult, Request},
@@ -89,6 +89,11 @@ pub fn AssemblyFinalizePanel(
     message: RwSignal<String>,
 ) -> impl IntoView {
     let frame = snapshot.run(());
+    let output_target = frame
+        .as_ref()
+        .ok()
+        .and_then(|frame| frame.head(&frame.active_document).ok())
+        .cloned();
     let default_name = frame
         .as_ref()
         .ok()
@@ -104,6 +109,8 @@ pub fn AssemblyFinalizePanel(
     let captured_epoch = epoch.get_untracked();
     let show_prepared = RwSignal::new(false);
     let save_primers = RwSignal::new(false);
+    let primer_capability = RwSignal::new(None::<Result<PrimerCapability, String>>);
+    let primer_worker = StoredValue::new_local(None::<Rc<CachedWorker>>);
     let allow_incomplete = RwSignal::new(false);
     let completed = RwSignal::new(false);
     let alive = Arc::new(AtomicBool::new(true));
@@ -126,6 +133,9 @@ pub fn AssemblyFinalizePanel(
     let cleanup_alive = alive.clone();
     on_cleanup(move || {
         cleanup_alive.store(false, Ordering::Relaxed);
+        if let Some(worker) = primer_worker.get_value() {
+            worker.close();
+        }
         generation.with_value(|g| g.set(g.get().wrapping_add(1)));
         if let Some(worker) = worker.get_value() {
             worker.close();
@@ -138,10 +148,120 @@ pub fn AssemblyFinalizePanel(
         }
     });
     Effect::new(move |_| {
-        if epoch.get() != captured_epoch && owns_lock.with_value(|lock| lock.get()) {
-            cancel.run(());
+        if epoch.get() != captured_epoch {
+            save_primers.set(false);
+            primer_capability.set(Some(Err("The workspace changed. Reopen output choices to inspect the current plan's oligos.".into())));
+            if let Some(worker) = primer_worker.get_value() {
+                worker.close();
+            }
+            primer_worker.set_value(None);
+            if owns_lock.with_value(|lock| lock.get()) {
+                cancel.run(());
+            }
         }
     });
+    // Reuse the existing readonly order export job: it extracts declarations in
+    // the worker without PCR, digestion, target verification or installation.
+    // Optional extraction never blocks creating a construct without a collection.
+    if let Some(target) = output_target.filter(|_| binding.with_value(Option::is_some)) {
+        let prepared = (|| -> Result<_, String> {
+            let options = collagene_core::plan_oligos::Options::default();
+            let delimiter = collagene_core::oligo_formats::Delimiter::Comma;
+            let revision = plan
+                .with_value(|plan| {
+                    collagene_core::plan_oligos::export_revision(plan, &target, &options, delimiter)
+                })
+                .map_err(|e| e.to_string())?;
+            let expected_plan = plan.with_value(collagene_core::verification::plan_revision);
+            let expected_target = target.revision();
+            let expected_frame = binding
+                .with_value(|b| b.as_ref().map(|b| b.fingerprint.clone()))
+                .ok_or("Exact source bindings are unavailable.")?;
+            let w = Rc::new(CachedWorker::new()?);
+            Ok((
+                w,
+                revision,
+                expected_plan,
+                expected_target,
+                expected_frame,
+                options,
+                delimiter,
+            ))
+        })();
+        match prepared {
+            Err(error) => primer_capability.set(Some(Err(error))),
+            Ok((
+                w,
+                revision,
+                expected_plan,
+                expected_target,
+                expected_frame,
+                options,
+                delimiter,
+            )) => {
+                primer_worker.set_value(Some(w.clone()));
+                let request = Request {
+                    id: u32::MAX - 211,
+                    revision: revision.clone(),
+                    job: AnalysisJob::ExportPlanOligos {
+                        plan: plan.get_value(),
+                        target,
+                        options,
+                        delimiter,
+                    },
+                };
+                let alive = alive.clone();
+                spawn_local(async move {
+                    let reply = w.ask(request).await;
+                    w.close();
+                    if !alive.load(Ordering::Relaxed) || epoch.get_untracked() != captured_epoch {
+                        return;
+                    }
+                    primer_worker.set_value(None);
+                    let result = (|| -> Result<PrimerCapability, String> {
+                        let current = snapshot.run(())?;
+                        if run_lineage::workspace_fingerprint(&current)
+                            .map_err(|e| e.to_string())?
+                            != expected_frame
+                        {
+                            return Err(
+                                "The workspace changed during oligo review. Reopen output choices."
+                                    .into(),
+                            );
+                        }
+                        let reply = reply?;
+                        if reply.id != u32::MAX - 211 || reply.revision != revision {
+                            return Err("Oligo capabilities belong to another request.".into());
+                        }
+                        match reply.result {
+                            AnalysisResult::PlanOligosExported(export) => {
+                                export
+                                    .validate_binding(&revision)
+                                    .map_err(|e| e.to_string())?;
+                                PrimerCapability::from_report(
+                                    &export.report,
+                                    &expected_plan,
+                                    &expected_target,
+                                )
+                            }
+                            AnalysisResult::Error(error) => Err(error),
+                            _ => Err("Unexpected oligo-capability response.".into()),
+                        }
+                    })();
+                    if !result.as_ref().is_ok_and(PrimerCapability::can_save) {
+                        save_primers.set(false);
+                    }
+                    primer_capability.set(Some(result));
+                });
+            }
+        }
+    } else {
+        primer_capability.set(Some(Err(
+            "Exact intended target and source bindings are unavailable for optional oligo review."
+                .into(),
+        )));
+    }
+
     let run = {
         let alive = alive.clone();
         move || {
@@ -168,7 +288,16 @@ pub fn AssemblyFinalizePanel(
                 let options = Options {
                     name,
                     show_prepared: show_prepared.get_untracked(),
-                    save_primers: save_primers.get_untracked(),
+                    save_primers: primer_capability.with_untracked(|cap| {
+                        cap.as_ref()
+                            .and_then(|r| r.as_ref().ok())
+                            .is_some_and(|cap| {
+                                cap.selected(
+                                    save_primers.get_untracked(),
+                                    epoch.get_untracked() == captured_epoch,
+                                )
+                            })
+                    }),
                     allow_incomplete: allow_incomplete.get_untracked(),
                 };
                 options.validate().map_err(|e| e.to_string())?;
@@ -283,8 +412,10 @@ pub fn AssemblyFinalizePanel(
         <p>"Reconstruct the plan again and save the final construct with its exact source history. Every reconstructed preparation remains retained, even when hidden from Documents."</p>
         <label>"Construct name"<input aria-label="Assembly output name" maxlength="256" prop:value=move||name.get() disabled=move||busy.get()||completed.get() on:input=move|e|name.set(event_target_value(&e))/></label>
         <label><input type="checkbox" prop:checked=move||show_prepared.get() disabled=move||busy.get()||completed.get() on:change=move|e|show_prepared.set(event_target_checked(&e))/>"Show prepared fragments in Documents"</label>
-        <label><input type="checkbox" prop:checked=move||save_primers.get() disabled=move||busy.get()||completed.get() on:change=move|e|save_primers.set(event_target_checked(&e))/>"Save primer collection"</label>
-        <p class="helper">"Primer collections contain the declared oligos, not proof of synthesized or experimentally tested primers."</p>
+        <label><input type="checkbox" aria-label="Save declared primer collection" aria-describedby="assembly-primer-capability" prop:checked=move||primer_capability.with(|cap|cap.as_ref().and_then(|r|r.as_ref().ok()).is_some_and(|cap|cap.selected(save_primers.get(),epoch.get()==captured_epoch))) disabled=move||busy.get()||completed.get()||epoch.get()!=captured_epoch||!primer_capability.with(|cap|cap.as_ref().and_then(|r|r.as_ref().ok()).is_some_and(PrimerCapability::can_save)) on:change=move|e|{let requested=event_target_checked(&e);save_primers.set(primer_capability.with_untracked(|cap|cap.as_ref().and_then(|r|r.as_ref().ok()).is_some_and(|cap|cap.selected(requested,epoch.get_untracked()==captured_epoch))));}/>"Save primer collection"</label>
+        <p class="helper" id="assembly-primer-capability" role="status">{move||primer_capability.with(|cap|match cap{None=>"Checking declared oligos… You can create the construct without waiting for this optional output.".into(),Some(Ok(cap))=>cap.summary(),Some(Err(error))=>format!("Primer collection unavailable: {error} The construct can still be created without it.")})}</p>
+        {move||primer_capability.with(|cap|cap.as_ref().and_then(|r|r.as_ref().ok()).filter(|cap|!cap.unavailable.is_empty()||!cap.warnings.is_empty()).map(|cap|view!{<details><summary>"Declared oligo scope"</summary><ul>{cap.unavailable.iter().chain(&cap.warnings).map(|note|view!{<li>{note.clone()}</li>}).collect_view()}</ul></details>}))}
+        <p class="helper">"Collections contain only newly declared oligos in this plan. Historical origin primers are not reordered automatically; synthesized or experimentally tested primers are not established."</p>
         <details><summary>"Incomplete reconstruction"</summary>
             <p class="helper">"Normally, incomplete reconstructions are refused. Enable this only to retain a reconstruction with explicitly unresolved evidence. Invalid plans and missing final products remain refused; this does not turn an incomplete assessment into a verified outcome."</p>
             <label><input type="checkbox" prop:checked=move||allow_incomplete.get() disabled=move||busy.get()||completed.get() on:change=move|e|allow_incomplete.set(event_target_checked(&e))/>"Keep incomplete reconstruction"</label>

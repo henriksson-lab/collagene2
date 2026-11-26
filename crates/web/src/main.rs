@@ -44,10 +44,14 @@ mod assembly_library_topology;
 mod assembly_library_view;
 #[cfg(target_arch = "wasm32")]
 mod assembly_multisite_view;
+#[cfg(any(target_arch = "wasm32", test))]
+mod assembly_output_model;
 #[cfg(target_arch = "wasm32")]
 mod assembly_outputs;
 #[cfg(target_arch = "wasm32")]
 mod assembly_pool_view;
+#[cfg(any(target_arch = "wasm32", test))]
+mod assembly_product_model;
 #[cfg(target_arch = "wasm32")]
 mod assembly_product_view;
 #[cfg(target_arch = "wasm32")]

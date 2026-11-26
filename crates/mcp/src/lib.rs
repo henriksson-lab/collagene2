@@ -6574,7 +6574,11 @@ impl CollageneServer {
         let processed_step_count =
             report.processed_step_reports.len() + report.physical_processing_reports.len();
         let reference_step_count = report.reference_step_reports.len();
-        let artifact = if processed_step_count > 0 || reference_step_count > 0 {
+        let artifact = if processed_step_count > 0
+            || reference_step_count > 0
+            || !report.step_reports.is_empty()
+            || !report.annotation_reports.is_empty()
+        {
             Some(self.text_artifact(
                 bounded_json_limit(&report, 32 * 1024 * 1024)?,
                 "application/json",

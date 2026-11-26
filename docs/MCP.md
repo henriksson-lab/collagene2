@@ -888,3 +888,11 @@ The tool atomically returns an unverified intended-reference session target and 
 `inspect_pcr_digest` additionally accepts optional `pcr_options: mutagenesis::PcrOptions`. Omitting it preserves the exact-PCR tool behavior, response and artifact layouts. Supplying it selects the distinct native mismatch-PCR/catalog inspector and `mismatch-pcr-digest-inspection.json` artifact. The request's existing primer/catalog fields remain in `request`; explicit mismatch/3′-exact/search policy is separate in `pcr_options`. Primer tails, encoded substitutions, candidate binding evidence and the actual selected amplicon remain inspectable in the full typed artifact.
 
 Mismatch mode returns `mode: "mismatch-pcr"`, actual policy, native search/enumeration completeness, candidate summaries, selected amplicon summary, paged real fragments and `incomplete`. A certain nonoverlapping conditional singleton may be inspectable under a capped search; the incomplete flag stays explicit and no uniqueness or successful reaction is inferred. A saved-run `origin` still requires its exact `workspace` and shares the existing full ownership attestation before fresh science. No independent target, plan or product document is created. Tool count remains174. Existing shared recipe tools also accept explicit `MismatchPcrCatalogDigest` preparations and their flat saved-run equivalent; an explicit fragment index is verified separately against the independently declared target.
+
+
+`verify_plan` retains a complete verification artifact whenever legacy TOPO
+`step_reports` or `annotation_reports` contain evidence, including graph-only
+outcomes with no DNA contour. These use the existing artifact field alongside
+newer processed, physical and reference evidence. A plain plan with no typed
+step-evidence arrays keeps its existing response. Artifacts remain documentary;
+no intermediate or graph-only result is published as a molecule by verification.

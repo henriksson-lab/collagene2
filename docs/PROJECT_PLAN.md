@@ -1865,3 +1865,47 @@ final web/worker WASM check passed, as did formatting and whitespace checks.
 No browser/HTTP checks were run.
 Public8082 continues to serve53ccaea/worker77 until the next bundled preview.
 The full original implementation goal and all user exclusions remain unchanged.
+
+
+### Inspectable preparation prefixes and usable output choices
+
+Ordinary product review can now inspect each reconstructed leading step, even
+when a later operation yields no DNA. A shared readonly snapshot model separates
+validated prefix availability from final-step availability and checks plan,
+independent-target, engine and product receipt tags before exposing DNA. One
+selected canvas is mounted inside a collapsed step inspector; source history
+labels include mismatch PCR, annealing, tailing and saved-material reconstruction.
+Unknown later steps never reuse a previous product. The existing precise sequence
+selection and rotation-first map remain shared. No prefix view installs material
+or changes the final output selection.
+
+Review distinguishes a next unreconstructed operation from retained graph-only
+step evidence. A full reconstruction JSON download keeps typed graphs and
+annotation evidence available beside HTML/PDF and primer exports. Known-invalid
+independent-target checks disable output creation with an explanation. Diagnostic
+actual final DNA remains inspectable; finalization still performs fresh native
+verification and exact-source attestation.
+
+The output modal now checks actual declared oligo capabilities through the
+existing readonly worker export. Complete nonempty order sets can be saved as
+primer collections; empty/unsupported sets explain the limitation and leave
+construct creation available without that option. Stale context clears pending
+choices. Historical origin primers are not inferred as new orders.
+
+MCP verify_plan now retains its existing full-report artifact for legacy TOPO
+step/annotation evidence as well as newer processed/physical/reference reports.
+Graph-only outcomes remain available without inventing a DNA product or publishing
+one. Plain plans without these typed arrays retain their existing response shape.
+No scientific operation, worker schema, native plan schema or tool count changed:
+worker78, native15, candidate17, science20 and174 MCP tools remain current.
+
+Eight focused native checks passed: seven review/capability fixtures and one real
+legacy MCP evidence flow. The web/worker WASM, formatting and whitespace checks
+passed. No browser or HTTP application checks were run. Public8082 remains on53ccaea pending a bundled
+preview; the full original project goal and exclusions remain unchanged.
+
+The next ordinary review gap is direct comparison of actual reconstructed DNA
+with its independently declared target. Reuse native pairwise review through a
+snapshot diagnostic adapter, without fabricating historical document events or
+turning sequence agreement into experimental verification. Direct GenBank/FASTA
+exports from this review can reuse the existing writers and export-loss reports.

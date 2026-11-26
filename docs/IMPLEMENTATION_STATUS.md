@@ -2,6 +2,23 @@
 
 The implementation goal is active. The working application covers substantial parts of M0–M3, initial M4 cloning, gel and export workflows, an initial F26 codon-design workflow and F24 dot plots/reference-free read assembly; the complete [project plan](PROJECT_PLAN.md) is not finished. Application/scientific code is independently implemented and MIT licensed. No installed scientific program, downloader or sidecar is invoked at runtime.
 
+## Current source and public preview
+
+The recorded source baseline is `e258716` (exact and mismatch-PCR catalog fragment
+inspection, including explicit saved-run origins). It writes worker78, native
+plan15 and candidate17, uses science20, and exposes174 MCP tools. The cloning
+workflow also retains independently declared substitution intent; primer-derived
+products never become its expected target. Preparation-step inspection and
+oligo-capability output choices are connected on top of this baseline. The full
+project goal remains active.
+
+Public port8082 still serves the immutable `53ccaea` snapshot. The newer PCR-chain
+inspection/preparation changes are not published there yet. Browser checks remain
+deferred; source changes and compiler results do not establish visual acceptance
+of an unpublished interface. Earlier feature sections below describe their own
+delivery checkpoints, including historical version numbers and publication states.
+This section records the current source/deployment distinction.
+
 ## Current priority
 
 Finish the cloning application first: editor/maps/digests, PCR and primer handling,

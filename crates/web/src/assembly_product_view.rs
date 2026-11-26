@@ -1,13 +1,14 @@
 //! Read-only final-step reconstruction review. The parent supplies a fresh private
 //! verifier result; a serialized report is never accepted as installation proof.
 use crate::{
-    assembly_junctions_view::AssemblyJunctionsPanel, renderer::MapRenderer,
+    assembly_junctions_view::AssemblyJunctionsPanel,
+    assembly_product_model::{Snapshot, operation_label},
+    renderer::MapRenderer,
     sequence_view::SequenceView,
 };
 use collagene_core::{
     Location, Molecule,
-    chemistry::DuplexSummary,
-    verification::{self, DesignPlan, Operation, Source, Status, VerificationReport},
+    verification::{self, DesignPlan, Status, VerificationReport},
 };
 use leptos::{html, prelude::*};
 use std::{rc::Rc, sync::Arc};
@@ -21,187 +22,6 @@ fn clip(value: &str, limit: usize) -> String {
         format!("{text}…")
     } else {
         text
-    }
-}
-fn source_label(source: &Source) -> String {
-    match source {
-        Source::Input(id) => format!("original input {}", clip(id, 80)),
-        Source::Step(index) => format!("step {}", index + 1),
-    }
-}
-fn operation_label(operation: &Operation) -> String {
-    match operation {
-        Operation::Pcr {
-            template,
-            forward,
-            reverse,
-        } => format!(
-            "Exact PCR of {} · {} / {}",
-            source_label(template),
-            clip(&forward.name, 60),
-            clip(&reverse.name, 60)
-        ),
-        Operation::Digest {
-            template,
-            enzymes,
-            fragment_index,
-        } => format!(
-            "Digest {} · {} · fragment {} (zero based)",
-            source_label(template),
-            enzymes
-                .iter()
-                .take(8)
-                .map(|name| clip(name, 32))
-                .collect::<Vec<_>>()
-                .join(", "),
-            fragment_index
-        ),
-        Operation::CatalogDigest {
-            template,
-            fragment_index,
-            ..
-        } => format!(
-            "Catalog-pinned digest of {} · fragment {} (zero based)",
-            source_label(template),
-            fragment_index
-        ),
-        Operation::RepairEnds { template, method } => format!(
-            "Explicit end repair of {} · {:?}",
-            source_label(template),
-            method
-        ),
-        Operation::TreatEnds {
-            template,
-            treatment,
-        } => format!(
-            "Explicit terminal treatment of {} · {:?}",
-            source_label(template),
-            treatment
-        ),
-        Operation::DeclareSourceTermini {
-            template,
-            left,
-            right,
-        } => format!(
-            "Original duplex terminal assumption for {} · left {:?} · right {:?}",
-            source_label(template),
-            left,
-            right
-        ),
-        Operation::ProfiledOverlap {
-            fragments,
-            circular,
-            options,
-            ..
-        } => format!(
-            "Ordered {:?} overlap · {} fragments · {}",
-            options.method,
-            fragments.len(),
-            if *circular { "circular" } else { "linear" }
-        ),
-        Operation::Overlap {
-            fragments,
-            circular,
-            ..
-        } => format!(
-            "Ordered exact overlap · {} fragments · {}",
-            fragments.len(),
-            if *circular { "circular" } else { "linear" }
-        ),
-        Operation::Ligate {
-            fragments,
-            circular,
-            allow_nicked,
-        } => format!(
-            "Ordered ligation · {} fragments · {} · retained nicks {}",
-            fragments.len(),
-            if *circular { "circular" } else { "linear" },
-            if *allow_nicked {
-                "permitted"
-            } else {
-                "not permitted"
-            }
-        ),
-        _ => "Other typed preparation; inspect the complete saved plan and protocol.".into(),
-    }
-}
-struct Snapshot {
-    plan: DesignPlan,
-    target: Molecule,
-    report: VerificationReport,
-    plan_revision: String,
-    target_revision: String,
-    product_revision: Option<String>,
-    error: Option<String>,
-    physical: Option<DuplexSummary>,
-}
-impl Snapshot {
-    fn new(plan: DesignPlan, target: Molecule, report: VerificationReport) -> Self {
-        let validation = (|| -> Result<(String, String, String), String> {
-            collagene_core::assembly_junctions::source_preflight(&plan, &target)
-                .map_err(|e| e.to_string())?;
-            let plan_revision = verification::plan_revision(&plan);
-            let target_revision = target.revision();
-            if plan_revision.is_empty()
-                || report.plan_revision != plan_revision
-                || report.target_revision != target_revision
-                || plan.target_revision != target_revision
-            {
-                return Err("Plan or independent-target revision does not match this reconstruction receipt.".into());
-            }
-            if report.engine_version != verification::ENGINE_VERSION {
-                return Err("This reconstruction uses another scientific engine. Reconstruct the current plan again before reviewing its final product.".into());
-            }
-            if plan.steps.is_empty() || report.products.len() != plan.steps.len() {
-                return Err(format!(
-                    "Final product unavailable: {} of {} step products were reconstructed. Leading preparation products are not the final assembly.",
-                    report.products.len(),
-                    plan.steps.len()
-                ));
-            }
-            let product = report.products.last().ok_or("Final product unavailable")?;
-            collagene_core::model::bounds::model_preflight(&[product])
-                .map_err(|e| e.to_string())?;
-            product.validate().map_err(|e| e.to_string())?;
-            Ok((plan_revision, target_revision, product.revision()))
-        })();
-        let (plan_revision, target_revision, product_revision, error) = match validation {
-            Ok((p, t, m)) => (p, t, Some(m), None),
-            Err(error) => (
-                report.plan_revision.clone(),
-                report.target_revision.clone(),
-                None,
-                Some(error),
-            ),
-        };
-        // Display a descriptive receipt from this fresh report only. It is never
-        // used to reconstruct chemistry, authorize installation or choose DNA.
-        let physical = if product_revision.is_some() {
-            report
-                .products
-                .last()
-                .and_then(|m| m.metadata.get("duplex_model"))
-                .filter(|text| text.len() <= 1024 * 1024)
-                .and_then(|text| serde_json::from_str::<DuplexSummary>(text).ok())
-                .filter(|summary| {
-                    summary.nicks.len() <= 10_000
-                        && summary.ends.as_ref().is_none_or(|(a, b)| {
-                            a.overhang.len() <= 10_000 && b.overhang.len() <= 10_000
-                        })
-                })
-        } else {
-            None
-        };
-        Self {
-            plan,
-            target,
-            report,
-            plan_revision,
-            target_revision,
-            product_revision,
-            error,
-            physical,
-        }
     }
 }
 #[component]
@@ -221,7 +41,13 @@ pub fn AssemblyProductView(
     let current = Memo::new(move |_| epoch.get() == captured_epoch);
     let status = RwSignal::new(String::new());
     let junctions_open = RwSignal::new(false);
+    let intermediates_open = RwSignal::new(false);
+    let inspected_step =
+        RwSignal::new(snapshot.with_value(|s| s.prefix_available.saturating_sub(1)));
     let available = snapshot.with_value(|s| s.product_revision.is_some());
+    let report_available = snapshot.with_value(|s| s.prefix_error.is_none());
+    let output_available =
+        snapshot.with_value(|s| s.product_revision.is_some() && s.report.status != Status::Invalid);
     let identity = Memo::new(move |_| {
         if current.get() {
             snapshot.with_value(|s| (s.plan_revision.clone(), s.target_revision.clone()))
@@ -252,6 +78,21 @@ pub fn AssemblyProductView(
             Ok((s.plan.clone(), s.target.clone()))
         })
     });
+    let export_report = move |_| {
+        let result = capture.run(()).and_then(|_| {
+            snapshot.with_value(|s| {
+                if s.prefix_error.is_some() {
+                    return Err("The report context is not bound to this plan and target.".into());
+                }
+                let bytes = serde_json::to_vec_pretty(&s.report).map_err(|e| e.to_string())?;
+                if bytes.len() > 64 * 1024 * 1024 {
+                    return Err("The diagnostic JSON exceeds the 64MiB export profile.".into());
+                }
+                crate::app::download("cloning-reconstruction.json", "application/json", &bytes)
+            })
+        });
+        status.set(match result{Ok(())=>"Complete reconstruction report exported, including retained intermediate and graph-only evidence. This is diagnostic evidence, not material authority.".into(),Err(error)=>error});
+    };
     let open = move |_| {
         if !current.get_untracked() {
             status.set(
@@ -275,9 +116,10 @@ pub fn AssemblyProductView(
         <header class="assembly-product-header product-review-header"><div class="product-review-title"><h2>"Reconstructed product"</h2>
             <p class="product-review-result"><strong>{snapshot.with_value(|s|format!("{:?}",s.report.status))}</strong><span>{move||if current.get(){"Current reconstruction snapshot"}else{"Historical snapshot · reconstruct again"}}</span></p>
         </div><div class="product-review-actions">
-            {on_finalize.map(|finalize|view!{<button class="button primary" disabled=move||!available||!current.get() on:click=move|_|{let result=capture.run(()).and_then(|(plan,_)|finalize.run(collagene_core::transfer::Candidate::new(plan)));if let Err(error)=result{status.set(error);}}>"Create assembly outputs"</button>})}
-            <details class="product-export-menu"><summary>"Export primers / steps"</summary><crate::assembly_outputs::AssemblyOutputs capture identity epoch/></details>
+            {on_finalize.map(|finalize|view!{<button class="button primary" disabled=move||!output_available||!current.get() on:click=move|_|{let result=capture.run(()).and_then(|(plan,_)|finalize.run(collagene_core::transfer::Candidate::new(plan)));if let Err(error)=result{status.set(error);}}>"Create assembly outputs"</button>})}
+            <details class="product-export-menu"><summary>"Export primers / steps"</summary><crate::assembly_outputs::AssemblyOutputs capture identity epoch/><button class="text-tool" disabled=move||!report_available||!current.get() on:click=export_report>"Export full reconstruction JSON"</button></details>
         </div></header>
+        {snapshot.with_value(|s|(s.product_revision.is_some()&&s.report.status==Status::Invalid).then(||view!{<p class="assembly-product-status" role="status">"Output creation is unavailable because the independent target check is invalid. Inspect the actual DNA and findings, then correct the design."</p>}))}
         <p class="helper product-review-scope">"Actual reconstructed reference DNA, separate from intended DNA. This view does not establish experimental success, exhaustive product uniqueness or newly prepared material."</p>
         <p class="assembly-product-status" role="status">{move||if !current.get(){"Workspace context changed. This snapshot is historical; reconstruct again before opening or inspecting it.".to_string()}else{status.get()}}</p>
         {snapshot.with_value(|s|s.error.clone()).map(|error|view!{<p class="assembly-product-status" role="alert">{error}</p>})}
@@ -291,6 +133,50 @@ pub fn AssemblyProductView(
                 <button class="button secondary" disabled=move||!current.get() on:click=open>"Open reconstructed product reference"</button>
             </div>}
         })}else{None})}
+        <details class="assembly-product-details" on:toggle=move|event:web_sys::Event|{
+            let open=event.current_target().and_then(|target|target.dyn_into::<web_sys::HtmlElement>().ok()).is_some_and(|element|element.has_attribute("open"));
+            if open {
+                if let Err(error)=capture.run(()){status.set(error);intermediates_open.set(false);return;}
+            }
+            intermediates_open.set(open);
+        }><summary>"Inspect preparation steps and intermediate DNA"</summary>
+            {snapshot.with_value(|s|s.prefix_error.clone()).map(|error|view!{<p role="alert">{error}</p>})}
+            <p class="helper">{snapshot.with_value(|s|format!("{} of {} step products available in this reconstruction. Intermediate views do not select the final output or restore physical material.",s.prefix_available,s.plan.steps.len()))}</p>
+            {snapshot.with_value(|s|{
+                let index=s.prefix_available;
+                if s.prefix_error.is_some() || index>=s.plan.steps.len(){return None;}
+                let graphs=s.report.step_reports.iter().filter(|r|r.step_index==index).count();
+                let processed=s.report.processed_step_reports.iter().filter(|r|r.step_index==index).count();
+                let physical=s.report.physical_processing_reports.iter().filter(|r|r.step_index==index).count();
+                let reference=s.report.reference_step_reports.iter().filter(|r|r.step_index==index).count();
+                let annotation=s.report.annotation_reports.iter().filter(|r|r.step_index==index).count();
+                Some(view!{<p>{format!("Next step not reconstructed: {}. {}",index+1,operation_label(&s.plan.steps[index]))}</p><p class="helper">{format!("Retained typed evidence at this step: {graphs} graph, {processed} processed graph, {physical} physical processing, {reference} reference and {annotation} annotation reports. Export the full reconstruction JSON for complete evidence, including graph-only results with no DNA product.")}</p>})
+            })}
+            <Show when=move||snapshot.with_value(|s|s.prefix_available>0)>
+                <label>"Reconstructed step"<select aria-label="Reconstructed preparation step" disabled=move||!current.get() prop:value=move||inspected_step.get().to_string() on:change=move|event|{
+                    if let Ok(index)=event_target_value(&event).parse::<usize>() {
+                        if let Err(error)=capture.run(()){status.set(error);intermediates_open.set(false);return;}
+                    if snapshot.with_value(|s|s.product_at(index).is_ok()) {inspected_step.set(index);}
+                    }
+                }>{snapshot.with_value(|s|(0..s.prefix_available).map(|index|view!{<option value=index.to_string()>{format!("{}. {}{}",index+1,operation_label(&s.plan.steps[index]),if index+1==s.plan.steps.len(){" · final step"}else{" · intermediate"})}</option>}).collect_view())}</select></label>
+                <div class="method-row-actions"><button class="text-tool" disabled=move||!current.get()||inspected_step.get()==0 on:click=move|_|{match capture.run(()){Ok(_)=>inspected_step.update(|index|*index=index.saturating_sub(1)),Err(error)=>{status.set(error);intermediates_open.set(false);}}}>"Previous step"</button><button class="text-tool" disabled={move||!current.get()||snapshot.with_value(|s|inspected_step.get().saturating_add(1)>=s.prefix_available)} on:click=move|_|{match capture.run(()){Ok(_)=>inspected_step.update(|index|*index=index.saturating_add(1)),Err(error)=>{status.set(error);intermediates_open.set(false);}}}>"Next step"</button></div>
+                <For each=move||if intermediates_open.get()&&current.get(){vec![inspected_step.get()]}else{Vec::new()} key=|index|*index children=move|index|{
+                    snapshot.with_value(|s|match s.product_at(index) {
+                        Ok(product)=>{
+                            let product=product.clone();
+                            let identity=format!("{}:step{}:{}",s.plan_revision,index,product.revision());
+                            let physical=s.descriptive_physical_at(index);
+                            view!{<section aria-label="Read-only intermediate reconstruction">
+                                <p><strong>{format!("Step {} · {}",index+1,operation_label(&s.plan.steps[index]))}</strong>{format!(" · {} bases · {:?} · {} annotations",product.sequence.len(),product.topology,product.features.len())}</p>
+                                <ReferenceCanvas product identity current on_message=Callback::new(move|text|status.set(text))/>
+                                {physical.map(|summary|view!{<details><summary>"Descriptive strand/end receipt"</summary>{crate::end_view::summary(&summary)}<p class="helper">"Read-only evidence from this reconstructed step. Detached metadata cannot establish material for another operation."</p></details>})}
+                            </section>}.into_any()
+                        },
+                        Err(error)=>view!{<p role="alert">{error}</p>}.into_any(),
+                    })
+                }/>
+            </Show>
+        </details>
         <details class="assembly-product-details"><summary>"Sources, preparation history and verification findings"</summary>
             <p>{snapshot.with_value(|s|format!("Scientific engine: {}",s.report.engine_version))}</p>
             <p>{snapshot.with_value(|s|format!("Plan {} · independent target {} ({})",s.plan_revision,clip(&s.target.name,120),s.target_revision))}</p>

@@ -253,3 +253,32 @@ construct. A different Type IIS geometry fails explicitly; enzyme display names
 never substitute for exact recognition/cut pins. The existing finite-reaction
 complete-amplicon option retains mismatch policy while removing only the downstream
 digest request.
+
+
+## Preparation-step inspection and output capabilities
+
+Reconstructed product review includes a collapsed preparation-step inspector.
+Select one available leading step to inspect its DNA, annotations and descriptive
+strand/end receipt. Within the step inspector, only one reference canvas is mounted
+at a time. The shared
+viewer retains precise sequence selection and rotation-first circular maps. A
+later unavailable step never reuses the last preparation product as its result.
+The independent target, plan and engine identities are checked before any prefix
+is exposed; imported metadata cannot restore physical material authority.
+
+A failed or incomplete plan may still have useful intermediate DNA. A wrong-target
+plan may also have an actual final product suitable for diagnosis. Output creation
+is disabled for a known invalid target check; final-only opening/finalization never
+switches to a selected intermediate. The next unreconstructed step is identified
+separately, with retained typed-evidence counts. Full reconstruction JSON export
+preserves graph-only and annotation evidence even when no DNA contour exists.
+Such a report remains diagnostic evidence. Native finalization still performs its
+own fresh verification and exact-source checks.
+
+Output choices inspect the plan's actual declared oligo capability using the
+existing readonly order extractor in a worker. The primer-collection checkbox
+shows a distinct count when the order set is complete; empty or unsupported order
+sets disable that optional choice and explain why. Construct creation remains
+available without the collection. Historical primers inside a saved-product
+reconstruction are not silently added to new orders. Stale workspace context
+clears the optional choice and rejects delayed capability replies.

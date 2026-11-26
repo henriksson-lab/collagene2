@@ -217,7 +217,8 @@ fn actual_retained_nicks_cannot_become_a_saved_pcr_template() {
     request.forward = Primer::new("F", "TTGCAATC", "").unwrap();
     request.reverse = Primer::new("R", "GTACCGCT", "").unwrap();
     let err = p::inspect_from_run(&source, &origin, &request).unwrap_err();
-    assert!(err.to_string().contains("nicks"));
+    assert!(matches!(&err, collagene_core::Error::Unsupported(_)));
+    assert!(err.to_string().contains("nick"), "{err}");
     // The original native state, independently replayed, still carries both nicks.
     let plan = DesignPlan {
         name: "Replay only".into(),
@@ -240,6 +241,17 @@ fn actual_retained_nicks_cannot_become_a_saved_pcr_template() {
         panic!("replay evidence")
     };
     let original = evidence.decode_report().unwrap();
+    let summary: collagene_core::chemistry::DuplexSummary = serde_json::from_str(
+        original
+            .products
+            .last()
+            .unwrap()
+            .metadata
+            .get("duplex_model")
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(summary.nicks.len(), 2);
     assert!(
         original
             .findings

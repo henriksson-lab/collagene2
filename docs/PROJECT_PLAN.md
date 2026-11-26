@@ -1558,3 +1558,32 @@ swapping of captured oligo roles for reversed paired inserts. Swapping must carr
 the full strand chemistry, reset the independent contribution to the new top,
 clear the old candidate/junction declarations and reconstruct downstream ligation.
 These are UI/source handoffs to existing native operations, not new chemistry.
+
+### Plain ligation intent and ordered oligo role swaps
+
+Ordinary ligation and tailing share a compact independent-intent editor for
+upstream/downstream reference trims, literal junction DNA, circular closure and
+linear final suffixes. It stores only existing Edit declarations, retaining the
+source preparations, primers, terminal treatments and explicit annealing choice.
+Review intended construct freezes these values before native reconstruction;
+a wrong literal goal cannot create a verified named output. PCR redesign remains
+a separate interface for the methods that actually model it.
+
+A paired source slot offers an explicit ordered-oligo role swap. It exchanges the
+actual captured top/bottom events and their complete declared terminal chemistry,
+resets the intended region to the full new top strand with forward orientation,
+and requires fresh geometry selection. Only the incoming/outgoing junction edits
+are cleared; unrelated literals/trims and other source preparations are retained.
+The ordinary reverse checkbox directs paired inserts to this source-based action;
+existing reverse flags can still be cleared. Native tests compare asymmetric
+swapped oligos against Duplex::reverse and stage/finalize the independent new-top
+target while preserving all three original source parents. No new scientific
+operation, worker version, recipe format or MCP tool is needed.
+
+Validation:19 targeted native web cases pass, including independent literal goals,
+wrong-target refusal, named-output staging/finalization with all three source
+events, asymmetric swapped geometry and preservation of unrelated four-slot edits.
+The full offline frontend/worker build succeeds. Worker71, candidate16, plan14,
+science19 and MCP170 are unchanged. Browser and HTTP application checks remain
+deferred. The next common cloning UI gap is inspecting/selecting PCR-product
+catalog-digest fragments by actual lengths/ends instead of guessing an index.

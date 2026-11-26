@@ -123,6 +123,8 @@ mod golden_gate_pool_form;
 #[cfg(target_arch = "wasm32")]
 mod history_view;
 #[cfg(target_arch = "wasm32")]
+mod literal_intent_view;
+#[cfg(target_arch = "wasm32")]
 mod map_labels;
 #[cfg(target_arch = "wasm32")]
 mod mismatch_pcr_outputs;

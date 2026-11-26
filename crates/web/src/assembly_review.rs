@@ -609,6 +609,357 @@ mod tests {
             "Named adaptor clone"
         );
     }
+    fn paired_edit_fixture() -> (
+        Workspace,
+        crate::cloning_methods_model::MethodsState,
+        Vec<PlanInput>,
+        Vec<EventBinding>,
+        assembly_intent::Request,
+    ) {
+        use crate::cloning_methods_model::{MethodsState, Mode, OverlapPreparation, Treatment};
+        use collagene_core::catalog_digest;
+        let originals = vec![
+            Molecule::dna("Backbone original", "GGAATTCTTACG", Topology::Circular).unwrap(),
+            Molecule::dna("Top original", "AATTGCTACG", Topology::Linear).unwrap(),
+            Molecule::dna("Bottom original", "AATTCGTAGC", Topology::Linear).unwrap(),
+        ];
+        let frame = Workspace::from_documents("Three original events", originals, 0).unwrap();
+        let mut state = MethodsState::default();
+        state.mode = Mode::Ligation;
+        let catalog = catalog_digest::builtin_catalog().unwrap();
+        let ecori = catalog
+            .edition()
+            .enzymes
+            .iter()
+            .find(|enzyme| enzyme.name == "EcoRI")
+            .unwrap()
+            .id
+            .clone();
+        state.rows[0].preparation = OverlapPreparation::CatalogDigest;
+        state.rows[0].catalog_selection = Some(catalog_digest::select(&catalog, &[ecori]).unwrap());
+        state.rows[1].preparation = OverlapPreparation::AnnealedOligos;
+        state.rows[1].anneal_bottom_document = Some(2);
+        state.rows[1].anneal_options.min_paired_bases = 6;
+        state.rows[1].anneal_candidate = Some(0);
+        state.rows[1].treatment = Treatment::Phosphorylate;
+        let ids = state.all_input_ids().unwrap();
+        let bindings = frame
+            .documents
+            .iter()
+            .map(|document| EventBinding {
+                document_id: document.id.clone(),
+                event_id: document.head_event.clone().unwrap(),
+                revision: document.head.clone(),
+            })
+            .collect::<Vec<_>>();
+        let inputs = ids
+            .iter()
+            .zip(&bindings)
+            .map(|(id, binding)| PlanInput {
+                id: id.clone(),
+                revision: binding.revision.clone(),
+                molecule: frame.revisions[&binding.revision].clone(),
+            })
+            .collect::<Vec<_>>();
+        let roles = state.role_ids(2).unwrap();
+        let declaration = assembly_intent::Request {
+            name: "Independent two-contribution intent".into(),
+            circular: true,
+            fragments: vec![
+                Fragment {
+                    role: roles[0].role.clone(),
+                    input_id: ids[0].clone(),
+                    start: 2,
+                    end: 14,
+                    reverse: false,
+                },
+                Fragment {
+                    role: roles[1].role.clone(),
+                    input_id: ids[1].clone(),
+                    start: 0,
+                    end: 10,
+                    reverse: false,
+                },
+            ],
+        };
+        (frame, state, inputs, bindings, declaration)
+    }
+    #[test]
+    fn literal_ligation_intent_is_declared_before_annealing_and_wrong_literal_cannot_finalize() {
+        use collagene_core::{
+            assembly_junction_edit::{self, Edit},
+            cloning_outputs, ligation_recipe, run_lineage, verification,
+        };
+        let (frame, state, inputs, bindings, mut declaration) = paired_edit_fixture();
+        // Selected source core omits the four top overhang bases. They are an
+        // explicit independent requirement, physically supplied by the actual
+        // original oligo rather than copied from any reaction output.
+        declaration.fragments[1].start = 4;
+        let expected = "AATTCTTACGGGAATTGCTACG";
+        let build = |literal: &str| {
+            IntendedReference::Junctions(
+                assembly_junction_edit::build_intent(
+                    &inputs,
+                    &declaration,
+                    &[Edit {
+                        junction: 0,
+                        remove_left: 0,
+                        remove_right: 0,
+                        inserted: literal.into(),
+                    }],
+                )
+                .unwrap(),
+            )
+        };
+        let intent = build("AATT");
+        assert_eq!(intent.target().sequence.as_str(), expected);
+        assert_eq!(intent.fragments().len(), 2);
+        let (_, rows) = crate::cloning_preparations::prepared_rows(&state, 3).unwrap();
+        let recipe = ligation_recipe::Recipe {
+            name: "Literal intent, actual paired oligos".into(),
+            circular: true,
+            allow_nicked: false,
+            fragments: rows
+                .into_iter()
+                .zip(&state.rows)
+                .map(|(source, row)| ligation_recipe::Fragment {
+                    source,
+                    treatment: row.treatment.operation(),
+                })
+                .collect(),
+        };
+        let candidate = Candidate::new(
+            ligation_recipe::compile(&inputs, intent.target(), &recipe)
+                .unwrap()
+                .plan,
+        );
+        assert_eq!(
+            verification::verify(&candidate.plan, intent.target()).status,
+            verification::Status::ConsistentUnderAssumptions
+        );
+        let before = serde_json::to_value(&frame).unwrap();
+        let staged = stage_any(&frame, &intent, &bindings, &candidate).unwrap();
+        assert_eq!(staged.sources.len(), 3);
+        let parents = &staged
+            .workspace
+            .history
+            .iter()
+            .find(|e| e.id == staged.target.event_id)
+            .unwrap()
+            .parents;
+        assert_eq!(
+            parents.iter().collect::<std::collections::BTreeSet<_>>(),
+            bindings.iter().map(|b| &b.event_id).collect()
+        );
+        let options = cloning_outputs::Options {
+            name: "Literal-intent clone".into(),
+            show_prepared: false,
+            save_primers: false,
+            allow_incomplete: false,
+        };
+        let commit = cloning_outputs::finalize(
+            &staged.workspace,
+            &candidate.plan,
+            staged.target,
+            staged.sources,
+            &options,
+        )
+        .unwrap();
+        let run = run_lineage::load_run(&commit.workspace, &commit.receipt.run.run_id).unwrap();
+        assert_eq!(run.inputs.len(), 3);
+        for binding in &bindings {
+            assert!(run.inputs.iter().any(|i| &i.event == binding));
+        }
+        assert_eq!(
+            commit.workspace.revisions[&commit.receipt.construct.revision]
+                .sequence
+                .as_str(),
+            expected
+        );
+        let wrong = build("AATC");
+        assert_eq!(wrong.target().sequence.as_str(), "AATTCTTACGGGAATCGCTACG");
+        let candidate = Candidate::new(
+            ligation_recipe::compile(&inputs, wrong.target(), &recipe)
+                .unwrap()
+                .plan,
+        );
+        assert_eq!(
+            verification::verify(&candidate.plan, wrong.target()).status,
+            verification::Status::Invalid
+        );
+        let staged = stage_any(&frame, &wrong, &bindings, &candidate).unwrap();
+        let unchanged = serde_json::to_value(&staged.workspace).unwrap();
+        assert!(
+            cloning_outputs::finalize(
+                &staged.workspace,
+                &candidate.plan,
+                staged.target,
+                staged.sources,
+                &options
+            )
+            .is_err()
+        );
+        assert_eq!(serde_json::to_value(&staged.workspace).unwrap(), unchanged);
+        assert_eq!(serde_json::to_value(&frame).unwrap(), before);
+    }
+    #[test]
+    fn swapping_actual_ordered_oligos_changes_independent_intent_and_requires_fresh_selection() {
+        use crate::{
+            assembly_draft_model::{CapturedSource, Draft},
+            source_identity::SourceInfo,
+        };
+        use collagene_core::{cloning_outputs, ligation_recipe, run_lineage, verification};
+        use std::sync::Arc;
+        let (frame, state, inputs, bindings, _) = paired_edit_fixture();
+        let captures = inputs
+            .iter()
+            .zip(&bindings)
+            .map(|(input, binding)| {
+                Arc::new(CapturedSource {
+                    source: SourceInfo {
+                        binding: binding.clone(),
+                        name: input.molecule.name.clone(),
+                        length: input.molecule.sequence.len(),
+                        alphabet: input.molecule.sequence.alphabet(),
+                        topology: input.molecule.topology,
+                    },
+                    molecule: input.molecule.clone(),
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut draft = Draft::default();
+        draft.methods = state;
+        draft.slots[0].captured = Some(captures[0].clone());
+        draft.slots[0].start = 2;
+        draft.slots[0].end = 14;
+        draft.slots[1].captured = Some(captures[1].clone());
+        draft.slots[1].start = 0;
+        draft.slots[1].end = 10;
+        draft.slots[1].anneal_bottom = Some(captures[2].clone());
+        draft.sync_rows();
+        draft.methods.rows[1].anneal_candidate = Some(0);
+        draft.validate().unwrap();
+        let original = crate::assembly_draft_model::encode_raw(&draft).unwrap();
+        let mut swapped = draft.swap_oligo_roles(1).unwrap();
+        assert_eq!(
+            crate::assembly_draft_model::encode_raw(&draft).unwrap(),
+            original
+        );
+        assert_eq!(
+            swapped.slots[1].captured.as_ref().unwrap().source.binding,
+            bindings[2]
+        );
+        assert_eq!(
+            swapped.slots[1]
+                .anneal_bottom
+                .as_ref()
+                .unwrap()
+                .source
+                .binding,
+            bindings[1]
+        );
+        assert_eq!(swapped.methods.rows[1].anneal_candidate, None);
+        assert!(crate::cloning_preparations::prepared_rows(&swapped.methods, 3).is_err());
+        let options = swapped.methods.rows[1].anneal_options.clone();
+        let top = &swapped.slots[1].captured.as_ref().unwrap().molecule;
+        let bottom = &swapped.slots[1].anneal_bottom.as_ref().unwrap().molecule;
+        let fresh = verification::simulate_oligo_annealing(top, bottom, &options).unwrap();
+        assert!(fresh.annealing.complete && fresh.annealing.unique);
+        assert_eq!(fresh.annealing.candidates.len(), 1);
+        assert_eq!(
+            fresh.annealing.candidates[0].duplex.top.as_str(),
+            "AATTCGTAGC"
+        );
+        swapped.methods.rows[1].anneal_candidate = Some(0);
+        swapped.validate().unwrap();
+        let ids = swapped.methods.all_input_ids().unwrap();
+        let ordered_bindings = vec![
+            bindings[0].clone(),
+            bindings[2].clone(),
+            bindings[1].clone(),
+        ];
+        let ordered = ids
+            .iter()
+            .zip(&ordered_bindings)
+            .map(|(id, b)| PlanInput {
+                id: id.clone(),
+                revision: b.revision.clone(),
+                molecule: frame.revisions[&b.revision].clone(),
+            })
+            .collect::<Vec<_>>();
+        let roles = swapped.methods.role_ids(2).unwrap();
+        let declaration = assembly_intent::Request {
+            name: "Explicit opposite oligo contribution".into(),
+            circular: true,
+            fragments: vec![
+                Fragment {
+                    role: roles[0].role.clone(),
+                    input_id: ids[0].clone(),
+                    start: 2,
+                    end: 14,
+                    reverse: false,
+                },
+                Fragment {
+                    role: roles[1].role.clone(),
+                    input_id: ids[1].clone(),
+                    start: 0,
+                    end: 10,
+                    reverse: false,
+                },
+            ],
+        };
+        let intent =
+            IntendedReference::Regions(assembly_intent::build(&ordered, &declaration).unwrap());
+        assert_eq!(intent.target().sequence.as_str(), "AATTCTTACGGGAATTCGTAGC");
+        let (_, rows) = crate::cloning_preparations::prepared_rows(&swapped.methods, 3).unwrap();
+        let recipe = ligation_recipe::Recipe {
+            name: "Opposite ordered oligos".into(),
+            circular: true,
+            allow_nicked: false,
+            fragments: rows
+                .into_iter()
+                .zip(&swapped.methods.rows)
+                .map(|(source, row)| ligation_recipe::Fragment {
+                    source,
+                    treatment: row.treatment.operation(),
+                })
+                .collect(),
+        };
+        let candidate = Candidate::new(
+            ligation_recipe::compile(&ordered, intent.target(), &recipe)
+                .unwrap()
+                .plan,
+        );
+        assert_eq!(
+            verification::verify(&candidate.plan, intent.target()).status,
+            verification::Status::ConsistentUnderAssumptions
+        );
+        let staged = stage_any(&frame, &intent, &ordered_bindings, &candidate).unwrap();
+        let commit = cloning_outputs::finalize(
+            &staged.workspace,
+            &candidate.plan,
+            staged.target,
+            staged.sources,
+            &cloning_outputs::Options {
+                name: "Opposite insert clone".into(),
+                show_prepared: false,
+                save_primers: false,
+                allow_incomplete: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            commit.workspace.revisions[&commit.receipt.construct.revision]
+                .sequence
+                .as_str(),
+            "AATTCTTACGGGAATTCGTAGC"
+        );
+        let run = run_lineage::load_run(&commit.workspace, &commit.receipt.run.run_id).unwrap();
+        assert_eq!(run.inputs.len(), 3);
+        for binding in &bindings {
+            assert!(run.inputs.iter().any(|input| &input.event == binding));
+        }
+    }
     #[test]
     fn existing_target_outputs_stage_only_the_candidate_without_inventing_intent() {
         let (frame, target, sources, candidate) = existing_fixture();

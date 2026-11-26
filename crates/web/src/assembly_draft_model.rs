@@ -305,16 +305,22 @@ pub(crate) fn validate_controls(
         || (!junction_edits.is_empty()
             && !matches!(
                 methods.mode,
-                Mode::Overlap | Mode::GoldenGate | Mode::MultiSiteReference | Mode::Tailing
+                Mode::Overlap
+                    | Mode::GoldenGate
+                    | Mode::MultiSiteReference
+                    | Mode::Tailing
+                    | Mode::Ligation
             ))
     {
         return Err(
-            "Junction edits require declared reference intent, overlap, Golden Gate or TA/GC assembly and at most12 edits".into(),
+            "Junction edits require declared reference intent, overlap, Golden Gate, TA/GC or ordered ligation and at most12 edits".into(),
         );
     }
     let mut junctions = std::collections::BTreeSet::new();
     for edit in junction_edits {
-        let terminal = !circular && methods.mode == Mode::Tailing && edit.junction == count - 1;
+        let terminal = !circular
+            && matches!(methods.mode, Mode::Tailing | Mode::Ligation)
+            && edit.junction == count - 1;
         if (!terminal && edit.junction >= junction_count)
             || (terminal && edit.remove_right != 0)
             || !junctions.insert(edit.junction)
@@ -459,6 +465,66 @@ fn validate_oligo_capture(captured: &CapturedSource) -> Result<(), String> {
     Ok(())
 }
 impl Draft {
+    /// Explicitly reverse the declared pair by swapping its ordered originals.
+    /// This changes independent intent; it does not choose an annealing result.
+    /// Only the swapped row's incoming/outgoing boundary declarations are reset;
+    /// unrelated intent remains literal. Every mutation is transactional.
+    pub(crate) fn swap_oligo_roles(&self, index: usize) -> Result<Draft, String> {
+        self.validate()?;
+        if self.methods.mode != Mode::Ligation || self.alternatives.is_some() {
+            return Err("Swap ordered oligos requires an ordinary ligation draft.".into());
+        }
+        let row = self
+            .methods
+            .rows
+            .get(index)
+            .ok_or("The paired preparation row is unavailable.")?;
+        let slot = self
+            .slots
+            .get(index)
+            .ok_or("The paired source slot is unavailable.")?;
+        if row.preparation != OverlapPreparation::AnnealedOligos
+            || slot.captured.is_none()
+            || slot.anneal_bottom.is_none()
+        {
+            return Err(
+                "Capture both original strands of an active paired-oligo preparation first.".into(),
+            );
+        }
+        let mut next = self.clone();
+        let slot = &mut next.slots[index];
+        std::mem::swap(&mut slot.captured, &mut slot.anneal_bottom);
+        slot.start = 0;
+        slot.end = slot
+            .captured
+            .as_ref()
+            .ok_or("The new top oligo is unavailable.")?
+            .molecule
+            .sequence
+            .len();
+        slot.reverse = false;
+        slot.digest_geometry = None;
+        let row = &mut next.methods.rows[index];
+        std::mem::swap(
+            &mut row.anneal_options.top_chemistry,
+            &mut row.anneal_options.bottom_chemistry,
+        );
+        row.anneal_candidate = None;
+        row.anneal_source_context = None;
+        row.anneal_bottom_document = None;
+        let incoming = if index > 0 {
+            Some(index - 1)
+        } else if next.circular {
+            Some(next.slots.len() - 1)
+        } else {
+            None
+        };
+        next.junction_edits
+            .retain(|edit| edit.junction != index && Some(edit.junction) != incoming);
+        next.sync_rows();
+        next.validate()?;
+        Ok(next)
+    }
     fn uses_paired_fields(&self) -> bool {
         self.slots.iter().any(|slot| slot.anneal_bottom.is_some())
             || self.methods.rows.iter().any(|row| {
@@ -983,7 +1049,10 @@ mod paired_oligo_tests {
     use collagene_core::workspace::Workspace;
 
     fn captured(name: &str, dna: &str) -> Arc<CapturedSource> {
-        let molecule = Molecule::dna(name, dna, Topology::Linear).unwrap();
+        captured_topology(name, dna, Topology::Linear)
+    }
+    fn captured_topology(name: &str, dna: &str, topology: Topology) -> Arc<CapturedSource> {
+        let molecule = Molecule::dna(name, dna, topology).unwrap();
         let workspace = Workspace::from_documents(name, vec![molecule.clone()], 0).unwrap();
         let document = &workspace.documents[0];
         Arc::new(CapturedSource {
@@ -996,7 +1065,7 @@ mod paired_oligo_tests {
                 name: molecule.name.clone(),
                 length: molecule.sequence.len(),
                 alphabet: Alphabet::Dna,
-                topology: Topology::Linear,
+                topology,
             },
             molecule,
         })
@@ -1028,6 +1097,286 @@ mod paired_oligo_tests {
         draft.methods.rows[1].anneal_candidate = Some(0);
         draft.validate().unwrap();
         draft
+    }
+
+    #[test]
+    fn ligation_intent_literals_and_linear_suffixes_are_independent_of_preparation() {
+        let mut draft = paired();
+        let preparation = draft.methods.clone();
+        draft.junction_edits = vec![
+            assembly_junction_edit::Edit {
+                junction: 0,
+                remove_left: 0,
+                remove_right: 0,
+                inserted: "G".into(),
+            },
+            assembly_junction_edit::Edit {
+                junction: 1,
+                remove_left: 0,
+                remove_right: 0,
+                inserted: "C".into(),
+            },
+        ];
+        draft.validate().unwrap();
+        assert!(draft.methods == preparation);
+        assert!(decode_version(&encode_raw(&draft).unwrap(), 4).unwrap() == draft);
+        draft.circular = false;
+        draft.sync_rows();
+        draft.validate().unwrap();
+        draft.junction_edits[1].remove_right = 1;
+        assert!(draft.validate().is_err());
+        draft.junction_edits[1].remove_right = 0;
+        draft.junction_edits[1].inserted = "A".repeat(201);
+        assert!(draft.validate().is_err());
+    }
+
+    #[test]
+    fn swapped_ordered_roles_reset_intent_to_the_literal_old_bottom_and_clear_stale_pins() {
+        use collagene_core::{
+            chemistry::{FivePrime, Terminus, ThreePrime},
+            verification::PlanInput,
+        };
+        let mut draft = paired();
+        draft.slots[0].captured = Some(captured_topology(
+            "Backbone",
+            "GGAATTCTTACG",
+            Topology::Circular,
+        ));
+        draft.slots[0].start = 2;
+        draft.slots[0].end = 14;
+        draft.slots[1].captured = Some(captured("Top", "AATTGCTACG"));
+        draft.slots[1].anneal_bottom = Some(captured("Bottom", "AATTCGTAGC"));
+        draft.slots[1].start = 1;
+        draft.slots[1].end = 9;
+        draft.slots[1].reverse = true;
+        draft.slots[1].digest_geometry = Some(DigestGeometry {
+            top_start: 1,
+            top_length: 8,
+            bottom_start: 1,
+            bottom_length: 8,
+        });
+        draft.methods.rows[1].anneal_options.min_paired_bases = 6;
+        draft.methods.rows[1].anneal_options.top_chemistry = Terminus {
+            five_prime: FivePrime::Hydroxyl,
+            three_prime: ThreePrime::Blocked,
+        };
+        draft.methods.rows[1].anneal_options.bottom_chemistry = Terminus::CLEAVED;
+        draft.methods.rows[1].treatment = crate::cloning_methods_model::Treatment::Phosphorylate;
+        draft.junction_edits = vec![assembly_junction_edit::Edit {
+            junction: 0,
+            remove_left: 1,
+            remove_right: 0,
+            inserted: "T".into(),
+        }];
+        draft.sync_rows();
+        draft.methods.rows[1].anneal_candidate = Some(0);
+        draft.validate().unwrap();
+        let before = draft.clone();
+        let swapped = draft.swap_oligo_roles(1).unwrap();
+        assert!(draft == before);
+        assert!(swapped.slots[1].captured == before.slots[1].anneal_bottom);
+        assert!(swapped.slots[1].anneal_bottom == before.slots[1].captured);
+        assert_eq!(
+            (
+                swapped.slots[1].start,
+                swapped.slots[1].end,
+                swapped.slots[1].reverse
+            ),
+            (0, 10, false)
+        );
+        assert_eq!(
+            swapped.methods.rows[1].anneal_options.top_chemistry,
+            Terminus::CLEAVED
+        );
+        assert_eq!(
+            swapped.methods.rows[1].anneal_options.bottom_chemistry,
+            before.methods.rows[1].anneal_options.top_chemistry
+        );
+        assert!(swapped.methods.rows[1].treatment == before.methods.rows[1].treatment);
+        assert!(swapped.methods.rows[0] == before.methods.rows[0]);
+        assert_eq!(swapped.methods.source_roles, before.methods.source_roles);
+        assert_eq!(swapped.methods.rows[1].anneal_candidate, None);
+        assert_ne!(
+            swapped.methods.rows[1].anneal_source_context,
+            before.methods.rows[1].anneal_source_context
+        );
+        assert!(swapped.slots[1].digest_geometry.is_none() && swapped.junction_edits.is_empty());
+        assert!(decode_version(&encode_raw(&swapped).unwrap(), 4).unwrap() == swapped);
+        let ids = swapped.methods.all_input_ids().unwrap();
+        let sources = [
+            swapped.slots[0].captured.as_ref().unwrap(),
+            swapped.slots[1].captured.as_ref().unwrap(),
+            swapped.slots[1].anneal_bottom.as_ref().unwrap(),
+        ];
+        let inputs = sources
+            .into_iter()
+            .zip(&ids)
+            .map(|(capture, id)| PlanInput {
+                id: id.clone(),
+                revision: capture.source.binding.revision.clone(),
+                molecule: capture.molecule.clone(),
+            })
+            .collect::<Vec<_>>();
+        let roles = swapped.methods.role_ids(2).unwrap();
+        let request = collagene_core::assembly_intent::Request {
+            name: "Independently reversed adaptor".into(),
+            circular: true,
+            fragments: swapped
+                .slots
+                .iter()
+                .zip(&roles)
+                .map(
+                    |(slot, role)| collagene_core::overlap_primer_design::Fragment {
+                        role: role.role.clone(),
+                        input_id: role.input_id.clone(),
+                        start: slot.start,
+                        end: slot.end,
+                        reverse: slot.reverse,
+                    },
+                )
+                .collect(),
+        };
+        let intent = collagene_core::assembly_intent::build(&inputs, &request).unwrap();
+        assert_eq!(intent.target.sequence.as_str(), "AATTCTTACGGGAATTCGTAGC");
+    }
+
+    #[test]
+    fn swapping_one_pair_preserves_unrelated_four_slot_junction_intent() {
+        let mut draft = paired();
+        for (label, dna, id) in [
+            ("Third", "GTAC", "third-parent"),
+            ("Fourth", "CAAT", "fourth-parent"),
+        ] {
+            let source = captured(label, dna);
+            let mut slot = Slot::empty(label);
+            slot.end = source.molecule.sequence.len();
+            slot.captured = Some(source);
+            draft.slots.push(slot);
+            draft.methods.rows.push(OverlapInput::default());
+            draft.methods.source_roles.as_mut().unwrap().push(Role {
+                input_id: id.into(),
+                role: label.to_lowercase(),
+            });
+        }
+        draft.methods.rows[2].preparation = OverlapPreparation::ExactPcr;
+        draft.methods.rows[2].forward = "GT".into();
+        draft.methods.rows[2].reverse_primer = "GT".into();
+        draft.junction_edits = vec![
+            assembly_junction_edit::Edit {
+                junction: 0,
+                remove_left: 0,
+                remove_right: 0,
+                inserted: "A".into(),
+            },
+            assembly_junction_edit::Edit {
+                junction: 1,
+                remove_left: 0,
+                remove_right: 0,
+                inserted: "C".into(),
+            },
+            assembly_junction_edit::Edit {
+                junction: 2,
+                remove_left: 1,
+                remove_right: 1,
+                inserted: "GG".into(),
+            },
+            assembly_junction_edit::Edit {
+                junction: 3,
+                remove_left: 1,
+                remove_right: 0,
+                inserted: "T".into(),
+            },
+        ];
+        draft.sync_rows();
+        draft.methods.rows[1].anneal_candidate = Some(0);
+        let before = draft.clone();
+        let swapped = draft.swap_oligo_roles(1).unwrap();
+        assert_eq!(swapped.junction_edits, before.junction_edits[2..]);
+        assert!(swapped.slots[0] == before.slots[0] && swapped.slots[2..] == before.slots[2..]);
+        assert!(
+            swapped.methods.rows[0] == before.methods.rows[0]
+                && swapped.methods.rows[2..] == before.methods.rows[2..]
+        );
+        assert_eq!(swapped.methods.source_roles, before.methods.source_roles);
+        assert_eq!(swapped.methods.rows[1].anneal_candidate, None);
+        assert!(swapped.slots[1].captured == before.slots[1].anneal_bottom);
+        assert!(decode_version(&encode_raw(&swapped).unwrap(), 4).unwrap() == swapped);
+        assert!(draft == before);
+        // The first circular contribution has the closing boundary as its
+        // incoming neighbor; it must not erase the middle two declarations.
+        draft.slots.swap(0, 1);
+        draft.methods.swap_rows(0, 1);
+        draft.sync_rows();
+        let first = draft.swap_oligo_roles(0).unwrap();
+        assert_eq!(first.junction_edits, draft.junction_edits[1..3]);
+    }
+
+    #[test]
+    fn swapping_originals_and_full_termini_matches_asymmetric_physical_reversal() {
+        use collagene_core::chemistry::{self, FivePrime, Terminus, ThreePrime};
+        let mut draft = paired();
+        draft.slots[1].captured = Some(captured("Top", "AAGCTACG"));
+        draft.slots[1].end = 8;
+        draft.slots[1].anneal_bottom = Some(captured("Bottom", "TTTCGTAGC"));
+        draft.methods.rows[1].anneal_options.min_paired_bases = 6;
+        draft.methods.rows[1].anneal_options.top_chemistry = Terminus {
+            five_prime: FivePrime::Unknown,
+            three_prime: ThreePrime::Blocked,
+        };
+        draft.methods.rows[1].anneal_options.bottom_chemistry = Terminus::CLEAVED;
+        draft.sync_rows();
+        let original = chemistry::anneal_oligos(
+            &draft.slots[1].captured.as_ref().unwrap().molecule.sequence,
+            &draft.slots[1]
+                .anneal_bottom
+                .as_ref()
+                .unwrap()
+                .molecule
+                .sequence,
+            &draft.methods.rows[1].anneal_options,
+        )
+        .unwrap();
+        let swapped = draft.swap_oligo_roles(1).unwrap();
+        let fresh = chemistry::anneal_oligos(
+            &swapped.slots[1]
+                .captured
+                .as_ref()
+                .unwrap()
+                .molecule
+                .sequence,
+            &swapped.slots[1]
+                .anneal_bottom
+                .as_ref()
+                .unwrap()
+                .molecule
+                .sequence,
+            &swapped.methods.rows[1].anneal_options,
+        )
+        .unwrap();
+        assert!(original.complete && fresh.complete && !original.candidates.is_empty());
+        assert_eq!(original.candidates.len(), fresh.candidates.len());
+        for candidate in &original.candidates {
+            let reversed = candidate.duplex.reverse().unwrap();
+            assert!(
+                fresh
+                    .candidates
+                    .iter()
+                    .any(|candidate| candidate.duplex == reversed)
+            );
+        }
+        let asymmetric = original
+            .candidates
+            .iter()
+            .find(|candidate| candidate.duplex.bottom_start == 2)
+            .unwrap();
+        let (left, right) = asymmetric.duplex.ends().unwrap();
+        assert_eq!(left.overhang.len(), 2);
+        assert_eq!(right.overhang.len(), 3);
+        assert!(asymmetric.duplex.nicks.is_empty());
+        let before = serde_json::to_value(&draft).unwrap();
+        assert!(draft.swap_oligo_roles(0).is_err());
+        assert!(draft.swap_oligo_roles(99).is_err());
+        assert_eq!(serde_json::to_value(&draft).unwrap(), before);
     }
 
     #[test]

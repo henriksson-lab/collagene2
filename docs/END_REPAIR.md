@@ -60,3 +60,28 @@ these original operations. Saving/restoring a paired draft checks all three
 retained source events. Paired drafts use version4; combinatorial paired-source
 projection is not yet implemented. Existing plan14/candidate16 formats already
 represent the physical operations; worker71 adds the shared recipe preparation.
+
+### Editing independent ligation intent
+
+In **Declare intended junction DNA**, select an internal junction, circle closure
+or final linear suffix. Set the intended upstream/downstream reference trims and
+literal DNA. The final linear suffix has no downstream trim. These declarations
+retain the captured sources, primers, digest choices, end treatments and selected
+annealing geometry. **Review intended construct** checks the reference regions;
+subsequent recipe reconstruction verifies whether the prepared strands actually
+produce that DNA. An incorrect literal target cannot finalize as verified output.
+
+### Reversing a paired insert
+
+Use **Swap ordered oligo roles** in the active source card. The previous bottom
+becomes the new top and its whole ordered sequence becomes the independent
+reference contribution. Complete top/bottom terminal chemistry follows the
+captured originals. The action resets only the two neighboring junction
+declarations and the old geometry choice; unrelated edits and preparations are
+retained. Review the new bounds, select a fresh annealing geometry, and reconstruct
+ligation again. Both exact original oligo events remain in the plan.
+
+This explicit role swap handles unequal overhangs correctly: the physical new top
+is the original bottom strand. Ordinary annealing starts with continuous declared
+single strands, so arbitrary pre-existing nicked duplex material still requires
+its own supported upstream reconstruction.

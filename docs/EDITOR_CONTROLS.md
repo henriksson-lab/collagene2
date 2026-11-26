@@ -11,6 +11,11 @@ Shift+Ctrl/Cmd+Z redoes, and Ctrl+Y redoes. Clipboard shortcuts retain their exi
 handler. Escape clears the selection. The on-screen hint makes these controls
 visible rather than relying on a modal edit dialog.
 
+Exact local typing/cut/paste transitions now preserve their committed caret
+through the later reactive source update. Unrelated document writes preserve
+active selection; external event changes, undo/redo and restored workspaces clear
+it. [Identity and normalization rules](SEQUENCE_EDIT_TRANSITIONS.md).
+
 Edits use the existing model's alphabet validation, annotation transformation and
 history commit. Invalid edits preserve the source and report the reason. Compound
 or unresolved annotation selections are not silently converted into contiguous

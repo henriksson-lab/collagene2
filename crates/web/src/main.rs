@@ -363,6 +363,9 @@ mod plan_processing_model;
 #[cfg(any(target_arch = "wasm32", test))]
 mod plan_editing_sources;
 
+#[cfg(any(target_arch = "wasm32", test))]
+mod sequence_edit_transition;
+
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod sequence_geometry;
 

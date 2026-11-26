@@ -1,0 +1,231 @@
+use collagene_core::{
+    Molecule, Topology,
+    analysis::Primer,
+    chemistry::Terminus,
+    run_digest_history as digest,
+    run_lineage::{self, EventBinding, InputEventBinding},
+    run_material,
+    verification::{DesignPlan, Operation, PlanInput, Source},
+    workspace::{self, RevisionEvent, Workspace, WorkspaceAttachment},
+};
+use collagene_library_sharing::{self as sharing, Selection};
+const DNA: &str = "AGTCCGATGCTAGAATTCGACTTCAGACCTGTAGATCGTCA";
+fn event(w: &Workspace, index: usize) -> EventBinding {
+    let d = &w.documents[index];
+    EventBinding {
+        document_id: d.id.clone(),
+        event_id: d.head_event.clone().unwrap(),
+        revision: d.head.clone(),
+    }
+}
+fn pin(b: &EventBinding) -> Selection {
+    Selection {
+        document_id: b.document_id.clone(),
+        revision: b.revision.clone(),
+        head_event: Some(b.event_id.clone()),
+    }
+}
+fn fixture() -> (Workspace, EventBinding, String, String, String) {
+    let stock = Molecule::dna("Original PCR source", DNA, Topology::Linear).unwrap();
+    let target = Molecule::dna("Independent full PCR target", DNA, Topology::Linear).unwrap();
+    let private = Molecule::dna(
+        "PRIVATE UNRELATED DOCUMENT",
+        "CCCCAAAAGGGGTTTT",
+        Topology::Circular,
+    )
+    .unwrap();
+    let w = Workspace::from_documents(
+        "Local unpublished workspace",
+        vec![stock.clone(), target.clone(), private.clone()],
+        0,
+    )
+    .unwrap();
+    let plan = DesignPlan {
+        name: "Fresh unique PCR".into(),
+        target_revision: target.revision(),
+        inputs: vec![PlanInput {
+            id: "stock".into(),
+            revision: stock.revision(),
+            molecule: stock,
+        }],
+        steps: vec![Operation::Pcr {
+            template: Source::Input("stock".into()),
+            forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
+            reverse: Primer::new("R", "TGACGATC", "").unwrap(),
+        }],
+    };
+    let mut run = run_lineage::record_run(
+        &w,
+        &plan,
+        event(&w, 1),
+        vec![InputEventBinding {
+            input_id: "stock".into(),
+            event: event(&w, 0),
+        }],
+        false,
+    )
+    .unwrap();
+    let product = &run.receipt.products[0];
+    let source = EventBinding {
+        document_id: product.document_id.clone(),
+        event_id: product.event_id.clone(),
+        revision: product.revision.clone(),
+    };
+    let material = run_material::Selection {
+        run_id: run.receipt.run_id.clone(),
+        step_index: 0,
+        event: source.clone(),
+    };
+    // Installation is an explicit operation on the active exact saved PCR
+    // document, rather than on the independent target left active by capture.
+    run.workspace.active_document = source.document_id.clone();
+    let origin = run_material::capsule(&run.workspace, &material).unwrap();
+    let c = collagene_core::catalog_digest::builtin_catalog().unwrap();
+    let eco = c
+        .edition()
+        .enzymes
+        .iter()
+        .find(|e| e.name == "EcoRI")
+        .unwrap()
+        .id
+        .clone();
+    let selection = collagene_core::catalog_digest::select(&c, &[eco]).unwrap();
+    let installed = digest::prepare_install(
+        &run.workspace,
+        &digest::Request {
+            source,
+            origin,
+            selection,
+            options: collagene_core::restriction_inspection::InspectionOptions::default(),
+            fragment_index: 0,
+        },
+    )
+    .unwrap();
+    let product = installed.receipt.product.clone();
+    let record = installed.receipt.record_hash.clone();
+    let mut w = installed.workspace;
+    // Later private source edits cannot be chosen instead of the captured source
+    // event merely because the owning document now points somewhere else.
+    let old = event(&w, 0);
+    let edited = Molecule::dna(
+        "PRIVATE NEW SOURCE HEAD",
+        "TTTTGGGGCCCCAAAA",
+        Topology::Linear,
+    )
+    .unwrap();
+    let revision = edited.revision();
+    let e = RevisionEvent::new(
+        &old.document_id,
+        &revision,
+        vec![old.event_id.clone()],
+        "Private edit after digest",
+    )
+    .unwrap();
+    w.revisions.insert(revision.clone(), edited);
+    w.history.push(e.clone());
+    w.documents[0].undo.push(old.revision.clone());
+    w.documents[0].undo_events.push(old.event_id);
+    w.documents[0].head = revision.clone();
+    w.documents[0].head_event = Some(e.id);
+    let bytes = b"private presentation state".to_vec();
+    w.attachments.insert(
+        blake3::hash(&bytes).to_hex().to_string(),
+        WorkspaceAttachment {
+            kind: "oligo-table-v1".into(),
+            name: "Private UI".into(),
+            media_type: "application/json".into(),
+            bytes,
+        },
+    );
+    w.validate().unwrap();
+    (w, product, record, private.revision(), revision)
+}
+#[test]
+fn actual_pcr_digest_fragment_public_and_private_closure_preserve_fresh_material_without_private_current_heads()
+ {
+    let (w, product, record, private, new_head) = fixture();
+    let before = serde_json::to_value(&w).unwrap();
+    let fresh = digest::reconstruct(&w, &product).unwrap();
+    assert_eq!(fresh.reference().sequence.as_str(), "AGTCCGATGCTAG");
+    assert_eq!(fresh.tracked().duplex.top.as_str(), "AGTCCGATGCTAG");
+    assert_eq!(fresh.tracked().duplex.bottom.as_str(), "AATTCTAGCATCGGACT");
+    assert_eq!(fresh.tracked().duplex.left, Terminus::PCR);
+    assert_eq!(fresh.tracked().duplex.right, Terminus::CLEAVED);
+    for projected in [
+        sharing::project_document_closure(&w, &pin(&product)).unwrap(),
+        sharing::project_private_document_closure(&w, &pin(&product)).unwrap(),
+    ] {
+        assert!(projected.inventory.attachments.contains(&record));
+        assert!(!projected.workspace.revisions.contains_key(&private));
+        assert!(!projected.workspace.revisions.contains_key(&new_head));
+        assert!(projected.workspace.candidates.is_empty());
+        assert!(
+            projected
+                .workspace
+                .attachments
+                .values()
+                .all(|a| a.kind != "oligo-table-v1")
+        );
+        assert!(
+            projected
+                .workspace
+                .documents
+                .iter()
+                .all(|d| d.undo.is_empty() && d.redo.is_empty())
+        );
+        let reopened =
+            workspace::load_workspace(&workspace::save_workspace(&projected.workspace).unwrap())
+                .unwrap();
+        let again = digest::reconstruct(&reopened, &product).unwrap();
+        assert_eq!(again.reference(), fresh.reference());
+        assert_eq!(again.tracked(), fresh.tracked());
+        assert_eq!(again.origin_incomplete(), fresh.origin_incomplete());
+        let capsule = digest::capsule(&reopened, &product).unwrap();
+        let replay = digest::replay(&capsule, again.reference()).unwrap();
+        assert_eq!(replay.tracked(), fresh.tracked());
+    }
+    assert_eq!(serde_json::to_value(&w).unwrap(), before);
+}
+#[test]
+fn unrelated_selected_document_never_publishes_derived_record_or_its_private_origin_runs() {
+    let (w, _, record, private, _) = fixture();
+    let document = w.documents.iter().find(|d| d.head == private).unwrap();
+    let selected = Selection {
+        document_id: document.id.clone(),
+        revision: document.head.clone(),
+        head_event: document.head_event.clone(),
+    };
+    let out = sharing::project_document_closure(&w, &selected).unwrap();
+    assert_eq!(out.workspace.documents.len(), 1);
+    assert_eq!(out.workspace.revisions.len(), 1);
+    assert_eq!(
+        out.workspace.revisions[&private].name,
+        "PRIVATE UNRELATED DOCUMENT"
+    );
+    assert!(!out.inventory.attachments.contains(&record));
+    assert!(out.workspace.attachments.is_empty());
+}
+#[test]
+fn orphan_reserved_producer_corrupt_record_and_wrong_product_binding_refuse_instead_of_opaque_fallback()
+ {
+    let (w, product, hash, _, _) = fixture();
+    let mut orphan = w.clone();
+    orphan.attachments.remove(&hash);
+    assert!(sharing::project_document_closure(&orphan, &pin(&product)).is_err());
+    let mut corrupt = w.clone();
+    let mut a = corrupt.attachments.remove(&hash).unwrap();
+    a.bytes = b"{}".to_vec();
+    corrupt
+        .attachments
+        .insert(blake3::hash(&a.bytes).to_hex().to_string(), a);
+    assert!(sharing::project_document_closure(&corrupt, &pin(&product)).is_err());
+    let mut wrong = w.clone();
+    let mut a = wrong.attachments.remove(&hash).unwrap();
+    let mut record = digest::load_record(&a.bytes).unwrap();
+    record.product.document_id = wrong.documents[2].id.clone();
+    a.bytes = serde_json::to_vec(&record).unwrap();
+    wrong
+        .attachments
+        .insert(blake3::hash(&a.bytes).to_hex().to_string(), a);
+    assert!(sharing::project_private_document_closure(&wrong, &pin(&product)).is_err());
+}

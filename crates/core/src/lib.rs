@@ -76,6 +76,7 @@ pub mod tailing;
 
 pub mod overlap_profiles;
 
+pub mod run_digest_history;
 pub mod run_lineage;
 pub mod run_material;
 mod run_material_capsule;

@@ -136,6 +136,7 @@ struct Graph<'a> {
     run_headers: BTreeSet<String>,
     run_assets: BTreeMap<String, String>,
     owners: BTreeMap<String, String>,
+    digest_owners: BTreeMap<String, String>,
     companions: BTreeMap<String, Vec<String>>,
     kept_events: BTreeSet<String>,
     kept_revisions: BTreeSet<String>,
@@ -154,6 +155,7 @@ impl<'a> Graph<'a> {
             run_headers: BTreeSet::new(),
             run_assets: BTreeMap::new(),
             owners: BTreeMap::new(),
+            digest_owners: BTreeMap::new(),
             companions: BTreeMap::new(),
             kept_events: BTreeSet::new(),
             kept_revisions: BTreeSet::new(),
@@ -172,6 +174,11 @@ impl<'a> Graph<'a> {
                 }
                 for p in &header.products {
                     g.edge()?;
+                    if g.digest_owners.contains_key(&p.event_id) {
+                        return Err(Error::Unresolved(
+                            "multiple native owners for a product event",
+                        ));
+                    }
                     if g.owners
                         .insert(p.event_id.clone(), header.run_id.clone())
                         .is_some()
@@ -181,6 +188,30 @@ impl<'a> Graph<'a> {
                 }
                 g.run_assets.insert(header.run_id.clone(), hash.clone());
                 g.run_headers.insert(header.run_id);
+            } else if a.kind == collagene_core::run_digest_history::WORKSPACE_ATTACHMENT_KIND {
+                if g.digest_owners.len() >= collagene_core::run_digest_history::MAX_RECORDS
+                    || a.media_type != "application/json"
+                {
+                    return Err(Error::Unresolved(
+                        "saved-run digest attachment bounds/media",
+                    ));
+                }
+                let record = collagene_core::run_digest_history::load_record(&a.bytes)?;
+                let event = g
+                    .events
+                    .get(record.product.event_id.as_str())
+                    .ok_or(Error::Unresolved("saved-run digest product event"))?;
+                if event.document_id != record.product.document_id
+                    || event.revision != record.product.revision
+                    || g.owners.contains_key(&record.product.event_id)
+                    || g.digest_owners
+                        .insert(record.product.event_id, hash.clone())
+                        .is_some()
+                {
+                    return Err(Error::Unresolved("saved-run digest exact product owner"));
+                }
+                // Only index ownership here. Selecting an unrelated document
+                // must not enqueue this derivation's private source/target runs.
             } else if run_evidence(&a.kind) {
                 let owner: EvidenceOwner = serde_json::from_slice(&a.bytes)
                     .map_err(|_| Error::Unresolved("run evidence owner"))?;
@@ -257,12 +288,32 @@ impl<'a> Graph<'a> {
                 }
                 if let Some(owner) = self.owners.get(&id).cloned() {
                     self.run(&owner)?;
+                } else if let Some(hash) = self.digest_owners.get(&id).cloned() {
+                    self.kept_assets.insert(hash.clone());
+                    let attachment = self
+                        .source
+                        .attachments
+                        .get(&hash)
+                        .ok_or(Error::Unresolved("saved-run digest record bytes"))?;
+                    let record =
+                        collagene_core::run_digest_history::load_record(&attachment.bytes)?;
+                    for binding in collagene_core::run_digest_history::source_bindings(&record)? {
+                        self.binding(&binding)?;
+                    }
+                    for run in collagene_core::run_digest_history::required_run_ids(&record)? {
+                        self.run(&run)?;
+                    }
                 }
                 // This is a reserved native producer label, not a free-form
                 // user description contract. An orphan cannot be published as
                 // if its original reconstruction record were present.
                 else if event.operation.starts_with("Cloning run ") {
                     return Err(Error::Unresolved("orphan cloning-run product event"));
+                } else if event
+                    .operation
+                    .starts_with("Target-free saved-run digest fragment ")
+                {
+                    return Err(Error::Unresolved("orphan saved-run digest product event"));
                 }
             }
             while let Some(id) = self.pending_runs.pop_front() {

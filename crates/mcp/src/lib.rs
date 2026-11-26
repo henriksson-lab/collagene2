@@ -5258,7 +5258,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Import explicit GCG/Wisconsin single-sequence or original Collagene XML profiles, at most 4 MiB of text. GCG requires a caller-selected alphabet and verifies the declared type, length and checksum. XML lower-only migration requires AllowLowerOnly, retains exact original rows/bytes and never reconstructs physical cloning chemistry. Imports the entire selected project atomically as immutable session documents; no paths or external programs."
+        description = "Import explicit FASTA, GCG/Wisconsin single-sequence or original Collagene XML profiles, at most 4 MiB of text. FASTA alphabet=null retains per-record declarations (unmarked records are DNA); an explicit alphabet handles unmarked RNA/protein and must agree with every declaration. GCG requires a caller-selected alphabet and verifies the declared type, length and checksum. XML lower-only migration requires AllowLowerOnly, retains exact original rows/bytes and never reconstructs physical cloning chemistry. Imports the entire selected project atomically as immutable session documents; no paths or external programs."
     )]
     async fn import_compat_sequence(
         &self,
@@ -5272,6 +5272,13 @@ impl CollageneServer {
             let report = match args.profile {
                 sequence_exchange_tools::ImportProfile::Gcg(options) => {
                     collagene_core::gcg_sequence::import_gcg(args.text.as_bytes(), &options)
+                }
+                sequence_exchange_tools::ImportProfile::Fasta { alphabet } => {
+                    let text = args.text.trim_start_matches('\u{feff}');
+                    match alphabet {
+                        Some(alphabet) => formats::import_fasta_with_alphabet(text, alphabet),
+                        None => formats::import_fasta(text),
+                    }
                 }
                 sequence_exchange_tools::ImportProfile::CollageneXml { policy } => {
                     collagene_core::collagene_xml_compat::import_with_policy(

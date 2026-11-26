@@ -22,6 +22,12 @@ from RNA. The parser checks type, length, numbered positions and checksum.
 This review imports the whole selected source atomically after a second context
 check; multi-file batches requiring this choice are refused before publication.
 
+FASTA sources use the same review panel with a record-declaration mode and strict
+DNA/RNA/protein choices. A bounded summary shows the actual imported alphabet and
+length. Explicit record declarations must agree with a forced choice; conflicting
+name labels cannot override the native export alphabet. The paste dialog also
+offers **Choose FASTA alphabet**. [Alphabet contract](FASTA_ALPHABETS.md).
+
 Ordinary original Collagene XML continues through its existing importer. A project
 containing lower-strand-only records opens an explicit migration review instead.
 The opt-in profile reverses the actual lower calls into their 5′→3′ sequence;
@@ -30,7 +36,7 @@ record indexes remain retained, and uncertain annotation mappings remain marked
 for review. See [migration profile](COLLAGENE_XML_COMPAT.md).
 
 MCP adds `import_compat_sequence`, `export_snapgene` and `export_gcg` (184 tools).
-Import profiles are explicit and text is capped at 4 MiB. Exports are immutable
+Import profiles include explicit FASTA alphabet/declaration handling and text is capped at 4 MiB. Exports are immutable
 session artifacts, retrieved through the existing base64 chunk reader. Without
 explicit omission acknowledgment, a lossy export returns `review_required` and
 no artifact. These tools accept no filesystem paths and invoke no external

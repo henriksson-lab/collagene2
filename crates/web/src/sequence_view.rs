@@ -482,6 +482,21 @@ pub fn SequenceView(
             });
         },
     );
+    // on_edit commits synchronously. Capture the new event/revision through
+    // set_cursor only after success, using the normalized committed base count.
+    // The parent attests the same boundary across its later invalidation effect.
+    let finish_edit = Callback::new(move |(before_len, start, end): (usize, usize, usize)| {
+        stop_drag();
+        let after_len = molecule.with_untracked(|m| m.sequence.len());
+        if let Some(caret) =
+            crate::sequence_edit_transition::committed_caret(before_len, after_len, start, end)
+        {
+            set_cursor.run((caret, caret, None));
+        } else {
+            edit_cursor.set_value(None);
+            selection.set(None);
+        }
+    });
     let current_cursor = move || {
         edit_cursor.get_value().filter(|c| {
             c.identity == identity.get_untracked()
@@ -1159,6 +1174,7 @@ pub fn SequenceView(
             );
             return;
         }
+        let before_len = molecule.with_untracked(|m| m.sequence.len());
         match on_edit.run((
             source.get_untracked(),
             edit.start,
@@ -1166,8 +1182,7 @@ pub fn SequenceView(
             edit.replacement,
         )) {
             Ok(()) => {
-                stop_drag();
-                set_cursor.run((edit.caret, edit.caret, None));
+                finish_edit.run((before_len, edit.start, edit.end));
                 on_message.run(
                     "Selected reference copied and cut. Undo restores the previous document."
                         .into(),
@@ -1222,6 +1237,7 @@ pub fn SequenceView(
                 return;
             }
         };
+        let before_len = molecule.with_untracked(|m| m.sequence.len());
         match on_edit.run((
             source.get_untracked(),
             edit.start,
@@ -1229,8 +1245,7 @@ pub fn SequenceView(
             edit.replacement,
         )) {
             Ok(()) => {
-                stop_drag();
-                set_cursor.run((edit.caret, edit.caret, None));
+                finish_edit.run((before_len, edit.start, edit.end));
                 on_message
                     .run("Clipboard sequence applied. Undo restores the previous document.".into());
             }
@@ -1384,8 +1399,7 @@ pub fn SequenceView(
         let revision = source.get_untracked();
         match on_edit.run((revision, a, b, replacement.clone())) {
             Ok(()) => {
-                stop_drag();
-                set_cursor.run((a + replacement.len(), a + replacement.len(), None));
+                finish_edit.run((len, a, b));
                 on_message.run(String::new());
             }
             Err(error) => on_message.run(error),

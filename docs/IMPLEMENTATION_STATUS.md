@@ -22,8 +22,8 @@ also pass for `ebe44ae`. Its wider scientific run found an outdated web capabili
 fixture still expecting embedded TOPO oligos to be unavailable. That fixture now
 checks the supported collection while retaining independent graph-failure gates;
 all three related model cases pass locally. The prior draft11/unknown-draft12
-boundary correction remains intact. Committed `3077971` now passes scientific tests, WASM and desktop builds/MCP
-on Windows/macOS/Linux. New source requires its own CI. Installation
+boundary correction remains intact. Committed `3077971` and `ac0ba0d` now pass scientific tests, WASM and desktop
+builds/MCP on Windows/macOS/Linux. New source requires its own CI. Installation
 and graphical/offline acceptance remain separate unfinished gates.
 
 Native saved-catalog backup controls now create/list/verify and restore an
@@ -35,6 +35,16 @@ remote's bookkeeping while retaining local designs/history. Controlled active
 catalog cutover and broader collaboration remain unfinished.
 [Backup controls](NATIVE_CATALOG_BACKUP_CONTROLS.md) ·
 [Removal lifecycle](REMOTE_REMOVAL.md).
+
+Sequence editing now preserves exact local caret continuity through typing,
+cut and normalized paste, while clearing stale external/undo/restore selections.
+GenBank RNA T/U handling and citation replay are corrected; explicit FASTA
+alphabet review is connected to file/paste and MCP imports. A target-free saved
+run digest derivation and typed native sharing foundation are implemented, but
+worker/source-picker/typed preparation reuse remain required before the disabled
+saved-fragment opening path is exposed. All38 focused cases and web/worker WASM
+checking pass. [Editor](SEQUENCE_EDIT_TRANSITIONS.md) · [RNA](GENBANK_RNA.md) ·
+[FASTA](FASTA_ALPHABETS.md) · [Digest foundation](RUN_DIGEST_HISTORY.md).
 
 The resumed format batch adds fresh reviewed SnapGene DNA/protein reference
 export, explicit-alphabet GCG/Wisconsin single-sequence exchange and opt-in

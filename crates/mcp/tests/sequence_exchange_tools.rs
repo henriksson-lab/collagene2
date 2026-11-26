@@ -162,3 +162,49 @@ async fn snapgene_export_requires_loss_review_and_emits_fresh_reference_packets(
     c.cancel().await.unwrap();
     server.await.unwrap();
 }
+
+#[tokio::test]
+async fn fasta_profiles_preserve_explicit_alphabets_and_genbank_rna_uses_native_uracil() {
+    let (c, server) = setup().await;
+    for (text, alphabet, expected) in [
+        (">ambiguous\nACG\n", "Protein", "ACG"),
+        (">rna\nAUGC\n", "Rna", "AUGC"),
+    ] {
+        let imported = call(
+            &c,
+            "import_compat_sequence",
+            json!({"text":text,"profile":{"Fasta":{"alphabet":alphabet}}}),
+        )
+        .await;
+        let native = call(&c, "export_document", document(&imported)).await;
+        let m = collagene_core::protocol::load_document(&bytes(&c, &native).await).unwrap();
+        assert_eq!(format!("{:?}", m.sequence.alphabet()), alphabet);
+        assert_eq!(m.sequence.as_str(), expected);
+    }
+    reject(&c,"import_compat_sequence",json!({"text":">conflict [molecule=DNA]\nACG\n","profile":{"Fasta":{"alphabet":"Protein"}}})).await;
+    reject(&c,"import_compat_sequence",json!({"text":">conflict [molecule=RNA] [molecule=protein]\nACG\n","profile":{"Fasta":{"alphabet":null}}})).await;
+    let multi=call(&c,"import_compat_sequence",json!({"text":">one [molecule=RNA]\nAUG\n>two [molecule=protein]\nACG\n","profile":{"Fasta":{"alphabet":null}}})).await;
+    assert_eq!(multi["documents"].as_array().unwrap().len(), 2);
+    let mut alphabets = vec![];
+    for d in multi["documents"].as_array().unwrap() {
+        let native = call(
+            &c,
+            "export_document",
+            json!({"id":d["id"],"revision":d["revision"]}),
+        )
+        .await;
+        let m = collagene_core::protocol::load_document(&bytes(&c, &native).await).unwrap();
+        alphabets.push(format!("{:?}", m.sequence.alphabet()));
+    }
+    alphabets.sort();
+    assert_eq!(alphabets, vec!["Protein", "Rna"]);
+    let gb = "LOCUS       literal_rna                9 bp    mRNA    linear   SYN 26-NOV-2026\nFEATURES             Location/Qualifiers\nORIGIN\n        1 atggcttaa\n//\n";
+    let imported = call(&c, "import_document", json!({"text":gb})).await;
+    let native = call(&c, "export_document", document(&imported)).await;
+    let m = collagene_core::protocol::load_document(&bytes(&c, &native).await).unwrap();
+    assert_eq!(m.sequence.alphabet(), collagene_core::Alphabet::Rna);
+    assert_eq!(m.sequence.as_str(), "AUGGCUUAA");
+    assert_eq!(m.original_genbank.as_deref(), Some(gb));
+    c.cancel().await.unwrap();
+    server.await.unwrap();
+}

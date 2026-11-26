@@ -481,12 +481,20 @@ pub fn export_with_report(molecule: &Molecule, format: TextFormat) -> Result<Exp
             warnings.extend(report.warnings);
             report.text
         }
-        TextFormat::GenBank => export_genbank(molecule)?,
+        TextFormat::GenBank => {
+            if molecule.sequence.alphabet() == Alphabet::Rna {
+                warnings.push("RNA is stored internally as U; GenBank ORIGIN uses the INSDC T encoding. The native document and retained original remain unchanged.".into());
+            }
+            export_genbank(molecule)?
+        }
         TextFormat::Embl => crate::embl::export_embl(molecule)?,
         TextFormat::Fasta => export_fasta(molecule),
     };
     if matches!(format, TextFormat::Fasta) {
         warnings.push("FASTA exports sequence only; features, topology, source provenance and attachments require the native or annotated source format.".into());
+        if fasta_export_header(molecule).1 {
+            warnings.push("Conflicting alphabet markers in the literal document name were escaped in the FASTA header; the emitted canonical marker describes the actual sequence alphabet. The native name remains unchanged.".into());
+        }
     }
     if !matches!(format, TextFormat::Embl) && molecule.metadata.contains_key("embl.original_record")
     {
@@ -636,7 +644,39 @@ pub fn import_text(text: &str) -> Result<ImportReport, Error> {
     }
 }
 
+const FASTA_ALPHABET_MARKERS: [(&str, Alphabet); 3] = [
+    ("[molecule=DNA]", Alphabet::Dna),
+    ("[molecule=RNA]", Alphabet::Rna),
+    ("[molecule=protein]", Alphabet::Protein),
+];
+
+fn fasta_header_alphabet(header: &str) -> Result<Option<Alphabet>, Error> {
+    let mut declared = None;
+    for (marker, alphabet) in FASTA_ALPHABET_MARKERS {
+        if header.contains(marker) {
+            if declared.is_some_and(|current| current != alphabet) {
+                return Err(Error::Format(
+                    "FASTA header contains conflicting explicit alphabet markers".into(),
+                ));
+            }
+            declared = Some(alphabet);
+        }
+    }
+    Ok(declared)
+}
+
 pub fn import_fasta(text: &str) -> Result<ImportReport, Error> {
+    import_fasta_inner(text, None)
+}
+
+/// Explicit file/profile alphabet for unmarked FASTA, including protein strings
+/// that also happen to be valid DNA ambiguity calls. No composition inference.
+/// Existing recognized header declarations must agree with the selected profile.
+pub fn import_fasta_with_alphabet(text: &str, alphabet: Alphabet) -> Result<ImportReport, Error> {
+    import_fasta_inner(text, Some(alphabet))
+}
+
+fn import_fasta_inner(text: &str, explicit: Option<Alphabet>) -> Result<ImportReport, Error> {
     if text.len() > MAX_IMPORT_BYTES {
         return Err(Error::TooLarge);
     }
@@ -667,14 +707,15 @@ pub fn import_fasta(text: &str) -> Result<ImportReport, Error> {
             }
             name = Some(header.trim().into());
             bases.clear();
-            // Explicit annotation avoids guessing DNA versus protein for ambiguous short records.
-            alphabet = if header.contains("[molecule=protein]") {
-                Alphabet::Protein
-            } else if header.contains("[molecule=RNA]") {
-                Alphabet::Rna
-            } else {
-                Alphabet::Dna
-            };
+            let declared = fasta_header_alphabet(header)?;
+            if let (Some(selected), Some(declared)) = (explicit, declared) {
+                if selected != declared {
+                    return Err(Error::Format(
+                        "FASTA header alphabet differs from the explicit import profile".into(),
+                    ));
+                }
+            }
+            alphabet = explicit.or(declared).unwrap_or(Alphabet::Dna);
         } else {
             if name.is_none() {
                 return Err(Error::Format(
@@ -693,7 +734,11 @@ pub fn import_fasta(text: &str) -> Result<ImportReport, Error> {
     if molecules.is_empty() {
         return Err(Error::Format("no FASTA records".into()));
     }
-    if molecules
+    if let Some(alphabet) = explicit {
+        warnings.push(format!(
+            "FASTA alphabet was explicitly selected as {alphabet:?}; sequence composition and filename were not used to infer it."
+        ));
+    } else if molecules
         .iter()
         .any(|m| m.sequence.alphabet() != Alphabet::Dna)
     {
@@ -867,6 +912,36 @@ fn preflight_genbank(text: &str) -> Result<(), Error> {
     Ok(())
 }
 
+// INSDC nucleotide flat files encode RNA uracil as T. Keep this conversion
+// local to GenBank syntax: native RNA remains U, and original bytes stay exact.
+fn genbank_alphabet(kind: Option<&str>) -> Alphabet {
+    let kind = kind.unwrap_or("DNA").to_ascii_uppercase();
+    if kind.contains("RNA") {
+        Alphabet::Rna
+    } else if kind == "AA" || kind.contains("PROTEIN") {
+        Alphabet::Protein
+    } else {
+        Alphabet::Dna
+    }
+}
+fn genbank_internal_base(base: u8, alphabet: Alphabet) -> u8 {
+    let base = base.to_ascii_uppercase();
+    if alphabet == Alphabet::Rna && base == b'T' {
+        b'U'
+    } else {
+        base
+    }
+}
+fn genbank_internal_sequence(bytes: &[u8], alphabet: Alphabet) -> Result<Sequence, Error> {
+    let bases: Vec<u8> = bytes
+        .iter()
+        .map(|&b| genbank_internal_base(b, alphabet))
+        .collect();
+    let text = std::str::from_utf8(&bases)
+        .map_err(|_| Error::Format("GenBank sequence is not ASCII".into()))?;
+    Sequence::new(alphabet, text)
+}
+
 pub fn import_genbank(text: &str) -> Result<ImportReport, Error> {
     if text.len() > MAX_IMPORT_BYTES {
         return Err(Error::TooLarge);
@@ -910,20 +985,7 @@ pub fn import_genbank(text: &str) -> Result<ImportReport, Error> {
                 "GenBank LOCUS length differs from sequence length".into(),
             ));
         }
-        let molecule_type = record
-            .molecule_type
-            .as_deref()
-            .unwrap_or("DNA")
-            .to_ascii_uppercase();
-        let alphabet = if molecule_type.contains("RNA") {
-            Alphabet::Rna
-        } else if molecule_type == "AA" || molecule_type.contains("PROTEIN") {
-            Alphabet::Protein
-        } else {
-            Alphabet::Dna
-        };
-        let bases = std::str::from_utf8(&record.seq)
-            .map_err(|_| Error::Format("non-ASCII sequence".into()))?;
+        let alphabet = genbank_alphabet(record.molecule_type.as_deref());
         let mut mol = Molecule::dna(
             record
                 .name
@@ -932,7 +994,10 @@ pub fn import_genbank(text: &str) -> Result<ImportReport, Error> {
             "N",
             Topology::Linear,
         )?;
-        mol.sequence = Sequence::new(alphabet, bases)?;
+        mol.sequence = genbank_internal_sequence(&record.seq, alphabet)?;
+        if alphabet == Alphabet::Rna && record.seq.iter().any(|b| matches!(b, b't' | b'T')) {
+            warnings.push(format!("{}: RNA-declared GenBank sequence normalized from T to U; original text retains the supplied encoding.", mol.name));
+        }
         if let Some(kind) = &record.molecule_type {
             mol.metadata
                 .insert("genbank.molecule_type".into(), kind.clone());
@@ -1043,11 +1108,13 @@ pub fn export_genbank(mol: &Molecule) -> Result<String, Error> {
     } else {
         gb::Seq::empty()
     };
-    let source_differs = !record
-        .seq
-        .iter()
-        .map(|b| b.to_ascii_uppercase())
-        .eq(mol.sequence.as_str().bytes());
+    let original_alphabet = genbank_alphabet(record.molecule_type.as_deref());
+    let source_differs = original_alphabet != mol.sequence.alphabet()
+        || !record
+            .seq
+            .iter()
+            .map(|&b| genbank_internal_base(b, original_alphabet))
+            .eq(mol.sequence.as_str().bytes());
     if mol.metadata.contains_key(GENBANK_EDIT_RECIPE_KEY) {
         let index = mol
             .metadata
@@ -1056,11 +1123,7 @@ pub fn export_genbank(mol: &Molecule) -> Result<String, Error> {
             .transpose()
             .map_err(|_| Error::Unsupported("Invalid GenBank source record index".into()))?
             .unwrap_or(0);
-        let original_sequence = Sequence::new(
-            mol.sequence.alphabet(),
-            std::str::from_utf8(&record.seq)
-                .map_err(|_| Error::Format("Original GenBank sequence is not ASCII".into()))?,
-        )?;
+        let original_sequence = genbank_internal_sequence(&record.seq, original_alphabet)?;
         let recipe = verified_genbank_edit_recipe(mol, &original_sequence, index)?
             .ok_or_else(|| Error::Unsupported("Missing GenBank edit recipe".into()))?;
         if record.references.len() > 1024 {
@@ -1081,7 +1144,11 @@ pub fn export_genbank(mol: &Molecule) -> Result<String, Error> {
         for reference in &mut record.references {
             reference.description = remap_genbank_reference(&reference.description, &recipe)?;
             if !recipe.edits.is_empty() {
-                let review = "Collagene: source citation retained with projected coordinate scope; citation support for edited DNA is unverified. Original record remains immutable in native source history.";
+                let review = if mol.sequence.alphabet() == Alphabet::Rna {
+                    "Collagene: source citation retained with projected coordinate scope; citation support for edited RNA is unverified. Original record remains immutable in native source history."
+                } else {
+                    "Collagene: source citation retained with projected coordinate scope; citation support for edited DNA is unverified. Original record remains immutable in native source history."
+                };
                 let remark = reference.remark.get_or_insert_with(String::new);
                 if !remark.contains(review) {
                     if !remark.is_empty() {
@@ -1110,7 +1177,18 @@ pub fn export_genbank(mol: &Molecule) -> Result<String, Error> {
         }
     }
     record.name = Some(mol.name.replace(char::is_whitespace, "_"));
-    record.seq = mol.sequence.as_str().as_bytes().to_vec();
+    record.seq = mol
+        .sequence
+        .as_str()
+        .bytes()
+        .map(|base| {
+            if mol.sequence.alphabet() == Alphabet::Rna && base == b'U' {
+                b'T'
+            } else {
+                base
+            }
+        })
+        .collect();
     record.len = Some(record.seq.len());
     record.contig = None;
     record.topology = if mol.topology == Topology::Circular {
@@ -1183,15 +1261,39 @@ pub fn export_genbank(mol: &Molecule) -> Result<String, Error> {
 }
 
 pub fn export_fasta(mol: &Molecule) -> String {
-    let alphabet = match mol.sequence.alphabet() {
-        Alphabet::Rna if !mol.name.contains("[molecule=RNA]") => " [molecule=RNA]",
-        Alphabet::Protein if !mol.name.contains("[molecule=protein]") => " [molecule=protein]",
-        _ => "",
-    };
-    let mut out = format!(">{}{alphabet}\n", mol.name.replace(['\n', '\r'], " "));
+    let (header, _) = fasta_export_header(mol);
+    let mut out = format!(">{header}\n");
     for chunk in mol.sequence.as_str().as_bytes().chunks(80) {
         out.push_str(std::str::from_utf8(chunk).expect("ASCII"));
         out.push('\n');
     }
     out
+}
+
+fn fasta_export_header(mol: &Molecule) -> (String, bool) {
+    let actual = mol.sequence.alphabet();
+    let mut header = mol.name.replace(['\n', '\r'], " ");
+    let mut escaped = false;
+    for (marker, alphabet) in FASTA_ALPHABET_MARKERS {
+        if alphabet != actual && header.contains(marker) {
+            let label = format!(
+                "{}; label]",
+                marker.strip_suffix(']').expect("fixed marker")
+            );
+            header = header.replace(marker, &label);
+            escaped = true;
+        }
+    }
+    let marker = FASTA_ALPHABET_MARKERS
+        .iter()
+        .find(|(_, alphabet)| *alphabet == actual)
+        .map(|(marker, _)| *marker)
+        .expect("all native alphabets");
+    // Keep established unmarked-DNA output, but disambiguate a name whose
+    // conflicting semantic marker had to become a literal label.
+    if (actual != Alphabet::Dna || escaped) && !header.contains(marker) {
+        header.push(' ');
+        header.push_str(marker);
+    }
+    (header, escaped)
 }

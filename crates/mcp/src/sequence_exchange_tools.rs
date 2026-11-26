@@ -7,6 +7,11 @@ use serde::Deserialize;
 #[serde(deny_unknown_fields)]
 pub enum ImportProfile {
     Gcg(gcg_sequence::ImportOptions),
+    Fasta {
+        /// None retains per-record declarations and defaults unmarked records to DNA.
+        /// Some explicitly sets all records, refusing contradictory declarations.
+        alphabet: Option<collagene_core::Alphabet>,
+    },
     CollageneXml {
         policy: collagene_xml_compat::ReferencePolicy,
     },

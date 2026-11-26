@@ -3042,3 +3042,50 @@ All64 focused format, MCP, protocol, repository, native-host and UI-model cases
 pass. Native SDK and web/worker WASM compiler checks pass. Cross-platform CI for
 this source remains pending; browser acceptance remains deferred and the full
 implementation goal remains active.
+
+
+### Cloning continuity and sequence fidelity — 26 November 2026
+
+The active editor now preserves the caret through exact, attested local sequence
+edits, including normalized paste/cut and multiple edits before a reactive tick.
+Unrelated document writes preserve active selection; external edits, source/event
+changes, restore epochs and successful history navigation invalidate it. Scientific
+report invalidation remains separate. [Transition model](SEQUENCE_EDIT_TRANSITIONS.md).
+
+GenBank RNA import/export now follows its declared alphabet and standard T/U
+encoding, retaining original bytes and verifying citation edits against the
+normalized source. FASTA import has explicit alphabet/declaration review; export
+cannot let contradictory literal name markers override actual native type.
+The same explicit profile is exposed through MCP.
+[RNA](GENBANK_RNA.md) · [FASTA](FASTA_ALPHABETS.md).
+
+The saved-product digest audit found a real remaining connection: inspection and
+assembly handoff work, but opening a retained physical fragment and then using it
+through normal preparation controls is disabled. A target-free native derivation
+foundation now retains the exact origin, catalog, cut choice, actual strand/
+modification state, source event and inherited incompleteness. Archive validation
+and selected public/private native sharing follow explicit typed dependencies;
+no independent fragment target or positive target assessment is manufactured.
+Historical records remain readable while current replay requires current reviewed
+origin assessments. [Derivation](RUN_DIGEST_HISTORY.md) ·
+[Sharing](RUN_DIGEST_SHARING.md).
+
+The end-user path is still OPEN. Next implement append-only
+`ReconstructDigestFragment { template: Source, origin: ... }`, restricted to an
+exact original input event. A shared iterative mixed-origin traversal must charge
+depth, aggregate bytes, bases and steps before hashing/cloning/decoding. Extend
+normal preparation compilers, physical evidence, oligo/protocol output, origin
+selection and atomic fragment opening together. Planned next floors are
+candidate21/native plan19/science24 and the next worker version; current source
+retains candidate20/plan18/science23/worker89. Include PCR-after-fragment,
+subsequent assembly, replay after restart, sticky-end/modification ancestry,
+equal-content wrong-event refusal and mixed nesting exhaustion. Old-science
+material review/migration remains explicit; preserving an archive alone does
+not restore current material authority.
+
+All38 focused native/model/MCP cases and the web/worker WASM compiler check pass
+for this continuity checkpoint. No browser or application HTTP checks were run.
+The complete product goal, all exclusions and the BAM/BAI deferral remain active.
+After its CI frontend artifact is available, publish the immutable snapshot to
+8082 with static integrity/process checks and bounded compatibility-worker
+retention; keep the authenticated local library separate.

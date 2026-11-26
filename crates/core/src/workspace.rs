@@ -403,6 +403,7 @@ impl Workspace {
             charge(&mut expanded, attachment.bytes.len(), MAX_EXPANDED_BYTES)?;
         }
         crate::run_lineage::validate_workspace_runs(self)?;
+        crate::run_digest_history::validate_workspace_records(self)?;
         crate::reference_run_evidence::validate_workspace(self)?;
         crate::contig_history::validate_workspace_assemblies(self)?;
         Ok(())

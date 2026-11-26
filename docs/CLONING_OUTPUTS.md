@@ -282,3 +282,22 @@ sets disable that optional choice and explain why. Construct creation remains
 available without the collection. Historical primers inside a saved-product
 reconstruction are not silently added to new orders. Stale workspace context
 clears the optional choice and rejects delayed capability replies.
+
+## Direct actual-product sequence exports
+
+The product review export menu can prepare GenBank or FASTA directly from the
+actual final reconstructed molecule, without first creating a saved construct.
+This includes diagnostic products that differ from the independently intended
+target. Selecting a preparation-step inspector never changes the exported final
+product. Preparing a file displays the existing native writer's format losses
+before a separate download action; the same losses and exact product revision can
+also be downloaded as JSON.
+
+GenBank retains supported annotations, topology and bounded producer comments.
+Physical end summaries and reference-only claims remain unverified on text
+reimport; neither format restores tracked material, a passing check or exact native
+source-event ancestry. FASTA retains sequence and its supported alphabet tag while
+losing features, topology and producer provenance. Keep the native workspace and
+full reconstruction report for those records. Exporting does not install material,
+accept the target, or bypass fresh finalization. Changes to the review identity,
+workspace epoch or full actual-molecule revision invalidate prepared downloads.

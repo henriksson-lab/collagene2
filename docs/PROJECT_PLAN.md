@@ -1909,3 +1909,57 @@ with its independently declared target. Reuse native pairwise review through a
 snapshot diagnostic adapter, without fabricating historical document events or
 turning sequence agreement into experimental verification. Direct GenBank/FASTA
 exports from this review can reuse the existing writers and export-loss reports.
+
+
+### Direct expected-versus-actual review and sequence exchange
+
+Product review now compares its independently intended target directly with the
+actual final reconstructed DNA using the existing native pairwise worker. A
+snapshot diagnostic adapter binds plan, target, final product, requested policy
+and pairwise context; leading preparations cannot stand in for a final product.
+No historical events or saved sequencing-verification records are fabricated.
+The native cloning verdict and physical assumptions remain unchanged, including
+when a reverse-complement diagnostic finds sequence agreement.
+
+Global comparison defaults to preserving query orientation and allowing a
+circular target-origin rotation. The existing exact-rotation shortcut is reused.
+Native per-alignment/total-cell and origin-candidate limits are explicit advanced
+settings; large nonidentical comparisons can reach those existing bounds and
+report an unsupported/limited result rather than hide unaligned flanks. Alignment
+and difference pages reuse cached native-coordinate indexes. Difference navigation
+maps circular or reverse-oriented alignment coordinates back to both original
+snapshots before opening readonly reference views. Ambiguous compatible bases,
+search exhaustiveness, rotation/orientation and best-score evidence remain visible.
+Paging/scrolling does not rerun the comparison.
+
+The review export menu also prepares the actual final product directly as
+GenBank or FASTA using existing writers. Native loss findings appear before an
+explicit download; a bound JSON loss report is available alongside the file.
+Diagnostic wrong-target products remain distinguishable from intended DNA.
+Prepared files recheck full product/review identity and workspace epoch; text
+exchange neither installs material nor reconstructs missing source-event ancestry.
+GenBank retains supported annotations/topology; FASTA's annotation/topology losses
+are explicit. Existing format codecs are reused without new scientific engines,
+wire variants or schema changes.
+
+Eight focused native fixtures passed for source-bound comparisons, circular and
+reverse mappings, wrong/stale targets, prefix rejection, real constructed-product
+exports, annotation/producer roundtrips and lossy FASTA behavior. The final WASM
+frontend/worker build passed. Static integrity checks passed for42 immutable assets,
+including retained previous worker versions. Public8082 now serves the worker78
+bundle with the PCR-chain, intermediate-review and comparison/export changes.
+Process/socket metadata was verified without browser or HTTP application checks.
+The full original goal remains active and visual acceptance remains deferred.
+
+
+The CI audit also found a real native-suite compile blocker on e258716/c78701c:
+seven older test bindings assumed PhysicalProcessingEvidence still had a single
+variant. Three integration fixtures now explicitly assert the expected TopoActions
+variant before their unchanged scientific checks. All15 cases in those focused
+suites pass locally, alongside the eight new comparison/export cases (23 targeted
+native checks). The latest preceding matrix failed at compilation and canceled
+other native OS jobs, so this checkpoint does not claim a fresh three-OS pass.
+The correction is test-only and did not change the frozen production bundle.
+Native/Tauri host integration and actual cross-platform installer/offline/recovery
+checks remain required delivery work; the current static preview and MCP managed
+storage already restrict their own asset/storage roots.

@@ -22,6 +22,10 @@ mod assembly_archive_view;
 mod assembly_batch_projection;
 #[cfg(target_arch = "wasm32")]
 mod assembly_batch_view;
+#[cfg(any(target_arch = "wasm32", test))]
+mod assembly_comparison_model;
+#[cfg(target_arch = "wasm32")]
+mod assembly_comparison_view;
 #[cfg(target_arch = "wasm32")]
 mod assembly_draft_actions;
 #[cfg(any(target_arch = "wasm32", test))]
@@ -50,6 +54,10 @@ mod assembly_output_model;
 mod assembly_outputs;
 #[cfg(target_arch = "wasm32")]
 mod assembly_pool_view;
+#[cfg(any(target_arch = "wasm32", test))]
+mod assembly_product_export_model;
+#[cfg(target_arch = "wasm32")]
+mod assembly_product_exports;
 #[cfg(any(target_arch = "wasm32", test))]
 mod assembly_product_model;
 #[cfg(target_arch = "wasm32")]

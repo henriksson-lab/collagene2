@@ -514,7 +514,10 @@ fn real_twelve_field_worker67_report_keeps_nonempty_physical_graphs_and_gets_no_
     assert_eq!(fresh.physical_processing_reports.len(), 1);
     assert!(fresh.reference_step_reports.is_empty());
     let v::PhysicalProcessingEvidence::TopoActions(graph) =
-        &fresh.physical_processing_reports[0].evidence;
+        &fresh.physical_processing_reports[0].evidence
+    else {
+        panic!("expected retained TopoActions evidence")
+    };
     assert_eq!(graph.projection.processing.source_bases, 52);
     assert!(
         graph

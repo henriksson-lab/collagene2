@@ -165,7 +165,10 @@ fn evidence(report: &v::VerificationReport) -> &actions::Report {
     assert_eq!(report.physical_processing_reports.len(), 1);
     assert_eq!(report.physical_processing_reports[0].step_index, 0);
     let PhysicalProcessingEvidence::TopoActions(evidence) =
-        &report.physical_processing_reports[0].evidence;
+        &report.physical_processing_reports[0].evidence
+    else {
+        panic!("expected retained TopoActions evidence")
+    };
     evidence
 }
 #[test]
@@ -565,7 +568,9 @@ fn native_plan12_and_generic_run_sidecar_keep_main_and_excised_source_events_his
     for (i, binding) in saved.inputs.iter().enumerate() {
         assert_eq!(binding.event, event(&frame, i));
     }
-    let PhysicalProcessingEvidence::TopoActions(e) = &saved.steps[0].evidence;
+    let PhysicalProcessingEvidence::TopoActions(e) = &saved.steps[0].evidence else {
+        panic!("expected retained TopoActions evidence")
+    };
     assert_eq!(e.projection.processing.source_bases, 54);
     assert!(
         e.projection
@@ -628,7 +633,9 @@ fn native_plan12_and_generic_run_sidecar_keep_main_and_excised_source_events_his
     missing.attachments.remove(&sidecar);
     assert!(missing.validate().is_err());
     let mut historic = saved.clone();
-    let PhysicalProcessingEvidence::TopoActions(e) = &mut historic.steps[0].evidence;
+    let PhysicalProcessingEvidence::TopoActions(e) = &mut historic.steps[0].evidence else {
+        panic!("expected retained TopoActions evidence")
+    };
     e.engine_version = "historical-actions-inner-engine-v0".into();
     let mut historic_frame = retained.clone();
     let mut attachment = historic_frame.attachments.remove(&sidecar).unwrap();

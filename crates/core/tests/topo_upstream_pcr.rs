@@ -198,7 +198,10 @@ fn fixture() -> (DesignPlan, Molecule, Vec<topo::Input>) {
 fn evidence(r: &v::VerificationReport) -> &actions::Report {
     assert_eq!(r.physical_processing_reports.len(), 1);
     assert_eq!(r.physical_processing_reports[0].step_index, 1);
-    let PhysicalProcessingEvidence::TopoActions(e) = &r.physical_processing_reports[0].evidence;
+    let PhysicalProcessingEvidence::TopoActions(e) = &r.physical_processing_reports[0].evidence
+    else {
+        panic!("expected retained TopoActions evidence")
+    };
     e
 }
 #[test]
@@ -437,7 +440,9 @@ fn binary_candidate_and_retained_history_pin_the_exact_upstream_product_event() 
     let saved = physical_run_evidence::load(&loaded, &record.run_id)
         .unwrap()
         .unwrap();
-    let PhysicalProcessingEvidence::TopoActions(e) = &saved.steps[0].evidence;
+    let PhysicalProcessingEvidence::TopoActions(e) = &saved.steps[0].evidence else {
+        panic!("expected retained TopoActions evidence")
+    };
     assert_eq!(
         e.sources
             .iter()
@@ -476,7 +481,9 @@ fn binary_candidate_and_retained_history_pin_the_exact_upstream_product_event() 
         .map(|(h, a)| (h.clone(), a.clone()))
         .unwrap();
     let mut changed = saved;
-    let PhysicalProcessingEvidence::TopoActions(e) = &mut changed.steps[0].evidence;
+    let PhysicalProcessingEvidence::TopoActions(e) = &mut changed.steps[0].evidence else {
+        panic!("expected retained TopoActions evidence")
+    };
     e.sources
         .iter_mut()
         .find(|s| s.role == "template")

@@ -78,6 +78,31 @@ pub fn AssemblyProductView(
             Ok((s.plan.clone(), s.target.clone()))
         })
     });
+    let export_identity = Memo::new(move |_| {
+        if current.get() {
+            snapshot.with_value(|s| {
+                s.product_revision
+                    .as_ref()
+                    .map(|p| format!("{}:{}:{}", s.plan_revision, s.target_revision, p))
+                    .unwrap_or_default()
+            })
+        } else {
+            String::new()
+        }
+    });
+    let export_actual = Callback::new(move |()| {
+        capture.run(())?;
+        snapshot.with_value(|s| {
+            if s.product_revision.is_none() {
+                return Err("No actual final product is available for export.".into());
+            }
+            s.report
+                .products
+                .last()
+                .cloned()
+                .ok_or_else(|| "The actual final product is unavailable.".into())
+        })
+    });
     let export_report = move |_| {
         let result = capture.run(()).and_then(|_| {
             snapshot.with_value(|s| {
@@ -117,7 +142,7 @@ pub fn AssemblyProductView(
             <p class="product-review-result"><strong>{snapshot.with_value(|s|format!("{:?}",s.report.status))}</strong><span>{move||if current.get(){"Current reconstruction snapshot"}else{"Historical snapshot · reconstruct again"}}</span></p>
         </div><div class="product-review-actions">
             {on_finalize.map(|finalize|view!{<button class="button primary" disabled=move||!output_available||!current.get() on:click=move|_|{let result=capture.run(()).and_then(|(plan,_)|finalize.run(collagene_core::transfer::Candidate::new(plan)));if let Err(error)=result{status.set(error);}}>"Create assembly outputs"</button>})}
-            <details class="product-export-menu"><summary>"Export primers / steps"</summary><crate::assembly_outputs::AssemblyOutputs capture identity epoch/><button class="text-tool" disabled=move||!report_available||!current.get() on:click=export_report>"Export full reconstruction JSON"</button></details>
+            <details class="product-export-menu"><summary>"Export primers / steps"</summary><crate::assembly_outputs::AssemblyOutputs capture identity epoch/><Show when=move||available><crate::assembly_product_exports::AssemblyProductExports capture=export_actual identity=export_identity epoch/></Show><button class="text-tool" disabled=move||!report_available||!current.get() on:click=export_report>"Export full reconstruction JSON"</button></details>
         </div></header>
         {snapshot.with_value(|s|(s.product_revision.is_some()&&s.report.status==Status::Invalid).then(||view!{<p class="assembly-product-status" role="status">"Output creation is unavailable because the independent target check is invalid. Inspect the actual DNA and findings, then correct the design."</p>}))}
         <p class="helper product-review-scope">"Actual reconstructed reference DNA, separate from intended DNA. This view does not establish experimental success, exhaustive product uniqueness or newly prepared material."</p>
@@ -133,6 +158,7 @@ pub fn AssemblyProductView(
                 <button class="button secondary" disabled=move||!current.get() on:click=open>"Open reconstructed product reference"</button>
             </div>}
         })}else{None})}
+        <Show when=move||available><crate::assembly_comparison_view::AssemblyComparison snapshot=snapshot.get_value() guard=Callback::new(move|()|capture.run(()).map(|_|())) current epoch/></Show>
         <details class="assembly-product-details" on:toggle=move|event:web_sys::Event|{
             let open=event.current_target().and_then(|target|target.dyn_into::<web_sys::HtmlElement>().ok()).is_some_and(|element|element.has_attribute("open"));
             if open {

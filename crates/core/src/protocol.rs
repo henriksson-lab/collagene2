@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 81;
+pub const WORKER_SCHEMA_VERSION: u16 = 82;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 18;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -1858,6 +1858,15 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         AnalysisResult::TailingRecipePreview(p) => Some(&p.compiled.plan),
         _ => None,
     };
+    // The existing Operation stays worker81-compatible, but interpreting it as
+    // a forked recipe-row preparation requires the ownership model of schema82.
+    if recipe_plan.is_some_and(|p| {
+        p.steps
+            .iter()
+            .any(|op| matches!(op, crate::verification::Operation::OverlapExtension { .. }))
+    }) {
+        check_variant_version(bytes, 82)?;
+    }
     if recipe_plan.is_some_and(|p| {
         p.steps.iter().any(|op| {
             matches!(
@@ -3169,6 +3178,9 @@ mod preparation_shape {
     }
     fn variant(worker: u16, name: &str, variant: &str) -> Result<(), Found> {
         let minimum = match (name, variant) {
+            ("Preparation", "OverlapExtensionPcr")
+            | ("RunPreparation", "OverlapExtensionPcr")
+            | ("Stage", "OverlapExtension") => 82,
             ("Operation", "OverlapExtension")
             | ("PhysicalProcessingEvidence", "OverlapExtension") => 81,
             ("Preparation", "AnnealedOligos") => 71,
@@ -3384,7 +3396,7 @@ mod preparation_shape {
 }
 fn check_preparation_version(bytes: &[u8], value: &impl Serialize) -> Result<(), Error> {
     let worker = u16::from_le_bytes([bytes[4], bytes[5]]);
-    if worker < 81 {
+    if worker < 82 {
         value
             .serialize(preparation_shape::Visitor {
                 worker,
@@ -3430,7 +3442,9 @@ fn check_workspace_version(
         check_preparation_version(bytes, &candidate.plan)?;
     }
     for attachment in workspace.attachments.values() {
-        if attachment.kind == "assembly-draft-v7" {
+        if attachment.kind == "assembly-draft-v8" {
+            check_variant_version(bytes, 82)?;
+        } else if attachment.kind == "assembly-draft-v7" {
             check_variant_version(bytes, 79)?;
         } else if attachment.kind == "assembly-draft-v6" {
             check_variant_version(bytes, 77)?;

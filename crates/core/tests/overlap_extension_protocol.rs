@@ -80,7 +80,7 @@ fn run(job: AnalysisJob, revision: &str) -> AnalysisResult {
         job,
     };
     let reply = protocol::process_request(&protocol::encode_request(&request).unwrap()).unwrap();
-    assert_eq!(&reply[4..6], &81u16.to_le_bytes());
+    assert_eq!(&reply[4..6], &protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
     protocol::decode_response(&reply).unwrap().result
 }
 #[test]

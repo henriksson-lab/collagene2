@@ -60,6 +60,9 @@ fn recipe_shape(recipe: &Recipe) -> Result<(), Error> {
             selection.validate()?;
         }
         match &f.source.preparation {
+            preparation::Preparation::OverlapExtensionPcr { request } => {
+                request.validate_shape()?
+            }
             preparation::Preparation::MismatchPcrCatalogDigest {
                 forward,
                 reverse,
@@ -390,7 +393,7 @@ impl Preview {
         if !hex(&self.context_revision)
             || rows == 0
             || rows > preparation::MAX_ROWS
-            || steps > 6 * preparation::MAX_ROWS + 1
+            || steps > (preparation::MAX_STEPS_PER_ROW + 2) * preparation::MAX_ROWS + 1
             || self.compiled.ligation_step.checked_add(1) != Some(steps)
             || self.compiled.plan.inputs.len() > preparation::MAX_ROWS
             || self.verification.products.len() > steps
@@ -470,6 +473,7 @@ impl Preview {
                         s,
                         Operation::Pcr { .. }
                             | Operation::PcrWithMismatches { .. }
+                            | Operation::OverlapExtension { .. }
                             | Operation::ReconstructRunProduct { .. }
                             | Operation::AnnealOligos { .. }
                             | Operation::DeclareSourceTermini { .. }

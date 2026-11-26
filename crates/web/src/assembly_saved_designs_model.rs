@@ -242,7 +242,7 @@ fn version(value: &Value) -> Result<u32, String> {
     value
         .get("version")
         .and_then(Value::as_u64)
-        .filter(|v| (1..=7).contains(v))
+        .filter(|v| (1..=8).contains(v))
         .map(|v| v as u32)
         .ok_or_else(|| fail("unsupported editable-draft version."))
 }
@@ -728,7 +728,7 @@ mod tests {
     fn ordinary_versions_and_latest_literal_declarations_roundtrip_without_source_copies() {
         let (frame, base) = fixture();
         let before = serde_json::to_value(&frame).unwrap();
-        for version in 1..=7 {
+        for version in 1..=8 {
             let mut draft = base.clone();
             draft.version = version;
             draft.validate().unwrap();
@@ -1097,5 +1097,35 @@ mod tests {
         });
         let error = load(&excessive, &entry.id).err().unwrap();
         assert!(error.contains("before source copies"), "{error}");
+    }
+
+    #[test]
+    fn saved_version8_retains_all_six_oligos_without_copying_or_replacing_source_events() {
+        let (frame, mut draft) = fixture();
+        let original = draft.slots[0].captured.as_ref().unwrap().source.clone();
+        let mut raw = crate::cloning_methods_model::OverlapExtensionPcrInput::default();
+        raw.left.forward.annealing = "unfinished left".into();
+        raw.left.reverse.tail = "GGTCTGAAAA".into();
+        raw.right.forward.tail = "GCTACGTATT".into();
+        raw.right.reverse.annealing = "TGACGATC".into();
+        raw.outer.forward.tail = "independent assembly tail".into();
+        raw.outer.reverse.name = "Final separate outer primer".into();
+        raw.overlap = "18?".into();
+        draft.methods.rows[0].preparation =
+            crate::cloning_methods_model::OverlapPreparation::OverlapExtensionPcr;
+        draft.methods.rows[0].overlap_extension_pcr = Some(raw);
+        draft.sync_rows();
+        let (saved, entry) = save(&frame, "Edited insert preparation", &draft).unwrap();
+        assert_eq!(entry.draft_version, 8);
+        let restored = load(&saved, &entry.id).unwrap();
+        assert!(restored == draft);
+        assert!(restored.slots[0].captured.as_ref().unwrap().source == original);
+        assert_eq!(
+            serde_json::to_value(&frame.documents).unwrap(),
+            serde_json::to_value(&saved.documents).unwrap()
+        );
+        let text = std::str::from_utf8(&saved.attachments[&entry.attachment_hash].bytes).unwrap();
+        assert!(!text.contains("\"molecule\""));
+        assert!(saved.candidates.is_empty());
     }
 }

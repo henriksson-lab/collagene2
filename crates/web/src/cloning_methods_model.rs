@@ -112,6 +112,128 @@ pub enum OverlapPreparation {
     AnnealedOligos,
     MismatchPcr,
     MismatchPcrCatalogDigest,
+    OverlapExtensionPcr,
+}
+/// Editable oligos remain strings until the operator requests reconstruction.
+/// Incomplete fields are retained by draft persistence, without scientific status.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExtensionPrimerInput {
+    pub name: String,
+    pub annealing: String,
+    pub tail: String,
+}
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExtensionPrimerPairInput {
+    pub forward: ExtensionPrimerInput,
+    pub reverse: ExtensionPrimerInput,
+}
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OverlapExtensionPcrInput {
+    pub left: ExtensionPrimerPairInput,
+    pub right: ExtensionPrimerPairInput,
+    pub outer: ExtensionPrimerPairInput,
+    pub overlap: String,
+    pub min_paired_bases: String,
+    pub max_comparisons: String,
+    pub max_candidates: String,
+}
+impl ExtensionPrimerPairInput {
+    fn empty(label: &str) -> Self {
+        let primer = |direction: &str| ExtensionPrimerInput {
+            name: format!("{label} {direction}"),
+            annealing: String::new(),
+            tail: String::new(),
+        };
+        Self {
+            forward: primer("forward"),
+            reverse: primer("reverse"),
+        }
+    }
+    fn typed(&self) -> Result<collagene_core::overlap_extension_pcr::PrimerPair, String> {
+        Ok(collagene_core::overlap_extension_pcr::PrimerPair {
+            forward: Primer::new(
+                &self.forward.name,
+                &self.forward.annealing,
+                &self.forward.tail,
+            )
+            .map_err(|e| e.to_string())?,
+            reverse: Primer::new(
+                &self.reverse.name,
+                &self.reverse.annealing,
+                &self.reverse.tail,
+            )
+            .map_err(|e| e.to_string())?,
+        })
+    }
+}
+impl Default for OverlapExtensionPcrInput {
+    fn default() -> Self {
+        let options = collagene_core::overlap_extension::Options::default();
+        Self {
+            left: ExtensionPrimerPairInput::empty("Left PCR"),
+            right: ExtensionPrimerPairInput::empty("Right PCR"),
+            outer: ExtensionPrimerPairInput::empty("Outer PCR"),
+            overlap: options.overlap.to_string(),
+            min_paired_bases: options.min_paired_bases.to_string(),
+            max_comparisons: options.max_comparisons.to_string(),
+            max_candidates: options.max_candidates.to_string(),
+        }
+    }
+}
+impl OverlapExtensionPcrInput {
+    /// Bounds only: typing an incomplete number or oligo must remain saveable.
+    pub(crate) fn validate_raw(&self) -> Result<(), String> {
+        for pair in [&self.left, &self.right, &self.outer] {
+            for primer in [&pair.forward, &pair.reverse] {
+                if primer.name.len() > 256
+                    || primer.annealing.len() > 1000
+                    || primer.tail.len() > 1000
+                {
+                    return Err(
+                        "Overlap-extension primer fields exceed their supported bounds.".into(),
+                    );
+                }
+            }
+        }
+        if [
+            &self.overlap,
+            &self.min_paired_bases,
+            &self.max_comparisons,
+            &self.max_candidates,
+        ]
+        .iter()
+        .any(|s| s.len() > 20)
+        {
+            return Err("Overlap-extension numeric fields exceed20 characters.".into());
+        }
+        Ok(())
+    }
+    pub(crate) fn request(&self) -> Result<collagene_core::overlap_extension_pcr::Request, String> {
+        self.validate_raw()?;
+        let number = |text: &str, label: &str| {
+            if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Err(format!("Enter a positive whole number for {label}."));
+            }
+            text.parse::<usize>()
+                .map_err(|_| format!("{label} exceeds the supported range."))
+        };
+        let request = collagene_core::overlap_extension_pcr::Request {
+            left: self.left.typed()?,
+            right: self.right.typed()?,
+            outer: self.outer.typed()?,
+            extension: collagene_core::overlap_extension::Options {
+                overlap: number(&self.overlap, "selected terminal homology")?,
+                min_paired_bases: number(&self.min_paired_bases, "minimum terminal pairing")?,
+                max_comparisons: number(&self.max_comparisons, "terminal comparison limit")?,
+                max_candidates: number(&self.max_candidates, "terminal candidate limit")?,
+            },
+        };
+        request.validate_shape().map_err(|e| e.to_string())?;
+        Ok(request)
+    }
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OverlapInput {
@@ -123,6 +245,8 @@ pub struct OverlapInput {
     pub reverse: bool,
     pub treatment: Treatment,
     pub preparation: OverlapPreparation,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overlap_extension_pcr: Option<OverlapExtensionPcrInput>,
     #[serde(default)]
     pub catalog_selection: Option<collagene_core::catalog_digest::CatalogSelection>,
     pub left_terminus: Terminus,
@@ -256,6 +380,7 @@ impl Default for OverlapInput {
             reverse: false,
             treatment: Treatment::Keep,
             preparation: OverlapPreparation::WholeLinear,
+            overlap_extension_pcr: None,
             catalog_selection: None,
             left_terminus: Terminus::UNKNOWN,
             right_terminus: Terminus::UNKNOWN,
@@ -423,6 +548,13 @@ impl OverlapInput {
                 self.anneal_candidate
                     .map(|index| format!("explicit candidate {}", index + 1))
                     .unwrap_or_else(|| "choose an annealing candidate".into())
+            ),
+            OverlapPreparation::OverlapExtensionPcr => format!(
+                "Two source PCRs → reciprocal extension ({} bp homology) → outer-primer PCR",
+                self.overlap_extension_pcr
+                    .as_ref()
+                    .map(|request| request.overlap.as_str())
+                    .unwrap_or("enter")
             ),
         };
         format!(
@@ -837,5 +969,60 @@ mod mismatch_tests {
         let before = row.clone();
         assert!(row.use_complete_pcr_amplicon().is_err());
         assert!(row == before);
+    }
+}
+
+#[cfg(test)]
+mod overlap_extension_tests {
+    use super::*;
+    #[test]
+    fn partial_six_oligo_input_roundtrips_without_changing_legacy_row_json() {
+        let legacy = serde_json::to_value(OverlapInput::default()).unwrap();
+        assert!(legacy.get("overlap_extension_pcr").is_none());
+        let mut row: OverlapInput = serde_json::from_value(legacy).unwrap();
+        let mut raw = OverlapExtensionPcrInput::default();
+        for (index, pair) in [&mut raw.left, &mut raw.right, &mut raw.outer]
+            .into_iter()
+            .enumerate()
+        {
+            pair.forward.name = format!("Pair {index} forward");
+            pair.reverse.name = format!("Pair {index} reverse");
+            pair.forward.annealing = format!("incomplete forward {index}");
+            pair.reverse.tail = format!("incomplete reverse tail {index}");
+        }
+        raw.overlap = "2e".into();
+        raw.max_comparisons = String::new();
+        raw.validate_raw().unwrap();
+        assert!(raw.request().is_err());
+        row.preparation = OverlapPreparation::OverlapExtensionPcr;
+        row.overlap_extension_pcr = Some(raw.clone());
+        let decoded: OverlapInput =
+            serde_json::from_slice(&serde_json::to_vec(&row).unwrap()).unwrap();
+        assert!(decoded == row);
+        assert!(decoded.overlap_extension_pcr.as_ref().unwrap() == &raw);
+        assert!(!decoded.is_pcr());
+        let before = row.clone();
+        assert!(row.use_complete_pcr_amplicon().is_err());
+        assert!(row == before);
+    }
+    #[test]
+    fn raw_bounds_are_separate_from_scientific_oligo_and_search_validity() {
+        let mut raw = OverlapExtensionPcrInput::default();
+        raw.left.forward.name = String::new();
+        raw.overlap = "-".into();
+        raw.validate_raw().unwrap();
+        assert!(raw.request().is_err());
+        for which in 0..3 {
+            let mut large = raw.clone();
+            let pair = match which {
+                0 => &mut large.left,
+                1 => &mut large.right,
+                _ => &mut large.outer,
+            };
+            pair.reverse.tail = "A".repeat(1001);
+            assert!(large.validate_raw().is_err());
+        }
+        raw.max_comparisons = "9".repeat(21);
+        assert!(raw.validate_raw().is_err());
     }
 }

@@ -164,6 +164,8 @@ mod mismatch_pcr_outputs;
 mod multisite_form;
 #[cfg(target_arch = "wasm32")]
 mod oligo_import;
+#[cfg(target_arch = "wasm32")]
+mod overlap_extension_preparation_view;
 #[cfg(any(target_arch = "wasm32", test))]
 mod pcr_digest_model;
 #[cfg(target_arch = "wasm32")]

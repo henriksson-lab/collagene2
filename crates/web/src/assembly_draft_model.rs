@@ -280,6 +280,9 @@ pub(crate) fn bounded_size(value: &impl Serialize) -> Result<(), String> {
     serde_json::to_writer(&mut Count(0), value).map_err(|e| e.to_string())
 }
 pub(crate) fn validate_preparation_input(row: &OverlapInput) -> Result<(), String> {
+    if let Some(raw) = &row.overlap_extension_pcr {
+        raw.validate_raw()?;
+    }
     if [
         &row.mismatch_max_mismatches,
         &row.mismatch_three_prime_exact,
@@ -691,6 +694,24 @@ impl Draft {
         next.validate()?;
         Ok(next)
     }
+    fn uses_overlap_extension_fields(&self) -> bool {
+        let uses = |row: &OverlapInput| {
+            row.preparation == OverlapPreparation::OverlapExtensionPcr
+                || row.overlap_extension_pcr.is_some()
+        };
+        self.methods.rows.iter().any(uses)
+            || self.alternatives.as_ref().is_some_and(|library| {
+                library
+                    .bins
+                    .iter()
+                    .flat_map(|bin| &bin.choices)
+                    .any(|choice| uses(&choice.row))
+                    || library
+                        .rows
+                        .iter()
+                        .any(|saved| saved.edits.methods.rows.iter().any(uses))
+            })
+    }
     fn uses_paired_fields(&self) -> bool {
         self.slots.iter().any(|slot| slot.anneal_bottom.is_some())
             || self.methods.rows.iter().any(|row| {
@@ -756,12 +777,15 @@ impl Draft {
     /// Structural/bounded source consistency only. Historical event IDs require
     /// the host workspace to attest them before installing any candidate.
     pub fn validate(&self) -> Result<(), String> {
-        if !matches!(self.version, 1 | 2 | 3 | 4 | 5 | 6 | 7)
+        if !matches!(self.version, 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8)
             || self.version == 1 && self.alternatives.is_some()
         {
             return Err(
                 "Unsupported assembly draft version or alternatives in a legacy draft.".into(),
             );
+        }
+        if self.uses_overlap_extension_fields() && self.version < 8 {
+            return Err("Overlap-extension PCR declarations and working settings require assembly draft version8.".into());
         }
         if self.substitutions.len() > 256 {
             return Err("At most256 explicit substitutions are supported.".into());
@@ -982,6 +1006,9 @@ impl Draft {
         if !self.edits.is_empty() {
             self.version = self.version.max(7);
         }
+        if self.uses_overlap_extension_fields() {
+            self.version = self.version.max(8);
+        }
     }
 }
 
@@ -992,8 +1019,8 @@ pub fn encode(draft: &Draft) -> Result<Vec<u8>, String> {
 }
 /// Encode current editable state without promoting working fields into saved rows.
 pub fn encode_raw(draft: &Draft) -> Result<Vec<u8>, String> {
-    if !matches!(draft.version, 3 | 4 | 5 | 6 | 7) {
-        return Err("Raw assembly persistence requires draft version3–7.".into());
+    if !matches!(draft.version, 3 | 4 | 5 | 6 | 7 | 8) {
+        return Err("Raw assembly persistence requires draft version3–8.".into());
     }
     draft.validate()?;
     let mut writer = Bounded { bytes: Vec::new() };
@@ -2382,5 +2409,64 @@ mod contribution_edit_tests {
             replacement: "C".into(),
         };
         assert!(next.validate().is_err());
+    }
+}
+
+#[cfg(test)]
+mod extension_draft_tests {
+    use super::*;
+    use crate::cloning_methods_model::OverlapExtensionPcrInput;
+
+    #[test]
+    fn six_independent_unfinished_oligos_and_policy_roundtrip_only_as_version8() {
+        let mut draft = Draft::default();
+        let mut raw = OverlapExtensionPcrInput::default();
+        raw.left.forward.annealing = "ag tc unfinished".into();
+        raw.left.reverse.tail = "GGTCTGAAAA".into();
+        raw.right.forward.tail = "GCTACGTATT".into();
+        raw.right.reverse.name = "Right outer stock primer".into();
+        raw.outer.forward.tail = " separate final assembly tail ".into();
+        raw.outer.reverse.annealing = "TGACGATC".into();
+        raw.overlap = "1e".into();
+        raw.max_candidates = String::new();
+        draft.methods.rows[1].preparation = OverlapPreparation::OverlapExtensionPcr;
+        draft.methods.rows[1].overlap_extension_pcr = Some(raw);
+        draft.sync_rows();
+        assert_eq!(draft.version, 8);
+        let bytes = encode_raw(&draft).unwrap();
+        let restored = decode_version(&bytes, 8).unwrap();
+        assert!(restored == draft);
+        assert!(crate::cloning_preparations::prepared_rows(&restored.methods, 2).is_err());
+        assert!(decode_version(&bytes, 7).is_err());
+        let mut old = restored.clone();
+        old.version = 7;
+        assert!(old.validate().is_err());
+        // Changing preparation keeps working fields; they still require the
+        // version which understands them, without conferring valid preparation.
+        old.methods.rows[1].preparation = OverlapPreparation::WholeLinear;
+        assert!(old.validate().is_err());
+        old.sync_rows();
+        assert_eq!(old.version, 8);
+        assert!(decode_version(&encode_raw(&old).unwrap(), 8).unwrap() == old);
+        let mut oversized = old;
+        oversized.methods.rows[1]
+            .overlap_extension_pcr
+            .as_mut()
+            .unwrap()
+            .outer
+            .reverse
+            .tail = "A".repeat(1001);
+        assert!(encode_raw(&oversized).is_err());
+    }
+
+    #[test]
+    fn selected_empty_extension_preparation_requires8_without_storing_default_fields() {
+        let mut draft = Draft::default();
+        draft.methods.rows[0].preparation = OverlapPreparation::OverlapExtensionPcr;
+        assert!(draft.validate().is_err());
+        draft.sync_rows();
+        assert_eq!(draft.version, 8);
+        assert!(draft.methods.rows[0].overlap_extension_pcr.is_none());
+        assert!(decode_version(&encode_raw(&draft).unwrap(), 8).unwrap() == draft);
     }
 }

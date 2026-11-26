@@ -20,9 +20,10 @@ pub(crate) const MAX_BYTES: usize = 32 << 20;
 const MAX_INPUT_BASES: usize = 8 << 20;
 pub(crate) const MAX_ROLE_BASES: usize = 16 << 20;
 const MAX_PREPARATION_WORK: usize = 100_000_000;
+pub(crate) const MAX_STEPS_PER_ROW: usize = 5;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
-dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},AnnealedOligos{bottom_input_id:String,options:crate::chemistry::AnnealOptions,candidate_index:usize},FromRun{origin:crate::run_material::Capsule,preparation:RunPreparation},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>}}}
-dto! {pub enum RunPreparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>}}}
+dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},AnnealedOligos{bottom_input_id:String,options:crate::chemistry::AnnealOptions,candidate_index:usize},FromRun{origin:crate::run_material::Capsule,preparation:RunPreparation},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},OverlapExtensionPcr{request:crate::overlap_extension_pcr::Request}}}
+dto! {pub enum RunPreparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},OverlapExtensionPcr{request:crate::overlap_extension_pcr::Request}}}
 /// Literal catalog pin used by a preparation, including a flat saved-origin
 /// child. This is structural lookup only, never replay or cleavage authority.
 pub fn preparation_catalog_selection(
@@ -46,6 +47,12 @@ impl RunPreparation {
     /// chemistry restoration, or scientific computation.
     pub(crate) fn preparation(&self) -> Result<Preparation, Error> {
         match self {
+            Self::OverlapExtensionPcr { request } => {
+                request.validate_shape()?;
+                Ok(Preparation::OverlapExtensionPcr {
+                    request: request.clone(),
+                })
+            }
             Self::WholeLinear => Ok(Preparation::WholeLinear),
             Self::Digest {
                 enzymes,
@@ -259,6 +266,16 @@ pub(crate) fn validate_prepared_inputs(
         }
     }
     for step in steps {
+        if let Operation::Pcr {
+            forward, reverse, ..
+        } = step
+        {
+            primer(forward)?;
+            primer(reverse)?;
+        }
+        if let Operation::OverlapExtension { options, .. } = step {
+            crate::overlap_extension_pcr::extension_shape(options)?;
+        }
         if let Operation::PcrWithMismatches {
             forward,
             reverse,
@@ -405,11 +422,44 @@ pub(crate) fn prepared_chain(
             steps.push(*cursor);
             *cursor += 1;
         }
+        let mut branched = false;
         let preceding = *steps.last().ok_or_else(|| bad("empty preparation chain"))?;
-        if matches!(
-            plan.steps[preceding],
-            Operation::Pcr { .. } | Operation::PcrWithMismatches { .. }
-        ) && *cursor < assembly
+        if matches!(plan.steps.get(preceding), Some(Operation::Pcr { .. }))
+            && matches!(
+                plan.steps.get(preceding + 2),
+                Some(Operation::OverlapExtension { .. })
+            )
+        {
+            let second = preceding + 1;
+            let extension = preceding + 2;
+            let outer = preceding + 3;
+            let first_source = preparation_template(&plan.steps[preceding])
+                .ok_or_else(|| bad("overlap extension lost its first PCR source"))?;
+            if row.repair_step.is_some()
+                || outer >= assembly
+                || *cursor != second
+                || !matches!(plan.steps.get(second), Some(Operation::Pcr { template, .. }) if same_source(template, first_source))
+                || !matches!(plan.steps.get(extension), Some(Operation::OverlapExtension { left, right, .. })
+                    if !left.reverse && !right.reverse
+                    && same_source(&left.source, &Source::Step(preceding))
+                    && same_source(&right.source, &Source::Step(second)))
+                || !matches!(plan.steps.get(outer), Some(Operation::Pcr { template, .. }) if same_source(template, &Source::Step(extension)))
+            {
+                return Err(bad(
+                    "overlap-extension PCR lost its original-source branches, selected pair or outer PCR",
+                ));
+            }
+            steps.extend([second, extension, outer]);
+            *cursor = outer + 1;
+            branched = true;
+        }
+        let preceding = *steps.last().ok_or_else(|| bad("empty preparation chain"))?;
+        if !branched
+            && matches!(
+                plan.steps[preceding],
+                Operation::Pcr { .. } | Operation::PcrWithMismatches { .. }
+            )
+            && *cursor < assembly
             && matches!(plan.steps.get(*cursor),Some(Operation::CatalogDigest{template:Source::Step(n),..})if *n==preceding)
         {
             steps.push(*cursor);
@@ -441,6 +491,9 @@ pub(crate) fn prepared_chain(
     } else if row.repair_step.is_some() || !same_source(&row.prepared_source, &input) {
         return Err(bad("unprepared row must retain its own original reference"));
     }
+    if steps.len() > MAX_STEPS_PER_ROW {
+        return Err(Error::TooLarge);
+    }
     for &i in &steps {
         if owners
             .get_mut(i)
@@ -458,7 +511,7 @@ pub(crate) fn validate_preparation_rows(
     rows: &[PreparedRow],
     boundary: usize,
 ) -> Result<(), Error> {
-    if boundary > plan.steps.len() || boundary > 4 * MAX_ROWS {
+    if boundary > plan.steps.len() || boundary > MAX_STEPS_PER_ROW * MAX_ROWS {
         return Err(Error::TooLarge);
     }
     let mut owners = vec![None; boundary];
@@ -714,6 +767,14 @@ fn preparation_preflight_inner(
             &row.preparation
         };
         let units = match preparation {
+            Preparation::OverlapExtensionPcr { request } => {
+                let (units, extra) = request.work(m.sequence.len())?;
+                role_bases = role_bases
+                    .checked_add(extra)
+                    .filter(|n| *n <= MAX_ROLE_BASES)
+                    .ok_or(Error::TooLarge)?;
+                units
+            }
             Preparation::FromRun { .. } => {
                 return Err(bad("nested material preparation is unsupported"));
             }
@@ -986,7 +1047,23 @@ pub(crate) fn preparation_steps(
         } else {
             (original_input, None, &row.preparation)
         };
+        if let Preparation::OverlapExtensionPcr { request } = preparation {
+            let preparation_step = first_step.unwrap_or(steps.len());
+            let prepared_source = request.append(input, &mut steps)?;
+            rows.push(PreparedRow {
+                row_index: index,
+                role: row.role.clone(),
+                input_id: row.input_id.clone(),
+                input_revision: original.revision.clone(),
+                preparation_step: Some(preparation_step),
+                repair_step: None,
+                prepared_source,
+                reverse: row.reverse,
+            });
+            continue;
+        }
         let operation = match preparation {
+            Preparation::OverlapExtensionPcr { .. } => unreachable!("handled explicit fork above"),
             Preparation::FromRun { .. } => {
                 return Err(bad("nested material preparation is unsupported"));
             }
@@ -1227,10 +1304,10 @@ impl Preview {
             || self.compiled.rows.len() > MAX_ROWS
             || self.prepared.len() > self.compiled.rows.len()
             || self.compiled.plan.inputs.len() > MAX_ROWS
-            || self.verification.products.len() > 4 * MAX_ROWS + 1
-            || self.verification.step_reports.len() > 4 * MAX_ROWS + 1
-            || self.verification.annotation_reports.len() > 4 * MAX_ROWS + 1
-            || self.compiled.plan.steps.len() > 4 * MAX_ROWS + 1
+            || self.verification.products.len() > MAX_STEPS_PER_ROW * MAX_ROWS + 1
+            || self.verification.step_reports.len() > MAX_STEPS_PER_ROW * MAX_ROWS + 1
+            || self.verification.annotation_reports.len() > MAX_STEPS_PER_ROW * MAX_ROWS + 1
+            || self.compiled.plan.steps.len() > MAX_STEPS_PER_ROW * MAX_ROWS + 1
             || self.compiled.assembly_step.checked_add(1) != Some(self.compiled.plan.steps.len())
         {
             return Err(bad("invalid preview shape"));
@@ -1314,6 +1391,7 @@ impl Preview {
                         step,
                         Operation::Pcr { .. }
                             | Operation::PcrWithMismatches { .. }
+                            | Operation::OverlapExtension { .. }
                             | Operation::ReconstructRunProduct { .. }
                             | Operation::AnnealOligos { .. }
                             | Operation::Digest { .. }

@@ -211,3 +211,5 @@ pub mod assembly_edit_intent;
 pub mod assembly_substitution_intent;
 
 pub mod overlap_extension;
+
+pub mod overlap_extension_pcr;

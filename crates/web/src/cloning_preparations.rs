@@ -23,6 +23,9 @@ pub(crate) fn prepared_rows(
     }
     let mut fragments = Vec::with_capacity(state.rows.len());
     for (i, row) in state.rows.iter().enumerate() {
+        if let Some(request) = &row.overlap_extension_pcr {
+            request.validate_raw()?;
+        }
         if row.fragment.len() > 20 || row.forward_name.len() > 256 || row.reverse_name.len() > 256 {
             return Err("Preparation names or fragment number exceed their field bounds".into());
         }
@@ -45,6 +48,9 @@ pub(crate) fn prepared_rows(
                 candidate_index:row.anneal_candidate.ok_or("Inspect the annealing alternatives and explicitly choose a candidate before assembling.")?,
             },
             OverlapPreparation::WholeLinear => Preparation::WholeLinear,
+            OverlapPreparation::OverlapExtensionPcr => Preparation::OverlapExtensionPcr {
+                request: row.overlap_extension_pcr.as_ref().ok_or("Enter the two source-PCR pairs, terminal homology and outer-PCR pair before reconstruction.")?.request()?,
+            },
             OverlapPreparation::DeclaredDuplex => Preparation::DeclaredDuplex {
                 left: row.left_terminus,
                 right: row.right_terminus,
@@ -133,6 +139,7 @@ pub(crate) fn prepared_rows(
                 Preparation::Digest { enzymes, fragment_index, repair } => RunPreparation::Digest { enzymes, fragment_index, repair },
                 Preparation::CatalogDigest { selection, fragment_index, repair } => RunPreparation::CatalogDigest { selection, fragment_index, repair },
                 Preparation::ExactPcr { forward, reverse } => RunPreparation::ExactPcr { forward, reverse },
+                Preparation::OverlapExtensionPcr { request } => RunPreparation::OverlapExtensionPcr { request },
                 Preparation::MismatchPcr { forward, reverse, options } => RunPreparation::MismatchPcr { forward, reverse, options },
                 Preparation::PcrCatalogDigest { forward, reverse, selection, fragment_index, repair } => RunPreparation::PcrCatalogDigest { forward, reverse, selection, fragment_index, repair },
                 Preparation::MismatchPcrCatalogDigest { forward, reverse, options, selection, fragment_index, repair } => RunPreparation::MismatchPcrCatalogDigest { forward, reverse, options, selection, fragment_index, repair },
@@ -508,5 +515,252 @@ mod mismatch_tests {
         assert!(state == before);
         state.rows[0].mismatch_max_mismatches = "99".into();
         assert!(prepared_rows(&state, 1).is_err());
+    }
+}
+
+#[cfg(test)]
+mod overlap_extension_tests {
+    use super::*;
+    use crate::cloning_methods_model::{ExtensionPrimerInput, Mode, OverlapExtensionPcrInput};
+    use collagene_core::{
+        Topology, assembly_recipe, cloning_outputs,
+        run_lineage::{EventBinding, InputEventBinding},
+        run_material,
+        verification::{DesignPlan, Operation, Source, Status},
+        workspace::Workspace,
+    };
+    const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
+    const EDITED: &str = "AGTCCGATGCTACGTATTTTCAGACCTGTAGATCGTCA";
+    const FINAL: &str = "AGTCCGATGCTACGTATTTTCAGACCTGTAGATCGTCAGGCTAACCGTTA";
+    fn primer(name: &str, annealing: &str, tail: &str) -> ExtensionPrimerInput {
+        ExtensionPrimerInput {
+            name: name.into(),
+            annealing: annealing.into(),
+            tail: tail.into(),
+        }
+    }
+    fn raw() -> OverlapExtensionPcrInput {
+        let mut r = OverlapExtensionPcrInput::default();
+        r.left.forward = primer("Left outer", "AGTCCGAT", "");
+        r.left.reverse = primer("Left mutagenic", "TACGTAGC", "GGTCTGAAAA");
+        r.right.forward = primer("Right mutagenic", "TTCAGACC", "GCTACGTATT");
+        r.right.reverse = primer("Right outer", "TGACGATC", "");
+        r.outer.forward = primer("Final forward", "AGTCCGAT", "");
+        r.outer.reverse = primer("Final reverse", "TGACGATC", "");
+        r.overlap = "18".into();
+        r.min_paired_bases = "8".into();
+        r
+    }
+    fn state() -> MethodsState {
+        let mut s = MethodsState::default();
+        s.mode = Mode::Overlap;
+        s.circular = false;
+        s.overlaps = "8".into();
+        s.source_roles = Some(vec![
+            crate::assembly_role_ids::Role {
+                role: "edited-insert".into(),
+                input_id: "original-stock-event".into(),
+            },
+            crate::assembly_role_ids::Role {
+                role: "second-part".into(),
+                input_id: "other-event".into(),
+            },
+        ]);
+        s.rows[0].preparation = OverlapPreparation::OverlapExtensionPcr;
+        s.rows[0].overlap_extension_pcr = Some(raw());
+        // The previous single-pair fields are deliberately unusable, and must not
+        // replace any of the six new oligos during conversion.
+        s.rows[0].forward = "wrong old primer".into();
+        s.rows[0].reverse_primer = "wrong old primer".into();
+        s
+    }
+    fn preview(s: &MethodsState, source: Molecule) -> assembly_recipe::Preview {
+        let (ids, fragments) = prepared_rows(s, 2).unwrap();
+        let target =
+            Molecule::dna("Independent two-part requirement", FINAL, Topology::Linear).unwrap();
+        let other = Molecule::dna(
+            "Unchanged second part",
+            "GATCGTCAGGCTAACCGTTA",
+            Topology::Linear,
+        )
+        .unwrap();
+        let inputs = ids
+            .into_iter()
+            .zip([source, other])
+            .map(|(id, molecule)| PlanInput {
+                id,
+                revision: molecule.revision(),
+                molecule,
+            })
+            .collect::<Vec<_>>();
+        let (_, options) = s.profile().unwrap();
+        let recipe = assembly_recipe::Recipe {
+            name: "Actual edited insert and separate part".into(),
+            fragments,
+            overlaps: vec![8],
+            circular: false,
+            options,
+        };
+        assembly_recipe::preview(&inputs, &target, &recipe).unwrap()
+    }
+    #[test]
+    fn six_manual_oligos_map_into_real_multipart_preparation_without_changing_original() {
+        let s = state();
+        let before = s.clone();
+        let original =
+            Molecule::dna("Original unchanged stock", ORIGINAL, Topology::Linear).unwrap();
+        let original_json = serde_json::to_value(&original).unwrap();
+        let p = preview(&s, original.clone());
+        assert_eq!(
+            p.verification.status,
+            Status::ConsistentUnderAssumptions,
+            "{:?}",
+            p.verification.findings
+        );
+        assert_eq!(p.compiled.plan.inputs[0].id, "original-stock-event");
+        assert_eq!(p.compiled.rows[0].role, "edited-insert");
+        assert_eq!(p.prepared[0].sequence.as_str(), EDITED);
+        assert_eq!(
+            p.verification.products[0].sequence.as_str(),
+            "AGTCCGATGCTACGTATTTTCAGACC"
+        );
+        assert_eq!(
+            p.verification.products[1].sequence.as_str(),
+            "GCTACGTATTTTCAGACCTGTAGATCGTCA"
+        );
+        assert_eq!(p.verification.products[2].sequence.as_str(), EDITED);
+        assert_eq!(p.verification.products[3].sequence.as_str(), EDITED);
+        assert_eq!(
+            p.verification.products.last().unwrap().sequence.as_str(),
+            FINAL
+        );
+        assert_eq!(
+            serde_json::to_value(&p.compiled.plan.inputs[0].molecule).unwrap(),
+            original_json
+        );
+        assert!(s == before);
+        let mut incomplete = s;
+        incomplete.rows[0]
+            .overlap_extension_pcr
+            .as_mut()
+            .unwrap()
+            .outer
+            .reverse
+            .annealing
+            .clear();
+        assert!(prepared_rows(&incomplete, 2).is_err());
+    }
+    #[test]
+    fn saved_run_child_keeps_origin_and_uses_both_pcr_branches_on_reconstructed_material() {
+        let original = Molecule::dna("Original", ORIGINAL, Topology::Linear).unwrap();
+        let target = Molecule::dna(
+            "Separate original PCR requirement",
+            ORIGINAL,
+            Topology::Linear,
+        )
+        .unwrap();
+        let w = Workspace::from_documents(
+            "Original preparation",
+            vec![original.clone(), target.clone()],
+            0,
+        )
+        .unwrap();
+        let event = |i: usize| {
+            let d = &w.documents[i];
+            EventBinding {
+                document_id: d.id.clone(),
+                event_id: d.head_event.clone().unwrap(),
+                revision: d.head.clone(),
+            }
+        };
+        let plan = DesignPlan {
+            name: "Actual original-stock PCR".into(),
+            target_revision: target.revision(),
+            inputs: vec![PlanInput {
+                id: "stock".into(),
+                revision: original.revision(),
+                molecule: original,
+            }],
+            steps: vec![Operation::Pcr {
+                template: Source::Input("stock".into()),
+                forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
+                reverse: Primer::new("R", "TGACGATC", "").unwrap(),
+            }],
+        };
+        let commit = cloning_outputs::finalize(
+            &w,
+            &plan,
+            event(1),
+            vec![InputEventBinding {
+                input_id: "stock".into(),
+                event: event(0),
+            }],
+            &cloning_outputs::Options {
+                name: "Saved actual stock PCR".into(),
+                save_primers: false,
+                show_prepared: false,
+                allow_incomplete: false,
+            },
+        )
+        .unwrap();
+        let selection = run_material::Selection {
+            run_id: commit.receipt.run.run_id.clone(),
+            step_index: 0,
+            event: commit.receipt.construct.clone(),
+        };
+        let capsule = run_material::capsule(&commit.workspace, &selection).unwrap();
+        let saved = commit.workspace.revisions[&selection.event.revision].clone();
+        let mut s = state();
+        s.rows[0].run_origin =
+            Some(crate::run_origin_model::PinnedOrigin::new(capsule.clone()).unwrap());
+        let (_, rows) = prepared_rows(&s, 2).unwrap();
+        let assembly_recipe::Preparation::FromRun {
+            origin,
+            preparation: assembly_recipe::RunPreparation::OverlapExtensionPcr { request },
+        } = &rows[0].preparation
+        else {
+            panic!("flat original-run child");
+        };
+        assert_eq!(
+            serde_json::to_value(origin).unwrap(),
+            serde_json::to_value(&capsule).unwrap()
+        );
+        assert_eq!(
+            request.left.reverse.ordered_sequence(),
+            "GGTCTGAAAATACGTAGC"
+        );
+        assert_eq!(
+            request.right.forward.ordered_sequence(),
+            "GCTACGTATTTTCAGACC"
+        );
+        let p = preview(&s, saved);
+        assert_eq!(
+            p.verification.status,
+            Status::ConsistentUnderAssumptions,
+            "{:?}",
+            p.verification.findings
+        );
+        assert!(matches!(
+            &p.compiled.plan.steps[0],
+            Operation::ReconstructRunProduct { .. }
+        ));
+        assert!(matches!(
+            &p.compiled.plan.steps[1],
+            Operation::Pcr {
+                template: Source::Step(0),
+                ..
+            }
+        ));
+        assert!(matches!(
+            &p.compiled.plan.steps[2],
+            Operation::Pcr {
+                template: Source::Step(0),
+                ..
+            }
+        ));
+        assert_eq!(
+            p.verification.products.last().unwrap().sequence.as_str(),
+            FINAL
+        );
     }
 }

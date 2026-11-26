@@ -15,7 +15,7 @@ fn wire(version: u16, response: &Response) -> Vec<u8> {
     bytes
 }
 #[test]
-fn current_scientific_receipts_require81_and_historical20_stays_readable() {
+fn current_scientific_receipts_use_current_worker_and_historical20_stays_readable() {
     let original =
         Molecule::dna("Original reference", "ACGATTCGAACTGCTA", Topology::Linear).unwrap();
     let target = Molecule::dna(
@@ -44,7 +44,10 @@ fn current_scientific_receipts_require81_and_historical20_stays_readable() {
         job: AnalysisJob::Verify { target, plan },
     };
     let encoded = protocol::process_request(&protocol::encode_request(&request).unwrap()).unwrap();
-    assert_eq!(&encoded[4..6], &81u16.to_le_bytes());
+    assert_eq!(
+        &encoded[4..6],
+        &protocol::WORKER_SCHEMA_VERSION.to_le_bytes()
+    );
     let response = protocol::decode_response(&encoded).unwrap();
     let AnalysisResult::Verification(report) = &response.result else {
         panic!("verification reply");
@@ -57,6 +60,8 @@ fn current_scientific_receipts_require81_and_historical20_stays_readable() {
     );
     assert_eq!(report.engine_version, verification::ENGINE_VERSION);
     assert!(report.engine_version.ends_with("/science-22"));
+    assert!(protocol::decode_response(&wire(81, &response)).is_ok());
+    assert!(protocol::decode_response(&wire(80, &response)).is_err());
     assert!(protocol::decode_response(&wire(79, &response)).is_err());
     assert!(protocol::decode_response(&wire(73, &response)).is_err());
 

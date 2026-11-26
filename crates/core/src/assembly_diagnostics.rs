@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
 dto! {#[derive(Copy,PartialEq,Eq)] pub enum RowState {InputReference,Reconstructed,Failed,Blocked}}
-dto! {#[derive(Copy,PartialEq,Eq)] pub enum Stage {Pcr,Digest,Repair,EndTreatment,SourceDeclaration,OverlapAssembly,LigationAssembly,TargetComparison,Annealing,MaterialReconstruction}}
+dto! {#[derive(Copy,PartialEq,Eq)] pub enum Stage {Pcr,Digest,Repair,EndTreatment,SourceDeclaration,OverlapAssembly,LigationAssembly,TargetComparison,Annealing,MaterialReconstruction,OverlapExtension}}
 dto! {#[derive(Copy,PartialEq,Eq)] pub enum JunctionState {ExactHomology,HomologyMismatch,HomologyUnavailable,EndpointsAvailable,EndpointsUnavailable}}
 dto! {pub struct Row {pub index:usize,pub role:String,pub input_id:String,pub reverse:bool,pub state:RowState,pub preparation_step:Option<usize>,pub repair_step:Option<usize>,pub completed_steps:usize,pub total_steps:usize}}
 dto! {pub struct Failure {pub step:usize,pub stage:Stage,pub row:Option<usize>,pub upstream:Option<usize>,pub downstream:Option<usize>,pub message:String,pub recovery:String}}
@@ -36,6 +36,7 @@ fn stage(op: &Operation) -> Result<Stage, Error> {
     Ok(match op {
         Operation::ReconstructRunProduct { .. } => Stage::MaterialReconstruction,
         Operation::Pcr { .. } | Operation::PcrWithMismatches { .. } => Stage::Pcr,
+        Operation::OverlapExtension { .. } => Stage::OverlapExtension,
         Operation::AnnealOligos { .. } => Stage::Annealing,
         Operation::Digest { .. } | Operation::CatalogDigest { .. } => Stage::Digest,
         Operation::RepairEnds { .. } => Stage::Repair,
@@ -154,6 +155,10 @@ fn failure(step: usize, stage: Stage, row: Option<usize>) -> Failure {
         Stage::MaterialReconstruction => (
             "No reusable material was retained from the saved origin reconstruction.",
             "Review the exact saved source event and unchanged originating plan, target and inputs. Reconstruct the complete origin; imported physical summaries do not supply material authority.",
+        ),
+        Stage::OverlapExtension => (
+            "No product was retained for this reciprocal extension step.",
+            "Inspect both actual PCR products, explicit orientations, paired terminal homology, 3′ chemistry and search bounds; no intended-target sequence supplies missing material.",
         ),
         Stage::Annealing => (
             "No product was retained for this oligo-annealing step.",

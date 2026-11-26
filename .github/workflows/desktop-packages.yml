@@ -114,6 +114,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: desktop-packages-${{ inputs.build_profile }}
+          cache-on-failure: true
       - name: Install Linux build and packaging prerequisites
         if: runner.os == 'Linux'
         run: bash scripts/install_linux_desktop_deps.sh package

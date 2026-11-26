@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 175;
+pub const CURRENT_TOOL_COUNT: usize = 176;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -1043,6 +1043,15 @@ pub struct OverlapPrimerDesignQuery {
     /// Explicit ordered template intervals, orientation and bounded heuristic controls.
     pub request: collagene_core::overlap_primer_design::Request,
 }
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OverlapExtensionPrimerDesignQuery {
+    /// Exact original stock snapshot. Historical reports never restore physical state.
+    pub document: DocumentRef,
+    /// Construct-oriented original contribution, independently declared edits and bounded primer policy.
+    pub request: collagene_core::overlap_extension_primer_design::Request,
+}
+
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SubstitutedAssemblyIntentQuery {
@@ -5980,6 +5989,63 @@ impl CollageneServer {
                 "warnings":report.warnings.iter().take(100).map(|w|w.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),
                 "warnings_truncated":report.warnings.len()>100||report.warnings.iter().take(100).any(|w|w.chars().count()>1024),
                 "artifact_id":artifact,"authority":"Advisory design only. Use the returned recipe with propose_overlap_assembly against the same exact inputs and independent target; method guidance and primer heuristics do not verify a cloning result."}))
+        }).await
+    }
+    #[tool(
+        description = "Propose six ordered oligos for a source-bound overlap-extension PCR preparation from one immutable original DNA document, an explicit contribution interval/orientation and independently declared literal edits. Uses native anchored primer heuristics on original unchanged source intervals, then freshly reconstructs two PCR branches, selected reciprocal extension and outer-primer PCR against the separately constructed edit intent. Returns an advisory preparation, bounded oligo/status summaries and full source/request/intent/reconstruction evidence. Prepared DNA stays in stored-source orientation; apply request.fragment.reverse at subsequent assembly. No intended product is accepted as a source, no stock is changed, and no candidate, target document or material status is installed. Physical-state metadata and historical reports cannot bootstrap an original PCR template. Reuse the returned preparation in the ordinary assembly recipe and verify the full independent target."
+    )]
+    async fn design_overlap_extension_primers(
+        &self,
+        Parameters(args): Parameters<OverlapExtensionPrimerDesignQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || {
+            let source = {
+                let store = server.store.lock().unwrap();
+                let source = store.document(&args.document)?;
+                collagene_core::overlap_extension_primer_design::preflight(source, &args.request).map_err(bad)?;
+                source.clone()
+            };
+            let report = collagene_core::overlap_extension_primer_design::design(&source, &args.request).map_err(bad)?;
+            let expected = collagene_core::overlap_extension_primer_design::design_revision(&source, &args.request).map_err(bad)?;
+            report.validate_binding(&expected).map_err(bad)?;
+            let mut ordered_oligos = Vec::with_capacity(6);
+            for (stage, pair) in [("left_pcr", &report.preparation.left), ("right_pcr", &report.preparation.right), ("outer_pcr", &report.preparation.outer)] {
+                for (direction, primer) in [("forward", &pair.forward), ("reverse", &pair.reverse)] {
+                    ordered_oligos.push(json!({"stage":stage,"direction":direction,"primer":primer,"ordered_sequence":primer.ordered_sequence()}));
+                }
+            }
+            #[derive(Serialize)]
+            struct Evidence<'a> {
+                document: &'a DocumentRef,
+                report: &'a collagene_core::overlap_extension_primer_design::Report,
+                interpretation: &'static str,
+            }
+            let evidence = Evidence { document: &args.document, report: &report,
+                interpretation: "Read-only native primer proposal from explicit immutable source coordinates and independent literal edits. Expected DNA comes from edit intent, not simulated products. The retained local reconstruction is diagnostic; no stock, candidate, target document or material authority is installed. Reuse the preparation in a full independently targeted assembly before review/finalization." };
+            let artifact = server.text_artifact(bounded_json_limit(&evidence, 32 * 1024 * 1024)?, "application/json", "overlap-extension-primer-design.json")?;
+            output(json!({
+                "state":"advisory", "verified":false, "document":args.document,
+                "context_revision":report.context_revision,"source_revision":report.source_revision,"engine_version":report.engine_version,
+                "fragment":report.request.fragment,"reverse_at_assembly":report.request.fragment.reverse,
+                "preparation":report.preparation,"ordered_oligos":ordered_oligos,
+                "expected":{"revision":report.expected.revision(),"length":report.expected.sequence.len(),"topology":report.expected.topology,"orientation":"stored_source"},
+                "verification":{"status":report.verification.status,"plan_revision":report.verification.plan_revision,"target_revision":report.verification.target_revision,
+                    "product_count":report.verification.products.len(),"products":report.verification.products.iter().take(4).map(|m|json!({"revision":m.revision(),"length":m.sequence.len(),"topology":m.topology})).collect::<Vec<_>>(),
+                    "findings":report.verification.findings.iter().take(30).map(|s|s.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),
+                    "findings_truncated":report.verification.findings.len()>30||report.verification.findings.iter().take(30).any(|s|s.chars().count()>1024)},
+                "design_count":report.designs.len(),
+                "search":report.search.iter().take(3).map(|search|json!({
+                    "call":search.call,"candidates":search.candidates,"examined":search.examined,"rejected":search.rejected,
+                    "selected_index":search.selected_index,"capped":search.capped,"unique_geometry":search.unique_geometry,
+                    "notes":search.notes.iter().take(10).map(|s|s.chars().take(512).collect::<String>()).collect::<Vec<_>>(),
+                    "notes_truncated":search.notes.len()>10||search.notes.iter().take(10).any(|s|s.chars().count()>512)
+                })).collect::<Vec<_>>(),
+                "warnings":report.warnings.iter().take(100).map(|s|s.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),
+                "warnings_truncated":report.warnings.len()>100||report.warnings.iter().take(100).any(|s|s.chars().count()>1024),
+                "artifact_id":artifact,
+                "authority":"Advisory source-bound proposal only. The source and independent edits remain unchanged; use its explicit preparation in a full intended assembly for fresh native verification and review."
+            }))
         }).await
     }
     #[tool(

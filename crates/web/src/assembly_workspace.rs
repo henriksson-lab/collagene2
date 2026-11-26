@@ -1,9 +1,9 @@
 //! Persistent declared assembly slots. Frozen intent/scientific evidence is
 //! component-private and is never restored from a serialized draft.
-use crate::assembly_draft_model::digest_interval;
 pub use crate::assembly_draft_model::{
     CapturedSource, DigestGeometry, Draft, decode_version, set_digest_fragment,
 };
+use crate::assembly_draft_model::{digest_interval, edit_request, inputs_request};
 use crate::{
     assembly_review::IntendedReference,
     cloning_methods::{
@@ -144,106 +144,6 @@ struct Frozen {
     sources: Vec<Arc<CapturedSource>>,
     input_ids: Vec<String>,
     target_revision: String,
-}
-
-fn inputs_request(
-    draft: &Draft,
-) -> Result<
-    (
-        Vec<PlanInput>,
-        assembly_intent::Request,
-        Vec<Arc<CapturedSource>>,
-    ),
-    String,
-> {
-    draft.validate()?;
-    crate::assembly_alternatives::require_active_choice_match(draft)?;
-    let mut captures = draft
-        .slots
-        .iter()
-        .map(|s| {
-            s.captured.clone().ok_or_else(|| {
-                format!(
-                    "Set the {} fragment before reviewing the intended construct.",
-                    s.label
-                )
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let roles = draft.methods.role_ids(captures.len())?;
-    let ids = draft.methods.all_input_ids()?;
-    for (index, row) in draft.methods.rows.iter().enumerate() {
-        if row.preparation == OverlapPreparation::AnnealedOligos {
-            captures.push(draft.slots[index].anneal_bottom.clone().ok_or_else(|| {
-                format!(
-                    "Pin the bottom oligo for {} before reviewing intended DNA.",
-                    draft.slots[index].label
-                )
-            })?);
-        }
-    }
-    let request = assembly_intent::Request {
-        name: draft.name.clone(),
-        circular: draft.circular,
-        fragments: draft
-            .slots
-            .iter()
-            .enumerate()
-            .map(|(i, s)| collagene_core::overlap_primer_design::Fragment {
-                role: roles[i].role.clone(),
-                input_id: ids[i].clone(),
-                start: s.start,
-                end: s.end,
-                reverse: s.reverse,
-            })
-            .collect(),
-    };
-    let borrowed = ids
-        .iter()
-        .zip(&captures)
-        .map(|(id, c)| (id.as_str(), &c.molecule))
-        .collect::<Vec<_>>();
-    assembly_intent::preflight(&borrowed, &request).map_err(|e| e.to_string())?;
-    if !draft.junction_edits.is_empty() {
-        assembly_junction_edit::intent_preflight(&borrowed, &request, &draft.junction_edits)
-            .map_err(|e| e.to_string())?;
-    }
-    if !draft.substitutions.is_empty() {
-        assembly_substitution_intent::source_preflight(
-            &borrowed,
-            &assembly_substitution_intent::Request {
-                base: request.clone(),
-                junction_edits: draft.junction_edits.clone(),
-                substitutions: draft.substitutions.clone(),
-            },
-        )
-        .map_err(|e| e.to_string())?;
-    }
-    if !draft.edits.is_empty() {
-        assembly_edit_intent::source_preflight(&borrowed, &edit_request(draft, request.clone()))
-            .map_err(|e| e.to_string())?;
-    }
-    let inputs = ids
-        .into_iter()
-        .zip(&captures)
-        .map(|(id, c)| PlanInput {
-            id,
-            revision: c.source.binding.revision.clone(),
-            molecule: c.molecule.clone(),
-        })
-        .collect();
-    Ok((inputs, request, captures))
-}
-
-fn edit_request(draft: &Draft, base: assembly_intent::Request) -> assembly_edit_intent::Request {
-    assembly_edit_intent::Request {
-        base: assembly_substitution_intent::Request {
-            base,
-            junction_edits: draft.junction_edits.clone(),
-            substitutions: draft.substitutions.clone(),
-        },
-        edits: draft.edits.clone(),
-    }
 }
 
 fn method_overview(methods: &MethodsState) -> String {
@@ -1063,6 +963,28 @@ fn FrozenWorkspace(
             Ok(())
         })
     });
+    let use_extension_primers = Callback::new(
+        move |(before, next): (Draft, Draft)| -> Result<(), String> {
+            reference_guard.run(())?;
+            let index = draft.with_untracked(|current| {
+                crate::assembly_extension_primer_commit::validate(&before, &next, current)
+            })?;
+            // The proposal component re-attests its exact historical source at
+            // use time. This host guard independently preserves the frozen
+            // declaration and permits only the native transition above.
+            if before.identity() != next.identity() {
+                return Err(
+                    "Primer proposal changed the independently reviewed source declaration.".into(),
+                );
+            }
+            batch(|| {
+                methods.set(next.methods.clone());
+                draft.set(next);
+                status.set(format!("Overlap-extension primers applied to fragment {}. Reconstruct the complete assembly against the unchanged intended reference.", index + 1));
+            });
+            Ok(())
+        },
+    );
     let reference_inputs = Callback::new(move |()| -> Result<Vec<PlanInput>, String> {
         reference_guard.run(())?;
         bound.with_value(|f| {
@@ -1101,6 +1023,9 @@ fn FrozenWorkspace(
                 <crate::assembly_inverse_pcr_view::InversePcrPreparationView
                     draft intent=Arc::new(f.intent.clone()) epoch snapshot
                     current=reference_current guard=reference_guard on_review=review on_finalize=finalize/>
+                <crate::assembly_extension_primer_view::ExtensionPrimerProposalView
+                    draft intent=Arc::new(f.intent.clone()) epoch snapshot
+                    current=reference_current guard=reference_guard on_use=use_extension_primers/>
             }),
             _ => None,
         })}

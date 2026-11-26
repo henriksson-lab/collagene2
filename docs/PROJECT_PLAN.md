@@ -2303,3 +2303,39 @@ or application HTTP checks were run, so visual acceptance remains the user's
 review rather than a claim inferred from the build. The full original product
 objective and unfinished native safe-folder/Tauri, import-host integration and
 automatic primer-design work remain active.
+
+
+### Automatic overlap-extension primer proposals — native and WASM checked
+
+The new proposal path takes original-source contribution coordinates and literal
+internal edits, not a supplied candidate DNA sequence. Multiple disjoint edits
+can form one bounded central bridge. Reverse contributions are remapped into
+stored-source orientation; the ordinary recipe still applies its declared final
+orientation. Partial and origin-wrapping regions remain explicit.
+
+Native primer ranking retains the existing thermodynamic conditions and filters.
+A bounded search checks ranked pairs against independently declared source
+endpoints and native PCR geometries, then checks outer pairs on the actual
+extended substrate. It does not select an outcome by comparing it with desired
+DNA. Search limits and rejected/competing geometries remain evidence. A separate
+four-step verification checks the proposed preparation against the literal-edit
+reference. Proposed oligos remain suggestions until ordinary complete-assembly
+verification against the original frozen target.
+
+Worker83 adds job164/result156 and MCP tool176. Existing operation semantics,
+science22, candidate18, native-plan16 and draft8 remain unchanged. The dock bridge
+rebuilds the original typed independent intent, attests exact retained events,
+preserves outer tails and material-origin capsules, and permits only the selected
+row's preparation fields to change. Shared original-source declaration helpers
+now serve both intent review and proposal capture. Reference-only multi-parent
+exchange does not offer this PCR preparation control.
+
+Focused validation passed: eight native proposal groups, three binary protocol
+groups, one MCP SDK case, seven web capture/application groups and two commit
+guard groups. Existing recipe, protocol and draft cases also passed. Native
+test compilation and the WASM check passed. Fixtures exposed and corrected empty
+outer-tail parsing and contribution-coordinate remapping after junction trims,
+including reverse and origin-wrapping regions. No browser checks were run.
+The public8082 renderer remains the published00a54e0 snapshot; these new controls
+await the next batched frontend publication. Whole-assembly junction-tail design
+and preparation followed by catalog digestion remain separate unfinished work.

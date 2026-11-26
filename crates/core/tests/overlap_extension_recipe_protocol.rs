@@ -124,7 +124,7 @@ fn worker82_preserves_actual_branched_preparation_and_existing_candidate18_opera
         "{error}"
     );
     let bytes = protocol::process_request(&protocol::encode_request(&req).unwrap()).unwrap();
-    assert_eq!(&bytes[4..6], &82u16.to_le_bytes());
+    assert_eq!(&bytes[4..6], &protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
     let response = protocol::decode_response(&bytes).unwrap();
     let AnalysisResult::OverlapRecipePreview(preview) = &response.result else {
         panic!("overlap preview");

@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 82;
+pub const WORKER_SCHEMA_VERSION: u16 = 83;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 18;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -929,6 +929,10 @@ pub enum AnalysisJob {
         inputs: Vec<crate::verification::PlanInput>,
         request: crate::assembly_edit_intent::Request,
     },
+    DesignOverlapExtensionPrimers {
+        source: Molecule,
+        request: crate::overlap_extension_primer_design::Request,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1097,6 +1101,7 @@ pub enum AnalysisResult {
     SubstitutedAssemblyIntent(crate::assembly_substitution_intent::Report),
     MismatchPcrDigestInspection(crate::mismatch_pcr_digest_inspection::Preview),
     ContributionEditIntent(crate::assembly_edit_intent::Report),
+    OverlapExtensionPrimersDesigned(crate::overlap_extension_primer_design::Report),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1326,6 +1331,9 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         crate::pairwise_context::preflight(report, reference, query, *translate)?;
     }
     match &r.job {
+        AnalysisJob::DesignOverlapExtensionPrimers { source, request } => {
+            crate::overlap_extension_primer_design::preflight(source, request)?;
+        }
         AnalysisJob::InspectMismatchPcrDigest {
             molecule,
             origin,
@@ -1614,6 +1622,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_substitution_intent_tag(bytes, &[153])?;
     preflight_mismatch_digest_tag(bytes, &[154])?;
     preflight_contribution_edit_tag(bytes, &[155])?;
+    preflight_overlap_extension_primer_tag(bytes, &[156])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1670,6 +1679,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         },
     };
     let required = match &response.result {
+        AnalysisResult::OverlapExtensionPrimersDesigned(_) => 83,
         AnalysisResult::ContributionEditIntent(_) => 79,
         AnalysisResult::MismatchPcrDigestInspection(_) => 78,
         AnalysisResult::SubstitutedAssemblyIntent(_) => 77,
@@ -2119,6 +2129,10 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         }
         AnalysisResult::AssemblyIntent(report) => report.validate_binding(&response.revision)?,
         AnalysisResult::OverlapPrimersDesigned(report) => {
+            report.validate_binding(&response.revision)?;
+        }
+        AnalysisResult::OverlapExtensionPrimersDesigned(report) => {
+            check_verification_report_version(bytes, &report.verification)?;
             report.validate_binding(&response.revision)?;
         }
         AnalysisResult::AssemblyJunctionInspection(report) => {
@@ -2860,6 +2874,14 @@ fn preflight_mismatch_digest_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error
         .map_err(|e| Error::Format(e.to_string()))?;
     if tags.contains(&tag) {
         check_variant_version(bytes, 78)?;
+    }
+    Ok(())
+}
+fn preflight_overlap_extension_primer_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 83)?;
     }
     Ok(())
 }
@@ -3724,6 +3746,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_substitution_intent_tag(bytes, &[161])?;
     preflight_mismatch_digest_tag(bytes, &[162])?;
     preflight_contribution_edit_tag(bytes, &[163])?;
+    preflight_overlap_extension_primer_tag(bytes, &[164])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -3731,6 +3754,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::DesignOverlapExtensionPrimers { .. } => 83,
         AnalysisJob::BuildContributionEditIntent { .. } => 79,
         AnalysisJob::InspectMismatchPcrDigest { .. } => 78,
         AnalysisJob::BuildSubstitutedAssemblyIntent { .. } => 77,
@@ -4171,6 +4195,16 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
                 return Err(Error::Format(
                     "Mismatch PCR digest original source/origin/policy/catalog context changed"
                         .into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::DesignOverlapExtensionPrimers { source, request } => {
+            if crate::overlap_extension_primer_design::design_revision(source, request)?
+                != r.revision
+            {
+                return Err(Error::Format(
+                    "Overlap-extension primer source, independent edits or options changed".into(),
                 ));
             }
             None
@@ -5399,6 +5433,10 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             request,
         } => crate::mismatch_pcr_digest_inspection::inspect(&molecule, origin.as_ref(), &request)
             .map(AnalysisResult::MismatchPcrDigestInspection),
+        AnalysisJob::DesignOverlapExtensionPrimers { source, request } => {
+            crate::overlap_extension_primer_design::design(&source, &request)
+                .map(AnalysisResult::OverlapExtensionPrimersDesigned)
+        }
         AnalysisJob::BuildContributionEditIntent { inputs, request } => {
             crate::assembly_edit_intent::build(&inputs, &request)
                 .map(AnalysisResult::ContributionEditIntent)

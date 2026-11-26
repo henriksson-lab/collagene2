@@ -34,6 +34,12 @@ mod assembly_draft_model;
 mod assembly_edit_model;
 #[cfg(target_arch = "wasm32")]
 mod assembly_edit_view;
+#[cfg(any(target_arch = "wasm32", test))]
+mod assembly_extension_primer_commit;
+#[cfg(any(target_arch = "wasm32", test))]
+mod assembly_extension_primer_model;
+#[cfg(target_arch = "wasm32")]
+mod assembly_extension_primer_view;
 #[cfg(target_arch = "wasm32")]
 mod assembly_finalize;
 #[cfg(any(target_arch = "wasm32", test))]

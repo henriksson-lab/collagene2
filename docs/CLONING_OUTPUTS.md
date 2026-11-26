@@ -137,3 +137,32 @@ PCR of a nicked/staggered template and digest propagation of existing nicks rema
 withheld by the current engines. The replayed material and its nicks remain in
 the reconstructed prefix; an unsupported downstream step cannot produce or
 finalize a silently repaired product.
+
+## Direct virtual digestion of saved constructs
+
+VirtualDigest now offers the same explicit saved-origin picker as preparation
+rows. Choose a retained origin, then run the digest. The worker freshly replays
+that origin and applies the existing tracked digest; it never reconstructs
+material from a saved end summary. The ordinary inspector remains unchanged.
+
+Both the fragment-list and cut-boundary assembly buttons retain the exact saved
+source event, original source molecule, origin recipe, catalog/options and actual
+two-strand geometry. The draft emits `FromRun::CatalogDigest` and reconstructs
+again during method verification. Cut-defined selection uses the source's actual
+bottom-strand free endpoints; a staggered saved source need not start at zero or
+end at the top reference length. Forward intent can retain such fragments. If a
+reverse orientation requires bases outside the saved top reference, the current
+draft projection refuses it rather than inventing sequence; an explicit intended
+sequence/strand-aware intent extension remains necessary.
+
+The report shows original ends/nicks and source/per-fragment modification
+summaries. Complete cleavage is still an explicit conditional assumption, not a
+methylation-permission assessment. Known and unknown calls and generation records
+remain intact. Existing nicks preserve recognition evidence but withhold physical
+products under the current digest engine.
+
+The saved-origin route currently supports inspection, JSON evidence and assembly
+handoff. Ordinary named digest setups, gel handoff, GenBank product export and
+reference installation remain disabled for that route until they can retain the
+same origin scope. They do not silently fall back to an ordinary source. Those
+actions remain available for ordinary-reference digests.

@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 74;
+pub const WORKER_SCHEMA_VERSION: u16 = 75;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 17;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -909,6 +909,13 @@ pub enum AnalysisJob {
         origin: crate::run_material::Capsule,
         request: crate::pcr_digest_inspection::Request,
     },
+    InspectRunCatalogRestriction {
+        source_role: String,
+        molecule: Molecule,
+        origin: crate::run_material::Capsule,
+        selection: crate::catalog_digest::CatalogSelection,
+        options: crate::restriction_inspection::InspectionOptions,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1073,6 +1080,7 @@ pub enum AnalysisResult {
     PcrDigestInspection(crate::pcr_digest_inspection::Preview),
     RunMaterialInspection(crate::run_material::Inspection),
     RunPcrDigestInspection(crate::pcr_digest_inspection::RunPreview),
+    RunCatalogRestrictionInspection(crate::run_catalog_digest::Inspection),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1302,6 +1310,23 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         crate::pairwise_context::preflight(report, reference, query, *translate)?;
     }
     match &r.job {
+        AnalysisJob::InspectRunCatalogRestriction {
+            source_role,
+            molecule,
+            origin,
+            selection,
+            options,
+        } => {
+            let catalog = crate::catalog_digest::builtin_catalog()?;
+            crate::run_catalog_digest::source_preflight(
+                &catalog,
+                selection,
+                source_role,
+                molecule,
+                origin,
+                options,
+            )?;
+        }
         AnalysisJob::InspectRunPcrDigest {
             molecule,
             origin,
@@ -1538,6 +1563,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
     preflight_tailing_recipe_tag(bytes, &[148])?;
     preflight_pcr_digest_tag(bytes, &[149])?;
     preflight_run_material_tag(bytes, &[150, 151])?;
+    preflight_run_catalog_tag(bytes, &[152])?;
     let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
     let response: Response = match version {
         Some(1) => {
@@ -1594,6 +1620,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         },
     };
     let required = match &response.result {
+        AnalysisResult::RunCatalogRestrictionInspection(_) => 75,
         AnalysisResult::RunMaterialInspection(_) | AnalysisResult::RunPcrDigestInspection(_) => 74,
         AnalysisResult::PcrDigestInspection(_) => 72,
         AnalysisResult::TailingRecipePreview(report) => {
@@ -2020,6 +2047,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
                 check_variant_version(bytes, 48)?;
             }
             report.validate_binding(&response.revision)?
+        }
+        AnalysisResult::RunCatalogRestrictionInspection(report) => {
+            report.validate_binding(&response.revision)?;
         }
         AnalysisResult::RunPcrDigestInspection(report) => {
             report.validate_binding(&response.revision)?;
@@ -2730,6 +2760,14 @@ fn preflight_assembly_junctions_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Er
         .map_err(|e| Error::Format(e.to_string()))?;
     if tags.contains(&tag) {
         check_variant_version(bytes, 33)?;
+    }
+    Ok(())
+}
+fn preflight_run_catalog_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
+    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
+        .map_err(|e| Error::Format(e.to_string()))?;
+    if tags.contains(&tag) {
+        check_variant_version(bytes, 75)?;
     }
     Ok(())
 }
@@ -3481,6 +3519,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     preflight_tailing_recipe_tag(bytes, &[156])?;
     preflight_pcr_digest_tag(bytes, &[157])?;
     preflight_run_material_tag(bytes, &[158, 159])?;
+    preflight_run_catalog_tag(bytes, &[160])?;
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
         .map_err(|e| Error::Format(e.to_string()))?;
     if tag == 76 {
@@ -3488,6 +3527,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
     let required = match &r.job {
+        AnalysisJob::InspectRunCatalogRestriction { .. } => 75,
         AnalysisJob::InspectRunMaterial { .. } | AnalysisJob::InspectRunPcrDigest { .. } => 74,
         AnalysisJob::InspectPcrDigest { .. } => 72,
         AnalysisJob::PreviewTailingRecipe { .. } => 70,
@@ -4352,6 +4392,29 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             {
                 return Err(Error::Format(
                     "Run material workspace/event/origin selection changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::InspectRunCatalogRestriction {
+            source_role,
+            molecule,
+            origin,
+            selection,
+            options,
+        } => {
+            let catalog = crate::catalog_digest::builtin_catalog()?;
+            if crate::run_catalog_digest::inspection_revision(
+                &catalog,
+                selection,
+                source_role,
+                molecule,
+                origin,
+                options,
+            )? != r.revision
+            {
+                return Err(Error::Format(
+                    "Saved-run catalog inspection origin/source/pin/options changed".into(),
                 ));
             }
             None
@@ -5221,6 +5284,24 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             selection,
         } => crate::run_material::inspect(&workspace, &event, &selection)
             .map(AnalysisResult::RunMaterialInspection),
+        AnalysisJob::InspectRunCatalogRestriction {
+            source_role,
+            molecule,
+            origin,
+            selection,
+            options,
+        } => {
+            let catalog = crate::catalog_digest::builtin_catalog()?;
+            crate::run_catalog_digest::inspect(
+                &catalog,
+                &selection,
+                &source_role,
+                &molecule,
+                &origin,
+                &options,
+            )
+            .map(AnalysisResult::RunCatalogRestrictionInspection)
+        }
         AnalysisJob::InspectRunPcrDigest {
             molecule,
             origin,

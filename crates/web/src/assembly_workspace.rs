@@ -1,9 +1,9 @@
 //! Persistent declared assembly slots. Frozen intent/scientific evidence is
 //! component-private and is never restored from a serialized draft.
+use crate::assembly_draft_model::digest_interval;
 pub use crate::assembly_draft_model::{
-    CapturedSource, DigestGeometry, Draft, Slot, decode_version,
+    CapturedSource, DigestGeometry, Draft, Slot, decode_version, set_digest_fragment,
 };
-use crate::assembly_draft_model::{digest_interval, hex, token};
 use crate::{
     assembly_review::IntendedReference,
     cloning_methods::{
@@ -981,111 +981,6 @@ fn FrozenWorkspace(
         <Show when=move||draft.with(|d|d.methods.mode!=Mode::MultiSiteReference)>        <CloningMethodsPanel molecule=target query_options get_query source_info target_info selected_region=Callback::new(|()|None) config=methods epoch on_candidate=review on_finalize=Some(finalize) on_products primer_sources list_primers resolve_primer active_row=Some(active_preparation) on_edit_row=Some(edit_preparation) fixed_sources=true get_workspace=Some(snapshot) disable_plain_primer_design=bound.with_value(|f|!f.identity.junction_edits.is_empty()) on_source=Some(diagnostic_source)/></Show>
         <p role="status">{move||status.get()}</p>
     </section>}
-}
-
-/// Pin a fresh private digest selection, retaining its original source and full
-/// catalog identity. This checks bindings/bounds, not cleavage; the compiled
-/// CatalogDigest operation must reconstruct the actual fragment in the worker.
-/// The host must check payload epoch and actual retained source-event identity.
-/// Error leaves the original draft untouched.
-pub fn set_digest_fragment(
-    draft: &mut Draft,
-    fragment: crate::digest::AssemblyFragment,
-) -> Result<(), String> {
-    use collagene_core::{catalog_digest, restriction_history};
-    draft.validate()?;
-    if !token(&fragment.source.binding.document_id, 512)
-        || !token(&fragment.source.binding.event_id, 512)
-        || !hex(&fragment.source.binding.revision)
-    {
-        return Err("Invalid original-source event binding".into());
-    }
-    let index = draft.active_slot;
-    let catalog = catalog_digest::builtin_catalog().map_err(|e| e.to_string())?;
-    let role =
-        restriction_history::source_role(&fragment.source.binding).map_err(|e| e.to_string())?;
-    catalog_digest::source_preflight(
-        &catalog,
-        &fragment.selection,
-        &role,
-        &fragment.molecule,
-        &fragment.options,
-    )
-    .map_err(|e| e.to_string())?;
-    let n = fragment.molecule.sequence.len();
-    if fragment.source.length != n
-        || fragment.source.name != fragment.molecule.name
-        || fragment.source.topology != fragment.molecule.topology
-        || fragment.source.alphabet != fragment.molecule.sequence.alphabet()
-        || fragment.source.alphabet != Alphabet::Dna
-        || fragment.molecule.revision() != fragment.source.binding.revision
-    {
-        return Err("Digest original source differs from its captured document revision".into());
-    }
-    if fragment.fragment_index >= fragment.options.max_fragments
-        || !hex(&fragment.batch_revision)
-        || catalog_digest::batch_revision(
-            &catalog,
-            &fragment.selection,
-            &role,
-            &fragment.molecule,
-            &fragment.options,
-        )
-        .map_err(|e| e.to_string())?
-            != fragment.batch_revision
-    {
-        return Err("Digest selection/source/options changed; run the digest again".into());
-    }
-    let geometry = DigestGeometry {
-        top_start: fragment.top_start,
-        top_length: fragment.top_length,
-        bottom_start: fragment.bottom_start,
-        bottom_length: fragment.bottom_length,
-    };
-    digest_interval(&fragment.source, &geometry, false)?;
-    digest_interval(&fragment.source, &geometry, true)?;
-    let (start, end) = digest_interval(&fragment.source, &geometry, draft.slots[index].reverse)?;
-    let mut borrowed = draft
-        .slots
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| *i != index)
-        .filter_map(|(_, slot)| slot.captured.as_ref().map(|c| &c.molecule))
-        .collect::<Vec<_>>();
-    borrowed.push(&fragment.molecule);
-    collagene_core::model::bounds::model_preflight(&borrowed).map_err(|e| e.to_string())?;
-    let mut bases = 0usize;
-    for source in &borrowed {
-        bases = bases
-            .checked_add(source.sequence.len())
-            .filter(|n| *n <= 8 << 20)
-            .ok_or("Pinned assembly sources exceed8MiB")?;
-    }
-    let display_index = fragment
-        .fragment_index
-        .checked_add(1)
-        .ok_or("Digest fragment index overflow")?;
-    let mut next = draft.clone();
-    next.slots[index].captured = Some(Arc::new(CapturedSource {
-        source: fragment.source,
-        molecule: fragment.molecule.as_ref().clone(),
-    }));
-    next.slots[index].start = start;
-    next.slots[index].end = end;
-    next.slots[index].digest_geometry = Some(geometry);
-    next.junction_edits.clear();
-    next.methods.rows[index] = OverlapInput {
-        preparation: OverlapPreparation::CatalogDigest,
-        catalog_selection: Some(fragment.selection),
-        fragment: display_index.to_string(),
-        repair: None,
-        reverse: next.slots[index].reverse,
-        ..Default::default()
-    };
-    next.sync_rows();
-    next.validate()?;
-    *draft = next;
-    Ok(())
 }
 
 fn default_regeneration(draft: &Draft, proposed: &[assembly_junction_edit::Edit]) -> Vec<bool> {

@@ -78,12 +78,25 @@ struct Endpoint {
     top: usize,
     bottom: i64,
 }
-fn endpoint(boundary: &Boundary, r: &RestrictionInspection) -> Result<Endpoint, Error> {
+fn endpoint(
+    boundary: &Boundary,
+    r: &RestrictionInspection,
+    source: Option<&crate::chemistry::DuplexSummary>,
+) -> Result<Endpoint, Error> {
     match boundary {
-        Boundary::SourceStart => Ok(Endpoint { top: 0, bottom: 0 }),
+        Boundary::SourceStart => Ok(Endpoint {
+            top: 0,
+            bottom: source.map_or(0, |s| s.bottom_start),
+        }),
         Boundary::SourceEnd => Ok(Endpoint {
             top: r.source_length,
-            bottom: i64::try_from(r.source_length).map_err(|_| Error::TooLarge)?,
+            bottom: match source {
+                Some(s) => s
+                    .bottom_start
+                    .checked_add(i64::try_from(s.bottom_length).map_err(|_| Error::TooLarge)?)
+                    .ok_or(Error::TooLarge)?,
+                None => i64::try_from(r.source_length).map_err(|_| Error::TooLarge)?,
+            },
         }),
         Boundary::Cut { site_index } => {
             let s = r
@@ -117,9 +130,19 @@ fn selected<'a>(
     inspection: &'a CatalogRestrictionInspection,
     choice: &Choice,
 ) -> Result<&'a FragmentSummary, Error> {
+    selected_inner(inspection, choice, None)
+}
+fn selected_inner<'a>(
+    inspection: &'a CatalogRestrictionInspection,
+    choice: &Choice,
+    source: Option<&crate::chemistry::DuplexSummary>,
+) -> Result<&'a FragmentSummary, Error> {
     let r = &inspection.inspection;
     choice_shape(choice, r.topology, r.options.max_sites)?;
-    let (mut first, mut second) = (endpoint(&choice.first, r)?, endpoint(&choice.second, r)?);
+    let (mut first, mut second) = (
+        endpoint(&choice.first, r, source)?,
+        endpoint(&choice.second, r, source)?,
+    );
     if !r.scan_complete || !r.products_determined || !r.limits.is_empty() {
         return Err(bad(
             "fresh recognition/product determination is incomplete; inspect diagnostics and bounds before selecting physical cuts",
@@ -180,6 +203,107 @@ fn selected<'a>(
         ));
     }
     Ok(f)
+}
+/// Bounded coordinate consistency only; no bases, chemistry or material are
+/// reconstructed from this documentary summary.
+pub(crate) fn source_geometry_preflight(
+    r: &RestrictionInspection,
+    s: &crate::chemistry::DuplexSummary,
+) -> Result<(), Error> {
+    use crate::chemistry::{Polarity, Strand};
+    if s.model.is_empty()
+        || s.model.len() > 256
+        || s.top_length != r.source_length
+        || s.topology != r.topology
+        || s.bottom_length == 0
+        || s.bottom_length > crate::model::MAX_SEQUENCE_LEN
+        || s.nicks.len() > 10_000
+    {
+        return Err(bad("source duplex geometry differs from inspection"));
+    }
+    let n = i64::try_from(s.top_length).map_err(|_| Error::TooLarge)?;
+    let end = s
+        .bottom_start
+        .checked_add(i64::try_from(s.bottom_length).map_err(|_| Error::TooLarge)?)
+        .ok_or(Error::TooLarge)?;
+    if s.bottom_start >= n
+        || end <= 0
+        || s.covalently_closed_in_model != (s.topology == Topology::Circular && s.nicks.is_empty())
+    {
+        return Err(bad("invalid source paired-strand contour"));
+    }
+    if s.topology == Topology::Circular {
+        if s.bottom_start != 0 || s.bottom_length != s.top_length || s.ends.is_some() {
+            return Err(bad("invalid circular source geometry"));
+        }
+    } else {
+        let (left, right) = s
+            .ends
+            .as_ref()
+            .ok_or_else(|| bad("linear source free-end geometry is unavailable"))?;
+        let lp = if s.bottom_start > 0 {
+            Polarity::FivePrime
+        } else if s.bottom_start < 0 {
+            Polarity::ThreePrime
+        } else {
+            Polarity::Blunt
+        };
+        let rp = if end > n {
+            Polarity::FivePrime
+        } else if end < n {
+            Polarity::ThreePrime
+        } else {
+            Polarity::Blunt
+        };
+        for (end, polarity, length) in [
+            (left, lp, s.bottom_start.unsigned_abs()),
+            (right, rp, (end - n).unsigned_abs()),
+        ] {
+            if end.polarity != polarity
+                || end.overhang.len() as u64 != length
+                || end.overhang.len() > crate::model::MAX_SEQUENCE_LEN
+                || !end.overhang.bytes().all(|b| b"ACGT".contains(&b))
+            {
+                return Err(bad("source overhang geometry changed"));
+            }
+        }
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for nick in &s.nicks {
+        let (low, high) = match nick.strand {
+            Strand::Top => (0, n),
+            Strand::Bottom => (s.bottom_start, end),
+        };
+        let valid = if s.topology == Topology::Circular {
+            nick.position >= 0 && nick.position < n
+        } else {
+            nick.position > low && nick.position < high
+        };
+        if !valid || !seen.insert((nick.strand == Strand::Bottom, nick.position)) {
+            return Err(bad("invalid source nick coordinate"));
+        }
+    }
+    Ok(())
+}
+/// Select using the actual source strand boundaries. This is a readonly geometry
+/// lookup, never restoration of physical state from an imported summary.
+pub fn selected_fragment_with_source<'a>(
+    inspection: &'a CatalogRestrictionInspection,
+    choice: &Choice,
+    source: &crate::chemistry::DuplexSummary,
+) -> Result<&'a FragmentSummary, Error> {
+    inspection.validate()?;
+    source_geometry_preflight(&inspection.inspection, source)?;
+    selected_inner(inspection, choice, Some(source))
+}
+/// Readonly selection from an already bound inspection. No cleavage or product
+/// materialization runs here, and imported evidence never acquires freshness.
+pub fn selected_fragment<'a>(
+    inspection: &'a CatalogRestrictionInspection,
+    choice: &Choice,
+) -> Result<&'a FragmentSummary, Error> {
+    inspection.validate()?;
+    selected(inspection, choice)
 }
 #[allow(clippy::too_many_arguments)]
 pub fn preview(

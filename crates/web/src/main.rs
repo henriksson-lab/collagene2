@@ -296,3 +296,6 @@ mod sequence_geometry;
 mod run_origin_model;
 #[cfg(target_arch = "wasm32")]
 mod run_origin_view;
+
+#[cfg(any(target_arch = "wasm32", test))]
+mod digest_fragment_model;

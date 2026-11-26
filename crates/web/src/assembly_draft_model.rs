@@ -447,8 +447,7 @@ pub(crate) fn validate_slot(slot: &Slot, row: &OverlapInput, index: usize) -> Re
         return Err("Invalid pinned DNA source or one-turn interval".into());
     }
     if let Some(geometry) = &slot.digest_geometry {
-        digest_interval(source, geometry, false)?;
-        digest_interval(source, geometry, true)?;
+        validate_digest_geometry(source, geometry, slot.reverse, row.run_origin.is_some())?;
     }
     if molecule.revision() != source.binding.revision {
         return Err("Pinned source content differs from its captured revision".into());
@@ -877,6 +876,34 @@ pub(crate) fn digest_interval(
         return Err("Linear digest interval extends beyond its source".into());
     }
     Ok((start, end))
+}
+
+fn validate_digest_geometry(
+    source: &SourceInfo,
+    geometry: &DigestGeometry,
+    reverse: bool,
+    from_run: bool,
+) -> Result<(), String> {
+    digest_interval(source, geometry, false)?;
+    if !from_run {
+        digest_interval(source, geometry, true)?;
+        return Ok(());
+    }
+    let limit = collagene_core::model::MAX_SEQUENCE_LEN;
+    if geometry.bottom_length == 0
+        || geometry.bottom_length > limit
+        || geometry.bottom_start.unsigned_abs() > 2 * limit as u64
+        || i64::try_from(geometry.bottom_length)
+            .ok()
+            .and_then(|n| geometry.bottom_start.checked_add(n))
+            .is_none()
+    {
+        return Err("Saved fragment has invalid bottom-strand geometry".into());
+    }
+    if reverse {
+        digest_interval(source,geometry,true).map_err(|_|"That orientation includes bases outside the saved sequence’s displayed reference and needs an explicit intended sequence.".to_string())?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1723,4 +1750,146 @@ mod run_origin_tests {
         assert!(changed.junction_edits == draft.junction_edits);
         assert!(restored == changed);
     }
+}
+
+/// Pin a fresh private digest selection, retaining its original source and full
+/// catalog identity. This checks bindings/bounds, not cleavage; the compiled
+/// CatalogDigest operation must reconstruct the actual fragment in the worker.
+/// The host must check payload epoch and actual retained source-event identity.
+/// Error leaves the original draft untouched.
+pub fn set_digest_fragment(
+    draft: &mut Draft,
+    fragment: crate::digest_fragment_model::AssemblyFragment,
+) -> Result<(), String> {
+    use collagene_core::{catalog_digest, restriction_history};
+    draft.validate()?;
+    if !token(&fragment.source.binding.document_id, 512)
+        || !token(&fragment.source.binding.event_id, 512)
+        || !hex(&fragment.source.binding.revision)
+    {
+        return Err("Invalid original-source event binding".into());
+    }
+    let index = draft.active_slot;
+    let catalog = catalog_digest::builtin_catalog().map_err(|e| e.to_string())?;
+    let role =
+        restriction_history::source_role(&fragment.source.binding).map_err(|e| e.to_string())?;
+    if let Some(origin) = &fragment.origin {
+        if origin.selection.event != fragment.source.binding {
+            return Err("Saved material belongs to a different exact source event".into());
+        }
+        collagene_core::run_catalog_digest::source_preflight(
+            &catalog,
+            &fragment.selection,
+            &role,
+            &fragment.molecule,
+            origin.as_ref(),
+            &fragment.options,
+        )
+        .map_err(|e| e.to_string())?;
+    } else {
+        catalog_digest::source_preflight(
+            &catalog,
+            &fragment.selection,
+            &role,
+            &fragment.molecule,
+            &fragment.options,
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    let n = fragment.molecule.sequence.len();
+    if fragment.source.length != n
+        || fragment.source.name != fragment.molecule.name
+        || fragment.source.topology != fragment.molecule.topology
+        || fragment.source.alphabet != fragment.molecule.sequence.alphabet()
+        || fragment.source.alphabet != Alphabet::Dna
+        || fragment.molecule.revision() != fragment.source.binding.revision
+    {
+        return Err("Digest original source differs from its captured document revision".into());
+    }
+    if fragment.fragment_index >= fragment.options.max_fragments
+        || !hex(&fragment.batch_revision)
+        || fragment
+            .origin
+            .as_ref()
+            .map_or_else(
+                || {
+                    catalog_digest::batch_revision(
+                        &catalog,
+                        &fragment.selection,
+                        &role,
+                        &fragment.molecule,
+                        &fragment.options,
+                    )
+                },
+                |origin| {
+                    collagene_core::run_catalog_digest::inspection_revision(
+                        &catalog,
+                        &fragment.selection,
+                        &role,
+                        &fragment.molecule,
+                        origin.as_ref(),
+                        &fragment.options,
+                    )
+                },
+            )
+            .map_err(|e| e.to_string())?
+            != fragment.batch_revision
+    {
+        return Err("Digest selection/source/options changed; run the digest again".into());
+    }
+    let geometry = DigestGeometry {
+        top_start: fragment.top_start,
+        top_length: fragment.top_length,
+        bottom_start: fragment.bottom_start,
+        bottom_length: fragment.bottom_length,
+    };
+    validate_digest_geometry(
+        &fragment.source,
+        &geometry,
+        draft.slots[index].reverse,
+        fragment.origin.is_some(),
+    )?;
+    let (start, end) = digest_interval(&fragment.source, &geometry, draft.slots[index].reverse)?;
+    let mut borrowed = draft
+        .slots
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != index)
+        .filter_map(|(_, slot)| slot.captured.as_ref().map(|c| &c.molecule))
+        .collect::<Vec<_>>();
+    borrowed.push(&fragment.molecule);
+    collagene_core::model::bounds::model_preflight(&borrowed).map_err(|e| e.to_string())?;
+    let mut bases = 0usize;
+    for source in &borrowed {
+        bases = bases
+            .checked_add(source.sequence.len())
+            .filter(|n| *n <= 8 << 20)
+            .ok_or("Pinned assembly sources exceed8MiB")?;
+    }
+    let display_index = fragment
+        .fragment_index
+        .checked_add(1)
+        .ok_or("Digest fragment index overflow")?;
+    let mut next = draft.clone();
+    next.slots[index].captured = Some(Arc::new(CapturedSource {
+        source: fragment.source,
+        molecule: fragment.molecule.as_ref().clone(),
+    }));
+    next.slots[index].start = start;
+    next.slots[index].end = end;
+    next.slots[index].digest_geometry = Some(geometry);
+    next.junction_edits.clear();
+    next.methods.rows[index] = OverlapInput {
+        preparation: OverlapPreparation::CatalogDigest,
+        run_origin: fragment.origin,
+        catalog_selection: Some(fragment.selection),
+        fragment: display_index.to_string(),
+        repair: None,
+        reverse: next.slots[index].reverse,
+        ..Default::default()
+    };
+    next.sync_rows();
+    next.validate()?;
+    *draft = next;
+    Ok(())
 }

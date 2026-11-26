@@ -1,6 +1,6 @@
 //! Exact-source virtual restriction inspection. Scientific work stays in the worker.
 pub use crate::source_identity::SourceInfo;
-use crate::{app::download, worker::CachedWorker};
+use crate::{app::download, run_origin_model::PinnedOrigin, worker::CachedWorker};
 use collagene_core::{
     Alphabet, Molecule, Topology, analysis,
     catalog_digest::{self, CatalogSelection, catalog},
@@ -32,22 +32,7 @@ pub struct BoundaryPick {
     pub recognition_start: usize,
     pub reverse: bool,
 }
-/// A fresh digest UI selection. The molecule is the ORIGINAL source, never a
-/// materialized fragment. Catalog replay, not this range, prepares the duplex.
-#[derive(Clone)]
-pub struct AssemblyFragment {
-    pub source: SourceInfo,
-    pub molecule: Arc<Molecule>,
-    pub selection: CatalogSelection,
-    pub options: InspectionOptions,
-    pub fragment_index: usize,
-    pub batch_revision: String,
-    pub top_start: usize,
-    pub top_length: usize,
-    pub bottom_start: i64,
-    pub bottom_length: usize,
-    pub epoch: u64,
-}
+pub use crate::digest_fragment_model::AssemblyFragment;
 #[derive(Clone)]
 pub struct Navigation {
     pub source: EventBinding,
@@ -79,6 +64,8 @@ struct Inputs {
 }
 #[derive(Clone)]
 struct Bound {
+    origin: Option<PinnedOrigin>,
+    origin_inspection: Option<Arc<collagene_core::run_catalog_digest::Inspection>>,
     source: SourceInfo,
     molecule: Arc<Molecule>,
     inputs: Inputs,
@@ -147,6 +134,8 @@ impl std::io::Write for Json {
 }
 #[component]
 pub fn DigestPanel(
+    get_workspace: Callback<(), Result<collagene_core::workspace::Workspace, String>>,
+    origin: RwSignal<Option<PinnedOrigin>>,
     source: Memo<SourceInfo>,
     get_molecule: Callback<(), Molecule>,
     epoch: RwSignal<u64>,
@@ -255,6 +244,7 @@ pub fn DigestPanel(
     let worker = StoredValue::new_local(None::<Rc<CachedWorker>>);
     let site_page = RwSignal::new(0usize);
     let fragment_page = RwSignal::new(0usize);
+    let origin_finding_page = RwSignal::new(0usize);
     let alive = Arc::new(AtomicBool::new(true));
     let stop = Callback::new(move |()| {
         generation.update(|g| *g = g.wrapping_add(1));
@@ -275,7 +265,7 @@ pub fn DigestPanel(
         });
     }
     Effect::new(move |_| {
-        let _ = (source.get(), inputs.get(), epoch.get());
+        let _ = (source.get(), inputs.get(), epoch.get(), origin.get());
         stop.run(());
         bound.set(None);
         first_boundary.set(None);
@@ -283,13 +273,15 @@ pub fn DigestPanel(
         complement.set(false);
         site_page.set(0);
         fragment_page.set(0);
+        origin_finding_page.set(0);
         status.set(
             "Choose enzymes and run a virtual digest. Results refresh only after an explicit run."
                 .into(),
         );
     });
     let current = Callback::new(move |data: Arc<Bound>| {
-        data.epoch == epoch.get_untracked()
+        data.origin == origin.get_untracked()
+            && data.epoch == epoch.get_untracked()
             && source.get_untracked() == data.source
             && inputs.get_untracked() == Ok(data.inputs.clone())
     });
@@ -411,24 +403,41 @@ pub fn DigestPanel(
                 let role =
                     restriction_history::source_role(&source.binding).map_err(|e| e.to_string())?;
                 let bound_catalog = catalog.get_value()?;
-                catalog_digest::source_preflight(
-                    &bound_catalog,
-                    &selection,
-                    &role,
-                    &molecule,
-                    &options,
-                )
-                .map_err(|e| e.to_string())?;
-                if molecule.revision() != source.binding.revision {
+                let origin_snapshot = origin.get_untracked();
+                if molecule.revision() != source.binding.revision
+                    || origin_snapshot
+                        .as_ref()
+                        .is_some_and(|pin| pin.selection.event != source.binding)
+                {
                     return Err("The source document/event changed. Run the digest again.".into());
                 }
-                let revision = catalog_digest::batch_revision(
-                    &bound_catalog,
-                    &selection,
-                    &role,
-                    &molecule,
-                    &options,
-                )
+                let revision = if let Some(pin) = &origin_snapshot {
+                    collagene_core::run_catalog_digest::inspection_revision(
+                        &bound_catalog,
+                        &selection,
+                        &role,
+                        &molecule,
+                        pin.as_ref(),
+                        &options,
+                    )
+                } else {
+                    catalog_digest::source_preflight(
+                        &bound_catalog,
+                        &selection,
+                        &role,
+                        &molecule,
+                        &options,
+                    )
+                    .and_then(|()| {
+                        catalog_digest::batch_revision(
+                            &bound_catalog,
+                            &selection,
+                            &role,
+                            &molecule,
+                            &options,
+                        )
+                    })
+                }
                 .map_err(|e| e.to_string())?;
                 stop.run(());
                 let w = Rc::new(CachedWorker::new()?);
@@ -438,6 +447,7 @@ pub fn DigestPanel(
                 site_page.set(0);
                 fragment_page.set(0);
                 Ok((
+                    origin_snapshot,
                     source,
                     inputs,
                     selection,
@@ -451,6 +461,7 @@ pub fn DigestPanel(
                 ))
             })();
             let (
+                origin_snapshot,
                 source_snapshot,
                 settings,
                 selection,
@@ -475,11 +486,21 @@ pub fn DigestPanel(
                     .ask(Request {
                         id: 1,
                         revision: revision.clone(),
-                        job: AnalysisJob::InspectCatalogRestriction {
-                            source_role: role.clone(),
-                            molecule: molecule.clone(),
-                            selection: selection.clone(),
-                            options: options.clone(),
+                        job: if let Some(pin) = &origin_snapshot {
+                            AnalysisJob::InspectRunCatalogRestriction {
+                                source_role: role.clone(),
+                                molecule: molecule.clone(),
+                                origin: pin.as_ref().clone(),
+                                selection: selection.clone(),
+                                options: options.clone(),
+                            }
+                        } else {
+                            AnalysisJob::InspectCatalogRestriction {
+                                source_role: role.clone(),
+                                molecule: molecule.clone(),
+                                selection: selection.clone(),
+                                options: options.clone(),
+                            }
                         },
                     })
                     .await;
@@ -487,6 +508,7 @@ pub fn DigestPanel(
                     || generation.try_get_untracked() != Some(expected_generation)
                     || epoch.get_untracked() != expected_epoch
                     || source.get_untracked() != source_snapshot
+                    || origin.get_untracked() != origin_snapshot
                     || inputs.get_untracked() != Ok(settings.clone())
                 {
                     return;
@@ -494,10 +516,19 @@ pub fn DigestPanel(
                 w.close();
                 worker.set_value(None);
                 busy.set(false);
-                let report = match response {
+                let (report, origin_inspection) = match response {
                     Ok(response) if response.id == 1 && response.revision == revision => {
                         match response.result {
-                            AnalysisResult::CatalogRestrictionInspection(report) => report,
+                            AnalysisResult::CatalogRestrictionInspection(report)
+                                if origin_snapshot.is_none() =>
+                            {
+                                (report, None)
+                            }
+                            AnalysisResult::RunCatalogRestrictionInspection(report)
+                                if origin_snapshot.is_some() =>
+                            {
+                                (report.inspection.clone(), Some(Arc::new(report)))
+                            }
                             AnalysisResult::Error(e) => {
                                 status.set(e);
                                 return;
@@ -526,6 +557,26 @@ pub fn DigestPanel(
                         return;
                     }
                 };
+                if let Some(saved) = &origin_inspection {
+                    let Some(pin) = &origin_snapshot else {
+                        return;
+                    };
+                    if let Err(e) = saved.validate_bindings_for(
+                        &bound_catalog,
+                        &selection,
+                        &role,
+                        &molecule,
+                        pin.as_ref(),
+                        &options,
+                    ) {
+                        status.set(format!("Saved digest binding failed: {e}"));
+                        return;
+                    }
+                    if saved.context_revision != revision {
+                        status.set("Saved digest context changed.".into());
+                        return;
+                    }
+                }
                 if let Err(e) = report.validate_bindings_for(
                     &bound_catalog,
                     &selection,
@@ -536,11 +587,16 @@ pub fn DigestPanel(
                     status.set(format!("Digest report binding failed: {e}"));
                     return;
                 }
-                let catalog_revision = report.batch_revision.clone();
+                let catalog_revision = origin_inspection
+                    .as_ref()
+                    .map(|saved| saved.context_revision.clone())
+                    .unwrap_or_else(|| report.batch_revision.clone());
                 let catalog_engine_version = report.engine_version.clone();
                 let report = report.inspection;
                 status.set(if report.products_determined{format!("{} recognition sites · {} virtual fragment(s), assuming complete cleavage.",report.sites.len(),report.fragments.len())}else if report.scan_complete{"Recognition scan finished; a unique complete product set is not determined. Review the evidence below.".into()}else{"Recognition scan is incomplete. Unsearched sequence cannot establish absence or a complete product set.".into()});
                 bound.set(Some(Arc::new(Bound {
+                    origin: origin_snapshot,
+                    origin_inspection,
                     source: source_snapshot,
                     molecule: Arc::new(molecule),
                     inputs: settings,
@@ -569,6 +625,10 @@ pub fn DigestPanel(
         }
     });
     let open = Callback::new(move |index: usize| {
+        if origin.get_untracked().is_some() {
+            status.set("Saved-material mode supports origin-preserving assembly handoff. Standalone fragment output, named setups and gel recipes are not yet supported.".into());
+            return;
+        }
         let Some(data) = bound.get_untracked() else {
             return;
         };
@@ -627,7 +687,12 @@ pub fn DigestPanel(
             return;
         }
         if fragment.duplex.bottom_length == 0
-            || fragment.duplex.bottom_length > n
+            || fragment.duplex.bottom_length
+                > data
+                    .origin_inspection
+                    .as_ref()
+                    .map(|saved| saved.source_duplex.bottom_length)
+                    .unwrap_or(n)
             || i64::try_from(fragment.top_start)
                 .ok()
                 .and_then(|top| fragment.bottom_start.checked_sub(top))
@@ -637,6 +702,7 @@ pub fn DigestPanel(
             return;
         }
         let payload = AssemblyFragment {
+            origin: data.origin.clone(),
             source: data.source.clone(),
             molecule: data.molecule.clone(),
             selection: data.inputs.selection.clone(),
@@ -718,6 +784,34 @@ pub fn DigestPanel(
             second,
             complement: complement.get_untracked(),
         };
+        if let Some(saved) = &data.origin_inspection {
+            let summary = match saved.selected_fragment(&choice) {
+                Ok(fragment) => fragment,
+                Err(error) => {
+                    status.set(error.to_string());
+                    return;
+                }
+            };
+            let payload = AssemblyFragment {
+                origin: data.origin.clone(),
+                source: data.source.clone(),
+                molecule: data.molecule.clone(),
+                selection: data.inputs.selection.clone(),
+                options: data.inputs.limits.options(),
+                fragment_index: summary.index,
+                batch_revision: data.catalog_revision.clone(),
+                top_start: summary.top_start,
+                top_length: summary.duplex.top_length,
+                bottom_start: summary.bottom_start,
+                bottom_length: summary.duplex.bottom_length,
+                epoch: data.epoch,
+            };
+            if !current.run(data.clone()) {
+                return;
+            }
+            match on_assembly.run(payload){Ok(())=>status.set("Saved-material cut fragment assigned with its exact origin; assembly will reconstruct it again.".into()),Err(error)=>status.set(error)};
+            return;
+        }
         let selected_catalog = match catalog.get_value() {
             Ok(c) => c,
             Err(e) => {
@@ -865,6 +959,7 @@ pub fn DigestPanel(
                 return;
             }
             let payload = AssemblyFragment {
+                origin: data.origin.clone(),
                 source: data.source.clone(),
                 molecule: data.molecule.clone(),
                 selection,
@@ -896,6 +991,10 @@ pub fn DigestPanel(
     let export_product = {
         let alive = alive.clone();
         Callback::new(move |index: usize| {
+            if origin.get_untracked().is_some() {
+                status.set("Saved-material GenBank export is unavailable; use origin-preserving assembly output.".into());
+                return;
+            }
             let Some(data) = bound.get_untracked() else {
                 return;
             };
@@ -1035,6 +1134,10 @@ pub fn DigestPanel(
         })
     };
     let save_setup = Callback::new(move |()| {
+        if origin.get_untracked().is_some() {
+            status.set("Saved-material mode supports origin-preserving assembly handoff. Standalone fragment output, named setups and gel recipes are not yet supported.".into());
+            return;
+        }
         let Some(data) = bound.get_untracked() else {
             status.set("Run a fresh digest before saving its setup and evidence.".into());
             return;
@@ -1054,6 +1157,10 @@ pub fn DigestPanel(
         });
     });
     let add_current_to_gel = Callback::new(move |()| {
+        if origin.get_untracked().is_some() {
+            status.set("Saved-material mode supports origin-preserving assembly handoff. Standalone fragment output, named setups and gel recipes are not yet supported.".into());
+            return;
+        }
         let result = (|| -> Result<(), String> {
             let data = bound
                 .get_untracked()
@@ -1108,6 +1215,7 @@ pub fn DigestPanel(
                 .map_err(|e| e.to_string())?;
             let options = &record.recipe.options;
             batch(|| {
+                origin.set(None);
                 names.set(
                     record
                         .recipe
@@ -1172,6 +1280,8 @@ pub fn DigestPanel(
             kind: &'static str,
             authority: &'static str,
             source: &'a SourceInfo,
+            saved_origin: Option<&'a collagene_core::run_material::Capsule>,
+            saved_inspection: Option<&'a collagene_core::run_catalog_digest::Inspection>,
             report: &'a RestrictionInspection,
             catalog_pin: &'a CatalogSelection,
             catalog_engine_version: &'a str,
@@ -1181,6 +1291,8 @@ pub fn DigestPanel(
             kind: "virtual-digest-review-v2",
             authority: "Sequence/geometry prediction under stated cleavage assumptions; saved evidence never restores current verification",
             source: &data.source,
+            saved_origin: data.origin.as_ref().map(PinnedOrigin::as_ref),
+            saved_inspection: data.origin_inspection.as_deref(),
             report: &data.report,
             catalog_pin: &data.inputs.selection,
             catalog_engine_version: &data.catalog_engine_version,
@@ -1197,12 +1309,12 @@ pub fn DigestPanel(
         }
     };
     view! {
-            <section class="inspector-content digest-panel"><h2>"Virtual digest"</h2><p class="helper">"Choose enzymes to inspect recognition sites and predicted fragments. Products assume complete cleavage; methylation, reaction conditions and laboratory success are not assessed."</p>
+            <section class="inspector-content digest-panel"><h2>"Virtual digest"</h2><crate::run_origin_view::SourceOriginPicker source=Memo::new(move |_|Some(source.get())) epoch get_workspace selected=Memo::new(move |_|origin.get()) on_select=Callback::new(move |pin:Option<PinnedOrigin>|{if pin.as_ref().is_some_and(|p|p.selection.event!=source.get_untracked().binding){return Err("Saved origin source changed.".into());}origin.set(pin);Ok(())})/><Show when=move||origin.with(Option::is_some)><p class="helper">"Saved-material mode: assembly retains the exact originating run. Standalone fragment opening, GenBank export, named setups and predicted-gel recipes are unavailable until those routes preserve saved origins."</p></Show><p class="helper">"Choose enzymes to inspect recognition sites and predicted fragments. Products assume complete cleavage; methylation, reaction conditions and laboratory success are not assessed."</p>
             <details class="saved-digest-setups"><summary>"Named digest setups"</summary>
                 <p class="helper">"Save the exact source event, ordered catalog geometry, cleavage assumption, limits and historical evidence together. Reopening a saved setup does not move document heads or restore a current result."</p>
                 <label>"Digest name"<input aria-label="Saved digest setup name" maxlength="256" placeholder="Name this digest" prop:value=move||setup_name.get() on:input=move|e|{setup_name.set(event_target_value(&e));}/></label>
-                <button class="button secondary full" disabled=move||{busy.get()||bound.with(Option::is_none)} on:click=move|_|{save_setup.run(());}>"Save fresh digest setup and evidence"</button>
-                <button class="button secondary full" disabled=move||{busy.get()||bound.with(Option::is_none)} on:click=move|_|{add_current_to_gel.run(());}>"Add current digest to predicted gel"</button>
+                <button class="button secondary full" disabled=move||{busy.get()||origin.with(Option::is_some)||bound.with(Option::is_none)} on:click=move|_|{save_setup.run(());}>"Save fresh digest setup and evidence"</button>
+                <button class="button secondary full" disabled=move||{busy.get()||origin.with(Option::is_some)||bound.with(Option::is_none)} on:click=move|_|{add_current_to_gel.run(());}>"Add current digest to predicted gel"</button>
                 <p class="helper">"A saved setup is optional for gel prediction. The exact current recipe is reconstructed again; incomplete or undetermined products cannot supply trusted band lengths."</p>
                 {move||{
                     let entries=saved.get();let count=entries.len();let pages=count.div_ceil(100).max(1);let page=saved_page.get().min(pages-1);
@@ -1223,11 +1335,11 @@ pub fn DigestPanel(
             <details class="digest-catalog" data-catalog-edition=move||catalog.with_value(|c|c.as_ref().map(|c|c.edition().edition.clone()).unwrap_or_default()) data-catalog-hash=move||catalog.with_value(|c|c.as_ref().map(|c|c.content_hash().to_string()).unwrap_or_default())><summary>"Catalog and formulation evidence"</summary><p class="helper">{move||catalog.with_value(|c|match c {Ok(c)=>format!("{} enzyme identities · edition {} · content hash {}",c.edition().enzymes.len(),c.edition().edition,c.content_hash()),Err(e)=>format!("Catalog unavailable: {e}")})}</p><p class="helper">"Recognition and strand-cut geometry determine the virtual digest. Same-cut enzymes remain distinct identities; vendor formulations and their documentary conditions are reviewed separately and never change or validate predicted cleavage."</p>{move||catalog.with_value(|c|c.as_ref().ok().map(|c|catalog_evidence(c,&names.get())))}</details><div class="digest-actions"><button class="button primary" disabled=move||busy.get()||names.with(Vec::is_empty)||source.get().alphabet!=Alphabet::Dna on:click=run>"Run virtual digest"</button><button class="button secondary" disabled=move||!busy.get() on:click=move|_|{stop.run(());status.set("Digest request cancelled; no pending result or product was accepted.".into());}>"Cancel digest"</button></div>
             <p class="digest-status helper" role="status">{move||status.get()}</p>
             <details class="digest-options"><summary>"Assumptions and analysis limits"</summary><p class="helper">"The pinned catalog selection describes recognition and strand-cut geometry. Documentary vendor formulation evidence is separate and is not a reaction-compatibility assessment. Recognition can be certain while cuts lack sufficient substrate, and ambiguous sites can prevent a complete product set."</p><button class="text-tool" on:click=move|_|on_methylation.run(())>"Review methylation assumptions"</button><label>"Maximum comparisons"<input aria-label="Digest comparison limit" prop:value=move||comparisons.get() on:input=move|e|comparisons.set(event_target_value(&e))/></label><label>"Maximum recognition sites"<input aria-label="Digest site limit" prop:value=move||max_sites.get() on:input=move|e|max_sites.set(event_target_value(&e))/></label><label>"Maximum fragments"<input aria-label="Digest fragment limit" prop:value=move||max_fragments.get() on:input=move|e|max_fragments.set(event_target_value(&e))/></label><label>"Maximum report bytes"<input aria-label="Digest report byte limit" prop:value=move||report_bytes.get() on:input=move|e|report_bytes.set(event_target_value(&e))/></label></details>
-            {move||bound.get().map(|data|{let sites=data.report.sites.len();let fragments=data.report.fragments.len();let first_report=data.report.clone();let second_report=data.report.clone();let linear_source=data.source.topology==Topology::Linear;view!{<div class="digest-results" data-scan-complete=data.report.scan_complete.to_string() data-products-determined=data.report.products_determined.to_string()><h3>"Recognition and products"</h3><p>{format!("Recognition scan: {}. Product set: {}.",if data.report.scan_complete{"finished"}else{"incomplete"},if data.report.products_determined{"determined under complete-cleavage assumptions"}else{"not determined"})}</p>{data.report.limits.iter().map(|limit|view!{<p class="digest-warning">{format!("{} reached. Incomplete evidence cannot establish absence or complete products.",limit_label(*limit))}</p>}).collect_view()}{data.report.diagnostics.iter().map(|d|view!{<p class="digest-warning">{d.clone()}</p>}).collect_view()}
+            {move||bound.get().map(|data|{let sites=data.report.sites.len();let fragments=data.report.fragments.len();let first_report=data.report.clone();let second_report=data.report.clone();let linear_source=data.source.topology==Topology::Linear;view!{<div class="digest-results" data-scan-complete=data.report.scan_complete.to_string() data-products-determined=data.report.products_determined.to_string()>{data.origin_inspection.as_ref().map(|saved|{let saved=saved.clone();let total=saved.findings.len();view!{<section class="saved-digest-material"><h3>"Fresh saved-material reconstruction"</h3>{crate::end_view::summary(&saved.source_duplex)}<p>{format!("Origin assessment: {:?}. Original source modifications: {} known modified · {} eligible unknown · {} known unmodified.",saved.origin_status,saved.source_modifications.known_modified,saved.source_modifications.unknown_eligible,saved.source_modifications.known_unmodified)}</p><p class="helper">"Cleavage geometry assumes complete digestion; modification susceptibility and reaction performance remain unassessed. Origin limitations remain applicable."</p>{move||saved.findings.iter().skip(origin_finding_page.get()*20).take(20).map(|finding|view!{<p class="digest-warning">{finding.clone()}</p>}).collect_view()}<div class="digest-actions"><button class="text-tool" disabled=move||origin_finding_page.get()==0 on:click=move|_|origin_finding_page.update(|page|*page=page.saturating_sub(1))>"Previous origin findings"</button><button class="text-tool" disabled={move||(origin_finding_page.get()+1)*20>=total} on:click=move|_|origin_finding_page.update(|page|*page+=1)>"Next origin findings"</button></div></section>}})}<h3>"Recognition and products"</h3><p>{format!("Recognition scan: {}. Product set: {}.",if data.report.scan_complete{"finished"}else{"incomplete"},if data.report.products_determined{"determined under complete-cleavage assumptions"}else{"not determined"})}</p>{data.report.limits.iter().map(|limit|view!{<p class="digest-warning">{format!("{} reached. Incomplete evidence cannot establish absence or complete products.",limit_label(*limit))}</p>}).collect_view()}{data.report.diagnostics.iter().map(|d|view!{<p class="digest-warning">{d.clone()}</p>}).collect_view()}
             <section class="digest-cut-selection"><h3>"Choose a cut-defined assembly fragment"</h3><p class="helper">"Pick the first cut, then the second in the source sequence/map, or use the buttons below. Circular paths follow first → second; keep the opposite path for a retained backbone. A same-cut pair can describe a full circle opened at that cut. Internal selected-enzyme cuts must not split the retained path."</p><p>{move||cut_boundary_label(first_boundary.get().as_ref(),&first_report,"First")}</p><p>{move||cut_boundary_label(second_boundary.get().as_ref(),&second_report,"Second")}</p><Show when=move||linear_source><div class="digest-actions"><button class="text-tool" disabled=move||busy.get() on:click=move|_|choose_boundary.run((true,collagene_core::digest_cut_selection::Boundary::SourceStart))>"First: source start"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|choose_boundary.run((true,collagene_core::digest_cut_selection::Boundary::SourceEnd))>"First: source end"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|choose_boundary.run((false,collagene_core::digest_cut_selection::Boundary::SourceStart))>"Second: source start"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|choose_boundary.run((false,collagene_core::digest_cut_selection::Boundary::SourceEnd))>"Second: source end"</button></div></Show><Show when=move||!linear_source><label class="checkbox-label"><input type="checkbox" aria-label="Keep complementary digest cut path" prop:checked=move||complement.get() on:change=move|e|{stop.run(());complement.set(event_target_checked(&e));}/>"Keep opposite path (outside selected cut interval)"</label></Show><div class="digest-actions"><button class="text-tool" on:click=clear_boundaries>"Clear boundaries / start new pair"</button><button class="button primary" disabled=move||busy.get()||first_boundary.with(Option::is_none)||second_boundary.with(Option::is_none) on:click=move|_|use_boundaries.run(())>"Use selected cut boundaries in assembly"</button></div></section>
     <h3>{format!("{sites} recognition sites")}</h3><p class="helper">"Recognition ranges are original source bases, 1-based inclusive. Strand cuts are boundaries measured from the source origin; 0 is before the first base."</p>{data.report.sites.iter().skip(site_page.get()*25).take(25).map(|site|{let index=site.index;view!{<article class="digest-site"><button class="result-entry" on:click=move|_|navigate.run(index)>{format!("{} · {} · {}{}",site.enzyme,span_label(site),if site.reverse{"reverse"}else{"forward"},if site.certain{""}else{" · possible"})}</button><p>{format!("Top / bottom cut boundaries: {} / {}",cut_label(site.top_cut,site.top_boundary),cut_label(site.bottom_cut,site.bottom_boundary))}</p><div class="digest-actions"><button class="text-tool" disabled=move||busy.get() on:click=move|_|{choose_boundary.run((true,collagene_core::digest_cut_selection::Boundary::Cut{site_index:index}));navigate.run(index);}>"Use as first boundary"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|{choose_boundary.run((false,collagene_core::digest_cut_selection::Boundary::Cut{site_index:index}));navigate.run(index);}>"Use as second boundary"</button></div>{site.diagnostics.iter().map(|d|view!{<p class="digest-warning">{site_diagnostic(*d)}</p>}).collect_view()}</article>}}).collect_view()}<div class="digest-actions"><button class="button secondary" disabled=move||site_page.get()==0 on:click=move|_|site_page.update(|p|*p=p.saturating_sub(1))>"Previous digest sites"</button><button class="button secondary" disabled={move||(site_page.get()+1)*25>=sites} on:click=move|_|site_page.update(|p|*p+=1)>"Next digest sites"</button></div>
             <h3>"Reference-strand fragment lengths"</h3><p class="fragment-sizes">{data.report.ref_top_lengths.as_ref().map(|lengths|lengths.iter().take(100).map(|n|format!("{n} nt")).collect::<Vec<_>>().join(" · ")).unwrap_or_else(||"Not determined from this recognition evidence.".into())}</p><p class="helper">"First 100 lengths shown, following the reference/top strand and sorted by size. The JSON evidence retains every determined length. Physical summaries below use ascending reference cut order; staggered ends can give different top and bottom lengths."</p>
-            <h3>{format!("{fragments} virtual fragment(s)")}</h3>{data.report.fragments.iter().skip(fragment_page.get()*25).take(25).map(|fragment|{let index=fragment.index;let circular=fragment.duplex.topology==Topology::Circular;let ends=fragment.duplex.ends.as_ref().map(|(a,b)|format!("Left: {} · right: {}",end_label(a),end_label(b))).unwrap_or_else(||"Uncut circular substrate: no free ends".into());view!{<article class="digest-fragment"><h4>{format!("Fragment {} · {}",index+1,if fragment.duplex.topology==Topology::Circular{"circular"}else{"linear"})}</h4><p>{format!("{} nt top / {} nt bottom · original reference start {}",fragment.duplex.top_length,fragment.duplex.bottom_length,fragment.top_start+1)}</p><p>{ends}</p><div class="digest-actions"><button class="button secondary" disabled=move||busy.get() on:click=move|_|navigate_fragment.run(index)>"View fragment in source"</button><button class="button primary" disabled=move||busy.get()||circular on:click=move|_|use_in_assembly.run(index)>"Use in active assembly slot"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|open.run(index)>"Open fragment"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|export_product.run(index)>{move||if product_busy.get()==Some(index){"Reconstructing…"}else{"Export fragment GenBank"}}</button></div></article>}}).collect_view()}<div class="digest-actions"><button class="button secondary" disabled=move||fragment_page.get()==0 on:click=move|_|fragment_page.update(|p|*p=p.saturating_sub(1))>"Previous digest fragments"</button><button class="button secondary" disabled={move||(fragment_page.get()+1)*25>=fragments} on:click=move|_|fragment_page.update(|p|*p+=1)>"Next digest fragments"</button></div><button class="button secondary full" on:click=export_report>"Download digest evidence"</button><p class="helper">"Opening reconstructs the fragment again and retains its exact source event in the workspace. GenBank comments preserve descriptive, unverified producer/end information; native workspace files retain full source history."</p></div>}})}
+            <h3>{format!("{fragments} virtual fragment(s)")}</h3>{data.report.fragments.iter().skip(fragment_page.get()*25).take(25).map(|fragment|{let index=fragment.index;let circular=fragment.duplex.topology==Topology::Circular;let ends=fragment.duplex.ends.as_ref().map(|(a,b)|format!("Left: {} · right: {}",end_label(a),end_label(b))).unwrap_or_else(||"Uncut circular substrate: no free ends".into());view!{<article class="digest-fragment"><h4>{format!("Fragment {} · {}",index+1,if fragment.duplex.topology==Topology::Circular{"circular"}else{"linear"})}</h4><p>{format!("{} nt top / {} nt bottom · original reference start {}",fragment.duplex.top_length,fragment.duplex.bottom_length,fragment.top_start+1)}</p><p>{ends}</p>{data.origin_inspection.as_ref().and_then(|saved|saved.fragment_modifications.get(index)).map(|mods|view!{<p class="helper">{format!("Retained positional calls: {} modified · {} eligible unknown · {} unmodified",mods.known_modified,mods.unknown_eligible,mods.known_unmodified)}</p>})}<div class="digest-actions"><button class="button secondary" disabled=move||busy.get() on:click=move|_|navigate_fragment.run(index)>"View fragment in source"</button><button class="button primary" disabled=move||busy.get()||circular on:click=move|_|use_in_assembly.run(index)>"Use in active assembly slot"</button><button class="button secondary" disabled=move||busy.get()||origin.with(Option::is_some) on:click=move|_|open.run(index)>"Open fragment"</button><button class="button secondary" disabled=move||busy.get()||origin.with(Option::is_some) on:click=move|_|export_product.run(index)>{move||if product_busy.get()==Some(index){"Reconstructing…"}else{"Export fragment GenBank"}}</button></div></article>}}).collect_view()}<div class="digest-actions"><button class="button secondary" disabled=move||fragment_page.get()==0 on:click=move|_|fragment_page.update(|p|*p=p.saturating_sub(1))>"Previous digest fragments"</button><button class="button secondary" disabled={move||(fragment_page.get()+1)*25>=fragments} on:click=move|_|fragment_page.update(|p|*p+=1)>"Next digest fragments"</button></div><button class="button secondary full" on:click=export_report>"Download digest evidence"</button><p class="helper">"Opening reconstructs the fragment again and retains its exact source event in the workspace. GenBank comments preserve descriptive, unverified producer/end information; native workspace files retain full source history."</p></div>}})}
             </section>
         }.into_any()
 }

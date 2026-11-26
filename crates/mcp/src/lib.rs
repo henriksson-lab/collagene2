@@ -922,6 +922,11 @@ pub struct RestrictionInspectionQuery {
     pub document: DocumentRef,
     /// Stable source role; included in every report binding independently of document identity.
     pub source_role: String,
+    /// Explicit saved material source; requires its exact native workspace.
+    #[serde(default)]
+    pub origin: Option<collagene_core::run_material::Capsule>,
+    #[serde(default)]
+    pub workspace: Option<WorkspaceRef>,
     /// One to 64 exact catalog enzyme IDs or uniquely resolved names/aliases. Formulations are separate.
     pub enzymes: Vec<String>,
     /// Optional exact current catalog edition/hash/ordered-ID/geometry pin; stale or changed pins fail.
@@ -2080,6 +2085,39 @@ impl CollageneServer {
             store.feature_libraries.insert(id, library);
         }
         output(result)
+    }
+    /// Attest a documentary saved-source capsule against one exact retained
+    /// workspace without synthesizing a plan or running scientific reconstruction.
+    fn attest_run_source(
+        &self,
+        reference: &WorkspaceRef,
+        origin: &collagene_core::run_material::Capsule,
+        source: &Molecule,
+    ) -> Result<(), ErrorData> {
+        let frame = self.restore_workspace(reference)?;
+        let recorded =
+            collagene_core::run_lineage::load_run(&frame, &origin.selection.run_id).map_err(bad)?;
+        let candidate = transfer::load_candidate(&origin.candidate).map_err(bad)?;
+        if candidate.plan_revision != recorded.plan_revision
+            || origin.target_event != recorded.target
+            || origin.inputs != recorded.inputs
+            || origin.products != recorded.products
+            || frame.revisions.get(&recorded.target.revision) != Some(&origin.target)
+            || frame.revisions.get(&origin.selection.event.revision) != Some(source)
+        {
+            return Err(bad(
+                "saved-run capsule differs from the exact retained run/source/target events",
+            ));
+        }
+        let origins =
+            collagene_core::run_material::originating_products(&frame, &origin.selection.event)
+                .map_err(bad)?;
+        if !origins.contains(&origin.selection) {
+            return Err(bad(
+                "saved-run origin selection is not retained for this exact source event",
+            ));
+        }
+        Ok(())
     }
     fn restore_workspace(
         &self,
@@ -5235,20 +5273,7 @@ impl CollageneServer {
             let source={let store=server.store.lock().unwrap();let source=store.document(&args.document)?;if let Some(origin)=&args.origin{collagene_core::pcr_digest_inspection::preflight_from_run(source,origin,&args.request).map_err(bad)?;}else{collagene_core::pcr_digest_inspection::source_preflight(source,&args.request).map_err(bad)?;}source.clone()};
             let (ordinary,from_run)=if let Some(origin)=&args.origin {
                 let reference=args.workspace.as_ref().ok_or_else(||bad("saved-run source workspace is unavailable"))?;
-                let frame=server.restore_workspace(reference)?;
-                // Documentary ownership checks precede the one fresh inspect pass.
-                // A self-consistent imported capsule cannot invent an event owner
-                // or substitute a different stored run with equal DNA letters.
-                let recorded=collagene_core::run_lineage::load_run(&frame,&origin.selection.run_id).map_err(bad)?;
-                let candidate=transfer::load_candidate(&origin.candidate).map_err(bad)?;
-                if candidate.plan_revision!=recorded.plan_revision
-                    || origin.target_event!=recorded.target || origin.inputs!=recorded.inputs
-                    || origin.products!=recorded.products
-                    || frame.revisions.get(&recorded.target.revision)!=Some(&origin.target)
-                    || frame.revisions.get(&origin.selection.event.revision)!=Some(&source)
-                {return Err(bad("saved-run capsule differs from the exact retained run/source/target events"));}
-                let origins=collagene_core::run_material::originating_products(&frame,&origin.selection.event).map_err(bad)?;
-                if !origins.contains(&origin.selection){return Err(bad("saved-run origin selection is not retained for this exact source event"));}
+                server.attest_run_source(reference,origin,&source)?;
                 let expected=collagene_core::pcr_digest_inspection::inspection_revision_from_run(&source,origin,&args.request).map_err(bad)?;
                 let preview=collagene_core::pcr_digest_inspection::inspect_from_run(&source,origin,&args.request).map_err(bad)?;
                 preview.validate_binding(&expected).map_err(bad)?;(None,Some(preview))
@@ -5327,6 +5352,11 @@ impl CollageneServer {
         if args.enzymes.is_empty() || args.enzymes.len() > 64 {
             return Err(bad("select 1..64 embedded enzymes"));
         }
+        if args.origin.is_some() && args.workspace.is_none() {
+            return Err(bad(
+                "saved-run catalog inspection requires its exact native workspace reference",
+            ));
+        }
         let catalog = catalog_tools::builtin()?;
         let ids = args
             .enzymes
@@ -5353,22 +5383,34 @@ impl CollageneServer {
             let molecule = {
                 let store = server.store.lock().unwrap();
                 let molecule = store.document(&args.document)?;
-                collagene_core::catalog_digest::source_preflight(&catalog, &selection, &args.source_role, molecule, &args.options).map_err(bad)?;
+                if let Some(origin)=&args.origin {collagene_core::run_catalog_digest::source_preflight(&catalog,&selection,&args.source_role,molecule,origin,&args.options).map_err(bad)?;}
+                else{collagene_core::catalog_digest::source_preflight(&catalog, &selection, &args.source_role, molecule, &args.options).map_err(bad)?;}
                 molecule.clone()
             };
-            let pinned = collagene_core::catalog_digest::inspect(&catalog, &selection, &args.source_role, &molecule, &args.options).map_err(bad)?;
-            pinned.validate_bindings_for(&catalog, &selection, &args.source_role, &molecule, &args.options).map_err(bad)?;
-            let report = &pinned.inspection;
+            let(ordinary,from_run)=if let Some(origin)=&args.origin {
+                let workspace=args.workspace.as_ref().ok_or_else(||bad("saved-run catalog source workspace unavailable"))?;
+                server.attest_run_source(workspace,origin,&molecule)?;
+                let report=collagene_core::run_catalog_digest::inspect(&catalog,&selection,&args.source_role,&molecule,origin,&args.options).map_err(bad)?;
+                report.validate_bindings_for(&catalog,&selection,&args.source_role,&molecule,origin,&args.options).map_err(bad)?;
+                (None,Some(report))
+            }else{
+                let pinned=collagene_core::catalog_digest::inspect(&catalog,&selection,&args.source_role,&molecule,&args.options).map_err(bad)?;
+                pinned.validate_bindings_for(&catalog,&selection,&args.source_role,&molecule,&args.options).map_err(bad)?;(Some(pinned),None)
+            };
+            let pinned=from_run.as_ref().map(|r|&r.inspection).or(ordinary.as_ref()).ok_or_else(||bad("catalog inspection unavailable"))?;
+            let report=&pinned.inspection;
             if args.site_start > report.sites.len() || args.fragment_start > report.fragments.len() {
                 return Err(bad("restriction page offset exceeds retained evidence count"));
             }
             let site_end = args.site_start.saturating_add(args.max_sites).min(report.sites.len());
             let fragment_end = args.fragment_start.saturating_add(args.max_fragments).min(report.fragments.len());
-            let (artifact_id,catalog_artifact_id) = server.paired_text_artifacts([
-                (bounded_json(report)?, "application/json", "restriction-inspection.json"),
-                (bounded_json(&pinned)?, "application/json", "catalog-restriction-inspection.json"),
-            ])?;
-            output(json!({
+            let(artifact_id,catalog_artifact_id)=if let Some(run)=&from_run{
+                let id=server.text_artifact(bounded_json_limit(run,32*1024*1024)?,"application/json","run-catalog-restriction-inspection.json")?;(id.clone(),id)
+            }else{server.paired_text_artifacts([
+                (bounded_json(report)?,"application/json","restriction-inspection.json"),
+                (bounded_json(pinned)?,"application/json","catalog-restriction-inspection.json"),
+            ])?};
+            let mut response=json!({
                 "document":args.document,"engine_version":report.engine_version,"source_role":report.source_role,
                 "source_revision":report.source_revision,"source_length":report.source_length,"topology":report.topology,
                 "batch_revision":report.batch_revision,"geometry_revision":report.geometry_revision,
@@ -5383,7 +5425,15 @@ impl CollageneServer {
                 "artifact_id":artifact_id,"catalog_pin":pinned.selection,"catalog_batch_revision":pinned.batch_revision,
                 "catalog_artifact_id":catalog_artifact_id,"catalog_engine_version":pinned.engine_version,
                 "authority":"Recognition evidence and assumed-complete cleavage summaries only; possible/partial/edge evidence cannot authorize a digest product. Reconstruct selected products from current source inputs."
-            }))
+            });
+            if let Some(run)=&from_run {
+                response["context_revision"]=json!(run.context_revision);
+                response["origin_revision"]=json!(run.origin_revision);
+                response["origin_status"]=json!(run.origin_status);
+                response["origin_findings"]=json!(run.findings);
+                response["authority"]=json!("Fresh saved-run tracked material and catalog cleavage inspection only. Serialized evidence never grants material, isolation, target acceptance or permission to install a reference-only digest product.");
+            }
+            output(response)
         }).await
     }
     #[tool(

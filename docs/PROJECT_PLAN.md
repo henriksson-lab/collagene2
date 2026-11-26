@@ -1713,3 +1713,34 @@ passed. No browser or HTTP application checks were run.
 The compiled preview retains earlier immutable workers for open tabs. Its bounded
 static asset budget is now 384 MiB to accommodate those retained workers; it still
 serves only a validated read-only asset snapshot with no host filesystem API.
+
+### Direct saved-origin VirtualDigest and assembly handoff
+
+VirtualDigest now chooses an exact saved origin and reconstructs its tracked
+material through the existing native cleavage model. Source/per-fragment
+modification summaries, source ends/nicks and inherited incomplete findings stay
+visible. Cleavage remains conditional and methylation-unassessed; nicked material
+keeps recognition evidence while physical products are withheld.
+
+Both assembly handoffs retain the original saved source, scoped origin, catalog
+pin/options and actual fragment geometry. Shared readonly cut selection accounts
+for actual bottom-strand free endpoints, including staggered saved sources. The
+real draft handler is now shared with native tests. Forward handoff does not
+require a hypothetical reverse interval to fit the top reference; reverse intent
+outside that reference is still explicitly withheld pending strand-aware intent
+projection. Saved-origin setup/gel/GenBank/reference-installation routes remain
+explicitly disabled until their native records/installers preserve origin scope.
+
+Worker 75 appends direct saved-catalog inspection job 160/result 152. Existing MCP
+`inspect_restriction` accepts optional origin plus mandatory exact workspace proof
+for that route; tools remain 173 and candidate 17/plan 15/science 20 are unchanged.
+The source-origin picker is now shared and remains reactive to source changes and
+disappearance. Next ordinary-cloning work includes mismatch-PCR intent/preparation
+and an initial TOPO dock handoff using the existing engines.
+
+Validation: 43 targeted native checks passed, including both saved-source cut
+paths, actual chemistry/modification retention, nick withholding, native draft
+roundtrip/alias refusal, worker capability gates and real MCP SDK ownership/page
+checks. Web/worker WASM checks passed. Formatting and whitespace checks passed.
+No browser/HTTP checks or full Trunk rebuild were run for this increment; port
+8082 remains on the previous compiled saved-preparation preview.

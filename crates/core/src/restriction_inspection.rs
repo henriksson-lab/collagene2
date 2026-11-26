@@ -426,7 +426,7 @@ pub(crate) fn inspect_fresh_duplex(
     }
     inspect_with_digest(role, m, es, o, || chemistry::digest(duplex, es))
 }
-fn inspect_with_digest(
+pub(crate) fn inspect_with_digest(
     role: &str,
     m: &Molecule,
     es: &[Enzyme],

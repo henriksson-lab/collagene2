@@ -16,44 +16,7 @@ A molecular cloning workspace in Rust, WebAssembly and Leptos, with WebGL2 maps 
 - Saved history, primer orders and HTML/PDF protocols.
 - MCP-assisted design, optional WebMCP, shared plasmid folders and offline desktop storage/sync.
 
-### Cloning methods
-
-| Methods | Capabilities |
-| --- | --- |
-| Restriction/ligation | Sticky/blunt ends, ordered fragments and alternative products |
-| PCR/mutagenesis | Added primer bases, mismatch/inverse PCR and sequential changes |
-| Gibson/HiFi, In-Fusion | Overlap preparation and method-specific finishing assumptions |
-| Overlap-extension PCR | Source PCRs, reciprocal extension, outer PCR and reusable products |
-| Golden Gate | Type IIS preparation, fusion design and construct libraries |
-| Gateway, TOPO | BP/LR, selected MultiSite profiles and explicit strand-transfer chemistry |
-| TA/GC, end processing | Tails, phosphate treatment, blunting and oligo annealing |
-| Domestication | Checked substitutions with inverse-PCR or overlap-extension preparation |
-
-### File formats
-
-| Formats | Support |
-| --- | --- |
-| GenBank/ApE, FASTA, EMBL | Import/export |
-| GenPept, UniProt | Annotated protein import/export |
-| SnapGene DNA/protein, XDNA v0, GCG | Selected import/export profiles |
-| ABIF, SCF | Trace import, original download; SCF regeneration |
-| Original Collagene XML | Import and original download |
-| Aligned FASTA, CLUSTAL, Stockholm, PHYLIP, MSF, NEXUS, PIR, GDE, SELEX | Alignment import/export; no external aligner |
-| FASTQ, GFF3/GTF/BED, primer CSV/TSV | Quality, annotation and oligo exchange |
-| SBOL 3.1 JSON-LD | Selected structural profile |
-| Native Collagene 2 | Documents, workspaces, designs and history |
-| HTML/PDF, SVG | Protocol and map export |
-
-[Format profiles and limitations](docs/FORMAT_DELIVERY_MATRIX.md) · [NCBI/Addgene URL imports](docs/URL_IMPORT.md)
-
-### Platforms
-
-| Platform | Delivery |
-| --- | --- |
-| Windows, macOS, Linux browsers | Leptos/WASM web application with WebGL2 |
-| Windows, macOS, Linux desktop | Tauri; native CI builds, installed GUI acceptance in progress |
-| Shared lab server | Rust service with authenticated plasmid folders |
-| Mobile | Deferred |
+[Cloning methods, supported file formats and platforms](docs/FEATURES.md)
 
 ## Install and start
 
@@ -65,7 +28,7 @@ cargo install trunk --locked
 trunk serve
 ```
 
-Open **http://127.0.0.1:8080**. Build static web assets with `trunk build --release`.
+Open **http://127.0.0.1:8080**.
 
 [Desktop installation/build](docs/TAURI_DESKTOP.md) · [Server setup](docs/SERVER_LIBRARY.md) · [Application guide](docs/APPLICATION_GUIDE.md)
 

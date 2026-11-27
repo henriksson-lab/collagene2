@@ -2308,3 +2308,28 @@ checks were run. Alternate schemes/definitions, broader independent biology
 validation, protein/alignment overlays beyond the inspector and whole-product
 graphical/platform/interoperability acceptance remain required.
 [Contract](ANTIBODY_NUMBERING.md).
+
+
+### Protein viewer antibody overlays
+
+Biology can publish its selected conditional antibody track to the protein
+sequence viewer. Parent and viewer guards bind exact document/event/revision,
+workspace epoch and source length. Viewer identity uses unambiguous structured
+encoding; arbitrary delimiter characters in IDs do not merge source identities.
+The ephemeral overlay does not annotate or modify a molecule or saved history.
+
+Visible-row drawing colors CDR1/2/3 behind protein letters and uses the unused
+complement line for sparse, nonoverlapping exact IMGT labels. Grey underlines and
+question marks retain unresolved rows; hover and selection readouts show exact
+labels/regions and reference/rule origins. Decimal insertion labels retain source
+order. Drawing performs no source hash, alignment or reference-model rebuild.
+The complete inspector table/report still exposes every retained assignment.
+
+Four native fixture groups pass for source ownership, arbitrary-ID identity,
+label layout/insertion syntax, observed unresolved rows, tandem candidates and
+truncated N termini. The updated identity regression, integrated WASM and
+repository formatting checks pass.
+No browser/application HTTP checks were run. Imported alignment-row projection,
+alternate schemes/definitions, broader independent biology validation and whole-
+product graphical/platform/interoperability acceptance remain required.
+[Contract](ANTIBODY_NUMBERING.md).

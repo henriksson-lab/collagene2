@@ -242,3 +242,12 @@ Download the complete evidence report for provenance and alternative candidates.
 These are conditional human-reference/rule assignments, not calibrated domain/
 species classification or independently certified numbering. Kabat/Chothia and
 alternate definitions remain under development. [Scientific contract](ANTIBODY_NUMBERING.md).
+
+
+**Show selected candidate in sequence** colors conditional CDR1/2/3 regions in the
+protein viewer and adds sparse IMGT labels below the letters. Hover a residue for
+its exact position and evidence; grey underlines and `?` mark unresolved rows.
+The viewer readout describes the first selected residue. Use the inspector table
+or downloaded report for all labels. Uncheck the control to hide the overlay; it
+can remain visible when the inspector closes, but it cannot move to another
+document/event or survive a changed source version. No annotations are installed.

@@ -466,3 +466,8 @@ mod protein_liability_view;
 mod antibody_model;
 #[cfg(target_arch = "wasm32")]
 mod antibody_view;
+
+#[cfg(any(target_arch = "wasm32", test))]
+mod antibody_overlay;
+#[cfg(target_arch = "wasm32")]
+mod antibody_overlay_draw;

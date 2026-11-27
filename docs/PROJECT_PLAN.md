@@ -4561,3 +4561,21 @@ and integrated WASM checks pass.
 Protein/alignment overlays beyond the inspector, alternate schemes/definitions,
 broader independent biological validation and whole-product graphical/platform/
 interoperability acceptance remain open. [Contract](ANTIBODY_NUMBERING.md).
+
+
+### F34 protein viewer antibody overlays
+
+The selected retained antibody candidate can now publish an ephemeral overlay to
+the protein sequence viewer. Independent exact document/event/revision/epoch and
+length guards prevent equal-content retargeting and stale drawing. CDR colors
+show behind the reference letters; unassigned rows stay explicitly underlined.
+Sparse, nonoverlapping IMGT labels use the unused protein complement line, while
+hover/selection readouts retain exact labels, regions and evidence origins.
+Source order preserves decimal insertion semantics. There is no annotation or
+history mutation, extra analysis during scrolling or change to nucleotide tracks.
+
+All four focused native source-ownership, label-layout and observed-ambiguity
+fixture groups, integrated WASM and repository formatting checks pass. Imported alignment-row projection, alternate
+schemes/definitions, broader independent biological validation and whole-product
+graphical/platform/interoperability acceptance remain open.
+[Contract](ANTIBODY_NUMBERING.md).

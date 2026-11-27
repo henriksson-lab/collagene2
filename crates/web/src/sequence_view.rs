@@ -314,6 +314,9 @@ pub fn SequenceView(
     on_show_restrictions: Callback<()>,
     #[prop(optional_no_strip)] hidden_features: Option<Memo<BTreeSet<usize>>>,
     #[prop(optional_no_strip)] pcr_overlay: Option<Memo<Option<Arc<Overlay>>>>,
+    #[prop(optional_no_strip)] antibody_overlay: Option<
+        Memo<Option<Arc<crate::antibody_overlay::Overlay>>>,
+    >,
     #[prop(optional_no_strip)] pcr_context: Option<Memo<String>>,
     #[prop(default = false)] read_only: bool,
     #[prop(default = true)] shared_restrictions: bool,
@@ -417,6 +420,14 @@ pub fn SequenceView(
                     .unwrap_or_else(|| identity.get())
             && molecule.with(|m| overlay.validate_for_length(m.sequence.len()));
         valid.then_some(overlay)
+    });
+    let antibody = Memo::new(move |_| {
+        let overlay = antibody_overlay.and_then(|o| o.get())?;
+        (molecule.with(|m| {
+            m.sequence.alphabet() == Alphabet::Protein
+                && overlay.matches(&identity.get(), &source.get(), m.sequence.len())
+        }))
+        .then_some(overlay)
     });
     let edit_cursor = StoredValue::new(None::<EditCursor>);
     let base_drag = StoredValue::new(None::<BaseDrag>);
@@ -1427,6 +1438,7 @@ pub fn SequenceView(
                 .filter(|r| r.source_revision == revision && r.options == opts);
             let hidden = hidden.get();
             let pcr_overlay = pcr.get();
+            let antibody_overlay = antibody.get();
             let pcr_height = if pcr_overlay.is_some() { 40. } else { 0. };
             let packed = annotation_layout.get();
             let layout = packed.as_ref().as_ref().ok();
@@ -1529,6 +1541,9 @@ pub fn SequenceView(
                 ctx.set_text_align("right");
                 let _ = ctx.fill_text(&(start + 1).to_string(), 48., y);
                 ctx.set_text_align("left");
+                if let Some(overlay) = antibody_overlay.as_ref() {
+                    crate::antibody_overlay_draw::row(&ctx, overlay, start, end, start_x, y, cell);
+                }
                 for &(a, b) in &selected {
                     let left = a.max(start);
                     let right = b.min(end);
@@ -2088,6 +2103,13 @@ pub fn SequenceView(
         <Show when=move||{layout_overflow.get()>0 || (annotation_layout.with(|p|p.as_ref().is_err()) && options.with(|o|o.features||o.primers))}>
             <div class="annotation-layout-note" role="status"><span>{move||if annotation_layout.with(|p|p.as_ref().is_err()) {"Annotation display is limited. Inspect source annotations in Features.".to_string()}else{format!("{} additional annotations are available in Features.",layout_overflow.get())}}</span><button class="text-tool" on:click=move|_|on_show_features.run(())>"Inspect annotations"</button></div>
         </Show>
+        <Show when=move||antibody.get().is_some()>
+            <p class="helper" aria-label="Conditional antibody overlay">
+                "Conditional IMGT · "<span style="background:rgba(52,134,184,0.22)">"CDR1"</span>" · "<span style="background:rgba(195,144,38,0.25)">"CDR2"</span>" · "<span style="background:rgba(140,97,175,0.22)">"CDR3"</span>
+                " · grey underline/? = unresolved. Number labels are sparse; hover any residue for its exact assignment. Biology controls the selected candidate. "
+                {move||antibody.get().and_then(|o|selection.get().filter(|(a,b)|b>a).map(|(a,_)|o.description(a))).unwrap_or_default()}
+            </p>
+        </Show>
         <div class="sequence-view-menu" on:keydown=move|event:web_sys::KeyboardEvent|if event.key()=="Escape"{show_controls.set(false);}>
             <button class="text-tool sequence-view-trigger" aria-label="Sequence view settings" aria-expanded=move||show_controls.get().to_string() title="Sequence display, annotations, restriction sites and track details" on:click=move|_|show_controls.update(|open|*open=!*open)>"View ▾"</button>
             <Show when=move||show_controls.get()><div class="track-controls sequence-view-popover" role="group" aria-label="Sequence view settings" style="max-width:220px;max-height:220px;overflow:auto;">
@@ -2168,6 +2190,9 @@ pub fn SequenceView(
                                 let title=hit.as_ref().map(|item|format!("{} · recognition {}{}",item.label,
                                     item.parts.iter().map(|p|format!("{}–{}",p.start+1,p.end)).collect::<Vec<_>>().join(", "),
                                     item.cuts.as_ref().map(|c|format!(" · top {}, bottom {}",crate::search_view::boundary_label(c.top),crate::search_view::boundary_label(c.bottom))).unwrap_or_default())).unwrap_or_default();
+                                let title=if title.is_empty() {
+                                    antibody.get_untracked().and_then(|o|base_at(x,y,scroll.get_untracked(),row_height.get_untracked(),restriction_header.get_untracked(),columns.get_untracked(),o.capture.source_length,false).map(|i|o.description(i))).unwrap_or_default()
+                                }else{title};
                                 if c.get_attribute("title").as_deref()!=Some(title.as_str()){let _=c.set_attribute("title",&title);}
                             }
                             return;

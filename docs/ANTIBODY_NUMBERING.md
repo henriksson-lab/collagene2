@@ -500,3 +500,29 @@ read-only tools do not install documents or materials. The inspector and MCP exp
 the conditional human-reference scope directly. They do not complete alternate
 schemes, independent biological validation, alignment-row projection or full
 whole-product acceptance.
+
+
+## Protein sequence overlay
+
+The Biology inspector can publish its selected retained candidate to the protein
+sequence viewer. The overlay is ephemeral, with no document annotations or saved
+scientific authority. Document ID, event, revision, workspace epoch and source
+length guard publication and rendering independently. Equal sequence content in
+another document cannot acquire the overlay. Source/settings changes invalidate
+results; clearing the inspector checkbox hides the overlay. Closing the inspector
+can leave an exact-source overlay visible for viewing.
+
+CDR1/2/3 use separate background colors behind the stored protein letters.
+Unassigned rows receive a grey underline; sparse number labels show `?` rather
+than a guessed position. Number labels use the otherwise unused complement line,
+keep source order and fit without overlap. Decimal insertion labels remain exact;
+hovering any residue shows its full label, region and reference/rule origin.
+Selecting residues also exposes the exact first-residue assignment in the viewer
+readout. Unpainted source before the supported interval is not asserted to lie
+outside the biological domain. The complete inspector table/report remains the
+place to inspect every assignment.
+
+Only visible source rows are painted. Scrolling does not hash molecules, rebuild
+reference models, rerun alignment or install annotations. This source-coordinate
+overlay does not yet project antibody evidence onto imported alignment rows,
+provide alternate schemes or establish independent residue-level validation.

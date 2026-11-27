@@ -1,4 +1,5 @@
 //! Conditional antibody reference analysis, kept off the UI thread.
+use crate::antibody_overlay::{Overlay, origin, region};
 use crate::{
     antibody_model::{self, Capture},
     source_identity::SourceInfo,
@@ -42,26 +43,6 @@ fn loop_text(name: &str, outcome: &d::LoopAssignment) -> String {
         } => format!("{name}: unsupported length {residues}"),
     }
 }
-fn region(r: &n::Region) -> &'static str {
-    match r {
-        n::Region::Fr1 => "FR1",
-        n::Region::Cdr1 => "CDR1",
-        n::Region::Fr2 => "FR2",
-        n::Region::Cdr2 => "CDR2",
-        n::Region::Fr3 => "FR3",
-        n::Region::Cdr3 => "CDR3",
-        n::Region::Fr4 => "FR4",
-    }
-}
-fn origin(e: &n::AssignmentEvidence) -> &'static str {
-    match e {
-        n::AssignmentEvidence::InvariantVReference => {
-            "Reference correspondence shared by all optimal V paths"
-        }
-        n::AssignmentEvidence::ConditionalLoopRule => "Conditional published loop-numbering rule",
-        n::AssignmentEvidence::JFr4Reference => "Matched complete J/FR4 reference",
-    }
-}
 #[component]
 pub fn AntibodyPanel(
     source: Memo<SourceInfo>,
@@ -69,6 +50,7 @@ pub fn AntibodyPanel(
     workspace_busy: RwSignal<bool>,
     prepare: Callback<EventBinding, Result<Molecule, String>>,
     on_select: Callback<(Capture, usize, usize), Result<(), String>>,
+    on_overlay: Callback<Option<Arc<Overlay>>, Result<(), String>>,
 ) -> impl IntoView {
     let minimum = RwSignal::new("300".to_string());
     let substitutions = RwSignal::new("1".to_string());
@@ -100,6 +82,32 @@ pub fn AntibodyPanel(
     let report = RwSignal::new(None::<(Capture, Arc<n::Report>)>);
     let candidate = RwSignal::new(0usize);
     let page = RwSignal::new(0usize);
+    let show_overlay = RwSignal::new(true);
+    Effect::new(move |_| {
+        let value = report.get();
+        let index = candidate.get();
+        let visible = show_overlay.get();
+        let result = (|| {
+            if !visible {
+                return on_overlay.run(None);
+            }
+            let Some((capture, r)) = value else {
+                return on_overlay.run(None);
+            };
+            let (o, l) = settings.get()?;
+            capture.guard(epoch.get(), &source.get().binding, &o, &l)?;
+            if r.tracks.is_empty() {
+                return on_overlay.run(None);
+            }
+            let overlay = Overlay::new(&capture, &r, index)?;
+            on_overlay.run(Some(Arc::new(overlay)))
+        })();
+        if let Err(e) = result {
+            let _ = on_overlay.run(None);
+            status.set(e);
+        }
+    });
+
     let worker = StoredValue::new_local(None::<Rc<CachedWorker>>);
     let alive = Arc::new(AtomicBool::new(true));
     Effect::new(move |_| {
@@ -224,6 +232,7 @@ pub fn AntibodyPanel(
         <p class="helper" role="status">{move||status.get()}</p>
         <Show when=move||report.with(|r|r.is_some())>
             <p class="helper">{move||report.with(|r|r.as_ref().map(|(_,r)|format!("{} qualifying pairs within retained V ends. V endpoints truncated: {} · pairs truncated: {}.",r.evidence.qualified_pairs_in_retained_v,r.evidence.v_retention_truncated,r.evidence.pair_retention_truncated)).unwrap_or_default())}</p>
+            <label><input type="checkbox" prop:checked=move||show_overlay.get() on:change=move|e|show_overlay.set(event_target_checked(&e))/><span>"Show selected candidate in sequence"</span></label>
             <label>"Candidate"<select prop:value=move||candidate.get().to_string() on:change=move|e|{candidate.set(event_target_value(&e).parse().unwrap_or(0));page.set(0);}>
                 {move||report.with(|r|r.as_ref().map(|(_,r)|r.tracks.iter().enumerate().map(|(i,t)|view!{<option value=i.to_string()>{format!("{} · {:?} · supported {}–{}",i+1,t.locus,t.first_supported_source_index+1,t.source_end)}</option>}).collect_view()))}
             </select></label>

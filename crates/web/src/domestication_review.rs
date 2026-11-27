@@ -91,13 +91,13 @@ pub fn stage(frame: &Workspace, opened: &Open) -> Result<Staged, String> {
             || fingerprint(&prepared.request.selection).map_err(|e| e.to_string())?
                 != fingerprint(&opened.selection).map_err(|e| e.to_string())?
             || prepared.target != opened.target
-            || prepared.preparation.plan.inputs.len() != 1
-            || prepared.preparation.plan.inputs[0].id != physical::INPUT_ID
-            || prepared.preparation.plan.inputs[0].molecule != source
+            || prepared.plan.inputs.len() != 1
+            || prepared.plan.inputs[0].id != physical::INPUT_ID
+            || prepared.plan.inputs[0].molecule != source
         {
             return Err("The proposed physical preparation differs from the checked original source and independent intent.".into());
         }
-        Some(Candidate::new(prepared.preparation.plan.clone()))
+        Some(Candidate::new(prepared.plan.clone()))
     } else {
         None
     };
@@ -132,16 +132,48 @@ pub fn stage(frame: &Workspace, opened: &Open) -> Result<Staged, String> {
         derived.contribute(&mut staged).map_err(|e| e.to_string())?;
         binding
     };
-    let evidence=serde_json::to_vec(&serde_json::json!({"version":1,"source":opened.source,"check":checked.report(),"authority":"Checked reference constraints only; fresh reaction verification remains required."})).map_err(|e|e.to_string())?;
-    if evidence.len() > collagene_core::workspace::MAX_ENTRY_BYTES {
-        return Err("Domestication evidence exceeds its attachment bound.".into());
+    #[derive(serde::Serialize)]
+    struct ReviewEvidence<'a> {
+        version: u16,
+        source: &'a EventBinding,
+        target_event: &'a EventBinding,
+        check: &'a design::CheckReport,
+        // Always serialized, including explicit null for intent-only staging.
+        prepared: Option<&'a physical::Prepared>,
+        authority: &'static str,
     }
+    struct EvidenceBytes(Vec<u8>);
+    impl std::io::Write for EvidenceBytes {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            if bytes.len() > collagene_core::workspace::MAX_ENTRY_BYTES.saturating_sub(self.0.len())
+            {
+                return Err(std::io::Error::other(
+                    "Domestication review exceeds its native attachment bound",
+                ));
+            }
+            self.0.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut output = EvidenceBytes(Vec::new());
+    serde_json::to_writer(&mut output,&ReviewEvidence{
+        version:physical::REVIEW_EVIDENCE_VERSION,
+        source:&opened.source,
+        target_event:&target,
+        check:checked.report(),
+        prepared:opened.prepared.as_ref(),
+        authority:"Historical documentary source/intent/preparation snapshot. Recorded primer readiness and verification are not restored as current authority; fresh reconstruction is required.",
+    }).map_err(|e|e.to_string())?;
+    let evidence = output.0;
     let hash = blake3::hash(&evidence).to_hex().to_string();
     staged
         .attachments
         .entry(hash)
         .or_insert(WorkspaceAttachment {
-            kind: "domestication-intent-v1".into(),
+            kind: physical::REVIEW_EVIDENCE_KIND.into(),
             name: "domestication-intent.json".into(),
             media_type: "application/json".into(),
             bytes: evidence,
@@ -267,6 +299,28 @@ mod tests {
             staged.workspace.documents[0].head_event,
             frame.documents[0].head_event
         );
+        let evidence = staged
+            .workspace
+            .attachments
+            .values()
+            .find(|a| a.kind == physical::REVIEW_EVIDENCE_KIND)
+            .unwrap();
+        let record: serde_json::Value = serde_json::from_slice(&evidence.bytes).unwrap();
+        assert_eq!(record["version"], physical::REVIEW_EVIDENCE_VERSION);
+        assert!(
+            record
+                .get("prepared")
+                .expect("required nullable preparation")
+                .is_null()
+        );
+        assert_eq!(
+            record["source"],
+            serde_json::to_value(&opened.source).unwrap()
+        );
+        assert_eq!(
+            record["target_event"],
+            serde_json::to_value(&staged.target).unwrap()
+        );
         assert!(staged.candidate.is_none());
         assert!(staged.workspace.active_candidate.is_none());
         let again = stage(&staged.workspace, &opened).unwrap();
@@ -358,5 +412,282 @@ mod tests {
             .find(|e| e.id == second.target.event_id)
             .unwrap();
         assert_eq!(event.parents, [other.source.event_id]);
+    }
+    #[test]
+    fn overlap_extension_linear_and_circle_stage_real_canonical_products_and_archive_sources() {
+        use collagene_core::{
+            cloning_outputs, codon_design,
+            verification::{self, Status},
+        };
+        for topology in [Topology::Linear, Topology::Circular] {
+            let source = Molecule::dna(
+                "Original OE parent",
+                "AGTCCGATGCTACGTAGAATTCTTCAGACCTGTAGATCGTCA",
+                topology,
+            )
+            .unwrap();
+            let frame =
+                Workspace::from_documents("OE domestication", vec![source.clone()], 0).unwrap();
+            let doc = &frame.documents[0];
+            let event = EventBinding {
+                document_id: doc.id.clone(),
+                event_id: doc.head_event.clone().unwrap(),
+                revision: doc.head.clone(),
+            };
+            let request = design::Request {
+                source_revision: source.revision(),
+                selection: collagene_core::catalog_digest::select(
+                    &collagene_core::catalog_digest::builtin_catalog().unwrap(),
+                    &["ecori".into()],
+                )
+                .unwrap(),
+                scope: vec![design::SourceRange {
+                    start: 0,
+                    end: source.sequence.len(),
+                }],
+                retained_sites: vec![],
+                coding_features: vec![],
+                protected: vec![],
+                options: codon_design::DesignOptions::default(),
+                limits: design::Limits::default(),
+            };
+            let patches = vec![design::Patch {
+                position: 18,
+                expected: "A".into(),
+                replacement: "C".into(),
+            }];
+            let selection = design::Selection {
+                context_revision: design::propose_revision(&source, &request).unwrap(),
+                candidate_id: design::candidate_id(&request, &patches).unwrap(),
+                patches,
+            };
+            let checked = design::check(&source, &request, &selection).unwrap();
+            assert_eq!(
+                checked.target().sequence.as_str(),
+                "AGTCCGATGCTACGTAGACTTCTTCAGACCTGTAGATCGTCA"
+            );
+            let mut options = collagene_core::overlap_extension_primer_design::Options::default();
+            options.primer_options.min_length = 8;
+            options.primer_options.max_length = 8;
+            options.primer_options.min_gc_fraction = 0.;
+            options.primer_options.max_gc_fraction = 1.;
+            options.primer_options.max_tm_difference_c = 100.;
+            options.primer_options.max_homopolymer = 200;
+            options.primer_options.max_three_prime_complementarity = 200;
+            options.homology_flank = 8;
+            options.min_paired_bases = 8;
+            let prepared = physical::materialize(
+                &collagene_core::verification::PlanInput {
+                    id: physical::INPUT_ID.into(),
+                    revision: source.revision(),
+                    molecule: source.clone(),
+                },
+                &physical::Request {
+                    design: request.clone(),
+                    selection: selection.clone(),
+                    route: physical::Route::OverlapExtension { options },
+                },
+            )
+            .unwrap();
+            assert!(prepared.proposal_ready, "{:?}", prepared.proposal_findings);
+            assert_eq!(
+                prepared.plan.steps.len(),
+                if topology == Topology::Circular { 6 } else { 4 }
+            );
+            assert_eq!(
+                prepared.verification.status,
+                Status::ConsistentUnderAssumptions,
+                "{:?}",
+                prepared.verification.findings
+            );
+            let opened = Open {
+                source: event.clone(),
+                epoch: 9,
+                request: request.clone(),
+                selection: selection.clone(),
+                check: checked.report().clone(),
+                target: checked.target().clone(),
+                prepared: Some(prepared),
+            };
+            let staged = stage(&frame, &opened).unwrap();
+            let candidate = staged.candidate.unwrap();
+            assert_eq!(staged.workspace.documents[0].head, frame.documents[0].head);
+            assert_eq!(
+                staged.workspace.documents[0].head_event,
+                frame.documents[0].head_event
+            );
+            assert_eq!(
+                verification::verify(&candidate.plan, &opened.target).status,
+                Status::ConsistentUnderAssumptions
+            );
+            let staged_target = staged.target.clone();
+            let committed = cloning_outputs::finalize(
+                &staged.workspace,
+                &candidate.plan,
+                staged.target,
+                staged.inputs,
+                &cloning_outputs::Options {
+                    name: "Reviewed OE product".into(),
+                    show_prepared: true,
+                    save_primers: true,
+                    allow_incomplete: false,
+                },
+            )
+            .unwrap();
+            assert!(committed.receipt.primer_attachment.is_some());
+            let reopened = collagene_core::workspace::load_workspace(
+                &collagene_core::workspace::save_workspace(&committed.workspace).unwrap(),
+            )
+            .unwrap();
+            let evidence = reopened
+                .attachments
+                .values()
+                .find(|a| a.kind == physical::REVIEW_EVIDENCE_KIND)
+                .unwrap();
+            let record: serde_json::Value = serde_json::from_slice(&evidence.bytes).unwrap();
+            assert_eq!(record["version"], physical::REVIEW_EVIDENCE_VERSION);
+            assert_eq!(record["source"], serde_json::to_value(&event).unwrap());
+            assert_eq!(
+                record["target_event"],
+                serde_json::to_value(&staged_target).unwrap()
+            );
+            let historical: physical::Prepared = serde_json::from_value(
+                record
+                    .get("prepared")
+                    .expect("required preparation field")
+                    .clone(),
+            )
+            .unwrap();
+            let original = opened.prepared.as_ref().unwrap();
+            historical
+                .validate_binding(&original.context_revision)
+                .unwrap();
+            assert_eq!(
+                serde_json::to_vec(&historical).unwrap(),
+                serde_json::to_vec(original).unwrap()
+            );
+            assert_eq!(historical.proposal_ready, original.proposal_ready);
+            assert_eq!(historical.proposal_findings, original.proposal_findings);
+            let final_product = &reopened.revisions[&committed.receipt.construct.revision];
+            assert_eq!(final_product.sequence, opened.target.sequence);
+            assert_eq!(final_product.topology, topology);
+            assert_eq!(
+                reopened
+                    .documents
+                    .iter()
+                    .find(|d| d.id == event.document_id)
+                    .unwrap()
+                    .head_event
+                    .as_ref(),
+                Some(&event.event_id)
+            );
+            let mut stale = opened.clone();
+            stale.source.event_id = "unretained-equal-DNA-event".into();
+            assert!(stage(&frame, &stale).is_err());
+            let mut protected = request.clone();
+            protected
+                .protected
+                .push(design::SourceRange { start: 18, end: 19 });
+            let mut protected_selection = selection.clone();
+            protected_selection.context_revision =
+                design::propose_revision(&source, &protected).unwrap();
+            protected_selection.candidate_id =
+                design::candidate_id(&protected, &protected_selection.patches).unwrap();
+            assert!(design::check(&source, &protected, &protected_selection).is_err());
+            let mut wrong = opened;
+            wrong.target.sequence = collagene_core::Sequence::dna("TTTTCCCCAAAAGGGG").unwrap();
+            assert!(stage(&frame, &wrong).is_err());
+        }
+    }
+    #[test]
+    fn diagnostic_nonready_preparation_remains_documentary_after_native_restart() {
+        let source = Molecule::dna(
+            "Repeated original endpoint",
+            "AGTCCGATAGTCCGATGCTACGTAGAATTCCAGACCTGTAGATCGTCA",
+            Topology::Linear,
+        )
+        .unwrap();
+        let frame =
+            Workspace::from_documents("Diagnostic OE history", vec![source.clone()], 0).unwrap();
+        let mut form = crate::domestication_form::Form::new(&source, None);
+        form.enzymes = "ecori".into();
+        let request = form.request(&source).unwrap();
+        let patches = vec![design::Patch {
+            position: 26,
+            expected: "A".into(),
+            replacement: "C".into(),
+        }];
+        let selection = design::Selection {
+            context_revision: design::propose_revision(&source, &request).unwrap(),
+            candidate_id: design::candidate_id(&request, &patches).unwrap(),
+            patches,
+        };
+        let checked = design::check(&source, &request, &selection).unwrap();
+        let mut options = collagene_core::overlap_extension_primer_design::Options::default();
+        options.primer_options.min_length = 8;
+        options.primer_options.max_length = 8;
+        options.primer_options.min_gc_fraction = 0.;
+        options.primer_options.max_gc_fraction = 1.;
+        options.primer_options.max_tm_difference_c = 100.;
+        options.primer_options.max_homopolymer = 200;
+        options.primer_options.max_three_prime_complementarity = 200;
+        options.homology_flank = 8;
+        options.min_paired_bases = 8;
+        let prepared = physical::materialize(
+            &collagene_core::verification::PlanInput {
+                id: physical::INPUT_ID.into(),
+                revision: source.revision(),
+                molecule: source,
+            },
+            &physical::Request {
+                design: request.clone(),
+                selection: selection.clone(),
+                route: physical::Route::OverlapExtension { options },
+            },
+        )
+        .unwrap();
+        assert!(!prepared.proposal_ready);
+        assert!(!prepared.proposal_findings.is_empty());
+        let doc = &frame.documents[0];
+        let event = EventBinding {
+            document_id: doc.id.clone(),
+            event_id: doc.head_event.clone().unwrap(),
+            revision: doc.head.clone(),
+        };
+        let opened = Open {
+            source: event,
+            epoch: 3,
+            request,
+            selection,
+            check: checked.report().clone(),
+            target: checked.target().clone(),
+            prepared: Some(prepared),
+        };
+        let staged = stage(&frame, &opened).unwrap();
+        assert!(staged.candidate.is_some());
+        let reopened = collagene_core::workspace::load_workspace(
+            &collagene_core::workspace::save_workspace(&staged.workspace).unwrap(),
+        )
+        .unwrap();
+        let asset = reopened
+            .attachments
+            .values()
+            .find(|a| a.kind == physical::REVIEW_EVIDENCE_KIND)
+            .unwrap();
+        let record: serde_json::Value = serde_json::from_slice(&asset.bytes).unwrap();
+        let historical: physical::Prepared =
+            serde_json::from_value(record.get("prepared").unwrap().clone()).unwrap();
+        let original = opened.prepared.unwrap();
+        historical
+            .validate_binding(&original.context_revision)
+            .unwrap();
+        assert!(!historical.proposal_ready);
+        assert_eq!(historical.proposal_findings, original.proposal_findings);
+        assert_eq!(historical.verification.status, original.verification.status);
+        assert!(historical.verification.products.is_empty());
+        assert_eq!(
+            reopened.documents[0].head_event,
+            frame.documents[0].head_event
+        );
     }
 }

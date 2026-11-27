@@ -516,6 +516,38 @@ pub fn DomesticationView(
             })
         })
     });
+    let capture_preparation = Callback::new(move |()| -> Result<_, String> {
+        let saved = prepared
+            .get_untracked()
+            .ok_or("Reconstruct a physical preparation first")?;
+        guard.run(saved.checked.scope.clone())?;
+        if route.get_untracked() != saved.route {
+            return Err("Preparation route or settings changed.".into());
+        }
+        let input = PlanInput {
+            id: physical::INPUT_ID.into(),
+            revision: saved.checked.scope.molecule.revision(),
+            molecule: saved.checked.scope.molecule.as_ref().clone(),
+        };
+        let context =
+            physical::revision(&input, &saved.report.request).map_err(|e| e.to_string())?;
+        saved
+            .report
+            .validate_binding(&context)
+            .map_err(|e| e.to_string())?;
+        Ok((saved.report.plan.clone(), saved.report.target.clone()))
+    });
+    let preparation_identity = Memo::new(move |_| {
+        prepared
+            .get()
+            .map(|saved| {
+                (
+                    collagene_core::verification::plan_revision(&saved.report.plan),
+                    saved.report.target.revision(),
+                )
+            })
+            .unwrap_or_default()
+    });
     let preparation_current = Memo::new(move |_| {
         prepared.with(|value| {
             value
@@ -603,15 +635,17 @@ pub fn DomesticationView(
             </section>}
         })}
         {move||checked.get().map(|saved|{
-            let open=saved.clone();let suggest=saved.clone();let count=saved.report.features.len();
+            let open=saved.clone();let suggest=StoredValue::new(saved.clone());let count=saved.report.features.len();
             view!{<section><h3>"Checked intended reference — no material created"</h3><p>{format!("{} · {} bases · {} substitutions",saved.target.name,saved.target.sequence.len(),saved.selection.patches.len())}</p>
                 {saved.report.warnings.iter().map(|message|view!{<p>{message.clone()}</p>}).collect_view()}
                 <details><summary>"Preserved coding sequences"</summary>{saved.report.features.iter().enumerate().skip(check_page.get().min(pages(count,LIST_PAGE)-1)*LIST_PAGE).take(LIST_PAGE).map(|(index,_)|view!{<CheckedCds saved=saved.clone() index/>}).collect_view()}<Pager page=check_page total=count limit=LIST_PAGE label="checked coding sequences"/></details>
                 <crate::assembly_product_view::ReferenceCanvas product=saved.target.clone() identity=saved.report.target_revision.clone() current=check_current on_message=Callback::new(move|message|status.set(message))/>
                 <button class="button secondary" disabled=move||pending.get() on:click=move|_|open_reference.run(open.clone())>"Open reference-only design"</button>
-                <details><summary>"Prepare an explicit inverse-PCR route"</summary>
-                    <p class="helper">"Every changed base must fit the declared replacement interval and actual primer tails. Complete oligos are limited to200 bases. Scattered edits can require a different route or reviewed rounds; no recoded template is invented."</p>
-                    <button class="text-tool" disabled=move||pending.get() on:click=move|_|{if guard.run(suggest.scope.clone()).is_ok(){if let (Some(first),Some(last))=(suggest.selection.patches.first(),suggest.selection.patches.last()){route.update(|value|{value.start=(first.position+1).to_string();value.end=(last.position+1).to_string();});}}}>"Suggest straight interval covering these substitutions"</button>
+                <details><summary>"Choose a physical preparation"</summary>
+                    <p class="helper">"Choose the preparation independently after checking source, feature and restriction constraints. The intended target never becomes an amplification template."</p>
+                    <label>"Physical preparation route"<select prop:value=move||match route.get().kind{crate::domestication_form::PreparationKind::InversePcr=>"inverse",crate::domestication_form::PreparationKind::OverlapExtension=>"extension"} on:change=move|e|route.update(|r|r.kind=if event_target_value(&e)=="extension"{crate::domestication_form::PreparationKind::OverlapExtension}else{crate::domestication_form::PreparationKind::InversePcr})><option value="inverse">"Inverse PCR — circular source"</option><option value="extension">"Overlap-extension PCR — whole linear or circular source"</option></select></label>
+                    <Show when=move||route.get().kind==crate::domestication_form::PreparationKind::InversePcr><p class="helper">"Every changed base must fit the declared replacement interval and actual primer tails. Complete oligos are limited to200 bases. Scattered edits can require a different route or reviewed rounds; no recoded template is invented."</p>
+                    <button class="text-tool" disabled=move||pending.get() on:click=move|_|{let suggest=suggest.get_value();if guard.run(suggest.scope.clone()).is_ok(){if let (Some(first),Some(last))=(suggest.selection.patches.first(),suggest.selection.patches.last()){route.update(|value|{value.start=(first.position+1).to_string();value.end=(last.position+1).to_string();});}}}>"Suggest straight interval covering these substitutions"</button>
                     <p class="helper">"This suggestion preserves original numbering. Enter an origin-spanning interval manually when appropriate; suggestion is not preparation approval."</p>
                     <fieldset disabled=move||pending.get()>
                         <label>"Replacement start (1-based)"<input type="number" min="1" prop:value=move||route.with(|value|value.start.clone()) on:input=move|event|route.update(|value|value.start=event_target_value(&event))/></label>
@@ -620,20 +654,25 @@ pub fn DomesticationView(
                         <label>"Reverse annealing length"<input type="number" min="8" max="80" prop:value=move||route.with(|value|value.reverse.clone()) on:input=move|event|route.update(|value|value.reverse=event_target_value(&event))/></label>
                         <label>"Replacement bases assigned to reverse tail"<input type="number" min="0" prop:value=move||route.with(|value|value.reverse_tail.clone()) on:input=move|event|route.update(|value|value.reverse_tail=event_target_value(&event))/></label>
                     </fieldset>
-                    <button class="button primary" disabled=move||pending.get() on:click=move|_|run.run(Work::Prepare(saved.clone(),route.get_untracked()))>"Reconstruct actual primers and inverse-PCR plan"</button>
+                    </Show>
+                    <Show when=move||route.get().kind==crate::domestication_form::PreparationKind::OverlapExtension><OverlapControls route pending/><p class="helper">"Amplify the original source in two PCRs, extend its explicitly edited overlap, then amplify with outer primers. Circular output additionally declares end phosphorylation and ligation. Linear output remains linear. No added outer tails, automatic source repair or independent-target replacement."</p></Show>
+                    <button class="button primary" disabled=move||pending.get() on:click=move|_|run.run(Work::Prepare(saved.clone(),route.get_untracked()))>"Reconstruct chosen physical preparation"</button>
                 </details>
             </section>}
         })}
         {move||prepared.get().map(|saved|{
-            let open=saved.clone();let physical=&saved.report;let actual=&physical.preparation;
-            let complete=physical.verification.products.len()==actual.plan.steps.len();
-            let note_count=physical.verification.findings.len()+physical.verification.assumptions.len()+physical.warnings.len()+actual.warnings.len();
-            view!{<section><h3>"Actual inverse-PCR preparation review"</h3><p>{format!("Native plan assessment: {:?}. Completed {} of {} operations.",physical.verification.status,physical.verification.products.len(),actual.plan.steps.len())}</p>
-                <pre>{format!("{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nTail: {}\n\n{}\nOrdered 5′→3′: {}{}\nAnnealing: {}\nTail: {}",actual.forward.name,actual.forward.tail,actual.forward.annealing.as_str(),actual.forward.annealing.as_str(),actual.forward.tail,actual.reverse.name,actual.reverse.tail,actual.reverse.annealing.as_str(),actual.reverse.annealing.as_str(),actual.reverse.tail)}</pre>
-                {physical.verification.findings.iter().chain(&physical.verification.assumptions).chain(&physical.warnings).chain(&actual.warnings).skip(preparation_note_page.get().min(pages(note_count,LIST_PAGE)-1)*LIST_PAGE).take(LIST_PAGE).map(|message|view!{<p>{message.clone()}</p>}).collect_view()}
+            let open=saved.clone();let physical=&saved.report;let actual=&physical.plan;
+            let complete=physical.verification.products.len()==actual.steps.len();
+            let note_count=physical.verification.findings.len()+physical.verification.assumptions.len()+physical.warnings.len();
+            view!{<section><h3>"Actual physical preparation review"</h3><p>{format!("Native plan assessment: {:?}. Completed {} of {} operations.",physical.verification.status,physical.verification.products.len(),actual.steps.len())}</p>
+                <h4>"Primer proposal"</h4><p>{if physical.proposal_ready{"Ready under the declared construction and primer constraints. This is separate from sequence verification and experimental success."}else{"Not ready under the declared primer constraints. The actual sequence verification remains unchanged; open this as a diagnostic candidate for review or manual editing."}}</p><ul>{physical.proposal_findings.iter().map(|finding|view!{<li>{finding.clone()}</li>}).collect_view()}</ul>
+                <PreparationEvidence method=Arc::new(physical.method.clone())/>
+                <crate::assembly_outputs::AssemblyOutputs capture=capture_preparation identity=preparation_identity epoch/>
+
+                {physical.verification.findings.iter().chain(&physical.verification.assumptions).chain(&physical.warnings).skip(preparation_note_page.get().min(pages(note_count,LIST_PAGE)-1)*LIST_PAGE).take(LIST_PAGE).map(|message|view!{<p>{message.clone()}</p>}).collect_view()}
                 <Pager page=preparation_note_page total=note_count limit=LIST_PAGE label="preparation findings"/>
                 {if complete {physical.verification.products.last().map(|product|view!{<h4>"Reconstructed final product"</h4><crate::assembly_product_view::ReferenceCanvas product=product.clone() identity=product.revision() current=preparation_current on_message=Callback::new(move|message|status.set(message))/>}).into_any()}else{view!{<p>"A full physical product was not reconstructed. A completed preparation prefix is not the final product."</p>}.into_any()}}
-                <button class="button primary" disabled=move||pending.get() on:click=move|_|open_plan.run(open.clone())>"Open plan for verification and outputs"</button>
+                <button class="button primary" disabled=move||pending.get() on:click=move|_|open_plan.run(open.clone())>{if physical.proposal_ready{"Open plan for verification and outputs"}else{"Open diagnostic plan for review or editing"}}</button>
             </section>}
         })}
         <p role="status">{move||status.get()}</p>
@@ -677,4 +716,44 @@ fn CheckedCds(saved: Arc<Checked>, index: usize) -> impl IntoView {
             view!{<p>"Original protein"</p><pre>{feature.before_protein.chars().skip(start).take(end-start).collect::<String>()}</pre><p>"Checked target protein"</p><pre>{feature.after_protein.chars().skip(start).take(end-start).collect::<String>()}</pre>}
         })}<Pager page total limit=PEPTIDE_PAGE label="protein residues"/>
     </article>}.into_any()
+}
+
+#[component]
+fn OverlapControls(route: RwSignal<RouteForm>, pending: RwSignal<bool>) -> impl IntoView {
+    let labels = [
+        "Minimum annealing length",
+        "Maximum annealing length",
+        "Target annealing Tm (°C)",
+        "Maximum pair ΔTm (°C)",
+        "Minimum GC fraction",
+        "Maximum GC fraction",
+        "Maximum homopolymer run",
+        "Maximum 3′ complementarity run",
+        "Ranked pairs per primer call",
+        "Homology flank per edit (bp)",
+        "Maximum ordered oligo length",
+        "Minimum paired overlap bases",
+        "Extension comparison limit",
+        "Extension candidate limit",
+        "Sodium concentration (M)",
+        "Total strand concentration (M)",
+    ];
+    view! {<details><summary>"Overlap-extension primer and search settings"</summary><fieldset disabled=move||pending.get()>{labels.into_iter().enumerate().map(|(index,label)|view!{<label>{label}<input maxlength="64" prop:value=move||route.with(|r|r.overlap_extension.values[index].clone()) on:input=move|e|route.update(|r|r.overlap_extension.values[index]=event_target_value(&e))/></label>}).collect_view()}</fieldset><p class="helper">"Tm and complementarity are bounded sequence models, not empirical amplification predictions. Search limits and incomplete evidence remain visible. No declared outer tails are discarded."</p></details>}
+}
+fn primer_text(primer: &collagene_core::analysis::Primer) -> String {
+    format!(
+        "{}\nOrdered 5′→3′: {}{}\nAnnealing domain: {}\n5′ tail: {}",
+        primer.name,
+        primer.tail,
+        primer.annealing.as_str(),
+        primer.annealing.as_str(),
+        primer.tail
+    )
+}
+#[component]
+fn PreparationEvidence(method: Arc<physical::MethodEvidence>) -> impl IntoView {
+    match method.as_ref(){
+  physical::MethodEvidence::InversePcr{forward,reverse,..}=>view!{<details open><summary>"Inverse-PCR primer pair"</summary><pre>{format!("{}\n\n{}",primer_text(forward),primer_text(reverse))}</pre></details>}.into_any(),
+  physical::MethodEvidence::OverlapExtension{preparation,designs,search,..}=>view!{<section><h4>"Three actual PCR primer pairs"</h4>{[("Left PCR",&preparation.left),("Right PCR",&preparation.right),("Outer PCR",&preparation.outer)].into_iter().map(|(label,pair)|view!{<details><summary>{label}</summary><pre>{format!("{}\n\n{}",primer_text(&pair.forward),primer_text(&pair.reverse))}</pre></details>}).collect_view()}{designs.iter().enumerate().map(|(i,report)|view!{<details><summary>{format!("Primer call {} diagnostics",i+1)}</summary><p>{format!("{} ranked pairs retained · {} evaluated · {} rejected",report.pairs.len(),report.evaluated_pairs,report.rejected_pairs)}</p>{report.warnings.iter().map(|w|view!{<p>{w.clone()}</p>}).collect_view()}{search.get(i).map(|s|view!{<p>{format!("{} · selected rank {} · {} examined · {} rejected · capped {} · unique geometry {}",s.call,s.selected_index+1,s.examined,s.rejected,s.capped,s.unique_geometry)}</p>{s.notes.iter().map(|n|view!{<p>{n.clone()}</p>}).collect_view()}{report.pairs.get(s.selected_index).map(|pair|view!{<p>{format!("Annealing Tm forward {:?} / reverse {:?} °C · ΔTm {:.2} °C · heterodimer max3′run {}",pair.forward.analysis.tm.as_ref().map(|t|t.tm_c),pair.reverse.analysis.tm.as_ref().map(|t|t.tm_c),pair.tm_difference_c,pair.heterodimer.max_three_prime_run)}</p>})}})}</details>}).collect_view()}<p class="helper">"Order sheets and HTML/PDF use the canonical reconstructed plan above, including all six ordered oligos and declared circular closure steps."</p></section>}.into_any(),
+ }
 }

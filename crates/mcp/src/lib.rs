@@ -7034,7 +7034,7 @@ impl CollageneServer {
         self.domestication_check(args).await
     }
     #[tool(
-        description = "Materialize an explicitly checked domestication candidate with an explicit original-source inverse-PCR route, actual bounded oligos, phosphorylation and circular ligation. Every intended substitution must be introduced by the real preparation. Atomically retains the independent target, candidate plan and evidence for fresh verify_plan and HTML/PDF/oligo export. Unsupported distant or ambiguous routes are refused, never replaced by invented recoded stock."
+        description = "Materialize a literal checked domestication target using an explicit original-source route: inverse PCR on a circle, or whole-source overlap-extension PCR on linear/circular DNA. OE performs two actual original-template PCR branches, physical extension and outer PCR; circles then require explicit phosphorylation and ligation. All substitutions, coding/protected constraints and scoped sites are checked before planning. Atomically retains the independently frozen target, one canonical native plan and full route/oligo/search evidence for fresh verify_plan and HTML/PDF/order export. Unresolved PCR geometry retains a nonready diagnostic candidate; unsupported sources, settings and failed coverage are refused. No invented recoded stock or imported report authority."
     )]
     async fn prepare_domestication(
         &self,

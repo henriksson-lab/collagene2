@@ -152,8 +152,93 @@ pub fn range(source: &Molecule, start: &str, end: &str) -> Result<design::Source
         end: last,
     })
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PreparationKind {
+    InversePcr,
+    OverlapExtension,
+}
+/// Editable raw values survive route switches, including unfinished numbers.
+#[derive(Clone, PartialEq, Eq)]
+pub struct OverlapForm {
+    pub values: [String; 16],
+}
+impl Default for OverlapForm {
+    fn default() -> Self {
+        let o = collagene_core::overlap_extension_primer_design::Options::default();
+        let p = o.primer_options;
+        Self {
+            values: [
+                p.min_length.to_string(),
+                p.max_length.to_string(),
+                p.target_tm_c.to_string(),
+                p.max_tm_difference_c.to_string(),
+                p.min_gc_fraction.to_string(),
+                p.max_gc_fraction.to_string(),
+                p.max_homopolymer.to_string(),
+                p.max_three_prime_complementarity.to_string(),
+                p.max_pairs.to_string(),
+                o.homology_flank.to_string(),
+                o.max_oligo_length.to_string(),
+                o.min_paired_bases.to_string(),
+                o.max_comparisons.to_string(),
+                o.max_candidates.to_string(),
+                p.conditions.sodium_molar.to_string(),
+                p.conditions.total_strand_molar.to_string(),
+            ],
+        }
+    }
+}
+impl OverlapForm {
+    pub fn options(
+        &self,
+    ) -> Result<collagene_core::overlap_extension_primer_design::Options, String> {
+        if self
+            .values
+            .iter()
+            .any(|s| s.is_empty() || s.len() > 64 || s.chars().any(char::is_control))
+        {
+            return Err(
+                "Complete bounded overlap-extension settings before preparing primers.".into(),
+            );
+        }
+        let integer = |i: usize| {
+            self.values[i]
+                .parse::<usize>()
+                .map_err(|_| "Enter whole-number overlap-extension bounds.".to_string())
+        };
+        let real = |i: usize| -> Result<f64, String> {
+            let v = self.values[i]
+                .parse::<f64>()
+                .map_err(|_| "Enter finite primer model settings.".to_string())?;
+            if !v.is_finite() {
+                return Err("Primer model settings must be finite.".into());
+            }
+            Ok(v)
+        };
+        let mut o = collagene_core::overlap_extension_primer_design::Options::default();
+        o.primer_options.min_length = integer(0)?;
+        o.primer_options.max_length = integer(1)?;
+        o.primer_options.target_tm_c = real(2)?;
+        o.primer_options.max_tm_difference_c = real(3)?;
+        o.primer_options.min_gc_fraction = real(4)?;
+        o.primer_options.max_gc_fraction = real(5)?;
+        o.primer_options.max_homopolymer = integer(6)?;
+        o.primer_options.max_three_prime_complementarity = integer(7)?;
+        o.primer_options.max_pairs = integer(8)?;
+        o.homology_flank = integer(9)?;
+        o.max_oligo_length = integer(10)?;
+        o.min_paired_bases = integer(11)?;
+        o.max_comparisons = integer(12)?;
+        o.max_candidates = integer(13)?;
+        o.primer_options.conditions.sodium_molar = real(14)?;
+        o.primer_options.conditions.total_strand_molar = real(15)?;
+        Ok(o)
+    }
+}
 #[derive(Clone, PartialEq, Eq)]
 pub struct RouteForm {
+    pub kind: PreparationKind,
+    pub overlap_extension: OverlapForm,
     pub start: String,
     pub end: String,
     pub forward: String,
@@ -163,6 +248,8 @@ pub struct RouteForm {
 impl Default for RouteForm {
     fn default() -> Self {
         Self {
+            kind: PreparationKind::InversePcr,
+            overlap_extension: Default::default(),
             start: String::new(),
             end: String::new(),
             forward: "18".into(),
@@ -189,6 +276,23 @@ impl RouteForm {
         .any(|s| s.len() > 20 || s.chars().any(char::is_control))
         {
             return Err("Preparation fields exceed their bounds.".into());
+        }
+        if self
+            .overlap_extension
+            .values
+            .iter()
+            .any(|s| s.len() > 64 || s.chars().any(char::is_control))
+        {
+            return Err("Overlap-extension raw settings exceed their bounds.".into());
+        }
+        if self.kind == PreparationKind::OverlapExtension {
+            return Ok(physical::Request {
+                design,
+                selection,
+                route: physical::Route::OverlapExtension {
+                    options: self.overlap_extension.options()?,
+                },
+            });
         }
         let interval = range(source, &self.start, &self.end)?;
         Ok(physical::Request {
@@ -297,6 +401,8 @@ mod tests {
             patches: vec![],
         };
         let route = RouteForm {
+            kind: PreparationKind::InversePcr,
+            overlap_extension: Default::default(),
             start: "31".into(),
             end: "2".into(),
             forward: "8".into(),
@@ -311,7 +417,10 @@ mod tests {
             forward_length,
             reverse_length,
             reverse_tail_bases,
-        } = built.route;
+        } = built.route
+        else {
+            panic!("inverse route was explicitly selected")
+        };
         assert_eq!(
             (
                 edit_start,
@@ -330,5 +439,36 @@ mod tests {
             molecule: source,
         };
         assert!(physical::preflight(&input, &built).is_err());
+    }
+    #[test]
+    fn route_switch_preserves_inactive_partial_text_and_explicit_oe_options() {
+        let source = source(Topology::Linear);
+        let request = Form::new(&source, Some(0)).request(&source).unwrap();
+        let selection = design::Selection {
+            context_revision: "a".repeat(64),
+            candidate_id: "b".repeat(64),
+            patches: vec![],
+        };
+        let mut form = RouteForm::default();
+        form.start = "unfinished".into();
+        form.kind = PreparationKind::OverlapExtension;
+        form.overlap_extension.values[0] = "8".into();
+        form.overlap_extension.values[1] = "12".into();
+        let native = form
+            .request(&source, request.clone(), selection.clone())
+            .unwrap();
+        assert!(
+            matches!(native.route,physical::Route::OverlapExtension{options} if options.primer_options.min_length==8&&options.primer_options.max_length==12)
+        );
+        assert_eq!(form.start, "unfinished");
+        form.kind = PreparationKind::InversePcr;
+        assert!(
+            form.request(&source, request.clone(), selection.clone())
+                .is_err()
+        );
+        form.kind = PreparationKind::OverlapExtension;
+        form.overlap_extension.values[2] = "6e".into();
+        assert!(form.request(&source, request, selection).is_err());
+        assert_eq!(form.overlap_extension.values[2], "6e");
     }
 }

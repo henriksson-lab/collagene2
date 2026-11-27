@@ -89,16 +89,22 @@ fn a_checked_literal_site_change_is_supplied_by_real_primers_from_original_dna()
             .iter()
             .all(|site| !site.in_scope || site.retained)
     );
-    assert_eq!(report.preparation.forward.tail, "C");
-    assert!(report.preparation.reverse.tail.is_empty());
+    let physical::MethodEvidence::InversePcr {
+        options,
+        forward,
+        reverse,
+        ..
+    } = &report.method
+    else {
+        panic!("inverse evidence");
+    };
+    assert_eq!(forward.tail, "C");
+    assert!(reverse.tail.is_empty());
     assert_eq!(
-        report.preparation.plan.inputs[0].molecule.sequence.as_str(),
+        report.plan.inputs[0].molecule.sequence.as_str(),
         original.sequence.as_str()
     );
-    assert_eq!(
-        report.preparation.plan.inputs[0].revision,
-        original.revision()
-    );
+    assert_eq!(report.plan.inputs[0].revision, original.revision());
     assert_ne!(report.target.revision(), original.revision());
     assert_eq!(
         report.verification.status,
@@ -108,20 +114,14 @@ fn a_checked_literal_site_change_is_supplied_by_real_primers_from_original_dna()
     );
     assert_eq!(report.verification.products.len(), 3);
     assert!(verification::plan_target_matches(
-        &report.preparation.plan,
+        &report.plan,
         &report.verification.products[2],
         &report.target
     ));
     assert_eq!(input.molecule, original);
     // A reference-only domesticated sequence is not a replacement material stock.
     assert!(
-        mutagenesis::compile_inverse_pcr(
-            &report.target,
-            &report.target,
-            None,
-            &report.preparation.options
-        )
-        .is_err()
+        mutagenesis::compile_inverse_pcr(&report.target, &report.target, None, options).is_err()
     );
 }
 #[test]
@@ -144,19 +144,25 @@ fn origin_spanning_edits_keep_original_coordinates_and_encode_both_tails() {
         report.target.sequence.as_str(),
         String::from_utf8(expected).unwrap()
     );
-    assert_eq!(report.preparation.options.inserted, "GACC");
-    assert_eq!(report.preparation.forward.tail, "CC");
-    assert_eq!(report.preparation.reverse.tail, "TC");
+    let physical::MethodEvidence::InversePcr {
+        options,
+        forward,
+        reverse,
+        ..
+    } = &report.method
+    else {
+        panic!("inverse evidence");
+    };
+    assert_eq!(options.inserted, "GACC");
+    assert_eq!(forward.tail, "CC");
+    assert_eq!(reverse.tail, "TC");
     assert_eq!(
         report.verification.status,
         Status::ConsistentUnderAssumptions,
         "{:?}",
         report.verification.findings
     );
-    assert_eq!(
-        report.preparation.plan.inputs[0].molecule.sequence.as_str(),
-        dna
-    );
+    assert_eq!(report.plan.inputs[0].molecule.sequence.as_str(), dna);
 }
 #[test]
 fn stale_original_candidate_and_out_of_interval_changes_are_refused() {
@@ -230,48 +236,56 @@ fn distant_substitutions_and_a_201_base_ordered_oligo_need_another_explicit_rout
     physical::preflight(&input, &long).unwrap(); // exactly200, still only a declaration
 }
 #[test]
-fn independent_target_and_plan_tampering_fail_and_old_inverse_result_stays_compatible() {
+fn independent_target_and_method_evidence_tampering_fail_under_current_compiler() {
     let (input, request) = simple();
     let report = physical::materialize(&input, &request).unwrap();
     let bound = report.context_revision.clone();
+    let physical::MethodEvidence::InversePcr { options, .. } = &report.method else {
+        panic!("inverse evidence");
+    };
     let mut changed = report.clone();
-    changed.preparation.forward.tail = "A".into();
-    assert!(changed.validate_binding(&bound).is_err());
-    changed = report.clone();
-    changed.preparation.forward_location = collagene_core::Location::range(0, 8);
-    assert!(changed.validate_binding(&bound).is_err());
-    changed = report.clone();
-    changed.preparation.retained_template_length += 1;
-    assert!(changed.validate_binding(&bound).is_err());
-    changed = report.clone();
-    changed.preparation.forward.tail = "A".into();
-    if let verification::Operation::Pcr { forward, .. } = &mut changed.preparation.plan.steps[0] {
+    if let physical::MethodEvidence::InversePcr { forward, .. } = &mut changed.method {
         forward.tail = "A".into();
     }
-    changed.verification.plan_revision = verification::plan_revision(&changed.preparation.plan);
+    assert!(changed.validate_binding(&bound).is_err());
+    changed = report.clone();
+    if let physical::MethodEvidence::InversePcr {
+        forward_location, ..
+    } = &mut changed.method
+    {
+        *forward_location = collagene_core::Location::range(0, 8);
+    }
+    assert!(changed.validate_binding(&bound).is_err());
+    changed = report.clone();
+    if let physical::MethodEvidence::InversePcr {
+        retained_template_length,
+        ..
+    } = &mut changed.method
+    {
+        *retained_template_length += 1;
+    }
+    assert!(changed.validate_binding(&bound).is_err());
+    changed = report.clone();
+    if let physical::MethodEvidence::InversePcr { forward, .. } = &mut changed.method {
+        forward.tail = "A".into();
+    }
+    if let verification::Operation::Pcr { forward, .. } = &mut changed.plan.steps[0] {
+        forward.tail = "A".into();
+    }
+    changed.verification.plan_revision = verification::plan_revision(&changed.plan);
     assert!(changed.validate_binding(&bound).is_err());
     changed = report.clone();
     changed.target = Molecule::dna("Wrong target", "ACGTACGTACGTACGT", Topology::Circular).unwrap();
     assert!(changed.validate_binding(&bound).is_err());
-    let original = mutagenesis::design_inverse_pcr(
-        &input.molecule,
-        &report.target,
-        None,
-        &report.preparation.options,
-    )
-    .unwrap();
+    let original =
+        mutagenesis::design_inverse_pcr(&input.molecule, &report.target, None, options).unwrap();
     assert_eq!(
         serde_json::to_value(&original.plan).unwrap(),
-        serde_json::to_value(&report.preparation.plan).unwrap()
+        serde_json::to_value(&report.plan).unwrap()
     );
     assert_eq!(original.verification.status, report.verification.status);
-    let wrong = mutagenesis::compile_inverse_pcr(
-        &input.molecule,
-        &changed.target,
-        None,
-        &report.preparation.options,
-    )
-    .unwrap();
+    let wrong =
+        mutagenesis::compile_inverse_pcr(&input.molecule, &changed.target, None, options).unwrap();
     assert_eq!(
         verification::verify(&wrong.plan, &changed.target).status,
         Status::Invalid

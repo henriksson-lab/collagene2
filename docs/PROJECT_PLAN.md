@@ -3417,3 +3417,43 @@ source/strand assertions and rejection of noncurrent headers; all15 cases in
 those targets pass. Together with the48 workflow cases, this increment covers63
 distinct native cases. Formatting and web/worker WASM checks pass. [Native contract](INVERSE_PCR_MATERIAL.md) ·
 [Transport](INVERSE_PCR_ORIGIN_TRANSPORT.md).
+
+### Original-source overlap-extension domestication
+
+The domestication designer now offers inverse PCR or overlap-extension PCR for
+explicit checked substitution patches. The source/CDS/site checker freezes the
+independent intended target before primer planning. Whole linear originals use
+two source PCRs, actual overlap extension and outer PCR; circular originals add
+explicit phosphorylation and circular ligation. The shared OE compiler supplies
+real primer/search evidence without a placeholder verification report. One
+canonical plan is verified against the checked target.
+
+Primer proposal readiness remains separate from physical verification. Unresolved
+source geometry retains a labelled diagnostic candidate that can be reviewed or
+edited; matching target DNA does not promote it to a ready proposal. The designer,
+existing binary worker and MCP retain all three pair searches and actual oligo
+uses. Existing order tables, HTML/PDF and native run recording consume that plan.
+Current documentary review records retain exact source/target events and the full
+optional preparation through workspace archives, without restoring acceptance.
+Ordinary selected-plasmid sharing omits that documentary sidecar with omission
+counts while retaining the actual self-contained run and biological dependencies.
+
+Worker101 directly replaces the current result representation; candidate26,
+plan24, science27, draft15 and MCP190 are unchanged. No old decoder, wrapper plan
+or migration is retained. All42 focused native cases and formatting pass,
+including existing inverse-PCR and edited-assembly/OE regressions, actual MCP and
+binary round trips, HTML/PDF, native archive restart and sharing omission.
+The integrated web/worker WASM compiler check also passes. Browser and application
+HTTP checks remain deferred under the current instruction.
+Saved-material OE inputs, distant edits requiring multiple rounds, automatic
+source rotation, explicit designer-evidence publication and broader Type IIS
+domestication remain active scope. [Scientific contract](DOMESTICATION_OVERLAP_EXTENSION.md) ·
+[Transport and sharing](DOMESTICATION_OE_TRANSPORT.md).
+
+Public8082 now serves the independently CI-built1b7ffef frontend (worker100),
+including saved-origin inverse PCR. Its scientific and desktop jobs passed on
+Linux, macOS and Windows. Artifact15173175308 supplied13 static assets; staging
+validated references, declared integrity hashes, the sole current worker and WASM
+headers. Process/socket inspection confirmed the replacement listener. No browser
+or application HTTP checks ran; private services were untouched. This preview
+does not yet include the overlap-extension increment being validated above.

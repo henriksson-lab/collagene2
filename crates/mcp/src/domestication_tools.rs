@@ -90,20 +90,24 @@ impl CollageneServer {
             let prepared=preparation::materialize(&input,&args.request).map_err(bad)?;
             prepared.validate_binding(&preparation::revision(&input,&args.request).map_err(bad)?).map_err(bad)?;
             let target=prepared.target.clone();
-            let plan=prepared.preparation.plan.clone();
+            let plan=prepared.plan.clone();
             let plan_revision=verification::plan_revision(&plan);
             if plan_revision.is_empty()||plan.target_revision!=target.revision(){return Err(bad("prepared plan lost its independent target"));}
-            let text=bounded_json_limit(&json!({"source":args.source,"prepared":prepared}),32*1024*1024)?;
+            #[derive(Serialize)]
+            struct Evidence<'a>{source:&'a DocumentRef,prepared:&'a preparation::Prepared}
+            let text=bounded_json_limit(&Evidence{source:&args.source,prepared:&prepared},32*1024*1024)?;
+            let method=match &prepared.method{preparation::MethodEvidence::InversePcr{..}=>"InversePcr",preparation::MethodEvidence::OverlapExtension{..}=>"OverlapExtension"};
             let artifact_id=blake3::hash(text.as_bytes()).to_hex().to_string();
             let target_id=target.revision();
             let target_bytes=bounded_json(&target)?.len();
             let plan_bytes=bounded_json(&plan)?.len().checked_add(target_bytes).ok_or_else(||bad("prepared candidate size overflow"))?;
-            let result=output(json!({"state":"candidate","verified":false,"source":args.source,
-                "context_revision":prepared.context_revision,"plan_revision":plan_revision,
+            let result=output(json!({"state":if prepared.proposal_ready{"candidate"}else{"diagnostic-candidate"},"verified":false,"source":args.source,
+                "proposal_ready":prepared.proposal_ready,"proposal_findings":prepared.proposal_findings.iter().take(40).collect::<Vec<_>>(),"proposal_findings_total":prepared.proposal_findings.len(),"proposal_findings_truncated":prepared.proposal_findings.len()>40,"proposal_scope":"Requested primer-construction conditions only; separate from molecular verification, isolation or experimental success.",
+                "context_revision":prepared.context_revision,"plan_revision":plan_revision,"method":method,"operation_count":plan.steps.len(),
                 "target":summary(&target_id,&target),"verification":{"status":prepared.verification.status,
-                    "engine_version":prepared.verification.engine_version,"findings":prepared.verification.findings.iter().take(40).collect::<Vec<_>>()},
+                    "engine_version":prepared.verification.engine_version,"findings":prepared.verification.findings.iter().take(40).collect::<Vec<_>>(),"findings_total":prepared.verification.findings.len(),"findings_truncated":prepared.verification.findings.len()>40},
                 "warnings":prepared.warnings,"artifact_id":artifact_id,
-                "authority":"Actual original-source primer preparation against the separately frozen reference. Use verify_plan, export_protocol, export_protocol_pdf and export_plan_oligos with plan_revision. No efficiency, template clearance or experimental success is established."}))?;
+                "authority":"Native original-source preparation proposal against the separately frozen reference. A diagnostic fallback is not ready under the requested primer-construction conditions. Actual verification remains separate. Use verify_plan, export_protocol, export_protocol_pdf and export_plan_oligos with plan_revision. No efficiency, template clearance or experimental success is established."}))?;
             let mut store=server.store.lock().unwrap();
             let new_plan=!store.plans.contains_key(&plan_revision);
             let new_doc=!store.documents.contains_key(&target_id);

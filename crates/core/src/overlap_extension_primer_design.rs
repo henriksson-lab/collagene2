@@ -62,6 +62,22 @@ pub struct Report {
     pub search: Vec<PairSearch>,
     pub warnings: Vec<String>,
 }
+/// Genuine native primer-planning/compilation phase, without final molecular
+/// verification. Embedding workflows supply their independently frozen target
+/// and verify their composed plan once. This is not physical source authority.
+#[derive(Clone, Debug)]
+pub struct Compilation {
+    pub context_revision: String,
+    pub engine_version: String,
+    pub source_revision: String,
+    pub request: Request,
+    pub preparation: overlap_extension_pcr::Request,
+    pub expected: Molecule,
+    pub plan: DesignPlan,
+    pub designs: Vec<DesignReport>,
+    pub search: Vec<PairSearch>,
+    pub warnings: Vec<String>,
+}
 fn bad(s: &str) -> Error {
     Error::Unsupported(format!("overlap-extension primer planning: {s}"))
 }
@@ -711,11 +727,48 @@ pub fn design(source: &Molecule, request: &Request) -> Result<Report, Error> {
     design_with_budget(source, request, &mut budget)
 }
 /// Shared whole-design ledger; only native source-bound proposal work uses it.
+/// Plan all native primer pairs and exact operation declarations without
+/// executing final verification. Source-bound ranked PCR searches still run.
+pub fn compile(source: &Molecule, request: &Request) -> Result<Compilation, Error> {
+    let mut budget = Budget {
+        used: 0,
+        limit: MAX_WORK,
+        materialized: 0,
+    };
+    compile_with_budget(source, request, &mut budget)
+}
 pub(crate) fn design_with_budget(
     source: &Molecule,
     request: &Request,
     budget: &mut Budget,
 ) -> Result<Report, Error> {
+    let compiled = compile_with_budget(source, request, budget)?;
+    let verification = verification::verify(&compiled.plan, &compiled.expected);
+    let mut warnings = compiled.warnings;
+    if verification.status != Status::ConsistentUnderAssumptions {
+        warnings.push("The selected oligos did not establish a complete target-consistent physical preparation. Keep the verifier findings; no intended sequence was substituted to obtain success.".into());
+    }
+    let report = Report {
+        context_revision: compiled.context_revision,
+        engine_version: compiled.engine_version,
+        source_revision: compiled.source_revision,
+        request: compiled.request,
+        preparation: compiled.preparation,
+        expected: compiled.expected,
+        plan: compiled.plan,
+        verification,
+        designs: compiled.designs,
+        search: compiled.search,
+        warnings,
+    };
+    report.validate()?;
+    Ok(report)
+}
+pub(crate) fn compile_with_budget(
+    source: &Molecule,
+    request: &Request,
+    budget: &mut Budget,
+) -> Result<Compilation, Error> {
     let b = bounds(source, request)?;
     let source_revision = source.revision();
     let context_revision = assembly_recipe::hash(&(ENGINE_VERSION, &source_revision, request))?;
@@ -820,7 +873,6 @@ pub(crate) fn design_with_budget(
     let preparation = preparation(&designs, &search, request, &b)?;
     preparation.validate_shape()?;
     let plan = plan(source, request, &expected, &preparation)?;
-    let verification = verification::verify(&plan, &expected);
     let mut warnings=vec![
         "Native anchored pairs are ranked under the requested filters (at most20). Bounded search chooses the first unique declared source-endpoint/oligo-role PCR geometry in each ranked list; the outer list is checked on actual extended branch material. No intended target DNA chooses a pair or product. Searches are not globally optimal or exhaustive beyond the retained native lists.".into(),
         "Derived endpoints, physical maximum lengths, tails and max_pairs are recorded per native call. Requested Tm/GC/salt/structure filters remain unchanged. Work caps or ambiguous/competing PCRs retain an explicit diagnostic fallback rather than inventing material.".into(),
@@ -829,10 +881,7 @@ pub(crate) fn design_with_budget(
         "Outer forward/reverse tails refer to oligos in stored source orientation. Their endpoints remain on unchanged original flanks. Readable saved-material metadata cannot restore source chemistry; exact closed-origin reconstruction remains necessary where the verifier requires it.".into(),
     ];
     warnings.push(format!("Ranked source searches charged{} comparison-work units (including reserved native design/final-verification work) within{} and{} materialized-base units within64MiB. Native interrupted materialization calls are conservatively charged at their full32MiB cap.",budget.used,MAX_WORK,budget.materialized));
-    if verification.status != Status::ConsistentUnderAssumptions {
-        warnings.push("The selected oligos did not establish a complete target-consistent physical preparation. Keep the verifier findings; no intended sequence was substituted to obtain success.".into());
-    }
-    let report = Report {
+    let report = Compilation {
         context_revision,
         engine_version: ENGINE_VERSION.into(),
         source_revision,
@@ -840,12 +889,31 @@ pub(crate) fn design_with_budget(
         preparation,
         expected,
         plan,
-        verification,
         designs,
         search,
         warnings,
     };
-    report.validate()?;
+    validate_preparation(
+        source,
+        request,
+        &report.context_revision,
+        &report.preparation,
+        &report.designs,
+        &report.search,
+    )?;
+    bytes(
+        &(
+            &report.context_revision,
+            &report.request,
+            &report.preparation,
+            &report.expected,
+            &report.plan,
+            &report.designs,
+            &report.search,
+            &report.warnings,
+        ),
+        MAX_REPORT_BYTES,
+    )?;
     Ok(report)
 }
 fn location_guard(location: &Location, n: usize) -> Result<(), Error> {
@@ -873,6 +941,144 @@ fn location_guard(location: &Location, n: usize) -> Result<(), Error> {
         }
     }
     Ok(())
+}
+/// Bounded readonly correspondence of actual native calls, selected primers
+/// and literal edits; no primer ranking/PCR/verification is repeated.
+pub fn validate_preparation(
+    source: &Molecule,
+    request: &Request,
+    context: &str,
+    prepared: &overlap_extension_pcr::Request,
+    designs: &[DesignReport],
+    searches: &[PairSearch],
+) -> Result<Molecule, Error> {
+    if designs.len() != 3 || searches.len() != 3 {
+        return Err(bad("expected three native primer calls"));
+    }
+    for (d, search) in designs.iter().zip(searches) {
+        if d.pairs.is_empty()
+            || d.pairs.len() > 20
+            || search.candidates != d.pairs.len()
+            || search.examined > search.candidates
+            || search.rejected > search.examined
+            || search.selected_index >= d.pairs.len()
+            || search.notes.len() > 22
+            || search.notes.iter().any(|s| s.len() > 4096)
+            || search.unique_geometry
+                && (search.examined != search.selected_index + 1
+                    || search.rejected + 1 != search.examined)
+            || !search.unique_geometry
+                && (search.selected_index != 0 || search.rejected != search.examined)
+        {
+            return Err(bad("invalid bounded ranked-pair search evidence"));
+        }
+    }
+    bytes(&(request, prepared, designs, searches), MAX_REPORT_BYTES)?;
+    let b = bounds(source, request)?;
+    let source_revision = source.revision();
+    if design_revision(source, request)? != context {
+        return Err(bad("returned source/request binding changed"));
+    }
+    prepared.validate_shape()?;
+    let insert = edited(source, &request, &b, b.start, b.end);
+    let mut right_prefix = String::new();
+    segment(
+        source,
+        &request.fragment,
+        b.end,
+        b.end + request.options.homology_flank,
+        &mut right_prefix,
+    );
+    let left_tail = Sequence::dna(&format!("{insert}{right_prefix}"))?
+        .reverse_complement()?
+        .as_str()
+        .to_owned();
+    let mut right_tail = String::new();
+    segment(
+        source,
+        &request.fragment,
+        b.start - request.options.homology_flank,
+        b.start,
+        &mut right_tail,
+    );
+    right_tail.push_str(&insert);
+    let derived = derived_options(source, &request, &b, &left_tail, &right_tail, true)?;
+    for (call_index, (d, o)) in designs.iter().zip(&derived).enumerate() {
+        if d.source_revision != source_revision
+            || d.options != *o
+            || d.pairs.len() > o.max_pairs
+            || searches[call_index].call != ["left", "right", "outer"][call_index]
+            || d.pairs.windows(2).any(|pair| pair[0].score > pair[1].score)
+            || d.evaluated_pairs > 4096
+            || d.rejected_pairs > d.evaluated_pairs
+            || d.warnings.len() > 32
+            || d.warnings.iter().any(|s| s.len() > 8192)
+        {
+            return Err(bad("returned native primer-call settings changed"));
+        }
+        for pair in &d.pairs {
+            if !pair.score.is_finite()
+                || !pair.tm_difference_c.is_finite()
+                || pair.forward.primer.annealing.len() + pair.reverse.primer.annealing.len()
+                    > o.target_end - o.target_start
+                || pair.product_length
+                    != (o.target_end - o.target_start) + o.forward_tail.len() + o.reverse_tail.len()
+            {
+                return Err(bad("returned primer pair shape changed"));
+            }
+            for (candidate, reverse, tail) in [
+                (&pair.forward, false, &o.forward_tail),
+                (&pair.reverse, true, &o.reverse_tail),
+            ] {
+                let p = &candidate.primer;
+                overlap_extension_pcr::primer(p)?;
+                if p.annealing.len() < o.min_length
+                    || p.annealing.len() > o.max_length
+                    || p.tail != *tail
+                    || p.ordered_sequence().len() > request.options.max_oligo_length
+                    || candidate.analysis.name != p.name
+                    || candidate.analysis.annealing != p.annealing.as_str()
+                    || candidate.analysis.tail != p.tail
+                    || candidate.analysis.ordered_sequence != p.ordered_sequence()
+                {
+                    return Err(bad("returned oligo differs from its native call/analysis"));
+                }
+                location_guard(&candidate.location, source.sequence.len())?;
+                let mut actual = String::with_capacity(p.annealing.len());
+                let start = if reverse {
+                    o.target_end - p.annealing.len()
+                } else {
+                    o.target_start
+                };
+                for j in 0..p.annealing.len() {
+                    actual.push(
+                        source.sequence.as_str().as_bytes()[(start + j) % source.sequence.len()]
+                            as char,
+                    );
+                }
+                if reverse {
+                    actual = Sequence::dna(&actual)?
+                        .reverse_complement()?
+                        .as_str()
+                        .to_owned();
+                }
+                if p.annealing.as_str() != actual
+                    || candidate.location.extract(&source.sequence)? != actual
+                {
+                    return Err(bad(
+                        "returned primer does not bind its original anchored endpoint",
+                    ));
+                }
+            }
+        }
+    }
+    let selected = preparation(designs, searches, request, &b)?;
+    if assembly_recipe::hash(&selected)? != assembly_recipe::hash(prepared)? {
+        return Err(bad(
+            "returned preparation differs from the selected native oligos",
+        ));
+    }
+    expected(source, request, &b)
 }
 impl Report {
     /// Bounded documentary correspondence only. This does not repeat primer
@@ -904,138 +1110,24 @@ impl Report {
         {
             return Err(bad("invalid returned report bounds or version"));
         }
-        for (d, search) in self.designs.iter().zip(&self.search) {
-            if d.pairs.is_empty()
-                || d.pairs.len() > 20
-                || search.candidates != d.pairs.len()
-                || search.examined > search.candidates
-                || search.rejected > search.examined
-                || search.selected_index >= d.pairs.len()
-                || search.notes.len() > 22
-                || search.notes.iter().any(|s| s.len() > 4096)
-                || search.unique_geometry
-                    && (search.examined != search.selected_index + 1
-                        || search.rejected + 1 != search.examined)
-                || !search.unique_geometry
-                    && (search.selected_index != 0 || search.rejected != search.examined)
-            {
-                return Err(bad("invalid bounded ranked-pair search evidence"));
-            }
-        }
         bytes(self, MAX_REPORT_BYTES)?;
         let input = &self.plan.inputs[0];
         let source = &input.molecule;
-        let b = bounds(source, &self.request)?;
         if input.id != self.request.fragment.input_id
             || input.revision != self.source_revision
             || source.revision() != self.source_revision
-            || assembly_recipe::hash(&(ENGINE_VERSION, &self.source_revision, &self.request))?
-                != self.context_revision
         {
-            return Err(bad("returned source/request binding changed"));
+            return Err(bad("returned source input changed"));
         }
-        self.preparation.validate_shape()?;
-        let insert = edited(source, &self.request, &b, b.start, b.end);
-        let mut right_prefix = String::new();
-        segment(
+        let expected = validate_preparation(
             source,
-            &self.request.fragment,
-            b.end,
-            b.end + self.request.options.homology_flank,
-            &mut right_prefix,
-        );
-        let left_tail = Sequence::dna(&format!("{insert}{right_prefix}"))?
-            .reverse_complement()?
-            .as_str()
-            .to_owned();
-        let mut right_tail = String::new();
-        segment(
-            source,
-            &self.request.fragment,
-            b.start - self.request.options.homology_flank,
-            b.start,
-            &mut right_tail,
-        );
-        right_tail.push_str(&insert);
-        let derived = derived_options(source, &self.request, &b, &left_tail, &right_tail, true)?;
-        for (call_index, (d, o)) in self.designs.iter().zip(&derived).enumerate() {
-            if d.source_revision != self.source_revision
-                || d.options != *o
-                || d.pairs.len() > o.max_pairs
-                || self.search[call_index].call != ["left", "right", "outer"][call_index]
-                || d.pairs.windows(2).any(|pair| pair[0].score > pair[1].score)
-                || d.evaluated_pairs > 4096
-                || d.rejected_pairs > d.evaluated_pairs
-                || d.warnings.len() > 32
-                || d.warnings.iter().any(|s| s.len() > 8192)
-            {
-                return Err(bad("returned native primer-call settings changed"));
-            }
-            for pair in &d.pairs {
-                if !pair.score.is_finite()
-                    || !pair.tm_difference_c.is_finite()
-                    || pair.forward.primer.annealing.len() + pair.reverse.primer.annealing.len()
-                        > o.target_end - o.target_start
-                    || pair.product_length
-                        != (o.target_end - o.target_start)
-                            + o.forward_tail.len()
-                            + o.reverse_tail.len()
-                {
-                    return Err(bad("returned primer pair shape changed"));
-                }
-                for (candidate, reverse, tail) in [
-                    (&pair.forward, false, &o.forward_tail),
-                    (&pair.reverse, true, &o.reverse_tail),
-                ] {
-                    let p = &candidate.primer;
-                    overlap_extension_pcr::primer(p)?;
-                    if p.annealing.len() < o.min_length
-                        || p.annealing.len() > o.max_length
-                        || p.tail != *tail
-                        || p.ordered_sequence().len() > self.request.options.max_oligo_length
-                        || candidate.analysis.name != p.name
-                        || candidate.analysis.annealing != p.annealing.as_str()
-                        || candidate.analysis.tail != p.tail
-                        || candidate.analysis.ordered_sequence != p.ordered_sequence()
-                    {
-                        return Err(bad("returned oligo differs from its native call/analysis"));
-                    }
-                    location_guard(&candidate.location, source.sequence.len())?;
-                    let mut actual = String::with_capacity(p.annealing.len());
-                    let start = if reverse {
-                        o.target_end - p.annealing.len()
-                    } else {
-                        o.target_start
-                    };
-                    for j in 0..p.annealing.len() {
-                        actual.push(
-                            source.sequence.as_str().as_bytes()[(start + j) % source.sequence.len()]
-                                as char,
-                        );
-                    }
-                    if reverse {
-                        actual = Sequence::dna(&actual)?
-                            .reverse_complement()?
-                            .as_str()
-                            .to_owned();
-                    }
-                    if p.annealing.as_str() != actual
-                        || candidate.location.extract(&source.sequence)? != actual
-                    {
-                        return Err(bad(
-                            "returned primer does not bind its original anchored endpoint",
-                        ));
-                    }
-                }
-            }
-        }
-        let preparation = preparation(&self.designs, &self.search, &self.request, &b)?;
-        if assembly_recipe::hash(&preparation)? != assembly_recipe::hash(&self.preparation)? {
-            return Err(bad(
-                "returned preparation differs from the selected native oligos",
-            ));
-        }
-        let expected = expected(source, &self.request, &b)?;
+            &self.request,
+            &self.context_revision,
+            &self.preparation,
+            &self.designs,
+            &self.search,
+        )?;
+        let preparation = &self.preparation;
         if expected.revision() != self.expected.revision() {
             return Err(bad(
                 "returned expected reference differs from independent literal edits",

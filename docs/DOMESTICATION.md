@@ -42,19 +42,37 @@ different equal-content source produces a separately parented reference.
 
 ## Physical preparation and outputs
 
-Physical preparation is a separate action. The current route is original-template
+Physical preparation is a separate action. One route is original-template
 inverse PCR with an explicit replacement interval, forward/reverse annealing
 lengths and tail split. The interval may wrap around a circular source. Every
 selected substitution must lie inside it and must be encoded in the actual ordered
 primers. Unchanged intervening bases are copied literally. Both complete ordered
 primers must fit the 200-base limit; retained annealing domains must be nonoverlapping.
 
-The shared pure inverse-PCR compiler builds actual primers and the PCR →
-phosphorylation → circular ligation plan. The old inverse-PCR API delegates to
-that compiler and retains its original serialized output. Native materialization
-verifies once against the already frozen reference. Unsupported distant edits
-require another explicit route or reviewed rounds; a recoded reference is never
+The shared current inverse-PCR compiler builds actual primers and the PCR →
+phosphorylation → circular ligation plan. Native materialization verifies this
+canonical plan once against the already frozen reference.
+
+The overlap-extension route prepares a whole original linear or circular source
+using two actual branch PCRs, reciprocal extension and outer PCR. Circular sources
+then receive explicit terminal phosphorylation and intended circular ligation.
+Native anchored primer ranking receives only original DNA and explicit literal
+patches. The independently checked target is frozen before planning and never
+selects a pair or product. All six primer uses, native call/filter/search evidence,
+and the one canonical physical plan remain inspectable. No recoded reference is
 invented as pre-existing template material.
+
+Both unchanged flanks must support the requested nonoverlapping domains; long
+bridges must fit actual oligos. Edits near an original linearization boundary,
+unsupported distant edits or saved-material templates require another explicit
+route or reviewed rounds. This slice does not silently rotate the original,
+recover source chemistry from metadata or add external primer tails.
+
+Prepared.proposal_ready describes only satisfaction of requested primer-route
+constraints. A ranked diagnostic fallback is visibly nonready even if some final
+sequence could match. The actual VerificationReport is retained unchanged;
+readiness does not assert reaction acceptance, globally optimal primers,
+experimental isolation or absence of bounded terminal alternatives.
 
 Review actual oligos, findings and the final reconstructed product before opening
 the plan. An invalid preparation does not acquire authority because its reference
@@ -76,8 +94,8 @@ solution exists, and its candidate does not prove a global biological optimum.
 Explicit literal candidates can still be independently checked against all
 supported affected frames.
 
-Worker61 appends inspection, proposal, checked-reference and preparation jobs.
-MCP156 includes `inspect_domestication`, `propose_domestication`,
+The current worker exposes inspection, proposal, checked-reference and preparation jobs.
+The MCP surface includes `inspect_domestication`, `propose_domestication`,
 `check_domestication` and `prepare_domestication`. Inspection exposes exact feature
 pins for subsequent requests. Prepared MCP candidates retain the independent
 target, plan and complete evidence atomically, then use existing `verify_plan`,
@@ -85,7 +103,7 @@ target, plan and complete evidence atomically, then use existing `verify_plan`,
 are descriptive data; only fresh checking creates the private native checked intent.
 
 Joint overlapping-frame optimization, broader initiation/translation profiles,
-more complete compound-gap search contexts, multi-round/overlap/oligo preparation
+more complete compound-gap search contexts, multi-round/oligo preparation
 and curated empirical method guidance remain active delivery work. Actual GUI and
 performance acceptance remains deferred until all in-scope code is implemented.
 No browser, external scientific program, kit outcome or template-clearance claim

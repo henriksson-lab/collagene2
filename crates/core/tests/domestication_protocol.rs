@@ -141,7 +141,7 @@ fn inspection_proposal_check_and_original_template_preparation_keep_append_only_
         panic!("actual original-source preparation required")
     };
     assert_eq!(prepared.target, target);
-    assert_eq!(prepared.preparation.plan.inputs[0].molecule, input.molecule);
+    assert_eq!(prepared.plan.inputs[0].molecule, input.molecule);
     assert_eq!(
         prepared.verification.status,
         Status::ConsistentUnderAssumptions

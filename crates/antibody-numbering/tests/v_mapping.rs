@@ -27,6 +27,7 @@ fn limits() -> Limits {
     Limits {
         max_cells: profile::MAX_CELLS,
         max_endpoints_per_locus: profile::MAX_ENDPOINTS,
+        max_trace_states: profile::MAX_TRACE_STATES,
     }
 }
 #[test]
@@ -263,7 +264,8 @@ fn reports_reconstruct_models_source_and_limits_and_jobs_cancel_without_partial_
             &scoring(),
             &Limits {
                 max_cells: report.cells - 1,
-                max_endpoints_per_locus: profile::MAX_ENDPOINTS
+                max_endpoints_per_locus: profile::MAX_ENDPOINTS,
+                max_trace_states: profile::MAX_TRACE_STATES,
             },
             &mut || false
         )
@@ -275,7 +277,8 @@ fn reports_reconstruct_models_source_and_limits_and_jobs_cancel_without_partial_
             &scoring(),
             &Limits {
                 max_cells: 0,
-                max_endpoints_per_locus: profile::MAX_ENDPOINTS
+                max_endpoints_per_locus: profile::MAX_ENDPOINTS,
+                max_trace_states: profile::MAX_TRACE_STATES,
             },
             &mut || false
         )
@@ -363,7 +366,13 @@ fn fixed_terminal_anchor_survives_tied_internal_correspondences_without_projecti
         Some(ProjectionIssue::TiedOptimalPaths)
     );
     assert!(end.projection.is_none());
-    let anchor = end.terminal_anchor.as_ref().unwrap();
+    let anchor = end
+        .invariant_correspondences
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|p| p.reference_position.number == 104)
+        .unwrap();
     assert_eq!(anchor.source_index, 95);
     assert_eq!(anchor.residue, 'C');
     assert_eq!(anchor.reference_position.number, 104);
@@ -377,8 +386,11 @@ fn fixed_terminal_anchor_survives_tied_internal_correspondences_without_projecti
         .iter_mut()
         .find(|p| p.end == 96)
         .unwrap()
-        .terminal_anchor
+        .invariant_correspondences
         .as_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|p| p.reference_position.number == 104)
         .unwrap()
         .source_index += 1;
     assert_eq!(

@@ -2226,3 +2226,21 @@ matching-chain candidates and all 18 controls yield none; exact-tail scope finds
 results do not prove numbering, lambda/nonhuman coverage or broad calibration.
 Full region/scheme and application/delivery work remain open.
 [Assessment contract and limitations](ANTIBODY_NUMBERING.md).
+
+
+### All-optimal correspondences and CDR1/2 allocators
+
+The native kernel computes source/model positions shared by every optimal path,
+including deletion and alternate-match ambiguity. It visits a bounded state graph
+and reports trace work independently of grid cells; V mapping shares the trace
+budget across loci. Whole-source residue ambiguity withholds invariant summaries.
+The earlier terminal-only field is replaced directly by invariant correspondences;
+endpoint/V/candidate engines are 2/4/3. C104 remains available for conditional pairing.
+
+CDR1/2 central-gap allocation implements the published supported length profiles
+and agrees with both loops in all 354 provider V references. All 24 selected native
+cases pass, including score/match-intersection enumeration over 1,700 small profile/
+input configurations and bounded-work refusal. Focused optional-schema WASM checks
+pass, and the external chain assessment remains unchanged. Full query loop/region
+assembly, alternate numbering schemes, broader biology validation and application/
+whole-product acceptance remain open. [Contract](ANTIBODY_NUMBERING.md).

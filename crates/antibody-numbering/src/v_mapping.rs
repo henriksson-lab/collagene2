@@ -5,7 +5,7 @@ use super::*;
 use crate::{profile, references};
 use collagene_model::PROTEIN_RESIDUES;
 use std::collections::BTreeSet;
-pub const MAPPING_ENGINE: &str = "antibody-v-reference-mapping-3";
+pub const MAPPING_ENGINE: &str = "antibody-v-reference-mapping-4";
 data! {pub enum Locus {Heavy,Kappa,Lambda}}
 data! {pub struct Scoring {
     pub observed_reward:i16,pub frequency_bonus:i16,pub unseen_penalty:i16,
@@ -35,7 +35,7 @@ data! {pub struct Model {
 }}
 fn model_revision(model: &Model) -> Result<String> {
     hash(
-        b"antibody-v-reference-model-3\0",
+        b"antibody-v-reference-model-4\0",
         &(profile::PROFILE_ENGINE, model),
         1 << 20,
     )
@@ -167,7 +167,7 @@ impl Model {
 data! {pub struct Limits {
     /// Aggregate grid cells across all three models, with each matrix reused for
     /// lower/upper scoring bounds. Not a separate budget for each locus.
-    pub max_cells:usize,pub max_endpoints_per_locus:usize,
+    pub max_cells:usize,pub max_endpoints_per_locus:usize,pub max_trace_states:usize,
 }}
 data! {pub enum ProjectionIssue {AmbiguousSource,TiedOptimalPaths}}
 data! {pub struct Correspondence {
@@ -181,9 +181,9 @@ data! {pub struct Projection {
 }}
 data! {pub struct EndpointProjection {
     pub end:usize,pub projection:Option<Projection>,pub projection_issue:Option<ProjectionIssue>,
-    /// Invariant over all state paths at this fixed end, even when internal
-    /// correspondence paths tie. Withheld for ambiguous sources.
-    pub terminal_anchor:Option<Correspondence>,
+    /// Positions shared by every optimal state path at this fixed end. None for
+    /// ambiguous sources; tied paths may still share framework/loop boundaries.
+    pub invariant_correspondences:Option<Vec<Correspondence>>,
 }}
 data! {pub struct Mapping {
     pub locus:Locus,pub model_revision:String,pub alignment:profile::EndpointReport,
@@ -191,7 +191,7 @@ data! {pub struct Mapping {
 }}
 data! {pub struct Report {
     pub engine:String,pub source_revision:String,pub corpus_revision:String,pub context_revision:String,
-    pub scoring:Scoring,pub limits:Limits,pub cells:usize,pub mappings:Vec<Mapping>,
+    pub scoring:Scoring,pub limits:Limits,pub cells:usize,pub invariant_trace_states:usize,pub mappings:Vec<Mapping>,
 }}
 /// Return every locus independently; uncalibrated scores of differently sized
 /// profiles must not choose a winning chain type or imply that a domain exists.
@@ -209,6 +209,7 @@ pub fn map_query(
     if limits.max_cells == 0
         || limits.max_cells > profile::MAX_CELLS
         || limits.max_endpoints_per_locus > profile::MAX_ENDPOINTS
+        || limits.max_trace_states > profile::MAX_TRACE_STATES
     {
         return Err(Error::Limit("V-reference aggregate cells"));
     }
@@ -224,7 +225,7 @@ pub fn map_query(
         .ok_or(Error::Limit("V-reference aggregate cells"))?;
     let corpus_revision = models[0].corpus_revision.clone();
     let context_revision = hash(
-        b"antibody-v-reference-context-3\0",
+        b"antibody-v-reference-context-4\0",
         &(
             MAPPING_ENGINE,
             profile::PROFILE_ENGINE,
@@ -233,10 +234,11 @@ pub fn map_query(
             &corpus_revision,
             scoring,
             limits,
-            "invariant terminal C104 separate from tied internal correspondence; per-endpoint optima; exact endpoint counts and explicit truncation; distinct protein weighting; C23/C104 required; all-gap positions omitted; no classification; no inferred insertion labels; ambiguous/tied projections withheld",
+            "all-optimal-path invariant correspondences with aggregate trace work; per-endpoint optima; exact endpoint counts and explicit truncation; distinct protein weighting; C23/C104 required; all-gap positions omitted; no classification; no inferred insertion labels; ambiguous/tied projections withheld",
         ),
         65536,
     )?;
+    let mut remaining_trace = limits.max_trace_states;
     let mut mappings = vec![];
     for model in models {
         let model_revision = model_revision(&model)?;
@@ -247,9 +249,11 @@ pub fn map_query(
             &profile::EndpointLimits {
                 max_cells: individual_cells,
                 max_endpoints: limits.max_endpoints_per_locus,
+                max_trace_states: remaining_trace,
             },
             cancel,
         )?;
+        remaining_trace -= alignment.invariant_trace_states;
         let last = model.profile.states.len() - 1;
         let state = &model.profile.states[last];
         if model.positions[last] != position(104)
@@ -265,21 +269,27 @@ pub fn map_query(
         }
         let mut projections = vec![];
         for endpoint in &alignment.endpoints {
-            let terminal_anchor = if alignment.ambiguous_residues == 0 {
-                let index = endpoint.end.checked_sub(1).ok_or(Error::Binding)?;
-                if source.sequence.as_str().as_bytes().get(index) != Some(&b'C')
-                    || !matches!(endpoint.upper.steps.last(),Some(profile::Step::Match{source_index,model_index}) if *source_index==index && *model_index==last)
-                {
-                    return Err(Error::Binding);
-                }
-                Some(Correspondence {
-                    source_index: index,
-                    residue: 'C',
-                    reference_position: position(104),
+            let invariant_correspondences = endpoint.invariant_matches.as_ref().map(|matches| {
+                matches
+                    .iter()
+                    .map(|m| Correspondence {
+                        source_index: m.source_index,
+                        residue: source.sequence.as_str().as_bytes()[m.source_index] as char,
+                        reference_position: model.positions[m.model_index].clone(),
+                    })
+                    .collect::<Vec<_>>()
+            });
+            if alignment.ambiguous_residues == 0
+                && !invariant_correspondences.as_ref().is_some_and(|matches| {
+                    matches.iter().any(|m| {
+                        m.reference_position == position(104)
+                            && m.source_index + 1 == endpoint.end
+                            && m.residue == 'C'
+                    })
                 })
-            } else {
-                None
-            };
+            {
+                return Err(Error::Binding);
+            }
             let projection_issue = if alignment.ambiguous_residues > 0 {
                 Some(ProjectionIssue::AmbiguousSource)
             } else if endpoint.upper.alternative_optimal_paths {
@@ -321,7 +331,7 @@ pub fn map_query(
                 end: endpoint.end,
                 projection,
                 projection_issue,
-                terminal_anchor,
+                invariant_correspondences,
             });
         }
         mappings.push(Mapping {
@@ -342,6 +352,7 @@ pub fn map_query(
         scoring: scoring.clone(),
         limits: limits.clone(),
         cells,
+        invariant_trace_states: limits.max_trace_states - remaining_trace,
         mappings,
     })
 }

@@ -81,6 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         v_mapping: v::Limits {
             max_cells: profile::MAX_CELLS,
             max_endpoints_per_locus: profile::MAX_ENDPOINTS,
+            max_trace_states: profile::MAX_TRACE_STATES,
         },
         max_scan_windows: d::MAX_SCAN_WINDOWS,
         max_candidates: d::MAX_CANDIDATES,

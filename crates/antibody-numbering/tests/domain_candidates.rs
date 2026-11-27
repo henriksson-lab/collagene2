@@ -42,6 +42,7 @@ fn limits() -> Limits {
         v_mapping: v_mapping::Limits {
             max_cells: profile::MAX_CELLS,
             max_endpoints_per_locus: profile::MAX_ENDPOINTS,
+            max_trace_states: profile::MAX_TRACE_STATES,
         },
         max_scan_windows: MAX_SCAN_WINDOWS,
         max_candidates: MAX_CANDIDATES,
@@ -336,6 +337,10 @@ fn observed_antibody_with_tied_v_positions_keeps_conditional_cdr3_and_explicit_a
         .find(|p| p.end == 96)
         .unwrap();
     assert!(v.projection.is_none());
-    assert!(v.terminal_anchor.is_some());
+    assert!(
+        v.invariant_correspondences
+            .as_ref()
+            .is_some_and(|m| m.iter().any(|c| c.reference_position.number == 104))
+    );
     r.validate_for(&m, &options(), &limits()).unwrap();
 }

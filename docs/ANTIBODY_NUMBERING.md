@@ -244,7 +244,7 @@ Reachable and score-qualified endpoint counts cover the whole input even after
 the retention cap is reached. A zero cap requests counts only. A truncated result
 must not be interpreted as absence of additional qualifying endpoints.
 
-The endpoint engine is `antibody-profile-endpoints-1`, with at most 128 retained
+The endpoint engine is `antibody-profile-endpoints-2`, with at most 128 retained
 endpoints per profile. Each endpoint has its own score bounds, source/model path
 and tied-path flag. Repeated independent sequence blocks therefore retain separate
 endpoints. Multiple optimal starts or state paths **at the same end** remain tied;
@@ -252,7 +252,7 @@ they are not exhaustively enumerated. This mode also does not enumerate suboptim
 starts at a shared endpoint. Its counts describe score-qualified endpoints, not
 biologically confirmed domains or all possible numbering assignments.
 
-V mapping now uses engine `antibody-v-reference-mapping-3`. Its former single-best
+V mapping now uses engine `antibody-v-reference-mapping-4`. Its former single-best
 representation is replaced directly: one endpoint report per locus and explicitly
 end-bound projections. The caller supplies an aggregate grid-cell budget and a
 per-locus retention cap. Counts, truncation, thresholds and exact model/source
@@ -301,7 +301,7 @@ The algorithm does not enumerate suboptimal V paths or infer omitted endpoints.
 At most 64 candidate payloads and two million complete-FR4 scan windows are
 allowed; callers can choose smaller limits. Exceeding work bounds or cancellation
 returns an error, never a partial successful report. Native engine
-`antibody-vj-candidates-2` binds the exact source, current V/reference/endpoint and
+`antibody-vj-candidates-3` binds the exact source, current V/reference/endpoint and
 CDR3-rule engines, options and limits. Report reconstruction checks all candidates,
 coordinates, loop labels, FR4 residues, J alternatives, counts and truncation flags.
 
@@ -319,8 +319,8 @@ scheme/region assignment and application integration remain required.
 A required, non-insertable final V model state represents C104 and emits only C.
 At a fixed source endpoint every state path therefore assigns the same source
 residue to this terminal reference position, even if internal paths tie. The
-current mapper validates this topology and retains `terminal_anchor` independently
-of its full projection. Tied V paths still receive no invented unique V-position
+current mapper validates this topology and retains the C104 match among
+`invariant_correspondences`, independently of its full projection. Tied V paths still receive no invented unique V-position
 map. Conditional V/J pairing can use the invariant anchor while retaining
 `v_projection_issue`; its `representative_v_start` explicitly describes the stored
 representative rather than proving a unique domain start.
@@ -346,7 +346,7 @@ complete scheme/region validation remain required.
 
 The assessed options retain V weights 5/8/−6, affine gaps −12/−2, minimum V score
 300 and CDR3 lengths 2–60. Only the declared FR4 substitution allowance varies.
-Observed with candidate engine 2 / V-mapping engine 3 on this fixed panel:
+Observed with candidate engine 2 / V-mapping engine 4 on this fixed panel:
 
 | Allowed FR4 substitutions | Antibody chains with a matching chain-class candidate | Non-antibody chains with candidates |
 | --- | --- | --- |
@@ -356,8 +356,49 @@ Observed with candidate engine 2 / V-mapping engine 3 on this fixed panel:
 
 The exact-tail profile misses both 1HZH chains; their observed FR4 sequences differ
 from the reference tails. No V or pair retention cap is reached in these runs.
-All 13 selected native cases and focused optional-schema WASM checks pass,
+All 24 selected native cases and focused optional-schema WASM checks pass,
 including source-bound invariant-anchor and observed-sequence regressions. These
 results do not validate lambda detection, nonhuman coverage, arbitrary mutation
 loads or residue-level numbering. The panel is small, deliberately selected and
 contains related sequences; it is not a population performance estimate.
+
+
+## Invariants over every optimal path
+
+The endpoint kernel now stores all tied predecessor states in the dynamic-
+programming graph. A bounded backward traversal visits the optimal-state union;
+a model position is invariant only when every optimal path matches it to the same
+source index and no optimal path deletes it. The deterministic representative and
+its tie flag remain available separately. This computes exact intersections of
+path correspondences, not a chosen path with an ambiguity label removed.
+
+Invariant summaries are withheld for residue-ambiguous sources: the graph of an
+upper score bound alone cannot prove correspondence over every possible residue
+assignment. The independent `max_trace_states` budget limits graph states across
+all retained endpoints and, in V mapping, across all three loci. At most two million
+states may be visited. Budget exhaustion or cancellation returns an error; a
+counts-only request needs no invariant trace work. The report retains exact work
+counts and binds the budget into its context. Current endpoint/V/candidate engines
+are 2/4/3; callers and fixtures use the new representation directly.
+
+An independent complete-path oracle now checks both endpoint scores and match
+intersections for 1,700 small input/profile configurations, including zero-cost
+gaps, terminal insertions, deletions and multiple starts. Existing single-best
+score/path checks remain unchanged. The 30-chain assessment retains its previously
+reported outcomes under the same scoring and substitution options.
+
+## CDR1/2 central-gap rule allocators
+
+`imgt_loops::positions` implements the published V-domain display convention:
+CDR1 occupies 27–38 with lengths 5–12; CDR2 occupies 56–65 with lengths 0–10.
+Short loops keep the extra residue on the left when their length is odd, leaving
+central gaps. It rejects unsupported lengths and invents no insertion labels.
+This differs from rearranged CDR3 allocation and from moving/storing germline
+positions for other analyses. [IMGT V-domain chart](https://www.imgt.org/IMGTScientificChart/Numbering/IMGTIGVLsuperfamily.html).
+
+Native literal chart fixtures cover all supported lengths; both loop placements
+also agree with all 354 provider-labeled V references. The rule engine is
+`imgt-cdr12-central-gaps-1`, with an explicit provenance revision. Applying these
+allocators to query loops still requires independently established boundaries
+(e.g. invariant framework anchors 26/39 and 55/66). Full query numbering, region
+assignment, alternative schemes and application tracks remain unfinished.

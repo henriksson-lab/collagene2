@@ -112,10 +112,10 @@ fn request(source_hash: &str, profile_hash: &str, limits: &Limits) -> Result<Str
 struct Node {
     score: i32,
     ways: u8,
-    prev: u8,
+    parents: u8,
 }
 impl Node {
-    fn add(&mut self, parent: Node, cost: i32, prev: usize) {
+    fn add(&mut self, parent: Node, cost: i32, parent_state: usize) {
         if parent.ways == 0 {
             return;
         }
@@ -124,10 +124,11 @@ impl Node {
             *self = Self {
                 score,
                 ways: parent.ways,
-                prev: (prev + 1) as u8,
+                parents: 1 << parent_state,
             };
         } else if score == self.score {
             self.ways = (self.ways + parent.ways).min(2);
+            self.parents |= 1 << parent_state;
         }
     }
 }
@@ -172,7 +173,7 @@ fn fill(
         matrix[i * width][M] = Node {
             score: 0,
             ways: 1,
-            prev: 0,
+            parents: 0,
         };
     }
     for i in 0..=source.len() {
@@ -249,7 +250,7 @@ fn traceback(
             }
             _ => unreachable!(),
         }
-        k = usize::from(n.prev) - 1;
+        k = n.parents.trailing_zeros() as usize;
     }
     steps.reverse();
     Some(Alignment {
@@ -381,16 +382,111 @@ impl Report {
     }
 }
 
-pub const ENDPOINT_ENGINE: &str = "antibody-profile-endpoints-1";
+// Traverse the optimal predecessor DAG, not an exponential list of paths.
+// Intersection of model/source matches is equivalent to one source value and
+// no deletion among every reachable optimal consumption of that model state.
+fn invariant_matches(
+    matrix: &[[Node; 3]],
+    width: usize,
+    end: usize,
+    score: i32,
+    visited: &mut [u8],
+    remaining: &mut usize,
+    cancel: &mut impl FnMut() -> bool,
+) -> Result<Vec<InvariantMatch>> {
+    fn push(
+        cell: usize,
+        state: usize,
+        visited: &mut [u8],
+        remaining: &mut usize,
+        stack: &mut Vec<(usize, usize)>,
+    ) -> Result<()> {
+        let bit = 1_u8 << state;
+        if visited[cell] & bit == 0 {
+            if *remaining == 0 {
+                return Err(Error::Limit("profile invariant trace states"));
+            }
+            *remaining -= 1;
+            visited[cell] |= bit;
+            stack.push((cell, state));
+        }
+        Ok(())
+    }
+    visited.fill(0);
+    let mut stack = vec![];
+    for state in [M, D, I] {
+        let cell = end * width + width - 1;
+        let node = matrix[cell][state];
+        if node.ways > 0 && node.score == score {
+            push(cell, state, visited, remaining, &mut stack)?;
+        }
+    }
+    let mut sources = vec![None; width - 1];
+    let mut conflicts = vec![false; width - 1];
+    let mut deleted = vec![false; width - 1];
+    let mut processed = 0;
+    while let Some((cell, state)) = stack.pop() {
+        if processed % 256 == 0 && cancel() {
+            return Err(Error::Cancelled);
+        }
+        processed += 1;
+        let i = cell / width;
+        let j = cell % width;
+        if j == 0 {
+            continue;
+        }
+        let predecessor = match state {
+            M => {
+                let index = i - 1;
+                match sources[j - 1] {
+                    None => sources[j - 1] = Some(index),
+                    Some(other) if other != index => conflicts[j - 1] = true,
+                    _ => (),
+                };
+                cell - width - 1
+            }
+            D => {
+                deleted[j - 1] = true;
+                cell - 1
+            }
+            I => cell - width,
+            _ => unreachable!(),
+        };
+        let parents = matrix[cell][state].parents;
+        for parent in [M, D, I] {
+            if parents & (1 << parent) != 0 {
+                push(predecessor, parent, visited, remaining, &mut stack)?;
+            }
+        }
+    }
+    Ok(sources
+        .into_iter()
+        .enumerate()
+        .filter_map(|(model_index, index)| {
+            index
+                .filter(|_| !conflicts[model_index] && !deleted[model_index])
+                .map(|source_index| InvariantMatch {
+                    model_index,
+                    source_index,
+                })
+        })
+        .collect())
+}
+
+pub const ENDPOINT_ENGINE: &str = "antibody-profile-endpoints-2";
 pub const MAX_ENDPOINTS: usize = 128;
-data! {pub struct EndpointLimits {pub max_cells:usize,pub max_endpoints:usize}}
+pub const MAX_TRACE_STATES: usize = 2_000_000;
+data! {pub struct EndpointLimits {pub max_cells:usize,pub max_endpoints:usize,pub max_trace_states:usize}}
+data! {pub struct InvariantMatch {pub model_index:usize,pub source_index:usize}}
 data! {pub struct Endpoint {
     /// Zero-based exclusive source endpoint; each endpoint has its own optimum.
     pub end:usize,pub lower:Option<Alignment>,pub upper:Alignment,pub threshold_status:ThresholdStatus,
+    /// Matches shared by every optimal path. None for residue-ambiguous sources.
+    pub invariant_matches:Option<Vec<InvariantMatch>>,
 }}
 data! {pub struct EndpointReport {
     pub engine:String,pub source_revision:String,pub profile_revision:String,pub context_revision:String,
-    pub source_length:usize,pub limits:EndpointLimits,pub cells:usize,
+    pub source_length:usize,pub limits:EndpointLimits,pub cells:usize,pub invariant_trace_states:usize,
     pub reachable_endpoints:usize,pub qualified_endpoints:usize,pub truncated:bool,
     pub ambiguous_residues:usize,pub endpoints:Vec<Endpoint>,
 }}
@@ -406,7 +502,7 @@ pub fn align_endpoints(
     if cancel() {
         return Err(Error::Cancelled);
     }
-    if limits.max_endpoints > MAX_ENDPOINTS {
+    if limits.max_endpoints > MAX_ENDPOINTS || limits.max_trace_states > MAX_TRACE_STATES {
         return Err(Error::Limit("profile endpoint retention"));
     }
     let (source_revision, profile_revision, budget) = prepare(
@@ -421,14 +517,14 @@ pub fn align_endpoints(
         .filter(|&n| n <= budget)
         .ok_or(Error::Limit("profile cells"))?;
     let context_revision = hash(
-        b"antibody-profile-endpoints-context-1\0",
+        b"antibody-profile-endpoints-context-2\0",
         &(
             ENDPOINT_ENGINE,
             PROFILE_ENGINE,
             &source_revision,
             &profile_revision,
             limits,
-            "per-source-end optimum; upper score threshold; source-end order; exact counts beyond retention; ties retained as flags",
+            "all-optimal-path invariant matches for resolved source only; bounded DAG state union; per-source-end optimum; upper score threshold; source-end order; exact counts beyond retention; ties retained as flags",
         ),
         65536,
     )?;
@@ -439,6 +535,12 @@ pub fn align_endpoints(
     fill(bytes, profile, &cache, 1, &mut matrix, cancel)?;
     let mut reachable_endpoints = 0;
     let mut qualified_endpoints = 0;
+    let ambiguous_residues = bytes
+        .iter()
+        .filter(|&&b| matches!(b, b'B' | b'Z' | b'J' | b'X'))
+        .count();
+    let mut remaining_trace = limits.max_trace_states;
+    let mut visited = vec![0_u8; cells];
     let mut endpoints = vec![];
     for end in 0..=bytes.len() {
         if end % 16 == 0 && cancel() {
@@ -459,6 +561,19 @@ pub fn align_endpoints(
                 lower: None,
                 upper: traceback(&matrix, width, end, state, best).unwrap(),
                 threshold_status: ThresholdStatus::PossibleScore,
+                invariant_matches: if ambiguous_residues == 0 {
+                    Some(invariant_matches(
+                        &matrix,
+                        width,
+                        end,
+                        best.score,
+                        &mut visited,
+                        &mut remaining_trace,
+                        cancel,
+                    )?)
+                } else {
+                    None
+                },
             });
         }
     }
@@ -490,6 +605,7 @@ pub fn align_endpoints(
         source_length: bytes.len(),
         limits: limits.clone(),
         cells,
+        invariant_trace_states: limits.max_trace_states - remaining_trace,
         reachable_endpoints,
         qualified_endpoints,
         truncated: qualified_endpoints > endpoints.len(),
@@ -510,7 +626,10 @@ impl EndpointReport {
         if self.engine != ENDPOINT_ENGINE
             || self.endpoints.len() > MAX_ENDPOINTS
             || self.endpoints.iter().any(|e| {
-                e.upper.steps.len() > MAX_SOURCE_RESIDUES + MAX_STATES
+                e.invariant_matches
+                    .as_ref()
+                    .is_some_and(|m| m.len() > MAX_STATES)
+                    || e.upper.steps.len() > MAX_SOURCE_RESIDUES + MAX_STATES
                     || e.lower
                         .as_ref()
                         .is_some_and(|a| a.steps.len() > MAX_SOURCE_RESIDUES + MAX_STATES)

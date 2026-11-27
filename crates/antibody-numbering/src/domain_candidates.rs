@@ -3,7 +3,7 @@
 use super::*;
 use crate::{references, v_mapping};
 use std::collections::BTreeMap;
-pub const CANDIDATE_ENGINE: &str = "antibody-vj-candidates-2";
+pub const CANDIDATE_ENGINE: &str = "antibody-vj-candidates-3";
 pub const MAX_CANDIDATES: usize = 64;
 pub const MAX_SCAN_WINDOWS: usize = 2_000_000;
 data! {pub struct Options {
@@ -83,7 +83,7 @@ pub fn find_candidates(
         return Err(Error::Binding);
     }
     let context_revision = hash(
-        b"antibody-vj-candidate-context-2\0",
+        b"antibody-vj-candidate-context-3\0",
         &(
             CANDIDATE_ENGINE,
             v_mapping::MAPPING_ENGINE,
@@ -123,7 +123,7 @@ pub fn find_candidates(
             if endpoint.end != projected.end {
                 return Err(Error::Binding);
             }
-            let Some(anchor) = &projected.terminal_anchor else {
+            let Some(invariants) = &projected.invariant_correspondences else {
                 blocked_v_endpoints.push(BlockedV {
                     endpoint: VEndpoint {
                         locus: mapping.locus.clone(),
@@ -133,6 +133,10 @@ pub fn find_candidates(
                 });
                 continue;
             };
+            let anchor = invariants
+                .iter()
+                .find(|m| m.reference_position == position(104))
+                .ok_or(Error::Binding)?;
             if anchor.reference_position != position(104) || anchor.residue != 'C' {
                 return Err(Error::Binding);
             }
@@ -233,7 +237,7 @@ pub fn find_candidates(
                     })
                     .collect();
                 let id = hash(
-                    b"antibody-vj-candidate-id-2\0",
+                    b"antibody-vj-candidate-id-3\0",
                     &(
                         &context_revision,
                         &mapping.locus,

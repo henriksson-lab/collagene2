@@ -126,9 +126,15 @@ fn ties_stops_and_thresholds_do_not_turn_score_hits_into_unique_domains() {
 // Independent path-language enumeration: recurse over complete source/model
 // consumption paths, without any production matrix, traceback or emission cache.
 fn brute(s: &str, p: &Profile) -> Option<(i32, usize)> {
-    brute_end(s, p, None)
+    brute_end(s, p, None).map(|r| (r.score, r.ways))
 }
-fn brute_end(s: &str, p: &Profile, wanted: Option<usize>) -> Option<(i32, usize)> {
+#[derive(Debug)]
+struct Oracle {
+    score: i32,
+    ways: usize,
+    matches: std::collections::BTreeSet<(usize, usize)>,
+}
+fn brute_end(s: &str, p: &Profile, wanted: Option<usize>) -> Option<Oracle> {
     fn visit(
         s: &[u8],
         p: &Profile,
@@ -136,14 +142,24 @@ fn brute_end(s: &str, p: &Profile, wanted: Option<usize>) -> Option<(i32, usize)
         j: usize,
         last: u8,
         score: i32,
-        best: &mut Option<(i32, usize)>,
+        best: &mut Option<Oracle>,
         wanted: Option<usize>,
+        path: &mut Vec<(usize, usize)>,
     ) {
         if j == p.states.len() && wanted.is_none_or(|end| end == i) {
             match best {
-                Some((old, n)) if *old == score => *n = (*n + 1).min(2),
-                Some((old, _)) if *old > score => (),
-                _ => *best = Some((score, 1)),
+                Some(old) if old.score == score => {
+                    old.ways = (old.ways + 1).min(2);
+                    old.matches.retain(|pair| path.contains(pair));
+                }
+                Some(old) if old.score > score => (),
+                _ => {
+                    *best = Some(Oracle {
+                        score,
+                        ways: 1,
+                        matches: path.iter().copied().collect(),
+                    })
+                }
             }
         }
         if i < s.len() && j < p.states.len() && s[i] != b'*' {
@@ -152,21 +168,53 @@ fn brute_end(s: &str, p: &Profile, wanted: Option<usize>) -> Option<(i32, usize)
                 .position(|&b| b == s[i])
                 .unwrap();
             if let Some(e) = p.states[j].emissions[column] {
-                visit(s, p, i + 1, j + 1, 0, score + i32::from(e), best, wanted);
+                path.push((j, i));
+                visit(
+                    s,
+                    p,
+                    i + 1,
+                    j + 1,
+                    0,
+                    score + i32::from(e),
+                    best,
+                    wanted,
+                    path,
+                );
+                path.pop();
             }
         }
         if j < p.states.len() && !p.states[j].required && last != 2 {
             let cost = if last == 1 { p.gap_extend } else { p.gap_open };
-            visit(s, p, i, j + 1, 1, score + i32::from(cost), best, wanted);
+            visit(
+                s,
+                p,
+                i,
+                j + 1,
+                1,
+                score + i32::from(cost),
+                best,
+                wanted,
+                path,
+            );
         }
         if i < s.len() && j > 0 && p.states[j - 1].allow_insert_after && last != 1 && s[i] != b'*' {
             let cost = if last == 2 { p.gap_extend } else { p.gap_open };
-            visit(s, p, i + 1, j, 2, score + i32::from(cost), best, wanted);
+            visit(
+                s,
+                p,
+                i + 1,
+                j,
+                2,
+                score + i32::from(cost),
+                best,
+                wanted,
+                path,
+            );
         }
     }
     let mut best = None;
     for i in 0..=s.len() {
-        visit(s.as_bytes(), p, i, 0, 0, 0, &mut best, wanted);
+        visit(s.as_bytes(), p, i, 0, 0, 0, &mut best, wanted, &mut vec![]);
     }
     best
 }
@@ -289,8 +337,18 @@ fn current_profiles_budgets_source_and_reconstructed_evidence_are_checked() {
 
 #[test]
 fn every_small_profile_endpoint_agrees_with_complete_path_enumeration() {
-    for template in ["A", "AC", "ACA"] {
+    for (template, free_gaps) in [
+        ("A", false),
+        ("AC", false),
+        ("ACA", false),
+        ("A", true),
+        ("ACA", true),
+    ] {
         let mut p = profile(template);
+        if free_gaps {
+            p.gap_open = 0;
+            p.gap_extend = 0;
+        }
         p.minimum_score = i32::MIN;
         if template == "A" {
             p.states[0].allow_insert_after = true;
@@ -311,14 +369,13 @@ fn every_small_profile_endpoint_agrees_with_complete_path_enumeration() {
                     &EndpointLimits {
                         max_cells: MAX_CELLS,
                         max_endpoints: MAX_ENDPOINTS,
+                        max_trace_states: MAX_TRACE_STATES,
                     },
                     &mut || false,
                 )
                 .unwrap();
                 let expected = (0..=s.len())
-                    .filter_map(|end| {
-                        brute_end(&s, &p, Some(end)).map(|(score, ways)| (end, score, ways))
-                    })
+                    .filter_map(|end| brute_end(&s, &p, Some(end)).map(|r| (end, r.score, r.ways)))
                     .collect::<Vec<_>>();
                 assert_eq!(r.reachable_endpoints, expected.len());
                 assert_eq!(r.qualified_endpoints, expected.len());
@@ -344,6 +401,21 @@ fn every_small_profile_endpoint_agrees_with_complete_path_enumeration() {
                         .iter()
                         .all(|e| e.lower.as_ref() == Some(&e.upper))
                 );
+                for endpoint in &r.endpoints {
+                    let oracle = brute_end(&s, &p, Some(endpoint.end)).unwrap();
+                    assert_eq!(
+                        endpoint
+                            .invariant_matches
+                            .as_ref()
+                            .unwrap()
+                            .iter()
+                            .map(|m| (m.model_index, m.source_index))
+                            .collect::<std::collections::BTreeSet<_>>(),
+                        oracle.matches,
+                        "{template}/{s}/{}",
+                        endpoint.end
+                    );
+                }
             }
         }
     }
@@ -355,6 +427,7 @@ fn endpoint_retention_counts_ambiguity_and_evidence_are_source_bound() {
     let limits = EndpointLimits {
         max_cells: MAX_CELLS,
         max_endpoints: 1,
+        max_trace_states: MAX_TRACE_STATES,
     };
     let r = align_endpoints(&m, &p, &limits, &mut || false).unwrap();
     assert_eq!(
@@ -377,6 +450,7 @@ fn endpoint_retention_counts_ambiguity_and_evidence_are_source_bound() {
         &EndpointLimits {
             max_cells: MAX_CELLS,
             max_endpoints: 0,
+            max_trace_states: MAX_TRACE_STATES,
         },
         &mut || false,
     )
@@ -397,7 +471,8 @@ fn endpoint_retention_counts_ambiguity_and_evidence_are_source_bound() {
             &p,
             &EndpointLimits {
                 max_cells: MAX_CELLS,
-                max_endpoints: MAX_ENDPOINTS + 1
+                max_endpoints: MAX_ENDPOINTS + 1,
+                max_trace_states: MAX_TRACE_STATES,
             },
             &mut || false
         )
@@ -421,14 +496,16 @@ fn endpoint_retention_counts_ambiguity_and_evidence_are_source_bound() {
             &EndpointLimits {
                 max_cells: MAX_CELLS,
                 max_endpoints: MAX_ENDPOINTS,
+                max_trace_states: MAX_TRACE_STATES,
             },
             &mut || false,
         )
         .unwrap();
         for e in r.endpoints {
+            assert!(e.invariant_matches.is_none());
             let values = expand(s)
                 .iter()
-                .map(|v| brute_end(v, &p, Some(e.end)).map(|(n, _)| n))
+                .map(|v| brute_end(v, &p, Some(e.end)).map(|r| r.score))
                 .collect::<Vec<_>>();
             assert_eq!(Some(e.upper.score), values.iter().flatten().copied().max());
             if let Some(lower) = e.lower {
@@ -436,4 +513,35 @@ fn endpoint_retention_counts_ambiguity_and_evidence_are_source_bound() {
             }
         }
     }
+}
+
+#[test]
+fn invariant_graph_work_is_bounded_and_counts_only_does_not_require_a_trace() {
+    let m = source("AAA");
+    let p = profile("A");
+    let limits = EndpointLimits {
+        max_cells: MAX_CELLS,
+        max_endpoints: 1,
+        max_trace_states: 1,
+    };
+    assert_eq!(
+        align_endpoints(&m, &p, &limits, &mut || false).unwrap_err(),
+        Error::Limit("profile invariant trace states")
+    );
+    let counted = align_endpoints(
+        &m,
+        &p,
+        &EndpointLimits {
+            max_cells: MAX_CELLS,
+            max_endpoints: 0,
+            max_trace_states: 0,
+        },
+        &mut || false,
+    )
+    .unwrap();
+    assert_eq!(counted.qualified_endpoints, 3);
+    assert_eq!(counted.invariant_trace_states, 0);
+    let mut limits = limits;
+    limits.max_trace_states = MAX_TRACE_STATES + 1;
+    assert!(align_endpoints(&m, &p, &limits, &mut || false).is_err());
 }

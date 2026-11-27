@@ -4476,3 +4476,22 @@ Exact-tail matching finds 10 antibody chains. This finite chain-level assessment
 does not complete biological calibration, lambda/nonhuman coverage, full numbering/
 region validation, application integration or whole-product acceptance.
 [Contract and assessment](ANTIBODY_NUMBERING.md).
+
+
+### F34 all-optimal invariants and CDR1/2 placement rules
+
+The endpoint kernel now retains all optimal predecessors and computes exact
+invariant model/source matches by a bounded traversal of the optimal-state graph.
+Deleted or multiply placed positions do not become invariant. Residue-ambiguous
+sources withhold this summary; the representative path remains separate. A new
+aggregate trace-state budget enforces bounded work with no partial-success result.
+Endpoint/V-mapping/candidate engines are now 2/4/3, with direct caller replacement.
+
+Published CDR1/2 central-gap allocators cover supported loop lengths without
+reusing rearranged CDR3 rules or inventing insertion labels. Literal fixtures and
+all 354 provider V references agree. The path oracle checks score and correspondence
+intersections for 1,700 small input/profile configurations. All 24 selected native
+cases and focused optional-schema WASM checks pass; the fixed external chain panel
+retains its prior outcomes. Using invariant query boundaries for full loop/region
+assignment, other schemes/species and application integration remain required.
+[Contract](ANTIBODY_NUMBERING.md).

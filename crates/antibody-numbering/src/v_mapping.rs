@@ -5,7 +5,7 @@ use super::*;
 use crate::{profile, references};
 use collagene_model::PROTEIN_RESIDUES;
 use std::collections::BTreeSet;
-pub const MAPPING_ENGINE: &str = "antibody-v-reference-mapping-1";
+pub const MAPPING_ENGINE: &str = "antibody-v-reference-mapping-2";
 data! {pub enum Locus {Heavy,Kappa,Lambda}}
 data! {pub struct Scoring {
     pub observed_reward:i16,pub frequency_bonus:i16,pub unseen_penalty:i16,
@@ -35,7 +35,7 @@ data! {pub struct Model {
 }}
 fn model_revision(model: &Model) -> Result<String> {
     hash(
-        b"antibody-v-reference-model-1\0",
+        b"antibody-v-reference-model-2\0",
         &(profile::PROFILE_ENGINE, model),
         1 << 20,
     )
@@ -167,9 +167,9 @@ impl Model {
 data! {pub struct Limits {
     /// Aggregate grid cells across all three models, with each matrix reused for
     /// lower/upper scoring bounds. Not a separate budget for each locus.
-    pub max_cells:usize,
+    pub max_cells:usize,pub max_endpoints_per_locus:usize,
 }}
-data! {pub enum ProjectionIssue {NoPath,BelowScoreThreshold,AmbiguousSource,TiedOptimalPaths}}
+data! {pub enum ProjectionIssue {AmbiguousSource,TiedOptimalPaths}}
 data! {pub struct Correspondence {
     pub source_index:usize,pub residue:char,pub reference_position:Position,
 }}
@@ -179,9 +179,12 @@ data! {pub struct Projection {
     /// Query insertions deliberately receive no invented scheme labels.
     pub unassigned_residues:Vec<usize>,
 }}
+data! {pub struct EndpointProjection {
+    pub end:usize,pub projection:Option<Projection>,pub projection_issue:Option<ProjectionIssue>,
+}}
 data! {pub struct Mapping {
-    pub locus:Locus,pub model_revision:String,pub alignment:profile::Report,
-    pub projection:Option<Projection>,pub projection_issue:Option<ProjectionIssue>,
+    pub locus:Locus,pub model_revision:String,pub alignment:profile::EndpointReport,
+    pub projections:Vec<EndpointProjection>,
 }}
 data! {pub struct Report {
     pub engine:String,pub source_revision:String,pub corpus_revision:String,pub context_revision:String,
@@ -200,7 +203,10 @@ pub fn map_query(
     }
     let source_revision = source_revision(source)?;
     scoring.validate()?;
-    if limits.max_cells == 0 || limits.max_cells > profile::MAX_CELLS {
+    if limits.max_cells == 0
+        || limits.max_cells > profile::MAX_CELLS
+        || limits.max_endpoints_per_locus > profile::MAX_ENDPOINTS
+    {
         return Err(Error::Limit("V-reference aggregate cells"));
     }
     let models = models(scoring, cancel)?;
@@ -215,15 +221,16 @@ pub fn map_query(
         .ok_or(Error::Limit("V-reference aggregate cells"))?;
     let corpus_revision = models[0].corpus_revision.clone();
     let context_revision = hash(
-        b"antibody-v-reference-context-1\0",
+        b"antibody-v-reference-context-2\0",
         &(
             MAPPING_ENGINE,
             profile::PROFILE_ENGINE,
+            profile::ENDPOINT_ENGINE,
             &source_revision,
             &corpus_revision,
             scoring,
             limits,
-            "distinct protein weighting; C23/C104 required; all-gap positions omitted; no classification; no inferred insertion labels; ambiguous/tied projections withheld",
+            "per-endpoint optima; exact endpoint counts and explicit truncation; distinct protein weighting; C23/C104 required; all-gap positions omitted; no classification; no inferred insertion labels; ambiguous/tied projections withheld",
         ),
         65536,
     )?;
@@ -231,61 +238,65 @@ pub fn map_query(
     for model in models {
         let model_revision = model_revision(&model)?;
         let individual_cells = (source.sequence.len() + 1) * (model.profile.states.len() + 1);
-        let alignment = profile::align(
+        let alignment = profile::align_endpoints(
             source,
             &model.profile,
-            &profile::Limits {
+            &profile::EndpointLimits {
                 max_cells: individual_cells,
+                max_endpoints: limits.max_endpoints_per_locus,
             },
             cancel,
         )?;
-        let projection_issue = if alignment.upper.is_none() {
-            Some(ProjectionIssue::NoPath)
-        } else if alignment.threshold_status == profile::ThresholdStatus::BelowThreshold {
-            Some(ProjectionIssue::BelowScoreThreshold)
-        } else if alignment.ambiguous_residues > 0 {
-            Some(ProjectionIssue::AmbiguousSource)
-        } else if alignment.upper.as_ref().unwrap().alternative_optimal_paths {
-            Some(ProjectionIssue::TiedOptimalPaths)
-        } else {
-            None
-        };
-        let projection = if projection_issue.is_none() {
-            let mut matches = vec![];
-            let mut deleted_positions = vec![];
-            let mut unassigned_residues = vec![];
-            for step in &alignment.upper.as_ref().unwrap().steps {
-                match *step {
-                    profile::Step::Match {
-                        source_index,
-                        model_index,
-                    } => matches.push(Correspondence {
-                        source_index,
-                        residue: source.sequence.as_str().as_bytes()[source_index] as char,
-                        reference_position: model.positions[model_index].clone(),
-                    }),
-                    profile::Step::Delete { model_index } => {
-                        deleted_positions.push(model.positions[model_index].clone())
-                    }
-                    profile::Step::Insert { source_index, .. } => {
-                        unassigned_residues.push(source_index)
+        let mut projections = vec![];
+        for endpoint in &alignment.endpoints {
+            let projection_issue = if alignment.ambiguous_residues > 0 {
+                Some(ProjectionIssue::AmbiguousSource)
+            } else if endpoint.upper.alternative_optimal_paths {
+                Some(ProjectionIssue::TiedOptimalPaths)
+            } else {
+                None
+            };
+            let projection = if projection_issue.is_none() {
+                let mut matches = vec![];
+                let mut deleted_positions = vec![];
+                let mut unassigned_residues = vec![];
+                for step in &endpoint.upper.steps {
+                    match *step {
+                        profile::Step::Match {
+                            source_index,
+                            model_index,
+                        } => matches.push(Correspondence {
+                            source_index,
+                            residue: source.sequence.as_str().as_bytes()[source_index] as char,
+                            reference_position: model.positions[model_index].clone(),
+                        }),
+                        profile::Step::Delete { model_index } => {
+                            deleted_positions.push(model.positions[model_index].clone())
+                        }
+                        profile::Step::Insert { source_index, .. } => {
+                            unassigned_residues.push(source_index)
+                        }
                     }
                 }
-            }
-            Some(Projection {
-                matches,
-                deleted_positions,
-                unassigned_residues,
-            })
-        } else {
-            None
-        };
+                Some(Projection {
+                    matches,
+                    deleted_positions,
+                    unassigned_residues,
+                })
+            } else {
+                None
+            };
+            projections.push(EndpointProjection {
+                end: endpoint.end,
+                projection,
+                projection_issue,
+            });
+        }
         mappings.push(Mapping {
             locus: model.locus,
             model_revision,
             alignment,
-            projection,
-            projection_issue,
+            projections,
         });
     }
     if cancel() {
@@ -312,11 +323,14 @@ impl Report {
         if self.engine != MAPPING_ENGINE
             || self.mappings.len() != 3
             || self.mappings.iter().any(|m| {
-                m.projection.as_ref().is_some_and(|p| {
-                    p.matches.len() > MAX_SOURCE_RESIDUES
-                        || p.deleted_positions.len() > 104
-                        || p.unassigned_residues.len() > MAX_SOURCE_RESIDUES
-                })
+                m.projections.len() > profile::MAX_ENDPOINTS
+                    || m.projections.iter().any(|e| {
+                        e.projection.as_ref().is_some_and(|p| {
+                            p.matches.len() > MAX_SOURCE_RESIDUES
+                                || p.deleted_positions.len() > 104
+                                || p.unassigned_residues.len() > MAX_SOURCE_RESIDUES
+                        })
+                    })
             })
             || *self != map_query(source, scoring, limits, &mut || false)?
         {

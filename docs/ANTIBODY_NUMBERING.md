@@ -173,13 +173,15 @@ populated states permit deletions and insertions according to the affine kernel.
 These are authored heuristic scores, not trained likelihoods or calibrated
 antibody evidence. Callers supply all weights and their score threshold explicitly.
 
-`v_mapping::map_query` returns all three locus alignments independently. It does
-not select a chain or species by comparing scores from differently sized profiles.
-Above the declared score filter, a unique path through a fully resolved query can
+`v_mapping::map_query` searches all three loci independently at every full-profile
+source endpoint. It does not select a chain or species by comparing scores from
+differently sized profiles. Above the declared score filter, a unique path at an
+endpoint through a fully resolved query can
 produce candidate reference correspondences, deleted model positions and query
 insertion indices. Inserted residues receive no invented numbering labels. Any
 ambiguous residue anywhere in the source conservatively withholds the projection;
-tied optimal paths also withhold it. Alignment bounds and paths remain available
+tied optimal paths at that endpoint also withhold it. Distinct endpoints remain
+separate candidates. Alignment bounds and paths remain available
 for inspection. Even a unique, high-scoring correspondence does not certify an
 antibody, complete domain, actual IMGT numbering or a CDR/framework assignment.
 The current model is not an independently calibrated domain detector.
@@ -229,3 +231,38 @@ phases, label extents and terminal metadata.
 These are J reference facts. Connecting them to query V paths, reconstructing
 rearranged CDR3s, handling alternative domains, full scheme validation/calibration
 and worker/MCP/application tracks remain required.
+
+
+## Bounded endpoint search
+
+`profile::align_endpoints` returns the best full-profile alignment **at each source
+end** that meets the declared attainable-score threshold. It uses the same matrix
+fill, transitions and traceback as the general single-best query. A single matrix
+is reused for upper and lower bounds; traceback retention does not require one
+matrix per endpoint. Candidate endpoints are retained in ascending source order.
+Reachable and score-qualified endpoint counts cover the whole input even after
+the retention cap is reached. A zero cap requests counts only. A truncated result
+must not be interpreted as absence of additional qualifying endpoints.
+
+The endpoint engine is `antibody-profile-endpoints-1`, with at most 128 retained
+endpoints per profile. Each endpoint has its own score bounds, source/model path
+and tied-path flag. Repeated independent sequence blocks therefore retain separate
+endpoints. Multiple optimal starts or state paths **at the same end** remain tied;
+they are not exhaustively enumerated. This mode also does not enumerate suboptimal
+starts at a shared endpoint. Its counts describe score-qualified endpoints, not
+biologically confirmed domains or all possible numbering assignments.
+
+V mapping now uses engine `antibody-v-reference-mapping-2`. Its former single-best
+representation is replaced directly: one endpoint report per locus and explicitly
+end-bound projections. The caller supplies an aggregate grid-cell budget and a
+per-locus retention cap. Counts, truncation, thresholds and exact model/source
+context survive report validation. Unsupported mapping engines reject without
+an adapter or fallback. Biological calibration, query J/FR4/CDR3 reconstruction,
+accepted scheme/species coverage and worker/MCP/application tracks remain open.
+
+Native endpoint fixtures compare all 1,020 small input/profile pairs at every
+source end against independent complete path enumeration, including terminal
+insertions and deletion paths. They also check concrete ambiguity bounds,
+thresholded and counts-only results, retention limits, reconstruction and
+cancellation. Tandem real-reference V-prefix fixtures retain both endpoints and
+exercise truncation without turning duplicate blocks into an unreported global tie.

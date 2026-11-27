@@ -158,14 +158,14 @@ fn emissions(profile: &Profile) -> Vec<[[Option<i16>; 2]; 128]> {
         })
         .collect()
 }
-fn solve(
+fn fill(
     source: &[u8],
     profile: &Profile,
     cache: &[[[Option<i16>; 2]; 128]],
     mode: usize,
     matrix: &mut [[Node; 3]],
     cancel: &mut impl FnMut() -> bool,
-) -> Result<Option<Alignment>> {
+) -> Result<()> {
     matrix.fill([Node::default(); 3]);
     let width = profile.states.len() + 1;
     for i in 0..=source.len() {
@@ -175,8 +175,6 @@ fn solve(
             prev: 0,
         };
     }
-    let mut best = Node::default();
-    let mut endpoint = (0, 0);
     for i in 0..=source.len() {
         if i % 16 == 0 && cancel() {
             return Err(Error::Cancelled);
@@ -210,26 +208,22 @@ fn solve(
             }
             matrix[index] = cell;
         }
-        for k in [M, D, I] {
-            let n = matrix[i * width + width - 1][k];
-            if n.ways == 0 {
-                continue;
-            }
-            if best.ways == 0 || n.score > best.score {
-                best = n;
-                endpoint = (i, k);
-            } else if n.score == best.score {
-                best.ways = (best.ways + n.ways).min(2);
-            }
-        }
     }
+    Ok(())
+}
+fn traceback(
+    matrix: &[[Node; 3]],
+    width: usize,
+    end: usize,
+    state: usize,
+    best: Node,
+) -> Option<Alignment> {
     if best.ways == 0 {
-        return Ok(None);
+        return None;
     }
-    let end = endpoint.0;
     let mut i = end;
     let mut j = width - 1;
-    let mut k = endpoint.1;
+    let mut k = state;
     let mut steps = vec![];
     while j > 0 {
         let n = matrix[i * width + j][k];
@@ -258,13 +252,56 @@ fn solve(
         k = usize::from(n.prev) - 1;
     }
     steps.reverse();
-    Ok(Some(Alignment {
+    Some(Alignment {
         score: best.score,
         start: i,
         end,
         steps,
         alternative_optimal_paths: best.ways > 1,
-    }))
+    })
+}
+fn endpoint(matrix: &[[Node; 3]], width: usize, end: usize) -> (Node, usize) {
+    let mut best = Node::default();
+    let mut state = M;
+    for k in [M, D, I] {
+        let n = matrix[end * width + width - 1][k];
+        if n.ways == 0 {
+            continue;
+        }
+        if best.ways == 0 || n.score > best.score {
+            best = n;
+            state = k;
+        } else if n.score == best.score {
+            best.ways = (best.ways + n.ways).min(2);
+        }
+    }
+    (best, state)
+}
+fn solve(
+    source: &[u8],
+    profile: &Profile,
+    cache: &[[[Option<i16>; 2]; 128]],
+    mode: usize,
+    matrix: &mut [[Node; 3]],
+    cancel: &mut impl FnMut() -> bool,
+) -> Result<Option<Alignment>> {
+    fill(source, profile, cache, mode, matrix, cancel)?;
+    let width = profile.states.len() + 1;
+    let mut best = Node::default();
+    let mut selected = (0, M);
+    for end in 0..=source.len() {
+        let (node, state) = endpoint(matrix, width, end);
+        if node.ways == 0 {
+            continue;
+        }
+        if best.ways == 0 || node.score > best.score {
+            best = node;
+            selected = (end, state);
+        } else if node.score == best.score {
+            best.ways = (best.ways + node.ways).min(2);
+        }
+    }
+    Ok(traceback(matrix, width, selected.0, selected.1, best))
 }
 pub fn align(
     source: &Molecule,
@@ -337,6 +374,148 @@ impl Report {
                 .as_ref()
                 .is_some_and(|a| a.steps.len() > MAX_SOURCE_RESIDUES + MAX_STATES)
             || align(source, profile, limits, &mut || false)? != *self
+        {
+            return Err(Error::Binding);
+        }
+        Ok(())
+    }
+}
+
+pub const ENDPOINT_ENGINE: &str = "antibody-profile-endpoints-1";
+pub const MAX_ENDPOINTS: usize = 128;
+data! {pub struct EndpointLimits {pub max_cells:usize,pub max_endpoints:usize}}
+data! {pub struct Endpoint {
+    /// Zero-based exclusive source endpoint; each endpoint has its own optimum.
+    pub end:usize,pub lower:Option<Alignment>,pub upper:Alignment,pub threshold_status:ThresholdStatus,
+}}
+data! {pub struct EndpointReport {
+    pub engine:String,pub source_revision:String,pub profile_revision:String,pub context_revision:String,
+    pub source_length:usize,pub limits:EndpointLimits,pub cells:usize,
+    pub reachable_endpoints:usize,pub qualified_endpoints:usize,pub truncated:bool,
+    pub ambiguous_residues:usize,pub endpoints:Vec<Endpoint>,
+}}
+/// Every full-profile endpoint with an attainable score meeting the declared
+/// threshold. Retention is bounded and ordered by source endpoint, not score.
+/// Multiple starts/state paths at one end remain tied; they are not enumerated.
+pub fn align_endpoints(
+    source: &Molecule,
+    profile: &Profile,
+    limits: &EndpointLimits,
+    cancel: &mut impl FnMut() -> bool,
+) -> Result<EndpointReport> {
+    if cancel() {
+        return Err(Error::Cancelled);
+    }
+    if limits.max_endpoints > MAX_ENDPOINTS {
+        return Err(Error::Limit("profile endpoint retention"));
+    }
+    let (source_revision, profile_revision, budget) = prepare(
+        source,
+        profile,
+        &Limits {
+            max_cells: limits.max_cells,
+        },
+    )?;
+    let cells = (source.sequence.len() + 1)
+        .checked_mul(profile.states.len() + 1)
+        .filter(|&n| n <= budget)
+        .ok_or(Error::Limit("profile cells"))?;
+    let context_revision = hash(
+        b"antibody-profile-endpoints-context-1\0",
+        &(
+            ENDPOINT_ENGINE,
+            PROFILE_ENGINE,
+            &source_revision,
+            &profile_revision,
+            limits,
+            "per-source-end optimum; upper score threshold; source-end order; exact counts beyond retention; ties retained as flags",
+        ),
+        65536,
+    )?;
+    let bytes = source.sequence.as_str().as_bytes();
+    let width = profile.states.len() + 1;
+    let cache = emissions(profile);
+    let mut matrix = vec![[Node::default(); 3]; cells];
+    fill(bytes, profile, &cache, 1, &mut matrix, cancel)?;
+    let mut reachable_endpoints = 0;
+    let mut qualified_endpoints = 0;
+    let mut endpoints = vec![];
+    for end in 0..=bytes.len() {
+        if end % 16 == 0 && cancel() {
+            return Err(Error::Cancelled);
+        }
+        let (best, state) = endpoint(&matrix, width, end);
+        if best.ways == 0 {
+            continue;
+        }
+        reachable_endpoints += 1;
+        if best.score < profile.minimum_score {
+            continue;
+        }
+        qualified_endpoints += 1;
+        if endpoints.len() < limits.max_endpoints {
+            endpoints.push(Endpoint {
+                end,
+                lower: None,
+                upper: traceback(&matrix, width, end, state, best).unwrap(),
+                threshold_status: ThresholdStatus::PossibleScore,
+            });
+        }
+    }
+    if !endpoints.is_empty() {
+        fill(bytes, profile, &cache, 0, &mut matrix, cancel)?;
+        for value in &mut endpoints {
+            if cancel() {
+                return Err(Error::Cancelled);
+            }
+            let (best, state) = endpoint(&matrix, width, value.end);
+            value.lower = traceback(&matrix, width, value.end, state, best);
+            if value
+                .lower
+                .as_ref()
+                .is_some_and(|a| a.score >= profile.minimum_score)
+            {
+                value.threshold_status = ThresholdStatus::GuaranteedScore;
+            }
+        }
+    }
+    if cancel() {
+        return Err(Error::Cancelled);
+    }
+    Ok(EndpointReport {
+        engine: ENDPOINT_ENGINE.into(),
+        source_revision,
+        profile_revision,
+        context_revision,
+        source_length: bytes.len(),
+        limits: limits.clone(),
+        cells,
+        reachable_endpoints,
+        qualified_endpoints,
+        truncated: qualified_endpoints > endpoints.len(),
+        ambiguous_residues: bytes
+            .iter()
+            .filter(|&&b| matches!(b, b'B' | b'Z' | b'J' | b'X'))
+            .count(),
+        endpoints,
+    })
+}
+impl EndpointReport {
+    pub fn validate_for(
+        &self,
+        source: &Molecule,
+        profile: &Profile,
+        limits: &EndpointLimits,
+    ) -> Result<()> {
+        if self.engine != ENDPOINT_ENGINE
+            || self.endpoints.len() > MAX_ENDPOINTS
+            || self.endpoints.iter().any(|e| {
+                e.upper.steps.len() > MAX_SOURCE_RESIDUES + MAX_STATES
+                    || e.lower
+                        .as_ref()
+                        .is_some_and(|a| a.steps.len() > MAX_SOURCE_RESIDUES + MAX_STATES)
+            })
+            || *self != align_endpoints(source, profile, limits, &mut || false)?
         {
             return Err(Error::Binding);
         }

@@ -2169,3 +2169,21 @@ fixtures. Focused optional-schema WASM checks and deterministic regeneration pas
 This supplies J reference facts, not automatic query J/FR4/CDR3 assignment or full
 domain numbering. Calibration, remaining schemes/species, application tracks and
 whole-product acceptance remain required. [Contract](ANTIBODY_NUMBERING.md).
+
+
+### Per-endpoint V-candidate enumeration
+
+The V mapper now uses engine 2 and bounded per-source-end profile results instead
+of retaining one global optimum per locus. The same current matrix fill and
+traceback serve general best-alignment and endpoint queries. Candidate endpoint
+counts stay exact beyond retention, zero caps provide counts only, and truncation
+is explicit. Same-end path ambiguity withholds projection while distinct endpoints
+remain separate. Tandem reference-prefix fixtures retain both source ends.
+
+All 12 selected native cases and focused optional-schema WASM checks pass. These
+include both global and per-endpoint independent path oracles, concrete ambiguity,
+retention/count limits, reconstruction, cancellation and the updated V-model cases.
+The old V-mapping representation is replaced directly with no compatibility layer.
+This removes a prerequisite gap for multi-domain work; query J/FR4/CDR3 combination,
+biological calibration, remaining schemes/species, application integration and
+whole-product acceptance remain required. [Contract](ANTIBODY_NUMBERING.md).

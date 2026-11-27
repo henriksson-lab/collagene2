@@ -4412,3 +4412,23 @@ all 10 selected native cases, focused optional-schema WASM checks and determinis
 regeneration pass. Query J/FR4/CDR3 reconstruction,
 full-domain biological calibration, other accepted schemes/species and application
 tracks remain required. [Reference contract](ANTIBODY_NUMBERING.md).
+
+
+### F34 endpoint enumeration for tandem V candidates
+
+A single best V-prefix per locus would discard tandem domains. The current native
+profile kernel now supplies bounded per-source-end optima through the same matrix
+fill and traceback implementation. Reachable and score-qualified counts remain
+exact beyond retention; zero-retention requests are counts-only, and truncation
+is explicit. Lower/upper ambiguity bounds and ties remain local to each endpoint.
+
+V mapping engine 2 replaces its earlier single-best representation directly with
+per-locus endpoint reports and source-end-bound projections. Separate repeated
+blocks remain separate candidates; same-end tied paths withhold projection.
+No suboptimal-path enumeration or biological classification is implied. An
+independent path oracle checks every endpoint for 1,020 small input/profile pairs;
+tandem V-prefix, limits, ambiguity, cancellation and reconstruction fixtures cover
+the connected native model. All 12 selected native cases and focused optional-
+schema WASM checks pass. Query
+J/FR4/CDR3 combination, calibration, remaining schemes/species and application
+tracks remain required. [Contract](ANTIBODY_NUMBERING.md).

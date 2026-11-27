@@ -26,6 +26,7 @@ fn scoring() -> Scoring {
 fn limits() -> Limits {
     Limits {
         max_cells: profile::MAX_CELLS,
+        max_endpoints_per_locus: profile::MAX_ENDPOINTS,
     }
 }
 #[test]
@@ -136,10 +137,10 @@ fn embedded_reference_query_keeps_original_source_indices_and_all_locus_evidence
     assert_eq!(report.cells, 294 * (m.sequence.len() + 1));
     let heavy = &report.mappings[0];
     assert_eq!(
-        heavy.alignment.upper.as_ref().unwrap().end,
+        heavy.alignment.endpoints[0].upper.end,
         prefix.len() + HEAVY.len()
     );
-    let projection = heavy
+    let projection = heavy.projections[0]
         .projection
         .as_ref()
         .expect("literal reference-prefix mapping should have a unique scored path");
@@ -166,12 +167,12 @@ fn embedded_reference_query_keeps_original_source_indices_and_all_locus_evidence
     );
     assert_eq!(
         projection.matches.len() + projection.unassigned_residues.len(),
-        heavy.alignment.upper.as_ref().unwrap().end - heavy.alignment.upper.as_ref().unwrap().start
+        heavy.alignment.endpoints[0].upper.end - heavy.alignment.endpoints[0].upper.start
     );
     report.validate_for(&m, &scoring(), &limits()).unwrap();
 }
 #[test]
-fn ties_residue_ambiguity_and_score_filters_withhold_projection_without_claiming_classification() {
+fn tandem_endpoints_are_retained_and_ambiguity_and_score_filters_remain_explicit() {
     let repeated = map_query(
         &source(&format!("{HEAVY}*{HEAVY}")),
         &scoring(),
@@ -179,11 +180,36 @@ fn ties_residue_ambiguity_and_score_filters_withhold_projection_without_claiming
         &mut || false,
     )
     .unwrap();
+    let heavy = &repeated.mappings[0];
+    assert_eq!(heavy.alignment.qualified_endpoints, 2);
+    assert!(!heavy.alignment.truncated);
     assert_eq!(
-        repeated.mappings[0].projection_issue,
-        Some(ProjectionIssue::TiedOptimalPaths)
+        heavy.projections.iter().map(|p| p.end).collect::<Vec<_>>(),
+        [HEAVY.len(), 2 * HEAVY.len() + 1]
     );
-    assert!(repeated.mappings[0].projection.is_none());
+    assert!(
+        heavy
+            .projections
+            .iter()
+            .all(|p| p.projection.is_some() && p.projection_issue.is_none())
+    );
+    let mut capped = limits();
+    capped.max_endpoints_per_locus = 1;
+    let limited = map_query(
+        &source(&format!("{HEAVY}*{HEAVY}")),
+        &scoring(),
+        &capped,
+        &mut || false,
+    )
+    .unwrap();
+    assert_eq!(limited.mappings[0].alignment.qualified_endpoints, 2);
+    assert!(limited.mappings[0].alignment.truncated);
+    assert_eq!(limited.mappings[0].projections.len(), 1);
+    capped.max_endpoints_per_locus = 0;
+    let counted = map_query(&source(HEAVY), &scoring(), &capped, &mut || false).unwrap();
+    assert_eq!(counted.mappings[0].alignment.qualified_endpoints, 1);
+    assert!(counted.mappings[0].projections.is_empty());
+    assert!(counted.mappings[0].alignment.truncated);
     let ambiguous = map_query(
         &source(&format!("X*{HEAVY}")),
         &scoring(),
@@ -192,21 +218,25 @@ fn ties_residue_ambiguity_and_score_filters_withhold_projection_without_claiming
     )
     .unwrap();
     assert_eq!(
-        ambiguous.mappings[0].projection_issue,
+        ambiguous.mappings[0].projections[0].projection_issue,
         Some(ProjectionIssue::AmbiguousSource)
     );
     let mut high = scoring();
     high.minimum_score = i32::MAX;
     let filtered = map_query(&source(HEAVY), &high, &limits(), &mut || false).unwrap();
-    assert!(filtered.mappings.iter().all(|m| m.projection_issue
-        == Some(ProjectionIssue::BelowScoreThreshold)
-        && m.projection.is_none()));
+    assert!(
+        filtered
+            .mappings
+            .iter()
+            .all(|m| m.alignment.qualified_endpoints == 0 && m.projections.is_empty())
+    );
+    assert!(filtered.mappings[0].alignment.reachable_endpoints > 0);
     let absent = map_query(&source("AAACAAA"), &scoring(), &limits(), &mut || false).unwrap();
     assert!(
         absent
             .mappings
             .iter()
-            .all(|m| m.projection_issue == Some(ProjectionIssue::NoPath))
+            .all(|m| m.alignment.reachable_endpoints == 0)
     );
 }
 #[test]
@@ -232,13 +262,25 @@ fn reports_reconstruct_models_source_and_limits_and_jobs_cancel_without_partial_
             &m,
             &scoring(),
             &Limits {
-                max_cells: report.cells - 1
+                max_cells: report.cells - 1,
+                max_endpoints_per_locus: profile::MAX_ENDPOINTS
             },
             &mut || false
         )
         .is_err()
     );
-    assert!(map_query(&m, &scoring(), &Limits { max_cells: 0 }, &mut || false).is_err());
+    assert!(
+        map_query(
+            &m,
+            &scoring(),
+            &Limits {
+                max_cells: 0,
+                max_endpoints_per_locus: profile::MAX_ENDPOINTS
+            },
+            &mut || false
+        )
+        .is_err()
+    );
     let mut invalid = scoring();
     invalid.frequency_bonus = 501;
     assert!(models(&invalid, &mut || false).is_err());
@@ -264,7 +306,10 @@ fn query_insertions_remain_unassigned_and_forged_correspondences_fail_reconstruc
     let extra = "O".repeat(20);
     let m = source(&format!("{}{}{}", &HEAVY[..split], extra, &HEAVY[split..]));
     let report = map_query(&m, &scoring(), &limits(), &mut || false).unwrap();
-    let projection = report.mappings[0].projection.as_ref().unwrap();
+    let projection = report.mappings[0].projections[0]
+        .projection
+        .as_ref()
+        .unwrap();
     assert_eq!(
         projection.unassigned_residues,
         (split..split + 20).collect::<Vec<_>>()
@@ -276,13 +321,18 @@ fn query_insertions_remain_unassigned_and_forged_correspondences_fail_reconstruc
             .any(|m| (split..split + 20).contains(&m.source_index))
     );
     let mut forged = report.clone();
-    forged.mappings[0].projection.as_mut().unwrap().matches[0].source_index += 1;
+    forged.mappings[0].projections[0]
+        .projection
+        .as_mut()
+        .unwrap()
+        .matches[0]
+        .source_index += 1;
     assert_eq!(
         forged.validate_for(&m, &scoring(), &limits()),
         Err(Error::Binding)
     );
     let mut forged = report.clone();
-    forged.mappings[0]
+    forged.mappings[0].projections[0]
         .projection
         .as_mut()
         .unwrap()

@@ -126,6 +126,9 @@ fn ties_stops_and_thresholds_do_not_turn_score_hits_into_unique_domains() {
 // Independent path-language enumeration: recurse over complete source/model
 // consumption paths, without any production matrix, traceback or emission cache.
 fn brute(s: &str, p: &Profile) -> Option<(i32, usize)> {
+    brute_end(s, p, None)
+}
+fn brute_end(s: &str, p: &Profile, wanted: Option<usize>) -> Option<(i32, usize)> {
     fn visit(
         s: &[u8],
         p: &Profile,
@@ -134,8 +137,9 @@ fn brute(s: &str, p: &Profile) -> Option<(i32, usize)> {
         last: u8,
         score: i32,
         best: &mut Option<(i32, usize)>,
+        wanted: Option<usize>,
     ) {
-        if j == p.states.len() {
+        if j == p.states.len() && wanted.is_none_or(|end| end == i) {
             match best {
                 Some((old, n)) if *old == score => *n = (*n + 1).min(2),
                 Some((old, _)) if *old > score => (),
@@ -148,21 +152,21 @@ fn brute(s: &str, p: &Profile) -> Option<(i32, usize)> {
                 .position(|&b| b == s[i])
                 .unwrap();
             if let Some(e) = p.states[j].emissions[column] {
-                visit(s, p, i + 1, j + 1, 0, score + i32::from(e), best);
+                visit(s, p, i + 1, j + 1, 0, score + i32::from(e), best, wanted);
             }
         }
         if j < p.states.len() && !p.states[j].required && last != 2 {
             let cost = if last == 1 { p.gap_extend } else { p.gap_open };
-            visit(s, p, i, j + 1, 1, score + i32::from(cost), best);
+            visit(s, p, i, j + 1, 1, score + i32::from(cost), best, wanted);
         }
         if i < s.len() && j > 0 && p.states[j - 1].allow_insert_after && last != 1 && s[i] != b'*' {
             let cost = if last == 2 { p.gap_extend } else { p.gap_open };
-            visit(s, p, i + 1, j, 2, score + i32::from(cost), best);
+            visit(s, p, i + 1, j, 2, score + i32::from(cost), best, wanted);
         }
     }
     let mut best = None;
     for i in 0..=s.len() {
-        visit(s.as_bytes(), p, i, 0, 0, 0, &mut best);
+        visit(s.as_bytes(), p, i, 0, 0, 0, &mut best, wanted);
     }
     best
 }
@@ -281,4 +285,155 @@ fn current_profiles_budgets_source_and_reconstructed_evidence_are_checked() {
     );
     let dna = Molecule::dna("DNA", "AC", Topology::Linear).unwrap();
     assert!(align(&dna, &p, &limits(), &mut || false).is_err());
+}
+
+#[test]
+fn every_small_profile_endpoint_agrees_with_complete_path_enumeration() {
+    for template in ["A", "AC", "ACA"] {
+        let mut p = profile(template);
+        p.minimum_score = i32::MIN;
+        if template == "A" {
+            p.states[0].allow_insert_after = true;
+        }
+        if template == "ACA" {
+            p.states[1].required = false;
+        }
+        for len in 1..=4 {
+            for mut word in 0..4_usize.pow(len) {
+                let mut s = String::new();
+                for _ in 0..len {
+                    s.push(b"ACG*"[word % 4] as char);
+                    word /= 4;
+                }
+                let r = align_endpoints(
+                    &source(&s),
+                    &p,
+                    &EndpointLimits {
+                        max_cells: MAX_CELLS,
+                        max_endpoints: MAX_ENDPOINTS,
+                    },
+                    &mut || false,
+                )
+                .unwrap();
+                let expected = (0..=s.len())
+                    .filter_map(|end| {
+                        brute_end(&s, &p, Some(end)).map(|(score, ways)| (end, score, ways))
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(r.reachable_endpoints, expected.len());
+                assert_eq!(r.qualified_endpoints, expected.len());
+                assert!(!r.truncated);
+                assert_eq!(
+                    r.endpoints
+                        .iter()
+                        .map(|e| (
+                            e.end,
+                            e.upper.score,
+                            if e.upper.alternative_optimal_paths {
+                                2
+                            } else {
+                                1
+                            }
+                        ))
+                        .collect::<Vec<_>>(),
+                    expected,
+                    "{template}/{s}"
+                );
+                assert!(
+                    r.endpoints
+                        .iter()
+                        .all(|e| e.lower.as_ref() == Some(&e.upper))
+                );
+            }
+        }
+    }
+}
+#[test]
+fn endpoint_retention_counts_ambiguity_and_evidence_are_source_bound() {
+    let p = profile("A");
+    let m = source("AAA");
+    let limits = EndpointLimits {
+        max_cells: MAX_CELLS,
+        max_endpoints: 1,
+    };
+    let r = align_endpoints(&m, &p, &limits, &mut || false).unwrap();
+    assert_eq!(
+        (
+            r.reachable_endpoints,
+            r.qualified_endpoints,
+            r.endpoints.len()
+        ),
+        (3, 3, 1)
+    );
+    assert!(r.truncated);
+    assert_eq!((r.endpoints[0].upper.start, r.endpoints[0].end), (0, 1));
+    r.validate_for(&m, &p, &limits).unwrap();
+    let mut forged = r.clone();
+    forged.endpoints[0].end = 2;
+    assert!(forged.validate_for(&m, &p, &limits).is_err());
+    let zero = align_endpoints(
+        &m,
+        &p,
+        &EndpointLimits {
+            max_cells: MAX_CELLS,
+            max_endpoints: 0,
+        },
+        &mut || false,
+    )
+    .unwrap();
+    assert_eq!(zero.qualified_endpoints, 3);
+    assert!(zero.truncated && zero.endpoints.is_empty());
+    let mut high = p.clone();
+    high.minimum_score = 6;
+    let filtered = align_endpoints(&m, &high, &limits, &mut || false).unwrap();
+    assert_eq!(
+        (filtered.reachable_endpoints, filtered.qualified_endpoints),
+        (3, 0)
+    );
+    assert!(!filtered.truncated);
+    assert!(
+        align_endpoints(
+            &m,
+            &p,
+            &EndpointLimits {
+                max_cells: MAX_CELLS,
+                max_endpoints: MAX_ENDPOINTS + 1
+            },
+            &mut || false
+        )
+        .is_err()
+    );
+    let mut calls = 0;
+    assert_eq!(
+        align_endpoints(&m, &p, &limits, &mut || {
+            calls += 1;
+            calls == 3
+        })
+        .unwrap_err(),
+        Error::Cancelled
+    );
+    for s in ["AX", "BX", "XCA", "JAC", "ZC", "XX"] {
+        let mut p = profile("AC");
+        p.minimum_score = i32::MIN;
+        let r = align_endpoints(
+            &source(s),
+            &p,
+            &EndpointLimits {
+                max_cells: MAX_CELLS,
+                max_endpoints: MAX_ENDPOINTS,
+            },
+            &mut || false,
+        )
+        .unwrap();
+        for e in r.endpoints {
+            let values = expand(s)
+                .iter()
+                .map(|v| brute_end(v, &p, Some(e.end)).map(|(n, _)| n))
+                .collect::<Vec<_>>();
+            assert_eq!(Some(e.upper.score), values.iter().flatten().copied().max());
+            if let Some(lower) = e.lower {
+                assert!(values.iter().all(|v| v.is_some_and(|n| n >= lower.score)));
+            }
+        }
+    }
 }

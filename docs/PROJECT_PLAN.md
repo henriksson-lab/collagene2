@@ -4393,3 +4393,22 @@ in aggregate. All five new native cases and optional-schema WASM checks pass;
 full classifier calibration, rearranged-domain/
 scheme assignment and application integration remain required.
 [Mapping contract](ANTIBODY_NUMBERING.md).
+
+
+### F34 J/FR4 reference facts and one current corpus
+
+The human corpus now retains 23 functional J references alongside its 354 V
+references. Original provider sequence/coding intervals, frame/anchor values,
+complete FR4 codons and the terminal untranslated splice nucleotide remain
+separate. Conserved-anchor and sequential complete-J-codon rules give explicit
+rule-derived FR4 positions; these differ from provider-supplied V-column labels.
+Provider coordinate conventions are checked for these exact pinned releases.
+
+The internal corpus is now version 2 / antibody-reference-corpus-2, with direct
+V/J callers and a complete exclusion ledger. The V-only internal format and API
+are replaced, with no compatibility reader or migration. Native translation,
+source/coordinate, label/terminal and existing V-model checks cover this batch;
+all 10 selected native cases, focused optional-schema WASM checks and deterministic
+regeneration pass. Query J/FR4/CDR3 reconstruction,
+full-domain biological calibration, other accepted schemes/species and application
+tracks remain required. [Reference contract](ANTIBODY_NUMBERING.md).

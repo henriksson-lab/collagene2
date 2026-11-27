@@ -1,16 +1,16 @@
-//! Version-pinned CC0 human V-gene prefixes with provider-supplied IMGT labels.
+//! Version-pinned CC0 human V-prefixes and J/FR4 reference segments.
 //! These are germline reference facts, not complete rearranged domains, trained
 //! classification profiles, species predictions or automatic numbering results.
 use super::*;
 use collagene_model::PROTEIN_RESIDUES;
 use std::collections::BTreeSet;
-pub const REFERENCE_ENGINE: &str = "antibody-reference-corpus-1";
-const DATA: &str = include_str!("../data/ogrdb-human-v/references.json");
+pub const REFERENCE_ENGINE: &str = "antibody-reference-corpus-2";
+const DATA: &str = include_str!("../data/ogrdb-human-vj/references.json");
 data! {pub struct Excluded {pub allele_ref:String,pub reason:String,pub sequence_type:String}}
 data! {pub struct Source {
     pub set_id:String,pub set_ref:String,pub release_version:u32,pub release_date:String,
     pub species:String,pub taxonomy_id:String,pub locus:String,pub author:String,
-    pub url:String,pub sha256:String,pub original_records:usize,pub retained_records:usize,
+    pub url:String,pub sha256:String,pub original_records:usize,pub v_records:usize,pub j_records:usize,
     pub excluded:Vec<Excluded>,
 }}
 data! {pub struct Cdr {
@@ -18,7 +18,7 @@ data! {pub struct Cdr {
     /// Zero-based half-open offsets in the ungapped V-prefix protein.
     pub start:usize,pub end:usize,
 }}
-data! {pub struct Reference {
+data! {pub struct VReference {
     pub source:usize,pub allele_ref:String,pub allele_id:String,pub label:String,
     pub release_version:u32,
     /// Exactly 104 codons. A whole gap codon is represented by three dots.
@@ -31,6 +31,20 @@ data! {pub struct Reference {
     /// residues or accept this reference as a canonical conserved-anchor model.
     pub non_cysteine_anchors:Vec<u16>,
 }}
+data! {pub struct JReference {
+    pub source:usize,pub allele_ref:String,pub allele_id:String,pub label:String,
+    pub release_version:u32,pub original_sequence:String,pub coding_nucleotides:String,
+    /// Original provider gene interval: one-based inclusive, in original_sequence.
+    pub gene_start:usize,pub gene_end:usize,
+    /// Raw OGRDB values, retained without claiming generic AIRR interpretation.
+    pub provider_codon_frame:u8,pub provider_j_cdr3_end:usize,
+    /// Zero-based coding-sequence offset verified for these pinned releases.
+    pub anchor_offset:usize,pub fr4_nucleotides:String,pub fr4_protein:String,
+    /// Authored IMGT-118 sequential rule, not provider-supplied position labels.
+    pub fr4_positions:Vec<String>,
+    /// Incomplete splice-junction codon; never translated or numbered as FR4.
+    pub trailing_nucleotides:String,
+}}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Corpus {
@@ -38,47 +52,57 @@ pub struct Corpus {
     license: String,
     license_url: String,
     scope: String,
+    j_label_rule: String,
     sources: Vec<Source>,
-    entries: Vec<Reference>,
+    v_entries: Vec<VReference>,
+    j_entries: Vec<JReference>,
 }
 impl Corpus {
     pub fn sources(&self) -> &[Source] {
         &self.sources
     }
-    pub fn entries(&self) -> &[Reference] {
-        &self.entries
+    pub fn v_entries(&self) -> &[VReference] {
+        &self.v_entries
+    }
+    pub fn j_entries(&self) -> &[JReference] {
+        &self.j_entries
     }
     pub fn revision(&self) -> Result<String> {
         self.validate()?;
         hash(
-            b"antibody-reference-corpus-1\0",
+            b"antibody-reference-corpus-2\0",
             &(REFERENCE_ENGINE, self),
             1 << 20,
         )
     }
     fn validate(&self) -> Result<()> {
-        if self.version != 1
+        if self.version != 2
             || self.license != "CC0-1.0"
             || self.license_url
                 != "https://ogrdb.airr-community.org/render_page/licensing_statement.html"
-            || self.scope != "human-functional-V-IMGT-1-through-104"
+            || self.scope != "human-functional-V-prefix-and-J-FR4"
+            || self.j_label_rule != "IMGT-118-sequential-complete-J-codons"
             || self.sources.len() != 3
-            || self.entries.len() != 354
+            || self.v_entries.len() != 354
+            || self.j_entries.len() != 23
         {
             return Err(Error::Invalid("unsupported embedded reference corpus"));
         }
         let expected = [
-            ("OGRDB:G00060", 10, "IGH", 194),
-            ("OGRDB:G00061", 5, "IGK", 74),
-            ("OGRDB:G00062", 4, "IGL", 86),
+            ("OGRDB:G00060", 10, "IGH", 194, 7),
+            ("OGRDB:G00061", 5, "IGK", 74, 7),
+            ("OGRDB:G00062", 4, "IGL", 86, 9),
         ];
         let mut identities = BTreeSet::new();
         let mut counts = [0; 3];
-        for (source, &(id, version, locus, retained)) in self.sources.iter().zip(&expected) {
+        for (source, &(id, version, locus, retained, j_retained)) in
+            self.sources.iter().zip(&expected)
+        {
             if source.set_id != id
                 || source.release_version != version
                 || source.locus != locus
-                || source.retained_records != retained
+                || source.v_records != retained
+                || source.j_records != j_retained
                 || source.species != "Homo sapiens"
                 || source.taxonomy_id != "NCBITAXON:9606"
                 || source.author.trim().is_empty()
@@ -87,19 +111,20 @@ impl Corpus {
                     .sha256
                     .bytes()
                     .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-                || source.retained_records + source.excluded.len() != source.original_records
+                || source.v_records + source.j_records + source.excluded.len()
+                    != source.original_records
             {
                 return Err(Error::Invalid("reference source metadata"));
             }
             for excluded in &source.excluded {
-                if excluded.reason != "not-functional-V"
+                if excluded.reason != "not-functional-V-or-J"
                     || !identities.insert(excluded.allele_ref.as_str())
                 {
                     return Err(Error::Invalid("reference exclusion ledger"));
                 }
             }
         }
-        for entry in &self.entries {
+        for entry in &self.v_entries {
             if entry.source >= 3
                 || entry.release_version == 0
                 || entry.label.is_empty()
@@ -156,6 +181,63 @@ impl Corpus {
                 }
             }
         }
+        let mut j_counts = [0; 3];
+        for entry in &self.j_entries {
+            if entry.source >= 3
+                || entry.release_version == 0
+                || entry.label.is_empty()
+                || entry.allele_id.is_empty()
+                || !identities.insert(entry.allele_ref.as_str())
+                || entry.original_sequence.len() > 512
+                || entry.coding_nucleotides.len() > 256
+                || entry.coding_nucleotides.is_empty()
+                || entry.gene_start == 0
+                || entry
+                    .original_sequence
+                    .get(entry.gene_start - 1..entry.gene_end)
+                    != Some(entry.coding_nucleotides.as_str())
+                || !entry
+                    .original_sequence
+                    .bytes()
+                    .all(|b| b"ACGT".contains(&b))
+                || !(1..=3).contains(&entry.provider_codon_frame)
+                || entry.anchor_offset >= entry.coding_nucleotides.len()
+                || entry.provider_j_cdr3_end != entry.anchor_offset + 1
+                || entry.anchor_offset % 3 != usize::from(entry.provider_codon_frame - 1)
+            {
+                return Err(Error::Invalid("J source interval/anchor/frame"));
+            }
+            let expected_length = if entry.source == 0 { 11 } else { 10 };
+            let end = entry.anchor_offset + entry.fr4_nucleotides.len();
+            if entry.fr4_protein.len() != expected_length
+                || entry.fr4_nucleotides.len() != expected_length * 3
+                || entry.fr4_positions
+                    != (118..118 + expected_length)
+                        .map(|n| n.to_string())
+                        .collect::<Vec<_>>()
+                || entry.coding_nucleotides.get(entry.anchor_offset..end)
+                    != Some(entry.fr4_nucleotides.as_str())
+                || entry.coding_nucleotides.get(end..) != Some(entry.trailing_nucleotides.as_str())
+                || entry.trailing_nucleotides.len() != 1
+                || !entry
+                    .fr4_protein
+                    .bytes()
+                    .all(|b| PROTEIN_RESIDUES.contains(&b))
+            {
+                return Err(Error::Invalid("J FR4 complete-codon extent/labels"));
+            }
+            let aa = entry.fr4_protein.as_bytes();
+            if aa[0] != if entry.source == 0 { b'W' } else { b'F' }
+                || aa[1] != b'G'
+                || aa[3] != b'G'
+            {
+                return Err(Error::Invalid("J FR4 anchor motif"));
+            }
+            j_counts[entry.source] += 1;
+        }
+        if j_counts != [7, 7, 9] {
+            return Err(Error::Invalid("J reference source counts"));
+        }
         if counts != [194, 74, 86] {
             return Err(Error::Invalid("reference source counts"));
         }
@@ -165,7 +247,7 @@ impl Corpus {
 /// Load the finite embedded corpus. No network request, executable or database
 /// installation is performed. Nucleotide/protein translations are independently
 /// checked against the existing scientific core in the corpus integration test.
-pub fn human_v_references() -> Result<Corpus> {
+pub fn human_references() -> Result<Corpus> {
     if DATA.len() > 1 << 20 {
         return Err(Error::Limit("embedded reference bytes"));
     }

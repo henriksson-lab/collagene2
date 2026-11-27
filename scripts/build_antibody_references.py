@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the pinned CC0 human IMGT V-prefix corpus from local OGRDB AIRR JSON.
+"""Build the pinned CC0 human IMGT V-prefix/J-FR4 corpus from local OGRDB AIRR JSON.
 
 Development tooling only: no network, scientific executable or Python runtime is
 used by Collagene. Inputs are the three original API response files; obtain their
@@ -36,7 +36,7 @@ def require(ok, message):
 
 
 def build(paths):
-    sources, entries = [], []
+    sources, v_entries, j_entries = [], [], []
     for index, ((gid, version, locus, digest), path) in enumerate(zip(RELEASES, paths, strict=True)):
         raw = path.read_bytes()
         require(len(raw) <= 16 << 20, 'source byte bound')
@@ -50,11 +50,42 @@ def build(paths):
         excluded = []
         kept = 0
         for a in alleles:
-            if a['sequence_type'] != 'V' or a['functional'] is not True:
+            if a['sequence_type'] not in ['V', 'J'] or a['functional'] is not True:
                 excluded.append({'allele_ref': a['allele_description_ref'],
-                                 'reason': 'not-functional-V', 'sequence_type': a['sequence_type']})
+                                 'reason': 'not-functional-V-or-J', 'sequence_type': a['sequence_type']})
                 continue
             require(a['locus'] == locus and a['species']['id'] == 'NCBITAXON:9606', 'allele identity')
+            if a['sequence_type'] == 'J':
+                coding = a['coding_sequence']
+                require(a['sequence'][a['gene_start']-1:a['gene_end']] == coding, 'J gene/coding interval')
+                anchor = a['j_cdr3_end']-1
+                frame = a['j_codon_frame']
+                # The pinned OGRDB release values use a coding-sequence anchor
+                # and a 1-based complete-codon start. Preserve the raw fields;
+                # this is not a generic AIRR coordinate reinterpretation.
+                require(frame in [1, 2, 3] and anchor >= 0 and anchor % 3 == frame-1,
+                        'J provider anchor/frame agreement')
+                require(set(coding) <= set('ACGT') and anchor < len(coding), 'J coding alphabet/anchor')
+                complete = (len(coding)-anchor)//3*3
+                dna = coding[anchor:anchor+complete]
+                trailing = coding[anchor+complete:]
+                protein = ''.join(TRANSLATE[dna[n:n+3]] for n in range(0, len(dna), 3))
+                require(len(protein) == (11 if locus == 'IGH' else 10) and len(trailing) == 1,
+                        'unsupported J terminal extent')
+                require(protein[0] == ('W' if locus == 'IGH' else 'F') and protein[1] == 'G'
+                        and protein[3] == 'G' and '*' not in protein, 'J canonical motif/translation')
+                j_entries.append({
+                    'source': index, 'allele_ref': a['allele_description_ref'],
+                    'allele_id': a['allele_description_id'], 'label': a['label'],
+                    'release_version': a['release_version'],
+                    'original_sequence': a['sequence'], 'coding_nucleotides': coding,
+                    'gene_start': a['gene_start'], 'gene_end': a['gene_end'],
+                    'provider_codon_frame': frame, 'provider_j_cdr3_end': a['j_cdr3_end'],
+                    'anchor_offset': anchor, 'fr4_nucleotides': dna, 'fr4_protein': protein,
+                    'fr4_positions': [str(n) for n in range(118, 118+len(protein))],
+                    'trailing_nucleotides': trailing,
+                })
+                continue
             delineations = [d for d in a['v_gene_delineations'] if d['delineation_scheme'] == 'IMGT']
             require(len(delineations) == 1, 'one explicit IMGT delineation required')
             d = delineations[0]
@@ -81,7 +112,7 @@ def build(paths):
                 require(observed and (start, end) == (observed[0], observed[-1]+1), 'CDR/labels disagree')
                 ranges.append({'kind': kind, 'start': start, 'end': end})
             require(d['fwr3_end'] == len(prefix), 'V-prefix terminus/delineation mismatch')
-            entries.append({
+            v_entries.append({
                 'source': index, 'allele_ref': a['allele_description_ref'],
                 'allele_id': a['allele_description_id'], 'label': a['label'],
                 'release_version': a['release_version'],
@@ -96,13 +127,17 @@ def build(paths):
             'species': s['species']['label'], 'taxonomy_id': s['species']['id'],
             'locus': locus, 'author': s['author'],
             'url': f'https://ogrdb.airr-community.org/api/germline/set/{gid}/{version}',
-            'sha256': digest, 'original_records': len(alleles), 'retained_records': kept,
+            'sha256': digest, 'original_records': len(alleles), 'v_records': kept,
+            'j_records': sum(e['source'] == index for e in j_entries),
             'excluded': sorted(excluded, key=lambda x: x['allele_ref']),
         })
-    entries.sort(key=lambda x: (x['source'], x['allele_ref']))
-    return {'version': 1, 'license': 'CC0-1.0',
+    v_entries.sort(key=lambda x: (x['source'], x['allele_ref']))
+    j_entries.sort(key=lambda x: (x['source'], x['allele_ref']))
+    return {'version': 2, 'license': 'CC0-1.0',
             'license_url': 'https://ogrdb.airr-community.org/render_page/licensing_statement.html',
-            'scope': 'human-functional-V-IMGT-1-through-104', 'sources': sources, 'entries': entries}
+            'scope': 'human-functional-V-prefix-and-J-FR4',
+            'j_label_rule': 'IMGT-118-sequential-complete-J-codons',
+            'sources': sources, 'v_entries': v_entries, 'j_entries': j_entries}
 
 
 if __name__ == '__main__':
@@ -112,4 +147,4 @@ if __name__ == '__main__':
     args = ap.parse_args()
     result = build(args.sources)
     args.output.write_text(json.dumps(result, separators=(',', ':'), ensure_ascii=True)+'\n')
-    print(f"{len(result['entries'])} references; {args.output.stat().st_size} bytes")
+    print(f"{len(result['v_entries'])} V and {len(result['j_entries'])} J references; {args.output.stat().st_size} bytes")

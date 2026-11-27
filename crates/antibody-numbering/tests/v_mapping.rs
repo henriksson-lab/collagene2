@@ -1,7 +1,7 @@
 use collagene_antibody_numbering::{Error, profile, v_mapping::*};
 use collagene_model::{Alphabet, Molecule, PROTEIN_RESIDUES, Sequence, Topology};
 // OGRDB IGHV3-23*01, G00060 v10: labeled V-prefix with gaps removed.
-// CC0 data provenance: data/ogrdb-human-v/ATTRIBUTION.md.
+// CC0 data provenance: data/ogrdb-human-vj/ATTRIBUTION.md.
 const HEAVY: &str = "EVQLLESGGGLVQPGGSLRLSCAASGFTFSSYAMSWVRQAPGKGLEWVSAISGSGGSTYYADSVKGRFTISRDNSKNTLYLQMNSLRAEDTAVYYC";
 fn source(s: &str) -> Molecule {
     Molecule {

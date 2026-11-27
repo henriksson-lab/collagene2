@@ -121,7 +121,7 @@ liability fixtures, 16 native cases pass. Optional-schema WASM checks cover both
 consumers of the shared amino-acid alternatives.
 
 
-## Embedded human V-gene references
+## Embedded human V/J references
 
 The `references` module loads a version-pinned CC0 corpus from OGRDB releases
 G00060 v10, G00061 v5 and G00062 v4. It retains 354 provider-annotated functional
@@ -134,22 +134,22 @@ conserved-anchor references.
 
 The source API responses are pinned by SHA-256. An authored generator verifies
 source identity, frame, codon gaps, prefix agreement and label/CDR agreement.
-Runtime loading performs no network or executable calls. Corpus version 1 rejects
+Runtime loading performs no network or executable calls. Corpus version 2 rejects
 unsupported internal versions; its content revision binds the complete retained
 reference data and source/exclusion metadata. Native structural validation checks
 columns, identities, source ownership and region agreement. A separate integration
 fixture checks every generated protein against the existing Rust translation
 engine, independently of the Python generator's codon dictionary.
 
-These are germline V-prefix facts. Unlabeled CDR3 tails are excluded; there is no
-rearranged CDR3, J/FR4 assignment, nonhuman coverage, Kabat/Chothia correspondence
+These are germline reference facts. Unlabeled V CDR3 tails are excluded; there is no
+rearranged CDR3, query-domain assignment, nonhuman coverage, Kabat/Chothia correspondence
 or calibrated classification model in this corpus. Reference metadata is distinct
 from an automatic query-domain assignment. Automatic detection still requires
 profile construction/calibration, ambiguity and alternative-domain handling,
 numbering reconstruction and independent biological validation, followed by the
 worker/MCP/protein/alignment tracks. The corpus does not complete those gates.
 
-[Source attribution, license and rebuild instructions](../crates/antibody-numbering/data/ogrdb-human-v/ATTRIBUTION.md)
+[Source attribution, license and rebuild instructions](../crates/antibody-numbering/data/ogrdb-human-vj/ATTRIBUTION.md)
 · [Provider content license](https://ogrdb.airr-community.org/render_page/licensing_statement.html)
 · [AIRR numbering/delineation contract](https://docs.airr-community.org/en/latest/datarep/germline.html).
 
@@ -195,5 +195,37 @@ Native fixtures check independent literal reference counts and missing columns,
 real V-prefix source anchors, all-locus evidence, duplicate best matches,
 ambiguity, declared thresholds, budgets, cancellation and tampering. This does not
 replace independent biological calibration and full-domain scheme validation.
-J/FR4 and rearranged CDR3, accepted alternative schemes and nonhuman scope,
+Query J/FR4 and rearranged CDR3 assignment, accepted alternative schemes and nonhuman scope,
 alternative-domain handling, region derivation and application tracks remain open.
+
+
+## J/FR4 reference facts
+
+The current corpus also retains all 23 provider-annotated functional human J
+alleles from the pinned releases (7 IGH, 7 IGK, 9 IGL). Original sequence, coding
+interval, coding DNA and raw provider frame/anchor values survive the transform.
+For these OGRDB responses, the conserved anchor is verified as a coding-sequence
+offset and its phase agrees with the complete-codon start. This is an explicitly
+checked provider-specific convention, not a generic AIRR import rule.
+
+Complete codons starting at the conserved W/F yield FR4 reference proteins. The
+canonical motif is checked against the original DNA translation. Labels start at
+published IMGT position 118 and run sequentially across complete codons: through
+128 for these heavy references, 127 for these light references. These J labels
+are authored rule-derived facts, not provider-supplied per-column labels. The
+terminal one-nucleotide partial codon remains separate and untranslated; it is
+not assigned an FR4 amino acid or combined with invented constant-region bases.
+[IMGT FR4 definition](https://www.imgt.org/IMGTeducation/Tutorials/3Dstructure/_UK/DOMAINs/fleches.html)
+· [Coding/splice boundary](https://imgt.org/IMGTScientificChart/Numbering/IMGTnumberingCR.html).
+
+The single current corpus representation is version 2 / engine
+`antibody-reference-corpus-2`. Old internal versions are rejected. V-reference
+models and tests consume the updated corpus directly; there is no V-only adapter
+or fallback. Counts and source-exclusion ledgers cover V and J separately. Native
+fixtures check every J translation with the existing Rust engine, including the
+retained untranslated nucleotide, and refuse invalid raw coordinates, anchor
+phases, label extents and terminal metadata.
+
+These are J reference facts. Connecting them to query V paths, reconstructing
+rearranged CDR3s, handling alternative domains, full scheme validation/calibration
+and worker/MCP/application tracks remain required.

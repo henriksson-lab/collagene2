@@ -2151,3 +2151,21 @@ This is a reference-mapping component, not a calibrated biological detector or
 full-domain numbering/CDR assignment. Automatic classification/calibration,
 rearranged CDR3/J/FR4, other accepted schemes/species, application integration and
 whole-product acceptance remain open. [Contract](ANTIBODY_NUMBERING.md).
+
+
+### One current human V/J reference corpus
+
+The current corpus is version 2 / `antibody-reference-corpus-2`. It retains all
+354 functional V and 23 functional J alleles from the pinned human OGRDB releases.
+V/J entries and count ledgers are explicit, all 44 other source records are
+accounted for, and the earlier V-only format/API have been replaced directly.
+J source sequence/coding intervals, raw provider frame/anchor fields, complete
+FR4 codons and one untranslated terminal splice nucleotide are retained. J labels
+are derived from the published 118-anchor rule, separately from provider V labels.
+
+All 10 selected native cases pass: corpus/version/coordinate validation, complete
+V/J translation through the existing Rust core, and the affected V-model/report
+fixtures. Focused optional-schema WASM checks and deterministic regeneration pass.
+This supplies J reference facts, not automatic query J/FR4/CDR3 assignment or full
+domain numbering. Calibration, remaining schemes/species, application tracks and
+whole-product acceptance remain required. [Contract](ANTIBODY_NUMBERING.md).

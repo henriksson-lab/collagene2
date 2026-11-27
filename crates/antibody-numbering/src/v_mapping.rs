@@ -47,7 +47,7 @@ pub fn models(scoring: &Scoring, cancel: &mut impl FnMut() -> bool) -> Result<Ve
     if cancel() {
         return Err(Error::Cancelled);
     }
-    let corpus = references::human_v_references()?;
+    let corpus = references::human_references()?;
     let corpus_revision = corpus.revision()?;
     let mut models = vec![];
     for (source, locus) in [Locus::Heavy, Locus::Kappa, Locus::Lambda]
@@ -57,7 +57,7 @@ pub fn models(scoring: &Scoring, cancel: &mut impl FnMut() -> bool) -> Result<Ve
         let mut training_alleles = vec![];
         let mut omitted_alleles = vec![];
         let mut proteins = BTreeSet::new();
-        for entry in corpus.entries().iter().filter(|e| e.source == source) {
+        for entry in corpus.v_entries().iter().filter(|e| e.source == source) {
             if cancel() {
                 return Err(Error::Cancelled);
             }

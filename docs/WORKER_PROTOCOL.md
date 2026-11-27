@@ -1,8 +1,8 @@
 # Binary worker protocol
 
 The web worker and native adapters share Rust DTOs in `core::protocol` and the
-same deterministic scientific engines. Current schemas are worker **94**,
-candidate **24** and native workspace plan **22**; the verifier is **science-26**.
+same deterministic scientific engines. Current schemas are worker **95**,
+candidate **25** and native workspace plan **23**; the verifier is **science-26**.
 Only current internal encodings are accepted. Superseded development formats have
 no fallback decoder, migration or capability ladder.
 
@@ -18,8 +18,8 @@ validate their captured source/event/workspace state before accepting a response
 The decoder checks namespace, current version, exact length, checksum and complete
 payload consumption. Ordinary messages have a **32 MiB** cap; only explicitly
 listed workspace-bearing jobs/replies may use **128 MiB**. A borrowed prefix probe
-checks the tag and bounded revision before admitting a large body. The exhaustive
-allowlists in `protocol.rs::decode_request` and `decode_response` are authoritative;
+checks the tag and bounded revision before admitting a large body. The current request selector list is shared by stateless and session admission;
+reply admission has its own current selector list. These bounds are authoritative;
 adding a job does not grant it the larger budget automatically.
 
 Typed validators preserve scientific model bounds, exact source revisions, graph
@@ -219,16 +219,15 @@ superseded development schemas. Change the current schema when changing layouts.
 | 168 | `PreviewAnnealingRecipe` |
 | 169 | `InspectTopoRun` |
 | 170 | `InspectMaterialOrigin` |
-| 171 | `InstallRunDigestFragment` |
-| 172 | `MaterialPcrDocuments` |
-| 173 | `PrepareMaterialPcrOutputs` |
-| 174 | `ReviewSequenceExport` |
-| 175 | `PrepareSequenceExport` |
-| 176 | `ExportScfTrace` |
-| 177 | `InstallMaterialDerivation` |
-| 178 | `InspectMaterialDigest` |
-| 179 | `PrepareSavedRunReview` |
-| 180 | `RenderMapSvg` |
+| 171 | `MaterialPcrDocuments` |
+| 172 | `PrepareMaterialPcrOutputs` |
+| 173 | `ReviewSequenceExport` |
+| 174 | `PrepareSequenceExport` |
+| 175 | `ExportScfTrace` |
+| 176 | `InstallMaterialDerivation` |
+| 177 | `InspectMaterialDigest` |
+| 178 | `PrepareSavedRunReview` |
+| 179 | `RenderMapSvg` |
 
 ## Current result tags
 
@@ -395,16 +394,15 @@ superseded development schemas. Change the current schema when changing layouts.
 | 158 | `EditedOverlapPrimersDesigned` |
 | 159 | `TopoRunInspection` |
 | 160 | `MaterialOriginInspection` |
-| 161 | `RunDigestInstalled` |
-| 162 | `MaterialPcrDocuments` |
-| 163 | `MaterialPcrOutputsPrepared` |
-| 164 | `SequenceExportAssessment` |
-| 165 | `SequenceExportPrepared` |
-| 166 | `ScfTraceExported` |
-| 167 | `MaterialDerivationInstalled` |
-| 168 | `MaterialDigestInspection` |
-| 169 | `SavedRunReviewPrepared` |
-| 170 | `MapSvgExported` |
+| 161 | `MaterialPcrDocuments` |
+| 162 | `MaterialPcrOutputsPrepared` |
+| 163 | `SequenceExportAssessment` |
+| 164 | `SequenceExportPrepared` |
+| 165 | `ScfTraceExported` |
+| 166 | `MaterialDerivationInstalled` |
+| 167 | `MaterialDigestInspection` |
+| 168 | `SavedRunReviewPrepared` |
+| 169 | `MapSvgExported` |
 
 ## Related contracts
 

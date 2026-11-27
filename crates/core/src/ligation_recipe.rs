@@ -38,9 +38,6 @@ fn sources(recipe: &Recipe) -> Result<Vec<FragmentSpec>, Error> {
             preparation::Preparation::FromRun { origin, .. } => {
                 Some(crate::run_material::MaterialOriginRef::Run(origin))
             }
-            preparation::Preparation::FromDigest { origin, .. } => {
-                Some(crate::run_material::MaterialOriginRef::Digest(origin))
-            }
             preparation::Preparation::FromDerived { origin, .. } => {
                 Some(crate::run_material::MaterialOriginRef::Derived(origin))
             }
@@ -48,13 +45,7 @@ fn sources(recipe: &Recipe) -> Result<Vec<FragmentSpec>, Error> {
         }
     }))?;
     for row in &recipe.fragments {
-        if let preparation::Preparation::FromDigest {
-            origin,
-            preparation: child,
-        } = &row.source.preparation
-        {
-            preparation::from_digest_shape(origin, child)?;
-        } else if let preparation::Preparation::FromDerived {
+        if let preparation::Preparation::FromDerived {
             origin,
             preparation: child,
         } = &row.source.preparation
@@ -145,10 +136,7 @@ pub fn source_preflight(
                 origin,
                 preparation: child,
             } => preparation::from_run_shape(origin, child)?,
-            preparation::Preparation::FromDigest {
-                origin,
-                preparation: child,
-            } => preparation::from_digest_shape(origin, child)?,
+
             preparation::Preparation::FromDerived {
                 origin,
                 preparation: child,
@@ -465,7 +453,6 @@ impl Preview {
                             | Operation::PcrWithMismatches { .. }
                             | Operation::OverlapExtension { .. }
                             | Operation::ReconstructRunProduct { .. }
-                            | Operation::ReconstructDigestFragment { .. }
                             | Operation::ReconstructMaterial { .. }
                             | Operation::AnnealOligos { .. }
                             | Operation::DeclareSourceTermini { .. }

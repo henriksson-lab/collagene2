@@ -136,9 +136,7 @@ pub fn prepare(workspace: &Workspace, run_id: &str) -> Result<PreparedReview, Er
     let has_saved_material_origins = candidate.plan.steps.iter().any(|step| {
         matches!(
             step,
-            Operation::ReconstructRunProduct { .. }
-                | Operation::ReconstructDigestFragment { .. }
-                | Operation::ReconstructMaterial { .. }
+            Operation::ReconstructRunProduct { .. } | Operation::ReconstructMaterial { .. }
         )
     });
     let recorded_engine_matches = record.assessment.engine_version == verification::ENGINE_VERSION;

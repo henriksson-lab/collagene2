@@ -7,7 +7,7 @@ use collagene_core::{
     chemistry::{Duplex, FivePrime},
     cloning_outputs,
     history::DocumentHistory,
-    material_derivation as d, material_pcr, modified_duplex, run_digest_history,
+    material_derivation as d, material_pcr, modified_duplex,
     run_lineage::{self, EventBinding, InputEventBinding},
     run_material::{self, MaterialOrigin},
     verification::{self, DesignPlan, Operation, OrientedSource, PlanInput, Source, Status},
@@ -341,28 +341,34 @@ fn full_ordered_tails_and_source_run_and_legacy_digest_origins_are_replayed_not_
             .as_str(),
         STOCK
     );
-    let old = run_digest_history::prepare_install(
+    let digested = d::prepare_install(
         &saved.workspace,
-        &run_digest_history::Request {
+        &d::Request {
             source: selection.event,
-            origin,
-            selection: enzyme(),
-            options: Default::default(),
-            fragment_index: 1,
+            origin: d::SourceOrigin::Saved(collagene_core::run_material::MaterialOrigin::Run(
+                origin,
+            )),
+            derivation: d::Derivation::CatalogDigest {
+                selection: enzyme(),
+                options: Default::default(),
+                fragment_index: 1,
+            },
+            name: "Native selected digest fragment".into(),
+            save_primers: false,
         },
     )
     .unwrap();
-    let pin = old.receipt.product;
-    let cap = run_digest_history::capsule(&old.workspace, &pin).unwrap();
+    let pin = digested.receipt.product;
+    let cap = d::capsule(&digested.workspace, &pin).unwrap();
     let request = pcr(
-        &old.workspace,
+        &digested.workspace,
         &pin,
-        d::SourceOrigin::Saved(MaterialOrigin::Digest(cap)),
+        d::SourceOrigin::Saved(MaterialOrigin::Derived(cap)),
         Primer::new("Inner F", "CCGTAGGA", "").unwrap(),
         Primer::new("Inner R", "TGACGATC", "").unwrap(),
-        "From exact old digest",
+        "From exact derived digest",
     );
-    let after = d::prepare_install(&old.workspace, &request).unwrap();
+    let after = d::prepare_install(&digested.workspace, &request).unwrap();
     assert_eq!(
         after.workspace.revisions[&after.receipt.product.revision]
             .sequence

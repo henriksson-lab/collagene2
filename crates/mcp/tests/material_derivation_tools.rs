@@ -247,7 +247,7 @@ async fn ordinary_pcr_native_install_redigest_and_derived_discovery_preserve_imm
     closed.validate_for_workspace(&w, &receipt.product).unwrap();
     let origin = run_material::MaterialSelection::Derived(receipt.product.clone());
     // Even a handle with the right event must name its actual origin family.
-    reject(&c,json!({"workspace":reference(&installed),"task":{"PreviewPcr":{"source":receipt.product,"origin":{"Saved":run_material::MaterialSelection::Digest(receipt.product.clone())},"forward":forward,"reverse":reverse}}})).await;
+    reject(&c,json!({"workspace":reference(&installed),"task":{"PreviewPcr":{"source":receipt.product,"origin":{"Saved":run_material::MaterialSelection::Run(run_material::Selection { run_id: "0".repeat(64), step_index: 0, event: receipt.product.clone() })},"forward":forward,"reverse":reverse}}})).await;
     let catalog = catalog_digest::builtin_catalog().unwrap();
     let eco = catalog
         .edition()

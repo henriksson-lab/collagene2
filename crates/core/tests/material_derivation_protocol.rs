@@ -1,4 +1,4 @@
-//! Native material selectors, source identity and append-only capability floors.
+//! Native material selectors, source identity and current encoding integrity.
 use collagene_core::{
     Molecule, Topology,
     analysis::Primer,
@@ -76,8 +76,8 @@ fn installed() -> (Workspace, EventBinding) {
             request,
         },
         revision.clone(),
-        177,
-        167,
+        176,
+        166,
     );
     let AnalysisResult::MaterialDerivationInstalled(value) = reply.result else {
         unreachable!()
@@ -95,8 +95,8 @@ fn installed() -> (Workspace, EventBinding) {
     (w, value.receipt.product)
 }
 #[test]
-fn worker91_install177_reply167_and_digest178_reply168_bind_actual_material() {
-    assert!(protocol::WORKER_SCHEMA_VERSION >= 91);
+fn current_install_and_digest_jobs_bind_actual_material() {
+    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 95);
     let (w, product) = installed();
     let source = w.revisions[&product.revision].clone();
     let origin = native::SourceOrigin::Saved(MaterialOrigin::Derived(
@@ -125,8 +125,8 @@ fn worker91_install177_reply167_and_digest178_reply168_bind_actual_material() {
             options,
         },
         context.clone(),
-        178,
-        168,
+        177,
+        167,
     );
     let AnalysisResult::MaterialDigestInspection(report) = response.result else {
         unreachable!()
@@ -138,7 +138,7 @@ fn worker91_install177_reply167_and_digest178_reply168_bind_actual_material() {
     assert_eq!(source, w.revisions[&product.revision]);
 }
 #[test]
-fn operation28_evidence7_candidate22_and_plan20_are_explicit_and_replayable() {
+fn reconstruction_operation_and_evidence_are_explicit_and_replayable() {
     let (w, product) = installed();
     let source = w.revisions[&product.revision].clone();
     let target = Molecule::dna("Independent expected DNA", TEMPLATE, Topology::Linear).unwrap();
@@ -156,9 +156,9 @@ fn operation28_evidence7_candidate22_and_plan20_are_explicit_and_replayable() {
             origin,
         }],
     };
-    assert_eq!(tag(&plan.steps[0]), 28);
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 24);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 22);
+    assert_eq!(tag(&plan.steps[0]), 27);
+    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 25);
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 23);
     let bytes = transfer::save_candidate(&transfer::Candidate::new(plan.clone())).unwrap();
     assert_eq!(
         &bytes[4..6],
@@ -176,7 +176,7 @@ fn operation28_evidence7_candidate22_and_plan20_are_explicit_and_replayable() {
         report.findings
     );
     assert!(report.engine_version.ends_with("/science-26"));
-    assert_eq!(tag(&report.physical_processing_reports[0].evidence), 7);
+    assert_eq!(tag(&report.physical_processing_reports[0].evidence), 6);
 }
 #[test]
 fn dropping_only_duplex_summary_cannot_launder_native_material_into_a_plain_source() {

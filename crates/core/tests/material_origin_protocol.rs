@@ -1,10 +1,10 @@
-//! Worker90/candidate21/plan19 append-only material-origin capability fixtures.
+//! Current worker material-origin reconstruction, identity and output fixtures.
 use collagene_core::{
     Molecule, Topology,
     analysis::Primer,
     catalog_digest, cloning_outputs,
     history::DocumentHistory,
-    run_digest_history as digest,
+    material_derivation as native,
     run_lineage::{EventBinding, InputEventBinding},
     run_material::{self, MaterialOrigin, MaterialSelection},
     verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
@@ -28,7 +28,7 @@ fn input(id: &str, m: Molecule) -> PlanInput {
         molecule: m,
     }
 }
-fn digest_fixture() -> (Workspace, digest::Capsule, EventBinding) {
+fn digest_fixture() -> (Workspace, native::Capsule, EventBinding) {
     let source = Molecule::dna("Original stock", STOCK, Topology::Linear).unwrap();
     let target = Molecule::dna("Independent original PCR target", STOCK, Topology::Linear).unwrap();
     let w = Workspace::from_documents(
@@ -78,24 +78,28 @@ fn digest_fixture() -> (Workspace, digest::Capsule, EventBinding) {
         .unwrap()
         .id
         .clone();
-    let prepared = digest::prepare_install(
+    let prepared = native::prepare_install(
         &saved.workspace,
-        &digest::Request {
+        &native::Request {
             source: selected.event,
-            origin,
-            selection: catalog_digest::select(&catalog, &[enzyme]).unwrap(),
-            options: Default::default(),
-            fragment_index: 1,
+            origin: native::SourceOrigin::Saved(MaterialOrigin::Run(origin)),
+            derivation: native::Derivation::CatalogDigest {
+                selection: catalog_digest::select(&catalog, &[enzyme]).unwrap(),
+                options: Default::default(),
+                fragment_index: 1,
+            },
+            name: "Opened EcoRI fragment".into(),
+            save_primers: false,
         },
     )
     .unwrap();
     let pin = prepared.receipt.product;
-    let cap = digest::capsule(&prepared.workspace, &pin).unwrap();
+    let cap = native::capsule(&prepared.workspace, &pin).unwrap();
     (prepared.workspace, cap, pin)
 }
 fn prepared_plan(
     w: &mut Workspace,
-    cap: &digest::Capsule,
+    cap: &native::Capsule,
     pin: &EventBinding,
 ) -> (DesignPlan, EventBinding) {
     let target =
@@ -112,7 +116,7 @@ fn prepared_plan(
         target_revision: target.revision(),
         inputs: vec![input("fragment", source)],
         steps: vec![
-            Operation::ReconstructDigestFragment {
+            Operation::ReconstructMaterial {
                 template: Source::Input("fragment".into()),
                 origin: cap.clone(),
             },
@@ -163,7 +167,7 @@ fn checked_roundtrip(
         protocol::WORKER_SCHEMA_VERSION
     );
     let mut old = bytes.clone();
-    old[4..6].copy_from_slice(&89u16.to_le_bytes());
+    old[4..6].copy_from_slice(&(protocol::WORKER_SCHEMA_VERSION - 1).to_le_bytes());
     assert_eq!(&old[6..], &bytes[6..]);
     assert!(protocol::process_request(&old).is_err());
     let encoded = protocol::process_request(&bytes).unwrap();
@@ -177,16 +181,17 @@ fn checked_roundtrip(
         response.result
     );
     let mut old = encoded.clone();
-    old[4..6].copy_from_slice(&89u16.to_le_bytes());
+    old[4..6].copy_from_slice(&(protocol::WORKER_SCHEMA_VERSION - 1).to_le_bytes());
     assert_eq!(&old[6..], &encoded[6..]);
     assert!(protocol::decode_response(&old).is_err());
     response
 }
 #[test]
-fn four_appended_worker_operations_reconstruct_literal_material_and_bind_outputs() {
-    assert!(protocol::WORKER_SCHEMA_VERSION >= 90);
-    let (mut w, cap, pin) = digest_fixture();
-    let selection = Some(MaterialSelection::Digest(pin.clone()));
+fn current_worker_operations_reconstruct_literal_material_and_bind_outputs() {
+    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 95);
+    let (w, cap, pin) = digest_fixture();
+    let before = serde_json::to_value(&w).unwrap();
+    let selection = Some(MaterialSelection::Derived(pin.clone()));
     let revision = run_material::material_inspection_revision(&w, &pin, &selection).unwrap();
     let inspected = checked_roundtrip(
         AnalysisJob::InspectMaterialOrigin {
@@ -202,23 +207,19 @@ fn four_appended_worker_operations_reconstruct_literal_material_and_bind_outputs
         panic!("material origin inspection")
     };
     report.validate_binding(&revision).unwrap();
-    assert!(matches!(report.selected, Some(MaterialOrigin::Digest(_))));
-    let request = cap.record.request.clone();
-    // The fixture is currently displaying the already opened fragment. Reopening
-    // a fragment must explicitly return to the exact original run source first.
-    assert!(digest::installation_revision(&w, &request).is_err());
-    w.active_document = request.source.document_id.clone();
-    let revision = digest::installation_revision(&w, &request).unwrap();
+    assert!(matches!(report.selected, Some(MaterialOrigin::Derived(_))));
+    let request = native::load_record(&cap.record_bytes).unwrap().request;
+    let revision = native::revision(&w, &request).unwrap();
     let installed = checked_roundtrip(
-        AnalysisJob::InstallRunDigestFragment {
+        AnalysisJob::InstallMaterialDerivation {
             workspace: w.clone(),
             request,
         },
         revision.clone(),
-        171,
-        161,
+        176,
+        166,
     );
-    let AnalysisResult::RunDigestInstalled(installed) = installed.result else {
+    let AnalysisResult::MaterialDerivationInstalled(installed) = installed.result else {
         panic!("digest installation")
     };
     installed.validate_binding(&revision).unwrap();
@@ -231,7 +232,7 @@ fn four_appended_worker_operations_reconstruct_literal_material_and_bind_outputs
         CUT
     );
     let source = w.revisions[&pin.revision].clone();
-    let origin = MaterialOrigin::Digest(cap);
+    let origin = MaterialOrigin::Derived(cap);
     let forward = Primer::new("Native-material F", "CCGTAGGA", "").unwrap();
     let reverse = Primer::new("Native-material R", "TGACGATC", "").unwrap();
     let revision = material_pcr::revision(&source, &origin, &forward, &reverse).unwrap();
@@ -243,8 +244,8 @@ fn four_appended_worker_operations_reconstruct_literal_material_and_bind_outputs
             reverse: reverse.clone(),
         },
         revision,
-        172,
-        162,
+        171,
+        161,
     );
     let AnalysisResult::MaterialPcrDocuments(previews) = previews.result else {
         panic!("material PCR")
@@ -272,8 +273,8 @@ fn four_appended_worker_operations_reconstruct_literal_material_and_bind_outputs
     let outputs = checked_roundtrip(
         AnalysisJob::PrepareMaterialPcrOutputs { origin, request },
         revision.clone(),
-        173,
-        163,
+        172,
+        162,
     );
     let AnalysisResult::MaterialPcrOutputsPrepared(outputs) = outputs.result else {
         panic!("material PCR outputs")
@@ -281,11 +282,12 @@ fn four_appended_worker_operations_reconstruct_literal_material_and_bind_outputs
     outputs.validate_binding(&revision).unwrap();
     assert_eq!(outputs.product.unwrap().sequence.as_str(), AMPLICON);
     assert_eq!(outputs.primers.unwrap().records.len(), 2);
+    assert_eq!(serde_json::to_value(&w).unwrap(), before);
 }
 #[test]
 fn current_material_origin_encoding_preserves_operation_and_exact_evidence() {
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 24);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 22);
+    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 25);
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 23);
     let (mut w, cap, pin) = digest_fixture();
     let (plan, target) = prepared_plan(&mut w, &cap, &pin);
     assert_eq!(tag(&plan.steps[0]), 27);
@@ -348,7 +350,7 @@ fn source_step_reconstruction_is_refused_before_material_can_be_recovered() {
     let (mut plan, target) = prepared_plan(&mut w, &cap, &pin);
     plan.steps.insert(
         1,
-        Operation::ReconstructDigestFragment {
+        Operation::ReconstructMaterial {
             template: Source::Step(0),
             origin: cap,
         },
@@ -361,7 +363,14 @@ fn source_step_reconstruction_is_refused_before_material_can_be_recovered() {
 #[test]
 fn current_encoding_retains_documentary_producer_stamps_without_granting_authority() {
     let (_, cap, _) = digest_fixture();
-    let origin = cap.record.request.origin;
+    let native::SourceOrigin::Saved(MaterialOrigin::Run(origin)) =
+        native::load_record(&cap.record_bytes)
+            .unwrap()
+            .request
+            .origin
+    else {
+        panic!("the digest must retain its actual saved PCR run source")
+    };
     let plan = transfer::load_candidate(&origin.candidate).unwrap().plan;
     assert!(
         plan.steps
@@ -376,8 +385,6 @@ fn current_encoding_retains_documentary_producer_stamps_without_granting_authori
         result: AnalysisResult::Verification(report),
     };
     protocol::decode_response(&wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &response)).unwrap();
-    assert!(protocol::decode_response(&wire(b"CGR\0", 92, &response)).is_err());
-    assert!(protocol::decode_response(&wire(b"CGR\0", 91, &response)).is_err());
     let mut historical = response;
     let AnalysisResult::Verification(report) = &mut historical.result else {
         unreachable!()

@@ -1834,7 +1834,7 @@ mod run_origin_tests {
     }
 
     #[test]
-    fn digest_origin_roundtrip_retains_actual_preparation_and_refuses_run_only_routes() {
+    fn derived_digest_roundtrip_retains_actual_preparation_and_refuses_run_only_routes() {
         let (original, mut workspace) = saved_pcr_workspace();
         let run = original.methods.rows[0]
             .run_origin
@@ -1854,22 +1854,59 @@ mod run_origin_tests {
             .unwrap();
         let selection =
             collagene_core::catalog_digest::select(&catalog, &[enzyme.id.clone()]).unwrap();
-        let installed = collagene_core::run_digest_history::prepare_install(
+        let installed = collagene_core::material_derivation::prepare_install(
             &workspace,
-            &collagene_core::run_digest_history::Request {
-                source,
-                origin: run,
-                selection,
-                options: Default::default(),
-                fragment_index: 0,
+            &collagene_core::material_derivation::Request {
+                source: source.clone(),
+                origin: collagene_core::material_derivation::SourceOrigin::Saved(
+                    collagene_core::run_material::MaterialOrigin::Run(run),
+                ),
+                derivation: collagene_core::material_derivation::Derivation::CatalogDigest {
+                    selection,
+                    options: Default::default(),
+                    fragment_index: 0,
+                },
+                name: "Saved SmaI fragment".into(),
+                save_primers: false,
             },
         )
         .unwrap();
+        assert_eq!(installed.receipt.source, source);
+        assert_eq!(
+            (
+                installed.receipt.duplex.top_length,
+                installed.receipt.duplex.bottom_length,
+                installed.receipt.duplex.bottom_start
+            ),
+            (8, 8, 0)
+        );
+        let (left, right) = installed.receipt.duplex.ends.as_ref().unwrap();
+        assert!(left.polarity == collagene_core::chemistry::Polarity::Blunt);
+        assert!(right.polarity == collagene_core::chemistry::Polarity::Blunt);
+        assert!(left.chemistry.five_prime == collagene_core::chemistry::FivePrime::Hydroxyl);
+        assert!(right.chemistry.five_prime == collagene_core::chemistry::FivePrime::Phosphate);
+        assert!(installed.receipt.duplex.nicks.is_empty());
         let event = installed.receipt.product.clone();
         let capsule =
-            collagene_core::run_digest_history::capsule(&installed.workspace, &event).unwrap();
+            collagene_core::material_derivation::capsule(&installed.workspace, &event).unwrap();
         let before = serde_json::to_vec(&installed.workspace).unwrap();
-        let material = collagene_core::run_material::MaterialOrigin::Digest(capsule);
+        let record =
+            collagene_core::material_derivation::load_record(&capsule.record_bytes).unwrap();
+        assert_eq!(record.request.source, source);
+        assert!(matches!(
+            record.request.origin,
+            collagene_core::material_derivation::SourceOrigin::Saved(
+                collagene_core::run_material::MaterialOrigin::Run(_)
+            )
+        ));
+        assert!(matches!(
+            record.request.derivation,
+            collagene_core::material_derivation::Derivation::CatalogDigest {
+                fragment_index: 0,
+                ..
+            }
+        ));
+        let material = collagene_core::run_material::MaterialOrigin::Derived(capsule);
         let pin = crate::run_origin_model::PinnedOrigin::from_material(material).unwrap();
         assert!(pin.as_run().is_err());
         let molecule = installed.workspace.revisions[&event.revision].clone();
@@ -1895,11 +1932,21 @@ mod run_origin_tests {
         let bytes = encode_raw(&draft).unwrap();
         let restored = decode(&bytes).unwrap();
         assert!(restored == draft);
+        let mut obsolete = serde_json::to_value(&draft).unwrap();
+        let current = obsolete["methods"]["rows"][0]["run_origin"]
+            .as_object_mut()
+            .unwrap();
+        let body = current.remove("Derived").unwrap();
+        current.insert("Digest".into(), body);
+        assert!(
+            decode(&serde_json::to_vec(&obsolete).unwrap()).is_err(),
+            "Removed origin tag must never be reinterpreted"
+        );
 
         let (_, rows) = crate::cloning_preparations::prepared_rows(&restored.methods, 1).unwrap();
         assert!(matches!(
             &rows[0].preparation,
-            collagene_core::assembly_recipe::Preparation::FromDigest {
+            collagene_core::assembly_recipe::Preparation::FromDerived {
                 preparation: collagene_core::assembly_recipe::RunPreparation::ExactPcr { .. },
                 ..
             }
@@ -1914,7 +1961,7 @@ mod run_origin_tests {
     }
 
     #[test]
-    fn reusable_pcr_derived_origin_requires13_and_keeps_native_record_and_primers() {
+    fn reusable_pcr_derived_origin_keeps_native_record_and_primers() {
         let (mut draft, mut workspace) = saved_pcr_workspace();
         let source_event = {
             let document = &workspace.documents[0];

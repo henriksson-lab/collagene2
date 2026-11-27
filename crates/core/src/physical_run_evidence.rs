@@ -84,7 +84,6 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
                 s,
                 Operation::TopoActions { .. }
                     | Operation::ReconstructRunProduct { .. }
-                    | Operation::ReconstructDigestFragment { .. }
                     | Operation::ReconstructMaterial { .. }
                     | Operation::Ligate { .. }
                     | Operation::OverlapExtension { .. }
@@ -172,39 +171,6 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
                 .ok_or_else(|| bad("saved-material source is unavailable or forward"))?;
                 if revision != origin.selection.event.revision {
                     return Err(bad("saved-material exact source revision changed"));
-                }
-                continue;
-            }
-            (
-                Operation::ReconstructDigestFragment { template, origin },
-                crate::verification::PhysicalProcessingEvidence::SavedDigestOrigin(replay),
-            ) => {
-                origin.validate_documentary()?;
-                replay.validate_documentary()?;
-                if assembly_recipe::hash(origin)? != assembly_recipe::hash(&replay.origin)? {
-                    return Err(bad("saved digest origin declaration changed"));
-                }
-                let Source::Input(id) = template else {
-                    return Err(bad(
-                        "saved digest reconstruction requires an exact original input",
-                    ));
-                };
-                let revision = r
-                    .plan
-                    .inputs
-                    .iter()
-                    .find(|i| &i.id == id)
-                    .map(|i| i.revision.as_str())
-                    .ok_or_else(|| bad("saved digest source missing"))?;
-                let binding = r
-                    .inputs
-                    .iter()
-                    .find(|i| &i.input_id == id)
-                    .ok_or_else(|| bad("saved digest source event missing"))?;
-                if revision != origin.record.product.revision
-                    || binding.event != origin.record.product
-                {
-                    return Err(bad("saved digest exact input event changed"));
                 }
                 continue;
             }
@@ -458,7 +424,6 @@ pub(crate) fn validate_workspace(w: &Workspace) -> Result<(), Error> {
                 s,
                 Operation::TopoActions { .. }
                     | Operation::ReconstructRunProduct { .. }
-                    | Operation::ReconstructDigestFragment { .. }
                     | Operation::ReconstructMaterial { .. }
                     | Operation::Ligate { .. }
                     | Operation::OverlapExtension { .. }

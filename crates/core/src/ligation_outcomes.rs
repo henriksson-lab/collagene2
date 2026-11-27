@@ -154,7 +154,9 @@ fn sources<'a>(
     for (key, material) in map {
         material.validate()?;
         if material.duplex.topology != Topology::Linear {
-            return Err(bad("actual operands must be linear fragments"));
+            return Err(Error::Format(
+                "Ligation outcomes: operands must be linear duplex fragments".into(),
+            ));
         }
         let summary = modified_duplex::summary(material)?;
         descriptors.push(Source {

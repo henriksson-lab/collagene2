@@ -5,14 +5,13 @@ use collagene_core::{
     analysis::Primer,
     catalog_digest,
     chemistry::{Duplex, FivePrime},
-    cloning_outputs, homology_assembly,
+    cloning_outputs, homology_assembly, material_derivation as d,
     methylation::MethylationState,
     modified_duplex::{self, GenerationAssumptions},
-    run_digest_history as d,
     run_lineage::{EventBinding, InputEventBinding},
     run_material, transfer,
     verification::{self, DesignPlan, Operation, OrientedSource, PlanInput, Source, Status},
-    workspace::{self, RevisionEvent, Workspace},
+    workspace::{self, Workspace},
 };
 const STOCK: &str = "AGTCCGATGAATTCCGTAGGACTTCAGACCTGTAGATCGTCA";
 const RIGHT_FRAGMENT: &str = "AATTCCGTAGGACTTCAGACCTGTAGATCGTCA";
@@ -80,11 +79,17 @@ fn finalize(
     (
         commit.workspace,
         d::Request {
-            source,
-            origin,
-            selection: enzyme(),
-            options: Default::default(),
-            fragment_index: 0,
+            source: source,
+            origin: d::SourceOrigin::Saved(collagene_core::run_material::MaterialOrigin::Run(
+                origin,
+            )),
+            derivation: d::Derivation::CatalogDigest {
+                selection: enzyme(),
+                options: Default::default(),
+                fragment_index: 0,
+            },
+            name: "Native selected digest fragment".into(),
+            save_primers: false,
         },
     )
 }
@@ -112,18 +117,24 @@ fn pcr() -> (Workspace, d::Request) {
     };
     let w = Workspace::from_documents("Native original PCR", vec![source, target], 1).unwrap();
     let (w, mut request) = finalize(w, plan, 1, vec![("stock", 0)], false);
-    request.fragment_index = 1;
+    let d::Derivation::CatalogDigest { fragment_index, .. } = &mut request.derivation else {
+        unreachable!()
+    };
+    *fragment_index = 1;
     (w, request)
 }
 #[test]
 fn real_saved_pcr_opens_an_independent_cut_fragment_without_target_bootstrap_and_replays_after_archive()
  {
     let (w, request) = pcr();
+    let d::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin)) = &request.origin else {
+        unreachable!()
+    };
     let before = workspace::save_workspace(&w).unwrap();
-    let context = d::installation_revision(&w, &request).unwrap();
+    let context = d::revision(&w, &request).unwrap();
     let prepared = d::prepare_install(&w, &request).unwrap();
     assert_eq!(prepared.receipt.context_revision, context);
-    assert!(!prepared.receipt.origin_incomplete);
+    assert!(!prepared.receipt.incomplete);
     prepared
         .receipt
         .validate_archive(&prepared.workspace)
@@ -173,12 +184,12 @@ fn real_saved_pcr_opens_an_independent_cut_fragment_without_target_bootstrap_and
     assert!(
         d::source_bindings(&record)
             .unwrap()
-            .contains(&request.origin.target_event)
+            .contains(&origin.target_event)
     );
     assert!(
         d::required_run_ids(&record)
             .unwrap()
-            .contains(&request.origin.selection.run_id)
+            .contains(&origin.selection.run_id)
     );
     let installed = d::install(&w, &request).unwrap();
     installed.validate_binding(&context).unwrap();
@@ -258,8 +269,8 @@ fn actual_physical_overlap_circle_digest_preserves_strands_and_inherited_search_
         Workspace::from_documents("Actual saved physical circle", vec![a, b, target], 2).unwrap();
     let (w, request) = finalize(w, plan, 2, vec![("left", 0), ("right", 1)], true);
     let installed = d::prepare_install(&w, &request).unwrap();
-    assert!(installed.receipt.origin_incomplete);
-    assert!(installed.receipt.origin_findings_total >= installed.receipt.origin_findings.len());
+    assert!(installed.receipt.incomplete);
+    assert!(installed.receipt.findings_total >= installed.receipt.findings.len());
     let fresh = d::reconstruct(&installed.workspace, &installed.receipt.product).unwrap();
     assert_eq!(
         fresh.reference().sequence.as_str(),
@@ -269,7 +280,7 @@ fn actual_physical_overlap_circle_digest_preserves_strands_and_inherited_search_
     assert_eq!(fresh.tracked().duplex.top.len(), 22);
     assert_eq!(fresh.tracked().duplex.bottom.len(), 22);
     assert_eq!(fresh.tracked().duplex.bottom_start, 4);
-    assert!(fresh.origin_incomplete());
+    assert!(fresh.incomplete());
     assert_eq!(fresh.tracked().duplex.left.five_prime, FivePrime::Phosphate);
     assert_eq!(
         fresh.tracked().duplex.right.five_prime,
@@ -300,7 +311,10 @@ fn declared_original_modifications_survive_actual_full_circle_cleavage_and_capsu
     };
     let w = Workspace::from_documents("Original declared source", vec![source, target], 1).unwrap();
     let (w, request) = finalize(w, plan, 1, vec![("stock", 0)], false);
-    let original = run_material::reconstruct(&w, &request.origin.selection).unwrap();
+    let d::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin)) = &request.origin else {
+        unreachable!()
+    };
+    let original = run_material::reconstruct(&w, &origin.selection).unwrap();
     let expected = modified_duplex::summary(original.tracked()).unwrap();
     assert!(expected.known_modified > 0);
     let prepared = d::prepare_install(&w, &request).unwrap();
@@ -326,21 +340,32 @@ fn exact_source_origin_catalog_and_fragment_guards_refuse_changes_without_partia
     bad.source = event(&w, 0);
     assert!(d::prepare_install(&w, &bad).is_err());
     let mut bad = request.clone();
-    bad.fragment_index = 999;
+    let d::Derivation::CatalogDigest { fragment_index, .. } = &mut bad.derivation else {
+        unreachable!()
+    };
+    *fragment_index = 999;
     assert!(d::prepare_install(&w, &bad).is_err());
     let mut bad = request.clone();
-    bad.options.max_comparisons = 1;
+    let d::Derivation::CatalogDigest { options, .. } = &mut bad.derivation else {
+        unreachable!()
+    };
+    options.max_comparisons = 1;
     assert!(d::prepare_install(&w, &bad).is_err());
     let mut bad = request.clone();
-    bad.selection.catalog_content_hash = "00".repeat(32);
+    let d::Derivation::CatalogDigest { selection, .. } = &mut bad.derivation else {
+        unreachable!()
+    };
+    selection.catalog_content_hash = "00".repeat(32);
     assert!(d::prepare_install(&w, &bad).is_err());
     // A bounded, internally consistent recipe with the same DNA is still not
     // the exact retained originating run and cannot attest an installation.
     let mut bad = request.clone();
-    let mut candidate = transfer::load_candidate(&bad.origin.candidate).unwrap();
+    let d::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin)) = &mut bad.origin else {
+        unreachable!()
+    };
+    let mut candidate = transfer::load_candidate(&origin.candidate).unwrap();
     candidate.plan.name = "Different source recipe identity".into();
-    bad.origin.candidate =
-        transfer::save_candidate(&transfer::Candidate::new(candidate.plan)).unwrap();
+    origin.candidate = transfer::save_candidate(&transfer::Candidate::new(candidate.plan)).unwrap();
     assert!(d::prepare_install(&w, &bad).is_err());
     let mut changed = w.clone();
     let mut histories = collagene_core::history::DocumentHistory::restore_all(&changed).unwrap();
@@ -363,98 +388,7 @@ fn exact_source_origin_catalog_and_fragment_guards_refuse_changes_without_partia
     assert_eq!(workspace::save_workspace(&w).unwrap(), before);
     let installed = d::prepare_install(&w, &request).unwrap();
     let capsule = d::capsule(&installed.workspace, &installed.receipt.product).unwrap();
-    let mut detached = capsule.source.clone();
+    let mut detached = installed.workspace.revisions[&capsule.product.revision].clone();
     detached.metadata.remove("duplex_model");
     assert!(d::replay(&capsule, &detached).is_err());
-}
-#[test]
-fn historical_science_record_remains_readable_but_cannot_restore_current_material_authority() {
-    let (w, request) = pcr();
-    let prepared = d::prepare_install(&w, &request).unwrap();
-    let mut frame = prepared.workspace;
-    let old = prepared.receipt.product;
-    let mut record = d::load_record(
-        &frame
-            .attachments
-            .remove(&prepared.receipt.record_hash)
-            .unwrap()
-            .bytes,
-    )
-    .unwrap();
-    record.scientific_engine = "collagene-core/science-historical-fixture".into();
-    record.context_revision = blake3::hash(
-        &serde_json::to_vec(&(
-            d::ENGINE_VERSION,
-            &record.scientific_engine,
-            &record.source_workspace_fingerprint,
-            &record.request,
-        ))
-        .unwrap(),
-    )
-    .to_hex()
-    .to_string();
-    let mut product = frame.revisions.remove(&old.revision).unwrap();
-    product.metadata.insert(
-        "source:run_digest_history:context".into(),
-        record.context_revision.clone(),
-    );
-    let revision = product.revision();
-    let old_event = frame
-        .history
-        .iter()
-        .find(|event| event.id == old.event_id)
-        .unwrap()
-        .clone();
-    let event = RevisionEvent::new(
-        &old.document_id,
-        &revision,
-        old_event.parents,
-        old_event.operation,
-    )
-    .unwrap();
-    frame.history.retain(|entry| entry.id != old.event_id);
-    frame.history.push(event.clone());
-    frame.revisions.insert(revision.clone(), product);
-    let document = frame
-        .documents
-        .iter_mut()
-        .find(|doc| doc.id == old.document_id)
-        .unwrap();
-    document.head = revision.clone();
-    document.head_event = Some(event.id.clone());
-    record.product = EventBinding {
-        document_id: old.document_id,
-        event_id: event.id,
-        revision,
-    };
-    record.validate_documentary().unwrap();
-    let bytes = serde_json::to_vec(&record).unwrap();
-    let hash = blake3::hash(&bytes).to_hex().to_string();
-    frame.attachments.insert(
-        hash,
-        workspace::WorkspaceAttachment {
-            kind: d::WORKSPACE_ATTACHMENT_KIND.into(),
-            name: "Historical target-free fragment".into(),
-            media_type: "application/json".into(),
-            bytes: bytes.clone(),
-        },
-    );
-    d::load_record(&bytes).unwrap();
-    d::validate_workspace_records(&frame).unwrap();
-    let restored = workspace::load_workspace(&workspace::save_workspace(&frame).unwrap()).unwrap();
-    assert!(d::reconstruct(&restored, &record.product).is_err());
-    assert!(d::capsule(&restored, &record.product).is_err());
-    let capsule = d::Capsule {
-        schema_version: 1,
-        source: restored.revisions[&record.request.source.revision].clone(),
-        record,
-    };
-    capsule.validate_documentary().unwrap();
-    assert!(
-        d::replay(
-            &capsule,
-            &restored.revisions[&capsule.record.product.revision]
-        )
-        .is_err()
-    );
 }

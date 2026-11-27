@@ -126,7 +126,6 @@ struct Graph<'a> {
     run_headers: BTreeSet<String>,
     run_assets: BTreeMap<String, String>,
     owners: BTreeMap<String, String>,
-    digest_owners: BTreeMap<String, String>,
     companions: BTreeMap<String, Vec<String>>,
     kept_events: BTreeSet<String>,
     kept_revisions: BTreeSet<String>,
@@ -145,7 +144,6 @@ impl<'a> Graph<'a> {
             run_headers: BTreeSet::new(),
             run_assets: BTreeMap::new(),
             owners: BTreeMap::new(),
-            digest_owners: BTreeMap::new(),
             companions: BTreeMap::new(),
             kept_events: BTreeSet::new(),
             kept_revisions: BTreeSet::new(),
@@ -164,11 +162,6 @@ impl<'a> Graph<'a> {
                 }
                 for p in &header.products {
                     g.edge()?;
-                    if g.digest_owners.contains_key(&p.event_id) {
-                        return Err(Error::Unresolved(
-                            "multiple native owners for a product event",
-                        ));
-                    }
                     if g.owners
                         .insert(p.event_id.clone(), header.run_id.clone())
                         .is_some()
@@ -178,30 +171,6 @@ impl<'a> Graph<'a> {
                 }
                 g.run_assets.insert(header.run_id.clone(), hash.clone());
                 g.run_headers.insert(header.run_id);
-            } else if a.kind == collagene_core::run_digest_history::WORKSPACE_ATTACHMENT_KIND {
-                if g.digest_owners.len() >= collagene_core::run_digest_history::MAX_RECORDS
-                    || a.media_type != "application/json"
-                {
-                    return Err(Error::Unresolved(
-                        "saved-run digest attachment bounds/media",
-                    ));
-                }
-                let record = collagene_core::run_digest_history::load_record(&a.bytes)?;
-                let event = g
-                    .events
-                    .get(record.product.event_id.as_str())
-                    .ok_or(Error::Unresolved("saved-run digest product event"))?;
-                if event.document_id != record.product.document_id
-                    || event.revision != record.product.revision
-                    || g.owners.contains_key(&record.product.event_id)
-                    || g.digest_owners
-                        .insert(record.product.event_id, hash.clone())
-                        .is_some()
-                {
-                    return Err(Error::Unresolved("saved-run digest exact product owner"));
-                }
-                // Only index ownership here. Selecting an unrelated document
-                // must not enqueue this derivation's private source/target runs.
             } else if a.kind == collagene_core::material_derivation::WORKSPACE_ATTACHMENT_KIND {
                 // Exact typed ownership is indexed in resolve. Merely having
                 // an unrelated derivation never publishes its sources/assets.
@@ -267,7 +236,7 @@ impl<'a> Graph<'a> {
     }
     fn resolve(&mut self) -> Result<(), Error> {
         let material = material_derivation_closure::Index::new(self.source)?;
-        material.validate_existing_owners(&self.owners, &self.digest_owners)?;
+        material.validate_existing_owners(&self.owners)?;
         while !self.pending_events.is_empty() || !self.pending_runs.is_empty() {
             while let Some(id) = self.pending_events.pop_front() {
                 let event = *self
@@ -283,21 +252,6 @@ impl<'a> Graph<'a> {
                 }
                 if let Some(owner) = self.owners.get(&id).cloned() {
                     self.run(&owner)?;
-                } else if let Some(hash) = self.digest_owners.get(&id).cloned() {
-                    self.kept_assets.insert(hash.clone());
-                    let attachment = self
-                        .source
-                        .attachments
-                        .get(&hash)
-                        .ok_or(Error::Unresolved("saved-run digest record bytes"))?;
-                    let record =
-                        collagene_core::run_digest_history::load_record(&attachment.bytes)?;
-                    for binding in collagene_core::run_digest_history::source_bindings(&record)? {
-                        self.binding(&binding)?;
-                    }
-                    for run in collagene_core::run_digest_history::required_run_ids(&record)? {
-                        self.run(&run)?;
-                    }
                 } else if material.follow_product(self, &id)? {
                     // All source/closed-origin dependencies enter this same queue.
                 }
@@ -348,21 +302,6 @@ impl<'a> Graph<'a> {
                 for op in &run.plan.steps {
                     if let Operation::ReconstructMaterial { origin, .. } = op {
                         material.follow_capsule(self, origin)?;
-                    }
-                    if let Operation::ReconstructDigestFragment { origin, .. } = op {
-                        // The native owner record validates the exact capsule; close
-                        // its actual retained derivation, not a label or sequence alias.
-                        self.binding(&origin.record.product)?;
-                        for binding in
-                            collagene_core::run_digest_history::source_bindings(&origin.record)?
-                        {
-                            self.binding(&binding)?;
-                        }
-                        for run in
-                            collagene_core::run_digest_history::required_run_ids(&origin.record)?
-                        {
-                            self.run(&run)?;
-                        }
                     }
                     if let Operation::ReconstructRunProduct { origin, .. } = op {
                         self.run(&origin.selection.run_id)?;

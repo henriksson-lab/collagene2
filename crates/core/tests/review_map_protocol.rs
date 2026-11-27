@@ -87,7 +87,7 @@ fn call(job: AnalysisJob, revision: String, job_tag: u32, reply_tag: u32) -> pro
     response
 }
 #[test]
-fn review179_reply169_preserves_exact_independent_intent_without_adopting_status() {
+fn review178_reply168_preserves_exact_independent_intent_without_adopting_status() {
     let (w, run_id) = saved();
     let before = serde_json::to_value(&w).unwrap();
     let revision = run_review::request_revision(&w, &run_id).unwrap();
@@ -97,8 +97,8 @@ fn review179_reply169_preserves_exact_independent_intent_without_adopting_status
             run_id: run_id.clone(),
         },
         revision.clone(),
-        179,
-        169,
+        178,
+        168,
     );
     let AnalysisResult::SavedRunReviewPrepared(review) = response.result else {
         unreachable!()
@@ -123,7 +123,7 @@ fn review179_reply169_preserves_exact_independent_intent_without_adopting_status
     assert_eq!(serde_json::to_value(&w).unwrap(), before);
 }
 #[test]
-fn map180_reply170_keeps_safe_xml_and_exact_supplied_cut_coordinates() {
+fn map179_reply169_keeps_safe_xml_and_exact_supplied_cut_coordinates() {
     let source = Molecule::dna("A<&>", "CCGAATTCTT", Topology::Circular).unwrap();
     let enzyme = analysis::starter_enzymes()
         .into_iter()
@@ -144,8 +144,8 @@ fn map180_reply170_keeps_safe_xml_and_exact_supplied_cut_coordinates() {
             request: request.clone(),
         },
         "a".repeat(64),
-        180,
-        170,
+        179,
+        169,
     );
     let AnalysisResult::MapSvgExported(map) = response.result else {
         unreachable!()
@@ -165,9 +165,9 @@ fn map180_reply170_keeps_safe_xml_and_exact_supplied_cut_coordinates() {
 }
 #[test]
 fn current_plan_data_replays_only_through_current_transport() {
-    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 94);
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 24);
-    assert_eq!(collagene_core::workspace::PLAN_SCHEMA_VERSION, 22);
+    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 95);
+    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 25);
+    assert_eq!(collagene_core::workspace::PLAN_SCHEMA_VERSION, 23);
     assert!(verification::ENGINE_VERSION.ends_with("/science-26"));
     let (w, id) = saved();
     let request = protocol::Request {
@@ -187,4 +187,62 @@ fn current_plan_data_replays_only_through_current_transport() {
     let mut unsupported = bytes.clone();
     unsupported[4..6].copy_from_slice(&(protocol::WORKER_SCHEMA_VERSION - 1).to_le_bytes());
     assert!(protocol::process_request(&unsupported).is_err());
+}
+
+#[test]
+fn session_and_stateless_admission_keep_review_and_map_size_policies_distinct() {
+    let (workspace, run_id) = saved();
+    let source = workspace.head(&workspace.active_document).unwrap().clone();
+    let review_revision = run_review::request_revision(&workspace, &run_id).unwrap();
+    let jobs = [
+        (
+            AnalysisJob::PrepareSavedRunReview { workspace, run_id },
+            review_revision,
+            true,
+        ),
+        (
+            AnalysisJob::RenderMapSvg {
+                request: svg_export::Request {
+                    source_revision: source.revision(),
+                    source: source.clone(),
+                    restriction_sites: None,
+                },
+            },
+            source.revision(),
+            false,
+        ),
+    ];
+    let mut session = protocol::AnalysisSession::default();
+    for (job, revision, is_review) in jobs {
+        let request = protocol::Request {
+            id: 800,
+            revision,
+            job,
+        };
+        let mut frame = protocol::encode_request(&request).unwrap();
+        // Valid current payload plus trailing bytes: review's larger snapshot
+        // allowance must reach complete-payload validation. Map export must
+        // refuse the ordinary-message size before decoding its body.
+        frame.resize(42 + collagene_core::formats::MAX_IMPORT_BYTES + 1, 0);
+        let length = (frame.len() - 42) as u32;
+        frame[6..10].copy_from_slice(&length.to_le_bytes());
+        let checksum = blake3::hash(&frame[42..]);
+        frame[10..42].copy_from_slice(checksum.as_bytes());
+        for outcome in [
+            protocol::process_request(&frame),
+            session.process_request(&frame),
+        ] {
+            if is_review {
+                assert!(
+                    matches!(outcome, Err(collagene_core::Error::Format(_))),
+                    "{outcome:?}"
+                );
+            } else {
+                assert!(
+                    matches!(outcome, Err(collagene_core::Error::TooLarge)),
+                    "{outcome:?}"
+                );
+            }
+        }
+    }
 }

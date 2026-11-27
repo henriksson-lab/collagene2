@@ -153,14 +153,20 @@ async fn actual_saved_pcr_digest_discovery_and_explicit_replay_are_exact_and_rea
         .find(|enzyme| enzyme.name == "SmaI")
         .unwrap();
     let selection = collagene_core::catalog_digest::select(&catalog, &[enzyme.id.clone()]).unwrap();
-    let installed = collagene_core::run_digest_history::prepare_install(
+    let installed = collagene_core::material_derivation::prepare_install(
         &commit.workspace,
-        &collagene_core::run_digest_history::Request {
+        &collagene_core::material_derivation::Request {
             source,
-            origin,
-            selection,
-            options: Default::default(),
-            fragment_index: 0,
+            origin: collagene_core::material_derivation::SourceOrigin::Saved(
+                run_material::MaterialOrigin::Run(origin),
+            ),
+            derivation: collagene_core::material_derivation::Derivation::CatalogDigest {
+                selection,
+                options: Default::default(),
+                fragment_index: 0,
+            },
+            name: "Selected saved-PCR SmaI fragment".into(),
+            save_primers: false,
         },
     )
     .unwrap();
@@ -181,7 +187,7 @@ async fn actual_saved_pcr_digest_discovery_and_explicit_replay_are_exact_and_rea
     .await;
     let wr = json!({"id":imported["workspace"]["id"],"revision":imported["workspace"]["revision"]});
     let count = call(&client, "list_documents", json!({})).await["total"].clone();
-    let selected = run_material::MaterialSelection::Digest(product.clone());
+    let selected = run_material::MaterialSelection::Derived(product.clone());
     let discovery = call(
         &client,
         "inspect_material_origin",
@@ -203,18 +209,18 @@ async fn actual_saved_pcr_digest_discovery_and_explicit_replay_are_exact_and_rea
         .validate_binding(reply["context_revision"].as_str().unwrap())
         .unwrap();
     let origin = inspection.selected.unwrap();
-    assert!(matches!(&origin, run_material::MaterialOrigin::Digest(_)));
+    assert!(matches!(&origin, run_material::MaterialOrigin::Derived(_)));
     origin
         .validate_for_workspace(&installed.workspace, &product)
         .unwrap();
-    let run_material::MaterialOrigin::Digest(capsule) = origin else {
+    let run_material::MaterialOrigin::Derived(capsule) = origin else {
         unreachable!()
     };
     let reference = &installed.workspace.revisions[&product.revision];
-    let replay = collagene_core::run_digest_history::replay(&capsule, reference).unwrap();
+    let replay = collagene_core::material_derivation::replay(&capsule, reference).unwrap();
     assert_eq!(replay.tracked().duplex.top.as_str(), "ACGACCCC");
     let wrong = event(&installed.workspace, 0);
-    reject(&client,"inspect_material_origin",json!({"workspace":wr,"event":product,"selection":run_material::MaterialSelection::Digest(wrong)})).await;
+    reject(&client,"inspect_material_origin",json!({"workspace":wr,"event":product,"selection":run_material::MaterialSelection::Derived(wrong)})).await;
     reject(
         &client,
         "inspect_material_origin",

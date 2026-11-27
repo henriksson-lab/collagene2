@@ -2,7 +2,7 @@ use collagene_core::{
     Molecule, Topology,
     analysis::Primer,
     chemistry::Terminus,
-    run_digest_history as digest,
+    material_derivation as material,
     run_lineage::{self, EventBinding, InputEventBinding},
     run_material,
     verification::{DesignPlan, Operation, PlanInput, Source},
@@ -90,14 +90,18 @@ fn fixture() -> (Workspace, EventBinding, String, String, String) {
         .id
         .clone();
     let selection = collagene_core::catalog_digest::select(&c, &[eco]).unwrap();
-    let installed = digest::prepare_install(
+    let installed = material::prepare_install(
         &run.workspace,
-        &digest::Request {
+        &material::Request {
             source,
-            origin,
-            selection,
-            options: collagene_core::restriction_inspection::InspectionOptions::default(),
-            fragment_index: 0,
+            origin: material::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin)),
+            derivation: material::Derivation::CatalogDigest {
+                selection,
+                options: collagene_core::restriction_inspection::InspectionOptions::default(),
+                fragment_index: 0,
+            },
+            name: "Selected PCR EcoRI fragment".into(),
+            save_primers: false,
         },
     )
     .unwrap();
@@ -145,7 +149,7 @@ fn actual_pcr_digest_fragment_public_and_private_closure_preserve_fresh_material
  {
     let (w, product, record, private, new_head) = fixture();
     let before = serde_json::to_value(&w).unwrap();
-    let fresh = digest::reconstruct(&w, &product).unwrap();
+    let fresh = material::reconstruct(&w, &product).unwrap();
     assert_eq!(fresh.reference().sequence.as_str(), "AGTCCGATGCTAG");
     assert_eq!(fresh.tracked().duplex.top.as_str(), "AGTCCGATGCTAG");
     assert_eq!(fresh.tracked().duplex.bottom.as_str(), "AATTCTAGCATCGGACT");
@@ -176,12 +180,12 @@ fn actual_pcr_digest_fragment_public_and_private_closure_preserve_fresh_material
         let reopened =
             workspace::load_workspace(&workspace::save_workspace(&projected.workspace).unwrap())
                 .unwrap();
-        let again = digest::reconstruct(&reopened, &product).unwrap();
+        let again = material::reconstruct(&reopened, &product).unwrap();
         assert_eq!(again.reference(), fresh.reference());
         assert_eq!(again.tracked(), fresh.tracked());
-        assert_eq!(again.origin_incomplete(), fresh.origin_incomplete());
-        let capsule = digest::capsule(&reopened, &product).unwrap();
-        let replay = digest::replay(&capsule, again.reference()).unwrap();
+        assert_eq!(again.incomplete(), fresh.incomplete());
+        let capsule = material::capsule(&reopened, &product).unwrap();
+        let replay = material::replay(&capsule, again.reference()).unwrap();
         assert_eq!(replay.tracked(), fresh.tracked());
     }
     assert_eq!(serde_json::to_value(&w).unwrap(), before);
@@ -221,9 +225,9 @@ fn orphan_reserved_producer_corrupt_record_and_wrong_product_binding_refuse_inst
     assert!(sharing::project_document_closure(&corrupt, &pin(&product)).is_err());
     let mut wrong = w.clone();
     let mut a = wrong.attachments.remove(&hash).unwrap();
-    let mut record = digest::load_record(&a.bytes).unwrap();
+    let mut record = material::load_record(&a.bytes).unwrap();
     record.product.document_id = wrong.documents[2].id.clone();
-    a.bytes = serde_json::to_vec(&record).unwrap();
+    a.bytes = material::save_record(&record).unwrap();
     wrong
         .attachments
         .insert(blake3::hash(&a.bytes).to_hex().to_string(), a);
@@ -233,7 +237,7 @@ fn orphan_reserved_producer_corrupt_record_and_wrong_product_binding_refuse_inst
 #[test]
 fn later_pcr_run_closes_nested_saved_digest_recipe_and_replays_after_publication() {
     let (mut w, product, record, private, new_head) = fixture();
-    let origin = digest::capsule(&w, &product).unwrap();
+    let origin = material::capsule(&w, &product).unwrap();
     let source = w.revisions[&product.revision].clone();
     let target = Molecule::dna(
         "Independent downstream PCR target",
@@ -280,7 +284,7 @@ fn later_pcr_run_closes_nested_saved_digest_recipe_and_replays_after_publication
             molecule: source,
         }],
         steps: vec![
-            Operation::ReconstructDigestFragment {
+            Operation::ReconstructMaterial {
                 template: Source::Input("digest".into()),
                 origin,
             },

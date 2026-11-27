@@ -84,9 +84,6 @@ fn shape(recipe: &Recipe) -> Result<(), Error> {
             preparation::Preparation::FromRun { origin, .. } => {
                 Some(crate::run_material::MaterialOriginRef::Run(origin))
             }
-            preparation::Preparation::FromDigest { origin, .. } => {
-                Some(crate::run_material::MaterialOriginRef::Digest(origin))
-            }
             preparation::Preparation::FromDerived { origin, .. } => {
                 Some(crate::run_material::MaterialOriginRef::Derived(origin))
             }

@@ -464,7 +464,7 @@ Every import returns a structured report: supported fields, preserved opaque dat
 
 Round-trip acceptance compares molecule/annotation semantics, not whitespace or field ordering. When a destination cannot express information, show an export loss summary. Original opaque chunks may be retained as attachments, but must not be emitted as current sequence-linked metadata after edits without validating them.
 
-The proposed native archive contains a small JSON manifest with schema versions and hashes, binary sequence/analysis chunks, versioned document metadata and plan records, and original evidence files. Sequence bytes can initially be IUPAC ASCII; packing can follow profiling. Keep durable schemas independently migratable from transient RPC types. Browser IndexedDB and native/server databases store the same logical records through platform adapters. Server mode requires a persistent joint lab database and shared plasmid folders, rather than isolated per-browser storage; see the server library requirement below.
+The proposed native archive contains a small JSON manifest with schema versions and hashes, binary sequence/analysis chunks, versioned document metadata and plan records, and original evidence files. Sequence bytes can initially be IUPAC ASCII; packing can follow profiling. Durable archives and transient RPC use independently identified current schemas. Reject unsupported development encodings and update implementation and callers directly. Browser IndexedDB and native/server databases store the same logical records through platform adapters. Server mode requires a persistent joint lab database and shared plasmid folders, rather than isolated per-browser storage; see the server library requirement below.
 
 ## Rust libraries and implementation ownership
 
@@ -488,7 +488,7 @@ The entries are candidates, not a dependency lockfile. Pure Rust does not by its
 | Serialization | [Serde](https://docs.rs/serde/latest/serde/), [Postcard](https://docs.rs/postcard/latest/postcard/) | Shared Rust DTOs and binary serialization; envelope, compatibility and bounded decoding remain ours |
 | MCP | [official `rmcp` SDK](https://github.com/modelcontextprotocol/rust-sdk) and `schemars` | Native server, tools, resources and schema generation; implement scientific contracts and authorization |
 | HTTP service | [Axum](https://docs.rs/axum/latest/axum/), Tokio | Optional hosted projects, MCP, job execution and connectors; CPU work needs bounded background execution |
-| Browser persistence | [rexie](https://docs.rs/rexie/latest/rexie/) | IndexedDB adapter; implement autosave, migration, quota errors, recovery and export |
+| Browser persistence | [rexie](https://docs.rs/rexie/latest/rexie/) | IndexedDB adapter; implement autosave, quota errors, recovery and export |
 | Desktop | [Tauri Leptos integration](https://v2.tauri.app/start/frontend/leptos/) | Reuse Leptos assets and core; add native files, local MCP and embedded compute on Windows/macOS/Linux |
 | Reports | Rust HTML templates; [typst](https://docs.rs/typst/latest/typst/) and [typst-pdf](https://docs.rs/typst-pdf/latest/typst_pdf/) | Shared report data with separate HTML/PDF renderers; native PDF initially avoids increasing the browser bundle |
 
@@ -608,7 +608,7 @@ F21 requires versioned enzyme facts and supplier identities, explicit source-bou
 
 The initial assessment profile covers the starter enzyme set with independently curated supplier citations and explicit unsupported combinations. It must not substitute HF/v2 formulations for an ordinary enzyme name. Published “some overlapping combinations” are insufficient to predict a particular context unless that context is supported. Each report binds source revision, options, profile/version/hash, per-site recognition/cut coordinates, overlapping motifs and potential modified-base strand/positions. Limits cannot establish absence. Imported producer reports require fresh computation for scientific use.
 
-The assessment remains a source-generation context model. The implemented tracked-strand foundation separately binds positional N6-methyladenine and 5-methylcytosine states and retains them through supported physical operations. Rescanning a product for complete methylase motifs cannot recover modifications that survived after a motif was cut. Legacy assumed-complete digest operations and gel predictions remain explicitly conditional; declared modified/uncertain material cannot silently inherit a fresh complete-cleavage conclusion through legacy plan steps. Supplier buffer/temperature/star-activity compatibility, richer catalogs, source strain presets and empirical condition validation remain required F21 work.
+The assessment remains a source-generation context model. The implemented tracked-strand foundation separately binds positional N6-methyladenine and 5-methylcytosine states and retains them through supported physical operations. Rescanning a product for complete methylase motifs cannot recover modifications that survived after a motif was cut. Basic digest operations and gel predictions remain explicitly conditional; declared modified or uncertain material requires the appropriate tracked-state checks before a complete-cleavage conclusion. Supplier buffer/temperature/star-activity compatibility, richer catalogs, source strain presets and empirical condition validation remain required F21 work.
 
 The physical implementation now wraps the existing serialized `Duplex` in `TrackedDuplex`, preserving old payload layouts. It stores chemical identities and explicit modified/unmodified/unknown coverage in bounded strand-local 5′→3′ coordinates. Generation assumptions expand once against the original immutable input and retain that provenance. Geometry mappings must slice/concatenate/rotate modification coverage with each actual strand; annotation projection is not a substitute. Existing end-repair `StrandMapping` provides a useful copy-versus-synthesis primitive.
 
@@ -666,7 +666,7 @@ F35 acceptance includes pasting a provider page URL directly into the applicatio
 
 Start with Serde and Postcard for Rust-to-Rust worker and application service messages. Postcard has a [documented stable wire format](https://docs.rs/postcard/latest/postcard/); our DTO schema still needs its own compatibility policy. This is an initial engineering choice, not an established speed advantage on Collagene workloads.
 
-Use explicit versioned message types with a header containing protocol major/minor, request ID, message kind, document revision and payload length. Negotiate supported versions/capabilities and reject unsupported major versions. Do not reorder fields or enum variants within an existing Postcard schema. Introduce new versioned types and migrations; test old/new clients explicitly.
+Use explicit bounded binary message types with namespace, schema, payload length and checksum headers and typed request ID/revision bodies. Each namespace supports one current encoding. Reject unsupported versions before decoding. Change the current schema identifier whenever layouts change, update implementation/callers/tests directly, and preserve source, integrity and resource bounds.
 
 Use binary HTTP request/response bodies for ordinary operations and binary WebSocket frames when bidirectional synchronization/progress justifies a socket. Worker messages carry compact job metadata and transferable buffers. Sequence chunks, quality arrays and traces should stay binary; avoid base64 and retransmitting whole documents after edits. Bound payload sizes, allocations, decompression and concurrent jobs; support chunking, cancellation, backpressure and stale-result rejection.
 
@@ -751,7 +751,7 @@ Scientific correctness needs stronger checks than UI snapshots. Build a licensed
 
 Use property tests for reverse-complement involution, circular rotation equivalence, coordinate conversion, extraction/annotation remapping, and sequence accounting across chemical transformations. Use independently calculated reference cases and checked-in reference outputs with documented provenance and settings. Validation must not require invoking external scientific tools. Thermodynamic results require numerical tolerances and recorded parameter tables; sequence/coordinate results should be exact.
 
-Run the same scientific fixtures natively on Windows, macOS and Linux and in browser WASM. Add a CI build/test matrix for all three operating systems and the WASM target; verify desktop installation and OS webview behavior on each supported platform. Fuzz parsers and binary decoders with limits on memory, input sizes and decompression. Add migration and export loss tests, malformed plan tests, cancellation/stale-result tests and graphics interaction benchmarks. Test the verifier against wrong AI plans as well as correct ones. Desktop browser workflows are the current UI acceptance target; mobile-specific validation follows the deferred scope decision after desktop completion and user review.
+Run the same scientific fixtures natively on Windows, macOS and Linux and in browser WASM. Add a CI build/test matrix for all three operating systems and the WASM target; verify desktop installation and OS webview behavior on each supported platform. Fuzz parsers and binary decoders with limits on memory, input sizes and decompression. Add external-import and export-loss tests, malformed plan tests, cancellation/stale-result tests and graphics interaction benchmarks. Test the verifier against wrong AI plans as well as correct ones. Desktop browser workflows are the current UI acceptance target; mobile-specific validation follows the deferred scope decision after desktop completion and user review.
 
 ## Delivery sequence and completion gates
 
@@ -3069,55 +3069,18 @@ cannot let contradictory literal name markers override actual native type.
 The same explicit profile is exposed through MCP.
 [RNA](GENBANK_RNA.md) · [FASTA](FASTA_ALPHABETS.md).
 
-The saved-product digest audit found a real remaining connection: inspection and
-assembly handoff work, but opening a retained physical fragment and then using it
-through normal preparation controls is disabled. A target-free native derivation
-foundation now retains the exact origin, catalog, cut choice, actual strand/
-modification state, source event and inherited incompleteness. Archive validation
-and selected public/private native sharing follow explicit typed dependencies;
-no independent fragment target or positive target assessment is manufactured.
-Historical records remain readable while current replay requires current reviewed
-origin assessments. [Derivation](RUN_DIGEST_HISTORY.md) ·
-[Sharing](RUN_DIGEST_SHARING.md).
+Saved-product processing now uses generic target-free material derivations. Exact PCR and catalog digestion retain original source events, actual strands and modifications, selected geometry, inherited incompleteness and canonical records. Processing does not manufacture an independent target or positive target assessment. Selected public/private publication follows exact typed dependencies.
 
-The end-user path is still OPEN. Next implement append-only
-`ReconstructDigestFragment { template: Source, origin: ... }`, restricted to an
-exact original input event. A shared iterative mixed-origin traversal must charge
-depth, aggregate bytes, bases and steps before hashing/cloning/decoding. Extend
-normal preparation compilers, physical evidence, oligo/protocol output, origin
-selection and atomic fragment opening together. Planned next floors are
-candidate21/native plan19/science24 and the next worker version; current source
-retains candidate20/plan18/science23/worker89. Include PCR-after-fragment,
-subsequent assembly, replay after restart, sticky-end/modification ancestry,
-equal-content wrong-event refusal and mixed nesting exhaustion. Old-science
-material review/migration remains explicit; preserving an archive alone does
-not restore current material authority.
+Saved material has two source families: targeted Run products and target-free Derived products. `Preparation::FromDerived` emits input-only `ReconstructMaterial` before downstream preparation. One iterative ancestry ledger charges all roots and descendants before decoding. Current internal encodings are required throughout; unsupported development formats have no conversion path.
 
-All38 focused native/model/MCP cases and the web/worker WASM compiler check pass
-for this continuity checkpoint. No browser or application HTTP checks were run.
-The complete product goal, all exclusions and the BAM/BAI deferral remain active.
-After its CI frontend artifact is available, publish the immutable snapshot to
-8082 with static integrity/process checks and bounded compatibility-worker
-retention; keep the authenticated local library separate.
+The live digest workflow opens exact retained fragments through this generic route. Fixtures cover PCR after a saved fragment, subsequent assembly, restart/archive/publication replay, sticky-end and modification ancestry, wrong-event refusal and shared-budget exhaustion. The complete product goal, exclusions and BAM/BAI deferral remain active. [Saved material digests](SAVED_MATERIAL_DIGESTS.md).
 
 ### Saved digest reuse and parallel format continuation — 26 November 2026
 
-Pending source connects saved-run digest opening, exact-event origin selection
-and `FromDigest` preparation through ordinary PCR/assembly controls and native
-history replay. Mixed Run/Digest ancestry shares one traversal budget and keeps
-actual strands, modifications, nicks and inherited incompleteness. Appended
-operation27/evidence6, worker90, candidate21, native plan19 and science24 preserve
-old discriminants while enforcing the new capability floors. Digest-bearing
-drafts use version12; old run-only draft encoding remains compatible. MCP can
-inspect either material-origin kind through an explicit selection.
+Saved fragment opening, exact-event source selection and `FromDerived` preparation connect ordinary PCR/assembly controls to native history replay. Run and Derived ancestry use one traversal and preserve actual termini, modifications, nicks and incomplete evidence. MCP inspects either current source family through an explicit selection. Current draft14 declarations retain these source pins.
 
-PCR on intact staggered material is limited to geometries contained in its known
-top reference. Other actual-strand geometries and nicked templates refuse with an
-explicit unsupported explanation. Opened analytical PCR documents remain
-reference-only: treating them as standalone physical material requires a future
-target-free PCR derivation. The supported physical path is a typed preparation
-followed by assembly and a retained run, never an invented independent target.
-[Model](MATERIAL_PCR.md) · [Preparations](SAVED_DIGEST_PREPARATION.md) ·
+PCR on intact staggered material is limited to supported geometries contained in its known top reference. Unsupported actual-strand geometries and nicked templates refuse explicitly. Analytical PCR references supply no independent material authority; reusable exact-PCR products use native target-free derivations. Targeted assemblies keep their own independently declared expected product.
+[Model](MATERIAL_PCR.md) · [Preparations](SAVED_MATERIAL_DIGESTS.md) ·
 [Mixed ancestry](MIXED_MATERIAL_ORIGINS.md).
 
 In parallel, independent workers implemented selected XDNA v0 reference export,
@@ -3221,8 +3184,8 @@ unchanged. This investigation made no inference requests or biological uploads.
 The ligation integration now passes44 focused native core/SDK cases, including
 full JSON/FASTA retained in native history and independently extracted PDF text
 and attachments. The ongoing consolidation uses one Ligate operation, with
-worker94/candidate24/plan22 and science26; focused validation of the consolidated
-source is pending. Whole-mixture products remain outside the explicitly bounded one-copy
+worker95/candidate25/plan23 and science26. Focused native verification passes;
+current WASM verification is pending. Whole-mixture products remain outside the explicitly bounded one-copy
 all-fragment search. Further alternatives such as vector-only/self-ligation and
 other copy counts must not be described as proven absent.
 
@@ -3246,9 +3209,16 @@ matching remain distinct assessments. Native model/desktop/MCP checks and the in
 Core callers compile with JSON-schema support and all nine corrected protocol
 fixtures pass. Cross-platform CI remains pending; browser checks remain deferred.
 
-The dedicated saved-run digest path is superseded by generic
-`material_derivation::CatalogDigest`; the live UI already uses the generic path.
-Remove its module, operation/origin variants and remaining consumers directly,
-using Saved(Run) → CatalogDigest → Derived for equivalent fixtures. Keep Run
-(independently targeted workflows) and Derived (target-free processing) distinct.
-Do not add capsule conversion or old-plan rewriting.
+The dedicated saved-run digest module and its operation/origin/preparation routes
+are removed. Generic Saved(Run) → CatalogDigest → Derived is the single retained
+digest path. Run and Derived remain distinct contracts. Caller compilation passes;
+focused native/model/SDK and publication fixtures pass. Circular ligation operands
+now fail as invalid, preserving the chemistry layer's known precondition. Session
+and stateless routing share one current large-request selector list; map export
+retains the ordinary message bound.
+
+The current generic-digest cleanup passes417 focused native cases, all affected
+core/MCP/web/host/sharing test caller checks, formatting and integrated web/worker
+WASM compilation. No browser or application HTTP checks were performed. The full
+project goal and its remaining cloning, GUI and installation acceptance gaps stay
+active.

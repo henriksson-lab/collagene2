@@ -5,7 +5,7 @@ use collagene_core::{
     analysis::Primer,
     catalog_digest, cloning_outputs,
     history::DocumentHistory,
-    run_digest_history as digest,
+    material_derivation as digest,
     run_lineage::{EventBinding, InputEventBinding},
     run_material::{self, MaterialOrigin, MaterialOriginRef, MaterialSelection},
     verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
@@ -83,10 +83,16 @@ fn digest_fixture() -> (Workspace, digest::Capsule, EventBinding) {
         &saved.workspace,
         &digest::Request {
             source: selected.event,
-            origin,
-            selection: catalog_digest::select(&catalog, &[enzyme]).unwrap(),
-            options: Default::default(),
-            fragment_index: 1,
+            origin: digest::SourceOrigin::Saved(collagene_core::run_material::MaterialOrigin::Run(
+                origin,
+            )),
+            derivation: digest::Derivation::CatalogDigest {
+                selection: catalog_digest::select(&catalog, &[enzyme]).unwrap(),
+                options: Default::default(),
+                fragment_index: 1,
+            },
+            name: "Native selected digest fragment".into(),
+            save_primers: false,
         },
     )
     .unwrap();
@@ -113,7 +119,7 @@ fn prepared_plan(
         target_revision: target.revision(),
         inputs: vec![input("fragment", source)],
         steps: vec![
-            Operation::ReconstructDigestFragment {
+            Operation::ReconstructMaterial {
                 template: Source::Input("fragment".into()),
                 origin: cap.clone(),
             },
@@ -130,11 +136,11 @@ fn prepared_plan(
 fn actual_sticky_fragment_then_new_pcr_survives_native_archive_and_mixed_run_replay() {
     let (mut w, cap, pin) = digest_fixture();
     let inspected =
-        run_material::inspect_material(&w, &pin, &Some(MaterialSelection::Digest(pin.clone())))
+        run_material::inspect_material(&w, &pin, &Some(MaterialSelection::Derived(pin.clone())))
             .unwrap();
     assert!(matches!(
         inspected.selected,
-        Some(MaterialOrigin::Digest(_))
+        Some(MaterialOrigin::Derived(_))
     ));
     inspected
         .validate_binding(&inspected.context_revision)
@@ -193,7 +199,7 @@ fn actual_sticky_fragment_then_new_pcr_survives_native_archive_and_mixed_run_rep
         ]
     );
     let (reference, tracked, incomplete, findings, total, truncated) =
-        digest::replay(&cap, &reopened.revisions[&cap.record.product.revision])
+        digest::replay(&cap, &reopened.revisions[&cap.product.revision])
             .unwrap()
             .into_parts();
     assert_eq!(reference.sequence.as_str(), CUT);
@@ -223,12 +229,12 @@ fn equal_content_alias_and_detached_record_cannot_attest_the_selected_digest_eve
         .is_err()
     );
     assert!(
-        MaterialOrigin::Digest(cap.clone())
+        MaterialOrigin::Derived(cap.clone())
             .validate_for_workspace(&w, &alias_pin)
             .is_err()
     );
     let mut changed = cap.clone();
-    changed.source.name = "Different source snapshot".into();
+    changed.source_snapshot.name = "Different source snapshot".into();
     assert!(changed.validate_documentary().is_err());
     let key = w
         .attachments
@@ -239,7 +245,7 @@ fn equal_content_alias_and_detached_record_cannot_attest_the_selected_digest_eve
         .clone();
     w.attachments.remove(&key);
     assert!(
-        MaterialOrigin::Digest(cap)
+        MaterialOrigin::Derived(cap)
             .validate_for_workspace(&w, &pin)
             .is_err()
     );
@@ -247,9 +253,13 @@ fn equal_content_alias_and_detached_record_cannot_attest_the_selected_digest_eve
 #[test]
 fn one_aggregate_ledger_charges_mixed_descendants_instead_of_resetting_each_child() {
     let (mut w, cap, pin) = digest_fixture();
+    let record = digest::load_record(&cap.record_bytes).unwrap();
+    let digest::SourceOrigin::Saved(MaterialOrigin::Run(parent)) = &record.request.origin else {
+        panic!("explicit run parent")
+    };
     run_material::material_capsules_preflight([
-        MaterialOriginRef::Digest(&cap),
-        MaterialOriginRef::Run(&cap.record.request.origin),
+        MaterialOriginRef::Derived(&cap),
+        MaterialOriginRef::Run(parent),
     ])
     .unwrap();
     let (plan, target) = prepared_plan(&mut w, &cap, &pin);
@@ -284,96 +294,4 @@ fn one_aggregate_ledger_charges_mixed_descendants_instead_of_resetting_each_chil
         )
         .is_err()
     );
-}
-
-#[test]
-fn old_outer_candidate_cannot_hide_new_digest_semantics_in_a_newer_inner_capsule() {
-    let (mut w, cap, pin) = digest_fixture();
-    let (plan, target) = prepared_plan(&mut w, &cap, &pin);
-    let saved = cloning_outputs::finalize(
-        &w,
-        &plan,
-        target,
-        vec![InputEventBinding {
-            input_id: "fragment".into(),
-            event: pin,
-        }],
-        &cloning_outputs::Options {
-            name: "Saved digest-derived PCR".into(),
-            show_prepared: false,
-            save_primers: false,
-            allow_incomplete: false,
-        },
-    )
-    .unwrap();
-    let selection = run_material::Selection {
-        run_id: saved.receipt.run.run_id,
-        step_index: 1,
-        event: saved.receipt.construct,
-    };
-    let inner = run_material::capsule(&saved.workspace, &selection).unwrap();
-    assert!(u16::from_le_bytes([inner.candidate[4], inner.candidate[5]]) >= 21);
-    let mut w = saved.workspace;
-    let target = Molecule::dna("Independent third PCR target", AMPLICON, Topology::Linear).unwrap();
-    DocumentHistory::new("independent-third-target", target.clone())
-        .unwrap()
-        .contribute(&mut w)
-        .unwrap();
-    let target_pin = event(&w, w.documents.len() - 1);
-    let source = w.revisions[&selection.event.revision].clone();
-    // Outer plan deliberately contains only established pre-schema21 operations.
-    let plan = DesignPlan {
-        name: "Old operation wrapper over digest-derived run".into(),
-        target_revision: target.revision(),
-        inputs: vec![input("saved", source)],
-        steps: vec![
-            Operation::ReconstructRunProduct {
-                template: Source::Input("saved".into()),
-                origin: inner,
-            },
-            Operation::Pcr {
-                template: Source::Step(0),
-                forward: Primer::new("Third F", "CCGTAGGA", "").unwrap(),
-                reverse: Primer::new("Third R", "TGACGATC", "").unwrap(),
-            },
-        ],
-    };
-    let saved = cloning_outputs::finalize(
-        &w,
-        &plan,
-        target_pin,
-        vec![InputEventBinding {
-            input_id: "saved".into(),
-            event: selection.event,
-        }],
-        &cloning_outputs::Options {
-            name: "Saved third PCR".into(),
-            show_prepared: false,
-            save_primers: false,
-            allow_incomplete: false,
-        },
-    )
-    .unwrap();
-    let selection = run_material::Selection {
-        run_id: saved.receipt.run.run_id,
-        step_index: 1,
-        event: saved.receipt.construct,
-    };
-    let mut outer = run_material::capsule(&saved.workspace, &selection).unwrap();
-    outer.validate_documentary().unwrap();
-    let original = outer.candidate.clone();
-    for old in [17u16, 20] {
-        outer.candidate = original.clone();
-        // Header version is outside the existing payload checksum. Keep every
-        // byte of payload and checksum intact; only the outer capability lies.
-        outer.candidate[4..6].copy_from_slice(&old.to_le_bytes());
-        assert_eq!(&outer.candidate[6..], &original[6..]);
-        assert!(outer.validate_documentary().is_err());
-        assert!(run_material::visit_candidate_plans(&outer.candidate, |_| Ok(())).is_err());
-        assert!(collagene_core::transfer::load_candidate(&outer.candidate).is_err());
-    }
-    // Legacy envelopes remain valid when the complete ancestry uses old ops.
-    let mut legacy = cap.record.request.origin;
-    legacy.candidate[4..6].copy_from_slice(&17u16.to_le_bytes());
-    legacy.validate_documentary().unwrap();
 }

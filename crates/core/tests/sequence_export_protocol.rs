@@ -1,4 +1,4 @@
-//! Literal export selectors preserve old binary prefixes and bind source/options.
+//! Current export selectors bind source, profile options and prepared bytes.
 use collagene_core::{
     Molecule, Topology, gcg_sequence,
     protocol::{self, AnalysisJob, AnalysisResult, Request},
@@ -40,7 +40,7 @@ fn run(
     response
 }
 #[test]
-fn sequence_export_review_and_preparation_are_source_bound_append_only_profiles() {
+fn sequence_export_review_and_preparation_are_source_bound_profiles() {
     let source = Molecule::dna("Actual reference", "ACGTCGAT", Topology::Circular).unwrap();
     let before = source.clone();
     for format in [
@@ -60,8 +60,8 @@ fn sequence_export_review_and_preparation_are_source_bound_append_only_profiles(
                 format: format.clone(),
             },
             context.clone(),
-            174,
-            164,
+            173,
+            163,
         );
         let AnalysisResult::SequenceExportAssessment(review) = reviewed.result else {
             unreachable!()
@@ -79,8 +79,8 @@ fn sequence_export_review_and_preparation_are_source_bound_append_only_profiles(
                 allow_omissions: true,
             },
             context.clone(),
-            175,
-            165,
+            174,
+            164,
         );
         let AnalysisResult::SequenceExportPrepared(prepared) = result.result else {
             unreachable!()
@@ -144,8 +144,8 @@ fn trace_worker_pins_view_precision_and_actual_signal_and_refuses_fabrication() 
             options: options.clone(),
         },
         context.clone(),
-        176,
-        166,
+        175,
+        165,
     );
     let AnalysisResult::ScfTraceExported(report) = response.result else {
         unreachable!()

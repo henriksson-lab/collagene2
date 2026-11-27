@@ -63,18 +63,13 @@ impl<'a> Index<'a> {
         }
         Ok(Self { source, owners })
     }
-    /// Invoke after ordinary run and saved-digest indexes have been built. A
+    /// Invoke after ordinary run ownership has been indexed. A
     /// product cannot acquire a second native owner depending on attachment order.
     pub(super) fn validate_existing_owners(
         &self,
         run_owners: &BTreeMap<String, String>,
-        digest_owners: &BTreeMap<String, String>,
     ) -> Result<(), Error> {
-        if self
-            .owners
-            .keys()
-            .any(|id| run_owners.contains_key(id) || digest_owners.contains_key(id))
-        {
+        if self.owners.keys().any(|id| run_owners.contains_key(id)) {
             return Err(Error::Unresolved(
                 "multiple native owners for material product event",
             ));

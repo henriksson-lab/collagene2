@@ -144,20 +144,19 @@ pub struct Selection {
 #[serde(deny_unknown_fields)]
 pub enum MaterialSelection {
     Run(Selection),
-    Digest(EventBinding),
     Derived(EventBinding),
 }
 impl MaterialSelection {
     pub fn event(&self) -> &EventBinding {
         match self {
             Self::Run(s) => &s.event,
-            Self::Digest(e) | Self::Derived(e) => e,
+            Self::Derived(e) => e,
         }
     }
     pub fn validate(&self) -> Result<(), Error> {
         match self {
             Self::Run(s) => shape(s),
-            Self::Digest(e) | Self::Derived(e) => event_shape(e),
+            Self::Derived(e) => event_shape(e),
         }
     }
 }
@@ -166,28 +165,27 @@ impl MaterialSelection {
 #[serde(deny_unknown_fields)]
 pub enum MaterialOrigin {
     Run(Capsule),
-    Digest(crate::run_digest_history::Capsule),
     Derived(crate::material_derivation::Capsule),
 }
 impl MaterialOrigin {
     pub fn event(&self) -> &EventBinding {
         match self {
             Self::Run(o) => &o.selection.event,
-            Self::Digest(o) => &o.record.product,
+
             Self::Derived(o) => &o.product,
         }
     }
     pub fn selection(&self) -> MaterialSelection {
         match self {
             Self::Run(o) => MaterialSelection::Run(o.selection.clone()),
-            Self::Digest(o) => MaterialSelection::Digest(o.record.product.clone()),
+
             Self::Derived(o) => MaterialSelection::Derived(o.product.clone()),
         }
     }
     pub fn validate_documentary(&self) -> Result<(), Error> {
         match self {
             Self::Run(o) => o.validate_documentary(),
-            Self::Digest(o) => o.validate_documentary(),
+
             Self::Derived(o) => o.validate_documentary(),
         }
     }
@@ -207,9 +205,6 @@ impl MaterialOrigin {
         match self {
             Self::Run(origin) => {
                 crate::run_material_capsule::validate_run_capsule_origins(workspace, origin)
-            }
-            Self::Digest(origin) => {
-                crate::run_digest_history::validate_capsule_for_workspace(workspace, origin, event)
             }
             Self::Derived(origin) => {
                 crate::material_derivation::validate_capsule_for_workspace(workspace, origin, event)
@@ -283,7 +278,6 @@ impl MaterialOrigin {
                     false,
                 )
             }
-            Self::Digest(origin) => crate::run_digest_history::replay(origin, source)?.into_parts(),
             Self::Derived(origin) => {
                 crate::material_derivation::replay(origin, source)?.into_parts()
             }
@@ -355,16 +349,7 @@ pub fn inspect_material(
         .into_iter()
         .map(MaterialSelection::Run)
         .collect::<Vec<_>>();
-    for asset in workspace
-        .attachments
-        .values()
-        .filter(|a| a.kind == crate::run_digest_history::WORKSPACE_ATTACHMENT_KIND)
-    {
-        let record = crate::run_digest_history::load_record(&asset.bytes)?;
-        if record.product == *event {
-            origins.push(MaterialSelection::Digest(event.clone()));
-        }
-    }
+
     for asset in workspace
         .attachments
         .values()
@@ -387,9 +372,6 @@ pub fn inspect_material(
         }
         let result = match selection {
             MaterialSelection::Run(s) => capsule(workspace, s).map(MaterialOrigin::Run),
-            MaterialSelection::Digest(e) => {
-                crate::run_digest_history::capsule(workspace, e).map(MaterialOrigin::Digest)
-            }
             MaterialSelection::Derived(e) => {
                 crate::material_derivation::capsule(workspace, e).map(MaterialOrigin::Derived)
             }

@@ -22,7 +22,7 @@ pub(crate) const MAX_ROLE_BASES: usize = 16 << 20;
 const MAX_PREPARATION_WORK: usize = 100_000_000;
 pub(crate) const MAX_STEPS_PER_ROW: usize = 7;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
-dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},AnnealedOligos{bottom_input_id:String,options:crate::chemistry::AnnealOptions,candidate_index:usize},FromRun{origin:crate::run_material::Capsule,preparation:RunPreparation},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},OverlapExtensionPcr{request:crate::overlap_extension_pcr::Request},OverlapExtensionPcrCatalogDigest{request:crate::overlap_extension_pcr::Request,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},FromDigest{origin:crate::run_digest_history::Capsule,preparation:RunPreparation},FromDerived{origin:crate::material_derivation::Capsule,preparation:RunPreparation}}}
+dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},AnnealedOligos{bottom_input_id:String,options:crate::chemistry::AnnealOptions,candidate_index:usize},FromRun{origin:crate::run_material::Capsule,preparation:RunPreparation},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},OverlapExtensionPcr{request:crate::overlap_extension_pcr::Request},OverlapExtensionPcrCatalogDigest{request:crate::overlap_extension_pcr::Request,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},FromDerived{origin:crate::material_derivation::Capsule,preparation:RunPreparation}}}
 dto! {pub enum RunPreparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},OverlapExtensionPcr{request:crate::overlap_extension_pcr::Request},OverlapExtensionPcrCatalogDigest{request:crate::overlap_extension_pcr::Request,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>}}}
 /// Literal catalog pin used by a preparation, including a flat saved-origin
 /// child. This is structural lookup only, never replay or cleavage authority.
@@ -34,15 +34,17 @@ pub fn preparation_catalog_selection(
         | Preparation::PcrCatalogDigest { selection, .. }
         | Preparation::MismatchPcrCatalogDigest { selection, .. }
         | Preparation::OverlapExtensionPcrCatalogDigest { selection, .. } => Some(selection),
-        Preparation::FromRun { preparation, .. }
-        | Preparation::FromDigest { preparation, .. }
-        | Preparation::FromDerived { preparation, .. } => match preparation {
-            RunPreparation::CatalogDigest { selection, .. }
-            | RunPreparation::PcrCatalogDigest { selection, .. }
-            | RunPreparation::MismatchPcrCatalogDigest { selection, .. }
-            | RunPreparation::OverlapExtensionPcrCatalogDigest { selection, .. } => Some(selection),
-            _ => None,
-        },
+        Preparation::FromRun { preparation, .. } | Preparation::FromDerived { preparation, .. } => {
+            match preparation {
+                RunPreparation::CatalogDigest { selection, .. }
+                | RunPreparation::PcrCatalogDigest { selection, .. }
+                | RunPreparation::MismatchPcrCatalogDigest { selection, .. }
+                | RunPreparation::OverlapExtensionPcrCatalogDigest { selection, .. } => {
+                    Some(selection)
+                }
+                _ => None,
+            }
+        }
         _ => None,
     }
 }
@@ -63,9 +65,7 @@ pub(crate) fn preparation_operation_count(preparation: &Preparation) -> usize {
         | Preparation::MismatchPcrCatalogDigest { repair: r, .. } => 2 + repair(r),
         Preparation::OverlapExtensionPcr { .. } => 4,
         Preparation::OverlapExtensionPcrCatalogDigest { repair: r, .. } => 5 + repair(r),
-        Preparation::FromRun { preparation, .. }
-        | Preparation::FromDigest { preparation, .. }
-        | Preparation::FromDerived { preparation, .. } => {
+        Preparation::FromRun { preparation, .. } | Preparation::FromDerived { preparation, .. } => {
             1 + match preparation {
                 RunPreparation::WholeLinear => 0,
                 RunPreparation::ExactPcr { .. } | RunPreparation::MismatchPcr { .. } => 1,
@@ -208,14 +208,7 @@ pub(crate) fn from_run_shape(
     preparation.preparation()?;
     Ok(())
 }
-pub(crate) fn from_digest_shape(
-    origin: &crate::run_digest_history::Capsule,
-    preparation: &RunPreparation,
-) -> Result<(), Error> {
-    origin.validate_documentary()?;
-    preparation.preparation()?;
-    Ok(())
-}
+
 pub(crate) fn from_derived_shape(
     origin: &crate::material_derivation::Capsule,
     preparation: &RunPreparation,
@@ -324,9 +317,6 @@ pub(crate) fn validate_prepared_inputs(
         Operation::ReconstructRunProduct { origin, .. } => {
             Some(crate::run_material::MaterialOriginRef::Run(origin))
         }
-        Operation::ReconstructDigestFragment { origin, .. } => {
-            Some(crate::run_material::MaterialOriginRef::Digest(origin))
-        }
         Operation::ReconstructMaterial { origin, .. } => {
             Some(crate::run_material::MaterialOriginRef::Derived(origin))
         }
@@ -375,21 +365,7 @@ pub(crate) fn validate_prepared_inputs(
                 return Err(bad("saved material source revision changed"));
             }
         }
-        if let Operation::ReconstructDigestFragment { template, origin } = step {
-            origin.validate_documentary()?;
-            let Source::Input(id) = template else {
-                return Err(bad(
-                    "digest reconstruction must consume its exact original input",
-                ));
-            };
-            let input = inputs
-                .iter()
-                .find(|i| &i.id == id)
-                .ok_or_else(|| bad("missing saved digest source"))?;
-            if input.revision != origin.record.product.revision {
-                return Err(bad("saved digest source revision changed"));
-            }
-        }
+
         if let Operation::ReconstructMaterial { template, origin } = step {
             origin.validate_documentary()?;
             let Source::Input(id) = template else {
@@ -456,7 +432,6 @@ fn preparation_template(op: &Operation) -> Option<&Source> {
         | Operation::CatalogDigest { template, .. }
         | Operation::DeclareSourceTermini { template, .. }
         | Operation::ReconstructRunProduct { template, .. }
-        | Operation::ReconstructDigestFragment { template, .. }
         | Operation::ReconstructMaterial { template, .. } => Some(template),
         _ => None,
     }
@@ -506,7 +481,6 @@ pub(crate) fn prepared_chain(
                     && plan.inputs.iter().any(|i| &i.id == bottom)
             }
             Operation::ReconstructRunProduct { .. }
-            | Operation::ReconstructDigestFragment { .. }
             | Operation::ReconstructMaterial { .. }
             | Operation::Pcr { .. }
             | Operation::PcrWithMismatches { .. }
@@ -526,9 +500,7 @@ pub(crate) fn prepared_chain(
         *cursor += 1;
         if matches!(
             op,
-            Operation::ReconstructRunProduct { .. }
-                | Operation::ReconstructDigestFragment { .. }
-                | Operation::ReconstructMaterial { .. }
+            Operation::ReconstructRunProduct { .. } | Operation::ReconstructMaterial { .. }
         ) && *cursor < assembly
             && matches!(plan.steps.get(*cursor),Some(Operation::Pcr{template:Source::Step(n),..}|Operation::PcrWithMismatches{template:Source::Step(n),..}|Operation::Digest{template:Source::Step(n),..}|Operation::CatalogDigest{template:Source::Step(n),..}) if *n==first)
         {
@@ -815,9 +787,6 @@ fn preparation_preflight_inner(
             Preparation::FromRun { origin, .. } => {
                 Some(crate::run_material::MaterialOriginRef::Run(origin))
             }
-            Preparation::FromDigest { origin, .. } => {
-                Some(crate::run_material::MaterialOriginRef::Digest(origin))
-            }
             Preparation::FromDerived { origin, .. } => {
                 Some(crate::run_material::MaterialOriginRef::Derived(origin))
             }
@@ -891,17 +860,6 @@ fn preparation_preflight_inner(
             }
             effective = preparation.preparation()?;
             &effective
-        } else if let Preparation::FromDigest {
-            origin,
-            preparation,
-        } = &row.preparation
-        {
-            from_digest_shape(origin, preparation)?;
-            if origin.record.product.revision != m.revision() {
-                return Err(bad("saved digest origin source revision changed"));
-            }
-            effective = preparation.preparation()?;
-            &effective
         } else if let Preparation::FromDerived {
             origin,
             preparation,
@@ -964,9 +922,7 @@ fn preparation_preflight_inner(
                     .ok_or(Error::TooLarge)?;
                 units
             }
-            Preparation::FromRun { .. }
-            | Preparation::FromDigest { .. }
-            | Preparation::FromDerived { .. } => {
+            Preparation::FromRun { .. } | Preparation::FromDerived { .. } => {
                 return Err(bad("nested material preparation is unsupported"));
             }
             Preparation::AnnealedOligos {
@@ -1235,18 +1191,6 @@ pub(crate) fn preparation_steps(
             });
             effective = preparation.preparation()?;
             (Source::Step(first), Some(first), &effective)
-        } else if let Preparation::FromDigest {
-            origin,
-            preparation,
-        } = &row.preparation
-        {
-            let first = steps.len();
-            steps.push(Operation::ReconstructDigestFragment {
-                template: original_input,
-                origin: origin.clone(),
-            });
-            effective = preparation.preparation()?;
-            (Source::Step(first), Some(first), &effective)
         } else if let Preparation::FromDerived {
             origin,
             preparation,
@@ -1309,9 +1253,7 @@ pub(crate) fn preparation_steps(
             | Preparation::OverlapExtensionPcrCatalogDigest { .. } => {
                 unreachable!("handled explicit fork above")
             }
-            Preparation::FromRun { .. }
-            | Preparation::FromDigest { .. }
-            | Preparation::FromDerived { .. } => {
+            Preparation::FromRun { .. } | Preparation::FromDerived { .. } => {
                 return Err(bad("nested material preparation is unsupported"));
             }
             Preparation::WholeLinear => None,
@@ -1901,7 +1843,6 @@ impl Preview {
                             | Operation::PcrWithMismatches { .. }
                             | Operation::OverlapExtension { .. }
                             | Operation::ReconstructRunProduct { .. }
-                            | Operation::ReconstructDigestFragment { .. }
                             | Operation::ReconstructMaterial { .. }
                             | Operation::AnnealOligos { .. }
                             | Operation::Digest { .. }

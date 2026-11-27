@@ -2,8 +2,8 @@
 use collagene_core::{
     Molecule, Topology,
     analysis::Primer,
-    catalog_digest, cloning_outputs, homology_assembly, material_pcr as m, pcr_outputs,
-    run_digest_history as digest,
+    catalog_digest, cloning_outputs, homology_assembly, material_derivation as digest,
+    material_pcr as m, pcr_outputs,
     run_lineage::{EventBinding, InputEventBinding},
     run_material::{self, MaterialOrigin},
     verification::{self, DesignPlan, Operation, OrientedSource, PlanInput, Source},
@@ -147,16 +147,22 @@ fn cut(incomplete: bool) -> (Molecule, MaterialOrigin) {
         &w,
         &digest::Request {
             source: origin.selection.event.clone(),
-            origin,
-            selection: catalog_digest::select(&c, &[id]).unwrap(),
-            options: Default::default(),
-            fragment_index: if incomplete { 0 } else { 1 },
+            origin: digest::SourceOrigin::Saved(collagene_core::run_material::MaterialOrigin::Run(
+                origin,
+            )),
+            derivation: digest::Derivation::CatalogDigest {
+                selection: catalog_digest::select(&c, &[id]).unwrap(),
+                options: Default::default(),
+                fragment_index: if incomplete { 0 } else { 1 },
+            },
+            name: "Native selected digest fragment".into(),
+            save_primers: false,
         },
     )
     .unwrap();
     let event = installed.receipt.product;
     let source = installed.workspace.revisions[&event.revision].clone();
-    let origin = MaterialOrigin::Digest(digest::capsule(&installed.workspace, &event).unwrap());
+    let origin = MaterialOrigin::Derived(digest::capsule(&installed.workspace, &event).unwrap());
     (source, origin)
 }
 fn oligos(incomplete: bool) -> (Primer, Primer) {
@@ -303,8 +309,8 @@ fn changed_source_origin_and_unbounded_oligo_are_rejected_before_preview_selecti
     source.name = "Another revision".into();
     assert!(m::revision(&source, &origin, &forward, &reverse).is_err());
     let (source, mut origin) = cut(false);
-    if let MaterialOrigin::Digest(d) = &mut origin {
-        d.record.request.fragment_index = 999;
+    if let MaterialOrigin::Derived(d) = &mut origin {
+        d.record_bytes[44] ^= 1; // Actual opaque recipe checksum must fail before any PCR selection.
     }
     assert!(m::simulate(&source, &origin, &forward, &reverse).is_err());
     let (_, _, run) = stock(false);

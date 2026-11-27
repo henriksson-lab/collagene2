@@ -1,4 +1,4 @@
-//! Append-only outcome evidence must not acquire meaning under older envelopes.
+//! Current ligation outcomes retain their intended path, alternatives and geometry.
 use collagene_core::{
     Molecule, Topology,
     chemistry::Terminus,
@@ -75,7 +75,7 @@ fn ligation_and_evidence_keep_intended_and_extractable_alternatives() {
     );
     assert_eq!(report.products[2].sequence.as_str(), "AAAACCCC");
     let evidence = &report.physical_processing_reports[0].evidence;
-    assert_eq!(tag(evidence), 8);
+    assert_eq!(tag(evidence), 7);
     let PhysicalProcessingEvidence::LigationOutcomes(evidence) = evidence else {
         panic!("outcomes")
     };
@@ -100,47 +100,44 @@ fn ligation_and_evidence_keep_intended_and_extractable_alternatives() {
 }
 
 #[test]
-fn new_semantics_cannot_hide_in_old_worker_or_candidate_envelopes() {
+fn current_worker_and_candidate_roundtrips_validate_full_outcome_geometry() {
     let (plan, target) = fixture();
-    let request = protocol::Request {
-        id: 29,
-        revision: target.revision(),
-        job: AnalysisJob::Verify {
-            plan: plan.clone(),
-            target: target.clone(),
-        },
-    };
-    let bytes = protocol::encode_request(&request).unwrap();
-    let mut old = bytes.clone();
-    old[4..6].copy_from_slice(&91u16.to_le_bytes());
-    assert_eq!(&old[6..], &bytes[6..]);
-    assert!(protocol::process_request(&old).is_err());
-    let response_bytes = protocol::process_request(&bytes).unwrap();
-    let mut response = protocol::decode_response(&response_bytes).unwrap();
-    // Removing only the engine-version fence must still leave the new evidence
-    // capability fence intact.
-    let AnalysisResult::Verification(report) = &mut response.result else {
-        panic!("verification")
-    };
-    let payload = postcard::to_allocvec(&response).unwrap();
-    let mut bytes = b"CGR\0".to_vec();
-    bytes.extend(protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
-    bytes.extend((payload.len() as u32).to_le_bytes());
-    bytes.extend(blake3::hash(&payload).as_bytes());
-    bytes.extend(payload);
-    protocol::decode_response(&bytes).unwrap();
-    let mut old = bytes.clone();
-    old[4..6].copy_from_slice(&91u16.to_le_bytes());
-    assert_eq!(&old[6..], &bytes[6..]);
-    assert!(protocol::decode_response(&old).is_err());
-    let bytes = transfer::save_candidate(&transfer::Candidate::new(plan)).unwrap();
+    let candidate = transfer::Candidate::new(plan.clone());
+    let bytes = transfer::save_candidate(&candidate).unwrap();
     assert_eq!(
         &bytes[4..6],
         &protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
     );
-    let mut old = bytes.clone();
-    old[4..6].copy_from_slice(&22u16.to_le_bytes());
-    assert_eq!(&old[6..], &bytes[6..]);
-    assert!(transfer::load_candidate(&old).is_err());
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 22);
+    assert_eq!(
+        transfer::load_candidate(&bytes).unwrap().plan_revision,
+        candidate.plan_revision
+    );
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 23);
+    let request = protocol::Request {
+        id: 4,
+        revision: target.revision(),
+        job: AnalysisJob::Verify { plan, target },
+    };
+    let bytes = protocol::encode_request(&request).unwrap();
+    let bytes = protocol::process_request(&bytes).unwrap();
+    let mut response = protocol::decode_response(&bytes).unwrap();
+    let AnalysisResult::Verification(report) = &mut response.result else {
+        panic!("verification")
+    };
+    let PhysicalProcessingEvidence::LigationOutcomes(evidence) =
+        &mut report.physical_processing_reports[0].evidence
+    else {
+        panic!("ligation outcomes")
+    };
+    assert_eq!(evidence.report.intended.sequence.as_str(), "AAAACCCC");
+    assert!(!evidence.report.alternatives.is_empty());
+    // An edited topology cannot be paired with the unchanged physical duplex.
+    evidence.report.intended.topology = Topology::Circular;
+    let payload = postcard::to_allocvec(&response).unwrap();
+    let mut forged = b"CGR\0".to_vec();
+    forged.extend(protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
+    forged.extend((payload.len() as u32).to_le_bytes());
+    forged.extend(blake3::hash(&payload).as_bytes());
+    forged.extend(payload);
+    assert!(protocol::decode_response(&forged).is_err());
 }

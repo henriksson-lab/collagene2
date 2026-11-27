@@ -3,7 +3,7 @@ use collagene_core::{
     Molecule, Topology,
     analysis::Primer,
     assembly_recipe::{self as a, FragmentSpec, Preparation, RunPreparation},
-    catalog_digest, cloning_outputs, homology_assembly, plan_oligos, run_digest_history as digest,
+    catalog_digest, cloning_outputs, homology_assembly, material_derivation as digest, plan_oligos,
     run_lineage::{EventBinding, InputEventBinding},
     run_material,
     verification::{self, DesignPlan, Operation, OrientedSource, PlanInput, Source, Status},
@@ -208,10 +208,16 @@ fn fixture(incomplete: bool) -> Fixture {
         &saved.workspace,
         &digest::Request {
             source: saved.receipt.construct,
-            origin,
-            selection: catalog_digest::select(&c, &[id]).unwrap(),
-            options: Default::default(),
-            fragment_index,
+            origin: digest::SourceOrigin::Saved(collagene_core::run_material::MaterialOrigin::Run(
+                origin,
+            )),
+            derivation: digest::Derivation::CatalogDigest {
+                selection: catalog_digest::select(&c, &[id]).unwrap(),
+                options: Default::default(),
+                fragment_index: fragment_index,
+            },
+            name: "Native selected digest fragment".into(),
+            save_primers: false,
         },
     )
     .unwrap();
@@ -257,7 +263,7 @@ fn compile(f: &Fixture) -> (Vec<PlanInput>, Molecule, a::Recipe, a::Compiled) {
             FragmentSpec {
                 role: "fragment-role".into(),
                 input_id: "fragment".into(),
-                preparation: Preparation::FromDigest {
+                preparation: Preparation::FromDerived {
                     origin: f.capsule.clone(),
                     preparation: primers(forward, reverse),
                 },
@@ -282,7 +288,7 @@ fn finish(f: Fixture) {
     assert_eq!(compiled.rows[1].preparation_step, Some(1));
     assert!(matches!(compiled.rows[1].prepared_source, Source::Step(2)));
     assert!(
-        matches!(&compiled.plan.steps[1],Operation::ReconstructDigestFragment{template:Source::Input(id),..} if id=="fragment")
+        matches!(&compiled.plan.steps[1],Operation::ReconstructMaterial{template:Source::Input(id),..} if id=="fragment")
     );
     assert!(matches!(
         &compiled.plan.steps[2],
@@ -320,12 +326,6 @@ fn finish(f: Fixture) {
             .uses
             .iter()
             .all(|u| !u.primer_name.starts_with("Historical"))
-    );
-    assert!(
-        order
-            .warnings
-            .iter()
-            .any(|w| w.contains("catalog digest fragment"))
     );
     let saved = cloning_outputs::finalize(
         &f.w,
@@ -374,8 +374,8 @@ fn actual_saved_circle_digest_keeps_incomplete_origin_through_new_pcr_and_saved_
 fn changed_saved_digest_event_and_revision_cannot_be_recorded_as_matching_input() {
     let f = fixture(false);
     let (inputs, target, mut recipe, compiled) = compile(&f);
-    if let Preparation::FromDigest { origin, .. } = &mut recipe.fragments[1].preparation {
-        origin.record.product.revision = "00".repeat(32);
+    if let Preparation::FromDerived { origin, .. } = &mut recipe.fragments[1].preparation {
+        origin.product.revision = "00".repeat(32);
     }
     assert!(a::compile(&inputs, &target, &recipe).is_err());
     let mut wrong = f.fragment.clone();
@@ -471,10 +471,16 @@ fn saved_digest_preparation_preserves_actual_source_modifications_before_any_new
         &saved.workspace,
         &digest::Request {
             source: saved.receipt.construct,
-            origin,
-            selection: catalog_digest::select(&c, &[id]).unwrap(),
-            options: Default::default(),
-            fragment_index: 0,
+            origin: digest::SourceOrigin::Saved(collagene_core::run_material::MaterialOrigin::Run(
+                origin,
+            )),
+            derivation: digest::Derivation::CatalogDigest {
+                selection: catalog_digest::select(&c, &[id]).unwrap(),
+                options: Default::default(),
+                fragment_index: 0,
+            },
+            name: "Native selected digest fragment".into(),
+            save_primers: false,
         },
     )
     .unwrap();
@@ -491,7 +497,7 @@ fn saved_digest_preparation_preserves_actual_source_modifications_before_any_new
             role: "cut-role".into(),
             input_id: "cut".into(),
             reverse: false,
-            preparation: Preparation::FromDigest {
+            preparation: Preparation::FromDerived {
                 origin: digest::capsule(&derived.workspace, &product).unwrap(),
                 preparation: RunPreparation::WholeLinear,
             },
@@ -512,23 +518,23 @@ fn saved_digest_preparation_preserves_actual_source_modifications_before_any_new
         report.findings
     );
     let evidence = &report.physical_processing_reports[0].evidence;
-    let verification::PhysicalProcessingEvidence::SavedDigestOrigin(evidence) = evidence else {
+    let verification::PhysicalProcessingEvidence::DerivedOrigin(evidence) = evidence else {
         panic!("missing actual digest reconstruction evidence")
     };
     assert_eq!(
-        evidence.modifications.known_modified,
+        evidence.material.modifications.known_modified,
         derived.receipt.modifications.known_modified
     );
     assert_eq!(
-        evidence.modifications.unknown_eligible,
+        evidence.material.modifications.unknown_eligible,
         derived.receipt.modifications.unknown_eligible
     );
     assert_eq!(
-        serde_json::to_value(&evidence.modifications.generation).unwrap(),
+        serde_json::to_value(&evidence.material.modifications.generation).unwrap(),
         serde_json::to_value(&derived.receipt.modifications.generation).unwrap()
     );
     assert_eq!(
-        evidence.duplex.top_length,
+        evidence.material.duplex.top_length,
         derived.receipt.duplex.top_length
     );
 }

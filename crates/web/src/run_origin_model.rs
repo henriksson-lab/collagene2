@@ -32,7 +32,7 @@ impl PinnedOrigin {
     pub(crate) fn as_run(&self) -> Result<&Capsule, String> {
         match self.as_ref() {
             MaterialOrigin::Run(origin) => Ok(origin),
-            MaterialOrigin::Digest(_) | MaterialOrigin::Derived(_) => Err("This workflow does not yet support saved digest or target-free derived products. Use ordinary PCR or an assembly preparation to retain their actual material origin.".into()),
+            MaterialOrigin::Derived(_) => Err("This workflow does not yet support target-free derived products. Use ordinary PCR or an assembly preparation to retain their actual material origin.".into()),
         }
     }
     pub(crate) fn label(&self) -> String {
@@ -44,10 +44,6 @@ impl PinnedOrigin {
             ),
             MaterialOrigin::Derived(_) => format!(
                 "Derived material · event {}…",
-                self.event().event_id.chars().take(12).collect::<String>()
-            ),
-            MaterialOrigin::Digest(_) => format!(
-                "Saved digest fragment · event {}…",
                 self.event().event_id.chars().take(12).collect::<String>()
             ),
         }

@@ -6,8 +6,15 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 94;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 24;
+pub const WORKER_SCHEMA_VERSION: u16 = 95;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 25;
+
+// Current selectors whose accepted payloads can contain complete workspace archives.
+// Stateless and session dispatch must admit the same envelope before routing.
+const WORKSPACE_REQUEST_SELECTORS: &[u32] = &[
+    19, 20, 42, 43, 69, 72, 102, 105, 106, 107, 108, 128, 130, 131, 134, 135, 149, 155, 158, 168,
+    169, 170, 171, 172, 173, 174, 175, 176, 177, 178,
+];
 
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
@@ -958,10 +965,6 @@ pub enum AnalysisJob {
         event: crate::run_lineage::EventBinding,
         selection: Option<crate::run_material::MaterialSelection>,
     },
-    InstallRunDigestFragment {
-        workspace: crate::workspace::Workspace,
-        request: crate::run_digest_history::Request,
-    },
     MaterialPcrDocuments {
         molecule: Molecule,
         origin: crate::run_material::MaterialOrigin,
@@ -1177,7 +1180,6 @@ pub enum AnalysisResult {
     EditedOverlapPrimersDesigned(crate::assembly_edited_primer_design::Report),
     TopoRunInspection(crate::topo_run_preparation::Inspection),
     MaterialOriginInspection(crate::run_material::MaterialInspection),
-    RunDigestInstalled(crate::run_digest_history::Installed),
     MaterialPcrDocuments(Vec<crate::verification::PcrDocument>),
     MaterialPcrOutputsPrepared(crate::pcr_outputs::Prepared),
     SequenceExportAssessment(crate::sequence_export::Assessment),
@@ -1239,9 +1241,6 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             selection,
         } => {
             crate::run_material::material_inspection_revision(workspace, event, selection)?;
-        }
-        AnalysisJob::InstallRunDigestFragment { workspace, request } => {
-            crate::run_digest_history::preflight(workspace, request)?;
         }
         AnalysisJob::MaterialPcrDocuments {
             molecule,
@@ -1557,7 +1556,6 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::PreviewAnnealingRecipe { .. }
             | AnalysisJob::InspectTopoRun { .. }
             | AnalysisJob::InspectMaterialOrigin { .. }
-            | AnalysisJob::InstallRunDigestFragment { .. }
             | AnalysisJob::MaterialPcrDocuments { .. }
             | AnalysisJob::PrepareMaterialPcrOutputs { .. }
             | AnalysisJob::ReviewSequenceExport { .. }
@@ -1581,7 +1579,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         bytes,
         &[
             20, 21, 40, 41, 62, 65, 94, 97, 100, 122, 126, 127, 159, 160, 161, 162, 163, 164, 165,
-            166, 167, 168, 169,
+            166, 167, 168,
         ],
     )?;
 
@@ -1594,9 +1592,6 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             report.validate_binding(&report.source_revision)?;
         }
         AnalysisResult::MaterialOriginInspection(report) => {
-            report.validate_binding(&response.revision)?;
-        }
-        AnalysisResult::RunDigestInstalled(report) => {
             report.validate_binding(&response.revision)?;
         }
         AnalysisResult::MaterialDerivationInstalled(report) => {
@@ -2309,9 +2304,6 @@ fn validate_verification_report(
                 crate::verification::PhysicalProcessingEvidence::DerivedOrigin(r) => {
                     r.validate_documentary()?;
                 }
-                crate::verification::PhysicalProcessingEvidence::SavedDigestOrigin(r) => {
-                    r.validate_documentary()?;
-                }
                 crate::verification::PhysicalProcessingEvidence::RunProduct(r) => {
                     r.validate_documentary()?;
                 }
@@ -2391,14 +2383,7 @@ pub fn overlap_profile_revision(
 }
 
 pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
-    let maximum = worker_limit(
-        b"CGQ\0",
-        bytes,
-        &[
-            19, 20, 42, 43, 69, 72, 102, 105, 106, 107, 108, 128, 130, 131, 134, 135, 149, 155,
-            158, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179,
-        ],
-    )?;
+    let maximum = worker_limit(b"CGQ\0", bytes, WORKSPACE_REQUEST_SELECTORS)?;
 
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
 
@@ -2436,14 +2421,6 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
                 != r.revision
             {
                 return Err(Error::Format("Material source/selection changed".into()));
-            }
-            None
-        }
-        AnalysisJob::InstallRunDigestFragment { workspace, request } => {
-            if crate::run_digest_history::installation_revision(workspace, request)? != r.revision {
-                return Err(Error::Format(
-                    "Saved digest installation source/selection changed".into(),
-                ));
             }
             None
         }
@@ -3812,10 +3789,6 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             selection,
         } => crate::run_material::inspect_material(&workspace, &event, &selection)
             .map(AnalysisResult::MaterialOriginInspection),
-        AnalysisJob::InstallRunDigestFragment { workspace, request } => {
-            crate::run_digest_history::install(&workspace, &request)
-                .map(AnalysisResult::RunDigestInstalled)
-        }
         AnalysisJob::MaterialPcrDocuments {
             molecule,
             origin,
@@ -4732,7 +4705,6 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             | AnalysisResult::DigestInstalled(_)
             | AnalysisResult::CatalogDigestInstalled(_)
             | AnalysisResult::CombinatorialOutputsArchive(_)
-            | AnalysisResult::RunDigestInstalled(_)
             | AnalysisResult::MaterialPcrOutputsPrepared(_)
             | AnalysisResult::SequenceExportAssessment(_)
             | AnalysisResult::SequenceExportPrepared(_)
@@ -4769,14 +4741,7 @@ pub struct AnalysisSession {
 }
 impl AnalysisSession {
     pub fn process_request(&mut self, bytes: &[u8]) -> Result<Vec<u8>, Error> {
-        let maximum = worker_limit(
-            b"CGQ\0",
-            bytes,
-            &[
-                19, 20, 42, 43, 69, 72, 102, 105, 106, 107, 108, 128, 130, 131, 134, 135, 149, 155,
-                158,
-            ],
-        )?;
+        let maximum = worker_limit(b"CGQ\0", bytes, WORKSPACE_REQUEST_SELECTORS)?;
         // Route by a borrowed prefix so ordinary jobs are not fully decoded twice.
         // Stable append-only track, genome and read-alignment variants retain
         // private worker state; all other jobs use ordinary stateless dispatch.
@@ -4786,9 +4751,6 @@ impl AnalysisSession {
             return process_request(bytes);
         }
 
-        if (53..=66).contains(&tag) {}
-        if (88..=93).contains(&tag) {}
-        if (77..=81).contains(&tag) {}
         let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
         let result = match r.job {
             AnalysisJob::BeginCombinatorialRelease { workspace, request } => {

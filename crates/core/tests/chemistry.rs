@@ -324,7 +324,9 @@ fn typed_plan_reconstructs_duplex_graph_and_retains_intermediates_on_failure() {
             .any(|f| f.contains("0 retained nicks"))
     );
     let html = export_protocol_html(&plan, &target);
-    assert!(html.contains("Complete restriction digest") && html.contains("Ordered ligation"));
+    assert!(
+        html.contains("Complete restriction digest") && html.contains("Intended ordered ligation")
+    );
     plan.steps[2] = Operation::Ligate {
         fragments: vec![
             OrientedSource {
@@ -341,7 +343,7 @@ fn typed_plan_reconstructs_duplex_graph_and_retains_intermediates_on_failure() {
         options: Default::default(),
     };
     let report = verify(&plan, &target);
-    assert_eq!(report.status, Status::Invalid);
+    assert_eq!(report.status, Status::Invalid, "{:?}", report.findings);
     assert_eq!(report.products.len(), 2);
     plan.steps[0] = Operation::Digest {
         template: Source::Input("vector".into()),

@@ -209,11 +209,7 @@ pub enum Operation {
         options: crate::overlap_profiles::ProfileOptions,
         policy: crate::homology_annealing::Options,
     },
-    /// Replay an exact target-free saved digest derivation before using its material.
-    ReconstructDigestFragment {
-        template: Source,
-        origin: crate::run_digest_history::Capsule,
-    },
+
     /// Replay a target-free typed derivation; serialized summaries confer no material.
     ReconstructMaterial {
         template: Source,
@@ -298,7 +294,6 @@ pub enum PhysicalProcessingEvidence {
     HomologyAssembly(crate::homology_assembly::Report),
     ThreePrimeResection(crate::three_prime_resection::Report),
     HomologyAnnealing(crate::homology_annealing::Report),
-    SavedDigestOrigin(SavedDigestOriginEvidence),
     DerivedOrigin(DerivedOriginEvidence),
     LigationOutcomes(LigationOutcomeEvidence),
 }
@@ -383,69 +378,7 @@ impl LigationOutcomeEvidence {
         Ok(())
     }
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct SavedDigestOriginEvidence {
-    pub origin: crate::run_digest_history::Capsule,
-    pub material_revision: String,
-    pub duplex: chemistry::DuplexSummary,
-    pub modifications: modified_duplex::ModificationSummary,
-    pub origin_incomplete: bool,
-    pub origin_findings: Vec<String>,
-    pub origin_findings_total: usize,
-    pub origin_findings_truncated: bool,
-}
-impl SavedDigestOriginEvidence {
-    /// Documentary shape and exact recipe binding, never imported material authority.
-    pub fn validate_documentary(&self) -> Result<(), Error> {
-        self.origin.validate_documentary()?;
-        let hex = |value: &str| {
-            value.len() == 64
-                && value
-                    .bytes()
-                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-        };
-        let count = self
-            .modifications
-            .known_modified
-            .checked_add(self.modifications.unknown_eligible)
-            .and_then(|n| n.checked_add(self.modifications.known_unmodified))
-            .ok_or(Error::TooLarge)?;
-        let total = self
-            .duplex
-            .top_length
-            .checked_add(self.duplex.bottom_length)
-            .ok_or(Error::TooLarge)?;
-        if !hex(&self.material_revision)
-            || self.material_revision != self.modifications.state_revision
-            || self.material_revision != self.origin.record.product_state_revision
-            || self.origin_incomplete != self.origin.record.origin_incomplete
-            || self.modifications.engine_version != modified_duplex::ENGINE_VERSION
-            || self.duplex.top_length == 0
-            || self.duplex.bottom_length == 0
-            || self.duplex.top_length > crate::model::MAX_SEQUENCE_LEN
-            || self.duplex.bottom_length > crate::model::MAX_SEQUENCE_LEN
-            || self.modifications.top_length != self.duplex.top_length
-            || self.modifications.bottom_length != self.duplex.bottom_length
-            || count > total
-            || self.origin_findings.len() > 128
-            || self
-                .origin_findings
-                .iter()
-                .any(|s| s.len() > 8192 || s.chars().count() > 2048)
-            || self.origin_findings_total < self.origin_findings.len()
-            || (!self.origin_findings_truncated
-                && self.origin_findings_total > self.origin_findings.len())
-        {
-            return Err(Error::Format(
-                "Saved digest evidence changed its bounded source/material binding".into(),
-            ));
-        }
-        evidence_bytes(self, 32 * 1024 * 1024)?;
-        Ok(())
-    }
-}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1413,7 +1346,6 @@ pub fn operation_sources(op: &Operation) -> Vec<&Source> {
         | Operation::RepairEnds { template, .. }
         | Operation::Tail3Prime { template, .. } => vec![template],
         Operation::ReconstructRunProduct { template, .. }
-        | Operation::ReconstructDigestFragment { template, .. }
         | Operation::ReconstructMaterial { template, .. } => vec![template],
         Operation::ResectThreePrime { source, .. } => vec![source],
         Operation::Overlap { fragments, .. }
@@ -1459,7 +1391,6 @@ pub fn operation_sources_mut(op: &mut Operation) -> Vec<&mut Source> {
         | Operation::RepairEnds { template, .. }
         | Operation::Tail3Prime { template, .. } => vec![template],
         Operation::ReconstructRunProduct { template, .. }
-        | Operation::ReconstructDigestFragment { template, .. }
         | Operation::ReconstructMaterial { template, .. } => vec![template],
         Operation::ResectThreePrime { source, .. } => vec![source],
         Operation::Overlap { fragments, .. }
@@ -2880,52 +2811,6 @@ fn reconstruct(
                 });
                 next_physical = Some(extended);
                 product
-            }
-            Operation::ReconstructDigestFragment { template, origin } => {
-                if !matches!(template, Source::Input(_)) {
-                    return Err(Error::Unsupported(
-                        "Saved digest reconstruction requires an exact original input event".into(),
-                    ));
-                }
-                let fresh = crate::run_digest_history::replay(origin, resolve(template)?)?;
-                let modification_summary = modified_duplex::summary(fresh.tracked())?;
-                let duplex_summary = fresh.tracked().duplex.summary()?;
-                let bytes = evidence_bytes(origin, crate::run_digest_history::MAX_CAPSULE_BYTES)?
-                    .checked_add(evidence_bytes(&modification_summary, 32 * 1024 * 1024)?)
-                    .ok_or(Error::TooLarge)?;
-                step_evidence_bytes = step_evidence_bytes
-                    .checked_add(bytes)
-                    .filter(|n| *n <= 32 * 1024 * 1024)
-                    .ok_or(Error::TooLarge)?;
-                let (
-                    reference,
-                    tracked,
-                    origin_incomplete,
-                    origin_findings,
-                    origin_findings_total,
-                    origin_findings_truncated,
-                ) = fresh.into_parts();
-                let evidence = SavedDigestOriginEvidence {
-                    origin: origin.clone(),
-                    material_revision: modification_summary.state_revision.clone(),
-                    duplex: duplex_summary,
-                    modifications: modification_summary,
-                    origin_incomplete,
-                    origin_findings,
-                    origin_findings_total,
-                    origin_findings_truncated,
-                };
-                evidence.validate_documentary()?;
-                findings.push(format!("Step {} freshly reconstructs saved digest fragment event {} from its exact original source and cleavage recipe. Actual strand termini and positional modifications are retained; this is material retrieval, not a new target check or proof of experimental isolation.",index+1,origin.record.product.event_id));
-                if origin_incomplete {
-                    incomplete.push(format!("Step {} retains incomplete origin findings; saved fragment reuse does not upgrade them.",index+1));
-                }
-                physical_processing_reports.push(PhysicalProcessingStepReport {
-                    step_index: index,
-                    evidence: PhysicalProcessingEvidence::SavedDigestOrigin(evidence),
-                });
-                next_physical = Some(tracked);
-                reference
             }
             Operation::ReconstructMaterial { template, origin } => {
                 if !matches!(template, Source::Input(_)) {
@@ -4357,9 +4242,6 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
             Operation::ReconstructMaterial { template, origin } => {
                 body.push_str(&format!("<li>Retrieve saved material {} by replaying its exact source and native derivation for event <code>{}</code>. Preserve actual strands, termini, modifications and inherited uncertainty. This retrieves material; it does not rerun historical reactions, create a target assessment or prove isolation.</li>",source(template),e(&origin.product.event_id)));
             },
-            Operation::ReconstructDigestFragment { template, origin } => {
-                body.push_str(&format!("<li>Retrieve saved digest fragment {} by freshly replaying its original source event <code>{}</code> and selected cleavage {}. Retain actual strands, termini, modifications and unresolved origin findings. No independent fragment target or experimental isolation is inferred.</li>",source(template),e(&origin.record.request.source.event_id),origin.record.request.fragment_index+1));
-            },
             Operation::ReconstructRunProduct { template, origin } => {
                 body.push_str(&format!("<li>Use saved material {} by reconstructing run <code>{}</code>, product {} against its unchanged original target <code>{}</code>. Preserve actual nicks, termini and positional modifications. Complete origin evidence is retained; this is not a newly performed reaction, inferred repair or proof of isolation.</li>", source(template), e(&origin.selection.run_id), origin.selection.step_index+1, e(&origin.target_event.revision)));
             },
@@ -4557,13 +4439,6 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
                     let material = &evidence.material;
                     body.push_str(&format!("<li>Step {}: replayed derivation event <code>{}</code>; material <code>{}</code>. {} Origin incomplete: {}; showing {} of {} findings{}.<ul>",step.step_index+1,e(&evidence.origin.product.event_id),e(&material.material_revision),e(&material.duplex.describe()),material.origin_incomplete,material.origin_findings.len(),material.origin_findings_total,if material.origin_findings_truncated {" (truncated)"} else {""}));
                     for finding in &material.origin_findings {
-                        body.push_str(&format!("<li>{}</li>", e(finding)));
-                    }
-                    body.push_str("</ul></li>");
-                }
-                PhysicalProcessingEvidence::SavedDigestOrigin(evidence) => {
-                    body.push_str(&format!("<li>Step {}: freshly replayed saved digest event <code>{}</code>; material <code>{}</code>. {} Known modified/unknown/unmodified eligible calls: {}/{}/{}. Origin incomplete: {}; showing {} of {} findings{}.<ul>",step.step_index+1,e(&evidence.origin.record.product.event_id),e(&evidence.material_revision),e(&evidence.duplex.describe()),evidence.modifications.known_modified,evidence.modifications.unknown_eligible,evidence.modifications.known_unmodified,evidence.origin_incomplete,evidence.origin_findings.len(),evidence.origin_findings_total,if evidence.origin_findings_truncated{" (truncated)"}else{""}));
-                    for finding in &evidence.origin_findings {
                         body.push_str(&format!("<li>{}</li>", e(finding)));
                     }
                     body.push_str("</ul></li>");

@@ -4,33 +4,26 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-Current source uses worker94, candidate24, native plan22, science26 and189 MCP
+Current source uses worker95, candidate25, native plan23, science26 and189 MCP
 tools. One Ligate operation retains the intended path and bounded alternatives
 in native history, HTML and PDF, including extractable strand FASTA/JSON. DTQ/DTR5
 has one Bootstrap API supporting editor-only startup and exact pending-switch
 cancellation. DSQ/DSR3 handles remote review. Unsupported internal schemas are
 rejected; development compatibility branches have been removed.
 
-The first current-codec/sole-Ligate batch passed43 focused native cases, including
-ligation alternatives/history/PDF, exact saved-run review, SVG transport, plan
-editing and material-origin/derivation boundaries. One assertion was corrected to
-expect unsupported-plan refusal without relying on an obsolete error category.
-The consolidated per-row tailing recipe subsequently passes18 related native
-cases. Both MCP SDK integrations pass, including exact saved-run review/SVG and
-TA/GC keep/add actions, protocol artifacts and incompatible-profile disclosure.
-All332 native web-model cases now pass. The surrounding desktop/recovery,
-publication and protocol increment passes424 native cases across24 targets,
-including those332 cases; the direct library-history suite adds8 passing cases.
-These results preserve the scientific refusals and reject obsolete internal
-formats. The integrated web/worker WASM check passes. Native core callers compile, including all core tests with JSON-schema support.
-The nine corrected protocol fixtures pass. Cross-platform CI remains pending. The earlier `1a491f2` checkpoint
-passed416 focused native/model/SDK cases, integrated web/worker WASM and the Linux
-Tauri shell compiler check; these results do not validate the present refactor.
-The shell has offline local storage, explicit multi-remote synchronization,
-scoped credentials, saved-branch review, embedded stdio MCP and authenticated URL
-imports. Export controls await native receipts under the configured root.
-Installation and graphical/offline acceptance remain unfinished. Browser and
-application HTTP checks remain deferred by request.
+Published checkpoint `9172c2f` has successful web compilation and unsigned desktop
+builds on Windows/macOS/Linux. Its scientific CI stopped on an outdated protocol
+text assertion. Local follow-up also exposed a circular-substrate classification
+regression; both are corrected in current source, retaining the strict Invalid
+expectation and the underlying chemistry checks.
+
+Current cleanup removes the dedicated saved-digest implementation. Generic Run
+and Derived origins preserve exact events, actual chemistry, inherited incomplete
+evidence, oligo exclusion and publication dependencies through one ancestry ledger.
+417 focused native scientific/model/SDK and publication cases pass, including332
+web-model cases. Core/MCP/web/host/sharing test callers compile, formatting passes,
+and the integrated web/worker WASM check passes. Browser/application HTTP
+acceptance remains deferred.
 
 The format checkpoint `73fd9d8` passes scientific tests, WASM, desktop builds/MCP
 and unsigned package builds on Windows/macOS/Linux. Desktop builds/MCP and WASM
@@ -80,7 +73,7 @@ atomic primer collection installation, Derived-origin preparation and selected
 sharing closure. Ordinary PCR controls explicitly request a reusable native
 product; ambiguous/multiple-product and mismatch-PCR previews remain
 reference-only. Assembly still checks a separately declared independent target. [Editor](SEQUENCE_EDIT_TRANSITIONS.md) · [RNA](GENBANK_RNA.md) ·
-[FASTA](FASTA_ALPHABETS.md) · [Digest foundation](RUN_DIGEST_HISTORY.md).
+[FASTA](FASTA_ALPHABETS.md) · [Digest foundation](SAVED_MATERIAL_DIGESTS.md).
 
 The resumed format batch adds fresh reviewed SnapGene DNA/protein reference
 export, explicit-alphabet GCG/Wisconsin single-sequence exchange and opt-in
@@ -1657,11 +1650,12 @@ printable outcomes and embedded JSON/FASTA. Other copy numbers, vector-only
 self-ligation and partial assemblies remain outside the declared scope.
 
 Obsolete development codecs, compatibility conversions and version ladders have
-been removed. Current internal schemas are worker94, candidate24, native plan22,
+been removed. Current internal schemas are worker95, candidate25, native plan23,
 DTQ/DTR5 and DSQ/DSR3; scientific engine26 is unchanged. Unsupported internal
 versions are rejected. External biological formats remain intentional features.
-Current source integration and focused native/WASM validation are pending; earlier
-checkpoint results do not prove this refactor.
+Current source passes417 focused cases, the affected native caller checks and
+integrated web/worker WASM compilation. Cross-platform CI for this increment is
+pending.
 
 Desktop has one Bootstrap API with an optional genuine catalog context. Catalog
 failure preserves the working editor. Exact pending-switch cancellation appends a

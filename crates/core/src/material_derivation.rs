@@ -967,7 +967,6 @@ pub fn source_bindings(record: &Record) -> Result<Vec<EventBinding>, Error> {
     add(&record.request.source);
     // Collect callback results separately so only one closure mutably borrows the map.
     let mut runs = Vec::new();
-    let mut digests = Vec::new();
     let mut derived = Vec::new();
     crate::run_material_capsule::derived_ancestry_walk(
         record,
@@ -983,11 +982,6 @@ pub fn source_bindings(record: &Record) -> Result<Vec<EventBinding>, Error> {
             Ok(())
         },
         |r, _| {
-            digests.push(r.request.source.clone());
-            digests.push(r.product.clone());
-            Ok(())
-        },
-        |r, _| {
             derived.push(r.request.source.clone());
             if r.product != record.product {
                 derived.push(r.product.clone())
@@ -995,7 +989,7 @@ pub fn source_bindings(record: &Record) -> Result<Vec<EventBinding>, Error> {
             Ok(())
         },
     )?;
-    for e in runs.iter().chain(&digests).chain(&derived) {
+    for e in runs.iter().chain(&derived) {
         add(e)
     }
     Ok(values.into_values().collect())
@@ -1009,7 +1003,6 @@ pub fn required_run_ids(record: &Record) -> Result<Vec<String>, Error> {
             Ok(())
         },
         |_, _| Ok(()),
-        |_, _| Ok(()),
     )?;
     Ok(ids.into_iter().collect())
 }
@@ -1017,7 +1010,6 @@ pub fn required_derivation_products(record: &Record) -> Result<Vec<EventBinding>
     let mut ids = BTreeMap::new();
     crate::run_material_capsule::derived_ancestry_walk(
         record,
-        |_, _| Ok(()),
         |_, _| Ok(()),
         |r, _| {
             if r.product != record.product {

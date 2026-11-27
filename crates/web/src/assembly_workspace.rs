@@ -198,6 +198,7 @@ fn preparation_overview(methods: &MethodsState, index: usize) -> String {
 
 #[component]
 pub fn AssemblyWorkspace(
+    web_mcp: RwSignal<Option<crate::web_mcp_assembly::bridge::Endpoint>>,
     draft: RwSignal<Draft>,
     previous_draft: RwSignal<Option<Arc<Draft>>>,
     epoch: RwSignal<u64>,
@@ -242,6 +243,7 @@ pub fn AssemblyWorkspace(
         }
     });
     let frozen = RwSignal::new(None::<Arc<Frozen>>);
+    let review_pin = RwSignal::new(None::<crate::web_mcp_assembly::Pin>);
     let source_receipt =
         RwSignal::new(None::<(u64, Arc<crate::assembly_edit_model::SourceReview>)>);
     let source_review = Memo::new(move |_| {
@@ -419,6 +421,7 @@ pub fn AssemblyWorkspace(
         let declared = draft.get_untracked();
         let state = identity.get_untracked();
         let bound_epoch = epoch.get_untracked();
+        review_pin.set(crate::web_mcp_assembly::pin(&declared, bound_epoch).ok());
         let frame = if declared.slots.iter().any(|slot| {
             matches!(
                 &slot.selector,
@@ -719,7 +722,7 @@ pub fn AssemblyWorkspace(
             Ok(())
         },
     );
-    let cancel = move |_| {
+    let cancel = Callback::new(move |()| {
         generation.update(|g| *g = g.wrapping_add(1));
         if let Some(w) = worker.get_value() {
             w.close();
@@ -728,7 +731,7 @@ pub fn AssemblyWorkspace(
         busy.set(false);
         frozen.set(None);
         status.set("Intended-construct review cancelled.".into());
-    };
+    });
     let replace_draft = Callback::new(move |next: Draft| {
         generation.update(|g| *g = g.wrapping_add(1));
         if let Some(w) = worker.get_value() {
@@ -770,6 +773,101 @@ pub fn AssemblyWorkspace(
         },
     );
     let saved_busy = Memo::new(move |_| workspace_busy.get() || busy.get());
+    // Bind browser commands to this mounted workspace, using the same worker and
+    // cancel commands as the visible controls. No Frozen receipt is supplied by JS.
+    use crate::web_mcp_assembly::{
+        self as browser_assembly,
+        bridge::{Command, Endpoint},
+    };
+    static NEXT_BROWSER_OWNER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let browser_owner = NEXT_BROWSER_OWNER.fetch_add(1, Ordering::Relaxed);
+    let browser_alive = Arc::new(AtomicBool::new(true));
+    let status_command = Callback::new(
+        move |expected: browser_assembly::Pin| -> Result<serde_json::Value, String> {
+            draft.with_untracked(|draft| {
+                browser_assembly::require_pin(draft, epoch.get_untracked(), &expected)
+            })?;
+            let same_review = review_pin.with_untracked(|held| held.as_ref() == Some(&expected));
+            let target = if same_review {
+                frozen.with_untracked(|held|held.as_ref().filter(|f|f.epoch==epoch.get_untracked()&&f.identity==identity.get_untracked()).map(|f|serde_json::json!({
+            "name":f.intent.target().name,"length":f.intent.target().sequence.len(),"revision":f.target_revision,"intent_context_revision":context(&f.intent)
+        })))
+            } else {
+                None
+            };
+            let phase = if !same_review {
+                "not_reviewed"
+            } else if busy.get_untracked() {
+                "running"
+            } else if target.is_some() {
+                "intended_reference_ready"
+            } else {
+                "stopped"
+            };
+            Ok(
+                serde_json::json!({"phase":phase,"review":if same_review {Some(browser_assembly::ReviewToken{owner:browser_owner,generation:generation.get_untracked()})}else{None},
+            "message":if same_review {status.get_untracked()}else{"Review this exact draft to build its intended reference.".into()},
+            "target":target,"scope":"intended_reference_review","method_verification":"not_performed_by_this_action","primer_apply":"Use the existing reviewed proposal controls; no automatic application is provided."}),
+            )
+        },
+    );
+    let command_alive = browser_alive.clone();
+    let command = Callback::new(
+        move |command: Command| -> Result<serde_json::Value, String> {
+            if !command_alive.load(Ordering::Relaxed) {
+                return Err("The assembly workspace was closed.".into());
+            }
+            if workspace_busy.get_untracked() {
+                return Err("Wait for the workspace operation to finish.".into());
+            }
+            match command {
+                Command::Status(expected) => status_command.run(expected),
+                Command::Review(expected) => {
+                    draft.with_untracked(|draft| {
+                        browser_assembly::require_pin(draft, epoch.get_untracked(), &expected)
+                    })?;
+                    if busy.get_untracked() {
+                        return Err("An intended-reference review is already running.".into());
+                    }
+                    review_intent.run(());
+                    if !busy.get_untracked() {
+                        return Err(status.get_untracked());
+                    }
+                    status_command.run(expected)
+                }
+                Command::Cancel(expected, token) => {
+                    draft.with_untracked(|draft| {
+                        browser_assembly::require_pin(draft, epoch.get_untracked(), &expected)
+                    })?;
+                    if token.owner != browser_owner
+                        || token.generation != generation.get_untracked()
+                        || !busy.get_untracked()
+                        || review_pin.with_untracked(|held| held.as_ref() != Some(&expected))
+                    {
+                        return Err("This intended-reference review is no longer running; read its current context.".into());
+                    }
+                    cancel.run(());
+                    status_command.run(expected)
+                }
+            }
+        },
+    );
+    web_mcp.set(Some(Endpoint {
+        alive: browser_alive.clone(),
+        command,
+    }));
+    on_cleanup(move || {
+        browser_alive.store(false, Ordering::Relaxed);
+        let _ = web_mcp.try_update(|held| {
+            if held
+                .as_ref()
+                .is_some_and(|endpoint| Arc::ptr_eq(&endpoint.alive, &browser_alive))
+            {
+                *held = None;
+            }
+        });
+    });
+
     view! {<section class="assembly-workspace"><header class="assembly-workspace-header"><h2>"Design assembly"</h2><p class="helper">"Choose a fragment, then select its source in the sequence viewer above."</p><crate::assembly_draft_actions::AssemblyDraftActions draft previous=previous_draft epoch locked=Memo::new(move |_| workspace_busy.get()||busy.get()) on_replace=replace_draft/></header>
         <crate::assembly_saved_designs_view::SavedDesigns draft epoch busy=saved_busy snapshot
             apply_attachments=apply_saved_attachments replace_draft=load_saved/>
@@ -825,7 +923,7 @@ pub fn AssemblyWorkspace(
         <Show when=move||draft.with(|d|d.methods.mode!=Mode::Tailing)><details class="assembly-library-options"><summary>"Source alternatives / library"</summary><crate::assembly_alternatives_view::AssemblyAlternativesView draft epoch/></details></Show>
         <Show when=move||draft.with(|d|d.methods.mode==Mode::Ligation&&d.alternatives.is_none())><details class="assembly-fragment-options"><summary>"Use an annealed oligo insert"</summary><p class="helper">"Pin the top oligo for this slot using Use whole source, then open the bottom oligo in the viewer and capture it below. Both ordered sequences are 5′→3′. The top source region declares your intended reference contribution; add any intended extra junction bases separately, before reaction simulation."</p><button class="button secondary" on:click=move|_|pin_bottom.run(())>"Capture viewer source as bottom oligo"</button><p class="helper">{move||draft.with(|d|d.slots.get(d.active_slot).and_then(|slot|slot.anneal_bottom.as_ref()).map(|capture|format!("Pinned bottom: {} · {} bases",capture.source.name,capture.molecule.sequence.len())).unwrap_or_else(||"No bottom oligo captured for this slot.".into()))}</p></details></Show>
         <section class="assembly-set-fragment"><p>{move||format!("Active viewer source: {} · set {}",active_source.get().name,draft.with(|d|d.slots.get(d.active_slot).map(|s|s.label.as_str()).unwrap_or("selected slot").to_owned()))}</p><button class="button primary" on:click=move|_|pin.run(1)>"Set from sequence selection"</button><button class="button secondary" on:click=move|_|pin.run(0)>"Use whole source"</button><button class="button secondary" on:click=move|_|pin.run(2)>"Keep outside selection"</button><p class="helper">"Keep outside selection retains the complementary path on circular DNA, including an origin crossing. This sets intended source coordinates; it does not digest, amplify or prove a physical fragment."</p></section></div></details>
-        <button class="button primary" disabled=move||busy.get() on:click=move|_|review_intent.run(())>"Review intended construct"</button><Show when=move||busy.get()><button class="text-tool" on:click=cancel>"Cancel intended construct"</button></Show><p class="assembly-workspace-status" role="status">{move||status.get()}</p>
+        <button class="button primary" disabled=move||busy.get() on:click=move|_|review_intent.run(())>"Review intended construct"</button><Show when=move||busy.get()><button class="text-tool" on:click=move|_|cancel.run(())>"Cancel intended construct"</button></Show><p class="assembly-workspace-status" role="status">{move||status.get()}</p>
         <Show when=move||draft.with(|d|matches!(d.methods.mode,Mode::Tailing|Mode::Ligation)||!d.substitutions.is_empty()||!d.edits.is_empty())><crate::literal_intent_view::LiteralIntentEditor draft/></Show>
         <ActualStrandSource draft source_review/>
         <crate::assembly_substitution_view::SubstitutionEditor draft active_source selected_region on_navigate source_review/>

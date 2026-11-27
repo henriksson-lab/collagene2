@@ -1154,7 +1154,7 @@ pub struct PcrDigestInspectionQuery {
     pub pcr_options: Option<collagene_core::mutagenesis::PcrOptions>,
     /// Explicit documentary origin for a saved-run source; never inferred from metadata.
     #[serde(default)]
-    pub origin: Option<collagene_core::run_material::Capsule>,
+    pub origin: Option<collagene_core::run_material::MaterialOrigin>,
     /// Required exact retained native workspace when a saved-run origin is supplied.
     #[serde(default)]
     pub workspace: Option<WorkspaceRef>,
@@ -1451,10 +1451,13 @@ pub struct OverlapPrimerDesignQuery {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct OverlapExtensionPrimerDesignQuery {
-    /// Exact original stock snapshot. Historical reports never restore physical state.
+    /// Immutable original or exact saved native source snapshot; saved sources require their owning workspace.
     pub document: DocumentRef,
-    /// Construct-oriented original contribution, independently declared edits and bounded primer policy.
+    /// Construct-oriented contribution in the explicit stored-strand frame, independently declared edits and bounded primer policy.
     pub request: collagene_core::overlap_extension_primer_design::Request,
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[schemars(required)]
+    pub origin_workspace: Option<WorkspaceRef>,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -6422,6 +6425,15 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             ));
         }
         if let Some(pcr_options) = args.pcr_options {
+            let run_origin = match args.origin {
+                Some(collagene_core::run_material::MaterialOrigin::Run(origin)) => Some(origin),
+                Some(collagene_core::run_material::MaterialOrigin::Derived(_)) => {
+                    return Err(bad(
+                        "Saved Derived mismatch-PCR digest inspection is not supported by this route.",
+                    ));
+                }
+                None => None,
+            };
             let request = collagene_core::mismatch_pcr_digest_inspection::Request {
                 base: args.request,
                 pcr_options,
@@ -6429,12 +6441,12 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             let server = self.clone();
             return self.compute(move||{
                 let source={let store=server.store.lock().unwrap();let source=store.document(&args.document)?;
-                    collagene_core::mismatch_pcr_digest_inspection::source_preflight(source,args.origin.as_ref(),&request).map_err(bad)?;source.clone()};
-                if let Some(origin)=&args.origin {
+                    collagene_core::mismatch_pcr_digest_inspection::source_preflight(source,run_origin.as_ref(),&request).map_err(bad)?;source.clone()};
+                if let Some(origin)=&run_origin {
                     server.attest_run_source(args.workspace.as_ref().ok_or_else(||bad("saved mismatch-PCR source workspace unavailable"))?,origin,&source)?;
                 }
-                let expected=collagene_core::mismatch_pcr_digest_inspection::inspection_revision(&source,args.origin.as_ref(),&request).map_err(bad)?;
-                let preview=collagene_core::mismatch_pcr_digest_inspection::inspect(&source,args.origin.as_ref(),&request).map_err(bad)?;
+                let expected=collagene_core::mismatch_pcr_digest_inspection::inspection_revision(&source,run_origin.as_ref(),&request).map_err(bad)?;
+                let preview=collagene_core::mismatch_pcr_digest_inspection::inspect(&source,run_origin.as_ref(),&request).map_err(bad)?;
                 preview.validate_binding(&expected).map_err(bad)?;
                 let count=preview.inspection.as_ref().map_or(0,|r|r.fragments.len());
                 if args.fragment_start>count{return Err(bad("mismatch-PCR digest fragment offset exceeds retained evidence"));}
@@ -6454,33 +6466,36 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
         }
         let server = self.clone();
         self.compute(move||{
-            let source={let store=server.store.lock().unwrap();let source=store.document(&args.document)?;if let Some(origin)=&args.origin{collagene_core::pcr_digest_inspection::preflight_from_run(source,origin,&args.request).map_err(bad)?;}else{collagene_core::pcr_digest_inspection::source_preflight(source,&args.request).map_err(bad)?;}source.clone()};
-            let (ordinary,from_run)=if let Some(origin)=&args.origin {
-                let reference=args.workspace.as_ref().ok_or_else(||bad("saved-run source workspace is unavailable"))?;
-                server.attest_run_source(reference,origin,&source)?;
-                let expected=collagene_core::pcr_digest_inspection::inspection_revision_from_run(&source,origin,&args.request).map_err(bad)?;
-                let preview=collagene_core::pcr_digest_inspection::inspect_from_run(&source,origin,&args.request).map_err(bad)?;
+            let frame=args.workspace.as_ref().map(|reference|server.restore_workspace(reference)).transpose()?;
+            let source={let store=server.store.lock().unwrap();let source=store.document(&args.document)?;
+                if let Some(origin)=&args.origin{collagene_core::pcr_digest_inspection::preflight_from_material(source,origin,&args.request,frame.as_ref().ok_or_else(||bad("Saved PCR digest source workspace is unavailable"))?).map_err(bad)?;}
+                else{collagene_core::pcr_digest_inspection::source_preflight(source,&args.request).map_err(bad)?;}source.clone()};
+            let (ordinary,from_material)=if let Some(origin)=&args.origin {
+                let frame=frame.as_ref().ok_or_else(||bad("Saved PCR digest source workspace is unavailable"))?;
+                let expected=collagene_core::pcr_digest_inspection::inspection_revision_from_material(&source,origin,&args.request,frame).map_err(bad)?;
+                let preview=collagene_core::pcr_digest_inspection::inspect_from_material(&source,origin,&args.request,frame).map_err(bad)?;
                 preview.validate_binding(&expected).map_err(bad)?;(None,Some(preview))
             }else{
                 let expected=collagene_core::pcr_digest_inspection::inspection_revision(&source,&args.request).map_err(bad)?;
                 let preview=collagene_core::pcr_digest_inspection::inspect(&source,&args.request).map_err(bad)?;
                 preview.validate_binding(&expected).map_err(bad)?;(Some(preview),None)
             };
-            let preview=from_run.as_ref().map(|r|&r.preview).or(ordinary.as_ref()).ok_or_else(||bad("PCR digest inspection unavailable"))?;
-            let context=from_run.as_ref().map(|r|r.context_revision.as_str()).unwrap_or(&preview.context_revision);
-            let origin_revision=from_run.as_ref().map(|r|&r.origin_revision);
+            let preview=from_material.as_ref().map(|r|&r.preview).or(ordinary.as_ref()).ok_or_else(||bad("PCR digest inspection unavailable"))?;
+            let context=from_material.as_ref().map(|r|r.context_revision.as_str()).unwrap_or(&preview.context_revision);
+            let origin_revision=from_material.as_ref().map(|r|&r.origin_revision);
             let count=preview.inspection.as_ref().map_or(0,|i|i.fragments.len());
             if args.fragment_start>count{return Err(bad("PCR digest fragment offset exceeds retained evidence"));}
             let end=args.fragment_start.saturating_add(args.max_fragments).min(count);
             let result=json!({"document":args.document,"engine_version":preview.engine_version,"context_revision":context,"origin_revision":origin_revision,"source_revision":preview.source_revision,
+                "origin_incomplete":from_material.as_ref().map(|r|r.origin_incomplete),"origin_findings_total":from_material.as_ref().map(|r|r.origin_findings_total),"origin_findings_truncated":from_material.as_ref().map(|r|r.origin_findings_truncated),
                 "pcr_geometry_count":preview.pcr_geometries.len(),"pcr_geometries":preview.pcr_geometries.iter().take(100).collect::<Vec<_>>(),"pcr_geometries_truncated":preview.pcr_geometries.len()>100,
                 "amplicon_length":preview.amplicon.as_ref().map(|m|m.sequence.len()),"products_determined":preview.inspection.as_ref().is_some_and(|i|i.products_determined),
                 "scan_complete":preview.inspection.as_ref().map(|i|i.scan_complete),"limits":preview.inspection.as_ref().map(|i|&i.limits),
                 "fragment_count":count,"fragment_start":args.fragment_start,"next_fragment_start":end,"fragments_done":end==count,
                 "fragments":preview.inspection.as_ref().map(|i|&i.fragments[args.fragment_start..end]),
                 "findings":preview.findings.iter().take(100).collect::<Vec<_>>(),"findings_truncated":preview.findings.len()>100,
-                "authority":"Fresh original-source PCR and assumed-complete catalog digestion evidence only. Inspect actual outer PCR and cut-derived termini; no selected product, target acceptance, reaction yield or imported physical authority is created."});
-            let (text,filename)=if let Some(run)=&from_run{(bounded_json_limit(run,32*1024*1024)?,"run-pcr-digest-inspection.json")}else{(bounded_json_limit(preview,32*1024*1024)?,"pcr-digest-inspection.json")};
+                "authority":"Fresh explicitly bound original or saved-material PCR and assumed-complete catalog digestion evidence only. Inspect actual outer PCR and cut-derived termini; no selected product, target acceptance, reaction yield or imported physical authority is created."});
+            let (text,filename)=if let Some(material)=&from_material{(bounded_json_limit(material,32*1024*1024)?,"material-pcr-digest-inspection.json")}else{(bounded_json_limit(preview,32*1024*1024)?,"pcr-digest-inspection.json")};
             let artifact=server.text_artifact(text,"application/json",filename)?;
             let mut result=result;result["artifact_id"]=json!(artifact);output(result)
         }).await
@@ -7401,7 +7416,7 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
         }).await
     }
     #[tool(
-        description = "Propose six ordered oligos for a source-bound overlap-extension PCR preparation from one immutable original DNA document, an explicit contribution interval/orientation and independently declared literal edits. Uses native anchored primer heuristics on original unchanged source intervals, then freshly reconstructs two PCR branches, selected reciprocal extension and outer-primer PCR against the separately constructed edit intent. Returns an advisory preparation, bounded oligo/status summaries and full source/request/intent/reconstruction evidence. Prepared DNA stays in stored-source orientation; apply request.fragment.reverse at subsequent assembly. No intended product is accepted as a source, no stock is changed, and no candidate, target document or material status is installed. Physical-state metadata and historical reports cannot bootstrap an original PCR template. Reuse the returned preparation in the ordinary assembly recipe and verify the full independent target."
+        description = "Propose six ordered oligos for a source-bound overlap-extension PCR preparation from an immutable original or exact saved Run/Derived source, an explicit stored-strand interval/orientation and independently declared literal edits. Saved sources require an exact material binding and owning origin_workspace; actual strand frames are reconstructed natively. Uses anchored primer heuristics on unchanged native source domains, then freshly reconstructs two PCR branches, selected reciprocal extension and outer-primer PCR against the separately constructed edit intent. Returns an advisory preparation, bounded oligo/status summaries and full source/request/intent/reconstruction evidence. Prepared DNA stays in stored-source orientation; apply request.fragment.reverse at subsequent assembly. No intended product is accepted as a source, no stock is changed, and no candidate, target document or material status is installed. Physical-state metadata and historical reports cannot bootstrap an original PCR template. Reuse the returned preparation in the ordinary assembly recipe and verify the full independent target."
     )]
     async fn design_overlap_extension_primers(
         &self,
@@ -7409,15 +7424,16 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
         self.compute(move || {
+            let workspace = args.origin_workspace.as_ref().map(|reference| server.restore_workspace(reference)).transpose()?;
             let source = {
                 let store = server.store.lock().unwrap();
                 let source = store.document(&args.document)?;
-                collagene_core::overlap_extension_primer_design::preflight(source, &args.request).map_err(bad)?;
+                collagene_core::overlap_extension_primer_design::preflight(source, &args.request, workspace.as_ref()).map_err(bad)?;
                 source.clone()
             };
-            let report = collagene_core::overlap_extension_primer_design::design(&source, &args.request).map_err(bad)?;
-            let expected = collagene_core::overlap_extension_primer_design::design_revision(&source, &args.request).map_err(bad)?;
-            report.validate_binding(&expected).map_err(bad)?;
+            let report = collagene_core::overlap_extension_primer_design::design(&source, &args.request, workspace.as_ref()).map_err(bad)?;
+            let expected = collagene_core::overlap_extension_primer_design::design_revision(&source, &args.request, workspace.as_ref()).map_err(bad)?;
+            report.validate_sources(&source, &expected, workspace.as_ref()).map_err(bad)?;
             let mut ordered_oligos = Vec::with_capacity(6);
             for (stage, pair) in [("left_pcr", &report.preparation.left), ("right_pcr", &report.preparation.right), ("outer_pcr", &report.preparation.outer)] {
                 for (direction, primer) in [("forward", &pair.forward), ("reverse", &pair.reverse)] {

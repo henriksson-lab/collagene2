@@ -245,53 +245,60 @@ impl Preview {
     }
 }
 
-// Saved material context surrounds the unchanged ordinary PCR/digest preview.
-// Serialized previews remain documentary; inspect_from_run always replays.
-dto! {pub struct RunPreview {pub context_revision:String,pub origin_revision:String,pub preview:Preview}}
-fn run_context(origin_revision: &str, preview_revision: &str) -> Result<String, Error> {
+// Native material is attested against its owning archive, then replayed once.
+// The inner preview remains documentary and never supplies physical stock.
+dto! {pub struct MaterialPreview {pub context_revision:String,pub origin_revision:String,pub origin_incomplete:bool,pub origin_findings_total:usize,pub origin_findings_truncated:bool,pub preview:Preview}}
+fn material_context(origin_revision: &str, preview_revision: &str) -> Result<String, Error> {
     assembly_recipe::hash(&(
-        "saved-run-pcr-digest-inspection-1",
+        "saved-material-pcr-digest-inspection-1",
         ENGINE_VERSION,
         verification::ENGINE_VERSION,
         origin_revision,
         preview_revision,
     ))
 }
-pub fn preflight_from_run(
+pub fn preflight_from_material(
     source: &Molecule,
-    origin: &crate::run_material::Capsule,
+    origin: &crate::run_material::MaterialOrigin,
     request: &Request,
+    workspace: &crate::workspace::Workspace,
 ) -> Result<(), Error> {
-    origin.validate_documentary()?;
+    crate::run_material::material_origins_preflight([origin])?;
     preflight(source, request, false)?;
-    if source.revision() != origin.selection.event.revision {
+    origin.validate_for_workspace(workspace, origin.event())?;
+    if crate::run_material::resolve(workspace, origin.event())? != source {
+        return Err(bad("source snapshot differs from its exact retained event"));
+    }
+    if source.revision() != origin.event().revision {
         return Err(bad("saved source differs from the pinned origin event"));
     }
     Ok(())
 }
-pub fn inspection_revision_from_run(
+pub fn inspection_revision_from_material(
     source: &Molecule,
-    origin: &crate::run_material::Capsule,
+    origin: &crate::run_material::MaterialOrigin,
     request: &Request,
+    workspace: &crate::workspace::Workspace,
 ) -> Result<String, Error> {
-    preflight_from_run(source, origin, request)?;
-    run_context(
+    preflight_from_material(source, origin, request, workspace)?;
+    material_context(
         &assembly_recipe::hash(origin)?,
         &context(&source.revision(), request)?,
     )
 }
-pub fn inspect_from_run(
+pub fn inspect_from_material(
     source: &Molecule,
-    origin: &crate::run_material::Capsule,
+    origin: &crate::run_material::MaterialOrigin,
     request: &Request,
-) -> Result<RunPreview, Error> {
-    let context_revision = inspection_revision_from_run(source, origin, request)?;
-    let material = crate::run_material_capsule::replay(origin, source)?;
+    workspace: &crate::workspace::Workspace,
+) -> Result<MaterialPreview, Error> {
+    let context_revision = inspection_revision_from_material(source, origin, request, workspace)?;
+    let material = origin.replay(source)?;
     let documents = verification::simulate_pcr_documents_from_fresh(
         source,
         &request.forward,
         &request.reverse,
-        &material.tracked,
+        material.tracked(),
         request.template_strand,
     )?;
     let mut preview = finish(
@@ -300,25 +307,32 @@ pub fn inspect_from_run(
         context(&source.revision(), request)?,
         documents,
     )?;
-    preview.findings.push("Template material was freshly reconstructed from its complete original saved run against its unchanged independent target; historical assumptions remain applicable.".into());
-    if material.incomplete {
-        preview.findings.push("The original saved run remains incomplete; fresh template reconstruction does not establish experimental success or resolve its retained limitations.".into());
+    preview.findings.push("Template material was freshly reconstructed from its exact retained native origin; historical assumptions remain applicable.".into());
+    if material.incomplete() {
+        preview.findings.push("The native origin remains incomplete; fresh template reconstruction does not establish experimental success or resolve its retained limitations.".into());
     }
-    let report = RunPreview {
+    preview.findings.push(format!("Native origin findings: showing {} of {}; excerpt truncated: {}. These retained limitations do not establish reaction success.", material.findings().len(),material.findings_total(),material.findings_truncated()));
+    preview.findings.extend(material.findings().iter().cloned());
+    let report = MaterialPreview {
         context_revision,
         origin_revision: assembly_recipe::hash(origin)?,
+        origin_incomplete: material.incomplete(),
+        origin_findings_total: material.findings_total(),
+        origin_findings_truncated: material.findings_truncated(),
         preview,
     };
     report.validate_binding(&report.context_revision)?;
     Ok(report)
 }
-impl RunPreview {
+impl MaterialPreview {
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
         self.preview.validate()?;
-        if !hex(&self.origin_revision)
+        if self.origin_findings_total > 32 * 1024 * 1024
+            || (self.origin_findings_total > 128 && !self.origin_findings_truncated)
+            || !hex(&self.origin_revision)
             || self.context_revision != expected
             || self.context_revision
-                != run_context(&self.origin_revision, &self.preview.context_revision)?
+                != material_context(&self.origin_revision, &self.preview.context_revision)?
         {
             return Err(bad("stale saved-origin/source/primer/catalog context"));
         }

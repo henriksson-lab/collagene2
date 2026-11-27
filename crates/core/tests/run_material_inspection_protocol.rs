@@ -233,15 +233,21 @@ fn saved_run_actual_pcr_digest_uses_origin_bound_job159_not_plain_reference_insp
         template_strand: collagene_core::chemistry::Strand::Top,
     };
     assert!(pcr_digest_inspection::source_preflight(&molecule, &request).is_err());
-    let revision =
-        pcr_digest_inspection::inspection_revision_from_run(&molecule, &origin, &request).unwrap();
+    let revision = pcr_digest_inspection::inspection_revision_from_material(
+        &molecule,
+        &run_material::MaterialOrigin::Run(origin.clone()),
+        &request,
+        &commit.workspace,
+    )
+    .unwrap();
     let r = Request {
         id: 159,
         revision: revision.clone(),
-        job: AnalysisJob::InspectRunPcrDigest {
+        job: AnalysisJob::InspectMaterialPcrDigest {
             molecule,
-            origin,
+            origin: run_material::MaterialOrigin::Run(origin),
             request,
+            workspace: commit.workspace.clone(),
         },
     };
     let bytes = protocol::encode_request(&r).unwrap();
@@ -252,7 +258,7 @@ fn saved_run_actual_pcr_digest_uses_origin_bound_job159_not_plain_reference_insp
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&reply[42..]).unwrap();
     assert_eq!(tag, 149);
     let response = protocol::decode_response(&reply).unwrap();
-    let AnalysisResult::RunPcrDigestInspection(report) = &response.result else {
+    let AnalysisResult::MaterialPcrDigestInspection(report) = &response.result else {
         panic!("origin-bound PCR digest")
     };
     report.validate_binding(&revision).unwrap();

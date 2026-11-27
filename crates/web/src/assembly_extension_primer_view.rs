@@ -159,7 +159,8 @@ pub fn ExtensionPrimerProposalView(
                 return Err("Review the current independent edit intent first.".to_owned());
             }
             let baseline = draft.get_untracked();
-            let source = model::attest(&baseline, baseline.active_slot, &snapshot.run(())?)?;
+            let workspace = snapshot.run(())?;
+            let source = model::attest(&baseline, baseline.active_slot, &workspace)?;
             let options = read_options(&baseline)?;
             let (capture, molecule, request) = intent.with_value(|i| {
                 model::request(
@@ -168,11 +169,14 @@ pub fn ExtensionPrimerProposalView(
                     baseline.active_slot,
                     &source,
                     &options,
+                    Some(&workspace),
                 )
             })?;
-            Ok::<_, String>((baseline, source, options, capture, molecule, request))
+            Ok::<_, String>((
+                baseline, source, options, capture, molecule, request, workspace,
+            ))
         })();
-        let (baseline, source, options, capture, molecule, request) = match captured {
+        let (baseline, source, options, capture, molecule, request, workspace) = match captured {
             Ok(v) => v,
             Err(error) => {
                 status.set(error);
@@ -196,7 +200,7 @@ pub fn ExtensionPrimerProposalView(
         pending.set(true);
         proposal.set(None);
         status.set(
-            "Proposing native original-source oligos and reconstructing the two PCR branches…"
+            "Proposing native exact-source strand oligos and reconstructing the two PCR branches…"
                 .into(),
         );
         let alive = alive.clone();
@@ -209,6 +213,7 @@ pub fn ExtensionPrimerProposalView(
                     job: AnalysisJob::DesignOverlapExtensionPrimers {
                         source: molecule,
                         request,
+                        workspace: Some(workspace),
                     },
                 })
                 .await;
@@ -228,7 +233,8 @@ pub fn ExtensionPrimerProposalView(
                 if now != baseline {
                     return Err("The assembly draft changed while proposing primers.".into());
                 }
-                let event = model::attest(&now, now.active_slot, &snapshot.run(())?)?;
+                let workspace = snapshot.run(())?;
+                let event = model::attest(&now, now.active_slot, &workspace)?;
                 if event != source {
                     return Err("The exact source event changed while proposing primers.".into());
                 }
@@ -242,7 +248,15 @@ pub fn ExtensionPrimerProposalView(
                     _ => return Err("Unexpected overlap-extension primer response.".into()),
                 };
                 let result = intent.with_value(|i| {
-                    model::from_design(&now, i.as_ref(), now.active_slot, &event, &options, report)
+                    model::from_design(
+                        &now,
+                        i.as_ref(),
+                        now.active_slot,
+                        &event,
+                        &options,
+                        report,
+                        Some(&workspace),
+                    )
                 })?;
                 if result.capture != capture {
                     return Err("The original source/edit/options declaration changed.".into());
@@ -271,9 +285,12 @@ pub fn ExtensionPrimerProposalView(
             return Err("The independent edit intent is stale.".into());
         }
         let before = draft.get_untracked();
-        let source = model::attest(&before, before.active_slot, &snapshot.run(())?)?;
+        let workspace = snapshot.run(())?;
+        let source = model::attest(&before, before.active_slot, &workspace)?;
         let options = read_options(&before)?;
-        let next = intent.with_value(|i| saved.apply(&before, i.as_ref(), &source, &options))?;
+        let next = intent.with_value(|i| {
+            saved.apply(&before, i.as_ref(), &source, &options, Some(&workspace))
+        })?;
         on_use.run((before, next))?;
         proposal.set(None);
         Ok::<_, String>(())

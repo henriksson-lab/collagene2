@@ -10,7 +10,11 @@ use collagene_core::{
     verification::{self, DesignPlan, Operation, OrientedSource, PlanInput, Source},
     workspace::Workspace,
 };
-fn saved(originals: Vec<Molecule>, target: Molecule, steps: Vec<Operation>) -> (Molecule, Capsule) {
+fn saved(
+    originals: Vec<Molecule>,
+    target: Molecule,
+    steps: Vec<Operation>,
+) -> (Molecule, Capsule, Workspace) {
     let inputs = originals
         .iter()
         .enumerate()
@@ -71,7 +75,7 @@ fn saved(originals: Vec<Molecule>, target: Molecule, steps: Vec<Operation>) -> (
         },
     )
     .unwrap();
-    (source, capsule)
+    (source, capsule, commit.workspace)
 }
 fn pcr(template: Source, forward: &str, reverse: &str) -> Operation {
     Operation::Pcr {
@@ -81,7 +85,7 @@ fn pcr(template: Source, forward: &str, reverse: &str) -> Operation {
         template_strand: collagene_core::chemistry::Strand::Top,
     }
 }
-fn fixture() -> (Molecule, Capsule, p::Request) {
+fn fixture() -> (Molecule, Capsule, p::Request, Workspace) {
     let source = Molecule::dna("Original", "ACGACCCCGGGGTAAC", Topology::Linear).unwrap();
     let target = Molecule::dna(
         "Independent original target",
@@ -89,7 +93,7 @@ fn fixture() -> (Molecule, Capsule, p::Request) {
         Topology::Linear,
     )
     .unwrap();
-    let (source, origin) = saved(
+    let (source, origin, workspace) = saved(
         vec![source],
         target,
         vec![pcr(Source::Input("src0".into()), "ACGACCCC", "GTTACCCC")],
@@ -104,21 +108,36 @@ fn fixture() -> (Molecule, Capsule, p::Request) {
         .id
         .clone();
     let request = p::Request {
+        template_strand: collagene_core::chemistry::Strand::Top,
         source_role: "saved-template".into(),
         forward: Primer::new("Downstream F", "ACGACCCC", "CCGAATTC").unwrap(),
         reverse: Primer::new("Downstream R", "GTTACCCC", "GGGAATTC").unwrap(),
         selection: catalog_digest::select(&catalog, &[enzyme]).unwrap(),
         options: Default::default(),
     };
-    (source, origin, request)
+    (source, origin, request, workspace)
 }
 #[test]
 fn fresh_saved_pcr_tail_digest_retains_outer_hydroxyl_and_internal_phosphate() {
-    let (source, origin, request) = fixture();
+    let (source, origin, request, workspace) = fixture();
     let before = serde_json::to_vec(&source).unwrap();
-    let result = p::inspect_from_run(&source, &origin, &request).unwrap();
+    let result = p::inspect_from_material(
+        &source,
+        &run_material::MaterialOrigin::Run(origin.clone()),
+        &request,
+        &workspace,
+    )
+    .unwrap();
     result
-        .validate_binding(&p::inspection_revision_from_run(&source, &origin, &request).unwrap())
+        .validate_binding(
+            &p::inspection_revision_from_material(
+                &source,
+                &run_material::MaterialOrigin::Run(origin.clone()),
+                &request,
+                &workspace,
+            )
+            .unwrap(),
+        )
         .unwrap();
     assert_eq!(result.origin_revision.len(), 64);
     assert_eq!(
@@ -147,32 +166,75 @@ fn fresh_saved_pcr_tail_digest_retains_outer_hydroxyl_and_internal_phosphate() {
 }
 #[test]
 fn competing_pcr_geometries_withhold_saved_material_digest_choices() {
-    let (source, origin, mut request) = fixture();
+    let (source, origin, mut request, workspace) = fixture();
     request.forward = Primer::new("Ambiguous F", "C", "").unwrap();
     request.reverse = Primer::new("Ambiguous R", "C", "").unwrap();
-    let result = p::inspect_from_run(&source, &origin, &request).unwrap();
+    let result = p::inspect_from_material(
+        &source,
+        &run_material::MaterialOrigin::Run(origin.clone()),
+        &request,
+        &workspace,
+    )
+    .unwrap();
     assert!(result.preview.pcr_geometries.len() > 1);
     assert!(result.preview.amplicon.is_none() && result.preview.inspection.is_none());
 }
 #[test]
 fn changed_origin_request_and_source_cannot_reuse_saved_inspection_context() {
-    let (source, origin, request) = fixture();
-    let result = p::inspect_from_run(&source, &origin, &request).unwrap();
+    let (source, origin, request, workspace) = fixture();
+    let result = p::inspect_from_material(
+        &source,
+        &run_material::MaterialOrigin::Run(origin.clone()),
+        &request,
+        &workspace,
+    )
+    .unwrap();
     let mut other = origin.clone();
     other.products[0].revision = "0".repeat(64);
-    let different = p::inspection_revision_from_run(&source, &other, &request).unwrap();
-    assert!(result.validate_binding(&different).is_err());
-    assert!(p::inspect_from_run(&source, &other, &request).is_err());
+    assert!(
+        p::inspection_revision_from_material(
+            &source,
+            &run_material::MaterialOrigin::Run(other.clone()),
+            &request,
+            &workspace
+        )
+        .is_err()
+    );
+    assert!(
+        p::inspect_from_material(
+            &source,
+            &run_material::MaterialOrigin::Run(other.clone()),
+            &request,
+            &workspace
+        )
+        .is_err()
+    );
     let mut changed = request.clone();
     changed.forward.tail = "AAGAATTC".into();
     assert!(
         result
-            .validate_binding(&p::inspection_revision_from_run(&source, &origin, &changed).unwrap())
+            .validate_binding(
+                &p::inspection_revision_from_material(
+                    &source,
+                    &run_material::MaterialOrigin::Run(origin.clone()),
+                    &changed,
+                    &workspace
+                )
+                .unwrap()
+            )
             .is_err()
     );
     let mut changed_source = source.clone();
     changed_source.name.push_str(" changed");
-    assert!(p::preflight_from_run(&changed_source, &origin, &request).is_err());
+    assert!(
+        p::preflight_from_material(
+            &changed_source,
+            &run_material::MaterialOrigin::Run(origin.clone()),
+            &request,
+            &workspace
+        )
+        .is_err()
+    );
 }
 #[test]
 fn actual_retained_nicks_cannot_become_a_saved_pcr_template() {
@@ -188,7 +250,7 @@ fn actual_retained_nicks_cannot_become_a_saved_pcr_template() {
         Topology::Circular,
     )
     .unwrap();
-    let (source, origin) = saved(
+    let (source, origin, workspace) = saved(
         originals,
         target,
         vec![
@@ -215,10 +277,16 @@ fn actual_retained_nicks_cannot_become_a_saved_pcr_template() {
             },
         ],
     );
-    let (_, _, mut request) = fixture();
+    let (_, _, mut request, _) = fixture();
     request.forward = Primer::new("F", "TTGCAATC", "").unwrap();
     request.reverse = Primer::new("R", "GTACCGCT", "").unwrap();
-    let err = p::inspect_from_run(&source, &origin, &request).unwrap_err();
+    let err = p::inspect_from_material(
+        &source,
+        &run_material::MaterialOrigin::Run(origin.clone()),
+        &request,
+        &workspace,
+    )
+    .unwrap_err();
     assert!(matches!(&err, collagene_core::Error::Unsupported(_)));
     assert!(err.to_string().contains("nick"), "{err}");
     // The original native state, independently replayed, still carries both nicks.

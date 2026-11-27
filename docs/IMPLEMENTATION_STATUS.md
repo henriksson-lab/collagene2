@@ -4,21 +4,31 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-Current source uses worker107, candidate29, native plan27, science30, draft18 and
+Current source uses worker108, candidate29, native plan27, science30, draft18 and
 192 MCP tools. There is one current internal representation; unsupported internal
 schemas are rejected without compatibility readers. The PCR/library integration
 is published as `f66deff`; its178 focused native cases pass, with a local integrated
 WASM check before its final shared-model guard. Its exact-source web CI passed; native CI stopped at missing explicit PCR strand
 fields in peripheral fixture constructors, corrected in the current batch.
 
-The next integrated working batch carries finishing policies through native
+The published448de55 batch carries finishing policies through native
 library and whole-primer proposals, adds actual staggered-end3′ annealing,
 records planned E. coli rescue as documentary intent, and adds the first optional
 WebMCP read/navigation tools. Its coordinated native and web/worker WASM checks pass, with167 distinct focused
 native cases and22 protocol rechecks. A final explanatory UI text edit follows
-that compiler check; it changes no Rust behavior. Publication and exact-source CI
-remain pending. Scientific completion remains
+that compiler check; it changes no Rust behavior. Its web CI passed; native OS CI stopped at missing or misplaced explicit PCR template-strand fields in three digest fixtures, corrected in current source. Scientific completion remains
 separate from documentary rescue. [WebMCP scope](WEBMCP.md).
+
+The current integrated batch completes generic saved Run/Derived exact-PCR
+digest inspection and source-bound standalone OE planning. Both retain the exact
+owning workspace and actual selected strand. It also adds sequential original-
+coordinate inverse-PCR domestication and WebMCP open-draft/review/cancel tools.
+The latter invoke the normal intended-reference review action; they do not apply
+primers or verify a reaction method. Native and integrated web/worker WASM checks pass. There are118 distinct passing
+focused native cases, including saved-source SDK checks, sequential-round
+semantics, web models and the corrected CI fixture profiles. Publication and
+exact-source cross-platform CI remain pending. The full product goal is active.
+[Sequential preparation](DOMESTICATION_ROUNDS.md) · [Saved-source OE](SAVED_OVERLAP_EXTENSION_PRIMERS.md) · [WebMCP scope](WEBMCP.md).
 
 The prior443f51b native CI on Windows, macOS and Linux found the same five stale
 binary selector/size-lane fixture expectations, corrected in f66deff without

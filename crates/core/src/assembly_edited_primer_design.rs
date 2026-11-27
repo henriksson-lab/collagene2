@@ -512,11 +512,18 @@ fn geometry(
     }
     Ok((rows, tails))
 }
-fn row_request(r: &Request, row: &RowGeometry, tail: &TailDeclaration) -> extension::Request {
+fn row_request(
+    r: &Request,
+    row: &RowGeometry,
+    tail: &TailDeclaration,
+    template_strand: crate::chemistry::Strand,
+) -> extension::Request {
     let mut options = r.options.clone();
     options.outer_forward_tail = tail.forward_tail.clone();
     options.outer_reverse_tail = tail.reverse_tail.clone();
     extension::Request {
+        template_strand,
+        material_binding: None,
         fragment: row.fragment.clone(),
         edits: row.edits.clone(),
         options,
@@ -662,7 +669,7 @@ fn proposal_preflight(inputs: &[(&str, &Molecule)], r: &Request) -> Result<(), E
         let charge = if row.edits.is_empty() {
             exact_work(source, &exact_options(r, row, tail)?)?
         } else {
-            extension::source_work_preflight(source, &row_request(r, row, tail))?
+            extension::source_work_preflight(source, &row_request(r, row, tail, source.strand))?
         };
         work = work
             .checked_add(charge.0)
@@ -886,7 +893,7 @@ pub fn design(
         } else {
             let proposal = extension::compile_source_with_budget(
                 source,
-                &row_request(r, row, tail),
+                &row_request(r, row, tail, source.strand),
                 &mut budget,
             )?;
             (

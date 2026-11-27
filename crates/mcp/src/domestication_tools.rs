@@ -96,7 +96,7 @@ impl CollageneServer {
             #[derive(Serialize)]
             struct Evidence<'a>{source:&'a DocumentRef,prepared:&'a preparation::Prepared}
             let text=bounded_json_limit(&Evidence{source:&args.source,prepared:&prepared},32*1024*1024)?;
-            let method=match &prepared.method{preparation::MethodEvidence::InversePcr{..}=>"InversePcr",preparation::MethodEvidence::OverlapExtension{..}=>"OverlapExtension"};
+            let method=match &prepared.method{preparation::MethodEvidence::InversePcr{..}=>"InversePcr",preparation::MethodEvidence::OverlapExtension{..}=>"OverlapExtension",preparation::MethodEvidence::InversePcrRounds{..}=>"InversePcrRounds"};
             let artifact_id=blake3::hash(text.as_bytes()).to_hex().to_string();
             let target_id=target.revision();
             let target_bytes=bounded_json(&target)?.len();

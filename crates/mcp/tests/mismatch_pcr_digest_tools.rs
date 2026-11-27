@@ -194,7 +194,10 @@ async fn explicit_mismatch_digest_policy_actual_fragments_incomplete_search_and_
     let mut from_run = args;
     from_run["document"] =
         json!({"id":selection.event.revision,"revision":selection.event.revision});
-    from_run["origin"] = serde_json::to_value(&origin).unwrap();
+    from_run["origin"] = serde_json::to_value(collagene_core::run_material::MaterialOrigin::Run(
+        origin.clone(),
+    ))
+    .unwrap();
     reject(&c, "inspect_pcr_digest", from_run.clone()).await;
     from_run["workspace"] = wr;
     let inspected = call(&c, "inspect_pcr_digest", from_run.clone()).await;
@@ -207,7 +210,7 @@ async fn explicit_mismatch_digest_policy_actual_fragments_incomplete_search_and_
         "CCGAATTCACTACCCCGGGGTAACGAATTCCC"
     );
     let mut forged = from_run;
-    forged["origin"]["selection"]["event"]["document_id"] = json!("forged-owner");
+    forged["origin"]["Run"]["selection"]["event"]["document_id"] = json!("forged-owner");
     reject(&c, "inspect_pcr_digest", forged).await;
     assert_eq!(call(&c, "list_documents", json!({})).await["total"], before);
     assert_eq!(

@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 107;
+pub const WORKER_SCHEMA_VERSION: u16 = 108;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 29;
 
 // Current selectors whose accepted payloads can contain complete workspace archives.
@@ -901,10 +901,11 @@ pub enum AnalysisJob {
         event: crate::run_lineage::EventBinding,
         selection: Option<crate::run_material::Selection>,
     },
-    InspectRunPcrDigest {
+    InspectMaterialPcrDigest {
         molecule: Molecule,
-        origin: crate::run_material::Capsule,
+        origin: crate::run_material::MaterialOrigin,
         request: crate::pcr_digest_inspection::Request,
+        workspace: crate::workspace::Workspace,
     },
     InspectRunCatalogRestriction {
         source_role: String,
@@ -933,6 +934,8 @@ pub enum AnalysisJob {
     DesignOverlapExtensionPrimers {
         source: Molecule,
         request: crate::overlap_extension_primer_design::Request,
+        #[serde(deserialize_with = "crate::assembly_recipe::required_option")]
+        workspace: Option<crate::workspace::Workspace>,
     },
     InspectOverlapExtensionDigest {
         source: Molecule,
@@ -1228,7 +1231,7 @@ pub enum AnalysisResult {
     TailingRecipePreview(crate::tailing_recipe::Preview),
     PcrDigestInspection(crate::pcr_digest_inspection::Preview),
     RunMaterialInspection(crate::run_material::Inspection),
-    RunPcrDigestInspection(crate::pcr_digest_inspection::RunPreview),
+    MaterialPcrDigestInspection(crate::pcr_digest_inspection::MaterialPreview),
     RunCatalogRestrictionInspection(crate::run_catalog_digest::Inspection),
     SubstitutedAssemblyIntent(crate::assembly_substitution_intent::Report),
     MismatchPcrDigestInspection(crate::mismatch_pcr_digest_inspection::Preview),
@@ -1484,8 +1487,12 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
                 workspace.as_ref(),
             )?;
         }
-        AnalysisJob::DesignOverlapExtensionPrimers { source, request } => {
-            crate::overlap_extension_primer_design::preflight(source, request)?;
+        AnalysisJob::DesignOverlapExtensionPrimers {
+            source,
+            request,
+            workspace,
+        } => {
+            crate::overlap_extension_primer_design::preflight(source, request, workspace.as_ref())?;
         }
         AnalysisJob::InspectOverlapExtensionDigest {
             source,
@@ -1592,12 +1599,15 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
                 options,
             )?;
         }
-        AnalysisJob::InspectRunPcrDigest {
+        AnalysisJob::InspectMaterialPcrDigest {
             molecule,
             origin,
             request,
+            workspace,
         } => {
-            crate::pcr_digest_inspection::preflight_from_run(molecule, origin, request)?;
+            crate::pcr_digest_inspection::preflight_from_material(
+                molecule, origin, request, workspace,
+            )?;
         }
         AnalysisJob::InspectRunMaterial {
             workspace,
@@ -1767,6 +1777,8 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::InspectRunMaterial { .. }
             | AnalysisJob::PreviewAnnealingRecipe { .. }
             | AnalysisJob::DesignEditedOverlapPrimers { .. }
+            | AnalysisJob::DesignOverlapExtensionPrimers { .. }
+            | AnalysisJob::InspectMaterialPcrDigest { .. }
             | AnalysisJob::InspectTopoRun { .. }
             | AnalysisJob::InspectMaterialOrigin { .. }
             | AnalysisJob::MaterialPcrDocuments { .. }
@@ -2098,7 +2110,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         AnalysisResult::RunCatalogRestrictionInspection(report) => {
             report.validate_binding(&response.revision)?;
         }
-        AnalysisResult::RunPcrDigestInspection(report) => {
+        AnalysisResult::MaterialPcrDigestInspection(report) => {
             report.validate_binding(&response.revision)?;
         }
         AnalysisResult::RunMaterialInspection(report) => {
@@ -2966,9 +2978,16 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             }
             None
         }
-        AnalysisJob::DesignOverlapExtensionPrimers { source, request } => {
-            if crate::overlap_extension_primer_design::design_revision(source, request)?
-                != r.revision
+        AnalysisJob::DesignOverlapExtensionPrimers {
+            source,
+            request,
+            workspace,
+        } => {
+            if crate::overlap_extension_primer_design::design_revision(
+                source,
+                request,
+                workspace.as_ref(),
+            )? != r.revision
             {
                 return Err(Error::Format(
                     "Overlap-extension primer source, independent edits or options changed".into(),
@@ -3592,13 +3611,14 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             }
             None
         }
-        AnalysisJob::InspectRunPcrDigest {
+        AnalysisJob::InspectMaterialPcrDigest {
             molecule,
             origin,
             request,
+            workspace,
         } => {
-            if crate::pcr_digest_inspection::inspection_revision_from_run(
-                molecule, origin, request,
+            if crate::pcr_digest_inspection::inspection_revision_from_material(
+                molecule, origin, request, workspace,
             )? != r.revision
             {
                 return Err(Error::Format(
@@ -4413,10 +4433,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             crate::overlap_extension_digest_inspection::inspect(&source, origin.as_ref(), &request)
                 .map(AnalysisResult::OverlapExtensionDigestInspection)
         }
-        AnalysisJob::DesignOverlapExtensionPrimers { source, request } => {
-            crate::overlap_extension_primer_design::design(&source, &request)
-                .map(AnalysisResult::OverlapExtensionPrimersDesigned)
-        }
+        AnalysisJob::DesignOverlapExtensionPrimers {
+            source,
+            request,
+            workspace,
+        } => crate::overlap_extension_primer_design::design(&source, &request, workspace.as_ref())
+            .map(AnalysisResult::OverlapExtensionPrimersDesigned),
         AnalysisJob::BuildContributionEditIntent {
             inputs,
             request,
@@ -4636,12 +4658,15 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             )
             .map(AnalysisResult::RunCatalogRestrictionInspection)
         }
-        AnalysisJob::InspectRunPcrDigest {
+        AnalysisJob::InspectMaterialPcrDigest {
             molecule,
             origin,
             request,
-        } => crate::pcr_digest_inspection::inspect_from_run(&molecule, &origin, &request)
-            .map(AnalysisResult::RunPcrDigestInspection),
+            workspace,
+        } => crate::pcr_digest_inspection::inspect_from_material(
+            &molecule, &origin, &request, &workspace,
+        )
+        .map(AnalysisResult::MaterialPcrDigestInspection),
         AnalysisJob::InspectPcrDigest { molecule, request } => {
             crate::pcr_digest_inspection::inspect(&molecule, &request)
                 .map(AnalysisResult::PcrDigestInspection)

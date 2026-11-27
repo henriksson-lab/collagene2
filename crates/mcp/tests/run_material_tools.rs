@@ -1,4 +1,6 @@
 //! Explicit exact-workspace origin discovery and documentary capsule preparation.
+#[path = "../../core/tests/common/material_library.rs"]
+mod material_library;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
     Molecule, Topology,
@@ -189,7 +191,10 @@ async fn exact_native_origin_discovery_preparation_and_immutable_context_refusal
     let request = json!({"template_strand":"Top","source_role":"savedPCR","forward":Primer::new("F","ACGACCCC","ATGCGAATTC").unwrap(),"reverse":Primer::new("R","GTTACCCC","ATGCGAATTC").unwrap(),"selection":collagene_core::catalog_digest::select(&catalog,&[id]).unwrap(),"options":collagene_core::restriction_inspection::InspectionOptions::default()});
     let mut inspect_args = json!({"document":{"id":selected.event.revision,"revision":selected.event.revision},"request":request});
     reject(&client, "inspect_pcr_digest", inspect_args.clone()).await;
-    inspect_args["origin"] = serde_json::to_value(&capsule).unwrap();
+    inspect_args["origin"] = serde_json::to_value(
+        collagene_core::run_material::MaterialOrigin::Run(capsule.clone()),
+    )
+    .unwrap();
     reject(&client, "inspect_pcr_digest", inspect_args.clone()).await;
     inspect_args["workspace"] = wr.clone();
     let result = call(&client, "inspect_pcr_digest", inspect_args.clone()).await;
@@ -197,7 +202,7 @@ async fn exact_native_origin_discovery_preparation_and_immutable_context_refusal
     assert_eq!(result["amplicon_length"], 36);
     assert_eq!(result["products_determined"], true);
     assert_eq!(result["origin_revision"].as_str().unwrap().len(), 64);
-    let wrapper: collagene_core::pcr_digest_inspection::RunPreview =
+    let wrapper: collagene_core::pcr_digest_inspection::MaterialPreview =
         serde_json::from_value(evidence(&client, &result["artifact_id"]).await).unwrap();
     wrapper
         .validate_binding(result["context_revision"].as_str().unwrap())
@@ -239,7 +244,7 @@ async fn exact_native_origin_discovery_preparation_and_immutable_context_refusal
         collagene_core::chemistry::FivePrime::Phosphate
     );
     let mut changed = inspect_args;
-    changed["origin"]["selection"]["event"]["document_id"] = json!("forged-owner");
+    changed["origin"]["Run"]["selection"]["event"]["document_id"] = json!("forged-owner");
     reject(&client, "inspect_pcr_digest", changed).await;
     let mut stale = args;
     stale["workspace"]["revision"] = json!("0".repeat(64));
@@ -266,4 +271,89 @@ async fn exact_native_origin_discovery_preparation_and_immutable_context_refusal
     );
     drop(client);
     server.abort();
+}
+
+#[tokio::test]
+async fn derived_bottom_pcr_digest_keeps_native_extra_calls_through_sdk() {
+    use collagene_core::{
+        catalog_digest, chemistry::Strand, material_derivation as derived,
+        run_material::MaterialOrigin,
+    };
+    let (workspace, event, origin) =
+        material_library::native_source("AGTCCGATGCTAC", "GTAGGTAGCATCGGACT", 13);
+    let catalog = catalog_digest::builtin_catalog().unwrap();
+    let selection = |name: &str| {
+        catalog_digest::select(
+            &catalog,
+            &[catalog
+                .edition()
+                .enzymes
+                .iter()
+                .find(|e| e.name == name)
+                .unwrap()
+                .id
+                .clone()],
+        )
+        .unwrap()
+    };
+    let prepared = derived::prepare_install(
+        &workspace,
+        &derived::Request {
+            source: event,
+            origin: derived::SourceOrigin::Saved(origin),
+            derivation: derived::Derivation::CatalogDigest {
+                selection: selection("SmaI"),
+                options: Default::default(),
+                fragment_index: 0,
+            },
+            name: "Saved derived unequal template".into(),
+            save_primers: false,
+        },
+    )
+    .unwrap();
+    let workspace =
+        workspace::load_workspace(&workspace::save_workspace(&prepared.workspace).unwrap())
+            .unwrap();
+    let origin =
+        MaterialOrigin::Derived(derived::capsule(&workspace, &prepared.receipt.product).unwrap());
+    let (client, server) = setup().await;
+    let uploaded = call(
+        &client,
+        "import_workspace_archive",
+        json!({"data_base64":STANDARD.encode(workspace::save_workspace(&workspace).unwrap())}),
+    )
+    .await;
+    let reference =
+        json!({"id":uploaded["workspace"]["id"],"revision":uploaded["workspace"]["revision"]});
+    let request = collagene_core::pcr_digest_inspection::Request {
+        source_role: "native-bottom".into(),
+        template_strand: Strand::Bottom,
+        forward: Primer::new("Bottom F", "GTAGGTAG", "CCGAATTC").unwrap(),
+        reverse: Primer::new("Bottom R", "AGTCCGAT", "GGGAATTC").unwrap(),
+        selection: selection("EcoRI"),
+        options: Default::default(),
+    };
+    let args = json!({"document":{"id":origin.event().revision,"revision":origin.event().revision},"origin":origin,"workspace":reference,"request":request});
+    let result = call(&client, "inspect_pcr_digest", args.clone()).await;
+    let report: collagene_core::pcr_digest_inspection::MaterialPreview =
+        serde_json::from_value(evidence(&client, &result["artifact_id"]).await).unwrap();
+    assert_eq!(
+        report.preview.amplicon.as_ref().unwrap().sequence.as_str(),
+        "CCGAATTCGTAGGTAGCATCGGACTGAATTCCC"
+    );
+    assert_eq!(
+        report.preview.pcr_geometries[0].template_strand,
+        Strand::Bottom
+    );
+    assert_eq!(result["origin_incomplete"], report.origin_incomplete);
+    assert_eq!(
+        result["origin_findings_total"],
+        report.origin_findings_total
+    );
+    assert_eq!(result["fragment_count"], 3);
+    let mut stale = args;
+    stale["origin"]["Derived"]["product"]["event_id"] = json!("foreign-event");
+    reject(&client, "inspect_pcr_digest", stale).await;
+    client.cancel().await.unwrap();
+    server.await.unwrap();
 }

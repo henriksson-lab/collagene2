@@ -121,7 +121,7 @@ pub fn OverlapExtensionPreparationFields(
         });
     });
     view! {<section class="overlap-extension-preparation" aria-label=format!("Fragment {} overlap-extension PCR",index+1)>
-        <p class="helper">"Two PCRs use the same original source. Their products undergo reciprocal extension, followed by a separate outer-primer PCR. Enter every annealing domain and 5′ tail explicitly; your intended target stays separate."</p>
+        <p class="helper">"Two PCRs use the same exact source event and selected native strand frame. Saved Run/Derived material is freshly reconstructed before PCR; bottom-only calls are never converted into a new stock. Their products undergo reciprocal extension, followed by outer PCR on the synthesized product. Enter every annealing domain and 5′ tail explicitly; your intended target stays separate."</p>
         <label>"Edit primer pair"<select aria-label=format!("Fragment {} extension primer pair",index+1) prop:value=move||active_pair.get().to_string() on:change=move|e|{if let Ok(pair)=event_target_value(&e).parse::<usize>(){if pair<3{active_pair.set(pair);}}}>
             <option value="0">"1 · Left source PCR"</option><option value="1">"2 · Right source PCR"</option><option value="2">"3 · Outer PCR after extension"</option>
         </select></label>

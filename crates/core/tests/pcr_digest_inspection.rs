@@ -18,6 +18,7 @@ fn fixture() -> (Molecule, p::Request) {
         .id
         .clone();
     let request = p::Request {
+        template_strand: collagene_core::chemistry::Strand::Top,
         source_role: "original-template".into(),
         forward: Primer::new("F", "AAA", "CCGAATTC").unwrap(),
         reverse: Primer::new("R", "GGG", "GGGAATTC").unwrap(),

@@ -3740,3 +3740,33 @@ reads and source-pinned range navigation through existing Rust editor callbacks.
 It uses current document.modelContext with lifetime cancellation and no obsolete
 API fallback. Design proposals and reviewed apply are still required to complete
 the broader adapter scope. No browser/application HTTP checks were performed.
+
+### Saved-material preparation, sequential domestication and browser review — integrated checkpoint
+
+The next coherent batch advances only the worker schema to108. Canonical plan27,
+candidate29, science30 and draft18 remain unchanged: the new workflows use the
+existing exact PCR, reconstruction, phosphorylation, extension and ligation
+operations. No alternate internal reader is retained.
+
+Standalone exact-PCR digest inspection now accepts native Run and Derived origins
+with their exact owning workspace. Native bottom-frame PCR retains extra actual
+source calls; the original reference is never substituted for that strand.
+Standalone OE primer proposals similarly declare an explicit template strand and
+required-nullable exact material binding, reconstruct saved origins once for
+planning and retain documentary coordinate evidence without restoring authority.
+The existing worker/MCP and reviewed apply boundaries carry the same contracts.
+
+Scattered substitution preparation gains an explicit ordered sequence of original-
+coordinate inverse-PCR rounds. The checked final genotype is fixed first. One
+canonical graph keeps the original input and makes each later amplification
+consume the preceding physical ligation product. Intended intermediate frames
+supply primer declarations only; they never become recoded stocks. Partial tail
+splits, original origin crossings, exact patch coverage, aggregate bounds and
+unchanged-target verification have independent fixtures. [Contract](DOMESTICATION_ROUNDS.md).
+
+WebMCP gains active draft context plus open/review/cancel commands using the normal
+assembly workspace intended-reference worker action. Exact draft, epoch, mounted
+owner and review-generation guards remain explicit. Automated primer proposal and
+reviewed application remain open. The integrated batch passes118 distinct focused native cases and the
+web/worker WASM check. Exact-source cross-platform CI remains pending; browser
+and application HTTP checks remain deferred.

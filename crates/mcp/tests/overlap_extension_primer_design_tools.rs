@@ -14,6 +14,8 @@ const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
 const EXPECTED: &str = "AGTCCGATGCTACGTATTTTCAGACCTGTAGATCGTCA";
 fn request() -> Request {
     Request {
+        template_strand: collagene_core::chemistry::Strand::Top,
+        material_binding: None,
         fragment: Fragment {
             role: "insert".into(),
             input_id: "original".into(),
@@ -121,7 +123,7 @@ async fn six_auto_oligos_keep_original_stock_independent_intent_and_full_recipe_
     let original = named(&imported, "original");
     let target = named(&imported, "independent_target");
     let documents_before = call(&client, "list_documents", json!({})).await;
-    let args = json!({"document":original,"request":request()});
+    let args = json!({"origin_workspace":null,"document":original,"request":request()});
     let proposal = call(&client, "design_overlap_extension_primers", args.clone()).await;
     assert_eq!(proposal["state"], "advisory");
     assert_eq!(proposal["verified"], false);

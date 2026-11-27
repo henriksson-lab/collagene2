@@ -15,6 +15,8 @@ fn fixture() -> (Molecule, DesignRequest) {
     (
         Molecule::dna("Immutable original", ORIGINAL, Topology::Linear).unwrap(),
         DesignRequest {
+            template_strand: collagene_core::chemistry::Strand::Top,
+            material_binding: None,
             fragment: Fragment {
                 role: "insert".into(),
                 input_id: "original".into(),
@@ -60,14 +62,19 @@ fn message(source: Molecule, request: DesignRequest, revision: String) -> Reques
     Request {
         id: 164,
         revision,
-        job: AnalysisJob::DesignOverlapExtensionPrimers { source, request },
+        job: AnalysisJob::DesignOverlapExtensionPrimers {
+            source,
+            request,
+            workspace: None,
+        },
     }
 }
 #[test]
 fn appended164_156_proposal_roundtrip_keeps_independent_expected_and_original_stock() {
     let (source, request) = fixture();
     let before = serde_json::to_value(&source).unwrap();
-    let context = overlap_extension_primer_design::design_revision(&source, &request).unwrap();
+    let context =
+        overlap_extension_primer_design::design_revision(&source, &request, None).unwrap();
     assert_ne!(context, source.revision());
     let r = message(source.clone(), request, context.clone());
     let bytes = protocol::encode_request(&r).unwrap();
@@ -130,7 +137,8 @@ fn appended164_156_proposal_roundtrip_keeps_independent_expected_and_original_st
 #[test]
 fn outer_context_and_report_binding_include_source_metadata_edit_literals_and_search_options() {
     let (source, request) = fixture();
-    let context = overlap_extension_primer_design::design_revision(&source, &request).unwrap();
+    let context =
+        overlap_extension_primer_design::design_revision(&source, &request, None).unwrap();
     assert!(
         protocol::process_request(
             &protocol::encode_request(&message(source.clone(), request.clone(), source.revision()))
@@ -156,7 +164,7 @@ fn outer_context_and_report_binding_include_source_metadata_edit_literals_and_se
             .is_err()
         );
     }
-    let report = overlap_extension_primer_design::design(&source, &request).unwrap();
+    let report = overlap_extension_primer_design::design(&source, &request, None).unwrap();
     let mut changed = report.clone();
     changed.preparation.extension.overlap -= 1;
     assert!(changed.validate_binding(&context).is_err());
@@ -165,7 +173,7 @@ fn outer_context_and_report_binding_include_source_metadata_edit_literals_and_se
     assert!(changed.validate_binding(&context).is_err());
     let mut invalid = request;
     invalid.edits[0].expected = "AAAA".into();
-    assert!(overlap_extension_primer_design::design(&source, &invalid).is_err());
+    assert!(overlap_extension_primer_design::design(&source, &invalid, None).is_err());
     let mut oversized = invalid;
     oversized.edits[0].expected = "GGAC".into();
     oversized.options.max_candidates = usize::MAX;
@@ -190,7 +198,8 @@ fn multiple_edits_and_reverse_original_stock_remain_explicit_in_binary_proposals
     .unwrap();
     for (source, reverse) in [(source, false), (reverse_source, true)] {
         request.fragment.reverse = reverse;
-        let revision = overlap_extension_primer_design::design_revision(&source, &request).unwrap();
+        let revision =
+            overlap_extension_primer_design::design_revision(&source, &request, None).unwrap();
         let response = protocol::decode_response(
             &protocol::process_request(
                 &protocol::encode_request(&message(

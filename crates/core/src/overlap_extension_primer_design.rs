@@ -12,10 +12,10 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::io::Write;
-pub const ENGINE_VERSION: &str = "overlap-extension-primer-design-1";
+pub const ENGINE_VERSION: &str = "overlap-extension-primer-design-2";
 const MAX_SOURCE_BASES: usize = 2 << 20;
 const MAX_SOURCE_BYTES: usize = 4 << 20;
-const MAX_REPORT_BYTES: usize = 32 << 20;
+const MAX_REPORT_BYTES: usize = (32 << 20) - (64 << 10);
 const MAX_EDIT_BASES: usize = 100_000;
 pub(crate) const MAX_WORK: usize = 100_000_000;
 macro_rules! dto {($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
@@ -43,7 +43,36 @@ impl Default for Options {
         }
     }
 }
-dto! {pub struct Request {pub fragment:Fragment,pub edits:Vec<Edit>,pub options:Options}}
+dto! {pub struct BoundOrigin {pub event:crate::run_lineage::EventBinding,pub origin:crate::run_material::MaterialOrigin}}
+dto! {pub struct Request {
+ pub fragment:Fragment,pub edits:Vec<Edit>,pub options:Options,
+ pub template_strand:crate::chemistry::Strand,
+ #[serde(deserialize_with="crate::assembly_recipe::required_option")]
+ pub material_binding:Option<BoundOrigin>,
+}}
+// Documentary coordinate evidence only; never restored as native material.
+dto! {pub struct SourceFrame {
+ pub template_strand:crate::chemistry::Strand,pub state_revision:String,
+ pub sequence:Sequence,pub topology:Topology,pub context_revision:String,
+}}
+#[derive(Clone, Copy)]
+struct Frame<'a> {
+    reference: &'a Molecule,
+    sequence: &'a Sequence,
+    topology: Topology,
+    strand: crate::chemistry::Strand,
+}
+impl<'a> From<Template<'a>> for Frame<'a> {
+    fn from(t: Template<'a>) -> Self {
+        Self {
+            reference: t.reference,
+            sequence: t.sequence,
+            topology: t.topology,
+            strand: t.strand,
+        }
+    }
+}
+
 dto! {pub struct PairSearch {pub call:String,pub candidates:usize,pub examined:usize,pub rejected:usize,pub selected_index:usize,pub capped:bool,pub unique_geometry:bool,pub notes:Vec<String>}}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -51,6 +80,7 @@ pub struct Report {
     pub context_revision: String,
     pub engine_version: String,
     pub source_revision: String,
+    pub source_frame: SourceFrame,
     pub request: Request,
     pub preparation: overlap_extension_pcr::Request,
     /// Independently edited reference in ORIGINAL source orientation, with only
@@ -58,7 +88,7 @@ pub struct Report {
     pub expected: Molecule,
     pub plan: DesignPlan,
     pub verification: VerificationReport,
-    /// Three native calls on the same original molecule, not cloned source DNA.
+    /// Three native design calls in the selected stored source frame, never fake stock DNA.
     pub designs: Vec<DesignReport>,
     pub search: Vec<PairSearch>,
     pub warnings: Vec<String>,
@@ -188,8 +218,11 @@ struct Bounds<'a> {
     homology: usize,
     edits: Vec<StoredEdit<'a>>,
 }
-fn bounds<'a>(source: Template<'_>, r: &'a Request) -> Result<Bounds<'a>, Error> {
+fn bounds<'a>(source: Frame<'_>, r: &'a Request) -> Result<Bounds<'a>, Error> {
     options(&r.options)?;
+    if source.strand != r.template_strand {
+        return Err(bad("declaration differs from selected source strand frame"));
+    }
     token(&r.fragment.role)?;
     token(&r.fragment.input_id)?;
     if r.edits.is_empty() || r.edits.len() > crate::assembly_edit_intent::MAX_EDITS {
@@ -345,7 +378,7 @@ fn bounds<'a>(source: Template<'_>, r: &'a Request) -> Result<Bounds<'a>, Error>
         edits,
     };
     let derived = derived_options(source, r, &bounds, "", "", false)?;
-    let reserve = reserved_work(source, r, &bounds, &derived)?;
+    let reserve = reserved_work(source.sequence.len(), r, &bounds, &derived)?;
     let minimum_search = source
         .sequence
         .len()
@@ -359,7 +392,7 @@ fn bounds<'a>(source: Template<'_>, r: &'a Request) -> Result<Bounds<'a>, Error>
     Ok(bounds)
 }
 fn reserved_work(
-    source: Template<'_>,
+    comparison_bases: usize,
     r: &Request,
     b: &Bounds<'_>,
     derived: &[DesignOptions; 3],
@@ -393,8 +426,7 @@ fn reserved_work(
     }
     // Reserve all final verifier PCR scans and two terminal scans (planning and
     // final reconstruction). Ranked-pair scans must fit the remaining budget.
-    let final_scan = source
-        .comparison_bases()?
+    let final_scan = comparison_bases
         .checked_add(b.insert_length)
         .and_then(|n| {
             n.checked_add(r.options.outer_forward_tail.len() + r.options.outer_reverse_tail.len())
@@ -415,18 +447,88 @@ fn reserved_work(
 }
 /// Borrowed source, literal-edit, geometry and aggregate work guards before any
 /// full source is cloned or native primer/PCR search is started.
-pub fn preflight(source: &Molecule, request: &Request) -> Result<(), Error> {
-    bounds(Template::reference(source)?, request).map(|_| ())
+fn binding_preflight(
+    source: &Molecule,
+    request: &Request,
+    workspace: Option<&crate::workspace::Workspace>,
+) -> Result<(), Error> {
+    crate::model::bounds::model_preflight(&[source])?;
+    crate::run_material::material_origins_preflight(
+        request.material_binding.iter().map(|b| &b.origin),
+    )?;
+    bytes(
+        &(
+            source,
+            request,
+            request.material_binding.as_ref().map(|b| &b.origin),
+        ),
+        MAX_REPORT_BYTES,
+    )?;
+    if request.edits.is_empty()
+        || request.edits.len() > crate::assembly_edit_intent::MAX_EDITS
+        || request.fragment.start >= request.fragment.end
+        || request.fragment.end - request.fragment.start > MAX_SOURCE_BASES
+    {
+        return Err(bad(
+            "declare a bounded nonempty contribution and literal edits",
+        ));
+    }
+    let mut literal_bases = 0usize;
+    for edit in &request.edits {
+        literal_bases = literal_bases
+            .checked_add(edit.expected.len())
+            .and_then(|n| n.checked_add(edit.replacement.len()))
+            .filter(|n| *n <= MAX_EDIT_BASES)
+            .ok_or(Error::TooLarge)?;
+    }
+    source.validate()?;
+    options(&request.options)?;
+    token(&request.fragment.role)?;
+    token(&request.fragment.input_id)?;
+    match &request.material_binding {
+        None => {
+            if request.template_strand != crate::chemistry::Strand::Top {
+                return Err(bad("Bottom frame requires an exact native saved origin"));
+            }
+            bounds(Template::reference(source)?.into(), request)?;
+        }
+        Some(binding) => {
+            let workspace = workspace
+                .ok_or_else(|| bad("saved template requires its retained native workspace"))?;
+            if binding.event.revision != source.revision()
+                || binding.origin.event() != &binding.event
+            {
+                return Err(bad("saved template event differs from exact source"));
+            }
+            binding
+                .origin
+                .validate_for_workspace(workspace, &binding.event)?;
+            if crate::run_material::resolve(workspace, &binding.event)? != source {
+                return Err(bad("saved template differs from retained event snapshot"));
+            }
+        }
+    }
+    Ok(())
 }
-pub fn design_revision(source: &Molecule, request: &Request) -> Result<String, Error> {
-    preflight(source, request)?;
-    assembly_recipe::hash(&(
-        ENGINE_VERSION,
-        Template::reference(source)?.context_revision()?,
-        request,
-    ))
+pub fn preflight(
+    source: &Molecule,
+    request: &Request,
+    workspace: Option<&crate::workspace::Workspace>,
+) -> Result<(), Error> {
+    binding_preflight(source, request, workspace)
 }
-fn segment(source: Template<'_>, f: &Fragment, start: usize, end: usize, out: &mut String) {
+fn context(source: &Molecule, request: &Request) -> Result<String, Error> {
+    assembly_recipe::hash(&(ENGINE_VERSION, source.revision(), request))
+}
+pub fn design_revision(
+    source: &Molecule,
+    request: &Request,
+    workspace: Option<&crate::workspace::Workspace>,
+) -> Result<String, Error> {
+    preflight(source, request, workspace)?;
+    context(source, request)
+}
+fn segment(source: Frame<'_>, f: &Fragment, start: usize, end: usize, out: &mut String) {
     let n = source.sequence.len();
     for i in start..end {
         out.push(source.sequence.as_str().as_bytes()[(f.start + i) % n] as char);
@@ -441,7 +543,7 @@ fn replacement(out: &mut String, e: &Edit, reverse: bool) {
         out.push_str(&e.replacement);
     }
 }
-fn edited(source: Template<'_>, r: &Request, b: &Bounds<'_>, start: usize, end: usize) -> String {
+fn edited(source: Frame<'_>, r: &Request, b: &Bounds<'_>, start: usize, end: usize) -> String {
     let mut out = String::new();
     let mut cursor = start;
     for e in &b.edits {
@@ -452,7 +554,7 @@ fn edited(source: Template<'_>, r: &Request, b: &Bounds<'_>, start: usize, end: 
     segment(source, &r.fragment, cursor, end, &mut out);
     out
 }
-fn expected(source: Template<'_>, r: &Request, b: &Bounds<'_>) -> Result<Molecule, Error> {
+fn expected(source: Frame<'_>, r: &Request, b: &Bounds<'_>) -> Result<Molecule, Error> {
     let mut dna = r.options.outer_forward_tail.clone();
     dna.push_str(&edited(source, r, b, 0, b.length));
     // An absent outer tail contributes no bases; it is not a standalone DNA
@@ -471,7 +573,7 @@ fn expected(source: Template<'_>, r: &Request, b: &Bounds<'_>) -> Result<Molecul
     )
 }
 fn derived_options(
-    source: Template<'_>,
+    source: Frame<'_>,
     r: &Request,
     b: &Bounds<'_>,
     left_tail: &str,
@@ -693,15 +795,43 @@ fn plan(
     expected: &Molecule,
     preparation: &overlap_extension_pcr::Request,
 ) -> Result<DesignPlan, Error> {
+    plan_from_frame(source.reference, r, expected, preparation)
+}
+fn plan_from_frame(
+    source: &Molecule,
+    r: &Request,
+    expected: &Molecule,
+    preparation: &overlap_extension_pcr::Request,
+) -> Result<DesignPlan, Error> {
     let mut steps = vec![];
-    preparation.append(Source::Input(r.fragment.input_id.clone()), &mut steps)?;
+    let input = Source::Input(r.fragment.input_id.clone());
+    let template = if let Some(binding) = &r.material_binding {
+        steps.push(match &binding.origin {
+            crate::run_material::MaterialOrigin::Run(origin) => {
+                verification::Operation::ReconstructRunProduct {
+                    template: input,
+                    origin: origin.clone(),
+                }
+            }
+            crate::run_material::MaterialOrigin::Derived(origin) => {
+                verification::Operation::ReconstructMaterial {
+                    template: input,
+                    origin: origin.clone(),
+                }
+            }
+        });
+        Source::Step(0)
+    } else {
+        input
+    };
+    preparation.append(template, &mut steps)?;
     Ok(DesignPlan {
         name: format!("{} overlap-extension PCR", r.fragment.role),
         target_revision: expected.revision(),
         inputs: vec![PlanInput {
             id: r.fragment.input_id.clone(),
-            revision: source.reference.revision(),
-            molecule: source.reference.clone(),
+            revision: source.revision(),
+            molecule: source.clone(),
         }],
         steps,
     })
@@ -716,9 +846,9 @@ pub(crate) fn source_work_preflight(
     source: Template<'_>,
     request: &Request,
 ) -> Result<(usize, usize), Error> {
-    let b = bounds(source, request)?;
-    let derived = derived_options(source, request, &b, "", "", false)?;
-    let reserve = reserved_work(source, request, &b, &derived)?;
+    let b = bounds(source.into(), request)?;
+    let derived = derived_options(source.into(), request, &b, "", "", false)?;
+    let reserve = reserved_work(source.comparison_bases()?, request, &b, &derived)?;
     let material = source
         .sequence
         .len()
@@ -732,46 +862,48 @@ pub(crate) fn source_work_preflight(
         .ok_or(Error::TooLarge)?;
     Ok((reserve, material))
 }
-pub fn design(source: &Molecule, request: &Request) -> Result<Report, Error> {
-    let mut budget = Budget {
-        used: 0,
-        limit: MAX_WORK,
-        materialized: 0,
-    };
-    design_with_budget(source, request, &mut budget)
-}
-/// Shared whole-design ledger; only native source-bound proposal work uses it.
-/// Plan all native primer pairs and exact operation declarations without
-/// executing final verification. Source-bound ranked PCR searches still run.
-pub fn compile(source: &Molecule, request: &Request) -> Result<Compilation, Error> {
-    let mut budget = Budget {
-        used: 0,
-        limit: MAX_WORK,
-        materialized: 0,
-    };
-    compile_source_with_budget(Template::reference(source)?, request, &mut budget)
-}
-pub(crate) fn design_with_budget(
+pub fn design(
     source: &Molecule,
     request: &Request,
-    budget: &mut Budget,
+    workspace: Option<&crate::workspace::Workspace>,
 ) -> Result<Report, Error> {
-    let compiled = compile_source_with_budget(Template::reference(source)?, request, budget)?;
-    let actual_plan = plan(
-        Template::reference(source)?,
-        request,
-        &compiled.expected,
-        &compiled.preparation,
-    )?;
+    preflight(source, request, workspace)?;
+    let fresh = request
+        .material_binding
+        .as_ref()
+        .map(|b| b.origin.replay(source))
+        .transpose()?;
+    let template = match &fresh {
+        Some(f) => Template::fresh(source, f.tracked(), request.template_strand)?,
+        None => Template::reference(source)?,
+    };
+    let mut budget = Budget {
+        used: 0,
+        limit: MAX_WORK,
+        materialized: 0,
+    };
+    let compiled = compile_source_with_budget(template, request, &mut budget)?;
+    let actual_plan = plan(template, request, &compiled.expected, &compiled.preparation)?;
     let verification = verification::verify(&actual_plan, &compiled.expected);
     let mut warnings = compiled.warnings;
     if verification.status != Status::ConsistentUnderAssumptions {
-        warnings.push("The selected oligos did not establish a complete target-consistent physical preparation. Keep the verifier findings; no intended sequence was substituted to obtain success.".into());
+        warnings.push("The selected oligos did not establish a complete target-consistent physical preparation. Keep verifier findings; intended DNA never substitutes for native material.".into());
     }
+    let source_frame = SourceFrame {
+        template_strand: template.strand,
+        sequence: template.sequence.clone(),
+        topology: template.topology,
+        state_revision: match &fresh {
+            Some(f) => crate::modified_duplex::summary(f.tracked())?.state_revision,
+            None => source.revision(),
+        },
+        context_revision: template.context_revision()?,
+    };
     let report = Report {
-        context_revision: compiled.context_revision,
+        context_revision: context(source, request)?,
         engine_version: compiled.engine_version,
         source_revision: compiled.source_revision,
+        source_frame,
         request: compiled.request,
         preparation: compiled.preparation,
         expected: compiled.expected,
@@ -784,19 +916,50 @@ pub(crate) fn design_with_budget(
     report.validate()?;
     Ok(report)
 }
+/// Compile against actual native material without a final independent-target verification.
+pub fn compile(
+    source: &Molecule,
+    request: &Request,
+    workspace: Option<&crate::workspace::Workspace>,
+) -> Result<Compilation, Error> {
+    preflight(source, request, workspace)?;
+    let fresh = request
+        .material_binding
+        .as_ref()
+        .map(|b| b.origin.replay(source))
+        .transpose()?;
+    let template = match &fresh {
+        Some(f) => Template::fresh(source, f.tracked(), request.template_strand)?,
+        None => Template::reference(source)?,
+    };
+    compile_source_with_budget(
+        template,
+        request,
+        &mut Budget {
+            used: 0,
+            limit: MAX_WORK,
+            materialized: 0,
+        },
+    )
+}
 pub(crate) fn compile_source_with_budget(
     source: Template<'_>,
     request: &Request,
     budget: &mut Budget,
 ) -> Result<Compilation, Error> {
-    let b = bounds(source, request)?;
+    if source.strand != request.template_strand {
+        return Err(bad(
+            "request strand differs from actual native template frame",
+        ));
+    }
+    let b = bounds(source.into(), request)?;
     let source_revision = source.reference.revision();
     let context_revision =
         assembly_recipe::hash(&(ENGINE_VERSION, source.context_revision()?, request))?;
-    let insert = edited(source, request, &b, b.start, b.end);
+    let insert = edited(source.into(), request, &b, b.start, b.end);
     let mut right_prefix = String::with_capacity(request.options.homology_flank);
     segment(
-        source,
+        source.into(),
         &request.fragment,
         b.end,
         b.end + request.options.homology_flank,
@@ -808,15 +971,15 @@ pub(crate) fn compile_source_with_budget(
         .to_owned();
     let mut right_tail = String::with_capacity(request.options.homology_flank + insert.len());
     segment(
-        source,
+        source.into(),
         &request.fragment,
         b.start - request.options.homology_flank,
         b.start,
         &mut right_tail,
     );
     right_tail.push_str(&insert);
-    let derived = derived_options(source, request, &b, &left_tail, &right_tail, true)?;
-    let reserve = reserved_work(source, request, &b, &derived)?;
+    let derived = derived_options(source.into(), request, &b, &left_tail, &right_tail, true)?;
+    let reserve = reserved_work(source.comparison_bases()?, request, &b, &derived)?;
     let material = source
         .sequence
         .len()
@@ -893,7 +1056,7 @@ pub(crate) fn compile_source_with_budget(
     let search = vec![left, right, outer];
     // Expected DNA is a separate source/literal construction. It is never read by
     // ranked pair selection, which uses only actual source endpoints/strand roles.
-    let expected = expected(source, request, &b)?;
+    let expected = expected(source.into(), request, &b)?;
     let preparation = preparation(&designs, &search, request, &b, source.strand)?;
     preparation.validate_shape()?;
     let mut warnings=vec![
@@ -990,6 +1153,28 @@ pub(crate) fn validate_source_preparation(
     designs: &[DesignReport],
     searches: &[PairSearch],
 ) -> Result<Molecule, Error> {
+    if source.strand != request.template_strand {
+        return Err(bad("preparation frame differs from request"));
+    }
+    validate_frame_preparation(
+        source.into(),
+        request,
+        context,
+        &source.context_revision()?,
+        prepared,
+        designs,
+        searches,
+    )
+}
+fn validate_frame_preparation(
+    source: Frame<'_>,
+    request: &Request,
+    context: &str,
+    source_context: &str,
+    prepared: &overlap_extension_pcr::Request,
+    designs: &[DesignReport],
+    searches: &[PairSearch],
+) -> Result<Molecule, Error> {
     if designs.len() != 3 || searches.len() != 3 {
         return Err(bad("expected three native primer calls"));
     }
@@ -1012,9 +1197,9 @@ pub(crate) fn validate_source_preparation(
         }
     }
     bytes(&(request, prepared, designs, searches), MAX_REPORT_BYTES)?;
-    let b = bounds(source, request)?;
+    let b = bounds(source.into(), request)?;
     let source_revision = source.reference.revision();
-    if assembly_recipe::hash(&(ENGINE_VERSION, source.context_revision()?, request))? != context {
+    if assembly_recipe::hash(&(ENGINE_VERSION, source_context, request))? != context {
         return Err(bad("returned source/request binding changed"));
     }
     prepared.validate_shape()?;
@@ -1127,14 +1312,15 @@ impl Report {
             || !hex(&self.source_revision)
             || self.engine_version != ENGINE_VERSION
             || self.plan.inputs.len() != 1
-            || self.plan.steps.len() != 4
+            || self.plan.steps.len() != 4 + usize::from(self.request.material_binding.is_some())
             || self.designs.len() != 3
             || self.search.len() != 3
-            || self.verification.products.len() > 4
-            || self.verification.physical_processing_reports.len() > 1
-            || self.verification.step_reports.len() > 4
-            || self.verification.processed_step_reports.len() > 4
-            || self.verification.reference_step_reports.len() > 4
+            || self.verification.products.len() > self.plan.steps.len()
+            || self.verification.physical_processing_reports.len()
+                > 1 + usize::from(self.request.material_binding.is_some())
+            || self.verification.step_reports.len() > self.plan.steps.len()
+            || self.verification.processed_step_reports.len() > self.plan.steps.len()
+            || self.verification.reference_step_reports.len() > self.plan.steps.len()
             || self.verification.findings.len() > 1000
             || self.verification.assumptions.len() > 100
             || self
@@ -1157,25 +1343,64 @@ impl Report {
         {
             return Err(bad("returned source input changed"));
         }
-        let expected = validate_preparation(
-            source,
+        let frame = &self.source_frame;
+        if frame.template_strand != self.request.template_strand
+            || !hex(&frame.state_revision)
+            || !hex(&frame.context_revision)
+            || frame.sequence.is_empty()
+            || frame.sequence.len() > MAX_SOURCE_BASES
+            || frame.sequence.alphabet() != Alphabet::Dna
+            || frame.topology != source.topology
+            || frame.template_strand == crate::chemistry::Strand::Top
+                && frame.sequence != source.sequence
+            || context(source, &self.request)? != self.context_revision
+        {
+            return Err(bad("documentary native source frame changed"));
+        }
+        match &self.request.material_binding {
+            None => {
+                let reference = Template::reference(source)?;
+                if frame.template_strand != crate::chemistry::Strand::Top
+                    || frame.state_revision != source.revision()
+                    || frame.context_revision != reference.context_revision()?
+                {
+                    return Err(bad("original reference frame changed"));
+                }
+            }
+            Some(binding) => {
+                crate::run_material::material_origins_preflight([&binding.origin])?;
+                binding.origin.validate_documentary()?;
+                if binding.origin.event() != &binding.event
+                    || binding.event.revision != source.revision()
+                {
+                    return Err(bad("documentary saved source event changed"));
+                }
+            }
+        }
+        let view = Frame {
+            reference: source,
+            sequence: &frame.sequence,
+            topology: frame.topology,
+            strand: frame.template_strand,
+        };
+        let internal_context =
+            assembly_recipe::hash(&(ENGINE_VERSION, &frame.context_revision, &self.request))?;
+        let expected = validate_frame_preparation(
+            view,
             &self.request,
-            &self.context_revision,
+            &internal_context,
+            &frame.context_revision,
             &self.preparation,
             &self.designs,
             &self.search,
         )?;
-        let preparation = &self.preparation;
         if expected.revision() != self.expected.revision() {
             return Err(bad(
                 "returned expected reference differs from independent literal edits",
             ));
         }
-        let mut expected_steps = vec![];
-        preparation.append(
-            Source::Input(self.request.fragment.input_id.clone()),
-            &mut expected_steps,
-        )?;
+        let expected_plan = plan_from_frame(source, &self.request, &expected, &self.preparation)?;
+        let expected_steps = expected_plan.steps;
         if self.plan.name != format!("{} overlap-extension PCR", self.request.fragment.role)
             || self.plan.target_revision != expected.revision()
             || assembly_recipe::hash(&expected_steps)? != assembly_recipe::hash(&self.plan.steps)?
@@ -1183,7 +1408,7 @@ impl Report {
             || self.verification.target_revision != self.expected.revision()
             || self.verification.engine_version != verification::ENGINE_VERSION
             || self.verification.status == Status::ConsistentUnderAssumptions
-                && (self.verification.products.len() != 4
+                && (self.verification.products.len() != self.plan.steps.len()
                     || !self.verification.products.last().is_some_and(|p| {
                         p.sequence == self.expected.sequence && p.topology == Topology::Linear
                     }))
@@ -1196,6 +1421,22 @@ impl Report {
             crate::model::bounds::model_preflight(&[p])?;
         }
         bytes(self, MAX_REPORT_BYTES)
+    }
+    pub fn validate_sources(
+        &self,
+        source: &Molecule,
+        expected: &str,
+        workspace: Option<&crate::workspace::Workspace>,
+    ) -> Result<(), Error> {
+        self.validate_binding(expected)?;
+        preflight(source, &self.request, workspace)?;
+        if self.source_revision != source.revision()
+            || self.plan.inputs[0].molecule != *source
+            || context(source, &self.request)? != expected
+        {
+            return Err(bad("response differs from exact retained source/request"));
+        }
+        Ok(())
     }
     pub fn validate_binding(&self, revision: &str) -> Result<(), Error> {
         if self.context_revision != revision {

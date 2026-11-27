@@ -168,6 +168,7 @@ pub mod assembly_diagnostics;
 
 pub mod domestication;
 pub mod domestication_preparation;
+mod domestication_rounds;
 pub mod golden_gate_fusion_design;
 pub mod golden_gate_fusion_rank;
 pub mod golden_gate_junction_edit;

@@ -10,6 +10,16 @@ use collagene_core::{
 /// Match the native origin digest using bounded streaming JSON. This hashes a
 /// documentary capsule only; it never restores physical state or replays it.
 fn capsule_revision(origin: &collagene_core::run_material::Capsule) -> Result<String, String> {
+    origin.validate_documentary().map_err(|e| e.to_string())?;
+    origin_revision(origin)
+}
+fn material_revision(
+    origin: &collagene_core::run_material::MaterialOrigin,
+) -> Result<String, String> {
+    origin.validate_documentary().map_err(|e| e.to_string())?;
+    origin_revision(origin)
+}
+fn origin_revision(origin: &impl serde::Serialize) -> Result<String, String> {
     use std::io::Write;
     struct Digest {
         hash: blake3::Hasher,
@@ -29,7 +39,6 @@ fn capsule_revision(origin: &collagene_core::run_material::Capsule) -> Result<St
             Ok(())
         }
     }
-    origin.validate_documentary().map_err(|e| e.to_string())?;
     let mut writer = Digest {
         hash: blake3::Hasher::new(),
         bytes: 0,
@@ -248,6 +257,73 @@ mod tests {
     }
 
     #[test]
+    fn derived_digest_application_keeps_origin_and_refuses_stale_or_removed_binding() {
+        use collagene_core::{
+            chemistry::Strand, material_derivation as d, run_material::MaterialOrigin,
+            workspace::Workspace,
+        };
+        let (mut state, source, request, _) = fixture();
+        let w = Workspace::from_documents("Native template derivation", vec![source.clone()], 0)
+            .unwrap();
+        let doc = &w.documents[0];
+        let event = collagene_core::run_lineage::EventBinding {
+            document_id: doc.id.clone(),
+            event_id: doc.head_event.clone().unwrap(),
+            revision: doc.head.clone(),
+        };
+        let forward = Primer::new("Native F", "ATGCCATG", "").unwrap();
+        let reverse = Primer::new("Native R", "TACCGGTA", "").unwrap();
+        let original = d::SourceOrigin::OriginalReference;
+        let documents =
+            d::preview_pcr(&source, &original, &forward, &reverse, Strand::Top).unwrap();
+        assert_eq!(documents.len(), 1);
+        let prepared = d::prepare_install(
+            &w,
+            &d::Request {
+                source: event,
+                origin: original.clone(),
+                derivation: d::Derivation::ExactPcr {
+                    selection: d::PcrSelection {
+                        selected_index: 0,
+                        expected_preview_revision: documents[0].molecule.revision(),
+                        geometry: documents[0].geometry.clone(),
+                    },
+                    forward,
+                    reverse,
+                    template_strand: Strand::Top,
+                },
+                name: "Retained PCR template".into(),
+                save_primers: false,
+            },
+        )
+        .unwrap();
+        let origin = MaterialOrigin::Derived(
+            d::capsule(&prepared.workspace, &prepared.receipt.product).unwrap(),
+        );
+        let source = &prepared.workspace.revisions[&origin.event().revision];
+        state.rows[1].run_origin =
+            Some(crate::run_origin_model::PinnedOrigin::from_material(origin.clone()).unwrap());
+        let report = pcr_digest_inspection::inspect_from_material(
+            source,
+            &origin,
+            &request,
+            &prepared.workspace,
+        )
+        .unwrap();
+        let revision = report.context_revision.clone();
+        let request = InspectionRequest::Exact(request);
+        let report = InspectionPreview::Material(report);
+        let selected = apply_inspection(&state, 1, &request, &report, &revision, 1).unwrap();
+        assert_eq!(selected.rows[1].fragment, "2");
+        assert!(selected.rows[1].run_origin == state.rows[1].run_origin);
+        let mut changed = state.clone();
+        changed.rows[1].forward_tail.push('A');
+        assert!(apply_inspection(&changed, 1, &request, &report, &revision, 1).is_err());
+        state.rows[1].run_origin = None;
+        assert!(apply_inspection(&state, 1, &request, &report, &revision, 1).is_err());
+    }
+
+    #[test]
     fn request_retains_exact_role_names_domains_tails_and_catalog_pin() {
         let (state, _, request, _) = fixture();
         assert_eq!(request.source_role, "insert-amplification");
@@ -349,7 +425,7 @@ mod tests {
     }
 }
 
-/// GUI-only sum types preserve both existing and additive native wire layouts.
+/// Distinct preparation reports retain their native request and source bindings.
 #[derive(Clone, serde::Serialize)]
 pub(crate) enum InspectionRequest {
     Exact(Request),
@@ -358,6 +434,7 @@ pub(crate) enum InspectionRequest {
 }
 pub(crate) enum InspectionPreview {
     Exact(Preview),
+    Material(collagene_core::pcr_digest_inspection::MaterialPreview),
     Mismatch(collagene_core::mismatch_pcr_digest_inspection::Preview),
     Extension(collagene_core::overlap_extension_digest_inspection::Preview),
 }
@@ -408,23 +485,46 @@ impl InspectionRequest {
     pub(crate) fn revision(
         &self,
         source: &collagene_core::Molecule,
-        origin: Option<&collagene_core::run_material::Capsule>,
+        origin: Option<&collagene_core::run_material::MaterialOrigin>,
+        workspace: Option<&collagene_core::workspace::Workspace>,
     ) -> Result<String, collagene_core::Error> {
+        use collagene_core::{Error, run_material::MaterialOrigin};
+        let run = || {
+            match origin {
+            None => Ok(None),
+            Some(MaterialOrigin::Run(run)) => Ok(Some(run)),
+            Some(MaterialOrigin::Derived(_)) => Err(Error::Unsupported("This preparation inspection does not support a Derived template; its native origin remains retained.".into())),
+        }
+        };
         match self {
             Self::Exact(r) => match origin {
-                Some(o) => collagene_core::pcr_digest_inspection::inspection_revision_from_run(
-                    source, o, r,
-                ),
+                Some(o) => {
+                    collagene_core::pcr_digest_inspection::inspection_revision_from_material(
+                        source,
+                        o,
+                        r,
+                        workspace.ok_or_else(|| {
+                            Error::Unsupported(
+                            "The exact owning workspace is required for saved-template inspection."
+                                .into(),
+                        )
+                        })?,
+                    )
+                }
                 None => collagene_core::pcr_digest_inspection::inspection_revision(source, r),
             },
             Self::Mismatch(r) => {
                 collagene_core::mismatch_pcr_digest_inspection::inspection_revision(
-                    source, origin, r,
+                    source,
+                    run()?,
+                    r,
                 )
             }
             Self::Extension(r) => {
                 collagene_core::overlap_extension_digest_inspection::inspection_revision(
-                    source, origin, r,
+                    source,
+                    run()?,
+                    r,
                 )
             }
         }
@@ -432,34 +532,45 @@ impl InspectionRequest {
     pub(crate) fn into_job(
         self,
         molecule: collagene_core::Molecule,
-        origin: Option<collagene_core::run_material::Capsule>,
-    ) -> collagene_core::protocol::AnalysisJob {
-        use collagene_core::protocol::AnalysisJob;
-        match self {
+        origin: Option<collagene_core::run_material::MaterialOrigin>,
+        workspace: Option<collagene_core::workspace::Workspace>,
+    ) -> Result<collagene_core::protocol::AnalysisJob, String> {
+        use collagene_core::{protocol::AnalysisJob, run_material::MaterialOrigin};
+        let run = |origin| match origin {
+            None => Ok(None),
+            Some(MaterialOrigin::Run(run)) => Ok(Some(run)),
+            Some(MaterialOrigin::Derived(_)) => {
+                Err("This preparation inspection cannot inspect a Derived template.".to_string())
+            }
+        };
+        Ok(match self {
             Self::Exact(request) => match origin {
-                Some(origin) => AnalysisJob::InspectRunPcrDigest {
+                Some(origin) => AnalysisJob::InspectMaterialPcrDigest {
                     molecule,
                     origin,
                     request,
+                    workspace: workspace.ok_or("The owning workspace is unavailable.")?,
                 },
                 None => AnalysisJob::InspectPcrDigest { molecule, request },
             },
             Self::Mismatch(request) => AnalysisJob::InspectMismatchPcrDigest {
                 molecule,
-                origin,
+                origin: run(origin)?,
                 request,
             },
             Self::Extension(request) => AnalysisJob::InspectOverlapExtensionDigest {
                 source: molecule,
-                origin,
+                origin: run(origin)?,
                 request,
             },
-        }
+        })
     }
 }
+
 impl InspectionPreview {
     pub(crate) fn context_revision(&self) -> &str {
         match self {
+            Self::Material(p) => &p.context_revision,
             Self::Exact(p) => &p.context_revision,
             Self::Mismatch(p) => &p.context_revision,
             Self::Extension(p) => &p.context_revision,
@@ -467,6 +578,7 @@ impl InspectionPreview {
     }
     pub(crate) fn source_revision(&self) -> &str {
         match self {
+            Self::Material(p) => &p.preview.source_revision,
             Self::Exact(p) => &p.source_revision,
             Self::Mismatch(p) => &p.source_revision,
             Self::Extension(p) => &p.source_revision,
@@ -474,6 +586,7 @@ impl InspectionPreview {
     }
     pub(crate) fn request(&self) -> InspectionRequest {
         match self {
+            Self::Material(p) => InspectionRequest::Exact(p.preview.request.clone()),
             Self::Exact(p) => InspectionRequest::Exact(p.request.clone()),
             Self::Mismatch(p) => InspectionRequest::Mismatch(p.request.clone()),
             Self::Extension(p) => InspectionRequest::Extension(p.request.clone()),
@@ -481,6 +594,7 @@ impl InspectionPreview {
     }
     pub(crate) fn validate_binding(&self, r: &str) -> Result<(), collagene_core::Error> {
         match self {
+            Self::Material(p) => p.validate_binding(r),
             Self::Exact(p) => p.validate_binding(r),
             Self::Mismatch(p) => p.validate_binding(r),
             Self::Extension(p) => p.validate_binding(r),
@@ -488,6 +602,7 @@ impl InspectionPreview {
     }
     pub(crate) fn amplicon(&self) -> Option<&collagene_core::Molecule> {
         match self {
+            Self::Material(p) => p.preview.amplicon.as_ref(),
             Self::Exact(p) => p.amplicon.as_ref(),
             Self::Mismatch(p) => p.amplicon.as_ref(),
             Self::Extension(p) => p.amplicon.as_ref(),
@@ -497,6 +612,7 @@ impl InspectionPreview {
         &self,
     ) -> Option<&collagene_core::restriction_inspection::RestrictionInspection> {
         match self {
+            Self::Material(p) => p.preview.inspection.as_ref(),
             Self::Exact(p) => p.inspection.as_ref(),
             Self::Mismatch(p) => p.inspection.as_ref(),
             Self::Extension(p) => p.inspection.as_ref(),
@@ -504,6 +620,7 @@ impl InspectionPreview {
     }
     pub(crate) fn findings(&self) -> &[String] {
         match self {
+            Self::Material(p) => &p.preview.findings,
             Self::Exact(p) => &p.findings,
             Self::Mismatch(p) => &p.findings,
             Self::Extension(p) => &p.findings,
@@ -511,6 +628,7 @@ impl InspectionPreview {
     }
     pub(crate) fn geometry_count(&self) -> usize {
         match self {
+            Self::Material(p) => p.preview.pcr_geometries.len(),
             Self::Exact(p) => p.pcr_geometries.len(),
             Self::Mismatch(p) => p.pcr.report.products.len(),
             Self::Extension(p) => usize::from(p.amplicon.is_some()),
@@ -521,6 +639,14 @@ impl InspectionPreview {
         start: usize,
     ) -> Vec<collagene_core::pcr_digest_inspection::GeometrySummary> {
         match self {
+            Self::Material(p) => p
+                .preview
+                .pcr_geometries
+                .iter()
+                .skip(start)
+                .take(20)
+                .cloned()
+                .collect(),
             Self::Extension(_) => Vec::new(),
             Self::Exact(p) => p
                 .pcr_geometries
@@ -551,6 +677,7 @@ impl InspectionPreview {
     }
     pub(crate) fn incomplete(&self) -> bool {
         match self {
+            Self::Material(p) => p.origin_incomplete,
             Self::Exact(_) => false,
             Self::Mismatch(p) => p.incomplete,
             Self::Extension(p) => p.incomplete,
@@ -577,6 +704,25 @@ pub(crate) fn apply_inspection(
     fragment: usize,
 ) -> Result<MethodsState, String> {
     match (bound, preview) {
+        (InspectionRequest::Exact(r), InspectionPreview::Material(p)) => {
+            p.validate_binding(revision).map_err(|e| e.to_string())?;
+            let current = state
+                .rows
+                .get(row)
+                .and_then(|r| r.run_origin.as_ref())
+                .ok_or("The saved origin changed.")?;
+            if material_revision(current.as_ref())? != p.origin_revision {
+                return Err("The saved origin changed.".into());
+            }
+            apply(
+                state,
+                row,
+                r,
+                &p.preview,
+                &p.preview.context_revision,
+                fragment,
+            )
+        }
         (InspectionRequest::Exact(r), InspectionPreview::Exact(p)) => {
             apply(state, row, r, p, revision, fragment)
         }
@@ -710,7 +856,7 @@ mod mismatch_digest_tests {
         );
         assert_eq!(preview.inspection().unwrap().fragments.len(), 3);
         assert!(!preview.incomplete());
-        let revision = request.revision(&source, None).unwrap();
+        let revision = request.revision(&source, None, None).unwrap();
         let next = apply_inspection(&state, 1, &request, &preview, &revision, 1).unwrap();
         let mut expected = state.clone();
         expected.rows[1].fragment = "2".into();
@@ -736,7 +882,7 @@ mod mismatch_digest_tests {
     fn stale_policies_modes_and_fragments_cannot_reuse_a_mutant_receipt() {
         let (state, source, request) = fixture();
         let preview = inspect(&source, &request);
-        let revision = request.revision(&source, None).unwrap();
+        let revision = request.revision(&source, None, None).unwrap();
         for field in 0..5 {
             let mut changed = state.clone();
             let row = &mut changed.rows[1];
@@ -761,7 +907,7 @@ mod mismatch_digest_tests {
             Molecule::dna("Repeated original", &ORIGINAL.repeat(2), Topology::Linear).unwrap();
         let preview = inspect(&repeated, &request);
         assert!(preview.incomplete() && preview.selectable());
-        let revision = request.revision(&repeated, None).unwrap();
+        let revision = request.revision(&repeated, None, None).unwrap();
         let applied = apply_inspection(&state, 1, &request, &preview, &revision, 1).unwrap();
         let (_, rows) = crate::cloning_preparations::prepared_rows(&applied, 2).unwrap();
         let collagene_core::assembly_recipe::Preparation::MismatchPcrCatalogDigest {
@@ -871,7 +1017,7 @@ mod overlap_extension_digest_tests {
         let (state, source, request) = fixture();
         let before = state.clone();
         let preview = inspect(&source, None, &request);
-        let revision = request.revision(&source, None).unwrap();
+        let revision = request.revision(&source, None, None).unwrap();
         assert_eq!(
             preview.amplicon().unwrap().sequence.as_str(),
             format!("CCGAATTC{MUTANT}CTCGAGCC")
@@ -917,7 +1063,7 @@ mod overlap_extension_digest_tests {
     fn stale_any_of_six_oligos_or_geometry_catalog_role_and_missing_fragments_never_apply() {
         let (state, source, request) = fixture();
         let preview = inspect(&source, None, &request);
-        let revision = request.revision(&source, None).unwrap();
+        let revision = request.revision(&source, None, None).unwrap();
         for field in 0..9 {
             let mut changed = state.clone();
             if field < 6 {
@@ -965,7 +1111,7 @@ mod overlap_extension_digest_tests {
         assert!(preview.incomplete() && preview.selectable());
         assert!(preview.amplicon().is_some());
         assert!(preview.inspection().is_some());
-        let revision = request.revision(&source, None).unwrap();
+        let revision = request.revision(&source, None, None).unwrap();
         let next = apply_inspection(&state, 1, &request, &preview, &revision, 1).unwrap();
         assert_eq!(
             next.rows[1]
@@ -1089,8 +1235,16 @@ mod overlap_extension_digest_tests {
             .unwrap(),
         );
         let request = build_inspection_request(&state, 1).unwrap();
-        assert!(request.revision(&source, None).is_err());
-        let revision = request.revision(&source, Some(&origin)).unwrap();
+        assert!(request.revision(&source, None, None).is_err());
+        let revision = request
+            .revision(
+                &source,
+                Some(&collagene_core::run_material::MaterialOrigin::Run(
+                    origin.clone(),
+                )),
+                Some(&commit.workspace),
+            )
+            .unwrap();
         let preview = inspect(&source, Some(&origin), &request);
         let InspectionPreview::Extension(report) = &preview else {
             unreachable!()

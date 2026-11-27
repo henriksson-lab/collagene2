@@ -37,7 +37,6 @@ fn fixture() -> (Molecule, DigestRequest) {
                 template_strand: collagene_core::chemistry::Strand::Top,
             },
             pcr_options: policy,
-            template_strand: collagene_core::chemistry::Strand::Top,
         },
     )
 }

@@ -37,6 +37,8 @@ fn edit(start: usize, end: usize, expected: &str, replacement: &str) -> Edit {
 }
 fn request() -> Request {
     Request {
+        template_strand: collagene_core::chemistry::Strand::Top,
+        material_binding: None,
         fragment: Fragment {
             role: "insert".into(),
             input_id: "original".into(),
@@ -67,11 +69,11 @@ fn literal_replacement_selects_three_native_calls_and_verifies_actual_four_step_
     let source = source();
     let original = serde_json::to_value(&source).unwrap();
     let req = request();
-    let report = design::design(&source, &req).unwrap();
+    let report = design::design(&source, &req, None).unwrap();
     consistent(&report, EDITED);
     assert_eq!(
         report.context_revision,
-        design::design_revision(&source, &req).unwrap()
+        design::design_revision(&source, &req, None).unwrap()
     );
     assert_eq!(report.source_revision, source.revision());
     assert_eq!(
@@ -132,7 +134,7 @@ fn reverse_contribution_edits_remain_source_oriented_and_declared_outer_tails_ar
     req.fragment.reverse = true;
     req.options.outer_forward_tail = "GGA".into();
     req.options.outer_reverse_tail = "TCC".into();
-    let report = design::design(&source, &req).unwrap();
+    let report = design::design(&source, &req, None).unwrap();
     consistent(&report, "GGATGACGATCTACAGGTCTGAAAATACGTAGCATCGGACTGGA");
     assert_eq!(report.preparation.outer.forward.tail, "GGA");
     assert_eq!(report.preparation.outer.reverse.tail, "TCC");
@@ -150,7 +152,10 @@ fn reverse_contribution_edits_remain_source_oriented_and_declared_outer_tails_ar
     let mut no_tails = req;
     no_tails.options.outer_forward_tail.clear();
     no_tails.options.outer_reverse_tail.clear();
-    consistent(&design::design(&source, &no_tails).unwrap(), EDITED_REVERSE);
+    consistent(
+        &design::design(&source, &no_tails, None).unwrap(),
+        EDITED_REVERSE,
+    );
 }
 #[test]
 fn partial_and_origin_wrapping_intervals_copy_only_the_declared_original_contribution() {
@@ -159,7 +164,7 @@ fn partial_and_origin_wrapping_intervals_copy_only_the_declared_original_contrib
     let mut req = request();
     req.fragment.start = 8;
     req.fragment.end = 48;
-    let report = design::design(&source, &req).unwrap();
+    let report = design::design(&source, &req, None).unwrap();
     consistent(&report, EDITED);
     assert_eq!(report.plan.inputs[0].molecule.sequence.len(), 56);
     let rotated = format!("{}{}", &text[30..], &text[..30]);
@@ -171,7 +176,7 @@ fn partial_and_origin_wrapping_intervals_copy_only_the_declared_original_contrib
     .unwrap();
     req.fragment.start = 34;
     req.fragment.end = 74;
-    let report = design::design(&circular, &req).unwrap();
+    let report = design::design(&circular, &req, None).unwrap();
     consistent(&report, EDITED);
     assert!(report.designs[1].options.target_end > circular.sequence.len());
     assert_eq!(report.plan.inputs[0].molecule.topology, Topology::Circular);
@@ -200,7 +205,7 @@ fn multiple_disjoint_snp_indel_insert_delete_literals_define_one_small_central_b
     ] {
         let mut req = request();
         req.edits = edits;
-        let report = design::design(&source, &req).unwrap();
+        let report = design::design(&source, &req, None).unwrap();
         consistent(&report, expected);
     }
 }
@@ -219,7 +224,7 @@ fn native_ranked_search_skips_competing_short_domains_without_reading_expected_p
     req.edits = vec![edit(left.len(), left.len() + 4, "GGAC", "TT")];
     req.options.primer_options.max_length = 10;
     req.options.primer_options.target_tm_c = -50.;
-    let report = design::design(&source, &req).unwrap();
+    let report = design::design(&source, &req, None).unwrap();
     consistent(&report, &format!("{left}TTTTCAGACCTGTAGATCGTCA"));
     assert!(report.search[0].examined > 1, "{:?}", report.search);
     assert!(report.search[0].selected_index > 0);
@@ -234,7 +239,7 @@ fn competing_or_unavailable_material_stays_diagnostic_and_terminal_scan_caps_are
         Topology::Linear,
     )
     .unwrap();
-    let report = design::design(&repeated, &request()).unwrap();
+    let report = design::design(&repeated, &request(), None).unwrap();
     assert_ne!(
         report.verification.status,
         Status::ConsistentUnderAssumptions
@@ -248,16 +253,17 @@ fn competing_or_unavailable_material_stays_diagnostic_and_terminal_scan_caps_are
         "duplex_model".into(),
         "Unverified saved material summary".into(),
     );
-    let report = design::design(&source, &request()).unwrap();
-    assert_eq!(report.verification.status, Status::Incomplete);
-    assert!(report.verification.products.is_empty());
+    assert!(
+        design::design(&source, &request(), None).is_err(),
+        "Marked saved material cannot bypass its exact native binding as an original reference"
+    );
     assert_eq!(
-        report.plan.inputs[0].molecule.metadata["duplex_model"],
+        source.metadata["duplex_model"],
         "Unverified saved material summary"
     );
     let mut req = request();
     req.options.max_comparisons = 18;
-    let report = design::design(&self::source(), &req).unwrap();
+    let report = design::design(&self::source(), &req, None).unwrap();
     assert_eq!(report.verification.status, Status::Incomplete);
     assert_eq!(report.verification.products.len(), 4);
     assert_eq!(report.expected.sequence.as_str(), EDITED);
@@ -278,25 +284,25 @@ fn wrong_literals_insertion_conflicts_boundary_edits_oligo_and_work_limits_fail_
             _ => req.options.max_candidates = 0,
         }
         assert!(
-            design::preflight(&source, &req).is_err(),
+            design::preflight(&source, &req, None).is_err(),
             "invalid request {kind}"
         );
     }
     let mut req = request();
     req.options.primer_options.min_gc_fraction = 1.;
     req.options.primer_options.max_gc_fraction = 1.;
-    assert!(design::design(&source, &req).is_err());
+    assert!(design::design(&source, &req, None).is_err());
     let big = Molecule::dna(
         "Huge original search outside the requested contribution",
         &format!("{ORIGINAL}{}", "A".repeat(500_000)),
         Topology::Linear,
     )
     .unwrap();
-    assert!(design::preflight(&big, &request()).is_err());
+    assert!(design::preflight(&big, &request(), None).is_err());
 }
 #[test]
 fn documentary_context_shape_and_selected_pair_tampering_cannot_rebind_a_worker_receipt() {
-    let report = design::design(&source(), &request()).unwrap();
+    let report = design::design(&source(), &request(), None).unwrap();
     let decoded: Report = serde_json::from_slice(&serde_json::to_vec(&report).unwrap()).unwrap();
     decoded.validate_binding(&report.context_revision).unwrap();
     assert!(decoded.validate_binding(&"0".repeat(64)).is_err());

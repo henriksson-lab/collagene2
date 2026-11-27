@@ -39,18 +39,11 @@ pub fn PcrDigestPicker(
     config: RwSignal<MethodsState>,
     index: usize,
     get_query: Callback<usize, Option<Molecule>>,
+    get_workspace: Option<Callback<(), Result<collagene_core::workspace::Workspace, String>>>,
     source_info: Callback<usize, Option<SourceInfo>>,
     epoch: RwSignal<u64>,
 ) -> impl IntoView {
     let row = move || config.with(|c| c.rows.get(index).cloned().unwrap_or_default());
-    let derived_source = Memo::new(move |_| {
-        row().run_origin.as_ref().is_some_and(|origin| {
-            matches!(
-                origin.as_ref(),
-                collagene_core::run_material::MaterialOrigin::Derived(_)
-            )
-        })
-    });
     let catalog = StoredValue::new(catalog_digest::builtin_catalog().ok());
     let search = RwSignal::new(String::new());
     let status = RwSignal::new(String::new());
@@ -158,22 +151,33 @@ pub fn PcrDigestPicker(
             status.set("The saved-material origin belongs to a different source event.".into());
             return;
         }
-        let run_origin = match bound
-            .origin
-            .as_ref()
-            .map(|origin| origin.as_run().cloned())
-            .transpose()
-        {
-            Ok(origin) => origin,
-            Err(error) => {
-                status.set(error);
+        let origin = bound.origin.as_ref().map(|o| o.as_ref().clone());
+        let workspace = if origin.is_some() {
+            let Some(get_workspace) = get_workspace else {
+                status.set("The exact saved-material workspace is unavailable.".into());
                 return;
+            };
+            match get_workspace.run(()) {
+                Ok(workspace) => Some(workspace),
+                Err(error) => {
+                    status.set(error);
+                    return;
+                }
             }
+        } else {
+            None
         };
-        let revision = match request.revision(&source, run_origin.as_ref()) {
+        let revision = match request.revision(&source, origin.as_ref(), workspace.as_ref()) {
             Ok(revision) => revision,
             Err(error) => {
                 status.set(error.to_string());
+                return;
+            }
+        };
+        let job = match request.clone().into_job(source, origin, workspace) {
+            Ok(job) => job,
+            Err(error) => {
+                status.set(error);
                 return;
             }
         };
@@ -197,7 +201,6 @@ pub fn PcrDigestPicker(
         spawn_local(async move {
             let mismatch = matches!(&request, InspectionRequest::Mismatch(_));
             let extension = matches!(&request, InspectionRequest::Extension(_));
-            let job = request.into_job(source, run_origin);
             let response = worker
                 .ask(Request {
                     id: token,
@@ -222,12 +225,12 @@ pub fn PcrDigestPicker(
                         {
                             Ok(InspectionPreview::Exact(preview))
                         }
-                        AnalysisResult::RunPcrDigestInspection(report)
+                        AnalysisResult::MaterialPcrDigestInspection(report)
                             if !mismatch && !extension && bound.origin.is_some() =>
                         {
                             report
                                 .validate_binding(&revision)
-                                .map(|()| InspectionPreview::Exact(report.preview))
+                                .map(|()| InspectionPreview::Material(report))
                                 .map_err(|e| e.to_string())
                         }
                         AnalysisResult::MismatchPcrDigestInspection(report) if mismatch => report
@@ -316,8 +319,7 @@ pub fn PcrDigestPicker(
         <button class="text-tool" disabled=move||row().catalog_selection.is_none() on:click=move|_|config.update(|c|if let Some(row)=c.rows.get_mut(index){row.catalog_selection=None;})>"Clear enzyme selection"</button>
         <p class="helper">"Search by name and select each enzyme needed for the digest. The exact catalog identities and cleavage geometries are pinned together."</p></details>
         <p>{move||row().catalog_selection.map(|selection|selection.enzymes.iter().map(|e|e.enzyme.name.clone()).collect::<Vec<_>>().join(" + ")).unwrap_or_else(||"Choose the PCR-product digest enzymes.".into())}</p>
-        <Show when=move||derived_source.get()><p class="helper">"PCR-product digest inspection is not available here for a saved derived template. Its origin remains retained; whole-construct primer preparation supports that source."</p></Show>
-        <button class="button secondary" disabled=move||busy.get()||derived_source.get() on:click=move|_|compute.run(())>"Inspect PCR digest fragments"</button>
+        <button class="button secondary" disabled=move||busy.get() on:click=move|_|compute.run(())>"Inspect PCR digest fragments"</button>
         <p class="helper" role="status">{move||status.get()}</p>
         {move||proof.get().map(|saved|{
             let preview=&saved.preview;let count=preview.geometry_count();let start=geometry_page.get().min(count.saturating_sub(1)/20)*20;

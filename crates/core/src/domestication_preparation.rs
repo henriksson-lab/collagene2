@@ -19,11 +19,21 @@ macro_rules! dto {($($tokens:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)
 dto! {pub enum Route {
     InversePcr {edit_start:usize,edit_end:usize,forward_length:usize,reverse_length:usize,reverse_tail_bases:usize},
     OverlapExtension {options:crate::overlap_extension_primer_design::Options},
+    InversePcrRounds {rounds:Vec<InverseRound>},
+}}
+dto! {pub struct InverseRound {
+    pub edit_start:usize,pub edit_end:usize,pub forward_length:usize,pub reverse_length:usize,pub reverse_tail_bases:usize,
+}}
+dto! {pub struct RoundEvidence {
+    pub round:InverseRound,pub template:Source,pub source_origin:usize,pub options:InversePcrOptions,
+    pub forward:crate::analysis::Primer,pub reverse:crate::analysis::Primer,
+    pub forward_location:crate::Location,pub reverse_location:crate::Location,pub retained_template_length:usize,
 }}
 dto! {pub struct Request {pub design:domestication::Request,pub selection:domestication::Selection,pub route:Route}}
 dto! {pub enum MethodEvidence {
     InversePcr {options:InversePcrOptions,forward:crate::analysis::Primer,reverse:crate::analysis::Primer,forward_location:crate::Location,reverse_location:crate::Location,retained_template_length:usize},
     OverlapExtension {context_revision:String,request:crate::overlap_extension_primer_design::Request,preparation:crate::overlap_extension_pcr::Request,#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]designs:Vec<crate::primers::DesignReport>,search:Vec<crate::overlap_extension_primer_design::PairSearch>},
+    InversePcrRounds {rounds:Vec<RoundEvidence>},
 }}
 dto! {pub struct Prepared {
     pub context_revision:String,pub request:Request,pub source_revision:String,pub target:Molecule,
@@ -183,7 +193,7 @@ pub fn preflight(input: &PlanInput, request: &Request) -> Result<(), Error> {
         }
         Route::OverlapExtension { .. } => {
             let native = oe_request(input, request)?;
-            crate::overlap_extension_primer_design::preflight(&input.molecule, &native)?;
+            crate::overlap_extension_primer_design::preflight(&input.molecule, &native, None)?;
             let (work, material) =
                 crate::overlap_extension_primer_design::work_preflight(&input.molecule, &native)?;
             let extra = if input.molecule.topology == Topology::Circular {
@@ -203,6 +213,9 @@ pub fn preflight(input: &PlanInput, request: &Request) -> Result<(), Error> {
             {
                 return Err(Error::TooLarge);
             }
+        }
+        Route::InversePcrRounds { rounds } => {
+            crate::domestication_rounds::preflight(input, &request.selection.patches, rounds)?
         }
     }
     Ok(())
@@ -280,6 +293,8 @@ fn oe_request(
         });
     }
     Ok(crate::overlap_extension_primer_design::Request {
+        template_strand: crate::chemistry::Strand::Top,
+        material_binding: None,
         fragment: crate::overlap_primer_design::Fragment {
             role: INPUT_ID.into(),
             input_id: INPUT_ID.into(),
@@ -310,6 +325,7 @@ fn inverse_evidence(
 fn readiness(method: &MethodEvidence) -> (bool, Vec<String>) {
     match method {
         MethodEvidence::InversePcr{..}=>(true,vec!["Explicit original-source inverse-PCR oligos and domains are declared; inspect actual physical verification separately.".into()]),
+        MethodEvidence::InversePcrRounds { rounds } => (true,vec![format!("{} explicitly ordered inverse-PCR rounds use actual preceding closed products. Oligos are declarations from independently intended intermediate genotypes; inspect native amplification/ligation alternatives and final verification separately.",rounds.len())]),
         MethodEvidence::OverlapExtension{search,..}=>{
             let ready=search.len()==3 && search.iter().all(|s|s.unique_geometry);
             let mut notes=vec![if ready{"All three selected native pairs passed the declared filters and established their declared source/extended-substrate geometry. Physical verification, terminal-search limits and isolation remain separate.".into()}else{"Diagnostic proposal only: at least one ranked native pair search did not establish its unique declared PCR geometry. A matching final sequence cannot promote this fallback to a ready primer proposal.".into()}];
@@ -334,6 +350,14 @@ pub fn materialize(input: &PlanInput, request: &Request) -> Result<Prepared, Err
             None,
             &options(input, request)?,
         )?),
+        Route::InversePcrRounds { rounds } => {
+            let (steps, evidence) =
+                crate::domestication_rounds::compile(input, &request.selection.patches, rounds)?;
+            (verification::DesignPlan {
+                name: format!("Sequential inverse-PCR domestication of {}", input.molecule.name),
+                target_revision: target.revision(), inputs: vec![input.clone()], steps,
+            }, MethodEvidence::InversePcrRounds { rounds: evidence }, vec!["Every round consumes the preceding real step product. Intermediate intended sequence frames declare primer bases only; they are never invented stocks, saved origins or additional plan inputs. Template removal, isolation, transformation and empirical success are not modeled.".into()])
+        }
         Route::OverlapExtension { .. } => {
             let native = oe_request(input, request)?;
             let extra = if input.molecule.topology == Topology::Circular {
@@ -577,6 +601,28 @@ impl Prepared {
                 {
                     return Err(bad(
                         "OE physical branch/extension/outer/closure graph changed",
+                    ));
+                }
+            }
+            (
+                Route::InversePcrRounds { rounds },
+                MethodEvidence::InversePcrRounds { rounds: evidence },
+            ) => {
+                let (steps, expected_rounds) = crate::domestication_rounds::compile(
+                    input,
+                    &self.request.selection.patches,
+                    rounds,
+                )?;
+                if self.plan.name
+                    != format!(
+                        "Sequential inverse-PCR domestication of {}",
+                        input.molecule.name
+                    )
+                    || assembly_recipe::hash(&self.plan.steps)? != assembly_recipe::hash(&steps)?
+                    || assembly_recipe::hash(evidence)? != assembly_recipe::hash(&expected_rounds)?
+                {
+                    return Err(bad(
+                        "sequential original-coordinate rounds, oligos or preceding-product graph changed",
                     ));
                 }
             }

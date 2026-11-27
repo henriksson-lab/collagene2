@@ -445,19 +445,22 @@ fn inverse_source_preflight(
     }
     Ok(())
 }
-struct InverseParts {
-    forward: Primer,
-    reverse: Primer,
-    forward_location: Location,
-    reverse_location: Location,
-    retained: usize,
+pub(crate) struct InverseParts {
+    pub(crate) forward: Primer,
+    pub(crate) reverse: Primer,
+    pub(crate) forward_location: Location,
+    pub(crate) reverse_location: Location,
+    pub(crate) retained: usize,
 }
-fn inverse_parts(source: &Molecule, options: &InversePcrOptions) -> Result<InverseParts, Error> {
+pub(crate) fn inverse_parts(
+    sequence: &Sequence,
+    options: &InversePcrOptions,
+) -> Result<InverseParts, Error> {
     // Bound the raw literal before normalization/allocation, not just the resulting oligos.
     if options.inserted.len() > 1024 {
         return Err(Error::TooLarge);
     }
-    let n = source.sequence.len();
+    let n = sequence.len();
     let deleted = options
         .edit_end
         .checked_sub(options.edit_start)
@@ -498,12 +501,12 @@ fn inverse_parts(source: &Molecule, options: &InversePcrOptions) -> Result<Inver
     let reverse_location = region(reverse_start, options.reverse_length, n, true);
     let forward = checked_primer(&Primer::new(
         "Mutagenesis forward",
-        &forward_location.extract(&source.sequence)?,
+        &forward_location.extract(sequence)?,
         &inserted[options.reverse_tail_bases..],
     )?)?;
     let reverse = checked_primer(&Primer::new(
         "Mutagenesis reverse",
-        &reverse_location.extract(&source.sequence)?,
+        &reverse_location.extract(sequence)?,
         &rc(&inserted[..options.reverse_tail_bases])?,
     )?)?;
     if retained
@@ -555,7 +558,7 @@ pub fn inverse_pcr_revision(
             "inverse PCR requires an independently supplied circular DNA target",
         ));
     }
-    inverse_parts(source, options)?;
+    inverse_parts(&source.sequence, options)?;
     inverse_context(source, &target.revision(), origin, options)
 }
 /// Tail-encoded replacement, explicit phosphorylation and intended circular ligation.
@@ -574,7 +577,7 @@ pub fn compile_inverse_pcr(
         forward_location,
         reverse_location,
         retained,
-    } = inverse_parts(source, options)?;
+    } = inverse_parts(&source.sequence, options)?;
     let mut steps = Vec::new();
     if let Some(origin) = origin {
         steps.push(match origin {
@@ -725,7 +728,7 @@ fn validate_inverse_fields(
     if inverse_context(source, target_revision, origin.as_ref(), options)? != context {
         return Err(bad());
     }
-    let parts = inverse_parts(source, options)?;
+    let parts = inverse_parts(&source.sequence, options)?;
     if crate::assembly_recipe::hash(&(
         forward,
         reverse,

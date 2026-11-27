@@ -155,6 +155,7 @@ pub fn range(source: &Molecule, start: &str, end: &str) -> Result<design::Source
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PreparationKind {
     InversePcr,
+    InversePcrRounds,
     OverlapExtension,
 }
 /// Editable raw values survive route switches, including unfinished numbers.
@@ -238,6 +239,7 @@ impl OverlapForm {
 #[derive(Clone, PartialEq, Eq)]
 pub struct RouteForm {
     pub kind: PreparationKind,
+    pub rounds: String,
     pub overlap_extension: OverlapForm,
     pub start: String,
     pub end: String,
@@ -249,6 +251,7 @@ impl Default for RouteForm {
     fn default() -> Self {
         Self {
             kind: PreparationKind::InversePcr,
+            rounds: String::new(),
             overlap_extension: Default::default(),
             start: String::new(),
             end: String::new(),
@@ -284,6 +287,59 @@ impl RouteForm {
             .any(|s| s.len() > 64 || s.chars().any(char::is_control))
         {
             return Err("Overlap-extension raw settings exceed their bounds.".into());
+        }
+        if self.kind == PreparationKind::InversePcrRounds {
+            if self.rounds.len() > 4096 {
+                return Err("Round declarations exceed4096 characters.".into());
+            }
+            let mut rounds = Vec::new();
+            for text in self
+                .rounds
+                .split(|c: char| c.is_ascii_whitespace() || c == ';')
+                .filter(|s| !s.is_empty())
+            {
+                if rounds.len() >= 32 {
+                    return Err("Declare at most32 rounds.".into());
+                }
+                let parts = text.split(':').collect::<Vec<_>>();
+                if parts.len() != 4 {
+                    return Err("Each round uses start-end:forward_length:reverse_length:reverse_tail_bases in original source coordinates.".into());
+                }
+                let (start, end) = parts[0]
+                    .split_once('-')
+                    .ok_or("Each round needs an original start-end interval.")?;
+                let interval = range(source, start, end)?;
+                let number = |s: &str| -> Result<usize, String> {
+                    if s.len() > 20 || !s.bytes().all(|b| b.is_ascii_digit()) {
+                        return Err("Round lengths must be bounded whole numbers.".into());
+                    }
+                    s.parse().map_err(|_| "Round length is too large.".into())
+                };
+                rounds.push(physical::InverseRound {
+                    edit_start: interval.start,
+                    edit_end: interval.end,
+                    forward_length: number(parts[1])?,
+                    reverse_length: number(parts[2])?,
+                    reverse_tail_bases: number(parts[3])?,
+                });
+            }
+            if rounds.len() < 2 {
+                return Err(
+                    "Declare two or more sequential rounds, or choose single inverse PCR.".into(),
+                );
+            }
+            let request = physical::Request {
+                design,
+                selection,
+                route: physical::Route::InversePcrRounds { rounds },
+            };
+            let input = collagene_core::verification::PlanInput {
+                id: physical::INPUT_ID.into(),
+                revision: source.revision(),
+                molecule: source.clone(),
+            };
+            physical::preflight(&input, &request).map_err(|e| e.to_string())?;
+            return Ok(request);
         }
         if self.kind == PreparationKind::OverlapExtension {
             return Ok(physical::Request {
@@ -401,6 +457,7 @@ mod tests {
             patches: vec![],
         };
         let route = RouteForm {
+            rounds: String::new(),
             kind: PreparationKind::InversePcr,
             overlap_extension: Default::default(),
             start: "31".into(),

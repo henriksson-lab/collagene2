@@ -1161,6 +1161,7 @@ pub fn App() -> impl IntoView {
         previous_assembly_draft.set(None);
     });
     let assembly_visible = RwSignal::new(false);
+    let web_mcp_assembly = RwSignal::new(None::<crate::web_mcp_assembly::bridge::Endpoint>);
     let pending_finalize = RwSignal::new(None::<std::sync::Arc<PendingFinalize>>);
     let pending_release = RwSignal::new(None::<String>);
     let selected_release_manifest = RwSignal::new(None::<String>);
@@ -1926,6 +1927,48 @@ pub fn App() -> impl IntoView {
     crate::web_mcp::install(Callback::new(move |(tool, arguments): (String, String)| {
         if workspace_restoring.get_untracked() {
             return Err("The workspace is still loading.".into());
+        }
+        use crate::web_mcp_assembly::{self as assembly, bridge::Command};
+        if tool == "collagene_open_assembly_workspace" {
+            crate::web_mcp::arguments::<crate::web_mcp::Empty>(&arguments)?;
+            assembly_visible.set(true);
+            return crate::web_mcp::response(
+                &serde_json::json!({"opened":true,"next":"Read assembly context after the workspace mounts, then request intended-reference review with its exact pin."}),
+            );
+        }
+        if tool == "collagene_assembly_context" {
+            crate::web_mcp::arguments::<crate::web_mcp::Empty>(&arguments)?;
+            let mut context = assembly_draft.with_untracked(|draft| {
+                assembly::context(draft, workspace_epoch.get_untracked())
+            })?;
+            let expected: assembly::Pin =
+                serde_json::from_value(context["pin"].clone()).map_err(|e| e.to_string())?;
+            context["review"] = match web_mcp_assembly.get_untracked() {
+                Some(endpoint) if endpoint.alive.load(std::sync::atomic::Ordering::Relaxed) => {
+                    endpoint.command.run(Command::Status(expected))?
+                }
+                _ => {
+                    serde_json::json!({"phase":"workspace_closed","message":"Open the assembly workspace to review this draft."})
+                }
+            };
+            return crate::web_mcp::response(&context);
+        }
+        if matches!(
+            tool.as_str(),
+            "collagene_review_assembly_draft" | "collagene_cancel_assembly_review"
+        ) {
+            let endpoint = web_mcp_assembly
+                .get_untracked()
+                .filter(|endpoint| endpoint.alive.load(std::sync::atomic::Ordering::Relaxed))
+                .ok_or("Open the assembly workspace before requesting or cancelling review.")?;
+            let command = if tool == "collagene_review_assembly_draft" {
+                let request: assembly::ReviewRequest = crate::web_mcp::arguments(&arguments)?;
+                Command::Review(request.expected)
+            } else {
+                let request: assembly::CancelRequest = crate::web_mcp::arguments(&arguments)?;
+                Command::Cancel(request.expected, request.review)
+            };
+            return crate::web_mcp::response(&endpoint.command.run(command)?);
         }
         let (response, navigation, source) = documents.with_untracked(|docs| {
             let doc = docs
@@ -6765,7 +6808,7 @@ pub fn App() -> impl IntoView {
                                     </div>
                                     <Show when=move||assembly_visible.get()><section class="assembly-dock" aria-label="Assembly workspace"><div class="assembly-dock-bar"><span>"Assembly design"</span><button class="text-tool" on:click=move|_|assembly_visible.set(false)>"Hide assembly"</button></div>
                                         <fieldset aria-label="Assembly source and preparation controls" disabled=move||workspace_restoring.get() style="border:0;padding:0;margin:0;min-width:0">
-                                        <crate::assembly_workspace::AssemblyWorkspace draft=assembly_draft previous_draft=previous_assembly_draft epoch=workspace_epoch snapshot=contig_snapshot workspace_busy=workspace_restoring
+                                        <crate::assembly_workspace::AssemblyWorkspace web_mcp=web_mcp_assembly draft=assembly_draft previous_draft=previous_assembly_draft epoch=workspace_epoch snapshot=contig_snapshot workspace_busy=workspace_restoring
                                             apply_saved_attachments=Callback::new(move|(before,after):(workspace::Workspace,workspace::Workspace)|{
                                                 if workspace_restoring.get_untracked(){return Err("Wait for the workspace update to finish.".to_owned());}
                                                 let current=contig_snapshot.run(())?;

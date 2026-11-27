@@ -75,34 +75,31 @@ available through the existing review and source-bound JSON download.
 
 ## Shared native declaration builder
 
-`core::topo_preparation::PreparationRequest` contains an explicit mode, prepared
-vector declaration, literal exact-PCR declaration, engine limits and projection
-options. The vector supplies its two strand interval lists, actual termini and
-pairing span. `compile` validates bounded declarations and returns the ordinary
-`topo::Request`, strand indices and directional flag. `source_preflight` and
-`compile_preparation` additionally apply the existing native borrowed-original
-model guards. These functions do not simulate activation or PCR and confer no
-scientific authority. Both web and MCP adapters can use this same DTO; heavy
-orientation work continues through the existing native worker tools.
+`core::topo_preparation::PreparationRequest` contains an explicit mode, source
+choice, engine limits and projection options. `PreparationSource` is `Original`
+with declared vector and exact-PCR insert, `SavedVector` with a native graph and
+new insert, or `ResumeGraph` with the existing vector/insert strand handles.
+`compile` returns one ordinary `topo::Request`, strand indexes and directionality.
+Source preflight checks exact declarations and native ownership where required;
+compilation alone establishes neither activation nor successful amplification.
 
-The builder preserves an empty transfer list for discovery. Its returned
-orientation-specific requests must be used for subsequent projection and target
-checking. The web TA compatibility helper retains its old role names, material
-IDs, pairing and request bytes; the directional profile has distinct declaration
-IDs and no implicit terminal tail. Complete ordered primers in these preparation
-profiles are bounded at 200 bases. More general source/graph recipes remain
-available through the existing adapter rather than being relabeled as this profile.
+The builder preserves an empty new `steps` suffix for orientation discovery.
+Subsequent projection/target comparison uses the chosen candidate-specific request
+and actual retained prefix. TA and directional profiles retain their explicit
+vector chemistry, original calls, complete ordered primers and optional tailing;
+no supplied adduct or primer domain is inferred from a label. General chronological
+source recipes remain available without pretending to be a named kit profile.
 
 ## Remaining physical scope
 
-This increment does not complete F15. Further transfer composition, source-call
-accounted directional flap processing, broader ligase profiles and a proven
-fresh-graph-to-duplex bridge remain separate work. A target-policy allowance must
-never delete an adduct, nick, flap, unpaired call or coupled component, or promote
-a reference-only contour to digest/PCR/ligation material. No current action claims
-host repair, transformation, template clearance or kit efficacy. A withheld graph
-can still be inspected and downloaded; opening it as closed reference DNA is not
-a workaround.
+Current native routes include chronological transfer composition, explicitly
+accounted directional flap hydrolysis, selected templated nick sealing and the
+faithful graph-to-tracked-duplex bridge. Supported saved graph prefixes continue
+with their actual chemistry and remaining activation. These do not establish
+broader ligase/kit profiles, host repair, transformation, template clearance or
+experimental efficacy. A target allowance cannot delete a nick, adduct, unpaired
+call or other component, or promote a reference-only contour into stock.
+A withheld graph remains inspectable; opening it as closed DNA is no workaround.
 
 Browser/visual/performance acceptance remains deferred until all in-scope code is
 complete. Source review, native fixtures and compiler results do not establish GUI
@@ -113,9 +110,15 @@ Try the supplied [synthetic TA example](../fixtures/topo-ta-demo.md) for literal
 
 ## Downstream ligase review
 
-An inspected orientation now opens a separate [nick-sealing review](TOPO_NICK_SEALING.md).
-Load its actual nicks, explicitly select source-call pairs and state the ligase
-assumption before computing. The original and treated graphs remain evidence;
-source/orientation/treatment changes cancel or invalidate pending results. This
-panel does not substitute its treated graph into the earlier projection/target
-workflow or infer an ordinary duplex from a closed-backbone summary.
+An explicit nick selection is a `Step::Process(SealNick)` in the same chronological
+transcript as transfers and supported flap cleavage. It records actual source-call
+pairs and the operator's ligase hypothesis. The native executor retains blocked
+outcomes, all other components and byproducts. Source, orientation, step-order or
+condition changes invalidate pending results and selected contour contexts.
+
+Simulation reviews the full graph. Reference projection/target comparison and the
+sole faithful `TopoActions` bridge remain distinct choices with explicit source
+seeds and policies. SavedVector adds only a declared fresh insert; ResumeGraph
+uses the insert already present and appends only the requested new steps. Neither
+route grants implicit source activation, empirical isolation or laboratory success.
+See [canonical actions](TOPO_PROCESSING_ACTIONS.md) and [graph history](TOPO_GRAPH_HISTORY.md).

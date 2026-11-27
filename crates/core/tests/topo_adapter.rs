@@ -46,7 +46,7 @@ fn ta() -> (Vec<t::Input>, t::Request) {
         input("it", "CGAATGA"),
         input("ib", "CATTCGA"),
     ];
-    let request=t::Request{recipe:t::GenerationRecipe{schema_version:1,materials:vec![t::MaterialRecipe::Prepared{declaration_id:"explicit prepared material".into(),assumption:"Supplied strands and activation are declared, not inferred from these sequence references".into(),strands:vec![prepared("vt","vt",13,true),prepared("vb","vb",13,true),prepared("it","it",7,false),prepared("ib","ib",7,false)],pairing:vec![pair(0,0,1,0,12),pair(2,0,3,0,6)]}]},transfers:vec![p::Transfer{donor:0,acceptor:2,geometry:p::Geometry::ThreePrimeTA},p::Transfer{donor:1,acceptor:3,geometry:p::Geometry::ThreePrimeTA}],engine_limits:p::Limits::default(),projection_options:v::Options::default()};
+    let request=t::Request{recipe:t::GenerationRecipe{schema_version:1,materials:vec![t::MaterialRecipe::Prepared{declaration_id:"explicit prepared material".into(),assumption:"Supplied strands and activation are declared, not inferred from these sequence references".into(),strands:vec![prepared("vt","vt",13,true),prepared("vb","vb",13,true),prepared("it","it",7,false),prepared("ib","ib",7,false)],pairing:vec![pair(0,0,1,0,12),pair(2,0,3,0,6)]}]},steps:vec![p::Step::Transfer(p::Transfer{donor: p::Call {strand:0,index:12},acceptor:p::Call{strand:2,index:0},geometry:p::Geometry::ThreePrimeTA}),p::Step::Transfer(p::Transfer{donor: p::Call {strand:1,index:12},acceptor:p::Call{strand:3,index:0},geometry:p::Geometry::ThreePrimeTA})],engine_limits:p::Limits::default(),projection_options:v::Options::default()};
     (inputs, request)
 }
 fn selected(inputs: &[t::Input], r: &t::Request) -> t::Selection {
@@ -128,7 +128,7 @@ fn recipe_source_roles_chemistry_and_selection_are_exact_pins() {
     }
     assert!(t::product(&i, &r, &new).is_err());
     let noactivation = t::simulate(&i, &r).unwrap();
-    assert!(!noactivation.physical.all_requested_transfers_applied);
+    assert!(!noactivation.physical.all_requested_steps_applied);
     assert!(
         noactivation
             .physical
@@ -156,7 +156,7 @@ fn circular_and_reverse_intervals_preserve_correspondence_without_inventing_wast
                 pairing: vec![],
             }],
         },
-        transfers: vec![],
+        steps: vec![],
         engine_limits: p::Limits::default(),
         projection_options: v::Options::default(),
     };
@@ -191,7 +191,7 @@ fn unique_exact_pcr_and_explicit_tailing_feed_actual_strands_not_metadata() {
                 tail: Some(collagene_core::tailing::TailingBase::A),
             }],
         },
-        transfers: vec![],
+        steps: vec![],
         engine_limits: p::Limits::default(),
         projection_options: v::Options::default(),
     };
@@ -240,7 +240,7 @@ fn pcr_search_work_is_reserved_for_all_passes_and_materials_before_scanning() {
             schema_version: 1,
             materials: vec![material.clone()],
         },
-        transfers: vec![],
+        steps: vec![],
         engine_limits: p::Limits::default(),
         projection_options: v::Options::default(),
     };
@@ -301,7 +301,7 @@ fn borrowed_native_trees_and_preparation_caps_fail_before_hashing() {
 #[test]
 fn two_orientation_requests_retain_all_graphs_and_materialize_independently() {
     let (i, mut r) = ta();
-    r.transfers.clear();
+    r.steps.clear();
     let all = t::inspect_orientations(&i, &r, [0, 1], [2, 3], false).unwrap();
     assert!(all.reference.orientation_search_complete);
     assert!(!all.reference.biochemical_mixture_exhaustive);
@@ -315,8 +315,8 @@ fn two_orientation_requests_retain_all_graphs_and_materialize_independently() {
         assert!(product.reference.is_some());
     }
     assert_ne!(
-        all.candidate_requests[0].transfers,
-        all.candidate_requests[1].transfers
+        all.candidate_requests[0].steps,
+        all.candidate_requests[1].steps
     );
     assert!(
         t::inspect_orientations(&i, &all.candidate_requests[0], [0, 1], [2, 3], false).is_err()
@@ -343,8 +343,16 @@ fn directional_displacement_is_preserved_and_target_comparison_withheld() {
         ];
         *pairing = vec![pair(0, 0, 1, 4, 14), pair(2, 0, 3, 0, 10)];
     }
-    r.transfers[0].geometry = p::Geometry::DirectionalCacc;
-    r.transfers[1].geometry = p::Geometry::Flush;
+    let p::Step::Transfer(first) = &mut r.steps[0] else {
+        panic!("transfer")
+    };
+    first.geometry = p::Geometry::DirectionalCacc;
+    first.donor.index = 13;
+    let p::Step::Transfer(second) = &mut r.steps[1] else {
+        panic!("transfer")
+    };
+    second.geometry = p::Geometry::Flush;
+    second.donor.index = 17;
     let s = selected(&inputs, &r);
     let product = t::product(&inputs, &r, &s).unwrap();
     assert!(product.reference.is_none());
@@ -367,7 +375,7 @@ fn directional_displacement_is_preserved_and_target_comparison_withheld() {
     let policy = t::AcceptancePolicy {
         allow_nicks: true,
         allow_unknown_terminal_chemistry: true,
-        allow_unapplied_transfers: true,
+        allow_unapplied_steps: true,
         allow_other_components: true,
         allow_circular_rotation: true,
         allow_reverse_complement: true,

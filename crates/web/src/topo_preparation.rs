@@ -151,7 +151,7 @@ pub fn initial_vector_request(draft: &Draft) -> Result<topo::Request, String> {
                 pairing: vector.pairing,
             }],
         },
-        transfers: vec![],
+        steps: vec![],
         engine_limits: physical::Limits::default(),
         projection_options: projection::Options::default(),
     })
@@ -319,6 +319,28 @@ fn declaration_hash(value: &impl serde::Serialize) -> Result<String, String> {
     serde_json::to_writer(&mut out, value).map_err(|e| e.to_string())?;
     Ok(out.hash.finalize().to_hex().to_string())
 }
+/// An action review appends explicit processing to the exact inspected path;
+/// it cannot replace its source recipe, pending transfers or scientific limits.
+pub(crate) fn validate_action_append(
+    base: &topo::Request,
+    chosen: &topo::Request,
+) -> Result<(), String> {
+    if declaration_hash(&(&base.recipe, &base.engine_limits, &base.projection_options))?
+        != declaration_hash(&(
+            &chosen.recipe,
+            &chosen.engine_limits,
+            &chosen.projection_options,
+        ))?
+        || chosen.steps.len() < base.steps.len()
+        || chosen.steps[..base.steps.len()] != base.steps
+        || chosen.steps[base.steps.len()..]
+            .iter()
+            .any(|step| !matches!(step, physical::Step::Process(_)))
+    {
+        return Err("The action transcript differs from the exact inspected source path".into());
+    }
+    Ok(())
+}
 pub fn capture(
     workspace: &collagene_core::workspace::Workspace,
     chosen: &CaptureRequest,
@@ -455,6 +477,68 @@ pub fn cacc_prefix_proposal(draft: &Draft) -> Result<Draft, String> {
 mod tests {
     use super::*;
     #[test]
+    fn action_handoff_keeps_exact_source_prefix_and_cannot_replace_it_with_new_transfers() {
+        let draft = Draft {
+            mode: collagene_core::topo_preparation::PreparationMode::Ta,
+            vector_top: "vt".into(),
+            vector_bottom: "vb".into(),
+            insert_template: "template".into(),
+            vector_top_length: 13,
+            vector_bottom_length: 13,
+            forward_sequence: "GGACGT".into(),
+            forward_annealing: 4,
+            reverse_sequence: "TTTGCA".into(),
+            reverse_annealing: 4,
+            preparation_assumption: "Explicit actual vector fixture".into(),
+            activation_confirmed: true,
+            add_a_tail: true,
+            ..Default::default()
+        };
+        let (_, compiled) = compile_request(&draft, None).unwrap();
+        let mut base = compiled.request;
+        let transfer = physical::Step::Transfer(physical::Transfer {
+            donor: physical::Call {
+                strand: 0,
+                index: 12,
+            },
+            acceptor: physical::Call {
+                strand: 2,
+                index: 0,
+            },
+            geometry: physical::Geometry::ThreePrimeTA,
+        });
+        base.steps.push(transfer.clone());
+        let mut chosen = base.clone();
+        chosen.steps.push(physical::Step::Process(
+            physical::processing::Action::SealNick {
+                selection: physical::nick_sealing::NickSelection {
+                    three: physical::Call {
+                        strand: 2,
+                        index: 6,
+                    },
+                    five: physical::Call {
+                        strand: 0,
+                        index: 0,
+                    },
+                },
+                ligase_assumption: "Explicit ideal ligase fixture".into(),
+            },
+        ));
+        validate_action_append(&base, &chosen).unwrap();
+        let mut wrong = chosen.clone();
+        wrong.steps.remove(0);
+        assert!(validate_action_append(&base, &wrong).is_err());
+        let mut wrong = chosen.clone();
+        wrong.steps.push(transfer);
+        assert!(validate_action_append(&base, &wrong).is_err());
+        let mut wrong = chosen.clone();
+        wrong.engine_limits.max_steps += 1;
+        assert!(validate_action_append(&base, &wrong).is_err());
+        let mut wrong = chosen;
+        wrong.recipe.materials.reverse();
+        assert!(validate_action_append(&base, &wrong).is_err());
+    }
+    #[test]
     fn declaration_preserves_ordered_oligos_and_never_selects_a_transfer() {
         let draft = Draft {
             mode: collagene_core::topo_preparation::PreparationMode::Ta,
@@ -476,7 +560,7 @@ mod tests {
         let (roles, compiled) = compile_request(&draft, None).unwrap();
         let request = compiled.request;
         assert_eq!(roles[0], ("vector_top".into(), "vt".into()));
-        assert!(request.transfers.is_empty());
+        assert!(request.steps.is_empty());
         let topo::MaterialRecipe::ExactPcr {
             forward,
             reverse,
@@ -523,7 +607,7 @@ mod tests {
         let original = draft.clone();
         let (roles, compiled) = compile_request(&draft, None).unwrap();
         assert!(compiled.directional);
-        assert!(compiled.request.transfers.is_empty());
+        assert!(compiled.request.steps.is_empty());
         assert_eq!(roles[2], ("insert_template".into(), "original".into()));
         let topo::MaterialRecipe::Prepared {
             pairing, strands, ..
@@ -662,7 +746,7 @@ pub(crate) async fn execute(
             Reply::Orientations(r) => AnalysisResult::TopoOrientations(r),
             Reply::Projected(r) => AnalysisResult::TopoProjection(r),
             Reply::Checked(r) => AnalysisResult::TopoTarget(r),
-            Reply::ActionsInspected(r) => AnalysisResult::TopoActionsInspected(r),
+            Reply::Simulated(r) => AnalysisResult::TopoSimulation(r),
             Reply::ActionsProcessed(r) => AnalysisResult::TopoActionsProduct(r),
         },
         review,

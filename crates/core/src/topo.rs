@@ -24,7 +24,7 @@ dto! {pub enum MaterialRecipe {
     SavedGraph {material_id:String,origin:crate::topo_graph_history::Capsule},
 }}
 dto! {pub struct GenerationRecipe {pub schema_version:u16,pub materials:Vec<MaterialRecipe>}}
-dto! {pub struct Request {pub recipe:GenerationRecipe,pub transfers:Vec<physical::Transfer>,pub engine_limits:physical::Limits,pub projection_options:projection::Options}}
+dto! {pub struct Request {pub recipe:GenerationRecipe,pub steps:Vec<physical::Step>,pub engine_limits:physical::Limits,pub projection_options:projection::Options}}
 dto! {pub enum Origin {
     ReferenceCorrespondence(SourceInterval),
     /// Full freshly computed PCR strand before optional tailing. This identifies
@@ -34,21 +34,21 @@ dto! {pub enum Origin {
 }}
 dto! {pub struct PreparedMap {pub strand:usize,pub strand_start:usize,pub length:usize,pub origin:Origin}}
 dto! {pub struct ReferenceGap {pub source_role:String,pub start:usize,pub end:usize}}
-dto! {pub struct PreparationEvidence {pub substrates:physical::Substrates,pub maps:Vec<PreparedMap>,pub not_represented:Vec<ReferenceGap>,pub assumptions:Vec<String>,pub retained_transfers:Vec<physical::Transfer>,pub layout:Vec<MaterialLayout>,pub graph_origins:Vec<GraphOriginEvidence>}}
+dto! {pub struct PreparationEvidence {pub substrates:physical::Substrates,pub maps:Vec<PreparedMap>,pub not_represented:Vec<ReferenceGap>,pub assumptions:Vec<String>,pub retained_steps:Vec<physical::Step>,pub layout:Vec<MaterialLayout>,pub graph_origins:Vec<GraphOriginEvidence>}}
 dto! {pub struct TopoReport {pub engine_version:String,pub batch_revision:String,pub sources:Vec<SourceIdentity>,pub preparation:PreparationEvidence,pub physical:physical::Report,pub incomplete:bool,pub findings:Vec<String>}}
 dto! {pub struct Selection {pub batch_revision:String,pub component:usize,pub reference_seed:physical::Call}}
 dto! {pub struct Product {pub engine_version:String,pub batch_revision:String,pub selection:Selection,pub sources:Vec<SourceIdentity>,pub preparation:PreparationEvidence,pub projection:projection::ProjectionReport,pub annotations:Option<crate::topo_annotations::AnnotationEvidence>,pub reference:Option<Molecule>}}
-dto! {#[derive(Default)] pub struct AcceptancePolicy {pub allow_nicks:bool,pub allow_unknown_terminal_chemistry:bool,pub allow_unapplied_transfers:bool,pub allow_other_components:bool,pub allow_circular_rotation:bool,pub allow_reverse_complement:bool}}
+dto! {#[derive(Default)] pub struct AcceptancePolicy {pub allow_nicks:bool,pub allow_unknown_terminal_chemistry:bool,pub allow_unapplied_steps:bool,pub allow_other_components:bool,pub allow_circular_rotation:bool,pub allow_reverse_complement:bool}}
 dto! {pub enum TargetOutcome {AcceptedUnderDeclaredGraph,Rejected{reasons:Vec<String>},Withheld{reason:String}}}
 dto! {pub struct TargetAssessment {pub engine_version:String,pub batch_revision:String,pub target_revision:String,pub policy:AcceptancePolicy,pub product:Product,pub outcome:TargetOutcome}}
 // Whole-graph evidence and a selected annotated contour answer distinct current
 // questions. There is one Product document, with documentary annotations only.
 dto! {pub struct MaterialLayout{pub owner:Option<String>,pub material:usize,pub source_strands:Vec<usize>,pub source_roles:Vec<(String,String)>}}
-dto! {pub struct GraphOriginEvidence{pub selection:crate::topo_graph_history::Selection,pub strand_start:usize,pub strand_end:usize,pub after_transfers:usize,pub activation_unmap:Vec<(String,String)>,pub transfer_map:Vec<usize>,pub incomplete:bool}}
+dto! {pub struct GraphOriginEvidence{pub selection:crate::topo_graph_history::Selection,pub strand_start:usize,pub strand_end:usize,pub after_steps:usize,pub activation_unmap:Vec<(String,String)>,pub step_map:Vec<usize>,pub incomplete:bool}}
 pub(crate) struct PreparedContext {
     pub inputs: Vec<Input>,
     pub evidence: PreparationEvidence,
-    pub effective_transfers: Vec<physical::Transfer>,
+    pub effective_steps: Vec<physical::Step>,
     pub incomplete: bool,
     pub origin_source_incomplete: Vec<bool>,
     pub findings: Vec<String>,
@@ -130,6 +130,7 @@ fn source_preflight_inner(
     r: &Request,
     reconstructed_templates: &BTreeSet<String>,
 ) -> Result<(), Error> {
+    physical::steps_preflight(&r.steps, &r.engine_limits).map_err(engine_error)?;
     let roots = r.recipe.materials.iter().filter_map(|m| {
         if let MaterialRecipe::SavedGraph { origin, .. } = m {
             Some(crate::run_material::NativeOriginRef::TopoGraph(origin))
@@ -163,11 +164,12 @@ fn source_preflight_flat(
     r: &Request,
     reconstructed_templates: &BTreeSet<String>,
 ) -> Result<(), Error> {
+    physical::steps_preflight(&r.steps, &r.engine_limits).map_err(engine_error)?;
     if inputs.len() > 64
         || r.recipe.schema_version != 1
         || r.recipe.materials.is_empty()
         || r.recipe.materials.len() > 64
-        || r.transfers.len() > 16
+        || r.steps.len() > 16
     {
         return Err(Error::TooLarge);
     }
@@ -590,7 +592,7 @@ fn expand(
                 schema_version: 1,
                 materials: vec![],
             },
-            transfers: vec![],
+            steps: vec![],
             engine_limits: r.engine_limits.clone(),
             projection_options: r.projection_options.clone(),
         },
@@ -670,6 +672,7 @@ fn expand_node(
     if *counter > 128 {
         return Err(Error::TooLarge);
     }
+    let node_step_base = out.request.steps.len();
     let node = *counter;
     *counter += 1;
     let mut roles = std::collections::BTreeMap::new();
@@ -780,7 +783,7 @@ fn expand_node(
                         "historical graph model cannot provide current material",
                     ));
                 }
-                let transfers_before = out.request.transfers.len();
+                let steps_before = out.request.steps.len();
                 let activation_namespace = origin.selection.record_hash.clone();
                 let indices = expand_node(
                     &origin.source_snapshots,
@@ -828,15 +831,14 @@ fn expand_node(
                     }
                 }
                 // Include nested transfer prefixes, all in the same physical job.
-                let transfer_map =
-                    (transfers_before..out.request.transfers.len()).collect::<Vec<_>>();
+                let step_map = (steps_before..out.request.steps.len()).collect::<Vec<_>>();
                 out.origins.push(GraphOriginEvidence {
                     selection: origin.selection.clone(),
                     strand_start: start,
                     strand_end: end,
-                    after_transfers: out.request.transfers.len(),
+                    after_steps: out.request.steps.len(),
                     activation_unmap,
-                    transfer_map,
+                    step_map,
                     incomplete: record.incomplete,
                 });
                 strand_map.extend(indices);
@@ -850,24 +852,65 @@ fn expand_node(
             source_roles: roles.iter().map(|(a, b)| (a.clone(), b.clone())).collect(),
         });
     }
-    for t in &r.transfers {
-        out.request.transfers.push(physical::Transfer {
-            donor: *strand_map
-                .get(t.donor)
-                .ok_or_else(|| bad("transfer donor outside original graph namespace"))?,
-            acceptor: *strand_map
-                .get(t.acceptor)
-                .ok_or_else(|| bad("transfer acceptor outside original graph namespace"))?,
-            geometry: t.geometry,
-        });
+    for step in &r.steps {
+        out.request
+            .steps
+            .push(remap_step(step, &strand_map, node_step_base)?);
     }
     if out.inputs.len() > 64
         || out.request.recipe.materials.len() > 64
-        || out.request.transfers.len() > 64
+        || out.request.steps.len() > 64
     {
         return Err(Error::TooLarge);
     }
     Ok(strand_map)
+}
+fn remap_step(
+    step: &physical::Step,
+    strands: &[usize],
+    step_base: usize,
+) -> Result<physical::Step, Error> {
+    let call = |c: physical::Call| -> Result<physical::Call, Error> {
+        Ok(physical::Call {
+            strand: *strands
+                .get(c.strand)
+                .ok_or_else(|| bad("call outside native graph source namespace"))?,
+            index: c.index,
+        })
+    };
+    Ok(match step {
+        physical::Step::Transfer(t) => physical::Step::Transfer(physical::Transfer {
+            donor: call(t.donor)?,
+            acceptor: call(t.acceptor)?,
+            geometry: t.geometry,
+        }),
+        physical::Step::Process(physical::processing::Action::CleaveThreePrimeFlap {
+            bond,
+            displacement_step,
+            profile,
+            assumption,
+        }) => physical::Step::Process(physical::processing::Action::CleaveThreePrimeFlap {
+            bond: physical::processing::Bond {
+                upstream: call(bond.upstream)?,
+                downstream: call(bond.downstream)?,
+            },
+            displacement_step: step_base
+                .checked_add(*displacement_step)
+                .ok_or(Error::TooLarge)?,
+            profile: *profile,
+            assumption: assumption.clone(),
+        }),
+        physical::Step::Process(physical::processing::Action::SealNick {
+            selection,
+            ligase_assumption,
+        }) => physical::Step::Process(physical::processing::Action::SealNick {
+            selection: physical::nick_sealing::NickSelection {
+                three: call(selection.three)?,
+                five: call(selection.five)?,
+            },
+            ligase_assumption: ligase_assumption.clone(),
+        }),
+    })
 }
 fn flat_strands(materials: &[MaterialRecipe]) -> usize {
     materials
@@ -1100,13 +1143,13 @@ fn prepare_declared(inputs: &[Input], r: &Request) -> Result<PreparationEvidence
             start = end;
         }
     }
-    physical::preflight(&substrates, &r.transfers, &r.engine_limits).map_err(engine_error)?;
+    physical::preflight(&substrates, &r.steps, &r.engine_limits).map_err(engine_error)?;
     Ok(PreparationEvidence {
         substrates,
         maps,
         not_represented,
         assumptions,
-        retained_transfers: vec![],
+        retained_steps: vec![],
         layout: vec![],
         graph_origins: vec![],
     })
@@ -1195,11 +1238,11 @@ fn prepare_bound(
     let mut evidence = prepare_declared(&expanded.inputs, &expanded.request)?;
     let prefix = expanded
         .request
-        .transfers
+        .steps
         .len()
-        .checked_sub(r.transfers.len())
+        .checked_sub(r.steps.len())
         .ok_or(Error::TooLarge)?;
-    evidence.retained_transfers = expanded.request.transfers[..prefix].to_vec();
+    evidence.retained_steps = expanded.request.steps[..prefix].to_vec();
     evidence.layout = expanded.layout;
     evidence.graph_origins = expanded.origins;
     let origin_source_incomplete=evidence.graph_origins.iter().map(|origin|evidence.maps.iter().any(|map|{
@@ -1211,30 +1254,30 @@ fn prepare_bound(
     Ok(PreparedContext {
         inputs: expanded.inputs,
         evidence,
-        effective_transfers: expanded.request.transfers,
+        effective_steps: expanded.request.steps,
         incomplete,
         origin_source_incomplete,
         findings,
     })
 }
-pub(crate) fn effective_transfers(
+pub(crate) fn effective_steps(
     evidence: &PreparationEvidence,
     r: &Request,
-) -> Result<Vec<physical::Transfer>, Error> {
-    let expected = retained_transfers(r)?;
-    if expected != evidence.retained_transfers {
+) -> Result<Vec<physical::Step>, Error> {
+    let expected = retained_steps(r)?;
+    if expected != evidence.retained_steps {
         return Err(bad(
             "retained graph transfer prefix differs from native request",
         ));
     }
     let mut all = expected;
-    all.extend(r.transfers.iter().cloned());
+    all.extend(r.steps.iter().cloned());
     if all.len() > 64 {
         return Err(Error::TooLarge);
     }
     Ok(all)
 }
-fn retained_transfers(r: &Request) -> Result<Vec<physical::Transfer>, Error> {
+fn retained_steps(r: &Request) -> Result<Vec<physical::Step>, Error> {
     let roots = r.recipe.materials.iter().filter_map(|m| {
         if let MaterialRecipe::SavedGraph { origin, .. } = m {
             Some(crate::run_material::NativeOriginRef::TopoGraph(origin))
@@ -1246,20 +1289,28 @@ fn retained_transfers(r: &Request) -> Result<Vec<physical::Transfer>, Error> {
     fn collect(
         r: &Request,
         base: usize,
+        step_base: usize,
         depth: usize,
-    ) -> Result<(usize, Vec<physical::Transfer>), Error> {
+    ) -> Result<(usize, Vec<physical::Step>), Error> {
         if depth > 32 {
             return Err(Error::TooLarge);
         }
         let mut n = 0usize;
         let mut out = vec![];
-        for m in &r.recipe.materials {
-            match m {
-                MaterialRecipe::Prepared { strands, .. } => n += strands.len(),
-                MaterialRecipe::ExactPcr { .. } => n += 2,
+        for material in &r.recipe.materials {
+            match material {
+                MaterialRecipe::Prepared { strands, .. } => {
+                    n = n.checked_add(strands.len()).ok_or(Error::TooLarge)?
+                }
+                MaterialRecipe::ExactPcr { .. } => n = n.checked_add(2).ok_or(Error::TooLarge)?,
                 MaterialRecipe::SavedGraph { origin, .. } => {
                     let record = origin.validate_shallow()?;
-                    let (count, steps) = collect(&record.request.request, base + n, depth + 1)?;
+                    let (count, steps) = collect(
+                        &record.request.request,
+                        base.checked_add(n).ok_or(Error::TooLarge)?,
+                        step_base.checked_add(out.len()).ok_or(Error::TooLarge)?,
+                        depth + 1,
+                    )?;
                     n = n.checked_add(count).ok_or(Error::TooLarge)?;
                     out.extend(steps);
                 }
@@ -1268,20 +1319,22 @@ fn retained_transfers(r: &Request) -> Result<Vec<physical::Transfer>, Error> {
                 return Err(Error::TooLarge);
             }
         }
-        for t in &r.transfers {
-            out.push(physical::Transfer {
-                donor: base.checked_add(t.donor).ok_or(Error::TooLarge)?,
-                acceptor: base.checked_add(t.acceptor).ok_or(Error::TooLarge)?,
-                geometry: t.geometry,
-            });
+        let map = (0..n)
+            .map(|i| base.checked_add(i).ok_or(Error::TooLarge))
+            .collect::<Result<Vec<_>, _>>()?;
+        for step in &r.steps {
+            out.push(remap_step(step, &map, step_base)?);
+            if out.len() > 64 {
+                return Err(Error::TooLarge);
+            }
         }
         Ok((n, out))
     }
-    let (_, mut full) = collect(r, 0, 0)?;
-    if r.transfers.len() > full.len() {
+    let (_, mut full) = collect(r, 0, 0, 0)?;
+    if r.steps.len() > full.len() {
         return Err(Error::TooLarge);
     }
-    full.truncate(full.len() - r.transfers.len());
+    full.truncate(full.len() - r.steps.len());
     Ok(full)
 }
 fn check_origin_incompleteness(
@@ -1298,13 +1351,13 @@ fn check_origin_incompleteness(
         .zip(&prepared.origin_source_incomplete)
     {
         let mut computed = *source_incomplete;
-        for index in &origin.transfer_map {
+        for index in &origin.step_map {
             let step = actual
                 .steps
                 .get(*index)
-                .filter(|_| *index < origin.after_transfers)
+                .filter(|_| *index < origin.after_steps)
                 .ok_or_else(|| bad("source transfer completeness map changed"))?;
-            computed |= step.outcome != physical::Outcome::Applied;
+            computed |= step.outcome() != physical::Outcome::Applied;
         }
         if computed != origin.incomplete {
             return Err(bad(
@@ -1323,16 +1376,16 @@ pub(crate) fn execute(
         .graph_origins
         .iter()
         .map(|o| physical::Checkpoint {
-            after_transfers: o.after_transfers,
+            after_steps: o.after_steps,
             strand_start: o.strand_start,
             strand_end: o.strand_end,
             activation_unmap: o.activation_unmap.iter().cloned().collect(),
-            transfer_map: o.transfer_map.clone(),
+            step_map: o.step_map.clone(),
         })
         .collect::<Vec<_>>();
     let fresh = physical::simulate_with_checkpoints(
         &prepared.evidence.substrates,
-        &prepared.effective_transfers,
+        &prepared.effective_steps,
         limits,
         &checkpoints,
     )
@@ -1378,7 +1431,7 @@ fn report_prepared(
         sources: identities(&prepared.inputs),
         incomplete: prepared.incomplete
             || physical.unsupported_or_unknown
-            || !physical.all_requested_transfers_applied,
+            || !physical.all_requested_steps_applied,
         findings: prepared.findings,
         preparation: prepared.evidence,
         physical,
@@ -1420,7 +1473,7 @@ fn product_preflighted(inputs: &[Input], r: &Request, s: &Selection) -> Result<P
     };
     let projection = projection::project_fresh(
         &prepared.evidence.substrates,
-        &prepared.effective_transfers,
+        &prepared.effective_steps,
         &r.engine_limits,
         &select,
         &r.projection_options,
@@ -1539,7 +1592,7 @@ fn check_fresh_product(
     ))?;
     let outcome=match (&product.projection.outcome,&product.reference){(projection::Outcome::Proven(v),Some(m))=>{let mut reasons=vec![];if !policy.allow_nicks&&!v.nicks.is_empty(){reasons.push("selected contour retains nicks".into());}
 if !policy.allow_unknown_terminal_chemistry&&!v.fully_known_terminal_chemistry{reasons.push("terminal chemistry is unknown".into());}
-if !policy.allow_unapplied_transfers&&!v.all_requested_transfers_applied{reasons.push("requested transfer did not apply".into());}
+if !policy.allow_unapplied_steps&&!v.all_requested_steps_applied{reasons.push("requested step did not apply".into());}
 if !policy.allow_other_components&&product.projection.physical.product.components.len()!=1{reasons.push("other physical components remain".into());}let dna=target.sequence.as_str();let same=|candidate:&str| candidate==dna||m.topology==Topology::Circular&&policy.allow_circular_rotation&&analysis::rotation_offset(candidate,dna).is_some();let sequence_matches=same(m.sequence.as_str())||policy.allow_reverse_complement&&same(m.sequence.reverse_complement()?.as_str());if m.topology!=target.topology||!sequence_matches{reasons.push("independent target DNA/topology differs under declared comparison policy".into());}
 if reasons.is_empty(){TargetOutcome::AcceptedUnderDeclaredGraph}else{TargetOutcome::Rejected{reasons}}},_=>TargetOutcome::Withheld{reason:"No unique paired contour; full physical graph and withheld projection evidence retained. No flap/nick repair or target-derived path is attempted.".into()}};
     let result = TargetAssessment {
@@ -1599,7 +1652,7 @@ pub fn orientations_revision(
     directional: bool,
 ) -> Result<String, Error> {
     source_preflight(inputs, r)?;
-    if !r.transfers.is_empty()
+    if !r.steps.is_empty()
         || vector.iter().chain(&insert).any(|i| *i >= 64)
         || vector
             .iter()
@@ -1640,7 +1693,7 @@ fn orientations_preflighted(
     insert: [usize; 2],
     directional: bool,
 ) -> Result<OrientationInspection, Error> {
-    if !r.transfers.is_empty() {
+    if !r.steps.is_empty() {
         return Err(bad(
             "orientation inspection requires an empty transfer list; orientation-specific requests are returned explicitly",
         ));
@@ -1658,16 +1711,16 @@ fn orientations_preflighted(
         .graph_origins
         .iter()
         .map(|o| physical::Checkpoint {
-            after_transfers: o.after_transfers,
+            after_steps: o.after_steps,
             strand_start: o.strand_start,
             strand_end: o.strand_end,
             activation_unmap: o.activation_unmap.iter().cloned().collect(),
-            transfer_map: o.transfer_map.clone(),
+            step_map: o.step_map.clone(),
         })
         .collect::<Vec<_>>();
     let reference = physical::orientations(
         &prepared.evidence.substrates,
-        &prepared.evidence.retained_transfers,
+        &prepared.evidence.retained_steps,
         vector,
         insert,
         directional,
@@ -1696,9 +1749,9 @@ fn orientations_preflighted(
     let sources = identities(&prepared.inputs);
     let preparation = prepared.evidence;
     let mut candidate_requests = Vec::new();
-    for pending in &reference.pending_transfers {
+    for pending in &reference.pending_steps {
         let mut request = r.clone();
-        request.transfers = pending.clone();
+        request.steps = pending.clone();
         candidate_requests.push(request);
     }
     let batch_revision = hash(&(
@@ -1733,6 +1786,9 @@ pub(crate) fn inspect_reconstructed_task(
     use crate::topo_run_preparation::{Reply, Task};
     source_preflight_reconstructed(inputs, task.preparation(), templates)?;
     Ok(match task {
+        Task::Simulate { request } => {
+            Reply::Simulated(report_prepared(inputs, request, prepare(inputs, request)?)?)
+        }
         Task::Orientations {
             request,
             vector,
@@ -1780,9 +1836,6 @@ pub(crate) fn inspect_reconstructed_task(
                 outcome,
             })
         }
-        Task::InspectActions { request } => Reply::ActionsInspected(
-            crate::topo_actions::inspect_actions_reconstructed(inputs, request, templates)?,
-        ),
         Task::ProcessActions { request } => Reply::ActionsProcessed(
             crate::topo_actions::inspect_reconstructed(inputs, request, templates)?,
         ),

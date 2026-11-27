@@ -106,9 +106,7 @@ fn presentation(kind: &str) -> bool {
 fn run_evidence(kind: &str) -> bool {
     matches!(
         kind,
-        collagene_core::reference_run_evidence::KIND
-            | collagene_core::physical_run_evidence::KIND
-            | collagene_core::processed_run_evidence::KIND
+        collagene_core::reference_run_evidence::KIND | collagene_core::physical_run_evidence::KIND
     )
 }
 // Explicit known-schema index projections. The original Workspace::validate
@@ -404,9 +402,6 @@ impl<'a> Graph<'a> {
                     let preparation = match op {
                         Operation::Topo { request, .. }
                         | Operation::CheckedTopo { request, .. } => Some(request),
-                        Operation::ProcessedTopo { request, .. } => {
-                            Some(&request.treatment.preparation)
-                        }
                         Operation::TopoActions { request, .. } => Some(&request.preparation),
                         _ => None,
                     };

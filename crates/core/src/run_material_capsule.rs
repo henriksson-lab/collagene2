@@ -278,9 +278,6 @@ fn origins(plan: &DesignPlan) -> Vec<(usize, Pending<'_>)> {
             Operation::Topo { request, .. } | Operation::CheckedTopo { request, .. } => {
                 result.extend(graph_nodes(request).map(|n| (1, n)))
             }
-            Operation::ProcessedTopo { request, .. } => {
-                result.extend(graph_nodes(&request.treatment.preparation).map(|n| (1, n)))
-            }
             Operation::TopoActions { request, .. } => {
                 result.extend(graph_nodes(&request.preparation).map(|n| (1, n)))
             }
@@ -441,10 +438,6 @@ fn walk<'a>(
                         | Operation::CheckedTopo { request, .. } => {
                             stack.extend(owned_graph_nodes(request).map(|n| (depth + 1, n)))
                         }
-                        Operation::ProcessedTopo { request, .. } => stack.extend(
-                            owned_graph_nodes(request.treatment.preparation)
-                                .map(|n| (depth + 1, n)),
-                        ),
                         Operation::TopoActions { request, .. } => stack
                             .extend(owned_graph_nodes(request.preparation).map(|n| (depth + 1, n))),
                         _ => {}
@@ -493,7 +486,7 @@ fn walk<'a>(
                     record
                         .request
                         .request
-                        .transfers
+                        .steps
                         .len()
                         .checked_add(1)
                         .ok_or(Error::TooLarge)?,
@@ -519,7 +512,7 @@ fn walk<'a>(
                     record
                         .request
                         .request
-                        .transfers
+                        .steps
                         .len()
                         .checked_add(1)
                         .ok_or(Error::TooLarge)?,
@@ -897,7 +890,7 @@ pub fn documentary_origins(
             record
                 .request
                 .request
-                .transfers
+                .steps
                 .len()
                 .checked_add(1)
                 .ok_or(Error::TooLarge)?,
@@ -1028,7 +1021,7 @@ pub fn documentary_origins(
             });
         }
         graphs.push(crate::topo_graph_history::Capsule {
-            schema_version: 1,
+            schema_version: 2,
             selection: selection.clone(),
             record_bytes: workspace.attachments[&selection.record_hash].bytes.clone(),
             source_snapshots: snapshots,

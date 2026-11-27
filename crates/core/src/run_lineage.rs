@@ -324,7 +324,6 @@ pub fn validate_workspace_runs(w: &Workspace) -> Result<(), Error> {
         }
         crossrefs(w, &r)?
     }
-    crate::processed_run_evidence::validate_workspace(w)?;
     crate::physical_run_evidence::validate_workspace(w)?;
     Ok(())
 }
@@ -408,7 +407,6 @@ pub fn record_run(
         inputs.push(b.clone());
     }
     let mut report = verification::verify(plan, target);
-    let processed_graphs = std::mem::take(&mut report.processed_step_reports);
     let physical_graphs = std::mem::take(&mut report.physical_processing_reports);
     let reference_graphs = std::mem::take(&mut report.reference_step_reports);
     if report.products.len() != plan.steps.len()
@@ -499,10 +497,7 @@ pub fn record_run(
         let hash = blake3::hash(&attachment.bytes).to_hex().to_string();
         next.attachments.insert(hash, attachment);
     }
-    if let Some(attachment) = crate::processed_run_evidence::attachment(&r, processed_graphs)? {
-        let hash = blake3::hash(&attachment.bytes).to_hex().to_string();
-        next.attachments.insert(hash, attachment);
-    }
+
     let bytes = save_run_record(&r)?;
     let h = blake3::hash(&bytes).to_hex().to_string();
     next.attachments.insert(

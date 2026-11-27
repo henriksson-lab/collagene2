@@ -45,7 +45,7 @@ fn fixture(four: bool) -> (Vec<t::Input>, t::Request) {
                     pairing,
                 }],
             },
-            transfers: vec![],
+            steps: vec![],
             engine_limits: p::Limits::default(),
             projection_options: v::Options::default(),
         },

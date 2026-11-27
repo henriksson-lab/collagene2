@@ -43,7 +43,6 @@ fn title(op: &Operation) -> &'static str {
         Operation::MultiSiteRecombineReference { .. } => "Multi-parent reference exchange",
         Operation::RecombineReference { .. } => "Reference recombination",
         Operation::Topo { .. } | Operation::CheckedTopo { .. } => "TOPO reference inspection",
-        Operation::ProcessedTopo { .. } => "Processed TOPO",
         Operation::TopoActions { .. } => "TOPO processing actions",
     }
 }
@@ -785,7 +784,6 @@ fn OperationEditor(
         Operation::AnnealOligos { .. } => vec!["Top oligo".to_string(), "Bottom oligo".to_string()],
         Operation::Topo { sources, .. }
         | Operation::CheckedTopo { sources, .. }
-        | Operation::ProcessedTopo { sources, .. }
         | Operation::TopoActions { sources, .. } => {
             sources.iter().map(|source| source.role.clone()).collect()
         }

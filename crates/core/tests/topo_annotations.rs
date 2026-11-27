@@ -69,7 +69,7 @@ fn preparation(top: &str, bottom: &str, maps: Vec<t::PreparedMap>) -> t::Prepara
         maps,
         not_represented: vec![],
         assumptions: vec!["Literal prepared correspondence; not biochemical proof".into()],
-        retained_transfers: vec![],
+        retained_steps: vec![],
         layout: vec![],
         graph_origins: vec![],
     }
@@ -95,7 +95,7 @@ fn view(top: &str, bottom: &str) -> v::DuplexView {
         nicks: vec![],
         ends: None,
         fully_known_terminal_chemistry: true,
-        all_requested_transfers_applied: true,
+        all_requested_steps_applied: true,
     }
 }
 fn project(

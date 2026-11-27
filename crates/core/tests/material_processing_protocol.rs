@@ -128,8 +128,8 @@ fn mismatch_install_redigest_and_repair_keep_literal_tails_and_actual_sticky_str
             request,
         },
         expected,
-        174,
-        164,
+        171,
+        161,
     );
     let AnalysisResult::MaterialDerivationInstalled(installed) = response.result else {
         panic!("installation")
@@ -180,8 +180,8 @@ fn mismatch_install_redigest_and_repair_keep_literal_tails_and_actual_sticky_str
             method: EndRepairMethod::FillFivePrimeOverhangs,
         },
         context.clone(),
-        179,
-        169,
+        176,
+        166,
     );
     let AnalysisResult::MaterialRepairPreview(repair) = response.result else {
         panic!("repair")
@@ -217,8 +217,8 @@ fn mismatch_install_redigest_and_repair_keep_literal_tails_and_actual_sticky_str
             request,
         },
         expected,
-        174,
-        164,
+        171,
+        161,
     );
     let AnalysisResult::MaterialDerivationInstalled(installed) = response.result else {
         panic!("repaired installation")
@@ -234,9 +234,9 @@ fn mismatch_install_redigest_and_repair_keep_literal_tails_and_actual_sticky_str
 }
 #[test]
 fn preview_admission_uses_compound_budget_but_map_remains_ordinary() {
-    let mut body = postcard::to_allocvec(&(1u32, "context", 178u32)).unwrap();
+    let mut body = postcard::to_allocvec(&(1u32, "context", 175u32)).unwrap();
     body.resize(collagene_core::formats::MAX_IMPORT_BYTES + 1, 0);
-    for selector in [178u32, 179, 177] {
+    for selector in [175u32, 176, 174] {
         let prefix = postcard::to_allocvec(&(1u32, "context", selector)).unwrap();
         body[..prefix.len()].copy_from_slice(&prefix);
         let mut b = b"CGQ\0".to_vec();
@@ -249,7 +249,7 @@ fn preview_admission_uses_compound_budget_but_map_remains_ordinary() {
             .process_request(&b)
             .unwrap_err();
         for error in [stateless, session] {
-            if selector == 177 {
+            if selector == 174 {
                 assert!(matches!(error, Error::TooLarge), "{error}");
             } else {
                 assert!(

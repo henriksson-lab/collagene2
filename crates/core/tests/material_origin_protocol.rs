@@ -205,8 +205,8 @@ fn current_worker_operations_reconstruct_literal_material_and_bind_outputs() {
             selection,
         },
         revision.clone(),
-        168,
-        158,
+        165,
+        155,
     );
     let AnalysisResult::MaterialOriginInspection(report) = inspected.result else {
         panic!("material origin inspection")
@@ -221,8 +221,8 @@ fn current_worker_operations_reconstruct_literal_material_and_bind_outputs() {
             request,
         },
         revision.clone(),
-        174,
-        164,
+        171,
+        161,
     );
     let AnalysisResult::MaterialDerivationInstalled(installed) = installed.result else {
         panic!("digest installation")
@@ -257,8 +257,8 @@ fn current_worker_operations_reconstruct_literal_material_and_bind_outputs() {
             template_strand: collagene_core::chemistry::Strand::Top,
         },
         revision,
-        169,
-        159,
+        166,
+        156,
     );
     let AnalysisResult::MaterialPcrDocuments(previews) = previews.result else {
         panic!("material PCR")
@@ -287,8 +287,8 @@ fn current_worker_operations_reconstruct_literal_material_and_bind_outputs() {
     let outputs = checked_roundtrip(
         AnalysisJob::PrepareMaterialPcrOutputs { origin, request },
         revision.clone(),
-        170,
-        160,
+        167,
+        157,
     );
     let AnalysisResult::MaterialPcrOutputsPrepared(outputs) = outputs.result else {
         panic!("material PCR outputs")
@@ -300,11 +300,11 @@ fn current_worker_operations_reconstruct_literal_material_and_bind_outputs() {
 }
 #[test]
 fn current_material_origin_encoding_preserves_operation_and_exact_evidence() {
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 29);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 27);
+    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 30);
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 28);
     let (mut w, cap, pin) = digest_fixture();
     let (plan, target) = prepared_plan(&mut w, &cap, &pin);
-    assert_eq!(tag(&plan.steps[0]), 27);
+    assert_eq!(tag(&plan.steps[0]), 26);
     let candidate = transfer::save_candidate(&transfer::Candidate::new(plan.clone())).unwrap();
     assert_eq!(
         u16::from_le_bytes([candidate[4], candidate[5]]),

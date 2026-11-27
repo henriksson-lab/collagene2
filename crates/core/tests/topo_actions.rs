@@ -4,7 +4,7 @@ use collagene_core::{
     Feature, Location, Molecule, Topology, chemistry, modified_duplex, topo,
     topo_actions as adapter,
 };
-use topo::physical::{self as p, processing as actions, processing_projection as pp, projection};
+use topo::physical::{self as p, processing as actions, projection};
 fn call(strand: usize, index: usize) -> p::Call {
     p::Call { strand, index }
 }
@@ -83,24 +83,36 @@ fn sources() -> (Vec<topo::Input>, topo::Request) {
                 ],
             }],
         },
-        transfers: vec![
-            p::Transfer {
-                donor: 0,
-                acceptor: 2,
+        steps: vec![
+            p::Step::Transfer(p::Transfer {
+                donor: p::Call {
+                    strand: 0,
+                    index: 13,
+                },
+                acceptor: p::Call {
+                    strand: 2,
+                    index: 0,
+                },
                 geometry: p::Geometry::DirectionalCacc,
-            },
-            p::Transfer {
-                donor: 1,
-                acceptor: 3,
+            }),
+            p::Step::Transfer(p::Transfer {
+                donor: p::Call {
+                    strand: 1,
+                    index: 17,
+                },
+                acceptor: p::Call {
+                    strand: 3,
+                    index: 0,
+                },
                 geometry: p::Geometry::Flush,
-            },
+            }),
         ],
         engine_limits: p::Limits::default(),
         projection_options: projection::Options::default(),
     };
     (inputs, request)
 }
-fn processing(cut: bool, seals: bool) -> actions::Request {
+fn processing(cut: bool, seals: bool) -> Vec<actions::Action> {
     let mut operations = vec![];
     if cut {
         operations.push(actions::Action::CleaveThreePrimeFlap {
@@ -123,32 +135,25 @@ fn processing(cut: bool, seals: bool) -> actions::Request {
             });
         }
     }
-    actions::Request {
-        actions: operations,
-        limits: actions::ProcessingLimits::default(),
-    }
+    operations
 }
 fn selected(
     inputs: &[topo::Input],
-    preparation: topo::Request,
-    processing: actions::Request,
+    mut preparation: topo::Request,
+    processing: Vec<actions::Action>,
 ) -> adapter::Request {
-    let inspection = adapter::inspect_actions(
-        inputs,
-        &adapter::ActionsRequest {
-            preparation: preparation.clone(),
-            processing: processing.clone(),
-        },
-    )
-    .unwrap();
+    preparation
+        .steps
+        .extend(processing.into_iter().map(p::Step::Process));
+    let inspection = topo::simulate(&inputs, &preparation).unwrap();
     let component = inspection
-        .processing
+        .physical
         .product
         .components
         .iter()
         .position(|c| {
             c.chains.iter().any(|&i| {
-                inspection.processing.product.chains[i]
+                inspection.physical.product.chains[i]
                     .sources
                     .iter()
                     .any(|s| s.source_strand == 0 && s.start == 0)
@@ -157,9 +162,8 @@ fn selected(
         .unwrap();
     adapter::Request {
         preparation,
-        processing,
-        selection: pp::Selection {
-            processing_context_revision: inspection.processing.context_revision,
+        selection: projection::Selection {
+            source_batch_revision: inspection.physical.batch_revision,
             component,
             reference_seed: call(0, 0),
         },
@@ -184,7 +188,7 @@ fn literal_directional_cut_and_sealing_prove_48_main_calls_plus_free_four() {
     );
     assert!(chemistry::has_unmapped_physical_evidence(product));
     assert!(chemistry::Duplex::from_molecule(product).is_err());
-    let graph = &out.projection.processing.product;
+    let graph = &out.projection.physical.product;
     assert_eq!(
         graph.chains.iter().map(|c| c.sequence.len()).sum::<usize>(),
         52
@@ -236,7 +240,7 @@ fn cleavage_without_ligation_retains_two_real_chemically_explicit_nicks() {
     assert_eq!(out.duplex.as_ref().unwrap().nicks.len(), 2);
     assert!(
         out.projection
-            .processing
+            .physical
             .product
             .chains
             .iter()
@@ -244,7 +248,7 @@ fn cleavage_without_ligation_retains_two_real_chemically_explicit_nicks() {
     );
     assert!(
         out.projection
-            .processing
+            .physical
             .product
             .nicks
             .iter()
@@ -262,7 +266,7 @@ fn no_requested_cut_never_erases_the_flap_or_invents_an_ordinary_product() {
     ));
     assert!(out.product.is_none());
     assert!(out.duplex.is_none());
-    assert_eq!(out.projection.processing.source_bases, 52);
+    assert_eq!(out.projection.physical.source_bases, 52);
 }
 #[test]
 fn actual_restriction_digest_consumes_the_bridged_duplex_and_keeps_modifications_unknown() {
@@ -296,7 +300,7 @@ fn source_context_action_order_and_imported_graph_tampering_never_authorize_repl
     let r = selected(&inputs, preparation, processing(true, true));
     let out = adapter::inspect(&inputs, &r).unwrap();
     let mut wrong = r.clone();
-    wrong.processing.actions.swap(0, 1);
+    wrong.preparation.steps.swap(2, 3);
     assert!(adapter::inspect(&inputs, &wrong).is_err());
     let mut foreign = inputs.clone();
     foreign[0].molecule.name = "different exact source".into();
@@ -304,7 +308,7 @@ fn source_context_action_order_and_imported_graph_tampering_never_authorize_repl
     let mut forged = out.clone();
     forged
         .projection
-        .processing
+        .physical
         .product
         .chains
         .retain(|c| c.sequence.as_str() != "GGTG");

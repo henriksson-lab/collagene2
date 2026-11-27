@@ -12,19 +12,19 @@ use crate::{
     pcr_digest_inspection::GeometrySummary,
     restriction_inspection::{self, InspectionOptions, RestrictionInspection},
     run_lineage::EventBinding,
-    run_material::{Capsule, Selection},
-    verification::{self, PcrDocument, Status},
+    run_material::{MaterialOrigin, MaterialSelection},
+    verification::{self, PcrDocument},
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io::Write};
-pub const ENGINE_VERSION: &str = "overlap-extension-digest-inspection-1";
+pub const ENGINE_VERSION: &str = "overlap-extension-digest-inspection-2";
 const MAX_GEOMETRIES: usize = 10_000;
 const MAX_BYTES: usize = 32 << 20;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
 dto! {pub struct Request {pub source_role:String,pub preparation:overlap_extension_pcr::Request,pub selection:CatalogSelection,pub options:InspectionOptions}}
 dto! {pub struct PcrStage {pub stage:String,pub template_revision:String,pub geometries:Vec<GeometrySummary>,pub product_revision:Option<String>,pub product_length:Option<usize>}}
-dto! {pub struct OriginSummary {pub selection:Selection,pub target:EventBinding,pub plan_revision:String,pub engine_version:String,pub status:Status,pub material_revision:String}}
-dto! {pub struct Preview {pub engine_version:String,pub context_revision:String,pub source_revision:String,pub origin_revision:Option<String>,pub origin_status:Option<Status>,pub request:Request,pub pcr_stages:Vec<PcrStage>,pub extension:Option<Geometry>,pub origin_evidence:Option<OriginSummary>,pub amplicon:Option<Molecule>,pub inspection:Option<RestrictionInspection>,pub incomplete:bool,pub findings:Vec<String>}}
+dto! {pub struct OriginSummary {pub selection:MaterialSelection,pub source:EventBinding,pub material_revision:String,pub incomplete:bool,pub findings:Vec<String>,pub findings_total:usize,pub findings_truncated:bool}}
+dto! {pub struct Preview {pub engine_version:String,pub context_revision:String,pub source_revision:String,pub origin_revision:Option<String>,pub origin_incomplete:Option<bool>,pub request:Request,pub pcr_stages:Vec<PcrStage>,pub extension:Option<Geometry>,pub origin_evidence:Option<OriginSummary>,pub amplicon:Option<Molecule>,pub inspection:Option<RestrictionInspection>,pub incomplete:bool,pub findings:Vec<String>}}
 fn bad(message: &str) -> Error {
     Error::Unsupported(format!("overlap-extension digest inspection: {message}"))
 }
@@ -63,15 +63,21 @@ fn shape(request: &Request) -> Result<(), Error> {
 }
 pub fn source_preflight(
     source: &Molecule,
-    origin: Option<&Capsule>,
+    origin: Option<&MaterialOrigin>,
     request: &Request,
+    workspace: Option<&crate::workspace::Workspace>,
 ) -> Result<(), Error> {
     shape(request)?;
     crate::model::bounds::model_preflight(&[source])?;
-    size(source)?;
+    crate::run_material::material_origins_preflight(origin)?;
+    size(&(source, origin, request))?;
     if let Some(origin) = origin {
-        origin.validate_documentary()?;
-        if source.revision() != origin.selection.event.revision {
+        let workspace = workspace
+            .ok_or_else(|| bad("saved template requires its exact owning native workspace"))?;
+        origin.validate_for_workspace(workspace, origin.event())?;
+        if source.revision() != origin.event().revision
+            || crate::run_material::resolve(workspace, origin.event())? != source
+        {
             return Err(bad(
                 "saved source differs from the exact pinned origin event",
             ));
@@ -84,6 +90,15 @@ pub fn source_preflight(
     {
         return Err(bad(
             "imported physical/reference-only material requires reconstruction of its originating graph",
+        ));
+    }
+    if origin.is_none()
+        && [&request.preparation.left, &request.preparation.right]
+            .iter()
+            .any(|p| p.template_strand != chemistry::Strand::Top)
+    {
+        return Err(bad(
+            "Bottom PCR frames require exact freshly reconstructed saved material",
         ));
     }
     // The borrowed guards ran before these bounded request-field copies. There
@@ -130,10 +145,11 @@ fn context(
 }
 pub fn inspection_revision(
     source: &Molecule,
-    origin: Option<&Capsule>,
+    origin: Option<&MaterialOrigin>,
     request: &Request,
+    workspace: Option<&crate::workspace::Workspace>,
 ) -> Result<String, Error> {
-    source_preflight(source, origin, request)?;
+    source_preflight(source, origin, request, workspace)?;
     context(
         &source.revision(),
         &origin.map(assembly_recipe::hash).transpose()?,
@@ -240,31 +256,56 @@ fn project(
 }
 pub fn inspect(
     source: &Molecule,
-    origin: Option<&Capsule>,
+    origin: Option<&MaterialOrigin>,
     request: &Request,
+    workspace: Option<&crate::workspace::Workspace>,
 ) -> Result<Preview, Error> {
-    let context_revision = inspection_revision(source, origin, request)?;
+    let context_revision = inspection_revision(source, origin, request, workspace)?;
     let mut findings=vec!["Fresh ideal exact-PCR branches, selected reciprocal extension and outer PCR, followed by the pinned assumed-complete digest. There is no intended target input. Geometry uniqueness is conditional on this model and is not experimental isolation or reaction success.".into()];
-    let material = origin
-        .map(|origin| crate::run_material_capsule::replay(origin, source))
-        .transpose()?;
-    let origin_evidence = if let Some(material) = &material {
-        let report = material.evidence.decode_report()?;
-        Some(OriginSummary {
-            selection: material.evidence.origin.selection.clone(),
-            target: material.evidence.origin.target_event.clone(),
-            plan_revision: report.plan_revision,
-            engine_version: report.engine_version,
-            status: report.status,
-            material_revision: material.evidence.material_revision.clone(),
+    let material = origin.map(|origin| origin.replay(source)).transpose()?;
+    // The same actual source frames bound both first-branch PCRs. This readonly
+    // work estimate borrows the already fresh material, never replays for cost.
+    if let Some(material) = material
+        .as_ref()
+        .filter(|m| m.tracked().duplex.nicks.is_empty())
+    {
+        let preparation = assembly_recipe::Preparation::OverlapExtensionPcrCatalogDigest {
+            request: request.preparation.clone(),
+            selection: request.selection.clone(),
+            fragment_index: 0,
+            repair: None,
+        };
+        for pair in [&request.preparation.left, &request.preparation.right] {
+            let template = crate::pcr_source::Template::fresh(
+                source,
+                material.tracked(),
+                pair.template_strand,
+            )?;
+            if assembly_recipe::preparation_work_from_frame(template, &preparation)? > 100_000_000 {
+                return Err(Error::TooLarge);
+            }
+        }
+    }
+    let origin_evidence = origin
+        .zip(material.as_ref())
+        .map(|(origin, material)| {
+            Ok::<_, Error>(OriginSummary {
+                selection: origin.selection(),
+                source: origin.event().clone(),
+                material_revision: crate::modified_duplex::summary(material.tracked())?
+                    .state_revision,
+                incomplete: material.incomplete(),
+                findings: material.findings().to_vec(),
+                findings_total: material.findings_total(),
+                findings_truncated: material.findings_truncated(),
+            })
         })
-    } else {
-        None
-    };
-    let origin_status = origin_evidence.as_ref().map(|o| o.status);
-    let mut incomplete = material.as_ref().is_some_and(|m| m.incomplete);
-    if origin_status.is_some() {
-        findings.push("Source chemistry was freshly reconstructed against the complete unchanged original saved scope. Origin target/event identity is retained; its incomplete findings remain applicable.".into());
+        .transpose()?;
+    let origin_incomplete = material.as_ref().map(|m| m.incomplete());
+    let mut incomplete = origin_incomplete.unwrap_or(false);
+    if let Some(material) = &material {
+        findings.push("Source strands and chemistry were freshly reconstructed from the exact retained native Run/Derived event; inherited limitations remain applicable. This does not establish experimental isolation.".into());
+        findings.extend(material.findings().iter().map(|s| format!("Origin: {s}")));
     }
     let initial = |pair: &overlap_extension_pcr::PrimerPair| {
         if let Some(material) = &material {
@@ -272,7 +313,7 @@ pub fn inspect(
                 source,
                 &pair.forward,
                 &pair.reverse,
-                &material.tracked,
+                material.tracked(),
                 pair.template_strand,
             )
         } else {
@@ -367,7 +408,7 @@ pub fn inspect(
         context_revision,
         source_revision: source.revision(),
         origin_revision: origin.map(assembly_recipe::hash).transpose()?,
-        origin_status,
+        origin_incomplete,
         request: request.clone(),
         pcr_stages,
         extension,
@@ -408,7 +449,13 @@ impl Preview {
                 return Err(bad("invalid native PCR stage binding"));
             }
             for (index, g) in p.geometries.iter().enumerate() {
-                if g.index != index
+                let expected_strand = [
+                    self.request.preparation.left.template_strand,
+                    self.request.preparation.right.template_strand,
+                    self.request.preparation.outer.template_strand,
+                ][i];
+                if g.template_strand != expected_strand
+                    || g.index != index
                     || g.product_length == 0
                     || g.product_length > crate::model::MAX_SEQUENCE_LEN
                     || g.forward_start > crate::model::MAX_SEQUENCE_LEN
@@ -433,30 +480,23 @@ impl Preview {
         size(self)?;
         match (
             &self.origin_revision,
-            self.origin_status,
+            self.origin_incomplete,
             &self.origin_evidence,
         ) {
             (None, None, None) => {}
-            (Some(revision), Some(status), Some(e))
+            (Some(revision), Some(incomplete), Some(e))
                 if hex(revision)
-                    && status != Status::Invalid
-                    && status == e.status
-                    && hex(&e.plan_revision)
+                    && e.incomplete == incomplete
                     && hex(&e.material_revision)
-                    && hex(&e.target.revision)
-                    && e.selection.event.revision == self.source_revision
-                    && e.engine_version == verification::ENGINE_VERSION
-                    && e.selection.run_id.len() == 64
-                    && hex(&e.selection.run_id)
-                    && e.selection.step_index < 1000
-                    && [
-                        &e.selection.event.document_id,
-                        &e.selection.event.event_id,
-                        &e.target.document_id,
-                        &e.target.event_id,
-                    ]
-                    .iter()
-                    .all(|s| !s.is_empty() && s.len() <= 256) => {}
+                    && e.source.revision == self.source_revision
+                    && e.selection.event() == &e.source
+                    && e.findings.len() <= 128
+                    && e.findings.iter().all(|s| s.chars().count() <= 2048)
+                    && e.findings_total >= e.findings.len()
+                    && (e.findings_truncated || e.findings_total == e.findings.len()) =>
+            {
+                e.selection.validate()?;
+            }
             _ => return Err(bad("saved-origin documentary binding changed")),
         }
         if let Some(g) = &self.extension {
@@ -518,7 +558,7 @@ impl Preview {
             return Err(bad("digest fragments require a native singleton outer PCR"));
         }
         let pipeline_available = self.extension.is_some() && self.amplicon.is_some();
-        let inherited_incomplete = self.origin_status == Some(Status::Incomplete)
+        let inherited_incomplete = self.origin_incomplete == Some(true)
             || self
                 .extension
                 .as_ref()

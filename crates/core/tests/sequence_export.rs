@@ -206,7 +206,7 @@ fn worker_review_and_prepare_current_tags_bind_the_same_context_and_reject_obsol
         postcard::take_from_bytes::<u32>(&postcard::to_allocvec(&request.job).unwrap())
             .unwrap()
             .0,
-        171
+        168
     );
     let bytes = protocol::encode_request(&request).unwrap();
     let mut old = bytes.clone();
@@ -217,7 +217,7 @@ fn worker_review_and_prepare_current_tags_bind_the_same_context_and_reject_obsol
         postcard::take_from_bytes::<u32>(&postcard::to_allocvec(&response.result).unwrap())
             .unwrap()
             .0,
-        161
+        158
     );
     let protocol::AnalysisResult::SequenceExportAssessment(review) = response.result else {
         panic!("export assessment")
@@ -237,7 +237,7 @@ fn worker_review_and_prepare_current_tags_bind_the_same_context_and_reject_obsol
         postcard::take_from_bytes::<u32>(&postcard::to_allocvec(&request.job).unwrap())
             .unwrap()
             .0,
-        172
+        169
     );
     let response = protocol::process_request(&protocol::encode_request(&request).unwrap()).unwrap();
     let mut old = response.clone();
@@ -248,7 +248,7 @@ fn worker_review_and_prepare_current_tags_bind_the_same_context_and_reject_obsol
         postcard::take_from_bytes::<u32>(&postcard::to_allocvec(&response.result).unwrap())
             .unwrap()
             .0,
-        162
+        159
     );
     let protocol::AnalysisResult::SequenceExportPrepared(prepared) = response.result else {
         panic!("prepared export")

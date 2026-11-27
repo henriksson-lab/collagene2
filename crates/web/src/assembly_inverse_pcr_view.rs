@@ -152,10 +152,18 @@ pub fn InversePcrPreparationView(
                 return Err("Review the current independent intent first.".to_owned());
             }
             let declared = draft.get_untracked();
-            let source = attest(&declared, &snapshot.run(())?)?;
+            let frame = snapshot.run(())?;
+            let source = attest(&declared, &frame)?;
             let options = read_options()?;
             let (capture, molecule, native_options) = intent.with_value(|i| {
-                model::request(&declared, i.as_ref(), &source, i.target(), &options)
+                model::request(
+                    &declared,
+                    i.as_ref(),
+                    &source,
+                    i.target(),
+                    &options,
+                    Some(&frame),
+                )
             })?;
             Ok::<_, String>((source, options, capture, molecule, native_options))
         })();
@@ -225,7 +233,8 @@ pub fn InversePcrPreparationView(
             let checked = (|| {
                 guard.run(())?;
                 let declared = draft.get_untracked();
-                let now = attest(&declared, &snapshot.run(())?)?;
+                let frame = snapshot.run(())?;
+                let now = attest(&declared, &frame)?;
                 if now != source {
                     return Err("The source event changed while preparing inverse PCR.".into());
                 }
@@ -239,7 +248,15 @@ pub fn InversePcrPreparationView(
                     _ => return Err("Unexpected inverse-PCR response.".into()),
                 };
                 let result = intent.with_value(|i| {
-                    model::from_design(&declared, i.as_ref(), &now, i.target(), &options, native)
+                    model::from_design(
+                        &declared,
+                        i.as_ref(),
+                        &now,
+                        i.target(),
+                        &options,
+                        native,
+                        Some(&frame),
+                    )
                 })?;
                 if result.capture != capture {
                     return Err("The inverse-PCR declaration changed.".into());
@@ -261,10 +278,18 @@ pub fn InversePcrPreparationView(
             return Err("The independent intent is stale.".into());
         }
         let declared = draft.get_untracked();
-        let source = attest(&declared, &snapshot.run(())?)?;
+        let frame = snapshot.run(())?;
+        let source = attest(&declared, &frame)?;
         let options = read_options()?;
         intent.with_value(|i| {
-            saved.validate_binding(&declared, i.as_ref(), &source, i.target(), &options)
+            saved.validate_binding(
+                &declared,
+                i.as_ref(),
+                &source,
+                i.target(),
+                &options,
+                Some(&frame),
+            )
         })?;
         Ok::<_, String>(saved.candidate.clone())
     });

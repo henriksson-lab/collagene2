@@ -4,14 +4,14 @@ use crate::{
     Error, Molecule, Topology, assembly_recipe, catalog_digest, chemistry, mutagenesis,
     pcr_digest_inspection,
     restriction_inspection::{self, RestrictionInspection},
-    run_material::Capsule,
-    verification::{self, Status},
+    run_material::MaterialOrigin,
+    verification,
 };
 use serde::{Deserialize, Serialize};
-pub const ENGINE_VERSION: &str = "mismatch-pcr-digest-inspection-1";
+pub const ENGINE_VERSION: &str = "mismatch-pcr-digest-inspection-2";
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
 dto! {pub struct Request{pub base:pcr_digest_inspection::Request,pub pcr_options:mutagenesis::PcrOptions}}
-dto! {pub struct Preview{pub engine_version:String,pub context_revision:String,pub source_revision:String,pub origin_revision:Option<String>,pub origin_status:Option<Status>,pub request:Request,#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))] pub pcr:verification::MutagenesisPreview,pub amplicon:Option<Molecule>,pub inspection:Option<RestrictionInspection>,pub incomplete:bool,pub findings:Vec<String>}}
+dto! {pub struct Preview{pub engine_version:String,pub context_revision:String,pub source_revision:String,pub origin_revision:Option<String>,pub origin_incomplete:Option<bool>,pub origin_findings:Vec<String>,pub origin_findings_total:usize,pub origin_findings_truncated:bool,pub request:Request,#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))] pub pcr:verification::MutagenesisPreview,pub amplicon:Option<Molecule>,pub inspection:Option<RestrictionInspection>,pub incomplete:bool,pub findings:Vec<String>}}
 fn bad(s: &str) -> Error {
     Error::Unsupported(format!("Mismatch PCR digest inspection: {s}"))
 }
@@ -45,15 +45,22 @@ fn context(source: &str, origin: &Option<String>, request: &Request) -> Result<S
 }
 pub fn source_preflight(
     source: &Molecule,
-    origin: Option<&Capsule>,
+    origin: Option<&MaterialOrigin>,
     request: &Request,
+    workspace: Option<&crate::workspace::Workspace>,
 ) -> Result<(), Error> {
     shape(request)?;
     crate::model::bounds::model_preflight(&[source])?;
     source.validate()?;
     if let Some(origin) = origin {
-        origin.validate_documentary()?;
-        if source.revision() != origin.selection.event.revision {
+        crate::run_material::material_origins_preflight([origin])?;
+        let workspace = workspace
+            .ok_or_else(|| bad("the exact owning workspace is required for saved material"))?;
+        origin.validate_for_workspace(workspace, origin.event())?;
+        if crate::run_material::resolve(workspace, origin.event())? != source {
+            return Err(bad("source snapshot differs from its exact retained event"));
+        }
+        if source.revision() != origin.event().revision {
             return Err(bad("source differs from pinned originating event"));
         }
     } else if chemistry::has_unmapped_physical_evidence(source) {
@@ -92,10 +99,11 @@ pub fn source_preflight(
 }
 pub fn inspection_revision(
     source: &Molecule,
-    origin: Option<&Capsule>,
+    origin: Option<&MaterialOrigin>,
     request: &Request,
+    workspace: Option<&crate::workspace::Workspace>,
 ) -> Result<String, Error> {
-    source_preflight(source, origin, request)?;
+    source_preflight(source, origin, request, workspace)?;
     context(
         &source.revision(),
         &origin.map(assembly_recipe::hash).transpose()?,
@@ -109,25 +117,28 @@ fn selectable(p: &verification::MutagenesisPreview) -> bool {
 }
 pub fn inspect(
     source: &Molecule,
-    origin: Option<&Capsule>,
+    origin: Option<&MaterialOrigin>,
     request: &Request,
+    workspace: Option<&crate::workspace::Workspace>,
 ) -> Result<Preview, Error> {
-    let context_revision = inspection_revision(source, origin, request)?;
-    let (native, origin_status) = if let Some(origin) = origin {
-        let material = crate::run_material_capsule::replay(origin, source)?;
+    let context_revision = inspection_revision(source, origin, request, workspace)?;
+    let mut origin_findings = Vec::new();
+    let mut origin_findings_total = 0;
+    let mut origin_findings_truncated = false;
+    let (native, origin_incomplete) = if let Some(origin) = origin {
+        let material = origin.replay(source)?;
+        origin_findings = material.findings().to_vec();
+        origin_findings_total = material.findings_total();
+        origin_findings_truncated = material.findings_truncated();
         (
             mutagenesis::simulate_pcr_reconstructed(
                 source,
-                &material.tracked.duplex,
+                &material.tracked().duplex,
                 &request.base.forward,
                 &request.base.reverse,
                 &request.pcr_options,
             )?,
-            Some(if material.incomplete {
-                Status::Incomplete
-            } else {
-                Status::ConsistentUnderAssumptions
-            }),
+            Some(material.incomplete()),
         )
     } else {
         (
@@ -148,6 +159,10 @@ pub fn inspect(
         native,
     )?;
     let mut findings=vec!["Intentional-mismatch PCR under an explicit binding/search policy, followed by assumed-complete cleavage. Primer-encoded substitutions are conditional sequence predictions; amplification, modification susceptibility, reagent compatibility and laboratory success are not established. New PCR outer termini are 5′OH/3′OH and restriction cuts retain cleaved phosphate chemistry.".into()];
+    if origin.is_some() {
+        findings.push(format!("Native origin findings: showing {} of {}; excerpt truncated: {}. Retained source limitations are not resolved by this PCR prediction.",origin_findings.len(),origin_findings_total,origin_findings_truncated));
+        findings.extend(origin_findings.iter().cloned());
+    }
     let (amplicon, inspection) = if selectable(&pcr) {
         let molecule = pcr.documents[0].clone();
         let duplex = chemistry::Duplex::exact_pcr(&molecule.sequence)?;
@@ -166,19 +181,22 @@ pub fn inspect(
         (None, None)
     };
     let incomplete = !pcr.report.enumeration_complete
-        || origin_status == Some(Status::Incomplete)
+        || origin_incomplete == Some(true)
         || inspection
             .as_ref()
             .is_none_or(|r| !r.scan_complete || !r.products_determined);
     if incomplete {
-        findings.push("This result is incomplete. A displayed singleton is conditional and does not establish uniqueness; retained original-run assumptions remain applicable.".into());
+        findings.push("This result is incomplete. A displayed singleton is conditional and does not establish uniqueness; retained native-origin assumptions remain applicable.".into());
     }
     let result = Preview {
         engine_version: ENGINE_VERSION.into(),
         context_revision,
         source_revision: source.revision(),
         origin_revision: origin.map(assembly_recipe::hash).transpose()?,
-        origin_status,
+        origin_incomplete,
+        origin_findings,
+        origin_findings_total,
+        origin_findings_truncated,
         request: request.clone(),
         pcr,
         amplicon,
@@ -196,13 +214,28 @@ impl Preview {
         if self.engine_version != ENGINE_VERSION
             || !hex(&self.source_revision)
             || self.origin_revision.as_ref().is_some_and(|s| !hex(s))
-            || self.origin_revision.is_some() != self.origin_status.is_some()
-            || self.origin_status == Some(Status::Invalid)
+            || self.origin_revision.is_some() != self.origin_incomplete.is_some()
             || self.context_revision != expected
             || self.context_revision
                 != context(&self.source_revision, &self.origin_revision, &self.request)?
         {
             return Err(bad("stale source/origin/policy/catalog context"));
+        }
+        if self.origin_findings.len() > 128
+            || self
+                .origin_findings
+                .iter()
+                .any(|f| f.chars().count() > 2048)
+            || self.origin_findings_total > 32 * 1024 * 1024
+            || self.origin_findings.len() > self.origin_findings_total
+            || (self.origin_findings_total > self.origin_findings.len()
+                && !self.origin_findings_truncated)
+            || (self.origin_revision.is_none()
+                && (!self.origin_findings.is_empty()
+                    || self.origin_findings_total != 0
+                    || self.origin_findings_truncated))
+        {
+            return Err(bad("invalid inherited native finding excerpt"));
         }
         let r = &self.pcr.report;
         let limit = self.request.pcr_options.max_products;
@@ -344,7 +377,7 @@ impl Preview {
             }
         }
         let incomplete = !r.enumeration_complete
-            || self.origin_status == Some(Status::Incomplete)
+            || self.origin_incomplete == Some(true)
             || self
                 .inspection
                 .as_ref()

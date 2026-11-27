@@ -51,22 +51,42 @@ fn directional() -> Substrates {
         pairing: vec![pair(0, 0, 1, 4, 14), pair(2, 0, 3, 0, 10)],
     }
 }
-fn transfers(geometry: Geometry) -> [Transfer; 2] {
+fn transfers(geometry: Geometry) -> [Step; 2] {
     [
-        Transfer {
-            donor: 0,
-            acceptor: 2,
+        Step::Transfer(Transfer {
+            donor: Call {
+                strand: 0,
+                index: if geometry == Geometry::DirectionalCacc {
+                    13
+                } else {
+                    12
+                },
+            },
+            acceptor: Call {
+                strand: 2,
+                index: 0,
+            },
             geometry,
-        },
-        Transfer {
-            donor: 1,
-            acceptor: 3,
+        }),
+        Step::Transfer(Transfer {
+            donor: Call {
+                strand: 1,
+                index: if geometry == Geometry::DirectionalCacc {
+                    17
+                } else {
+                    12
+                },
+            },
+            acceptor: Call {
+                strand: 3,
+                index: 0,
+            },
             geometry: if geometry == Geometry::DirectionalCacc {
                 Geometry::Flush
             } else {
                 geometry
             },
-        },
+        }),
     ]
 }
 fn call(strand: usize, index: usize) -> Call {
@@ -83,13 +103,10 @@ fn seal(three: Call, five: Call) -> p::Action {
                 .into(),
     }
 }
-fn request(actions: Vec<p::Action>) -> p::Request {
-    p::Request {
-        actions,
-        limits: p::ProcessingLimits::default(),
-    }
+fn request(actions: Vec<p::Action>) -> Vec<Step> {
+    actions.into_iter().map(Step::Process).collect()
 }
-fn full() -> p::Request {
+fn full() -> Vec<Step> {
     request(vec![
         cut(),
         seal(call(2, 9), call(0, 0)),
@@ -105,10 +122,19 @@ fn literal_cut_partitions_insert_bottom_into_retained_six_and_free_four_calls() 
     let t = transfers(Geometry::DirectionalCacc);
     let l = Limits::default();
     let r = request(vec![cut()]);
-    let report = p::simulate(&s, &t, &l, &r).unwrap();
-    assert_eq!(report.parent.product.chains.len(), 2);
+    let report = simulate(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
+        &l,
+    )
+    .unwrap();
+    assert_eq!(simulate(&s, &t, &l).unwrap().product.chains.len(), 2);
     assert_eq!(report.product.chains.len(), 3);
-    assert_eq!(report.parent.product.nicks.len(), 1);
+    assert_eq!(simulate(&s, &t, &l).unwrap().product.nicks.len(), 1);
     assert_eq!(report.product.nicks.len(), 2);
     assert_eq!(report.product.components.len(), 2);
     assert_eq!(base_count(&report.product), 52);
@@ -158,13 +184,13 @@ fn literal_cut_partitions_insert_bottom_into_retained_six_and_free_four_calls() 
     );
     assert_eq!(
         report.product.source_pairing,
-        report.parent.product.source_pairing
+        simulate(&s, &t, &l).unwrap().product.source_pairing
     );
     assert_eq!(
         report.product.released_activations,
         vec!["enzyme-vector-top", "enzyme-vector-bottom"]
     );
-    let p::ActionEvidence::FlapCleavage(e) = &report.steps[0] else {
+    let StepEvidence::Process(p::ActionEvidence::FlapCleavage(e)) = &report.steps[2] else {
         panic!()
     };
     assert_eq!(e.outcome, Outcome::Applied);
@@ -174,8 +200,18 @@ fn literal_cut_partitions_insert_bottom_into_retained_six_and_free_four_calls() 
     );
     assert_eq!(e.created_three_prime, Some(ThreePrime::Hydroxyl));
     assert_eq!(e.created_five_prime, Some(FivePrime::Phosphate));
-    p::audit_source_partition(&s, &report.product, &l, &r.limits).unwrap();
-    p::replay(&s, &t, &l, &r, &report).unwrap();
+    audit_source_partition(&s, &report.product, &l).unwrap();
+    replay(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
+        &l,
+        &report,
+    )
+    .unwrap();
 }
 #[test]
 fn explicit_cut_and_two_seals_close_main_48_calls_and_keep_free_4_component() {
@@ -183,8 +219,17 @@ fn explicit_cut_and_two_seals_close_main_48_calls_and_keep_free_4_component() {
     let t = transfers(Geometry::DirectionalCacc);
     let l = Limits::default();
     let r = full();
-    let report = p::simulate(&s, &t, &l, &r).unwrap();
-    assert!(report.all_requested_actions_applied);
+    let report = simulate(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
+        &l,
+    )
+    .unwrap();
+    assert!(report.all_requested_steps_applied);
     assert_eq!(base_count(&report.product), 52);
     assert_eq!(report.product.chains.len(), 3);
     assert!(report.product.nicks.is_empty());
@@ -229,7 +274,7 @@ fn explicit_cut_and_two_seals_close_main_48_calls_and_keep_free_4_component() {
             .iter()
             .any(|c| !c.covalently_closed && c.unpaired_nucleotides == 4)
     );
-    let p::ActionEvidence::NickSealing(last) = &report.steps[2] else {
+    let StepEvidence::Process(p::ActionEvidence::NickSealing(last)) = &report.steps[4] else {
         panic!()
     };
     assert_eq!(last.selection.three, call(3, 5));
@@ -250,29 +295,73 @@ fn declared_order_duplicate_cut_and_wrong_actual_bond_do_not_imply_repair() {
         cut(),
         seal(call(2, 9), call(0, 0)),
     ]);
-    let result = p::simulate(&s, &t, &l, &early).unwrap();
+    let result = simulate(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&early).iter().cloned())
+            .collect::<Vec<Step>>(),
+        &l,
+    )
+    .unwrap();
     assert_eq!(
-        result.steps[0].outcome(),
+        result.steps[2].outcome(),
         Outcome::BlockedUnderDeclaredModel
     );
-    assert_eq!(result.steps[1].outcome(), Outcome::Applied);
+    assert_eq!(result.steps[3].outcome(), Outcome::Applied);
     assert_eq!(result.product.nicks.len(), 1);
-    assert!(!result.all_requested_actions_applied);
+    assert!(!result.all_requested_steps_applied);
     assert_ne!(
-        p::revision(&s, &t, &l, &early).unwrap(),
-        p::revision(&s, &t, &l, &full()).unwrap()
+        batch_revision(
+            &s,
+            &(&t)
+                .iter()
+                .cloned()
+                .chain((&early).iter().cloned())
+                .collect::<Vec<Step>>(),
+            &l
+        )
+        .unwrap(),
+        batch_revision(
+            &s,
+            &(&t)
+                .iter()
+                .cloned()
+                .chain((&full()).iter().cloned())
+                .collect::<Vec<Step>>(),
+            &l
+        )
+        .unwrap()
     );
     let duplicate = request(vec![cut(), cut()]);
-    let result = p::simulate(&s, &t, &l, &duplicate).unwrap();
+    let result = simulate(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&duplicate).iter().cloned())
+            .collect::<Vec<Step>>(),
+        &l,
+    )
+    .unwrap();
     assert_eq!(
-        result.steps[1].outcome(),
+        result.steps[3].outcome(),
         Outcome::BlockedUnderDeclaredModel
     );
     assert_eq!(
         result.product,
-        p::simulate(&s, &t, &l, &request(vec![cut()]))
-            .unwrap()
-            .product
+        simulate(
+            &s,
+            &(&t)
+                .iter()
+                .cloned()
+                .chain((&request(vec![cut()])).iter().cloned())
+                .collect::<Vec<Step>>(),
+            &l
+        )
+        .unwrap()
+        .product
     );
     let mut wrong = cut();
     let p::Action::CleaveThreePrimeFlap { bond, .. } = &mut wrong else {
@@ -280,9 +369,18 @@ fn declared_order_duplicate_cut_and_wrong_actual_bond_do_not_imply_repair() {
     };
     bond.upstream = call(3, 4);
     bond.downstream = call(3, 5);
-    let result = p::simulate(&s, &t, &l, &request(vec![wrong])).unwrap();
-    assert_eq!(result.steps[0].outcome(), Outcome::Unsupported);
-    assert_eq!(result.product, result.parent.product);
+    let result = simulate(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&request(vec![wrong])).iter().cloned())
+            .collect::<Vec<Step>>(),
+        &l,
+    )
+    .unwrap();
+    assert_eq!(result.steps[2].outcome(), Outcome::Unsupported);
+    assert_eq!(result.product, simulate(&s, &t, &l).unwrap().product);
     let mut wrong = cut();
     let p::Action::CleaveThreePrimeFlap {
         displacement_step, ..
@@ -291,9 +389,18 @@ fn declared_order_duplicate_cut_and_wrong_actual_bond_do_not_imply_repair() {
         panic!()
     };
     *displacement_step = 1;
-    let result = p::simulate(&s, &t, &l, &request(vec![wrong])).unwrap();
-    assert_eq!(result.steps[0].outcome(), Outcome::Unsupported);
-    assert_eq!(result.product, result.parent.product);
+    let result = simulate(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&request(vec![wrong])).iter().cloned())
+            .collect::<Vec<Step>>(),
+        &l,
+    )
+    .unwrap();
+    assert_eq!(result.steps[2].outcome(), Outcome::Unsupported);
+    assert_eq!(result.product, simulate(&s, &t, &l).unwrap().product);
 }
 #[test]
 fn distal_blocked_chemistry_is_retained_and_missing_phosphate_is_never_created_for_sealing() {
@@ -301,7 +408,16 @@ fn distal_blocked_chemistry_is_retained_and_missing_phosphate_is_never_created_f
     let t = transfers(Geometry::DirectionalCacc);
     let l = Limits::default();
     s.strands[3].three_prime = ThreePrime::Blocked;
-    let report = p::simulate(&s, &t, &l, &full()).unwrap();
+    let report = simulate(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&full()).iter().cloned())
+            .collect::<Vec<Step>>(),
+        &l,
+    )
+    .unwrap();
     let free = report
         .product
         .chains
@@ -316,18 +432,27 @@ fn distal_blocked_chemistry_is_retained_and_missing_phosphate_is_never_created_f
         }
     );
     assert!(
-        report.all_requested_actions_applied,
+        report.all_requested_steps_applied,
         "created upstream3OH is distinct from preserved original distal blocked terminus"
     );
     let mut s = directional();
     s.strands[1].five_prime = FivePrime::Hydroxyl;
-    let report = p::simulate(&s, &t, &l, &full()).unwrap();
+    let report = simulate(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&full()).iter().cloned())
+            .collect::<Vec<Step>>(),
+        &l,
+    )
+    .unwrap();
     assert_eq!(
-        report.steps[2].outcome(),
+        report.steps[4].outcome(),
         Outcome::BlockedUnderDeclaredModel
     );
     assert_eq!(report.product.nicks.len(), 1);
-    let p::ActionEvidence::NickSealing(e) = &report.steps[2] else {
+    let StepEvidence::Process(p::ActionEvidence::NickSealing(e)) = &report.steps[4] else {
         panic!()
     };
     assert_eq!(e.three_prime, ThreePrime::Hydroxyl);
@@ -339,7 +464,16 @@ fn every_source_call_and_created_endpoint_is_checked_without_hiding_excised_mate
     let t = transfers(Geometry::DirectionalCacc);
     let l = Limits::default();
     let r = full();
-    let report = p::simulate(&s, &t, &l, &r).unwrap();
+    let report = simulate(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
+        &l,
+    )
+    .unwrap();
     let free = report
         .product
         .chains
@@ -348,34 +482,58 @@ fn every_source_call_and_created_endpoint_is_checked_without_hiding_excised_mate
         .unwrap();
     let mut missing = report.product.clone();
     missing.chains.remove(free);
-    assert!(p::audit_source_partition(&s, &missing, &l, &r.limits).is_err());
+    assert!(audit_source_partition(&s, &missing, &l).is_err());
     let mut duplicate = report.product.clone();
     duplicate.chains.push(duplicate.chains[free].clone());
-    assert!(p::audit_source_partition(&s, &duplicate, &l, &r.limits).is_err());
+    assert!(audit_source_partition(&s, &duplicate, &l).is_err());
     let mut gap = report.product.clone();
     gap.chains[free].sources[0].start = 7;
-    assert!(p::audit_source_partition(&s, &gap, &l, &r.limits).is_err());
+    assert!(audit_source_partition(&s, &gap, &l).is_err());
     let mut changed = report.product.clone();
     changed.chains[free].sequence = Sequence::dna("GGTA").unwrap();
-    assert!(p::audit_source_partition(&s, &changed, &l, &r.limits).is_err());
+    assert!(audit_source_partition(&s, &changed, &l).is_err());
     let mut changed = report.clone();
-    let p::ActionEvidence::FlapCleavage(e) = &mut changed.steps[0] else {
+    let StepEvidence::Process(p::ActionEvidence::FlapCleavage(e)) = &mut changed.steps[2] else {
         panic!()
     };
     e.created_five_prime = Some(FivePrime::Hydroxyl);
-    assert!(changed.validate_binding(&report.context_revision).is_err());
+    assert!(changed.validate_binding(&report.batch_revision).is_err());
     let mut changed = report.clone();
     changed.product.chains[free].ends = ChainEnds::Linear {
         five_prime: FivePrime::Hydroxyl,
         three_prime: ThreePrime::Hydroxyl,
     };
-    assert!(p::validate_report(&s, &t, &l, &r, &changed).is_err());
+    assert!(
+        validate_report(
+            &s,
+            &(&t)
+                .iter()
+                .cloned()
+                .chain((&r).iter().cloned())
+                .collect::<Vec<Step>>(),
+            &l,
+            &changed
+        )
+        .is_err()
+    );
     let mut changed = r.clone();
-    let p::Action::CleaveThreePrimeFlap { assumption, .. } = &mut changed.actions[0] else {
+    let Step::Process(p::Action::CleaveThreePrimeFlap { assumption, .. }) = &mut changed[0] else {
         panic!()
     };
     assumption.push_str(" altered");
-    assert!(p::replay(&s, &t, &l, &changed, &report).is_err());
+    assert!(
+        replay(
+            &s,
+            &(&t)
+                .iter()
+                .cloned()
+                .chain((&changed).iter().cloned())
+                .collect::<Vec<Step>>(),
+            &l,
+            &report
+        )
+        .is_err()
+    );
 }
 #[test]
 fn unanchored_displacements_and_unknown_activation_do_not_gain_an_anchored_cut() {
@@ -387,48 +545,67 @@ fn unanchored_displacements_and_unknown_activation_do_not_gain_an_anchored_cut()
     s.pairing[1].length = 4;
     s.pairing[1].start_a = 0;
     s.pairing[1].start_b = 6;
-    let report = p::simulate(&s, &t, &l, &request(vec![cut()])).unwrap();
-    assert_ne!(report.steps[0].outcome(), Outcome::Applied);
-    assert_eq!(report.product, report.parent.product);
+    let report = simulate(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&request(vec![cut()])).iter().cloned())
+            .collect::<Vec<Step>>(),
+        &l,
+    )
+    .unwrap();
+    assert_ne!(report.steps[2].outcome(), Outcome::Applied);
+    assert_eq!(report.product, simulate(&s, &t, &l).unwrap().product);
     let mut s = directional();
     s.strands[0].three_prime = ThreePrime::Unknown;
-    let report = p::simulate(&s, &t, &l, &request(vec![cut()])).unwrap();
-    assert_ne!(report.steps[0].outcome(), Outcome::Applied);
-    assert_eq!(report.product, report.parent.product);
+    let report = simulate(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&request(vec![cut()])).iter().cloned())
+            .collect::<Vec<Step>>(),
+        &l,
+    )
+    .unwrap();
+    assert_ne!(report.steps[2].outcome(), Outcome::Applied);
+    assert_eq!(report.product, simulate(&s, &t, &l).unwrap().product);
 }
 #[test]
-fn source_and_processing_caps_are_explicit_and_empty_actions_preserve_legacy_graphs() {
+fn one_transcript_bounds_steps_source_output_and_work_before_execution() {
     let s = directional();
     let t = transfers(Geometry::DirectionalCacc);
     let l = Limits::default();
-    let r = request(vec![]);
-    let legacy = simulate(&s, &t, &l).unwrap();
-    let result = p::simulate(&s, &t, &l, &r).unwrap();
-    assert_eq!(
-        serde_json::to_vec(&legacy).unwrap(),
-        serde_json::to_vec(&result.parent).unwrap()
-    );
-    assert_eq!(result.product, legacy.product);
-    let mut limit = l.clone();
-    limit.max_steps = 4;
-    assert!(p::preflight(&s, &t, &limit, &full()).is_err());
-    let mut bound = full();
-    bound.limits.max_product_chains = 4;
-    assert!(p::preflight(&s, &t, &l, &bound).is_err());
-    let mut bound = full();
-    bound.limits.max_actions = 2;
-    assert!(p::request_preflight(&bound, &l).is_err());
-    let mut bound = full();
-    bound.limits.max_mapping_segments = 1;
-    assert!(p::simulate(&s, &t, &l, &bound).is_err());
-    let mut changed = s.clone();
-    changed.strands[0].id.push_str(" changed identity");
-    assert!(p::replay(&changed, &t, &l, &r, &result).is_err());
-    // The old TA path remains available unchanged, without any inferred cuts.
+    let transcript = t.into_iter().chain(full()).collect::<Vec<_>>();
+    let mut bound = l.clone();
+    bound.max_steps = 4;
+    assert!(preflight(&s, &transcript, &bound).is_err());
+    bound.max_steps = 5;
+    assert!(preflight(&s, &transcript, &bound).is_ok());
+    bound.max_output_bases = 51;
+    assert!(preflight(&s, &transcript, &bound).is_err());
+    bound = l.clone();
+    bound.max_work_bytes = 1;
+    assert!(simulate(&s, &transcript, &bound).is_err());
+    let mut bad = transcript.clone();
+    let Step::Process(p::Action::CleaveThreePrimeFlap { bond, .. }) = &mut bad[2] else {
+        panic!()
+    };
+    bond.upstream.strand = 99;
+    assert!(preflight(&s, &bad, &l).is_err());
+    let report = simulate(&s, &transcript, &l).unwrap();
+    let mut other = s.clone();
+    other.strands[0].id.push_str(" changed");
+    assert!(replay(&other, &transcript, &l, &report).is_err());
     let ta = ta();
-    let tt = transfers(Geometry::ThreePrimeTA);
-    let old = simulate(&ta, &tt, &l).unwrap();
-    let new = p::simulate(&ta, &tt, &l, &r).unwrap();
-    assert_eq!(new.parent, old);
-    assert_eq!(new.product, old.product);
+    let steps = transfers(Geometry::ThreePrimeTA);
+    let ta_report = simulate(&ta, &steps, &l).unwrap();
+    assert_eq!(ta_report.product.nicks.len(), 2);
+    assert!(
+        ta_report
+            .steps
+            .iter()
+            .all(|step| matches!(step, StepEvidence::Transfer(_)))
+    );
 }

@@ -1,20 +1,20 @@
 //! Source-backed processed TOPO material. A fresh paired-contour proof can bridge
 //! only chemistry represented faithfully by the ordinary two-strand model.
 use crate::{
-    Error, Molecule, assembly_recipe, chemistry, modified_duplex as tracked, topo,
+    Error, Molecule, Topology, assembly_recipe, chemistry, modified_duplex as tracked, topo,
     topo_annotations, topo_worker,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use topo::physical::{self, processing as actions, processing_projection as processed, projection};
+use topo::physical::{self, projection};
 pub const ENGINE_VERSION: &str = "topo-source-actions-product-1";
 pub const MAX_REPORT_BYTES: usize = 32 * 1024 * 1024;
 macro_rules! dto {($($t:tt)*)=>{#[derive(Debug,Clone,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
-dto! {pub struct Request {pub preparation:topo::Request,pub processing:actions::Request,pub selection:processed::Selection,pub options:projection::Options}}
+dto! {pub struct Request {pub preparation:topo::Request,pub selection:projection::Selection,pub options:projection::Options}}
 dto! {pub struct Report {
     pub engine_version:String,pub context_revision:String,pub preparation_revision:String,
-    pub request:Request,pub sources:Vec<topo::SourceIdentity>,pub preparation:topo::PreparationEvidence,
-    pub projection:processed::ProjectionReport,pub duplex:Option<chemistry::Duplex>,
+    pub request:Request,pub input_sources:Vec<topo::SourceIdentity>,pub sources:Vec<topo::SourceIdentity>,pub preparation:topo::PreparationEvidence,
+    pub projection:projection::ProjectionReport,pub duplex:Option<chemistry::Duplex>,
     pub tracked:Option<tracked::TrackedDuplex>,pub product:Option<Molecule>,
     pub annotations:Option<topo_annotations::AnnotationEvidence>,pub bridge_notes:Vec<String>,
 }}
@@ -29,25 +29,14 @@ fn digest(s: &str) -> bool {
         && s.bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
-fn action_shape(original: &topo::Request, processing: &actions::Request) -> Result<(), Error> {
-    actions::request_preflight(processing, &original.engine_limits).map_err(physical_error)?;
-    if original.recipe.schema_version != 1
-        || original.recipe.materials.is_empty()
-        || original.recipe.materials.len() > 16
-        || original
-            .transfers
-            .len()
-            .checked_add(processing.actions.len())
-            .is_none_or(|n| n > 16 || n > original.engine_limits.max_steps)
-    {
+fn shape(r: &Request) -> Result<(), Error> {
+    physical::steps_preflight(&r.preparation.steps, &r.preparation.engine_limits)
+        .map_err(|e| Error::Unsupported(format!("TOPO transcript: {e}")))?;
+    if r.preparation.steps.len() > 64 {
         return Err(Error::TooLarge);
     }
-    Ok(())
-}
-fn shape(r: &Request) -> Result<(), Error> {
-    action_shape(&r.preparation, &r.processing)?;
     let l = &r.options.limits;
-    if !digest(&r.selection.processing_context_revision)
+    if !digest(&r.selection.source_batch_revision)
         || r.selection.component >= 64
         || r.selection.reference_seed.strand >= 32
         || r.selection.reference_seed.index >= 100_000
@@ -82,7 +71,7 @@ fn binding(
 ) -> Result<String, Error> {
     assembly_recipe::hash(&(
         ENGINE_VERSION,
-        processed::ENGINE,
+        projection::ENGINE,
         preparation_revision,
         sources,
         r,
@@ -96,7 +85,91 @@ pub fn revision(inputs: &[topo::Input], r: &Request) -> Result<String, Error> {
         r,
     )
 }
-use crate::topo_processed_product::{bridge, geometry};
+fn five(value: physical::FivePrime) -> Result<chemistry::FivePrime, String> {
+    Ok(match value {
+        physical::FivePrime::Phosphate=>chemistry::FivePrime::Phosphate,
+        physical::FivePrime::Hydroxyl=>chemistry::FivePrime::Hydroxyl,
+        physical::FivePrime::Unknown=>chemistry::FivePrime::Unknown,
+        physical::FivePrime::Blocked=>return Err("Blocked 5′ terminal chemistry is not represented by the ordinary duplex model; no OH/P substitution was made.".into()),
+    })
+}
+fn three(value: &physical::ThreePrime) -> Result<chemistry::ThreePrime, String> {
+    Ok(match value {
+        physical::ThreePrime::Hydroxyl=>chemistry::ThreePrime::Hydroxyl,
+        physical::ThreePrime::Unknown=>chemistry::ThreePrime::Unknown,
+        physical::ThreePrime::Blocked=>chemistry::ThreePrime::Blocked,
+        physical::ThreePrime::Phosphate=>return Err("3′ phosphate chemistry cannot be collapsed to generic blocked/OH chemistry in the ordinary duplex model.".into()),
+        physical::ThreePrime::Phosphotyrosyl{..}=>return Err("A retained phosphotyrosyl adduct cannot be represented faithfully by the ordinary duplex model.".into()),
+    })
+}
+fn terminus(e: &projection::EndChemistry) -> Result<chemistry::Terminus, String> {
+    Ok(chemistry::Terminus {
+        five_prime: five(e.five_prime)?,
+        three_prime: three(&e.three_prime)?,
+    })
+}
+pub(crate) fn geometry(
+    view: &projection::DuplexView,
+) -> Result<
+    (
+        Topology,
+        chemistry::Terminus,
+        chemistry::Terminus,
+        Vec<chemistry::Nick>,
+    ),
+    String,
+> {
+    if view.top.len() != view.bottom.len() || view.top.is_empty() {
+        return Err("Only a complete aligned paired contour is bridgeable.".into());
+    }
+    let topology = match view.topology {
+        projection::ContourTopology::Linear => Topology::Linear,
+        projection::ContourTopology::Circular => Topology::Circular,
+    };
+    let (left, right) = match (topology, &view.ends) {
+        (Topology::Linear, Some(ends)) => (terminus(&ends.left)?, terminus(&ends.right)?),
+        (Topology::Circular, None) => (chemistry::Terminus::UNKNOWN, chemistry::Terminus::UNKNOWN),
+        _ => return Err("Contour topology and exposed terminal evidence disagree.".into()),
+    };
+    let mut nicks = Vec::with_capacity(view.nicks.len());
+    for n in &view.nicks {
+        if n.three_prime != physical::ThreePrime::Hydroxyl
+            || n.five_prime != physical::FivePrime::Phosphate
+        {
+            return Err("An internal nick is bridgeable only with explicit 3′OH/5′P chemistry. Unknown, blocked, 5′OH, phosphate or adduct states remain in the retained graph.".into());
+        }
+        nicks.push(chemistry::Nick {
+            strand: match n.strand {
+                projection::ReferenceStrand::Top => chemistry::Strand::Top,
+                projection::ReferenceStrand::Bottom => chemistry::Strand::Bottom,
+            },
+            position: i64::try_from(n.boundary)
+                .map_err(|_| "Nick coordinate exceeds the duplex model".to_string())?,
+        });
+    }
+    Ok((topology, left, right, nicks))
+}
+pub(crate) fn bridge(
+    view: &projection::DuplexView,
+) -> Result<(chemistry::Duplex, tracked::TrackedDuplex), String> {
+    let (topology, left, right, nicks) = geometry(view)?;
+    let duplex = chemistry::Duplex {
+        top: view.top.clone(),
+        bottom: view.bottom.clone(),
+        bottom_start: 0,
+        topology,
+        left,
+        right,
+        nicks,
+    };
+    duplex.validate().map_err(|e| e.to_string())?;
+    let tracked =
+        tracked::TrackedDuplex::from_unknown_duplex(&duplex).map_err(|e| e.to_string())?;
+    Ok((duplex, tracked))
+}
+/// Fresh original preparation, one transfer/sealing reconstruction, then contour
+/// proof. No imported physical graph, reference summary or target selects DNA.
+
 /// Fresh original preparation, one transfer/sealing reconstruction, then contour
 /// proof. No imported physical graph, reference summary or target selects DNA.
 pub fn inspect(inputs: &[topo::Input], r: &Request) -> Result<Report, Error> {
@@ -126,11 +199,10 @@ fn inspect_preflighted(
     let sources = topo::identities(&prepared.inputs);
     let context_revision = binding(&preparation_revision, &sources, r)?;
     let fresh = topo::execute(&prepared, &original.engine_limits)?;
-    let projection = processed::project_fresh(
+    let projection = projection::project_fresh(
         &prepared.evidence.substrates,
-        &prepared.effective_transfers,
+        &prepared.effective_steps,
         &original.engine_limits,
-        &r.processing,
         &r.selection,
         &r.options,
         fresh,
@@ -164,6 +236,7 @@ fn inspect_preflighted(
         context_revision: context_revision.clone(),
         preparation_revision,
         request: r.clone(),
+        input_sources: topo::identities(inputs),
         sources,
         preparation,
         projection,
@@ -184,6 +257,7 @@ impl Report {
             || !digest(expected)
             || expected != self.context_revision
             || !digest(&self.preparation_revision)
+            || self.input_sources.len() > 64
             || self.sources.is_empty()
             || self.sources.len() > 64
             || self.bridge_notes.len() > 16
@@ -202,13 +276,28 @@ impl Report {
                 return Err(bad("source identity changed"));
             }
         }
+        let mut input_roles = BTreeSet::new();
+        for source in &self.input_sources {
+            if source.role.trim().is_empty()
+                || source.role.len() > 256
+                || !digest(&source.revision)
+                || !input_roles.insert(&source.role)
+            {
+                return Err(bad("root input source identity changed"));
+            }
+        }
+        let expanded =
+            topo::expanded_source_identities(&self.input_sources, &self.request.preparation)?;
+        if assembly_recipe::hash(&expanded)? != assembly_recipe::hash(&self.sources)? {
+            return Err(bad("root and expanded native source identities differ"));
+        }
         let original = &self.request.preparation;
         let original_revision = assembly_recipe::hash(&(
             topo::ENGINE_VERSION,
             physical::ENGINE,
             physical::PRIMARY_MODEL,
             projection::ENGINE,
-            &self.sources,
+            &self.input_sources,
             original,
         ))?;
         if original_revision != self.preparation_revision
@@ -217,11 +306,10 @@ impl Report {
             return Err(bad("source/preparation/selection context changed"));
         }
         topo_worker::preparation(&self.preparation)?;
-        processed::validate_report(
+        projection::validate_report(
             &self.preparation.substrates,
-            &topo::effective_transfers(&self.preparation, original)?,
+            &topo::effective_steps(&self.preparation, original)?,
             &original.engine_limits,
-            &self.request.processing,
             &self.request.selection,
             &self.request.options,
             &self.projection,
@@ -333,137 +421,3 @@ pub fn replay(inputs: &[topo::Input], r: &Request, report: &Report) -> Result<()
 }
 // Discovery is separate from an explicit selected component/seed. Its graph is
 // retained for review but never imported as input to the projection job.
-dto! {pub struct ActionsRequest{pub preparation:topo::Request,pub processing:actions::Request}}
-dto! {pub struct Inspection{pub engine_version:String,pub context_revision:String,pub preparation_revision:String,pub request:ActionsRequest,pub sources:Vec<topo::SourceIdentity>,pub preparation:topo::PreparationEvidence,pub processing:actions::Report}}
-pub fn preflight_actions(inputs: &[topo::Input], r: &ActionsRequest) -> Result<(), Error> {
-    action_shape(&r.preparation, &r.processing)?;
-    topo::source_preflight(inputs, &r.preparation)
-}
-fn action_binding(
-    preparation_revision: &str,
-    sources: &[topo::SourceIdentity],
-    r: &ActionsRequest,
-) -> Result<String, Error> {
-    assembly_recipe::hash(&(
-        ENGINE_VERSION,
-        "actions-discovery",
-        actions::ENGINE,
-        preparation_revision,
-        sources,
-        r,
-    ))
-}
-pub fn revision_actions(inputs: &[topo::Input], r: &ActionsRequest) -> Result<String, Error> {
-    preflight_actions(inputs, r)?;
-    action_binding(
-        &topo::batch_revision(inputs, &r.preparation)?,
-        &topo::documentary_sources(inputs, &r.preparation)?,
-        r,
-    )
-}
-pub fn inspect_actions(inputs: &[topo::Input], r: &ActionsRequest) -> Result<Inspection, Error> {
-    preflight_actions(inputs, r)?;
-    let preparation_revision = topo::batch_revision(inputs, &r.preparation)?;
-    actions_preflighted(inputs, r, preparation_revision)
-}
-pub(crate) fn inspect_actions_reconstructed(
-    inputs: &[topo::Input],
-    r: &ActionsRequest,
-    templates: &[(String, &tracked::TrackedDuplex)],
-) -> Result<Inspection, Error> {
-    action_shape(&r.preparation, &r.processing)?;
-    let revision = topo::batch_revision_reconstructed(inputs, &r.preparation, templates)?;
-    actions_preflighted(inputs, r, revision)
-}
-fn actions_preflighted(
-    inputs: &[topo::Input],
-    r: &ActionsRequest,
-    preparation_revision: String,
-) -> Result<Inspection, Error> {
-    let prepared = topo::prepare(inputs, &r.preparation)?;
-    let sources = topo::identities(&prepared.inputs);
-    let context_revision = action_binding(&preparation_revision, &sources, r)?;
-    let fresh = topo::execute(&prepared, &r.preparation.engine_limits)?;
-    let processing = actions::process_fresh(
-        &prepared.evidence.substrates,
-        &prepared.effective_transfers,
-        &r.preparation.engine_limits,
-        &r.processing,
-        fresh,
-    )
-    .map_err(physical_error)?;
-    let preparation = prepared.evidence;
-    let out = Inspection {
-        engine_version: ENGINE_VERSION.into(),
-        context_revision: context_revision.clone(),
-        preparation_revision,
-        request: r.clone(),
-        sources,
-        preparation,
-        processing,
-    };
-    out.validate_binding(&context_revision)?;
-    Ok(out)
-}
-impl Inspection {
-    /// Readonly structural/source binding, never execution of imported graph data.
-    pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
-        action_shape(&self.request.preparation, &self.request.processing)?;
-        if self.engine_version != ENGINE_VERSION
-            || !digest(expected)
-            || self.context_revision != expected
-            || !digest(&self.preparation_revision)
-            || self.sources.is_empty()
-            || self.sources.len() > 64
-        {
-            return Err(bad("action inspection binding shape changed"));
-        }
-        bounded(&self.request, MAX_REPORT_BYTES - 65536)?;
-        let mut roles = BTreeSet::new();
-        for s in &self.sources {
-            if s.role.trim().is_empty()
-                || s.role.len() > 256
-                || !digest(&s.revision)
-                || !roles.insert(s.role.as_str())
-            {
-                return Err(bad("action inspection source identity changed"));
-            }
-        }
-        let preparation_revision = assembly_recipe::hash(&(
-            topo::ENGINE_VERSION,
-            physical::ENGINE,
-            physical::PRIMARY_MODEL,
-            projection::ENGINE,
-            &self.sources,
-            &self.request.preparation,
-        ))?;
-        if preparation_revision != self.preparation_revision
-            || action_binding(&preparation_revision, &self.sources, &self.request)? != expected
-        {
-            return Err(bad("action inspection source/preparation changed"));
-        }
-        topo_worker::preparation(&self.preparation)?;
-        actions::validate_report(
-            &self.preparation.substrates,
-            &topo::effective_transfers(&self.preparation, &self.request.preparation)?,
-            &self.request.preparation.engine_limits,
-            &self.request.processing,
-            &self.processing,
-        )
-        .map_err(physical_error)?;
-        bounded(self, MAX_REPORT_BYTES)
-    }
-}
-pub fn replay_actions(
-    inputs: &[topo::Input],
-    r: &ActionsRequest,
-    report: &Inspection,
-) -> Result<(), Error> {
-    report.validate_binding(&revision_actions(inputs, r)?)?;
-    if assembly_recipe::hash(&inspect_actions(inputs, r)?)? != assembly_recipe::hash(report)? {
-        return Err(bad(
-            "action inspection differs from fresh source processing",
-        ));
-    }
-    Ok(())
-}

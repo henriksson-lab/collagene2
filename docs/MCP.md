@@ -791,58 +791,34 @@ projection/check tools. Declared activation is an assumption; neither compilatio
 nor a transferred source-call graph implies a repaired or closed clone.
 
 
-## Explicit downstream TOPO nick sealing
+## Ordered physical TOPO reactions and saved graphs
 
-`seal_topo_nicks` accepts immutable `sources` and
-`request: { preparation, sealing: { ligase_assumption, nicks: [{ three, five }] } }`.
-Each call is `{ strand, index }` in original prepared-strand coordinates. Fresh
-preparation and original transfers precede the selected treatment. Blocked,
-unknown and unsupported choices remain explicit; all source calls/components and
-released activation remain in the evidence artifact. A sealed graph is not an
-accepted candidate or ordinary tracked duplex. [Contract](TOPO_NICK_SEALING.md).
+`simulate_topo` reconstructs exact original sources using a single ordered
+`request.steps` transcript. `Transfer` names actual source `Call` endpoints;
+`Process` declares flap cleavage or selected nick sealing with explicit chemistry
+and profile assumptions. Failed steps and every source call/component remain
+visible. No report or projected sequence is accepted as native state.
 
+`project_topo_actions` uses `request: {preparation, selection, options}`. Selection
+pins `source_batch_revision` from the physical report, a component and original
+`reference_seed: {strand,index}`. It freshly replays the complete transcript,
+proves a paired contour where supported and bridges only faithful representable
+material. Other components, released activation, nicks and unpaired calls remain
+in its full evidence artifact. There are no separate phase executors.
 
-## Source-backed processed TOPO contours
+`topo_graph` with its explicit capture task retains the exact source-backed transcript in a schema2 native
+graph record; graph continuation reconstructs original sources and retained steps
+before applying new steps. The consumed activation and effective cut-end chemistry
+are not reset at a save/reopen boundary. Graph imports and downloads are documentary
+until fresh replay. Unsupported internal versions are refused.
 
-`project_processed_topo` accepts immutable `sources` and
-`request: { treatment: { preparation, sealing }, selection, options }`.
-`selection` pins `sealing_context_revision` (the physical sealing report context),
-`component` and original `reference_seed: { strand, index }`. Strict completion
-checks original transfers and requested seals. The native reconstruction returns
-actual proof/bridge availability and full evidence, atomically with an annotated
-sequence document where supported. That document retains restrictive physical
-metadata; importing it cannot restore the graph as physical state.
-
-Selected material is not an isolation/mixture-winner claim. Internal modifications
-remain unknown, unsupported chemistry is not erased, and no independent-target
-acceptance follows from this tool. [Contract](TOPO_PROCESSED_PRODUCT.md).
-
-
-## Retained processed plans and historical graphs
-
-`propose_plan` accepts the ProcessedTopo declaration with original role
-bindings and literal processing request. `verify_plan` reconstructs it afresh,
-returns processed_step_count and a complete processed-graph artifact, including
-withheld paths. A successful material result can feed later native operations;
-an imported sequence/report cannot establish that state. Target DNA stays separate.
-
-`record_workspace_run` retains complete historical processed graphs atomically in
-an exact-event-bound sidecar. `inspect_workspace_run_evidence` accepts workspace
-and run_id, returns historical metadata plus an optional full JSON artifact, and
-never replays science or restores material authority. Older ordinary runs have no
-fabricated attachment. Use replay_workspace_run for current-engine evidence.
-[Formats, handoff, protocols and limits](TOPO_PROCESSED_PLAN.md).
-
-
-## Ordered physical TOPO processing
-
-`inspect_topo_actions` reconstructs original declared sources and explicit ordered
-flap-cleavage/nick-sealing actions. `project_topo_actions` adds a source-seeded
-contour proof and faithful bridge, producing an annotated restrictive reference
-and full bounded evidence artifact. The ideal hydrolytic profile makes no named
-nuclease, kit-efficiency or host-repair claim. Plan verification retains typed
-generic evidence; historical inspection supports exact generic/mixed-run bundles.
-[Full contract and remaining scope](TOPO_PROCESSING_ACTIONS.md).
+`propose_plan`/`verify_plan` use the sole `TopoActions` physical bridge. Verification
+returns `scientific_step_count` plus bounded full typed evidence, including
+withheld products. `record_workspace_run` retains current physical/reference
+sidecars with exact run/event ownership. `inspect_workspace_run_evidence` downloads
+a bounded current scientific-evidence bundle without restoring material authority.
+Fresh replay remains a separate action. [Graph history](TOPO_GRAPH_HISTORY.md) ·
+[Chemical steps](TOPO_PROCESSING_ACTIONS.md).
 
 
 ## Native upstream PCR composition
@@ -926,13 +902,13 @@ The tool atomically returns an unverified intended-reference session target and 
 
 `inspect_pcr_digest` additionally accepts optional `pcr_options: mutagenesis::PcrOptions`. Omitting it preserves the exact-PCR tool behavior, response and artifact layouts. Supplying it selects the distinct native mismatch-PCR/catalog inspector and `mismatch-pcr-digest-inspection.json` artifact. The request's existing primer/catalog fields remain in `request`; explicit mismatch/3′-exact/search policy is separate in `pcr_options`. Primer tails, encoded substitutions, candidate binding evidence and the actual selected amplicon remain inspectable in the full typed artifact.
 
-Mismatch mode returns `mode: "mismatch-pcr"`, actual policy, native search/enumeration completeness, candidate summaries, selected amplicon summary, paged real fragments and `incomplete`. A certain nonoverlapping conditional singleton may be inspectable under a capped search; the incomplete flag stays explicit and no uniqueness or successful reaction is inferred. A saved-run `origin` still requires its exact `workspace` and shares the existing full ownership attestation before fresh science. No independent target, plan or product document is created. Existing shared recipe tools also accept explicit `MismatchPcrCatalogDigest` preparations and their flat saved-run equivalent; an explicit fragment index is verified separately against the independently declared target.
+Mismatch mode returns `mode: "mismatch-pcr"`, actual policy, native search/enumeration completeness, candidate summaries, selected amplicon summary, paged real fragments and `incomplete`. A certain nonoverlapping conditional singleton may be inspectable under a capped search; the incomplete flag stays explicit and no uniqueness or successful reaction is inferred. A native Run/Derived `origin` requires its exact owning `workspace` and shares the existing full ownership attestation before fresh science. No independent target, plan or product document is created. Existing shared recipe tools also accept explicit `MismatchPcrCatalogDigest` preparations and their flat saved-run equivalent; an explicit fragment index is verified separately against the independently declared target.
 
 
 `verify_plan` retains a complete verification artifact whenever TOPO
 `step_reports` or `annotation_reports` contain evidence, including graph-only
 outcomes with no DNA contour. These use the existing artifact field alongside
-processed, physical and reference evidence. A plain plan with no typed
+physical and reference evidence. A plain plan with no typed
 step-evidence arrays keeps its existing response. Artifacts remain documentary;
 no intermediate or graph-only result is published as a molecule by verification.
 

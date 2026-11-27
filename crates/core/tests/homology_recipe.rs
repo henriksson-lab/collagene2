@@ -305,7 +305,7 @@ fn reference_only_and_imported_product_summaries_cannot_acquire_homology_materia
         unavailable
             .findings
             .iter()
-            .any(|f| f.contains("established physical"))
+            .any(|f| f.contains("actual physical source state"))
     );
     let physical = recipe::preview_homology(&inputs, &target, &request, &policy).unwrap();
     let imported = physical.verification.products.last().unwrap().clone();
@@ -330,7 +330,7 @@ fn reference_only_and_imported_product_summaries_cannot_acquire_homology_materia
         imported
             .findings
             .iter()
-            .any(|f| f.contains("imported physical"))
+            .any(|f| f.contains("fresh native origin"))
     );
     let mut mismatched = policy;
     mismatched.overlaps = vec![7, 7];

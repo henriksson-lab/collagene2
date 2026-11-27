@@ -129,10 +129,10 @@ fn tailing_recipe_reconstructs_literal_ta_and_gc_with_current_operations() {
         let encoded = protocol::encode_request(&request).unwrap();
         let ((_, _, tag), _) =
             postcard::take_from_bytes::<(u32, &str, u32)>(&encoded[42..]).unwrap();
-        assert_eq!(tag, 154);
+        assert_eq!(tag, 151);
         let (bytes, value) = preview(&request);
         let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-        assert_eq!(tag, 146);
+        assert_eq!(tag, 143);
         value.validate_binding(&request.revision).unwrap();
         assert_eq!(
             value.verification.engine_version,

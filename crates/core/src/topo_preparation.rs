@@ -137,7 +137,7 @@ fn compiled_saved(
                 schema_version: 1,
                 materials,
             },
-            transfers: vec![],
+            steps: vec![],
             engine_limits: request.engine_limits.clone(),
             projection_options: request.projection_options.clone(),
         },
@@ -233,7 +233,7 @@ fn compile_original(
         request:topo::Request{recipe:topo::GenerationRecipe{schema_version:1,materials:vec![
             topo::MaterialRecipe::Prepared{declaration_id:vector.declaration_id.clone(),assumption:vector.assumption.clone(),strands:vector.strands.clone(),pairing:vector.pairing.clone()},
             topo::MaterialRecipe::ExactPcr{material_id:insert.material_id.clone(),template_role:insert.template_role.clone(),forward:insert.forward.clone(),reverse:insert.reverse.clone(),tail:insert.tail},
-        ]},transfers:vec![],engine_limits:request.engine_limits.clone(),projection_options:request.projection_options.clone()},
+        ]},steps:vec![],engine_limits:request.engine_limits.clone(),projection_options:request.projection_options.clone()},
         vector_strands:[0,1],insert_strands:[2,3],directional:request.mode==PreparationMode::DirectionalCacc,
         assumptions:vec![
             "Vector preparation, activation and every terminal state are explicit hypotheses. Original reference sequence or a commercial name does not establish activated stock; this builder does not simulate vector manufacture.".into(),

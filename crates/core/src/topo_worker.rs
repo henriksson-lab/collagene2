@@ -161,19 +161,25 @@ pub(crate) fn preparation(preparation: &topo::PreparationEvidence) -> Result<(),
             return Err(bad("source map outside prepared strand"));
         }
     }
-    if preparation.retained_transfers.len() > 64
+    if preparation.retained_steps.len() > 64
         || preparation.layout.len() > 256
         || preparation.graph_origins.len() > 128
     {
         return Err(Error::TooLarge);
     }
-    for transfer in &preparation.retained_transfers {
-        if transfer.donor >= strands.len() || transfer.acceptor >= strands.len() {
-            return Err(bad(
-                "retained transfer lies outside original source strands",
-            ));
-        }
-    }
+    let mut limits = physical::Limits::default();
+    limits.max_steps = 64;
+    limits.max_source_bases = 500_000;
+    limits.max_strands = 64;
+    limits.max_work_cells = 128_000_000;
+    limits.max_work_bytes = 128 * 1024 * 1024;
+    limits.max_report_bytes = 32 * 1024 * 1024;
+    physical::preflight(
+        &preparation.substrates,
+        &preparation.retained_steps,
+        &limits,
+    )
+    .map_err(|e| bad(&e.to_string()))?;
     for layout in &preparation.layout {
         if layout.material >= 64
             || layout.owner.as_ref().is_some_and(|owner| !hex(owner))
@@ -198,12 +204,9 @@ pub(crate) fn preparation(preparation: &topo::PreparationEvidence) -> Result<(),
             || !hex(&origin.selection.state_revision)
             || origin.strand_start >= origin.strand_end
             || origin.strand_end > strands.len()
-            || origin.after_transfers > preparation.retained_transfers.len()
-            || origin.transfer_map.len() > 64
-            || origin
-                .transfer_map
-                .iter()
-                .any(|&i| i >= origin.after_transfers)
+            || origin.after_steps > preparation.retained_steps.len()
+            || origin.step_map.len() > 64
+            || origin.step_map.iter().any(|&i| i >= origin.after_steps)
             || origin.activation_unmap.len() > 64
             || origin.activation_unmap.iter().any(|(a, b)| {
                 a.trim().is_empty() || b.trim().is_empty() || a.len() > 256 || b.len() > 256
@@ -211,10 +214,7 @@ pub(crate) fn preparation(preparation: &topo::PreparationEvidence) -> Result<(),
         {
             return Err(bad("invalid retained graph source checkpoint description"));
         }
-        if origin
-            .transfer_map
-            .windows(2)
-            .any(|pair| pair[0] >= pair[1])
+        if origin.step_map.windows(2).any(|pair| pair[0] >= pair[1])
             || origin
                 .activation_unmap
                 .iter()
@@ -232,87 +232,20 @@ fn physical_shape(
     report: &physical::Report,
     preparation: &topo::PreparationEvidence,
 ) -> Result<(), Error> {
-    let graph = &report.product;
-    if report.engine != physical::ENGINE
-        || report.model != physical::PRIMARY_MODEL
-        || !hex(&report.batch_revision)
-        || report.source_revisions.len() != preparation.substrates.strands.len()
-        || report.source_revisions.iter().any(|s| !hex(s))
-        || report.steps.len() > 64
-        || report.source_bases > 100_000
-        || graph.chains.len() > 64
-        || graph.components.len() > 64
-        || graph.nicks.len() > 100_000
-        || graph.unpaired.len() > 100_000
-        || graph.source_pairing.len() > 100_000
-        || graph.released_activations.len() > 32
-        || report.assumptions.len() > 128
+    physical::validate_report(
+        &preparation.substrates,
+        &report.request,
+        &report.limits,
+        report,
+    )
+    .map_err(|e| bad(&e.to_string()))?;
+    if report.request.len() < preparation.retained_steps.len()
+        || report.request[..preparation.retained_steps.len()] != preparation.retained_steps
     {
-        return Err(bad("invalid physical report bounds/engine"));
-    }
-    let source_bases = preparation
-        .substrates
-        .strands
-        .iter()
-        .map(|s| s.sequence.len())
-        .sum::<usize>();
-    let mut product_bases = 0usize;
-    let mut maps = 0usize;
-    for chain in &graph.chains {
-        product_bases = product_bases
-            .checked_add(chain.sequence.len())
-            .filter(|&n| n <= 100_000)
-            .ok_or(Error::TooLarge)?;
-        maps = maps
-            .checked_add(chain.sources.len())
-            .filter(|&n| n <= 100_000)
-            .ok_or(Error::TooLarge)?;
-    }
-    if report.source_bases != source_bases || product_bases != source_bases {
-        return Err(bad("physical report nucleotide counts disagree"));
-    }
-    for component in &graph.components {
-        if component.chains.len() > 64 || component.chains.iter().any(|&i| i >= graph.chains.len())
-        {
-            return Err(bad("component chain index outside graph"));
-        }
-    }
-    for run in &graph.unpaired {
-        if run.chain >= graph.chains.len()
-            || run.start >= run.end
-            || run.end > graph.chains[run.chain].sequence.len()
-            || run.displaced_by.len() > 64
-        {
-            return Err(bad("unpaired description outside graph"));
-        }
-    }
-    let prefix = &preparation.retained_transfers;
-    if report.steps.len() < prefix.len()
-        || report.steps.iter().enumerate().any(|(i, s)| s.step != i)
-        || report
-            .steps
-            .iter()
-            .zip(prefix)
-            .any(|(s, t)| &s.transfer != t)
-        || report.all_requested_transfers_applied
-            != report
-                .steps
-                .iter()
-                .all(|s| s.outcome == physical::Outcome::Applied)
-        || report.unsupported_or_unknown
-            != report.steps.iter().any(|s| {
-                matches!(
-                    s.outcome,
-                    physical::Outcome::Unsupported | physical::Outcome::Unknown
-                )
-            })
-    {
-        return Err(bad("physical prefix/outcome descriptions disagree"));
+        return Err(bad("native retained source transcript differs"));
     }
     Ok(())
 }
-/// Cheap readonly bounds/binding validation only: never replays enzyme activity
-/// or accepts the report as input to a fresh scientific operation.
 pub fn validate_simulation(
     report: &topo::TopoReport,
     expected_revision: &str,
@@ -324,7 +257,7 @@ pub fn validate_simulation(
         return Err(bad("adapter engine mismatch"));
     }
     physical_shape(&report.physical, &report.preparation)?;
-    if (!report.physical.all_requested_transfers_applied
+    if (!report.physical.all_requested_steps_applied
         || report.physical.unsupported_or_unknown
         || report
             .preparation
@@ -352,7 +285,7 @@ pub fn validate_orientations(
         || report.reference.engine != physical::ENGINE
         || report.reference.candidates.len() > 2
         || report.candidate_requests.len() != report.reference.candidates.len()
-        || report.reference.pending_transfers.len() != report.reference.candidates.len()
+        || report.reference.pending_steps.len() != report.reference.candidates.len()
         || report.reference.satisfied_prefix_steps.len() != report.reference.candidates.len()
         || report.reference.checkpoints.len() != report.preparation.graph_origins.len()
         || report.reference.biochemical_mixture_exhaustive
@@ -363,7 +296,7 @@ pub fn validate_orientations(
         physical_shape(candidate, &report.preparation)?;
     }
     for (index, request) in report.candidate_requests.iter().enumerate() {
-        if request.recipe.materials.len() > 64 || request.transfers.len() > 16 {
+        if request.recipe.materials.len() > 64 || request.steps.len() > 16 {
             return Err(Error::TooLarge);
         }
         crate::run_material::native_origins_preflight(request.recipe.materials.iter().filter_map(
@@ -376,20 +309,17 @@ pub fn validate_orientations(
             },
         ))?;
         let candidate = &report.reference.candidates[index];
-        let pending = &report.reference.pending_transfers[index];
-        let prefix = report.preparation.retained_transfers.len();
+        let pending = &report.reference.pending_steps[index];
+        let prefix = report.preparation.retained_steps.len();
         let satisfied = &report.reference.satisfied_prefix_steps[index];
-        if &request.transfers != pending
+        if &request.steps != pending
             || pending.len() > 2
             || candidate.steps.len() != prefix + pending.len()
-            || candidate.steps[prefix..]
-                .iter()
-                .zip(pending)
-                .any(|(s, t)| &s.transfer != t)
+            || candidate.request[prefix..] != pending[..]
             || satisfied.len() > 2
             || satisfied
                 .iter()
-                .any(|&i| i >= prefix || candidate.steps[i].outcome != physical::Outcome::Applied)
+                .any(|&i| i >= prefix || candidate.steps[i].outcome() != physical::Outcome::Applied)
             || satisfied.iter().collect::<BTreeSet<_>>().len() != satisfied.len()
         {
             return Err(bad(
@@ -404,8 +334,8 @@ pub fn validate_orientations(
         .iter()
         .zip(&report.reference.checkpoints)
     {
-        if graph.chains.len() > 64
-            || graph.components.len() > 64
+        if graph.chains.len() > 128
+            || graph.components.len() > 128
             || graph.nicks.len() > 100_000
             || graph.unpaired.len() > 100_000
             || graph.source_pairing.len() > 100_000
@@ -458,6 +388,15 @@ pub fn validate_projection(product: &topo::Product, expected_revision: &str) -> 
         )?,
     )?;
     physical_shape(&proof.physical, &product.preparation)?;
+    projection::validate_report(
+        &product.preparation.substrates,
+        &proof.physical.request,
+        &proof.physical.limits,
+        &proof.selection,
+        &proof.options,
+        proof,
+    )
+    .map_err(|e| bad(&e.to_string()))?;
     match (&proof.outcome, &product.reference, &product.annotations) {
         (projection::Outcome::Proven(view), Some(reference), Some(annotations)) => {
             collagene_model::bounds::model_preflight(&[reference])?;
@@ -547,7 +486,7 @@ pub fn validate_target(
             if !report.policy.allow_nicks && !view.nicks.is_empty()
                 || !report.policy.allow_unknown_terminal_chemistry
                     && !view.fully_known_terminal_chemistry
-                || !report.policy.allow_unapplied_transfers && !view.all_requested_transfers_applied
+                || !report.policy.allow_unapplied_steps && !view.all_requested_steps_applied
                 || !report.policy.allow_other_components
                     && report.product.projection.physical.product.components.len() != 1
             {

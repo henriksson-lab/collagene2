@@ -1,9 +1,9 @@
 use collagene_model::Sequence;
-use collagene_topo::{processing as actions, processing_projection as p, projection as contour, *};
+use collagene_topo::{processing as actions, projection as p, projection as contour, *};
 fn call(strand: usize, index: usize) -> Call {
     Call { strand, index }
 }
-fn fixture() -> (Substrates, Vec<Transfer>) {
+fn fixture() -> (Substrates, Vec<Step>) {
     let dna = [
         "AAGGGGCATCCCTT",
         "GGTGAAGGGATGCCCCTT",
@@ -53,20 +53,32 @@ fn fixture() -> (Substrates, Vec<Transfer>) {
             ],
         },
         vec![
-            Transfer {
-                donor: 0,
-                acceptor: 2,
+            Step::Transfer(Transfer {
+                donor: Call {
+                    strand: 0,
+                    index: 13,
+                },
+                acceptor: Call {
+                    strand: 2,
+                    index: 0,
+                },
                 geometry: Geometry::DirectionalCacc,
-            },
-            Transfer {
-                donor: 1,
-                acceptor: 3,
+            }),
+            Step::Transfer(Transfer {
+                donor: Call {
+                    strand: 1,
+                    index: 17,
+                },
+                acceptor: Call {
+                    strand: 3,
+                    index: 0,
+                },
                 geometry: Geometry::Flush,
-            },
+            }),
         ],
     )
 }
-fn request(seal: bool) -> actions::Request {
+fn request(seal: bool) -> Vec<Step> {
     let mut list = vec![actions::Action::CleaveThreePrimeFlap {
         bond: actions::Bond {
             upstream: call(3, 5),
@@ -84,13 +96,10 @@ fn request(seal: bool) -> actions::Request {
             });
         }
     }
-    actions::Request {
-        actions: list,
-        limits: actions::ProcessingLimits::default(),
-    }
+    list.into_iter().map(Step::Process).collect()
 }
-fn select(s: &Substrates, t: &[Transfer], r: &actions::Request, seed: Call) -> p::Selection {
-    let fresh = actions::simulate(s, t, &Limits::default(), r).unwrap();
+fn select(s: &Substrates, steps: &[Step], seed: Call) -> p::Selection {
+    let fresh = simulate(s, steps, &Limits::default()).unwrap();
     let component = fresh
         .product
         .components
@@ -104,7 +113,7 @@ fn select(s: &Substrates, t: &[Transfer], r: &actions::Request, seed: Call) -> p
         })
         .unwrap();
     p::Selection {
-        processing_context_revision: fresh.context_revision,
+        source_batch_revision: fresh.batch_revision,
         component,
         reference_seed: seed,
     }
@@ -119,12 +128,23 @@ fn view(report: &p::ProjectionReport) -> &contour::DuplexView {
 fn literal_cut_and_seals_prove_main48_calls_and_keep_excised_four() {
     let (s, t) = fixture();
     let r = request(true);
-    let selection = select(&s, &t, &r, call(0, 0));
+    let selection = select(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
+        call(0, 0),
+    );
     let report = p::project(
         &s,
-        &t,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
         &Limits::default(),
-        &r,
         &selection,
         &contour::Options::default(),
     )
@@ -133,11 +153,11 @@ fn literal_cut_and_seals_prove_main48_calls_and_keep_excised_four() {
     assert_eq!(v.top.as_str(), "AAGGGGCATCCCTTCACCATGACG");
     assert_eq!(v.topology, contour::ContourTopology::Circular);
     assert!(v.nicks.is_empty());
-    assert_eq!(report.processing.source_bases, 52);
-    assert_eq!(report.processing.product.components.len(), 2);
+    assert_eq!(report.physical.source_bases, 52);
+    assert_eq!(report.physical.product.components.len(), 2);
     assert!(
         report
-            .processing
+            .physical
             .product
             .components
             .iter()
@@ -146,7 +166,7 @@ fn literal_cut_and_seals_prove_main48_calls_and_keep_excised_four() {
                 && c.covalently_closed)
     );
     let free = report
-        .processing
+        .physical
         .product
         .chains
         .iter()
@@ -162,9 +182,8 @@ fn literal_cut_and_seals_prove_main48_calls_and_keep_excised_four() {
         }
     );
     assert_eq!(
-        report
-            .processing
-            .parent
+        simulate(&s, &t, &Limits::default())
+            .unwrap()
             .product
             .chains
             .iter()
@@ -174,9 +193,12 @@ fn literal_cut_and_seals_prove_main48_calls_and_keep_excised_four() {
     );
     p::replay(
         &s,
-        &t,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
         &Limits::default(),
-        &r,
         &selection,
         &contour::Options::default(),
         &report,
@@ -187,12 +209,23 @@ fn literal_cut_and_seals_prove_main48_calls_and_keep_excised_four() {
 fn newly_exposed_internal_source_three_oh_nick_is_preserved_before_sealing() {
     let (s, t) = fixture();
     let r = request(false);
-    let selection = select(&s, &t, &r, call(0, 0));
+    let selection = select(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
+        call(0, 0),
+    );
     let report = p::project(
         &s,
-        &t,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
         &Limits::default(),
-        &r,
         &selection,
         &contour::Options::default(),
     )
@@ -204,7 +237,7 @@ fn newly_exposed_internal_source_three_oh_nick_is_preserved_before_sealing() {
         && n.five_prime == FivePrime::Phosphate));
     assert!(
         report
-            .processing
+            .physical
             .product
             .chains
             .iter()
@@ -215,24 +248,46 @@ fn newly_exposed_internal_source_three_oh_nick_is_preserved_before_sealing() {
 fn reverse_seed_proves_actual_source_orientation_and_free_component_is_withheld() {
     let (s, t) = fixture();
     let r = request(true);
-    let selection = select(&s, &t, &r, call(1, 0));
+    let selection = select(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
+        call(1, 0),
+    );
     let report = p::project(
         &s,
-        &t,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
         &Limits::default(),
-        &r,
         &selection,
         &contour::Options::default(),
     )
     .unwrap();
     assert_eq!(view(&report).origin, call(1, 0));
     assert_eq!(view(&report).top.as_str(), "GGTGAAGGGATGCCCCTTCGTCAT");
-    let free = select(&s, &t, &r, call(3, 6));
+    let free = select(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
+        call(3, 6),
+    );
     let withheld = p::project(
         &s,
-        &t,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
         &Limits::default(),
-        &r,
         &free,
         &contour::Options::default(),
     )
@@ -241,19 +296,30 @@ fn reverse_seed_proves_actual_source_orientation_and_free_component_is_withheld(
         withheld.outcome,
         contour::Outcome::Withheld(contour::Withheld::UnpairedNucleotides { count: 4 })
     );
-    assert_eq!(withheld.processing.source_bases, 52);
+    assert_eq!(withheld.physical.source_bases, 52);
 }
 #[test]
 fn absent_cut_and_strict_blocked_actions_never_invent_repaired_contours() {
     let (s, t) = fixture();
     let mut no_cut = request(false);
-    no_cut.actions.clear();
-    let selection = select(&s, &t, &no_cut, call(0, 0));
+    no_cut.clear();
+    let selection = select(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&no_cut).iter().cloned())
+            .collect::<Vec<Step>>(),
+        call(0, 0),
+    );
     let report = p::project(
         &s,
-        &t,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&no_cut).iter().cloned())
+            .collect::<Vec<Step>>(),
         &Limits::default(),
-        &no_cut,
         &selection,
         &contour::Options::default(),
     )
@@ -263,22 +329,41 @@ fn absent_cut_and_strict_blocked_actions_never_invent_repaired_contours() {
         contour::Outcome::Withheld(contour::Withheld::UnpairedNucleotides { count: 4 })
     );
     let mut repeated = request(true);
-    repeated.actions.push(repeated.actions[0].clone());
-    let selection = select(&s, &t, &repeated, call(0, 0));
+    repeated.push(repeated[0].clone());
+    let selection = select(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&repeated).iter().cloned())
+            .collect::<Vec<Step>>(),
+        call(0, 0),
+    );
     let mut options = contour::Options::default();
-    options.require_all_requested_transfers_applied = true;
-    let blocked = p::project(&s, &t, &Limits::default(), &repeated, &selection, &options).unwrap();
+    options.require_all_requested_steps_applied = true;
+    let blocked = p::project(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&repeated).iter().cloned())
+            .collect::<Vec<Step>>(),
+        &Limits::default(),
+        &selection,
+        &options,
+    )
+    .unwrap();
     assert_eq!(
         blocked.outcome,
-        contour::Outcome::Withheld(contour::Withheld::RequestedTransfersNotApplied)
+        contour::Outcome::Withheld(contour::Withheld::RequestedStepsNotApplied)
     );
     assert_eq!(
-        blocked.processing.steps[3].outcome(),
+        blocked.physical.steps[5].outcome(),
         Outcome::BlockedUnderDeclaredModel
     );
     assert_eq!(
         blocked
-            .processing
+            .physical
             .product
             .chains
             .iter()
@@ -291,29 +376,85 @@ fn absent_cut_and_strict_blocked_actions_never_invent_repaired_contours() {
 fn changed_requests_foreign_versions_maps_and_dropped_flaps_do_not_replay() {
     let (s, t) = fixture();
     let r = request(true);
-    let selection = select(&s, &t, &r, call(0, 0));
+    let selection = select(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
+        call(0, 0),
+    );
     let options = contour::Options::default();
-    let report = p::project(&s, &t, &Limits::default(), &r, &selection, &options).unwrap();
+    let report = p::project(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
+        &Limits::default(),
+        &selection,
+        &options,
+    )
+    .unwrap();
     let mut wrong = report.clone();
     wrong.engine.push('x');
-    assert!(wrong.validate_binding(&report.context_revision).is_err());
+    assert!(wrong.validate_binding(&report.batch_revision).is_err());
     let mut wrong = report.clone();
     wrong
-        .processing
+        .physical
         .product
         .chains
         .retain(|c| c.sequence.as_str() != "GGTG");
     assert!(
-        p::validate_report(&s, &t, &Limits::default(), &r, &selection, &options, &wrong).is_err()
+        p::validate_report(
+            &s,
+            &(&t)
+                .iter()
+                .cloned()
+                .chain((&r).iter().cloned())
+                .collect::<Vec<Step>>(),
+            &Limits::default(),
+            &selection,
+            &options,
+            &wrong
+        )
+        .is_err()
     );
     let mut changed = r.clone();
-    changed.actions.swap(0, 1);
-    assert!(p::revision(&s, &t, &Limits::default(), &changed, &selection, &options).is_err());
+    changed.swap(0, 1);
+    assert!(
+        p::batch_revision(
+            &s,
+            &(&t)
+                .iter()
+                .cloned()
+                .chain((&changed).iter().cloned())
+                .collect::<Vec<Step>>(),
+            &Limits::default(),
+            &selection,
+            &options
+        )
+        .is_err()
+    );
     let mut wrong = report.clone();
     if let contour::Outcome::Proven(v) = &mut wrong.outcome {
         v.top = Sequence::dna("AAAAAAAAAAAAAAAAAAAAAAAA").unwrap();
     }
     assert!(
-        p::validate_report(&s, &t, &Limits::default(), &r, &selection, &options, &wrong).is_err()
+        p::validate_report(
+            &s,
+            &(&t)
+                .iter()
+                .cloned()
+                .chain((&r).iter().cloned())
+                .collect::<Vec<Step>>(),
+            &Limits::default(),
+            &selection,
+            &options,
+            &wrong
+        )
+        .is_err()
     );
 }

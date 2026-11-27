@@ -42,9 +42,9 @@ fn fixture() -> (Molecule, m::Request) {
 fn literal_mismatch_tail_digest_and_annotation_positions_retain_actual_cut_chemistry() {
     let (source, request) = fixture();
     let before = serde_json::to_value(&source).unwrap();
-    let result = m::inspect(&source, None, &request).unwrap();
+    let result = m::inspect(&source, None, &request, None).unwrap();
     result
-        .validate_binding(&m::inspection_revision(&source, None, &request).unwrap())
+        .validate_binding(&m::inspection_revision(&source, None, &request, None).unwrap())
         .unwrap();
     assert_eq!(result.pcr.report.products.len(), 1);
     assert!(result.pcr.report.enumeration_complete);
@@ -99,17 +99,17 @@ fn partial_singleton_is_explicitly_conditional_but_multiple_zero_and_overlap_wit
         Topology::Linear,
     )
     .unwrap();
-    let multiple = m::inspect(&source, None, &request).unwrap();
+    let multiple = m::inspect(&source, None, &request, None).unwrap();
     assert!(multiple.pcr.report.products.len() > 1);
     assert!(multiple.amplicon.is_none() && multiple.inspection.is_none());
     request.pcr_options.max_products = 1;
-    let partial = m::inspect(&source, None, &request).unwrap();
+    let partial = m::inspect(&source, None, &request, None).unwrap();
     assert_eq!(partial.pcr.report.products.len(), 1);
     assert!(!partial.pcr.report.enumeration_complete);
     assert!(partial.incomplete);
     assert!(partial.amplicon.is_some() && partial.inspection.is_some());
     let empty = Molecule::dna("No placements", "TTTTTTTTTTTTTTTT", Topology::Linear).unwrap();
-    let zero = m::inspect(&empty, None, &request).unwrap();
+    let zero = m::inspect(&empty, None, &request, None).unwrap();
     assert!(zero.pcr.report.products.is_empty());
     assert!(zero.amplicon.is_none() && zero.inspection.is_none());
     let source = Molecule::dna("Overlapping domains", "ACGTAC", Topology::Linear).unwrap();
@@ -117,7 +117,7 @@ fn partial_singleton_is_explicitly_conditional_but_multiple_zero_and_overlap_wit
     request.base.reverse = Primer::new("R", "GTAC", "").unwrap();
     request.pcr_options.binding.max_mismatches = 0;
     request.pcr_options.max_products = 1000;
-    let overlap = m::inspect(&source, None, &request).unwrap();
+    let overlap = m::inspect(&source, None, &request, None).unwrap();
     assert!(
         overlap
             .pcr
@@ -131,12 +131,12 @@ fn partial_singleton_is_explicitly_conditional_but_multiple_zero_and_overlap_wit
 #[test]
 fn readonly_preview_binding_rejects_source_policy_catalog_document_and_completion_tampering() {
     let (source, request) = fixture();
-    let original = m::inspect(&source, None, &request).unwrap();
+    let original = m::inspect(&source, None, &request, None).unwrap();
     let mut changed = request.clone();
     changed.pcr_options.binding.max_mismatches = 0;
     assert!(
         original
-            .validate_binding(&m::inspection_revision(&source, None, &changed).unwrap())
+            .validate_binding(&m::inspection_revision(&source, None, &changed, None).unwrap())
             .is_err()
     );
     let mut changed = original.clone();
@@ -171,7 +171,7 @@ fn readonly_preview_binding_rejects_source_policy_catalog_document_and_completio
     );
     let mut marked = source;
     marked.metadata.insert("duplex_model".into(), "{}".into());
-    assert!(m::source_preflight(&marked, None, &request).is_err());
+    assert!(m::source_preflight(&marked, None, &request, None).is_err());
 }
 #[test]
 fn saved_origin_is_freshly_replayed_and_forged_origin_or_stale_source_is_not_authority() {
@@ -241,18 +241,121 @@ fn saved_origin_is_freshly_replayed_and_forged_origin_or_stale_source_is_not_aut
         },
     )
     .unwrap();
-    let result = m::inspect(source, Some(&origin), &request).unwrap();
-    assert!(result.origin_revision.is_some() && result.origin_status.is_some());
+    let result = m::inspect(
+        source,
+        Some(&run_material::MaterialOrigin::Run(origin.clone())),
+        &request,
+        Some(&committed.workspace),
+    )
+    .unwrap();
+    assert!(result.origin_revision.is_some() && result.origin_incomplete == Some(false));
     assert_eq!(
         result.amplicon.unwrap().sequence.as_str(),
         "CCGAATTCACTACCCCGGGGTAACGAATTCCC"
     );
     let mut forged = origin.clone();
     forged.products[0].revision = "0".repeat(64);
-    assert!(m::inspect(source, Some(&forged), &request).is_err());
+    assert!(
+        m::inspect(
+            source,
+            Some(&run_material::MaterialOrigin::Run(forged.clone())),
+            &request,
+            Some(&committed.workspace)
+        )
+        .is_err()
+    );
     let mut changed = source.clone();
     changed.name.push_str(" stale");
-    assert!(m::source_preflight(&changed, Some(&origin), &request).is_err());
+    assert!(
+        m::source_preflight(
+            &changed,
+            Some(&run_material::MaterialOrigin::Run(origin.clone())),
+            &request,
+            Some(&committed.workspace)
+        )
+        .is_err()
+    );
+    // A genuine target-free digest derivative is retained and reopened before
+    // the same explicit mismatch-PCR operation; it is not cast to a Run.
+    use collagene_core::{material_derivation as d, workspace};
+    let catalog = catalog_digest::builtin_catalog().unwrap();
+    let id = catalog
+        .edition()
+        .enzymes
+        .iter()
+        .find(|e| e.name == "EcoRV")
+        .unwrap()
+        .id
+        .clone();
+    let prepared = d::prepare_install(
+        &committed.workspace,
+        &d::Request {
+            source: origin.selection.event.clone(),
+            origin: d::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin.clone())),
+            derivation: d::Derivation::CatalogDigest {
+                selection: catalog_digest::select(&catalog, &[id]).unwrap(),
+                options: Default::default(),
+                fragment_index: 0,
+            },
+            name: "Retained native digest template".into(),
+            save_primers: false,
+        },
+    )
+    .unwrap();
+    let reopened =
+        workspace::load_workspace(&workspace::save_workspace(&prepared.workspace).unwrap())
+            .unwrap();
+    let derived = run_material::MaterialOrigin::Derived(
+        d::capsule(&reopened, &prepared.receipt.product).unwrap(),
+    );
+    let template = &reopened.revisions[&derived.event().revision];
+    let before = workspace::save_workspace(&reopened).unwrap();
+    let report = m::inspect(template, Some(&derived), &request, Some(&reopened)).unwrap();
+    assert_eq!(report.origin_incomplete, Some(false));
+    assert_eq!(
+        report.amplicon.as_ref().unwrap().sequence.as_str(),
+        "CCGAATTCACTACCCCGGGGTAACGAATTCCC"
+    );
+    let ends = report.inspection.as_ref().unwrap().fragments[1]
+        .duplex
+        .ends
+        .as_ref()
+        .unwrap();
+    assert_eq!(ends.0.chemistry.five_prime, FivePrime::Phosphate);
+    assert_eq!(ends.1.chemistry.five_prime, FivePrime::Phosphate);
+    assert!(report.pcr.report.products[0].certain);
+    assert_eq!(
+        report.pcr.report.products[0].substitutions[0].source_position,
+        2
+    );
+    assert_eq!(
+        report.pcr.report.products[0].substitutions[0].product_position,
+        10
+    );
+    assert_eq!(workspace::save_workspace(&reopened).unwrap(), before);
+    assert!(m::inspect(template, Some(&derived), &request, None).is_err());
+    assert!(m::inspect(template, Some(&derived), &request, Some(&workspace)).is_err());
+    let mut bottom = request.clone();
+    bottom.base.template_strand = collagene_core::chemistry::Strand::Bottom;
+    assert!(m::inspect(template, Some(&derived), &bottom, Some(&reopened)).is_err());
+    let run_material::MaterialOrigin::Derived(mut wrong) = derived.clone() else {
+        panic!("Derived")
+    };
+    wrong.product.event_id.push_str("-alias");
+    assert!(
+        m::source_preflight(
+            template,
+            Some(&run_material::MaterialOrigin::Derived(wrong)),
+            &request,
+            Some(&reopened)
+        )
+        .is_err()
+    );
+    let mut changed = request.clone();
+    changed.base.forward.tail = "AAGAATTC".into();
+    let changed_context =
+        m::inspection_revision(template, Some(&derived), &changed, Some(&reopened)).unwrap();
+    assert!(report.validate_binding(&changed_context).is_err());
 }
 
 #[test]
@@ -261,7 +364,7 @@ fn shared_preparation_profile_bounds_ordered_oligos_and_combined_work_before_ins
     // Separate domains/tails pass the generic exact-preview limits, while this
     // ordinary preparation profile bounds each full ordered oligo to200 bases.
     request.base.forward.tail = "A".repeat(193);
-    assert!(m::source_preflight(&source, None, &request).is_err());
+    assert!(m::source_preflight(&source, None, &request, None).is_err());
     let (_, mut request) = fixture();
     request.base.forward = Primer::new("Bound F", &"A".repeat(100), "").unwrap();
     request.base.reverse = Primer::new("Bound R", &"C".repeat(100), "").unwrap();
@@ -270,7 +373,7 @@ fn shared_preparation_profile_bounds_ordered_oligos_and_combined_work_before_ins
     // and catalog work exceeds the shared100M preparation profile nonetheless.
     let source = Molecule::dna("Bounded source", &"A".repeat(100_000), Topology::Linear).unwrap();
     assert!(matches!(
-        m::source_preflight(&source, None, &request),
+        m::source_preflight(&source, None, &request, None),
         Err(collagene_core::Error::TooLarge)
     ));
 }

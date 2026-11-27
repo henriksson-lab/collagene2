@@ -13,7 +13,7 @@ use collagene_core::{
     },
     workspace::{self, Workspace},
 };
-use topo::physical::{self as p, processing as a, processing_projection as pp, projection};
+use topo::physical::{self as p, processing as a, projection};
 const TARGET: &str = "AAGGGGCATCCCTTCACCATGACG";
 fn call(strand: usize, index: usize) -> p::Call {
     p::Call { strand, index }
@@ -30,7 +30,7 @@ fn fixture() -> (DesignPlan, Molecule, Vec<topo::Input>) {
         molecule: Molecule::dna(role, dna, Topology::Linear).unwrap(),
     })
     .collect::<Vec<_>>();
-    let preparation = topo::Request {
+    let mut preparation = topo::Request {
         recipe: topo::GenerationRecipe {
             schema_version: 1,
             materials: vec![
@@ -71,60 +71,65 @@ fn fixture() -> (DesignPlan, Molecule, Vec<topo::Input>) {
                 },
             ],
         },
-        transfers: vec![
-            p::Transfer {
-                donor: 0,
-                acceptor: 2,
+        steps: vec![
+            p::Step::Transfer(p::Transfer {
+                donor: p::Call {
+                    strand: 0,
+                    index: 13,
+                },
+                acceptor: p::Call {
+                    strand: 2,
+                    index: 0,
+                },
                 geometry: p::Geometry::DirectionalCacc,
-            },
-            p::Transfer {
-                donor: 1,
-                acceptor: 3,
+            }),
+            p::Step::Transfer(p::Transfer {
+                donor: p::Call {
+                    strand: 1,
+                    index: 17,
+                },
+                acceptor: p::Call {
+                    strand: 3,
+                    index: 0,
+                },
                 geometry: p::Geometry::Flush,
-            },
+            }),
         ],
         engine_limits: p::Limits::default(),
         projection_options: projection::Options::default(),
     };
-    let processing = a::Request {
-        actions: vec![
-            a::Action::CleaveThreePrimeFlap {
-                bond: a::Bond {
-                    upstream: call(3, 5),
-                    downstream: call(3, 6),
-                },
-                displacement_step: 0,
-                profile: a::FlapCleavageProfile::IdealDuplexAnchoredThreePrimeHydrolysisV1,
-                assumption: "Declared ideal hydrolysis; not host repair or a named nuclease".into(),
+    let processing = vec![
+        a::Action::CleaveThreePrimeFlap {
+            bond: a::Bond {
+                upstream: call(3, 5),
+                downstream: call(3, 6),
             },
-            a::Action::SealNick {
-                selection: p::nick_sealing::NickSelection {
-                    three: call(2, 9),
-                    five: call(0, 0),
-                },
-                ligase_assumption: "Declared active ligase and cofactors".into(),
+            displacement_step: 0,
+            profile: a::FlapCleavageProfile::IdealDuplexAnchoredThreePrimeHydrolysisV1,
+            assumption: "Declared ideal hydrolysis; not host repair or a named nuclease".into(),
+        },
+        a::Action::SealNick {
+            selection: p::nick_sealing::NickSelection {
+                three: call(2, 9),
+                five: call(0, 0),
             },
-            a::Action::SealNick {
-                selection: p::nick_sealing::NickSelection {
-                    three: call(3, 5),
-                    five: call(1, 0),
-                },
-                ligase_assumption: "Declared active ligase and cofactors".into(),
+            ligase_assumption: "Declared active ligase and cofactors".into(),
+        },
+        a::Action::SealNick {
+            selection: p::nick_sealing::NickSelection {
+                three: call(3, 5),
+                five: call(1, 0),
             },
-        ],
-        limits: a::ProcessingLimits::default(),
-    };
+            ligase_assumption: "Declared active ligase and cofactors".into(),
+        },
+    ];
     // Select the actual source component before any target is supplied. Metadata
     // on the later template changes its identity, not these physical source calls.
-    let inspected = actions::inspect_actions(
-        &inputs,
-        &actions::ActionsRequest {
-            preparation: preparation.clone(),
-            processing: processing.clone(),
-        },
-    )
-    .unwrap();
-    let graph = &inspected.processing.product;
+    preparation
+        .steps
+        .extend(processing.into_iter().map(p::Step::Process));
+    let inspected = topo::simulate(&inputs, &preparation).unwrap();
+    let graph = &inspected.physical.product;
     let chain = graph
         .chains
         .iter()
@@ -142,14 +147,13 @@ fn fixture() -> (DesignPlan, Molecule, Vec<topo::Input>) {
         .unwrap();
     let request = actions::Request {
         preparation,
-        processing,
-        selection: pp::Selection {
-            processing_context_revision: inspected.processing.context_revision,
+        selection: projection::Selection {
+            source_batch_revision: inspected.physical.batch_revision,
             component,
             reference_seed: call(0, 0),
         },
         options: projection::Options {
-            require_all_requested_transfers_applied: true,
+            require_all_requested_steps_applied: true,
             require_known_terminal_chemistry: true,
             ..Default::default()
         },
@@ -220,10 +224,10 @@ fn modified_upstream_template_is_copied_into_new_material_and_portable_summary_i
         serde_json::from_str(&r.products[0].metadata["tracked_modifications"]).unwrap();
     assert!(before.known_modified > 0);
     let e = evidence(&r);
-    assert_eq!(e.projection.processing.source_bases, 52);
+    assert_eq!(e.projection.physical.source_bases, 52);
     assert_eq!(
         e.projection
-            .processing
+            .physical
             .product
             .chains
             .iter()
@@ -233,7 +237,7 @@ fn modified_upstream_template_is_copied_into_new_material_and_portable_summary_i
     );
     assert!(
         e.projection
-            .processing
+            .physical
             .product
             .chains
             .iter()
@@ -437,7 +441,7 @@ fn binary_candidate_and_retained_history_pin_the_exact_upstream_product_event() 
     let mut historical_request = protocol::encode_request(&protocol::Request {
         id: 102,
         revision: run_lineage::workspace_fingerprint(&loaded).unwrap(),
-        job: protocol::AnalysisJob::LoadProcessedRunEvidence {
+        job: protocol::AnalysisJob::LoadRunEvidence {
             workspace: loaded.clone(),
             run_id: record.run_id.clone(),
         },
@@ -448,7 +452,7 @@ fn binary_candidate_and_retained_history_pin_the_exact_upstream_product_event() 
             .unwrap();
     assert!(matches!(
         response.result,
-        protocol::AnalysisResult::HistoricalProcessedRunEvidence(_)
+        protocol::AnalysisResult::HistoricalRunEvidence(_)
     ));
     historical_request[4..6].copy_from_slice(&66u16.to_le_bytes());
     assert!(protocol::process_request(&historical_request).is_err());
@@ -477,14 +481,14 @@ fn binary_candidate_and_retained_history_pin_the_exact_upstream_product_event() 
         Status::ConsistentUnderAssumptions
     );
     assert!(replay.products_match);
-    let bytes = collagene_core::processed_run_evidence::download(&loaded, &record.run_id)
+    let bytes = collagene_core::run_evidence::download(&loaded, &record.run_id)
         .unwrap()
         .bytes
         .unwrap();
     assert!(
         String::from_utf8(bytes)
             .unwrap()
-            .contains("physical-processing-run-bundle-v1")
+            .contains("scientific-run-bundle-v1")
     );
     // Re-keying a historical sidecar after changing its upstream identity does
     // not transplant it onto an equal-looking source or another product event.

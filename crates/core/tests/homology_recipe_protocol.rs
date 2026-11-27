@@ -138,7 +138,7 @@ fn worker86_job167_operation24_evidence3_and_portable_schemas_keep_explicit_poli
     };
     let encoded = protocol::encode_request(&request).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&encoded[42..]).unwrap();
-    assert_eq!(tag, 165);
+    assert_eq!(tag, 162);
     assert!(protocol::process_request(&wire(b"CGQ\0", 85, &request)).is_err());
     let bytes = protocol::process_request(&encoded).unwrap();
     let response = protocol::decode_response(&bytes).unwrap();
@@ -174,7 +174,7 @@ fn worker86_job167_operation24_evidence3_and_portable_schemas_keep_explicit_poli
         postcard::take_from_bytes::<u32>(&postcard::to_allocvec(op).unwrap())
             .unwrap()
             .0,
-        24
+        23
     );
     let evidence = &preview
         .verification

@@ -144,7 +144,7 @@ async fn actual_four_step_digest_and_compound_recipe_preserve_stock_and_conditio
     let inspected = call(
         &client,
         "inspect_overlap_extension_digest",
-        json!({"document":original,"request":request(),"max_fragments":2}),
+        json!({"document":original,"origin":null,"workspace":null,"request":request(),"max_fragments":2}),
     )
     .await;
     assert_eq!(inspected["amplicon"]["length"], 58);
@@ -188,6 +188,35 @@ async fn actual_four_step_digest_and_compound_recipe_preserve_stock_and_conditio
         before,
         "digest inspection must not install a target or a product document"
     );
+    for oligo in 0..6 {
+        let mut changed = request();
+        let pair = match oligo / 2 {
+            0 => &mut changed.preparation.left,
+            1 => &mut changed.preparation.right,
+            _ => &mut changed.preparation.outer,
+        };
+        let primer = if oligo % 2 == 0 {
+            &mut pair.forward
+        } else {
+            &mut pair.reverse
+        };
+        primer.annealing = collagene_core::Sequence::dna("AAAAAAAA").unwrap();
+        let rejected = call(
+            &client,
+            "inspect_overlap_extension_digest",
+            json!({"document":original,"origin":null,"workspace":null,"request":changed}),
+        )
+        .await;
+        assert_eq!(
+            rejected["selectable"], false,
+            "changed oligo {oligo}: {rejected}"
+        );
+        assert!(
+            rejected["amplicon"].is_null(),
+            "changed oligo {oligo}: {rejected}"
+        );
+        assert_ne!(rejected["context_revision"], inspected["context_revision"]);
+    }
     let proposed=call(&client,"propose_ligation_assembly",json!({"inputs":[{"id":"source","document":original}],"target":target,"recipe":recipe(extension())})).await;
     assert_eq!(proposed["verified"], false);
     assert_eq!(
@@ -221,7 +250,7 @@ async fn actual_four_step_digest_and_compound_recipe_preserve_stock_and_conditio
     let inspected = call(
         &client,
         "inspect_overlap_extension_digest",
-        json!({"document":original,"request":conditional}),
+        json!({"document":original,"origin":null,"workspace":null,"request":conditional}),
     )
     .await;
     assert_eq!(inspected["selectable"], true);

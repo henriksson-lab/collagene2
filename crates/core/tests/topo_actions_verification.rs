@@ -7,7 +7,7 @@ use collagene_core::{
         TopoSource,
     },
 };
-use topo::physical::{self as p, processing as process, processing_projection as pp, projection};
+use topo::physical::{self as p, processing as process, projection};
 const ORIGINAL_MAIN: &str = "AAGGGGCATCCCTTCACCATGACG";
 const ECO_MAIN: &str = "AAGGGGCATCCCTTCACCGAATTCA";
 const ECO_TARGET: &str = "AATTCAAAGGGGCATCCCTTCACCG";
@@ -24,7 +24,7 @@ fn seal(three: p::Call, five: p::Call) -> process::Action {
             "Explicit active ligase/cofactor hypothesis for continuous-template3OH5P nicks".into(),
     }
 }
-fn fixture(site: bool) -> (Vec<topo::Input>, actions::ActionsRequest) {
+fn fixture(site: bool) -> (Vec<topo::Input>, topo::Request) {
     let dna = if site {
         [
             "AAGGGGCATCCCTT",
@@ -79,28 +79,21 @@ fn fixture(site: bool) -> (Vec<topo::Input>, actions::ActionsRequest) {
             },
         })
         .collect();
-    let preparation=topo::Request{recipe:topo::GenerationRecipe{schema_version:1,materials:vec![topo::MaterialRecipe::Prepared{declaration_id:"Original directional material declaration".into(),assumption:"Exact source correspondence, activation and terminal state are operator hypotheses, never inferred supplier evidence".into(),strands,pairing:vec![p::PairSpan{strand_a:0,start_a:0,strand_b:1,start_b:4,length:14},p::PairSpan{strand_a:2,start_a:0,strand_b:3,start_b:0,length:dna[2].len()}]}]},transfers:vec![p::Transfer{donor:0,acceptor:2,geometry:p::Geometry::DirectionalCacc},p::Transfer{donor:1,acceptor:3,geometry:p::Geometry::Flush}],engine_limits:p::Limits::default(),projection_options:projection::Options::default()};
+    let mut preparation=topo::Request{recipe:topo::GenerationRecipe{schema_version:1,materials:vec![topo::MaterialRecipe::Prepared{declaration_id:"Original directional material declaration".into(),assumption:"Exact source correspondence, activation and terminal state are operator hypotheses, never inferred supplier evidence".into(),strands,pairing:vec![p::PairSpan{strand_a:0,start_a:0,strand_b:1,start_b:4,length:14},p::PairSpan{strand_a:2,start_a:0,strand_b:3,start_b:0,length:dna[2].len()}]}]},steps:vec![p::Step::Transfer(p::Transfer{donor: p::Call {strand:0,index:13},acceptor:p::Call{strand:2,index:0},geometry:p::Geometry::DirectionalCacc}),p::Step::Transfer(p::Transfer{donor: p::Call {strand:1,index:17},acceptor:p::Call{strand:3,index:0},geometry:p::Geometry::Flush})],engine_limits:p::Limits::default(),projection_options:projection::Options::default()};
     let (anchor, last) = if site { (6, 10) } else { (5, 9) };
-    let processing = process::Request {
-        actions: vec![
-            cut(anchor),
-            seal(call(2, last), call(0, 0)),
-            seal(call(3, anchor), call(1, 0)),
-        ],
-        limits: process::ProcessingLimits::default(),
-    };
-    (
-        inputs,
-        actions::ActionsRequest {
-            preparation,
-            processing,
-        },
-    )
+    let processing = vec![
+        cut(anchor),
+        seal(call(2, last), call(0, 0)),
+        seal(call(3, anchor), call(1, 0)),
+    ];
+    preparation
+        .steps
+        .extend(processing.into_iter().map(p::Step::Process));
+    (inputs, preparation)
 }
-fn select(inputs: &[topo::Input], request: actions::ActionsRequest) -> actions::Request {
-    // Discover actual source component independently of any desired target.
-    let fresh = actions::inspect_actions(inputs, &request).unwrap();
-    let graph = &fresh.processing.product;
+fn select(inputs: &[topo::Input], preparation: topo::Request) -> actions::Request {
+    let fresh = topo::simulate(inputs, &preparation).unwrap();
+    let graph = &fresh.physical.product;
     let chain = graph
         .chains
         .iter()
@@ -116,20 +109,20 @@ fn select(inputs: &[topo::Input], request: actions::ActionsRequest) -> actions::
         .position(|c| c.chains.contains(&chain))
         .unwrap();
     actions::Request {
-        preparation: request.preparation,
-        processing: request.processing,
-        selection: pp::Selection {
-            processing_context_revision: fresh.processing.context_revision,
+        preparation,
+        selection: projection::Selection {
+            source_batch_revision: fresh.physical.batch_revision,
             component,
             reference_seed: call(0, 0),
         },
         options: projection::Options {
-            require_all_requested_transfers_applied: true,
+            require_all_requested_steps_applied: true,
             require_known_terminal_chemistry: true,
             ..Default::default()
         },
     }
 }
+
 fn plan(inputs: &[topo::Input], request: actions::Request, target: &Molecule) -> DesignPlan {
     DesignPlan {
         name: "Directional accounted flap actions with independent intent".into(),
@@ -191,12 +184,11 @@ fn actual54calls_to50paired_plus4free_then_ecori_digest_matches_frozen25bp_targe
         report.findings
     );
     assert_eq!(report.engine_version, v::ENGINE_VERSION);
-    assert!(report.processed_step_reports.is_empty());
     assert!(report.step_reports.is_empty());
     assert_eq!(report.products.len(), 2);
     let e = evidence(&report);
-    let graph = &e.projection.processing.product;
-    assert_eq!(e.projection.processing.source_bases, 54);
+    let graph = &e.projection.physical.product;
+    assert_eq!(e.projection.physical.source_bases, 54);
     assert_eq!(
         graph.chains.iter().map(|c| c.sequence.len()).sum::<usize>(),
         54
@@ -288,12 +280,12 @@ fn original52call_oracle_retains_free_fragment_and_wrong_target_never_selects_ma
         "{:?}",
         report.findings
     );
-    assert_eq!(evidence(&report).projection.processing.source_bases, 52);
+    assert_eq!(evidence(&report).projection.physical.source_bases, 52);
     assert_eq!(report.products[0].sequence.as_str(), ORIGINAL_MAIN);
     assert!(
         evidence(&report)
             .projection
-            .processing
+            .physical
             .product
             .components
             .iter()
@@ -314,9 +306,9 @@ fn original52call_oracle_retains_free_fragment_and_wrong_target_never_selects_ma
 #[test]
 fn no_cut_retains_anchored_flap_and_full_generic_typed_evidence_without_product_substitution() {
     let (inputs, mut r) = fixture(false);
-    r.processing.actions.remove(0);
+    r.steps.remove(2);
     let mut r = select(&inputs, r);
-    r.options.require_all_requested_transfers_applied = false;
+    r.options.require_all_requested_steps_applied = false;
     let target = Molecule::dna(
         "Independent intended contour",
         ORIGINAL_MAIN,
@@ -329,7 +321,7 @@ fn no_cut_retains_anchored_flap_and_full_generic_typed_evidence_without_product_
     let e = evidence(&report);
     assert!(e.tracked.is_none());
     assert!(e.product.is_none());
-    let graph = &e.projection.processing.product;
+    let graph = &e.projection.physical.product;
     assert_eq!(
         graph.chains.iter().map(|c| c.sequence.len()).sum::<usize>(),
         52
@@ -340,14 +332,13 @@ fn no_cut_retains_anchored_flap_and_full_generic_typed_evidence_without_product_
             .iter()
             .any(|u| &graph.chains[u.chain].sequence.as_str()[u.start..u.end] == "GGTG")
     );
-    assert!(report.processed_step_reports.is_empty());
 }
 #[test]
 fn ordered_and_blocked_actions_preserve_actual_branch_and_never_infer_phosphate() {
     let (inputs, mut r) = fixture(false);
-    r.processing.actions.swap(0, 2);
+    r.steps.swap(2, 4);
     let mut r = select(&inputs, r);
-    r.options.require_all_requested_transfers_applied = false;
+    r.options.require_all_requested_steps_applied = false;
     let target = Molecule::dna(
         "Independent retainednick contour",
         ORIGINAL_MAIN,
@@ -363,33 +354,32 @@ fn ordered_and_blocked_actions_preserve_actual_branch_and_never_infer_phosphate(
     );
     assert_eq!(evidence(&report).duplex.as_ref().unwrap().nicks.len(), 1);
     assert_eq!(
-        evidence(&report).projection.processing.steps[0].outcome(),
+        evidence(&report).projection.physical.steps[2].outcome(),
         p::Outcome::BlockedUnderDeclaredModel
     );
     let (inputs, mut r) = fixture(false);
-    let topo::MaterialRecipe::Prepared { strands, .. } = &mut r.preparation.recipe.materials[0]
-    else {
+    let topo::MaterialRecipe::Prepared { strands, .. } = &mut r.recipe.materials[0] else {
         panic!()
     };
     strands[1].five_prime = p::FivePrime::Hydroxyl;
     let mut r = select(&inputs, r);
-    r.options.require_all_requested_transfers_applied = false;
+    r.options.require_all_requested_steps_applied = false;
     r.options.require_known_terminal_chemistry = false;
     let report = v::verify(&plan(&inputs, r, &target), &target);
     assert_eq!(report.status, Status::Incomplete);
     assert!(evidence(&report).duplex.is_none());
     assert_eq!(
-        evidence(&report).projection.processing.steps[2].outcome(),
+        evidence(&report).projection.physical.steps[4].outcome(),
         p::Outcome::BlockedUnderDeclaredModel
     );
 }
 #[test]
-fn op20_candidate14_and_worker66_gates_preserve_original_source_context() {
+fn current_action_encoding_preserves_original_source_context() {
     let (inputs, r) = fixture(false);
     let r = select(&inputs, r);
     let target = Molecule::dna("Independent", ORIGINAL_MAIN, Topology::Circular).unwrap();
     let p = plan(&inputs, r, &target);
-    assert_eq!(postcard::to_allocvec(&p.steps[0]).unwrap()[0], 20);
+    assert_eq!(postcard::to_allocvec(&p.steps[0]).unwrap()[0], 19);
     let candidate = transfer::Candidate::new(p.clone());
     let bytes = transfer::save_candidate(&candidate).unwrap();
     assert_eq!(
@@ -421,7 +411,7 @@ fn op20_candidate14_and_worker66_gates_preserve_original_source_context() {
         panic!("wrong result")
     };
     assert_eq!(current.status, Status::ConsistentUnderAssumptions);
-    assert_eq!(evidence(&current).projection.processing.source_bases, 52);
+    assert_eq!(evidence(&current).projection.physical.source_bases, 52);
     let mut stale = p.clone();
     stale.inputs[0]
         .molecule
@@ -437,95 +427,31 @@ fn op20_candidate14_and_worker66_gates_preserve_original_source_context() {
     assert!(matches!(&sources[0].source,Source::Input(id) if id=="original-0"));
 }
 #[test]
-fn nick_only_operation_cannot_cut_directional_flap_in_current_encoding() {
-    let (inputs, r) = fixture(false);
-    let sealing = p::nick_sealing::Request {
-        ligase_assumption: "Only the old original exposed nick is selected; no flap action".into(),
-        nicks: vec![p::nick_sealing::NickSelection {
-            three: call(2, 9),
-            five: call(0, 0),
-        }],
-    };
-    let treatment = collagene_core::topo_nick_sealing::Request {
-        preparation: r.preparation,
-        sealing,
-    };
-    let fresh = collagene_core::topo_nick_sealing::inspect(&inputs, &treatment).unwrap();
-    let old = collagene_core::topo_processed_product::Request {
-        treatment,
-        selection: p::processed_projection::Selection {
-            sealing_context_revision: fresh.sealing.context_revision,
-            component: 0,
-            reference_seed: call(0, 0),
-        },
-        options: projection::Options::default(),
-    };
+fn nick_only_steps_never_cut_directional_flap_or_promote_material() {
+    let (inputs, mut declaration) = fixture(false);
+    declaration.steps.remove(2); // no hydrolytic flap cleavage declaration
+    let request = select(&inputs, declaration);
     let target = Molecule::dna(
-        "Independently specified24bp reference",
-        ORIGINAL_MAIN,
+        "Independent literal target",
+        "AAGGGGCATCCCTTCACCATGACG",
         Topology::Circular,
     )
     .unwrap();
-    let old_plan = DesignPlan {
-        name: "Unchanged nick-only operation19".into(),
-        target_revision: target.revision(),
-        inputs: inputs
+    let report = v::verify(&plan(&inputs, request, &target), &target);
+    let graph = &evidence(&report).projection.physical.product;
+    assert!(
+        graph
+            .unpaired
             .iter()
-            .map(|i| PlanInput {
-                id: i.role.clone(),
-                revision: i.molecule.revision(),
-                molecule: i.molecule.clone(),
-            })
-            .collect(),
-        steps: vec![Operation::ProcessedTopo {
-            sources: inputs
-                .iter()
-                .map(|i| TopoSource {
-                    role: i.role.clone(),
-                    source: Source::Input(i.role.clone()),
-                })
-                .collect(),
-            request: old,
-        }],
-    };
-    assert_eq!(postcard::to_allocvec(&old_plan.steps[0]).unwrap()[0], 19);
-    let report = v::verify(&old_plan, &target);
-    assert_eq!(report.status, Status::Incomplete);
-    assert_eq!(report.processed_step_reports.len(), 1);
-    assert!(report.physical_processing_reports.is_empty());
-    assert!(report.products.is_empty());
-    let candidate = transfer::save_candidate(&transfer::Candidate::new(old_plan.clone())).unwrap();
-    assert_eq!(
-        &candidate[4..6],
-        &protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
+            .any(|u| &graph.chains[u.chain].sequence.as_str()[u.start..u.end] == "GGTG")
     );
-    transfer::load_candidate(&candidate).unwrap();
-    let encoded = protocol::encode_request(&protocol::Request {
-        id: 1919,
-        revision: target.revision(),
-        job: protocol::AnalysisJob::Verify {
-            plan: old_plan,
-            target,
-        },
-    })
-    .unwrap();
-    assert_eq!(
-        &encoded[4..6],
-        &protocol::WORKER_SCHEMA_VERSION.to_le_bytes()
-    );
-    let response = protocol::process_request(&encoded).unwrap();
-    let protocol::AnalysisResult::Verification(report) =
-        protocol::decode_response(&response).unwrap().result
-    else {
-        panic!("current nick-only processing result")
-    };
-    assert_eq!(report.status, Status::Incomplete);
-    assert_eq!(report.processed_step_reports.len(), 1);
+    assert!(evidence(&report).product.is_none());
+    assert_ne!(report.status, Status::ConsistentUnderAssumptions);
 }
 #[test]
 fn native_plan12_and_generic_run_sidecar_keep_main_and_excised_source_events_historical() {
     use collagene_core::{
-        physical_run_evidence, processed_run_evidence,
+        physical_run_evidence,
         run_lineage::{self, EventBinding, InputEventBinding},
         workspace::{self, Workspace},
     };
@@ -576,10 +502,10 @@ fn native_plan12_and_generic_run_sidecar_keep_main_and_excised_source_events_his
     let PhysicalProcessingEvidence::TopoActions(e) = &saved.steps[0].evidence else {
         panic!("expected retained TopoActions evidence")
     };
-    assert_eq!(e.projection.processing.source_bases, 54);
+    assert_eq!(e.projection.physical.source_bases, 54);
     assert!(
         e.projection
-            .processing
+            .physical
             .product
             .chains
             .iter()
@@ -593,7 +519,7 @@ fn native_plan12_and_generic_run_sidecar_keep_main_and_excised_source_events_his
     assert_eq!(
         evidence(&replay.current_report)
             .projection
-            .processing
+            .physical
             .source_bases,
         54
     );
@@ -604,30 +530,24 @@ fn native_plan12_and_generic_run_sidecar_keep_main_and_excised_source_events_his
         .unwrap()
         .0
         .clone();
-    assert!(
-        processed_run_evidence::load(&retained, &commit.receipt.run_id)
-            .unwrap()
-            .is_none(),
-        "new generic evidence never fabricates the old nick-only record"
-    );
     let download = protocol::encode_request(&protocol::Request {
         id: 149,
         revision: run_lineage::workspace_fingerprint(&retained).unwrap(),
-        job: protocol::AnalysisJob::LoadProcessedRunEvidence {
+        job: protocol::AnalysisJob::LoadRunEvidence {
             workspace: retained.clone(),
             run_id: commit.receipt.run_id.clone(),
         },
     })
     .unwrap();
     let response = protocol::process_request(&download).unwrap();
-    let protocol::AnalysisResult::HistoricalProcessedRunEvidence(download) =
+    let protocol::AnalysisResult::HistoricalRunEvidence(download) =
         protocol::decode_response(&response).unwrap().result
     else {
         panic!("historical bundle")
     };
     assert_eq!(download.step_count, 1);
     let bundle: serde_json::Value = serde_json::from_slice(&download.bytes.unwrap()).unwrap();
-    assert_eq!(bundle["format"], "physical-processing-run-bundle-v1");
+    assert_eq!(bundle["format"], "scientific-run-bundle-v1");
     assert_eq!(bundle["attachments"].as_array().unwrap().len(), 1);
     assert_eq!(
         bundle["attachments"][0]["kind"],
@@ -637,6 +557,20 @@ fn native_plan12_and_generic_run_sidecar_keep_main_and_excised_source_events_his
     let mut missing = retained.clone();
     missing.attachments.remove(&sidecar);
     assert!(missing.validate().is_err());
+    // A valid attachment checksum cannot replace the owning run's root events.
+    let mut forged = saved.clone();
+    let PhysicalProcessingEvidence::TopoActions(e) = &mut forged.steps[0].evidence else {
+        panic!("expected retained TopoActions evidence")
+    };
+    e.input_sources[0].revision = "f".repeat(64);
+    let mut forged_frame = retained.clone();
+    let mut attachment = forged_frame.attachments.remove(&sidecar).unwrap();
+    attachment.bytes = serde_json::to_vec(&forged).unwrap();
+    forged_frame.attachments.insert(
+        blake3::hash(&attachment.bytes).to_hex().to_string(),
+        attachment,
+    );
+    assert!(physical_run_evidence::load(&forged_frame, &commit.receipt.run_id).is_err());
     let mut historic = saved.clone();
     let PhysicalProcessingEvidence::TopoActions(e) = &mut historic.steps[0].evidence else {
         panic!("expected retained TopoActions evidence")

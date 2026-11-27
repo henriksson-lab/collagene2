@@ -77,9 +77,9 @@ fn fixture() -> (Workspace, Value, Value) {
     let bindings = w.documents.iter().map(|d| json!({"document_id":d.id,"event_id":d.head_event.as_ref().unwrap(),"revision":d.head})).collect::<Vec<_>>();
     let bins = (0..2).map(|i| json!({"id":format!("bin-{i}"),"label":format!("Bin {i}"),"choices":[{"generation":{"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"},
         "id":format!("choice-{i}"),"label":"Whole reaction material","source":bindings[i],
-        "start":0,"end":w.revisions[&w.documents[i].head].sequence.len(),"reverse":false,"preparation":null,"treatment":null
+        "selector":{"ReferenceRange":{"start":0,"end":w.revisions[&w.documents[i].head].sequence.len(),"reverse":false}},"preparation_reverse":false,"preparation":null,"treatment":null
     }]})).collect::<Vec<_>>();
-    let design = json!({"id":"reaction-sdk","name":"Whole reaction alternatives","circular":true,"bins":bins,
+    let design = json!({"id":"reaction-sdk","name":"Whole reaction alternatives","circular":true,"bins":bins,"material_bindings":[],
         "method":{"GoldenGatePool":{"options":GoldenGateOptions {max_fragments:3,..Default::default()},
         "substrates":[{"bin_id":"bin-0","kind":"WholeSource"},{"bin_id":"bin-1","kind":"WholeSource"}],"selection":null}}});
     let row = json!({"id":"construct-one","name":"Explicit Ω path","choices":[{"bin_id":"bin-0","choice_id":"choice-0"},{"bin_id":"bin-1","choice_id":"choice-1"}],"target":{"Existing":bindings[2]},"overrides":null});

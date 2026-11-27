@@ -151,7 +151,7 @@ fn derived_insert_template_crosses_current_binary_worker_and_preserves_explicit_
     let tag = postcard::take_from_bytes::<u32>(&postcard::to_allocvec(&q.job).unwrap())
         .unwrap()
         .0;
-    assert_eq!(tag, 167);
+    assert_eq!(tag, 164);
     let encoded = protocol::encode_request(&q).unwrap();
     assert_eq!(
         &encoded[4..6],
@@ -169,7 +169,7 @@ fn derived_insert_template_crosses_current_binary_worker_and_preserves_explicit_
         postcard::take_from_bytes::<u32>(&postcard::to_allocvec(&response.result).unwrap())
             .unwrap()
             .0,
-        157
+        154
     );
     let AnalysisResult::TopoRunInspection(report) = response.result else {
         panic!("fresh TOPO inspection")

@@ -1,4 +1,4 @@
-//! Native saved graphs retain actual transfers and source calls; no report is stock.
+//! Native saved graphs retain actual steps and source calls; no report is stock.
 #[path = "common/topo_graph.rs"]
 mod literal;
 use collagene_core::{
@@ -127,31 +127,37 @@ fn orientation_resume_satisfies_exact_prefix_once_and_keeps_wrong_orientation_di
     )
     .unwrap();
     let mut request = literal::continuation(&partial.workspace, &partial.receipt.selection);
-    request.transfers.clear();
+    request.steps.clear();
     let choices = t::inspect_orientations(&[], &request, [0, 1], [2, 3], false).unwrap();
     assert_eq!(choices.reference.candidates.len(), 2);
     assert_eq!(choices.reference.satisfied_prefix_steps[0], vec![0]);
     assert_eq!(
-        choices.reference.pending_transfers[0],
-        vec![p::Transfer {
-            donor: 1,
-            acceptor: 3,
+        choices.reference.pending_steps[0],
+        vec![p::Step::Transfer(p::Transfer {
+            donor: p::Call {
+                strand: 1,
+                index: 12
+            },
+            acceptor: p::Call {
+                strand: 3,
+                index: 0
+            },
             geometry: p::Geometry::ThreePrimeTA
-        }]
+        })]
     );
     let first = &choices.reference.candidates[0];
     assert_eq!(first.steps.len(), 2);
     assert_eq!(first.product.released_activations.len(), 2);
     assert_eq!(first.product.chains[0].sequence.as_str(), literal::FINAL);
-    assert!(!choices.reference.candidates[1].all_requested_transfers_applied);
+    assert!(!choices.reference.candidates[1].all_requested_steps_applied);
     assert!(
         choices.reference.candidates[1]
             .steps
             .iter()
-            .any(|s| s.outcome != p::Outcome::Applied)
+            .any(|s| s.outcome() != p::Outcome::Applied)
     );
     assert_eq!(
-        choices.candidate_requests[0].transfers.len(),
+        choices.candidate_requests[0].steps.len(),
         1,
         "prefix is owned by saved source, not appended twice"
     );
@@ -202,7 +208,7 @@ fn renamed_declarations_labels_and_role_aliases_cannot_create_an_extra_activated
                 },
             ],
         },
-        transfers: vec![],
+        steps: vec![],
         engine_limits: Default::default(),
         projection_options: Default::default(),
     };
@@ -249,7 +255,7 @@ fn nested_capture_final_run_and_protocols_keep_all_calls_without_historical_olig
     )
     .unwrap();
     let full_request = g::CaptureRequest {
-        name: "Both transfers retained".into(),
+        name: "Both steps retained".into(),
         bindings: vec![],
         request: literal::continuation(&partial.workspace, &partial.receipt.selection),
     };
@@ -263,7 +269,7 @@ fn nested_capture_final_run_and_protocols_keep_all_calls_without_historical_olig
                 origin: g::documentary_capsule(&w, &full.receipt.selection).unwrap(),
             }],
         },
-        transfers: vec![],
+        steps: vec![],
         engine_limits: Default::default(),
         projection_options: Default::default(),
     };
@@ -285,7 +291,7 @@ fn nested_capture_final_run_and_protocols_keep_all_calls_without_historical_olig
     let orders = plan_oligos::build(&plan, &target, &Default::default()).unwrap();
     assert!(orders.oligos.records.is_empty());
     let html = verification::export_protocol_html(&plan, &target);
-    assert!(html.contains("retained source transfers"));
+    assert!(html.contains("retained source steps"));
     assert!(html.contains(literal::FINAL));
     assert!(!html.contains("record_bytes"));
     let pdf = collagene_core::pdf::export_protocol_pdf(&plan, &target).unwrap();
@@ -467,17 +473,29 @@ fn saved_vector_new_pcr_orders_only_current_pair_then_resume_orders_none() {
     let mut construction = topo_preparation::compile_preparation(&inputs, &declaration)
         .unwrap()
         .request;
-    construction.transfers = vec![
-        p::Transfer {
-            donor: 0,
-            acceptor: 2,
+    construction.steps = vec![
+        p::Step::Transfer(p::Transfer {
+            donor: p::Call {
+                strand: 0,
+                index: 12,
+            },
+            acceptor: p::Call {
+                strand: 2,
+                index: 0,
+            },
             geometry: p::Geometry::ThreePrimeTA,
-        },
-        p::Transfer {
-            donor: 1,
-            acceptor: 3,
+        }),
+        p::Step::Transfer(p::Transfer {
+            donor: p::Call {
+                strand: 1,
+                index: 12,
+            },
+            acceptor: p::Call {
+                strand: 3,
+                index: 0,
+            },
             geometry: p::Geometry::ThreePrimeTA,
-        },
+        }),
     ];
     let target = w.revisions[&literal::event(&w, 4).revision].clone();
     let task = native::Task::Check {
@@ -511,7 +529,7 @@ fn saved_vector_new_pcr_orders_only_current_pair_then_resume_orders_none() {
             .iter()
             .all(|r| matches!(r.raw_ordered_sequence.as_deref(), Some("CGA" | "CAT")))
     );
-    construction.transfers.truncate(1);
+    construction.steps.truncate(1);
     let partial = g::prepare_capture(
         &w,
         &g::CaptureRequest {

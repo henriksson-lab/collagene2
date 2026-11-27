@@ -51,7 +51,7 @@ fn native_saved_run_quantity_preview_capture_open_exports_keep_exact_events_and_
             request: r.clone(),
         },
         ctx.clone(),
-        183,
+        180,
     ) else {
         panic!("preview");
     };
@@ -68,7 +68,7 @@ fn native_saved_run_quantity_preview_capture_open_exports_keep_exact_events_and_
             request: r.clone(),
         },
         ctx,
-        184,
+        181,
     ) else {
         panic!("capture");
     };
@@ -88,7 +88,7 @@ fn native_saved_run_quantity_preview_capture_open_exports_keep_exact_events_and_
             workspace: c.workspace.clone(),
         },
         listed_context.clone(),
-        187,
+        184,
     ) else {
         panic!("list");
     };
@@ -107,7 +107,7 @@ fn native_saved_run_quantity_preview_capture_open_exports_keep_exact_events_and_
             quantity_hash: c.attachment_hash.clone(),
         },
         ctx.clone(),
-        185,
+        182,
     ) else {
         panic!("open");
     };
@@ -134,7 +134,7 @@ fn native_saved_run_quantity_preview_capture_open_exports_keep_exact_events_and_
                 format,
             },
             ctx.clone(),
-            186,
+            183,
         ) else {
             panic!("export");
         };
@@ -173,7 +173,7 @@ fn missing_quantities_are_drafts_and_equal_dna_events_or_stale_context_do_not_su
             request: draft.clone(),
         },
         ctx.clone(),
-        183,
+        180,
     ) else {
         panic!("draft");
     };
@@ -204,7 +204,7 @@ fn missing_quantities_are_drafts_and_equal_dna_events_or_stale_context_do_not_su
             request: over,
         },
         expected,
-        183,
+        180,
     ) else {
         panic!("overfilled");
     };
@@ -264,7 +264,7 @@ fn binary_mass_and_molar_dilutions_preserve_explicit_rounding_and_achieved_dimen
             request: r,
         },
         expected,
-        183,
+        180,
     ) else {
         panic!("dilution");
     };
@@ -319,7 +319,7 @@ fn candidate_deletion_keeps_discoverable_unavailable_receipt_without_reconstruct
             workspace: w.clone(),
         },
         ctx.clone(),
-        187,
+        184,
     ) else {
         panic!("catalog");
     };

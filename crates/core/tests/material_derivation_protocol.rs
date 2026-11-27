@@ -85,8 +85,8 @@ fn installed() -> (Workspace, EventBinding) {
             request,
         },
         revision.clone(),
-        174,
-        164,
+        171,
+        161,
     );
     let AnalysisResult::MaterialDerivationInstalled(value) = reply.result else {
         unreachable!()
@@ -133,8 +133,8 @@ fn current_install_and_digest_jobs_bind_actual_material() {
             options,
         },
         context.clone(),
-        175,
-        165,
+        172,
+        162,
     );
     let AnalysisResult::MaterialDigestInspection(report) = response.result else {
         unreachable!()
@@ -164,9 +164,9 @@ fn reconstruction_operation_and_evidence_are_explicit_and_replayable() {
             origin,
         }],
     };
-    assert_eq!(tag(&plan.steps[0]), 27);
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 29);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 27);
+    assert_eq!(tag(&plan.steps[0]), 26);
+    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 30);
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 28);
     let bytes = transfer::save_candidate(&transfer::Candidate::new(plan.clone())).unwrap();
     assert_eq!(
         &bytes[4..6],

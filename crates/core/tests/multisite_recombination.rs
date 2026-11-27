@@ -558,8 +558,7 @@ fn retained_multisite_run_requires_exact_immutable_reference_evidence() {
             .unwrap();
     assert_eq!(history.steps.len(), 1);
     let download =
-        collagene_core::processed_run_evidence::download(&commit.workspace, &commit.receipt.run_id)
-            .unwrap();
+        collagene_core::run_evidence::download(&commit.workspace, &commit.receipt.run_id).unwrap();
     let bundle: serde_json::Value =
         serde_json::from_slice(download.bytes.as_ref().unwrap()).unwrap();
     assert_eq!(bundle["format"], "scientific-run-bundle-v1");

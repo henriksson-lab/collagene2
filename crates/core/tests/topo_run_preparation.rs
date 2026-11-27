@@ -10,7 +10,7 @@ use collagene_core::{
     verification::{self as v, DesignPlan, Operation, PlanInput, Source, Status, TopoSource},
     workspace::{self, Workspace},
 };
-use topo::physical::{self as p, processing as a, processing_projection as pp, projection};
+use topo::physical::{self as p, processing as a, projection};
 const TARGET: &str = "AAGGGGCATCCCTTCACCATGACG";
 fn call(strand: usize, index: usize) -> p::Call {
     p::Call { strand, index }
@@ -27,7 +27,7 @@ fn fixture() -> (DesignPlan, Molecule, Vec<topo::Input>) {
         molecule: Molecule::dna(role, dna, Topology::Linear).unwrap(),
     })
     .collect::<Vec<_>>();
-    let preparation = topo::Request {
+    let mut preparation = topo::Request {
         recipe: topo::GenerationRecipe {
             schema_version: 1,
             materials: vec![
@@ -68,60 +68,65 @@ fn fixture() -> (DesignPlan, Molecule, Vec<topo::Input>) {
                 },
             ],
         },
-        transfers: vec![
-            p::Transfer {
-                donor: 0,
-                acceptor: 2,
+        steps: vec![
+            p::Step::Transfer(p::Transfer {
+                donor: p::Call {
+                    strand: 0,
+                    index: 13,
+                },
+                acceptor: p::Call {
+                    strand: 2,
+                    index: 0,
+                },
                 geometry: p::Geometry::DirectionalCacc,
-            },
-            p::Transfer {
-                donor: 1,
-                acceptor: 3,
+            }),
+            p::Step::Transfer(p::Transfer {
+                donor: p::Call {
+                    strand: 1,
+                    index: 17,
+                },
+                acceptor: p::Call {
+                    strand: 3,
+                    index: 0,
+                },
                 geometry: p::Geometry::Flush,
-            },
+            }),
         ],
         engine_limits: p::Limits::default(),
         projection_options: projection::Options::default(),
     };
-    let processing = a::Request {
-        actions: vec![
-            a::Action::CleaveThreePrimeFlap {
-                bond: a::Bond {
-                    upstream: call(3, 5),
-                    downstream: call(3, 6),
-                },
-                displacement_step: 0,
-                profile: a::FlapCleavageProfile::IdealDuplexAnchoredThreePrimeHydrolysisV1,
-                assumption: "Declared ideal hydrolysis; not host repair or a named nuclease".into(),
+    let processing = vec![
+        a::Action::CleaveThreePrimeFlap {
+            bond: a::Bond {
+                upstream: call(3, 5),
+                downstream: call(3, 6),
             },
-            a::Action::SealNick {
-                selection: p::nick_sealing::NickSelection {
-                    three: call(2, 9),
-                    five: call(0, 0),
-                },
-                ligase_assumption: "Declared active ligase and cofactors".into(),
+            displacement_step: 0,
+            profile: a::FlapCleavageProfile::IdealDuplexAnchoredThreePrimeHydrolysisV1,
+            assumption: "Declared ideal hydrolysis; not host repair or a named nuclease".into(),
+        },
+        a::Action::SealNick {
+            selection: p::nick_sealing::NickSelection {
+                three: call(2, 9),
+                five: call(0, 0),
             },
-            a::Action::SealNick {
-                selection: p::nick_sealing::NickSelection {
-                    three: call(3, 5),
-                    five: call(1, 0),
-                },
-                ligase_assumption: "Declared active ligase and cofactors".into(),
+            ligase_assumption: "Declared active ligase and cofactors".into(),
+        },
+        a::Action::SealNick {
+            selection: p::nick_sealing::NickSelection {
+                three: call(3, 5),
+                five: call(1, 0),
             },
-        ],
-        limits: a::ProcessingLimits::default(),
-    };
+            ligase_assumption: "Declared active ligase and cofactors".into(),
+        },
+    ];
     // Select the actual source component before any target is supplied. Metadata
     // on the later template changes its identity, not these physical source calls.
-    let inspected = actions::inspect_actions(
-        &inputs,
-        &actions::ActionsRequest {
-            preparation: preparation.clone(),
-            processing: processing.clone(),
-        },
-    )
-    .unwrap();
-    let graph = &inspected.processing.product;
+    preparation
+        .steps
+        .extend(processing.into_iter().map(p::Step::Process));
+    let inspected = topo::simulate(&inputs, &preparation).unwrap();
+    let graph = &inspected.physical.product;
     let chain = graph
         .chains
         .iter()
@@ -139,14 +144,13 @@ fn fixture() -> (DesignPlan, Molecule, Vec<topo::Input>) {
         .unwrap();
     let request = actions::Request {
         preparation,
-        processing,
-        selection: pp::Selection {
-            processing_context_revision: inspected.processing.context_revision,
+        selection: projection::Selection {
+            source_batch_revision: inspected.physical.batch_revision,
             component,
             reference_seed: call(0, 0),
         },
         options: projection::Options {
-            require_all_requested_transfers_applied: true,
+            require_all_requested_steps_applied: true,
             require_known_terminal_chemistry: true,
             ..Default::default()
         },
@@ -281,11 +285,8 @@ fn saved(
     );
     inputs[2].molecule = committed.workspace.revisions[&selection.event.revision].clone();
     if !staggered {
-        let task = adapter::Task::InspectActions {
-            request: actions::ActionsRequest {
-                preparation: req.preparation.clone(),
-                processing: req.processing.clone(),
-            },
+        let task = adapter::Task::Simulate {
+            request: req.preparation.clone(),
         };
         let inspected = adapter::inspect(
             &inputs,
@@ -296,10 +297,10 @@ fn saved(
             &task,
         )
         .unwrap();
-        let adapter::Reply::ActionsInspected(report) = inspected.reply else {
+        let adapter::Reply::Simulated(report) = inspected.reply else {
             panic!("inspection")
         };
-        req.selection.processing_context_revision = report.processing.context_revision;
+        req.selection.source_batch_revision = report.physical.batch_revision;
     }
     (committed.workspace, inputs, target, capsule, req)
 }
@@ -459,11 +460,8 @@ fn exact_capsule_and_role_pins_vector_prepared_rules_and_staggered_material_reje
         .is_err()
     );
     let (_, staggered, _, cap, req) = saved(true);
-    let task = adapter::Task::InspectActions {
-        request: actions::ActionsRequest {
-            preparation: req.preparation,
-            processing: req.processing,
-        },
+    let task = adapter::Task::Simulate {
+        request: req.preparation,
     };
     assert!(
         adapter::inspect(
@@ -508,11 +506,8 @@ fn wire<T: serde::Serialize>(magic: &[u8; 4], version: u16, payload: &T) -> Vec<
 #[test]
 fn saved_template_wrapper_pins_inner_bindings_and_changed_declarations() {
     let (_, inputs, _, origin, request) = saved(false);
-    let task = adapter::Task::InspectActions {
-        request: actions::ActionsRequest {
-            preparation: request.preparation.clone(),
-            processing: request.processing.clone(),
-        },
+    let task = adapter::Task::Simulate {
+        request: request.preparation.clone(),
     };
     let revision = adapter::revision(
         &inputs,
@@ -537,7 +532,7 @@ fn saved_template_wrapper_pins_inner_bindings_and_changed_declarations() {
     };
     let bytes = protocol::encode_request(&request).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 167);
+    assert_eq!(tag, 164);
     assert!(protocol::process_request(&wire(b"CGQ\0", 88, &request)).is_err());
     let response = protocol::decode_response(&protocol::process_request(&bytes).unwrap()).unwrap();
     assert!(protocol::decode_response(&wire(b"CGR\0", 88, &response)).is_err());
@@ -545,7 +540,7 @@ fn saved_template_wrapper_pins_inner_bindings_and_changed_declarations() {
         postcard::take_from_bytes::<u32>(&postcard::to_allocvec(&response.result).unwrap())
             .unwrap()
             .0,
-        157
+        154
     );
     let protocol::AnalysisResult::TopoRunInspection(inspection) = response.result else {
         panic!("saved template inspection")
@@ -561,23 +556,12 @@ fn saved_template_wrapper_pins_inner_bindings_and_changed_declarations() {
             &revision,
         )
         .unwrap();
-    let adapter::Reply::ActionsInspected(inner) = &inspection.reply else {
+    let adapter::Reply::Simulated(inner) = &inspection.reply else {
         panic!("actions")
     };
-    inner
-        .validate_binding(
-            &adapter::documentary_revision(
-                &inputs,
-                Some(&adapter::BoundTemplate {
-                    role: "template".into(),
-                    origin: origin.clone(),
-                }),
-                &task,
-            )
-            .unwrap(),
-        )
-        .unwrap();
-    assert_ne!(inner.context_revision, revision);
+    collagene_core::topo_worker::validate_simulation(inner, &inner.batch_revision).unwrap();
+    assert_ne!(inner.batch_revision, revision);
+
     assert!(
         inspection
             .validate_for(
@@ -625,8 +609,8 @@ fn saved_template_wrapper_pins_inner_bindings_and_changed_declarations() {
             .is_err()
     );
     let mut different = task.clone();
-    if let adapter::Task::InspectActions { request } = &mut different {
-        request.processing.actions.clear();
+    if let adapter::Task::Simulate { request } = &mut different {
+        request.steps.truncate(2);
     }
     assert!(
         inspection
@@ -646,7 +630,7 @@ fn saved_template_wrapper_pins_inner_bindings_and_changed_declarations() {
 fn saved_template_orientation_projection_and_independent_check_share_exact_native_inspection() {
     let (_, inputs, target, origin, request) = saved(false);
     let mut prep = request.preparation.clone();
-    prep.transfers.clear();
+    prep.steps.clear();
     let task = adapter::Task::Orientations {
         request: prep,
         vector: [0, 1],
@@ -766,24 +750,6 @@ fn embedded_topo_oligos_keep_literal_domains_tails_and_exact_source_without_orde
             request: request.preparation.clone(),
             selection,
             policy: topo::AcceptancePolicy::default(),
-        },
-        Operation::ProcessedTopo {
-            sources: sources.clone(),
-            request: collagene_core::topo_processed_product::Request {
-                treatment: collagene_core::topo_nick_sealing::Request {
-                    preparation: request.preparation.clone(),
-                    sealing: p::nick_sealing::Request {
-                        ligase_assumption: "Explicit documentary ligase declaration".into(),
-                        nicks: vec![],
-                    },
-                },
-                selection: p::processed_projection::Selection {
-                    sealing_context_revision: "b".repeat(64),
-                    component: 0,
-                    reference_seed: call(0, 0),
-                },
-                options: projection::Options::default(),
-            },
         },
         Operation::TopoActions { sources, request },
     ];
@@ -1018,11 +984,8 @@ fn actual_reusable_but_search_incomplete_origin_stays_conditional_through_new_to
     let Operation::TopoActions { mut request, .. } = old.steps[1].clone() else {
         panic!("actions")
     };
-    let task = adapter::Task::InspectActions {
-        request: actions::ActionsRequest {
-            preparation: request.preparation.clone(),
-            processing: request.processing.clone(),
-        },
+    let task = adapter::Task::Simulate {
+        request: request.preparation.clone(),
     };
     let inspected = adapter::inspect(
         &inputs,
@@ -1040,10 +1003,10 @@ fn actual_reusable_but_search_incomplete_origin_stays_conditional_through_new_to
     assert_eq!(inspected.origin_findings, replayed.findings());
     assert!(inspected.origin_findings_total >= report.findings.len());
     assert!(!inspected.origin_findings_truncated);
-    let adapter::Reply::ActionsInspected(actual) = inspected.reply else {
+    let adapter::Reply::Simulated(actual) = inspected.reply else {
         panic!("actions")
     };
-    request.selection.processing_context_revision = actual.processing.context_revision;
+    request.selection.source_batch_revision = actual.physical.batch_revision;
     let newplan = adapter::compile(
         &inputs,
         &target,
@@ -1157,11 +1120,8 @@ fn derived_pcr_restart_topo_check_and_record_preserve_exact_native_origin_and_in
     );
     assert!(topo::source_preflight(&inputs, &request.preparation).is_err());
 
-    let task = adapter::Task::InspectActions {
-        request: actions::ActionsRequest {
-            preparation: request.preparation.clone(),
-            processing: request.processing.clone(),
-        },
+    let task = adapter::Task::Simulate {
+        request: request.preparation.clone(),
     };
     let inspection = adapter::inspect(
         &inputs,
@@ -1191,10 +1151,10 @@ fn derived_pcr_restart_topo_check_and_record_preserve_exact_native_origin_and_in
             .unwrap(),
         )
         .unwrap();
-    let adapter::Reply::ActionsInspected(actual) = inspection.reply else {
+    let adapter::Reply::Simulated(actual) = inspection.reply else {
         panic!("actions")
     };
-    request.selection.processing_context_revision = actual.processing.context_revision;
+    request.selection.source_batch_revision = actual.physical.batch_revision;
     let selection = topo::Selection {
         batch_revision: adapter::preparation_revision(
             &inputs,
@@ -1469,11 +1429,8 @@ fn actual_nicked_saved_template_is_not_implicitly_repaired_for_topo_insert_pcr()
     inputs[2].molecule = saved.workspace.revisions[&product.revision].clone();
     let before = origin.replay(&inputs[2].molecule).unwrap();
     assert_eq!(before.tracked().duplex.nicks.len(), 1);
-    let task = adapter::Task::InspectActions {
-        request: actions::ActionsRequest {
-            preparation: request.preparation,
-            processing: request.processing,
-        },
+    let task = adapter::Task::Simulate {
+        request: request.preparation,
     };
     let error = adapter::inspect(
         &inputs,

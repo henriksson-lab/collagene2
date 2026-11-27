@@ -8,8 +8,8 @@ The original source documents and independently declared target remain unchanged
 
 ## Material boundary
 
-`topo_run_preparation` accepts an exact source role, selected `MaterialOrigin` (Run or Derived) and
-original TOPO declarations. Borrowed model/count guards precede source copying.
+`topo_run_preparation` accepts an optional `BoundTemplate { role, origin: MaterialOrigin }`
+and explicit TOPO declarations. Run and Derived are the ordinary material-origin families. Borrowed model/count guards precede source copying.
 Documentary preflight and response checks establish request identity only; they
 never supply chemical authority. Each actual inspection uses the shared origin replay. Run origins reconstruct their closed candidate against its retained independent target; Derived origins reconstruct their target-free native recipe and nested source ancestry. Both require the selected event/revision and actual private material to agree. Original source assumptions and bounded findings, including incomplete/truncation evidence, remain visible. The tracked template
 must have complete aligned strands without nicks. Staggered, nicked, reference-only
@@ -42,16 +42,16 @@ the complete source-event dependencies and origin recipe. Reuse remains conditio
 on actual representable product material. Component choice is not experimental
 isolation, kit efficacy or proof of laboratory success.
 
-The older standalone nick-only/ProcessedTopo lane is not offered for a saved
-PCR template because it cannot represent that upstream dependency. Use ordered
-processing for explicit cleavage/sealing and the final material candidate. The
-original checked-reference target view remains inspectable; it does not replace
-the saved origin with a plain sequence input.
+Transfers, supported flap hydrolysis and nick sealing are ordered `physical::Step`
+declarations in the same fresh cursor. There is one `TopoActions` material bridge,
+with no separate nick-only operation or processed-product lane. `Topo` and
+`CheckedTopo` remain reference/target views and do not grant ordinary material.
 
 ## Binary and validation contract
 
 The existing `InspectTopoRun` request and `TopoRunInspection` response carry the
-same task/inspection structures, with the origin directly typed as `MaterialOrigin`.
+current task/inspection structures, with required-nullable native `template`
+typed as `Option<BoundTemplate>`.
 There is no alternate run-only adapter or implicit origin conversion. The response
 wrapper binds the whole task, literal source revisions, selected role and complete
 origin. Its inner scientific report retains its original context. Receivers with
@@ -70,19 +70,17 @@ unsupported and are never automatically repaired.
 
 ## MCP source selection
 
-`inspect_saved_topo` receives a small `MaterialSelection` and a pinned immutable
-`origin_workspace`. It resolves the retained Run or Derived event inside that
-workspace, freshly reconstructs the origin, and checks that the declared insert
-template is the exact source snapshot. Closed capsule bytes are not arguments.
-Orientations, Project, InspectActions, ProcessActions and Check use the same
-source resolution. Check retains its separately supplied target document. Replies
-and full evidence expose inherited incompleteness and source findings; inspection
-creates no document, candidate or laboratory stock. The tool count is unchanged.
+`inspect_saved_topo` receives a required-nullable `{role, selection: MaterialSelection}`
+template and a pinned immutable `origin_workspace`. Native construction attests the
+retained exact event before fresh replay. Closed capsules are not arguments.
+Orientations, Project, Simulate, ProcessActions and Check use this source resolution.
+Check retains its separate target document. Inspection creates no document,
+candidate or laboratory stock. Graph-only continuation uses `template: null`.
 
 ## Explicit primer-order extraction
 
 Plan oligo extraction now reads actual ExactPcr declarations embedded in Topo,
-CheckedTopo, ProcessedTopo and TopoActions. Each forward/reverse use retains its
+CheckedTopo and TopoActions. Each forward/reverse use retains its
 complete ordered DNA, annealing/tail boundary, original name, material ordinal,
 outer plan step and exact Input/Step template binding. Saved-origin primers remain
 historical provenance and are not reordered. No binding coordinates or amplification
@@ -96,7 +94,7 @@ remain in the native plan. Derived Prepared sources or prepared intervals carryi
 original oligo-order evidence make the order incomplete and prevent saving a
 partial primer collection; no sliced/reversed or chemically activated vector is
 flattened into an oligo. Missing/ambiguous roles and forward references reject.
-Two additional fixture groups check all four TOPO operation wrappers, literal
+Two additional fixture groups check the three current TOPO operations, literal
 primer tails, source mappings, new-versus-historical primer separation and these
 unsupported preparation boundaries. The end-to-end fixture retains
 `save_primers: true` so native output capture exercises the actual order artifact.
@@ -112,11 +110,17 @@ incomplete. New TOPO PCR produces the24-base reference but final verification
 remains Incomplete and output requires the existing explicit conditional-save
 policy. The saved primer collection still contains only the new PCR oligos.
 
-## Prepared-vector boundary remains explicit
+## Activated-vector graphs remain a distinct source
 
-This change generalizes the insert PCR template origin only. It does not make a
-saved ordinary duplex an activated TOPO vector: Prepared vector intervals still
-refer to original reference sources under explicitly declared activation chemistry.
-A saved template cannot supply those Prepared intervals. No physical phosphotyrosyl
-adduct, supplier activity or host rescue is inferred from a saved sequence or
-ordinary duplex terminus.
+Ordinary Run/Derived duplex material does not become an activated TOPO vector.
+Prepared vector intervals still name original reference sources with explicit
+activation hypotheses. A saved ordinary template cannot supply those intervals.
+No phosphotyrosyl adduct, supplier activity or host rescue follows from a molecule
+name, sequence or ordinary duplex terminus.
+
+Separately, `MaterialRecipe::SavedGraph` can retain an entire native TOPO graph,
+including an activated vector or a partial transfer/processing transcript. It is
+not a `MaterialOrigin`. Fresh prefix replay preserves original activation use,
+actual cut ends, nicks, source-call ownership and byproducts. SavedVector declares
+only the new insert; ResumeGraph retains its existing insert and appends only the
+explicit new steps. See [graph history](TOPO_GRAPH_HISTORY.md).

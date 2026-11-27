@@ -9,13 +9,13 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io::Write};
-pub const ENGINE_VERSION: &str = "topo-elementary-graph-1";
-pub const WORKSPACE_ATTACHMENT_KIND: &str = "topo-elementary-graph-v1";
-pub const MEDIA_TYPE: &str = "application/vnd.collagene.topo-elementary-graph";
+pub const ENGINE_VERSION: &str = "topo-ordered-graph-2";
+pub const WORKSPACE_ATTACHMENT_KIND: &str = "topo-graph-v2";
+pub const MEDIA_TYPE: &str = "application/vnd.collagene.topo-graph";
 pub const MAX_RECORD_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_CAPSULE_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_RECORDS: usize = 128;
-const MAGIC: &[u8; 8] = b"TGRF\0\0\0\x01";
+const MAGIC: &[u8; 8] = b"TGRF\0\0\0\x02";
 macro_rules! dto{($($t:tt)*)=>{#[derive(Debug,Clone,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
 dto! {#[derive(PartialEq,Eq)]pub struct Selection{pub record_hash:String,pub state_revision:String}}
 dto! {pub struct SourceBinding{pub role:String,pub event:EventBinding,pub origin:Option<MaterialOrigin>}}
@@ -120,6 +120,8 @@ fn bound(v: &impl Serialize, max: usize) -> Result<(), Error> {
     serde_json::to_writer(Count(0, max), v).map_err(|_| Error::TooLarge)
 }
 fn shape(r: &CaptureRequest) -> Result<(), Error> {
+    topo::physical::steps_preflight(&r.request.steps, &r.request.engine_limits)
+        .map_err(|e| bad(&e.to_string()))?;
     if !text(&r.name, 256) || r.bindings.len() > 32 {
         return Err(Error::TooLarge);
     }
@@ -161,7 +163,7 @@ impl Record {
     pub fn validate_documentary(&self) -> Result<(), Error> {
         shape(&self.request)?;
         state_shape(&self.state)?;
-        if self.schema_version != 1
+        if self.schema_version != 2
             || !text(&self.engine_version, 128)
             || !text(&self.scientific_engine, 128)
             || ![
@@ -215,7 +217,7 @@ pub fn load_record(bytes: &[u8]) -> Result<Record, Error> {
 }
 impl Capsule {
     pub fn validate_shallow(&self) -> Result<Record, Error> {
-        if self.schema_version != 1
+        if self.schema_version != 2
             || !hex(&self.selection.record_hash)
             || !hex(&self.selection.state_revision)
             || self.record_bytes.len() > MAX_RECORD_BYTES
@@ -522,7 +524,7 @@ pub fn prepare_capture(w: &Workspace, r: &CaptureRequest) -> Result<PreparedCapt
     let (state_revision, state) = state(&report)?;
     let fingerprint = run_lineage::workspace_fingerprint(w)?;
     let record = Record {
-        schema_version: 1,
+        schema_version: 2,
         engine_version: ENGINE_VERSION.into(),
         scientific_engine: verification::ENGINE_VERSION.into(),
         source_workspace_fingerprint: fingerprint.clone(),
@@ -677,8 +679,8 @@ pub fn inspect(w: &Workspace, s: &Selection) -> Result<Inspection, Error> {
 }
 fn state_shape(s: &StateSummary) -> Result<(), Error> {
     if s.source_bases > 500_000
-        || s.chains > 64
-        || s.components > 64
+        || s.chains > 128
+        || s.components > 128
         || s.remaining_activations.len() > 64
         || s.released_activations.len() > 64
         || s.remaining_activations
@@ -686,7 +688,7 @@ fn state_shape(s: &StateSummary) -> Result<(), Error> {
             .chain(&s.released_activations)
             .any(|s| !text(s, 256))
         || s.findings.len() > 128
-        || s.assumptions.len() > 128
+        || s.assumptions.len() > 256
         || s.findings
             .iter()
             .chain(&s.assumptions)
@@ -740,13 +742,13 @@ fn summary_shape(s: &Summary) -> Result<(), Error> {
         || !hex(&s.selection.state_revision)
         || !text(&s.name, 256)
         || s.source_events.len() > 4096
-        || s.chains > 64
-        || s.components > 64
+        || s.chains > 128
+        || s.components > 128
         || s.source_bases > 500_000
         || s.remaining_activations.len() > 64
         || s.released_activations.len() > 64
         || s.findings.len() > 128
-        || s.assumptions.len() > 128
+        || s.assumptions.len() > 256
         || s.findings
             .iter()
             .chain(&s.assumptions)

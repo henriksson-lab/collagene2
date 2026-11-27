@@ -109,10 +109,10 @@ async fn immutable_run_record_list_replay_artifacts_and_explicit_event_bindings(
     .await;
     assert_eq!(historical["state"], "historical");
     assert_eq!(historical["verified"], false);
-    assert_eq!(historical["processed_step_count"], 0);
+    assert_eq!(historical["scientific_step_count"], 0);
     assert!(
         historical["artifact_id"].is_null(),
-        "ordinary run has no fabricated processed graph"
+        "ordinary run has no fabricated scientific graph"
     );
     let replay = call(
         &c,

@@ -1,4 +1,4 @@
-//! A legacy TOPO graph-only failure remains downloadable without publishing invented DNA.
+//! A current TOPO graph-only failure remains downloadable without publishing invented DNA.
 use collagene_core::{
     formats, topo as t,
     verification::{self, Operation, Source, Status, TopoSource, VerificationReport},
@@ -69,7 +69,7 @@ fn strand(role: &str, length: usize, activated: bool) -> t::PreparedStrand {
     }
 }
 #[tokio::test]
-async fn real_old_topo_zero_product_failure_retains_full_bound_step_graph_and_plain_plans_stay_unchanged()
+async fn native_topo_zero_product_failure_retains_full_bound_step_graph_and_plain_plans_stay_unchanged()
  {
     let (a, b) = tokio::io::duplex(65536);
     let server = tokio::spawn(async move {
@@ -93,7 +93,7 @@ async fn real_old_topo_zero_product_failure_retains_full_bound_step_graph_and_pl
             source: Source::Input((*id).into()),
         })
         .collect::<Vec<_>>();
-    let request=t::Request{recipe:t::GenerationRecipe{schema_version:1,materials:vec![t::MaterialRecipe::Prepared{declaration_id:"Explicit directional source strands".into(),assumption:"Declared source intervals, pairing and activation; no kit or repair is inferred".into(),strands:vec![strand("vt",14,true),strand("vb",18,true),strand("it",10,false),strand("ib",10,false)],pairing:vec![p::PairSpan{strand_a:0,start_a:0,strand_b:1,start_b:4,length:14},p::PairSpan{strand_a:2,start_a:0,strand_b:3,start_b:0,length:10}]}]},transfers:vec![p::Transfer{donor:0,acceptor:2,geometry:p::Geometry::DirectionalCacc},p::Transfer{donor:1,acceptor:3,geometry:p::Geometry::Flush}],engine_limits:p::Limits::default(),projection_options:projection::Options::default()};
+    let request=t::Request{recipe:t::GenerationRecipe{schema_version:1,materials:vec![t::MaterialRecipe::Prepared{declaration_id:"Explicit directional source strands".into(),assumption:"Declared source intervals, pairing and activation; no kit or repair is inferred".into(),strands:vec![strand("vt",14,true),strand("vb",18,true),strand("it",10,false),strand("ib",10,false)],pairing:vec![p::PairSpan{strand_a:0,start_a:0,strand_b:1,start_b:4,length:14},p::PairSpan{strand_a:2,start_a:0,strand_b:3,start_b:0,length:10}]}]},steps:vec![p::Step::Transfer(p::Transfer{donor:p::Call{strand:0,index:13},acceptor:p::Call{strand:2,index:0},geometry:p::Geometry::DirectionalCacc}),p::Step::Transfer(p::Transfer{donor:p::Call{strand:1,index:17},acceptor:p::Call{strand:3,index:0},geometry:p::Geometry::Flush})],engine_limits:p::Limits::default(),projection_options:projection::Options::default()};
     let models = local[..4].iter().collect::<Vec<_>>();
     let native = verification::topo_inputs(&sources, &models, &request).unwrap();
     let selection = t::Selection {
@@ -111,7 +111,7 @@ async fn real_old_topo_zero_product_failure_retains_full_bound_step_graph_and_pl
         .map(|id| json!({"id":id,"document":reference(&imported,id)}))
         .collect::<Vec<_>>();
     let target = reference(&imported, "independent_target");
-    let proposed=call(&c,"propose_plan",json!({"name":"Legacy directional flap remains graph-only","target":target,"inputs":inputs,"steps":[Operation::Topo{sources,request,selection}]})).await;
+    let proposed=call(&c,"propose_plan",json!({"name":"Directional flap remains graph-only","target":target,"inputs":inputs,"steps":[Operation::Topo{sources,request,selection}]})).await;
     let result = call(
         &c,
         "verify_plan",
@@ -120,7 +120,7 @@ async fn real_old_topo_zero_product_failure_retains_full_bound_step_graph_and_pl
     .await;
     assert_eq!(result["status"], "Incomplete");
     assert_eq!(result["products"], json!([]));
-    assert_eq!(result["processed_step_count"], 0);
+    assert_eq!(result["scientific_step_count"], 1);
     assert_eq!(result["reference_step_count"], 0);
     assert!(result["artifact_id"].is_string());
     let report: VerificationReport =

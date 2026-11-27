@@ -2,8 +2,8 @@
 //! This module never repairs a nick, deletes an unpaired call, or takes a target
 //! sequence as an origin/orientation guide. The full physical graph is retained.
 use crate::{
-    Call, ChainEnds, FivePrime, Limits, PairSpan, ProductGraph, Report, Substrates, ThreePrime,
-    Transfer,
+    Call, ChainEnds, FivePrime, Limits, PairSpan, ProductGraph, Report, Step, Substrates,
+    ThreePrime,
 };
 use collagene_model::Sequence;
 use serde::{Deserialize, Serialize};
@@ -46,7 +46,7 @@ impl Default for ProjectionLimits {
 pub struct Options {
     /// Geometry inspection can describe a retained-state branch even when an
     /// intended reaction did not apply. Strict cloning callers can require all.
-    pub require_all_requested_transfers_applied: bool,
+    pub require_all_requested_steps_applied: bool,
     /// Unknown end chemistry is retained by default, never changed to OH/P.
     pub require_known_terminal_chemistry: bool,
     pub limits: ProjectionLimits,
@@ -116,7 +116,7 @@ pub struct DuplexView {
     pub nicks: Vec<ProjectedNick>,
     pub ends: Option<DuplexEnds>,
     pub fully_known_terminal_chemistry: bool,
-    pub all_requested_transfers_applied: bool,
+    pub all_requested_steps_applied: bool,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -136,7 +136,7 @@ pub enum Withheld {
     AmbiguousNucleotide {
         call: Call,
     },
-    RequestedTransfersNotApplied,
+    RequestedStepsNotApplied,
     SeedOutsideComponent,
     ConflictingContinuation {
         call: Call,
@@ -231,7 +231,7 @@ pub(crate) fn limits(l: &ProjectionLimits) -> Result<(), Error> {
 }
 fn selection(
     s: &Substrates,
-    t: &[Transfer],
+    t: &[Step],
     l: &Limits,
     select: &Selection,
     o: &Options,
@@ -265,7 +265,7 @@ fn selection(
 }
 pub fn batch_revision(
     s: &Substrates,
-    t: &[Transfer],
+    t: &[Step],
     l: &Limits,
     select: &Selection,
     o: &Options,
@@ -444,8 +444,8 @@ pub(crate) fn prove(
             count: c.unpaired_nucleotides,
         });
     }
-    if o.require_all_requested_transfers_applied && !all_requested_applied {
-        return Err(Withheld::RequestedTransfersNotApplied);
+    if o.require_all_requested_steps_applied && !all_requested_applied {
+        return Err(Withheld::RequestedStepsNotApplied);
     }
     let pairs = c.paired_nucleotides / 2;
     if pairs == 0 || !c.paired_nucleotides.is_multiple_of(2) {
@@ -674,14 +674,14 @@ pub(crate) fn prove(
         nicks,
         ends,
         fully_known_terminal_chemistry: fully_known,
-        all_requested_transfers_applied: all_requested_applied,
+        all_requested_steps_applied: all_requested_applied,
     })
 }
 /// Fresh reconstruction only. The physical report is moved intact into every
 /// returned outcome; a withheld duplex view never erases a flap or byproduct.
 pub fn project(
     s: &Substrates,
-    t: &[Transfer],
+    t: &[Step],
     engine_limits: &Limits,
     select: &Selection,
     o: &Options,
@@ -693,7 +693,7 @@ pub fn project(
 /// cannot be supplied as incoming projection authority.
 pub fn project_fresh(
     s: &Substrates,
-    t: &[Transfer],
+    t: &[Step],
     engine_limits: &Limits,
     select: &Selection,
     o: &Options,
@@ -732,7 +732,7 @@ pub fn project_fresh(
             s,
             &physical.product,
             physical.source_bases,
-            physical.all_requested_transfers_applied,
+            physical.all_requested_steps_applied,
             select.component,
             select.reference_seed,
             o,
@@ -754,13 +754,14 @@ pub fn project_fresh(
             limit: o.limits.max_report_bytes,
         });
     }
+    result.validate_binding(&result.batch_revision)?;
     Ok(result)
 }
 /// Imported projection reports cannot establish current geometry/chemistry.
 /// Replay reconstructs both the original physical reaction and this contour proof.
 pub fn replay(
     s: &Substrates,
-    t: &[Transfer],
+    t: &[Step],
     engine_limits: &Limits,
     select: &Selection,
     o: &Options,
@@ -771,6 +772,170 @@ pub fn replay(
         return Err(Error::InvalidSelection(
             "projection differs from fresh source-based reconstruction",
         ));
+    }
+    Ok(())
+}
+
+impl ProjectionReport {
+    /// Readonly envelope/contour correspondence; does not reconstruct chemistry.
+    pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
+        limits(&self.options.limits)?;
+        let physical = &self.physical;
+        physical.validate_binding(&self.selection.source_batch_revision)?;
+        if self.engine != ENGINE
+            || self.batch_revision != expected
+            || crate::hash(&(
+                ENGINE,
+                &physical.batch_revision,
+                &self.selection,
+                &self.options,
+            ))? != expected
+            || self.selection.component >= physical.product.components.len()
+            || self.selection.reference_seed.strand >= physical.source_revisions.len()
+            || self.selection.reference_seed.index >= physical.source_bases
+        {
+            return Err(Error::InvalidSelection(
+                "canonical projection source/context changed",
+            ));
+        }
+        if let Outcome::Proven(view) = &self.outcome {
+            let n = view.top.len();
+            if n == 0
+                || n > self.options.limits.max_pairs
+                || n.checked_mul(2).is_none_or(|n| n > physical.source_bases)
+                || view.bottom.len() != n
+                || view.seed_reference_position >= n
+                || view.source_maps.len() > self.options.limits.max_mapping_segments
+                || view.nicks.len() > physical.product.nicks.len()
+                || view.all_requested_steps_applied != physical.all_requested_steps_applied
+                || (self.options.require_all_requested_steps_applied
+                    && !view.all_requested_steps_applied)
+                || (self.options.require_known_terminal_chemistry
+                    && !view.fully_known_terminal_chemistry)
+            {
+                return Err(Error::InvalidSelection(
+                    "canonical contour bounds/policy changed",
+                ));
+            }
+            let mut cursor = 0usize;
+            for map in &view.source_maps {
+                if map.reference_start != cursor
+                    || map.length == 0
+                    || map.top_strand >= physical.source_revisions.len()
+                    || map.bottom_strand >= physical.source_revisions.len()
+                    || map
+                        .top_start
+                        .checked_add(map.length)
+                        .is_none_or(|n| n > physical.source_bases)
+                    || map
+                        .bottom_start
+                        .checked_add(map.length)
+                        .is_none_or(|n| n > physical.source_bases)
+                {
+                    return Err(Error::InvalidSelection("canonical source map changed"));
+                }
+                cursor = cursor
+                    .checked_add(map.length)
+                    .ok_or(Error::InvalidSelection("source map overflow"))?;
+                if cursor > n {
+                    return Err(Error::InvalidSelection("source map exceeds contour"));
+                }
+            }
+            if cursor != n {
+                return Err(Error::InvalidSelection("source map coverage changed"));
+            }
+            for nick in &view.nicks {
+                if nick.boundary > n
+                    || !physical.product.nicks.iter().any(|x| {
+                        x.three == nick.three
+                            && x.five == nick.five
+                            && x.three_prime == nick.three_prime
+                            && x.five_prime == nick.five_prime
+                    })
+                {
+                    return Err(Error::InvalidSelection(
+                        "projected nick absent from actual graph",
+                    ));
+                }
+            }
+        }
+        crate::report_size(self, self.options.limits.max_report_bytes).map_err(|_| {
+            Error::ReportBytes {
+                limit: self.options.limits.max_report_bytes,
+            }
+        })?;
+        Ok(())
+    }
+}
+/// Borrowed source/map validation, not a scientific replay or material constructor.
+pub fn validate_report(
+    s: &Substrates,
+    steps: &[Step],
+    l: &Limits,
+    select: &Selection,
+    o: &Options,
+    report: &ProjectionReport,
+) -> Result<(), Error> {
+    report.validate_binding(&batch_revision(s, steps, l, select, o)?)?;
+    if report.selection != *select || report.options != *o {
+        return Err(Error::InvalidSelection("selected contour/options changed"));
+    }
+    crate::validate_report(s, steps, l, &report.physical)?;
+    if let Outcome::Proven(view) = &report.outcome {
+        for map in &view.source_maps {
+            let top = s
+                .strands
+                .get(map.top_strand)
+                .and_then(|st| {
+                    st.sequence
+                        .as_str()
+                        .as_bytes()
+                        .get(map.top_start..map.top_start.checked_add(map.length)?)
+                })
+                .ok_or(Error::InvalidSelection(
+                    "top source map exceeds actual source",
+                ))?;
+            let bottom = s
+                .strands
+                .get(map.bottom_strand)
+                .and_then(|st| {
+                    st.sequence
+                        .as_str()
+                        .as_bytes()
+                        .get(map.bottom_start..map.bottom_start.checked_add(map.length)?)
+                })
+                .ok_or(Error::InvalidSelection(
+                    "bottom source map exceeds actual source",
+                ))?;
+            if view
+                .top
+                .as_str()
+                .as_bytes()
+                .get(map.reference_start..map.reference_start + map.length)
+                != Some(top)
+            {
+                return Err(Error::InvalidSelection(
+                    "top contour differs from immutable calls",
+                ));
+            }
+            for (k, base) in bottom.iter().rev().enumerate() {
+                if crate::comp(*base) != Some(top[k]) {
+                    return Err(Error::InvalidSelection("paired source calls differ"));
+                }
+            }
+            let start = view.bottom.len() - map.reference_start - map.length;
+            if view
+                .bottom
+                .as_str()
+                .as_bytes()
+                .get(start..start + map.length)
+                != Some(bottom)
+            {
+                return Err(Error::InvalidSelection(
+                    "bottom contour differs from immutable calls",
+                ));
+            }
+        }
     }
     Ok(())
 }

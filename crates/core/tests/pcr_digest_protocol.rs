@@ -54,12 +54,12 @@ fn unique_actual_pcr_digest_roundtrips_new_tags_and_rejects_downgrade_and_stale_
     };
     let encoded = protocol::encode_request(&request).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&encoded[42..]).unwrap();
-    assert_eq!(tag, 155);
+    assert_eq!(tag, 152);
     assert!(protocol::process_request(&wire(b"CGQ\0", 71, &request)).is_err());
     let response_bytes = protocol::process_request(&encoded).unwrap();
     let ((_, _, tag), _) =
         postcard::take_from_bytes::<(u32, &str, u32)>(&response_bytes[42..]).unwrap();
-    assert_eq!(tag, 147);
+    assert_eq!(tag, 144);
     let response = protocol::decode_response(&response_bytes).unwrap();
     let AnalysisResult::PcrDigestInspection(preview) = &response.result else {
         panic!("PCR digest inspection")

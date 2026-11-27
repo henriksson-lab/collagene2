@@ -697,8 +697,8 @@ fn capsule_nesting_and_advertised_oversize_fail_before_unbounded_decoding() {
 
 #[test]
 fn context_pinned_processed_topo_origin_replays_before_pcr_instead_of_trusting_its_projection() {
-    use collagene_core::{topo, topo_nick_sealing as sealing, topo_processed_product as processed};
-    use topo::physical::{self as physical, nick_sealing, processed_projection, projection};
+    use collagene_core::{topo, topo_actions as processed};
+    use topo::physical::{self as physical, processing, projection};
     let dna = ["AGGGGCATCCCTT", "AGGGATGCCCCTT", "CGAATGA", "CATTCGA"];
     let originals = dna
         .iter()
@@ -746,42 +746,29 @@ fn context_pinned_processed_topo_origin_replays_before_pcr_instead_of_trusting_i
             declaration_id:"Explicit original TA material".into(),assumption:"Source correspondence and vector activation are explicit operator hypotheses, not imported material authority".into(),strands,
             pairing:vec![physical::PairSpan{strand_a:0,start_a:0,strand_b:1,start_b:0,length:12},physical::PairSpan{strand_a:2,start_a:0,strand_b:3,start_b:0,length:6}],
         }]},
-        transfers:vec![physical::Transfer{donor:0,acceptor:2,geometry:physical::Geometry::ThreePrimeTA},physical::Transfer{donor:1,acceptor:3,geometry:physical::Geometry::ThreePrimeTA}],
+        steps:vec![physical::Step::Transfer(physical::Transfer{donor: physical::Call {strand:0,index:12},acceptor:physical::Call{strand:2,index:0},geometry:physical::Geometry::ThreePrimeTA}),physical::Step::Transfer(physical::Transfer{donor: physical::Call {strand:1,index:12},acceptor:physical::Call{strand:3,index:0},geometry:physical::Geometry::ThreePrimeTA})],
         engine_limits:physical::Limits::default(),projection_options:projection::Options::default(),
     };
-    let treatment = sealing::Request {
-        preparation,
-        sealing: nick_sealing::Request {
-            ligase_assumption: "Explicit continuous-template3OH5P ligase hypothesis".into(),
-            nicks: vec![
-                nick_sealing::NickSelection {
-                    three: physical::Call {
-                        strand: 2,
-                        index: 6,
-                    },
+    let mut preparation = preparation;
+    for strand in [2, 3] {
+        preparation
+            .steps
+            .push(physical::Step::Process(processing::Action::SealNick {
+                selection: physical::nick_sealing::NickSelection {
+                    three: physical::Call { strand, index: 6 },
                     five: physical::Call {
-                        strand: 0,
+                        strand: strand - 2,
                         index: 0,
                     },
                 },
-                nick_sealing::NickSelection {
-                    three: physical::Call {
-                        strand: 3,
-                        index: 6,
-                    },
-                    five: physical::Call {
-                        strand: 1,
-                        index: 0,
-                    },
-                },
-            ],
-        },
-    };
-    let native = sealing::inspect(&inputs, &treatment).unwrap();
+                ligase_assumption: "Explicit continuous-template3OH5P ligase hypothesis".into(),
+            }));
+    }
+    let native = topo::simulate(&inputs, &preparation).unwrap();
     let request = processed::Request {
-        treatment,
-        selection: processed_projection::Selection {
-            sealing_context_revision: native.sealing.context_revision,
+        preparation,
+        selection: projection::Selection {
+            source_batch_revision: native.physical.batch_revision,
             component: 0,
             reference_seed: physical::Call {
                 strand: 0,
@@ -789,7 +776,7 @@ fn context_pinned_processed_topo_origin_replays_before_pcr_instead_of_trusting_i
             },
         },
         options: projection::Options {
-            require_all_requested_transfers_applied: true,
+            require_all_requested_steps_applied: true,
             require_known_terminal_chemistry: true,
             ..Default::default()
         },
@@ -803,7 +790,7 @@ fn context_pinned_processed_topo_origin_replays_before_pcr_instead_of_trusting_i
     let original = finalize_original(
         originals,
         target,
-        vec![Operation::ProcessedTopo {
+        vec![Operation::TopoActions {
             sources: (0..4)
                 .map(|i| verification::TopoSource {
                     role: format!("src{i}"),
@@ -836,16 +823,13 @@ fn context_pinned_processed_topo_origin_replays_before_pcr_instead_of_trusting_i
     assert_eq!(report.products.len(), 2);
     assert_eq!(report.products[1].sequence.as_str(), "AGGGGCATCCCTTCGAATGA");
     let original_report = evidence(&report).decode_report().unwrap();
-    assert_eq!(original_report.processed_step_reports.len(), 1);
-    assert!(
-        original_report.processed_step_reports[0]
-            .evidence
-            .duplex
-            .as_ref()
-            .unwrap()
-            .nicks
-            .is_empty()
-    );
+    assert_eq!(original_report.physical_processing_reports.len(), 1);
+    let verification::PhysicalProcessingEvidence::TopoActions(original_evidence) =
+        &original_report.physical_processing_reports[0].evidence
+    else {
+        panic!("canonical TOPO origin")
+    };
+    assert!(original_evidence.duplex.as_ref().unwrap().nicks.is_empty());
     // The literal same saved reference without explicit run reconstruction is
     // still a restricted projection and cannot silently become a PCR template.
     let mut detached = plan.clone();
@@ -863,10 +847,10 @@ fn context_pinned_processed_topo_origin_replays_before_pcr_instead_of_trusting_i
     assert!(detached_report.products.is_empty());
     let mut changed = plan.clone();
     let mut originating = transfer::load_candidate(&origin_mut(&mut changed).candidate).unwrap();
-    let Operation::ProcessedTopo { request, .. } = &mut originating.plan.steps[0] else {
+    let Operation::TopoActions { request, .. } = &mut originating.plan.steps[0] else {
         panic!("expected processed origin");
     };
-    request.selection.sealing_context_revision = "0".repeat(64);
+    request.selection.source_batch_revision = "0".repeat(64);
     if let Ok(bytes) = transfer::save_candidate(&Candidate::new(originating.plan)) {
         origin_mut(&mut changed).candidate = bytes;
         let changed_report = verification::verify(&changed, w.head(&target.document_id).unwrap());

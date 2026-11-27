@@ -1319,7 +1319,6 @@ impl Report {
             || self.verification.physical_processing_reports.len()
                 > 1 + usize::from(self.request.material_binding.is_some())
             || self.verification.step_reports.len() > self.plan.steps.len()
-            || self.verification.processed_step_reports.len() > self.plan.steps.len()
             || self.verification.reference_step_reports.len() > self.plan.steps.len()
             || self.verification.findings.len() > 1000
             || self.verification.assumptions.len() > 100

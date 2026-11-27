@@ -1,165 +1,93 @@
-# Source-backed physical TOPO adapter
+# Source-backed TOPO adapter
 
-The `core::topo` adapter reconstructs prepared strands from exact immutable
-`Input { role, molecule }` records and an explicit versioned `GenerationRecipe`.
-It does not infer activation from a product name, vendor, annotation, provenance
-comment or imported physical summary. It does not assert commercial kit parity.
+`core::topo` reconstructs native source recipes from immutable
+`Input { role, molecule }` records. Activation, terminal chemistry, pairing and
+reaction conditions are explicit declarations, never inferred from a name,
+vendor, annotation or imported physical-summary metadata.
 
-A `Prepared` material declares named actual 5′→3′ strands, each assembled from
-bounded source intervals, actual pairing spans, and explicit terminal chemistry.
-Intervals may reverse-complement a reference region or cross one circular origin.
-The declaration includes its own ID and human-readable preparation assumption.
-All strands are derived from the source DNA; an arbitrary unbound product string
-is not a preparation input. References are generation templates: repeated copying
-is permitted as an explicit hypothesis, and source correspondence is not a claim
-of atomic inheritance. Unrepresented reference intervals are reported separately.
-They are not invented manufacturing waste or simulated byproducts.
+A `Prepared` material describes stored 5′→3′ strands assembled from bounded
+original-source intervals, with explicit pairing spans and termini. Intervals may
+reverse-complement a reference region or cross one circular origin. References
+are generation templates under a stated hypothesis, not proof of atom inheritance
+or manufacture. Unrepresented source intervals remain documentary evidence; they
+are not invented reaction waste.
 
-`ExactPcr` is an alternative material recipe. It freshly runs the existing exact
-PCR geometry enumerator on an original source with explicit primers and requires
-exactly one geometry. It reconstructs the current ideal blunt OH-ended duplex,
-then optionally invokes the existing explicit single-nucleotide 3′ tail transform.
-The generated strand evidence records template interval, primer-tail lengths and
-actual strand direction; added terminal bases are separately identified as new
-synthesis. No inherited strand modification or polymerase terminal addition is
-inferred. Imported graph-only intermediates cannot be used as ordinary templates.
+`ExactPcr` declares actual ordered primers and optional subsequent single-base 3′
+tailing. Native geometry must establish the product from the actual permitted
+template. Supported saved Run/Derived templates are freshly reconstructed; their
+modifications do not transfer to new synthesis. The current TOPO template adapter
+requires complete aligned complementary strands without nicks. A reference-only
+projection or unsupported staggered source cannot bypass this boundary.
 
-`simulate` retains all prepared-source maps, unrepresented-reference evidence and
-the entire physical TOPO engine report. Transfers use actual generated-strand
-indices in declared material order. `inspect_orientations` accepts an empty
-transfer request and explicit vector/insert strand pairs, computes both declared
-orientations with the existing engine, and returns both full graphs plus their
-exact candidate-specific requests. It selects no winner and claims no exhaustive
-biochemical mixture. Pairing indices inside each prepared material
-are local to that material. Reverse-oriented preparations require explicit reverse
-source intervals and pairing; names do not assign a productive orientation. All
-unreacted chains, reciprocal physical components and displaced calls remain.
+`SavedGraph` is a distinct closed native graph source. It retains the whole graph,
+source snapshots and chronological prefix rather than pretending that an activated
+vector or intermediate is an ordinary duplex. Native ownership, exact events and
+one aggregate ancestry ledger precede copying; fresh execution establishes its
+state. See [graph history](TOPO_GRAPH_HISTORY.md).
 
-`product` freshly reconstructs the recipe and selected physical component. Its
-`Selection` pins adapter batch revision, component and an actual source-strand
-call as reference seed. The independent paired-contour proof is required before
-creating a reference molecule. This proof does not seal nicks or remove flaps.
-A directional flap therefore remains a full graph with a withheld contour view.
-A separate free strand remains in the graph even when another selected component
-has a proven paired contour. Circular reference origin and sense follow the seed,
-not an intended target. A linear origin follows the physical endpoint.
+## One chronological physical transcript
 
-The optional `reference` molecule is a coordinate view with projected top DNA,
-not a replacement physical substrate. It carries the existing generic
-`source:legacy:chemistry_unmapped=true` guard. Full graph, actual bottom DNA,
-source-call maps, activations, nick chemistry and end chemistry remain in the
-product envelope. The original physical Product remains annotation-free. The additive annotated wrapper composes actual selected top-call correspondence into conservative feature mappings; immutable originals and unmapped source features remain separate evidence.
+`Request.steps` is a sequence of `physical::Step::Transfer` and
+`physical::Step::Process` declarations. Transfer endpoints are immutable
+`Call { strand, index }` handles, not changing output-chain indexes. The same
+private cursor applies actual phosphotyrosyl transfers, supported flap hydrolysis
+and selected 3′OH/5′P nick sealing in order. There is no report-to-cursor restoration
+or separate processing/sealing phase. All components, cut fragments, unpaired
+calls and consumed/released activation identities remain accounted for.
 
-`check_target` accepts a separately supplied target and explicit acceptance policy.
-DNA/topology comparison is independent of component reconstruction, orientation
-and origin. Rotation and reverse complement are opt-in. Nicked products, unknown
-chemistry, unapplied transfers and other components each require separate opt-in.
-A match can be accepted only under this declared graph policy; it does not prove
-reaction success, repair, efficiency, stable short DNA, or a proprietary kit state.
-Without a unique paired contour, comparison is withheld rather than extracting a
-target-guided path through a directional flap.
+`simulate` returns complete preparation maps and a canonical physical report.
+Its `request` and typed `steps` evidence retain the same chronological transcript.
+`all_requested_steps_applied` covers transfers and processing. Work/memory/report
+limits remain explicit, and unsupported/unknown steps retain honest outcomes.
 
-Adapter, source, recipe, engine, proof and policy domains are pinned separately.
-Changing source metadata changes immutable source identity as well. Imported
-reports do not restore chemical authority. `replay_product` is a heavy fresh native
-audit, not a main-thread validator or a pathway from serialized claims to a physical
-input. A new source-based reconstruction is required to materialize a product.
+`inspect_orientations` requires an empty new suffix and explicit vector/insert
+strand pairs. It evaluates the two declared orientations after the actual retained
+prefix, returning both full graphs and candidate-specific pending steps. It
+chooses no winner and does not claim exhaustive real-mixture chemistry. Pairing
+indexes in a Prepared material are local; expansion records their actual native
+layout, role aliases and source-step mappings.
 
-Borrowed aggregate model guards run before rich validation/hash/copy. The initial
-adapter bounds source DNA and prepared DNA to 100,000 bases, 32 input roles,
-16 materials, 32 generated strands, 2,048 reference segments, 1,024 pair spans,
-16 transfers and 4,096 unrepresented intervals. Recipe serialization is capped at
-1 MiB; complete reports at 32 MiB. Existing engine/proof work, memory, component
-and report budgets remain additional constraints. PCR enumeration is conservatively
-preflighted by possible primer-pair count times maximum product length before
-calling its existing enumerator. Limits withhold/error rather than claim absence.
+## Reference view and independent target
 
-Before any PCR scan, preparation also reserves an aggregate search allowance of
-`4 × template length × (forward annealing length + reverse annealing length)`
-per PCR material. This covers both orientations in the candidate-count pass and
-again in the geometry enumerator. The recipe-wide sum must fit the requested
-`engine_limits.max_work_cells`; the physical engine independently reserves its
-own graph work under that cap. This is a conservative comparison-work bound,
-not a wall-clock timeout or a combined preparation-and-graph work counter.
+`product` freshly proves a source-seeded paired contour. Its `topo::Selection`
+pins the outer adapter batch revision, component and original-call seed. The
+physical projection inside that product separately binds the physical transcript
+revision. Target DNA never supplies path choice, orientation or reference origin.
+An unpaired flap withholds the contour until an explicit supported action changes
+its actual graph; the detached calls remain elsewhere.
 
-The adapter now connects to typed `Operation::Topo` plans, full reconstruction
-JSON evidence, HTML/PDF protocol export and four MCP tools. Each role binds an
-explicit immutable source. Plans freshly reconstruct the graph and retain it in
-`VerificationReport.step_reports`; a paired reference view keeps the chemistry
-boundary sticky through subsequent operations. A missing contour preserves the
-graph while withholding DNA. The initial plan operation deliberately has no
-implicit physical target-acceptance policy and remains Incomplete; standalone
-`check_topo_target` requires a separately supplied target and explicit policy.
+The one canonical `Product` contains optional conservative annotation evidence
+and a restrictive reference molecule. PCR-derived or disrupted features require
+review; dropped/unmapped originals remain source evidence. Coordinate
+correspondence does not grant inherited chemistry or biological function.
+Annotations are retained with the relevant `StepReport.topo`, not a second
+annotation-only product API or generic always-empty report collection.
 
-The browser can review and verify imported TOPO candidates and download the full
-physical reconstruction evidence. Existing source-event run capture/replay
-retains source recipes and immutable inputs, not a restored proof. The initial plan integration introduced candidate
-schema8/workspace plan schema6/worker schema25 and science10. Annotated views
-add worker schema27/science11; older verification layouts migrate without invented
-graphs or annotation evidence.
+`check_target` compares a separately supplied target with this freshly proven
+contour. Rotation and reverse complement are explicit options. Nicks, unknown
+terminal chemistry, unapplied steps and other components each have their own
+acceptance allowance. `Operation::CheckedTopo` is final-only; accepted sequence
+agreement under that policy is not isolation, reaction success or permission to
+reuse the reference as physical stock. `Operation::Topo` also remains a reference
+view.
 
-Broader kit-specific preparation controls, repeated-source annotation copies and downstream
-physical graph composition remain implementation work. No contour preview can
-be used as an intact-duplex substrate by silently dropping its graph. The
-underlying engine and its bounded elementary-transfer model are documented by
-`collagene-topo`. Compiler validation is separate from scientific/runtime
-validation; browser checks remain deferred until in-scope code is complete.
+## Faithful ordinary-material bridge
 
-The source-bound [web preparation workflow](TOPO_WEB_WORKFLOW.md) adds an explicit TA form and worker-backed orientation/projection/target inspection. Its recipe builder does not run science or choose a winner on the main thread.
+`Operation::TopoActions` is the sole contour-to-tracked-duplex bridge. Its request
+contains `preparation`, physical `Selection { source_batch_revision, component,
+reference_seed }` and projection `options`. The physical selection revision is
+`TopoReport.physical.batch_revision`, not the outer adapter revision.
 
-## Source-coordinate annotations
+Only faithfully representable strand, end and nick chemistry enters ordinary
+native duplex operations. Unsupported terminal species, ambiguous contours and
+unmodeled ancestry stay diagnostic. Internal modification calls remain Unknown;
+source annotations do not infer a modification-generation model. Full graph and
+byproducts remain in `physical_processing_reports` as typed `TopoActions`
+evidence. Exported/reimported molecule metadata cannot restore that private state.
 
-`annotated_product` freshly reconstructs the physical graph, then derives a
-separate reference view and `AnnotationEvidence`. `check_target_annotated` reuses
-one fresh independent-target reconstruction, never a caller-supplied product.
-The old physical `Product` and `TargetAssessment` layouts remain unchanged.
-
-Projection composes each selected top-call span through the preparation maps.
-It supports explicit forward/reverse source intervals and one circular wrap,
-and maps PCR template intervals while excluding primer tails and newly added
-terminal bases. Pairing alone supplies no second annotation parent. Because PCR
-provenance does not identify every primer-derived coordinate, all PCR-derived
-features are conservatively reviewed and stale translation/frame assertions are
-removed. Repeated source copies that would assign conflicting destination
-coordinates withhold that role's annotations and retain reviewed originals;
-other supported roles can still project. Unresolved and otherwise unsupported
-features remain original-source evidence with an explicit reason.
-
-The annotation helper has separate one-million-operation, segment, feature-copy
-and output bounds; capacity failure is explicit. Its evidence is source-coordinate
-correspondence, not chemical inheritance, validated function or permission to
-restore a physical state. A missing paired contour yields no annotated DNA.
-The verifier retains annotations separately in `annotation_reports`; historical
-worker25/26 reports retain their actual graph and gain no invented mapping report.
-
-The per-role `dropped` count describes features absent from the selected top-reference intervals. Their reviewed originals also remain in `unmapped`; these two counts overlap and do not assert global deletion from the physical graph.
-
-## Explicit final graph acceptance
-
-`Operation::CheckedTopo` carries all six physical/comparison policy flags and
-checks an independently bound final target with one fresh annotated physical
-assessment. A fully specified accepted result can be
-`ConsistentUnderAssumptions`; strict-policy rejection is Invalid, and a missing
-contour or unsupported scope remains Incomplete. Physical and annotation
-evidence survives rejection or withholding. Rotation and reverse-complement
-comparison follow the explicit policy in both verification and native run
-capture. The target never supplies a path, source call, component or repair.
-
-This is a final-only operation. The older `Topo` operation remains a restrictive
-reference preview, and neither operation silently supplies intact-duplex state
-for a later digest, PCR or ligation. Exported sequence views keep their chemistry
-restriction; allowing nicks or residual components does not remove them.
-Candidate9/workspace plan7/worker28/science12 identify the checked operation;
-report layouts remain unchanged from schema27. Full experimental success and
-unmodeled downstream graph composition remain outside this acceptance claim.
-
-
-## Explicit downstream nick sealing
-
-The [source-bound ligase step](TOPO_NICK_SEALING.md) now reconstructs original
-preparations/transfers and then explicitly seals selected supported nicks. It
-retains both original and treated graphs, all displaced calls and released
-activation. This is the first downstream graph-composition operation; it does not
-complete accounted flap processing, a post-treatment contour proof or a bridge
-to ordinary tracked duplex operations. Existing TOPO candidate acceptance and
-historical layouts are unchanged.
+The shared bounded writer, source/ancestry checks, fresh replay and readonly
+correspondence validators have distinct roles. Validators never rerun a supplied
+report into authority. Native history and HTML/PDF retain original hypotheses,
+chronological outcomes, source maps, actual nicks, detached calls and limitations.
+See [physical actions](TOPO_PROCESSING_ACTIONS.md), [nick eligibility](TOPO_NICK_SEALING.md)
+and [plan reuse](TOPO_PROCESSED_PLAN.md).

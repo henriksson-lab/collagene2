@@ -115,7 +115,7 @@ async fn fixture(c: &Client) -> (Value, t::Request) {
         declaration_id:"literal TA declaration".into(),assumption:"Prepared strands/activation are an explicit hypothesis, not inferred from record metadata".into(),
         strands:vec![strand("vt",13,true),strand("vb",13,true),strand("it",7,false),strand("ib",7,false)],
         pairing:vec![p::PairSpan{strand_a:0,start_a:0,strand_b:1,start_b:0,length:12},p::PairSpan{strand_a:2,start_a:0,strand_b:3,start_b:0,length:6}]}]},
-        transfers:vec![p::Transfer{donor:0,acceptor:2,geometry:p::Geometry::ThreePrimeTA},p::Transfer{donor:1,acceptor:3,geometry:p::Geometry::ThreePrimeTA}],
+        steps:vec![p::Step::Transfer(p::Transfer{donor:p::Call{strand:0,index:12},acceptor:p::Call{strand:2,index:0},geometry:p::Geometry::ThreePrimeTA}),p::Step::Transfer(p::Transfer{donor:p::Call{strand:1,index:12},acceptor:p::Call{strand:3,index:0},geometry:p::Geometry::ThreePrimeTA})],
         engine_limits:p::Limits::default(),projection_options:projection::Options::default()};
     (json!(sources), request)
 }
@@ -143,49 +143,59 @@ async fn topo_sdk_retains_nicks_all_orientations_and_explicit_independent_target
         json!({"origin_workspace":null,"sources":sources,"request":request}),
     )
     .await;
-    assert_eq!(
-        simulated["physical"]["all_requested_transfers_applied"],
-        true
-    );
+    assert_eq!(simulated["physical"]["all_requested_steps_applied"], true);
     assert_eq!(simulated["physical"]["component_count"], 1);
     assert_eq!(simulated["physical"]["nick_count"], 2);
     assert!(
         simulated["physical"].get("product").is_none(),
         "large physical graph belongs in artifact"
     );
-    let sealing = json!({"ligase_assumption":"Explicit ideal ATP-dependent ligase nick sealing under compatible conditions; no host repair", "nicks":[
-        {"three":{"strand":2,"index":6},"five":{"strand":0,"index":0}},
-        {"three":{"strand":3,"index":6},"five":{"strand":1,"index":0}}
-    ]});
+    let mut sealed = serde_json::to_value(&request).unwrap();
+    sealed["steps"].as_array_mut().unwrap().extend([
+        json!({"Process":{"SealNick":{"selection":{"three":{"strand":2,"index":6},"five":{"strand":0,"index":0}},"ligase_assumption":"Explicit ideal ATP-dependent ligase fixture; no host repair"}}}),
+        json!({"Process":{"SealNick":{"selection":{"three":{"strand":3,"index":6},"five":{"strand":1,"index":0}},"ligase_assumption":"Explicit ideal ATP-dependent ligase fixture; no host repair"}}}),
+    ]);
     let processed = call(
         &c,
-        "seal_topo_nicks",
-        json!({"origin_workspace":null,"sources":sources,"request":{"preparation":request,"sealing":sealing}}),
+        "simulate_topo",
+        json!({"origin_workspace":null,"sources":sources,"request":sealed}),
     )
     .await;
-    assert_eq!(processed["verified"], false);
-    assert_eq!(processed["physical"]["nicks"], 0);
-    assert_eq!(processed["physical"]["components"], 1);
+    assert_eq!(processed["physical"]["nick_count"], 0);
+    assert_eq!(processed["physical"]["component_count"], 1);
+    assert_eq!(processed["physical"]["all_requested_steps_applied"], true);
     let proof = evidence(&c, &processed["artifact_id"]).await;
+    let unsealed = evidence(&c, &simulated["artifact_id"]).await;
     assert_eq!(
-        proof["report"]["sealing"]["parent"]["product"]["nicks"]
+        unsealed["report"]["physical"]["product"]["nicks"]
             .as_array()
             .unwrap()
             .len(),
         2
     );
+    assert_eq!(
+        proof["report"]["physical"]["steps"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
+    );
     assert!(
-        proof["report"]["sealing"]["product"]["chains"]
+        proof["report"]["physical"]["product"]["chains"]
             .as_array()
             .unwrap()
             .iter()
             .all(|chain| chain["ends"] == "CovalentlyCircular")
     );
-    let projected=call(&c,"project_processed_topo",json!({"origin_workspace":null,"sources":sources,"request":{
-        "treatment":{"preparation":request,"sealing":sealing},
-        "selection":{"sealing_context_revision":proof["report"]["sealing"]["context_revision"],"component":0,"reference_seed":{"strand":0,"index":0}},
-        "options":{"require_all_requested_transfers_applied":true,"require_known_terminal_chemistry":true,"limits":t::physical::projection::ProjectionLimits::default()}
-    }})).await;
+    let bridge = json!({"preparation":sealed,
+        "selection":{"source_batch_revision":proof["report"]["physical"]["batch_revision"],"component":0,"reference_seed":{"strand":0,"index":0}},
+        "options":{"require_all_requested_steps_applied":true,"require_known_terminal_chemistry":true,"limits":t::physical::projection::ProjectionLimits::default()}});
+    let projected = call(
+        &c,
+        "project_topo_actions",
+        json!({"origin_workspace":null,"sources":sources,"request":bridge}),
+    )
+    .await;
     assert_eq!(projected["verified"], false);
     assert_eq!(projected["contour_proven"], true);
     assert!(!projected["document"].is_null());
@@ -197,12 +207,11 @@ async fn topo_sdk_retains_nicks_all_orientations_and_explicit_independent_target
     assert!(collagene_core::chemistry::has_unmapped_physical_evidence(
         &molecule
     ));
-    assert_eq!(
-        product_evidence["report"]["projection"]["sealing"]["parent"]["product"]["nicks"]
+    assert!(
+        product_evidence["report"]["projection"]["physical"]["product"]["nicks"]
             .as_array()
             .unwrap()
-            .len(),
-        2
+            .is_empty()
     );
     let independent_target = import(
         &c,
@@ -223,7 +232,7 @@ async fn topo_sdk_retains_nicks_all_orientations_and_explicit_independent_target
         .iter()
         .map(|source| json!({"role":source["role"],"source":{"Input":source["role"]}}))
         .collect::<Vec<_>>();
-    let proposed=call(&c,"propose_plan",json!({"name":"Source-bound processed TA clone","target":independent_target,"inputs":plan_inputs,"steps":[{"ProcessedTopo":{"sources":role_sources,"request":product_evidence["report"]["request"]}}]})).await;
+    let proposed=call(&c,"propose_plan",json!({"name":"Source-bound TA transfer and explicit sealing","target":independent_target,"inputs":plan_inputs,"steps":[{"TopoActions":{"sources":role_sources,"request":bridge}}]})).await;
     assert_eq!(proposed["verified"], false);
     let verified = call(
         &c,
@@ -234,24 +243,26 @@ async fn topo_sdk_retains_nicks_all_orientations_and_explicit_independent_target
     assert_eq!(verified["status"], "ConsistentUnderAssumptions");
     let full_plan = evidence(&c, &verified["artifact_id"]).await;
     assert_eq!(
-        full_plan["processed_step_reports"]
+        full_plan["physical_processing_reports"]
             .as_array()
             .unwrap()
             .len(),
         1
     );
-    let mut wrong = sealing.clone();
-    wrong["nicks"][0]["five"]["index"] = json!(1);
+    assert_eq!(full_plan["physical_processing_reports"][0]["evidence"]["TopoActions"]["projection"]["physical"]["steps"].as_array().unwrap().len(),4);
+    let mut wrong = sealed.clone();
+    wrong["steps"][2]["Process"]["SealNick"]["selection"]["five"]["index"] = json!(1);
     let retained = call(
         &c,
-        "seal_topo_nicks",
-        json!({"origin_workspace":null,"sources":sources,"request":{"preparation":request,"sealing":wrong}}),
+        "simulate_topo",
+        json!({"origin_workspace":null,"sources":sources,"request":wrong}),
     )
     .await;
     assert!(
-        retained["physical"]["nicks"].as_u64().unwrap() > 0,
+        retained["physical"]["nick_count"].as_u64().unwrap() > 0,
         "wrong actual terminus cannot be sealed"
     );
+    assert_eq!(retained["physical"]["all_requested_steps_applied"], false);
     let selection = json!({"batch_revision":simulated["batch_revision"],"component":0,"reference_seed":{"strand":0,"index":0}});
     let projected = call(
         &c,
@@ -296,7 +307,7 @@ async fn topo_sdk_retains_nicks_all_orientations_and_explicit_independent_target
         "target cannot supply generated DNA"
     );
     let mut orientations = request.clone();
-    orientations.transfers.clear();
+    orientations.steps.clear();
     let orientations=call(&c,"inspect_topo_orientations",json!({"origin_workspace":null,"sources":sources,"request":orientations,"vector":[0,1],"insert":[2,3],"directional":false})).await;
     assert_eq!(orientations["candidate_count"], 2);
     assert_eq!(orientations["orientation_search_complete"], true);
@@ -370,7 +381,7 @@ async fn topo_sdk_rejects_foreign_claims_stale_sources_and_selection_without_rep
     )
     .await;
     assert_eq!(
-        unactivated["physical"]["all_requested_transfers_applied"],
+        unactivated["physical"]["all_requested_steps_applied"],
         false
     );
     reject(&c,"inspect_topo_orientations",json!({"origin_workspace":null,"sources":sources,"request":request,"vector":[0,1],"insert":[2,3],"directional":false})).await;
@@ -426,7 +437,7 @@ async fn directional_preparation_compiles_actual_sources_without_inventing_repai
     .await;
     assert_eq!(compiled["verified"], false);
     assert_eq!(compiled["compiled"]["directional"], true);
-    assert_eq!(compiled["compiled"]["request"]["transfers"], json!([]));
+    assert_eq!(compiled["compiled"]["request"]["steps"], json!([]));
     let inspection=call(&c,"inspect_topo_orientations",json!({"origin_workspace":null,"sources":sources,"request":compiled["compiled"]["request"],"vector":compiled["compiled"]["vector_strands"],"insert":compiled["compiled"]["insert_strands"],"directional":true})).await;
     let full = evidence(&c, &inspection["artifact_id"]).await;
     assert!(
@@ -434,32 +445,32 @@ async fn directional_preparation_compiles_actual_sources_without_inventing_repai
         "physical graph must retain the actual displaced bases"
     );
     assert_eq!(inspection["biochemical_mixture_exhaustive"], false);
-    let mut preparation = compiled["compiled"]["request"].clone();
-    preparation["transfers"] = inspection["candidates"][0]["transfers"].clone();
-    let processing = json!({"actions":[
-        {"CleaveThreePrimeFlap":{"bond":{"upstream":{"strand":3,"index":5},"downstream":{"strand":3,"index":6}},"displacement_step":0,"profile":"IdealDuplexAnchoredThreePrimeHydrolysisV1","assumption":"Explicit ideal hydrolytic fixture only; no named nuclease or host guarantee"}},
-        {"SealNick":{"selection":{"three":{"strand":2,"index":9},"five":{"strand":0,"index":0}},"ligase_assumption":"Explicit ideal templated ligase fixture"}},
-        {"SealNick":{"selection":{"three":{"strand":3,"index":5},"five":{"strand":1,"index":0}},"ligase_assumption":"Explicit ideal templated ligase fixture"}}
-    ],"limits":t::physical::processing::ProcessingLimits::default()});
+    let mut preparation = full["report"]["candidate_requests"][0].clone();
+    preparation["steps"].as_array_mut().unwrap().extend([
+        json!({"Process":{"CleaveThreePrimeFlap":{"bond":{"upstream":{"strand":3,"index":5},"downstream":{"strand":3,"index":6}},"displacement_step":0,"profile":"IdealDuplexAnchoredThreePrimeHydrolysisV1","assumption":"Explicit ideal hydrolytic fixture only; no named nuclease or host guarantee"}}}),
+        json!({"Process":{"SealNick":{"selection":{"three":{"strand":2,"index":9},"five":{"strand":0,"index":0}},"ligase_assumption":"Explicit ideal templated ligase fixture"}}}),
+        json!({"Process":{"SealNick":{"selection":{"three":{"strand":3,"index":5},"five":{"strand":1,"index":0}},"ligase_assumption":"Explicit ideal templated ligase fixture"}}}),
+    ]);
     let inspected = call(
         &c,
-        "inspect_topo_actions",
-        json!({"origin_workspace":null,"sources":sources,"request":{"preparation":preparation,"processing":processing}}),
+        "simulate_topo",
+        json!({"origin_workspace":null,"sources":sources,"request":preparation}),
     )
     .await;
-    assert_eq!(inspected["verified"], false);
-    assert_eq!(inspected["source_calls"], 52);
-    assert_eq!(inspected["component_count"], 2);
-    let main = inspected["components"]
+    assert_eq!(inspected["physical"]["all_requested_steps_applied"], true);
+    assert_eq!(inspected["physical"]["component_count"], 2);
+    let inspected_evidence = evidence(&c, &inspected["artifact_id"]).await;
+    let actual = &inspected_evidence["report"]["physical"];
+    assert_eq!(actual["source_bases"], 52);
+    let main = actual["product"]["components"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|v| v["paired_calls"] == 48 && v["unpaired_calls"] == 0)
-        .unwrap()["component"]
-        .clone();
-    let request = json!({"preparation":preparation,"processing":processing,
-        "selection":{"processing_context_revision":inspected["processing_context_revision"],"component":main,"reference_seed":{"strand":0,"index":0}},
-        "options":{"require_all_requested_transfers_applied":true,"require_known_terminal_chemistry":true,"limits":t::physical::projection::ProjectionLimits::default()}});
+        .position(|v| v["paired_nucleotides"] == 48 && v["unpaired_nucleotides"] == 0)
+        .unwrap();
+    let request = json!({"preparation":preparation,
+        "selection":{"source_batch_revision":actual["batch_revision"],"component":main,"reference_seed":{"strand":0,"index":0}},
+        "options":{"require_all_requested_steps_applied":true,"require_known_terminal_chemistry":true,"limits":t::physical::projection::ProjectionLimits::default()}});
     let projected = call(
         &c,
         "project_topo_actions",
@@ -506,7 +517,7 @@ async fn directional_preparation_compiles_actual_sources_without_inventing_repai
         1
     );
     assert_eq!(
-        full["physical_processing_reports"][0]["evidence"]["TopoActions"]["projection"]["processing"]
+        full["physical_processing_reports"][0]["evidence"]["TopoActions"]["projection"]["physical"]
             ["source_bases"],
         52
     );

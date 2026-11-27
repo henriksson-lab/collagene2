@@ -14,10 +14,10 @@ dto! {pub enum Task {
  Orientations{request:topo::Request,vector:[usize;2],insert:[usize;2],directional:bool},
  Project{request:topo::Request,selection:topo::Selection},
  Check{request:topo::Request,selection:topo::Selection,target:Molecule,policy:topo::AcceptancePolicy},
- InspectActions{request:topo_actions::ActionsRequest},
+ Simulate{request:topo::Request},
  ProcessActions{request:topo_actions::Request},
 }}
-dto! {pub enum Reply {Orientations(topo::OrientationInspection),Projected(topo::Product),Checked(topo::TargetAssessment),ActionsInspected(topo_actions::Inspection),ActionsProcessed(topo_actions::Report)}}
+dto! {pub enum Reply {Orientations(topo::OrientationInspection),Projected(topo::Product),Checked(topo::TargetAssessment),Simulated(topo::TopoReport),ActionsProcessed(topo_actions::Report)}}
 fn bad(s: &str) -> Error {
     Error::Unsupported(format!("TOPO native sources: {s}"))
 }
@@ -30,7 +30,7 @@ impl Task {
             Self::Orientations { request, .. }
             | Self::Project { request, .. }
             | Self::Check { request, .. } => request,
-            Self::InspectActions { request } => &request.preparation,
+            Self::Simulate { request } => request,
             Self::ProcessActions { request } => &request.preparation,
         }
     }
@@ -196,17 +196,10 @@ pub fn documentary_revision(
             target.revision(),
             policy,
         )),
-        Task::InspectActions { request } => hash(&(
-            topo_actions::ENGINE_VERSION,
-            "actions-discovery",
-            topo::physical::processing::ENGINE,
-            &batch,
-            &sources,
-            request,
-        )),
+        Task::Simulate { .. } => Ok(batch),
         Task::ProcessActions { request } => hash(&(
             topo_actions::ENGINE_VERSION,
-            topo::physical::processing_projection::ENGINE,
+            topo::physical::projection::ENGINE,
             &batch,
             &sources,
             request,
@@ -258,7 +251,7 @@ pub fn inspect(
         Reply::Orientations(r) => &r.preparation,
         Reply::Projected(r) => &r.preparation,
         Reply::Checked(r) => &r.product.preparation,
-        Reply::ActionsInspected(r) => &r.preparation,
+        Reply::Simulated(r) => &r.preparation,
         Reply::ActionsProcessed(r) => &r.preparation,
     };
     for origin in &evidence.graph_origins {
@@ -313,7 +306,9 @@ impl Reply {
                 topo_worker::validate_projection(r, &inner)
             }
             (Self::Checked(r), Task::Check { .. }) => topo_worker::validate_target(r, &inner),
-            (Self::ActionsInspected(r), Task::InspectActions { .. }) => r.validate_binding(&inner),
+            (Self::Simulated(r), Task::Simulate { .. }) => {
+                topo_worker::validate_simulation(r, &inner)
+            }
             (Self::ActionsProcessed(r), Task::ProcessActions { .. }) => r.validate_binding(&inner),
             _ => Err(bad("reply kind differs")),
         }
@@ -426,7 +421,7 @@ impl Inspection {
             Reply::Orientations(r) => topo_worker::validate_orientations(r, &r.batch_revision),
             Reply::Projected(r) => topo_worker::validate_projection(r, &r.batch_revision),
             Reply::Checked(r) => topo_worker::validate_target(r, &r.batch_revision),
-            Reply::ActionsInspected(r) => r.validate_binding(&r.context_revision),
+            Reply::Simulated(r) => topo_worker::validate_simulation(r, &r.batch_revision),
             Reply::ActionsProcessed(r) => r.validate_binding(&r.context_revision),
         }
     }

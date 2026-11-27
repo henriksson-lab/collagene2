@@ -116,7 +116,17 @@ export function installCollageneWebMcp(dispatch) {
     const assemblyPin={type:'object',additionalProperties:false,required:['workspace_epoch','draft_revision'],properties:{workspace_epoch:{type:'integer',minimum:0},draft_revision:{type:'string',maxLength:64}}};
     const assemblyReview={type:'object',additionalProperties:false,required:['expected'],properties:{expected:assemblyPin}};
     const cancelReview={type:'object',additionalProperties:false,required:['expected','review'],properties:{expected:assemblyPin,review:{type:'object',additionalProperties:false,required:['owner','generation'],properties:{owner:{type:'integer',minimum:0},generation:{type:'integer',minimum:0}}}}};
+    const role={type:'string',minLength:1,maxLength:128};
+    const literal={type:'string',maxLength:512,pattern:'^[ACGTRYSWKMBDHVN]*$'};
+    const position={type:'integer',minimum:0};
+    const proposal={type:'object',additionalProperties:false,required:['expected','changes'],properties:{expected:assemblyPin,changes:{type:'array',minItems:1,maxItems:8,items:{oneOf:[
+        {type:'object',additionalProperties:false,required:['operation','role','start','end','expected','replacement'],properties:{operation:{const:'replace'},role,start:position,end:position,expected:literal,replacement:literal}},
+        {type:'object',additionalProperties:false,required:['operation','role','offset','expected','replacement'],properties:{operation:{const:'substitution'},role,offset:position,expected:literal,replacement:literal}}
+    ]}}}};
+    const discardProposal={type:'object',additionalProperties:false,required:['expected','proposal'],properties:{expected:assemblyPin,proposal:{type:'object',additionalProperties:false,required:['owner','generation','revision'],properties:{owner:{type:'integer',minimum:0},generation:{type:'integer',minimum:0},revision:{type:'string',maxLength:64}}}}};
     const definitions = [
+        ['collagene_propose_assembly_edits','Propose literal assembly changes','Stage1..8 explicit intended substitutions or replacements against exact original contribution roles. Coordinates are zero-based half-open in the construct-oriented original contribution before junction trims. Expected literals must match the pinned source; use empty replacement to delete. This does not change the draft, primers or physical method. The user must accept the visible proposal before normal intended-reference review.',proposal,false],
+        ['collagene_discard_assembly_proposal','Discard exact pending proposal','Discard only the exact pending proposal token in the mounted workspace. Does not undo accepted declarations or change source documents.',discardProposal,false],
         ['collagene_assembly_context','Read active assembly draft','Read live source/event/strand selectors, unfinished method settings, literal edits and exact draft pin. Source DNA and closed material capsules are excluded. If mounted, includes current intended-reference review state. No method verification or primer acceptance.',{type:'object',additionalProperties:false,properties:{}},true],
         ['collagene_open_assembly_workspace','Open assembly workspace','Open the existing assembly design/review controls without changing the draft or target. Read assembly context after opening before requesting review.',{type:'object',additionalProperties:false,properties:{}},false],
         ['collagene_review_assembly_draft','Review intended assembly reference','Invoke the existing Review intended construct action for the exact live draft pin. Requires the assembly workspace open. Returns a started-review token; poll assembly context for completion. This constructs declared requirements, not a verified cloning plan. Primer proposal/application remain explicit actions in the normal review controls.',assemblyReview,false],
@@ -133,11 +143,11 @@ export function installCollageneWebMcp(dispatch) {
                 annotations:{readOnlyHint,untrustedContentHint:true,consequentialHint:false},
                 execute:async (input,options) => {
                     if (lifetime.signal.aborted || options.signal.aborted) throw new DOMException('Tool cancelled','AbortError');
-                    // Flat schemas have at most these fields; reject oversized or
+                    // Bounded schemas admit a small edit list; reject oversized or
                     // unexpected object trees before crossing the Wasm boundary.
                     let nodes=0;
                     const encoded=JSON.stringify(input,(_key,value)=> {
-                        if (++nodes>32 || (typeof value==='string' && value.length>512)) throw new Error('WebMCP input is too large');
+                        if (++nodes>256 || (typeof value==='string' && value.length>512)) throw new Error('WebMCP input is too large');
                         return value;
                     });
                     if (typeof encoded!=='string' || encoded.length>16384) throw new Error('WebMCP input is too large');

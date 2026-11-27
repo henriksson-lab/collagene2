@@ -1,5 +1,5 @@
 use collagene_model::Sequence;
-use collagene_topo::{nick_sealing as n, processed_projection as p, projection as contour, *};
+use collagene_topo::{nick_sealing as n, projection as p, projection as contour, *};
 fn strand(id: &str, dna: &str, charged: bool) -> Strand {
     Strand {
         role: "source".into(),
@@ -32,7 +32,7 @@ fn pair(a: usize, x: usize, b: usize, y: usize, length: usize) -> PairSpan {
 fn call(strand: usize, index: usize) -> Call {
     Call { strand, index }
 }
-fn ta() -> (Substrates, Vec<Transfer>) {
+fn ta() -> (Substrates, Vec<Step>) {
     (
         Substrates {
             strands: vec![
@@ -44,45 +44,51 @@ fn ta() -> (Substrates, Vec<Transfer>) {
             pairing: vec![pair(0, 0, 1, 0, 12), pair(2, 0, 3, 0, 6)],
         },
         vec![
-            Transfer {
-                donor: 0,
-                acceptor: 2,
+            Step::Transfer(Transfer {
+                donor: Call {
+                    strand: 0,
+                    index: 12,
+                },
+                acceptor: Call {
+                    strand: 2,
+                    index: 0,
+                },
                 geometry: Geometry::ThreePrimeTA,
-            },
-            Transfer {
-                donor: 1,
-                acceptor: 3,
+            }),
+            Step::Transfer(Transfer {
+                donor: Call {
+                    strand: 1,
+                    index: 12,
+                },
+                acceptor: Call {
+                    strand: 3,
+                    index: 0,
+                },
                 geometry: Geometry::ThreePrimeTA,
-            },
+            }),
         ],
     )
 }
-fn request(count: usize) -> n::Request {
-    n::Request {
-        ligase_assumption: "Explicit active T4 DNA ligase in suitable ATP buffer".into(),
-        nicks: vec![
-            n::NickSelection {
-                three: call(2, 6),
-                five: call(0, 0),
-            },
-            n::NickSelection {
-                three: call(3, 6),
-                five: call(1, 0),
-            },
-        ]
+fn request(count: usize) -> Vec<Step> {
+    [(call(2, 6), call(0, 0)), (call(3, 6), call(1, 0))]
         .into_iter()
         .take(count)
-        .collect(),
-    }
+        .map(|(three, five)| {
+            Step::Process(processing::Action::SealNick {
+                selection: n::NickSelection { three, five },
+                ligase_assumption: "Explicit active T4 DNA ligase in suitable ATP buffer".into(),
+            })
+        })
+        .collect()
 }
-fn selection(s: &Substrates, t: &[Transfer], r: &n::Request, seed: Call) -> p::Selection {
+fn selection(s: &Substrates, steps: &[Step], seed: Call) -> p::Selection {
     p::Selection {
-        sealing_context_revision: n::revision(s, t, &Limits::default(), r).unwrap(),
+        source_batch_revision: batch_revision(s, steps, &Limits::default()).unwrap(),
         component: 0,
         reference_seed: seed,
     }
 }
-fn view(r: &p::ProcessedReport) -> &contour::DuplexView {
+fn view(r: &p::ProjectionReport) -> &contour::DuplexView {
     match &r.outcome {
         contour::Outcome::Proven(v) => v,
         _ => panic!("expected paired contour: {:?}", r.outcome),
@@ -95,18 +101,68 @@ fn fresh_ta_processed_contour_retains_one_nick_then_proves_closed_backbones() {
     let o = contour::Options::default();
     for (count, nicks) in [(0, 2), (1, 1), (2, 0)] {
         let r = request(count);
-        let select = selection(&s, &t, &r, call(0, 0));
-        let result = p::project(&s, &t, &l, &r, &select, &o).unwrap();
+        let select = selection(
+            &s,
+            &(&t)
+                .iter()
+                .cloned()
+                .chain((&r).iter().cloned())
+                .collect::<Vec<Step>>(),
+            call(0, 0),
+        );
+        let result = p::project(
+            &s,
+            &(&t)
+                .iter()
+                .cloned()
+                .chain((&r).iter().cloned())
+                .collect::<Vec<Step>>(),
+            &l,
+            &select,
+            &o,
+        )
+        .unwrap();
         let v = view(&result);
         assert_eq!(v.topology, contour::ContourTopology::Circular);
         assert_eq!(v.top.as_str(), "AGGGGCATCCCTTCGAATGA");
         assert_eq!(v.bottom.as_str(), "TCATTCGAAGGGATGCCCCT");
         assert_eq!(v.nicks.len(), nicks);
-        assert_eq!(result.sealing.product.nicks.len(), nicks);
-        assert_eq!(result.sealing.source_bases, 40);
-        assert_eq!(result.sealing.parent.product.nicks.len(), 2);
-        p::validate_report(&s, &t, &l, &r, &select, &o, &result).unwrap();
-        p::replay(&s, &t, &l, &r, &select, &o, &result).unwrap();
+        assert_eq!(result.physical.product.nicks.len(), nicks);
+        assert_eq!(result.physical.source_bases, 40);
+        assert_eq!(
+            simulate(&s, &t, &Limits::default())
+                .unwrap()
+                .product
+                .nicks
+                .len(),
+            2
+        );
+        p::validate_report(
+            &s,
+            &(&t)
+                .iter()
+                .cloned()
+                .chain((&r).iter().cloned())
+                .collect::<Vec<Step>>(),
+            &l,
+            &select,
+            &o,
+            &result,
+        )
+        .unwrap();
+        p::replay(
+            &s,
+            &(&t)
+                .iter()
+                .cloned()
+                .chain((&r).iter().cloned())
+                .collect::<Vec<Step>>(),
+            &l,
+            &select,
+            &o,
+            &result,
+        )
+        .unwrap();
     }
 }
 #[test]
@@ -118,15 +174,46 @@ fn origin_and_reverse_seed_use_literal_source_calls_without_target_guidance() {
         (call(2, 3), "ATGAAGGGGCATCCCTTCGA"),
         (call(1, 0), "AGGGATGCCCCTTCATTCGA"),
     ] {
-        let select = selection(&s, &t, &r, seed);
-        let report = p::project(&s, &t, &Limits::default(), &r, &select, &o).unwrap();
+        let select = selection(
+            &s,
+            &(&t)
+                .iter()
+                .cloned()
+                .chain((&r).iter().cloned())
+                .collect::<Vec<Step>>(),
+            seed,
+        );
+        let report = p::project(
+            &s,
+            &(&t)
+                .iter()
+                .cloned()
+                .chain((&r).iter().cloned())
+                .collect::<Vec<Step>>(),
+            &Limits::default(),
+            &select,
+            &o,
+        )
+        .unwrap();
         let v = view(&report);
         assert_eq!(v.origin, seed);
         assert_eq!(v.seed_reference_position, 0);
         assert_eq!(v.top.as_str(), letters);
         assert_eq!(v.source_maps[0].top_strand, seed.strand);
         assert_eq!(v.source_maps[0].top_start, seed.index);
-        p::validate_report(&s, &t, &Limits::default(), &r, &select, &o, &report).unwrap();
+        p::validate_report(
+            &s,
+            &(&t)
+                .iter()
+                .cloned()
+                .chain((&r).iter().cloned())
+                .collect::<Vec<Step>>(),
+            &Limits::default(),
+            &select,
+            &o,
+            &report,
+        )
+        .unwrap();
     }
 }
 #[test]
@@ -134,7 +221,16 @@ fn other_components_and_unreacted_source_calls_are_never_deleted() {
     let (mut s, t) = ta();
     s.strands.push(strand("free-byproduct", "GGAC", false));
     let r = request(2);
-    let fresh = n::simulate(&s, &t, &Limits::default(), &r).unwrap();
+    let fresh = simulate(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
+        &Limits::default(),
+    )
+    .unwrap();
     let component = fresh
         .product
         .components
@@ -151,25 +247,28 @@ fn other_components_and_unreacted_source_calls_are_never_deleted() {
     assert_eq!(fresh.product.components[component].paired_nucleotides, 40);
     assert_eq!(fresh.product.components[component].unpaired_nucleotides, 0);
     let select = p::Selection {
-        sealing_context_revision: fresh.context_revision,
+        source_batch_revision: fresh.batch_revision,
         component,
         reference_seed: call(0, 0),
     };
     let result = p::project(
         &s,
-        &t,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
         &Limits::default(),
-        &r,
         &select,
         &contour::Options::default(),
     )
     .unwrap();
     assert_eq!(view(&result).top.len(), 20);
-    assert_eq!(result.sealing.source_bases, 44);
-    assert_eq!(result.sealing.product.components.len(), 2);
+    assert_eq!(result.physical.source_bases, 44);
+    assert_eq!(result.physical.product.components.len(), 2);
     assert!(
         result
-            .sealing
+            .physical
             .product
             .components
             .iter()
@@ -177,7 +276,7 @@ fn other_components_and_unreacted_source_calls_are_never_deleted() {
     );
     assert!(
         result
-            .sealing
+            .physical
             .product
             .chains
             .iter()
@@ -185,7 +284,7 @@ fn other_components_and_unreacted_source_calls_are_never_deleted() {
     );
     assert_eq!(
         result
-            .sealing
+            .physical
             .product
             .chains
             .iter()
@@ -199,22 +298,52 @@ fn strict_requested_policy_includes_blocked_sealing_as_well_as_original_transfer
     let (mut s, t) = ta();
     s.strands[0].five_prime = FivePrime::Hydroxyl;
     let r = request(2);
-    let select = selection(&s, &t, &r, call(0, 0));
+    let select = selection(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
+        call(0, 0),
+    );
     let mut o = contour::Options::default();
-    let relaxed = p::project(&s, &t, &Limits::default(), &r, &select, &o).unwrap();
+    let relaxed = p::project(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
+        &Limits::default(),
+        &select,
+        &o,
+    )
+    .unwrap();
     assert_eq!(
-        relaxed.sealing.steps[0].outcome,
+        relaxed.physical.steps[2].outcome(),
         Outcome::BlockedUnderDeclaredModel
     );
-    assert!(!view(&relaxed).all_requested_transfers_applied);
+    assert!(!view(&relaxed).all_requested_steps_applied);
     assert_eq!(view(&relaxed).nicks.len(), 1);
-    o.require_all_requested_transfers_applied = true;
-    let strict = p::project(&s, &t, &Limits::default(), &r, &select, &o).unwrap();
+    o.require_all_requested_steps_applied = true;
+    let strict = p::project(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
+        &Limits::default(),
+        &select,
+        &o,
+    )
+    .unwrap();
     assert_eq!(
         strict.outcome,
-        contour::Outcome::Withheld(contour::Withheld::RequestedTransfersNotApplied)
+        contour::Outcome::Withheld(contour::Withheld::RequestedStepsNotApplied)
     );
-    assert_eq!(strict.sealing.product, relaxed.sealing.product);
+    assert_eq!(strict.physical.product, relaxed.physical.product);
 }
 #[test]
 fn directional_flap_stays_withheld_after_explicit_sealing() {
@@ -228,24 +357,47 @@ fn directional_flap_stays_withheld_after_explicit_sealing() {
         pairing: vec![pair(0, 0, 1, 4, 14), pair(2, 0, 3, 0, 10)],
     };
     let t = vec![
-        Transfer {
-            donor: 0,
-            acceptor: 2,
+        Step::Transfer(Transfer {
+            donor: Call {
+                strand: 0,
+                index: s.strands[0].sequence.len() - 1,
+            },
+            acceptor: Call {
+                strand: 2,
+                index: 0,
+            },
             geometry: Geometry::DirectionalCacc,
-        },
-        Transfer {
-            donor: 1,
-            acceptor: 3,
+        }),
+        Step::Transfer(Transfer {
+            donor: Call {
+                strand: 1,
+                index: s.strands[1].sequence.len() - 1,
+            },
+            acceptor: Call {
+                strand: 3,
+                index: 0,
+            },
             geometry: Geometry::Flush,
-        },
+        }),
     ];
     let r = request(0);
-    let select = selection(&s, &t, &r, call(0, 0));
+    let select = selection(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
+        call(0, 0),
+    );
     let result = p::project(
         &s,
-        &t,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
         &Limits::default(),
-        &r,
         &select,
         &contour::Options::default(),
     )
@@ -256,7 +408,7 @@ fn directional_flap_stays_withheld_after_explicit_sealing() {
     );
     assert_eq!(
         result
-            .sealing
+            .physical
             .product
             .chains
             .iter()
@@ -265,11 +417,14 @@ fn directional_flap_stays_withheld_after_explicit_sealing() {
         52
     );
     assert_eq!(
-        result.sealing.parent.steps[0]
-            .displacement
-            .as_ref()
-            .unwrap()
-            .calls_five_to_three,
+        (match &result.physical.steps[0] {
+            StepEvidence::Transfer(e) => e,
+            _ => panic!("transfer evidence"),
+        })
+        .displacement
+        .as_ref()
+        .unwrap()
+        .calls_five_to_three,
         vec![call(3, 6), call(3, 7), call(3, 8), call(3, 9)]
     );
 }
@@ -277,62 +432,116 @@ fn directional_flap_stays_withheld_after_explicit_sealing() {
 fn imported_positive_reports_versions_and_old_selection_contexts_do_not_replay() {
     let (s, t) = ta();
     let r = request(2);
-    let select = selection(&s, &t, &r, call(0, 0));
+    let select = selection(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
+        call(0, 0),
+    );
     let o = contour::Options::default();
-    let result = p::project(&s, &t, &Limits::default(), &r, &select, &o).unwrap();
+    let result = p::project(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
+        &Limits::default(),
+        &select,
+        &o,
+    )
+    .unwrap();
     let mut altered = result.clone();
     altered.engine.push_str("-future");
-    assert!(altered.validate_binding(&result.context_revision).is_err());
+    assert!(altered.validate_binding(&result.batch_revision).is_err());
     let mut changed = result.clone();
     if let contour::Outcome::Proven(v) = &mut changed.outcome {
         v.top = Sequence::dna("AAAAAAAAAAAAAAAAAAAA").unwrap();
     }
-    assert!(p::validate_report(&s, &t, &Limits::default(), &r, &select, &o, &changed).is_err());
-    assert!(p::replay(&s, &t, &Limits::default(), &r, &select, &o, &changed).is_err());
+    assert!(
+        p::validate_report(
+            &s,
+            &(&t)
+                .iter()
+                .cloned()
+                .chain((&r).iter().cloned())
+                .collect::<Vec<Step>>(),
+            &Limits::default(),
+            &select,
+            &o,
+            &changed
+        )
+        .is_err()
+    );
+    assert!(
+        p::replay(
+            &s,
+            &(&t)
+                .iter()
+                .cloned()
+                .chain((&r).iter().cloned())
+                .collect::<Vec<Step>>(),
+            &Limits::default(),
+            &select,
+            &o,
+            &changed
+        )
+        .is_err()
+    );
     let mut stale = select.clone();
-    stale.sealing_context_revision = batch_revision(&s, &t, &Limits::default()).unwrap();
-    assert!(p::revision(&s, &t, &Limits::default(), &r, &stale, &o).is_err());
+    stale.source_batch_revision = batch_revision(&s, &t, &Limits::default()).unwrap();
+    assert!(
+        p::batch_revision(
+            &s,
+            &(&t)
+                .iter()
+                .cloned()
+                .chain((&r).iter().cloned())
+                .collect::<Vec<Step>>(),
+            &Limits::default(),
+            &stale,
+            &o
+        )
+        .is_err()
+    );
     let encoded = serde_json::to_vec(&result).unwrap();
-    let restored: p::ProcessedReport = serde_json::from_slice(&encoded).unwrap();
+    let restored: p::ProjectionReport = serde_json::from_slice(&encoded).unwrap();
     assert_eq!(restored, result);
-    p::replay(&s, &t, &Limits::default(), &r, &select, &o, &restored).unwrap();
+    p::replay(
+        &s,
+        &(&t)
+            .iter()
+            .cloned()
+            .chain((&r).iter().cloned())
+            .collect::<Vec<Step>>(),
+        &Limits::default(),
+        &select,
+        &o,
+        &restored,
+    )
+    .unwrap();
 }
 #[test]
-fn old_contour_behavior_and_explicit_projection_budgets_are_preserved() {
+fn projection_budget_withholds_only_the_view_and_retains_complete_reaction() {
     let (s, t) = ta();
-    let r = request(0);
-    let select = selection(&s, &t, &r, call(0, 0));
-    let mut o = contour::Options::default();
-    let mut insufficient_output = Limits::default();
-    insufficient_output.max_output_bases = 119;
-    let bounded_selection = p::Selection {
-        sealing_context_revision: n::revision(&s, &t, &insufficient_output, &r).unwrap(),
-        ..select.clone()
-    };
+    let select = selection(&s, &t, call(0, 0));
+    let mut options = contour::Options::default();
+    let mut too_small = Limits::default();
+    too_small.max_output_bases = 39;
     assert!(matches!(
-        p::preflight(&s, &t, &insufficient_output, &r, &bounded_selection, &o),
+        p::project(&s, &t, &too_small, &select, &options),
         Err(contour::Error::Engine(Error::Limit {
             kind: Budget::OutputBases,
             ..
         }))
     ));
-    let old = contour::project(
-        &s,
-        &t,
-        &Limits::default(),
-        &contour::Selection {
-            source_batch_revision: batch_revision(&s, &t, &Limits::default()).unwrap(),
-            component: 0,
-            reference_seed: call(0, 0),
-        },
-        &o,
-    )
-    .unwrap();
-    let new = p::project(&s, &t, &Limits::default(), &r, &select, &o).unwrap();
-    assert_eq!(old.outcome, new.outcome);
-    assert_eq!(old.physical, new.sealing.parent);
-    o.limits.max_pairs = 19;
-    let bounded = p::project(&s, &t, &Limits::default(), &r, &select, &o).unwrap();
+    let full = p::project(&s, &t, &Limits::default(), &select, &options).unwrap();
+    assert_eq!(view(&full).nicks.len(), 2);
+    options.limits.max_pairs = 19;
+    let bounded = p::project(&s, &t, &Limits::default(), &select, &options).unwrap();
     assert!(matches!(
         bounded.outcome,
         contour::Outcome::Withheld(contour::Withheld::Budget {
@@ -340,8 +549,5 @@ fn old_contour_behavior_and_explicit_projection_budgets_are_preserved() {
             ..
         })
     ));
-    assert_eq!(
-        bounded.sealing.product.source_pairing,
-        new.sealing.product.source_pairing
-    );
+    assert_eq!(bounded.physical, full.physical);
 }

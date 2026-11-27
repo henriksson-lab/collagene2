@@ -90,13 +90,13 @@ fn contribution_edits_append_163_155_and_reject_old_or_stale_bindings() {
     };
     let encoded = protocol::encode_request(&request).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&encoded[42..]).unwrap();
-    assert_eq!(tag, 161);
+    assert_eq!(tag, 158);
     for version in [1, 76, 77, 78] {
         assert!(protocol::process_request(&wire(b"CGQ\0", version, &request)).is_err());
     }
     let encoded = protocol::process_request(&encoded).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&encoded[42..]).unwrap();
-    assert_eq!(tag, 153);
+    assert_eq!(tag, 150);
     let response = protocol::decode_response(&encoded).unwrap();
     let AnalysisResult::ContributionEditIntent(report) = &response.result else {
         panic!("literal intent")

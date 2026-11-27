@@ -1,16 +1,16 @@
-# Saved elementary TOPO graph sources
+# Saved ordered TOPO graph sources
 
-The native graph path saves the entire explicitly declared elementary-transfer state. It preserves every source call, component, chain, pairing, unpaired call, nick and activation. Selecting a contour/component is a documentary view, never physical isolation. Activated source material is distinct from ordinary Run/Derived duplex material: a phosphotyrosyl terminus cannot be flattened into ordinary `chemistry::Duplex` chemistry.
+The native graph path saves the entire explicitly declared ordered-step state. It preserves every source call, component, chain, pairing, unpaired call, nick and activation. Selecting a contour/component is a documentary view, never physical isolation. Activated source material is distinct from ordinary Run/Derived duplex material: a phosphotyrosyl terminus cannot be flattened into ordinary `chemistry::Duplex` chemistry.
 
 `topo_graph_history::CaptureRequest` binds external roles to exact retained events and optional ordinary Run/Derived PCR-template origins. Original vector activation remains an explicit caller hypothesis. Neither a sequence file nor a supplier name establishes activation. Native capture resolves the exact historical event, not the document's current head. The returned immutable workspace adds its canonical attachment without moving biological heads or replacing local histories.
 
-A current `topo-elementary-graph-v1` record retains the declaration, complete transfer transcript, source pins, current scientific model, documentary state summary and exact state revision. Its capsule has opaque bounded canonical record bytes and the exact source snapshots. Source/capsule attestation requires that the canonical record is actually retained under its hash and native kind/media type in the workspace. No supplied ProductGraph, report JSON, metadata marker or equal-DNA alias becomes native stock.
+A current `topo-graph-v2` record retains the declaration, complete ordered transcript, source pins, current scientific model, documentary state summary and exact state revision. Its capsule has opaque bounded canonical record bytes and the exact source snapshots. Source/capsule attestation requires that the canonical record is actually retained under its hash and native kind/media type in the workspace. No supplied ProductGraph, report JSON, metadata marker or equal-DNA alias becomes native stock.
 
 Human-readable capsule record bytes use bounded canonical base64; binary serialization uses bounded bytes. Records are limited to eight MiB; the complete mixed origin graph is limited to32 MiB before shallow decoding/copying. There are at most128 graph records. Existing shared depth, source-model, plan-step and native source limits apply across Run, Derived and graph nodes in one ancestry ledger. The current source adapter limits actual prepared source calls to100,000. Native graph execution, checkpoints, orientation branches and new processing phases reserve bounded work/memory; source PCR search retains its separately declared preparation-search allowance. Historical ordinary source reconstruction retains its own closed replay bounds and findings.
 
 `MaterialRecipe::SavedGraph` consumes the exact native graph source. The preparation compiler distinguishes Original, SavedVector plus an explicitly new PCR insert, and ResumeGraph using the existing vector AND insert strand handles. A one-transfer intermediate already contains40 calls; resume adds only the missing transfer and never silently creates another14-call insert or repeats historical PCR. Oligo extraction orders current ExactPcr primers only; saved graph history is source evidence rather than a new order list.
 
-The native resolver expands original source namespaces and the retained transfer prefix. A private execution cursor reconstructs them once. Checkpoints observe the whole owned source scope before later transfers and compare its canonical state. Source strand indices, activation identities and displacement-step ownership map back into the recorded domain for that comparison. Foreign components cannot be silently discarded. No report-to-private-graph restoration entry point exists.
+The native resolver expands original source namespaces and the retained ordered-step prefix. A private execution cursor reconstructs them once. Checkpoints observe the whole owned source scope before later steps and compare its canonical state. Source strand indices, activation identities and global displacement-step ownership map back into the recorded domain for that comparison. Foreign components cannot be silently discarded. No report-to-private-graph restoration entry point exists.
 
 Roles use one deterministic collision-free allocator for native and documentary expansion; a current external role resembling a generated name cannot shadow a closed source. Layout receipts preserve original aliases, native owner scope, local material index and exact expanded strand indices. Source coordinates always refer to actual original strands, never the currently selected target or output-chain names.
 
@@ -24,6 +24,21 @@ HTML/PDF protocols show graph record/state identities, readable original hypothe
 
 Record validation is documentary and uses stored engine identities for its context. Supported structural records remain readable after a scientific engine change; current replay refuses an unsupported historical graph model. Captured summaries do not restore or upgrade source state. Unknown/unsupported/unapplied transfer evidence and inherited ordinary-source incompleteness remain explicit. The same fresh cursor attests each recorded source scope's completeness flag against its actual ordinary origins and retained transfer outcomes; changing a canonical record's flag cannot upgrade or downgrade that source. A later target match or explicit acceptance policy does not erase inherited incompleteness. Template finding totals and truncation remain intact when graph findings are added.
 
-Only elementary-transfer graphs are reusable source records in this scope. Newly requested processing can follow their fresh reconstruction, but capture does not save the resulting flap-cleaved or nick-sealed graph as an incoming source. General continuation after such processing needs effective-terminal/new-endpoint kernel support; dropping those actions or redeclaring a projected molecule as activated stock is refused.
+The current record is schema/header2 and kind `topo-graph-v2`; no elementary-only
+reader or conversion exists. `CaptureRequest.request.steps` contains the actual
+ordered `Step::Transfer` and `Step::Process` declarations, including operator
+conditions. Native capture can retain a post-flap-cleavage or nick-sealed graph.
+It never captures an imported report as chemical authority. A resumed source
+executes that exact whole prefix, including effective 3′OH/5′P overrides and
+already sealed backbones, before its new requested suffix.
+
+Checkpoints use `after_steps` and `step_map`. They retain every source component,
+free flap call and released/remaining activation, and map global displacement
+indices back to the captured graph's complete step domain. `Transfer` names exact
+`Call { strand, index }` endpoints; a newly created3′OH is not an activation and a
+new5′phosphate is not5′OH. Consumed native activation instances cannot be restocked
+by renaming, recapture or joining another backbone. The physical cursor and its
+orientation branches share one work ledger. Contour projection is a view of the
+same fresh execution, not a phase-specific graph executor.
 
 Publication follows the typed native graph records, exact source events and ordinary origin dependencies required by the selected plan. The workspace fingerprint is a context pin, not a reason to disclose all workspace documents. Unrelated current heads, drafts and unreferenced graph records remain outside the selected closure. `source_bindings` reports exact native dependency closure, including proof dependencies; it is not an atom-provenance map or a target-document exclusion heuristic.

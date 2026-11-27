@@ -105,7 +105,6 @@ pub(crate) fn pin(draft: &Draft, epoch: u64) -> Result<Pin, String> {
             draft.version,
             &draft.name,
             draft.circular,
-            draft.active_slot,
             slots(draft),
             methods(draft),
             row_origins(draft),
@@ -150,6 +149,8 @@ pub(crate) mod bridge {
         Status(Pin),
         Review(Pin),
         Cancel(Pin, ReviewToken),
+        Propose(crate::web_mcp_design::Request),
+        Discard(crate::web_mcp_design::DiscardRequest),
     }
     #[derive(Clone)]
     pub(crate) struct Endpoint {

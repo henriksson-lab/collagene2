@@ -23,7 +23,7 @@ fn check(
                 origin: g::documentary_capsule(w, selection).unwrap(),
             }],
         },
-        transfers: vec![],
+        steps: vec![],
         engine_limits: Default::default(),
         projection_options: Default::default(),
     };
@@ -41,7 +41,7 @@ fn check(
         target: target.clone(),
         policy: t::AcceptancePolicy {
             allow_nicks: true,
-            allow_unapplied_transfers: true,
+            allow_unapplied_steps: true,
             ..Default::default()
         },
     };
@@ -77,17 +77,29 @@ fn forged_false_record(w: &Workspace, selection: &g::Selection) -> (Workspace, g
 fn completed_ta_graph_with_blocked_third_transfer_stays_incomplete_despite_target_acceptance() {
     let first = literal::captured();
     let mut r = literal::partial(&first.workspace, &first.receipt.selection);
-    r.request.transfers.extend([
-        p::Transfer {
-            donor: 1,
-            acceptor: 3,
+    r.request.steps.extend([
+        p::Step::Transfer(p::Transfer {
+            donor: p::Call {
+                strand: 1,
+                index: 12,
+            },
+            acceptor: p::Call {
+                strand: 3,
+                index: 0,
+            },
             geometry: p::Geometry::ThreePrimeTA,
-        },
-        p::Transfer {
-            donor: 0,
-            acceptor: 2,
+        }),
+        p::Step::Transfer(p::Transfer {
+            donor: p::Call {
+                strand: 0,
+                index: 12,
+            },
+            acceptor: p::Call {
+                strand: 2,
+                index: 0,
+            },
             geometry: p::Geometry::ThreePrimeTA,
-        },
+        }),
     ]);
     let saved = g::prepare_capture(&first.workspace, &r).unwrap();
     assert!(saved.receipt.summary.incomplete);
@@ -105,7 +117,7 @@ fn completed_ta_graph_with_blocked_third_transfer_stays_incomplete_despite_targe
         2
     );
     assert_eq!(
-        actual.report().physical.steps[2].outcome,
+        actual.report().physical.steps[2].outcome(),
         p::Outcome::BlockedUnderDeclaredModel
     );
     let (_, task, plan, target) = check(&saved.workspace, &saved.receipt.selection);
@@ -270,17 +282,29 @@ fn actual_capped_ordinary_origin_uncertainty_survives_new_pcr_and_graph_source_r
             reverse: Primer::new("insert R", "CAT", "").unwrap(),
             tail: Some(TailingBase::A),
         });
-    request.request.transfers = vec![
-        p::Transfer {
-            donor: 0,
-            acceptor: 2,
+    request.request.steps = vec![
+        p::Step::Transfer(p::Transfer {
+            donor: p::Call {
+                strand: 0,
+                index: 12,
+            },
+            acceptor: p::Call {
+                strand: 2,
+                index: 0,
+            },
             geometry: p::Geometry::ThreePrimeTA,
-        },
-        p::Transfer {
-            donor: 1,
-            acceptor: 3,
+        }),
+        p::Step::Transfer(p::Transfer {
+            donor: p::Call {
+                strand: 1,
+                index: 12,
+            },
+            acceptor: p::Call {
+                strand: 3,
+                index: 0,
+            },
             geometry: p::Geometry::ThreePrimeTA,
-        },
+        }),
     ];
     let graph = g::prepare_capture(&captured.workspace, &request).unwrap();
     assert!(graph.receipt.summary.incomplete);
@@ -295,7 +319,7 @@ fn actual_capped_ordinary_origin_uncertainty_survives_new_pcr_and_graph_source_r
             .product
             .projection
             .physical
-            .all_requested_transfers_applied
+            .all_requested_steps_applied
     );
     assert!(matches!(
         accepted.outcome,

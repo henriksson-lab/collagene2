@@ -216,7 +216,7 @@ async fn sdk_proposal_verification_and_exports_use_actual_extension_not_target_s
             .any(|finding| {
                 finding
                     .as_str()
-                    .is_some_and(|text| text.contains("established physical template"))
+                    .is_some_and(|text| text.contains("actual physical source state"))
             }),
         "{withheld}"
     );

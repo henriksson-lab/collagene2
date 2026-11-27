@@ -79,7 +79,7 @@ fn literal_14_18_vector_and_actual_cacc_pcr_keep_the_flap_and_withhold_contour()
     let before = serde_json::to_value(&inputs).unwrap();
     let compiled = prep::compile_preparation(&inputs, &request).unwrap();
     assert!(compiled.directional);
-    assert!(compiled.request.transfers.is_empty());
+    assert!(compiled.request.steps.is_empty());
     let report = inspect(&inputs, &request);
     assert_eq!(report.reference.candidates.len(), 2);
     assert!(!report.reference.biochemical_mixture_exhaustive);
@@ -92,7 +92,7 @@ fn literal_14_18_vector_and_actual_cacc_pcr_keep_the_flap_and_withhold_contour()
         "CGTCATGGTG"
     );
     let actual = &report.reference.candidates[0];
-    assert!(actual.all_requested_transfers_applied);
+    assert!(actual.all_requested_steps_applied);
     assert_eq!(actual.source_bases, 52);
     assert_eq!(
         actual
@@ -114,6 +114,10 @@ fn literal_14_18_vector_and_actual_cacc_pcr_keep_the_flap_and_withhold_contour()
         actual
             .steps
             .iter()
+            .filter_map(|step| match step {
+                graph::StepEvidence::Transfer(e) => Some(e),
+                graph::StepEvidence::Process(_) => None,
+            })
             .any(|step| step
                 .displacement
                 .as_ref()
@@ -147,7 +151,7 @@ fn literal_14_18_vector_and_actual_cacc_pcr_keep_the_flap_and_withhold_contour()
     let policy = topo::AcceptancePolicy {
         allow_nicks: true,
         allow_unknown_terminal_chemistry: true,
-        allow_unapplied_transfers: true,
+        allow_unapplied_steps: true,
         allow_other_components: true,
         allow_circular_rotation: true,
         allow_reverse_complement: true,
@@ -223,7 +227,7 @@ fn reversed_drawing_missing_activation_and_missing_cacc_never_gain_transfer_auth
     let (mut inputs, mut request) = fixture();
     inputs[1] = input("vb", "GTGGAAGGGATGCCCCTT");
     let wrong = inspect(&inputs, &request);
-    assert!(!wrong.reference.candidates[0].all_requested_transfers_applied);
+    assert!(!wrong.reference.candidates[0].all_requested_steps_applied);
     inputs[1] = input("vb", "GGTGAAGGGATGCCCCTT");
     {
         let prep::PreparationSource::Original { vector, .. } = &mut request.source else {
@@ -232,7 +236,7 @@ fn reversed_drawing_missing_activation_and_missing_cacc_never_gain_transfer_auth
         vector.strands[0].three_prime = graph::ThreePrime::Hydroxyl;
     }
     let inactive = inspect(&inputs, &request);
-    assert!(!inactive.reference.candidates[0].all_requested_transfers_applied);
+    assert!(!inactive.reference.candidates[0].all_requested_steps_applied);
     let (mut inputs, mut request) = fixture();
     inputs[2] = input("template", "AACCATGACG");
     {
@@ -242,7 +246,7 @@ fn reversed_drawing_missing_activation_and_missing_cacc_never_gain_transfer_auth
         insert.forward = Primer::new("No CACC", "AACCA", "").unwrap();
     }
     let missing = inspect(&inputs, &request);
-    assert!(!missing.reference.candidates[0].all_requested_transfers_applied);
+    assert!(!missing.reference.candidates[0].all_requested_steps_applied);
     {
         let prep::PreparationSource::Original { insert, .. } = &mut request.source else {
             panic!("original declaration fixture")

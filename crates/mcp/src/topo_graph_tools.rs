@@ -36,7 +36,7 @@ pub struct Recipe {
 #[serde(deny_unknown_fields)]
 pub struct Preparation {
     pub recipe: Recipe,
-    pub transfers: Vec<physical::Transfer>,
+    pub steps: Vec<physical::Step>,
     pub engine_limits: physical::Limits,
     pub projection_options: physical::projection::Options,
 }
@@ -45,9 +45,9 @@ impl Preparation {
         bounded_json_limit(self, 2 * 1024 * 1024)?;
         if self.recipe.materials.is_empty()
             || self.recipe.materials.len() > 16
-            || self.transfers.len() > 16
+            || self.steps.len() > 16
         {
-            return Err(bad("bounded current TOPO materials/transfers required"));
+            return Err(bad("bounded current TOPO materials/steps required"));
         }
         Ok(self
             .recipe
@@ -106,7 +106,7 @@ impl Preparation {
                 schema_version: request.recipe.schema_version,
                 materials,
             },
-            transfers: request.transfers.clone(),
+            steps: request.steps.clone(),
             engine_limits: request.engine_limits.clone(),
             projection_options: request.projection_options.clone(),
         }
@@ -164,7 +164,7 @@ impl Preparation {
                 schema_version: self.recipe.schema_version,
                 materials,
             },
-            transfers: self.transfers.clone(),
+            steps: self.steps.clone(),
             engine_limits: self.engine_limits.clone(),
             projection_options: self.projection_options.clone(),
         })
@@ -172,29 +172,9 @@ impl Preparation {
 }
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct Sealing {
-    pub preparation: Preparation,
-    pub sealing: physical::nick_sealing::Request,
-}
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Processed {
-    pub treatment: Sealing,
-    pub selection: physical::processed_projection::Selection,
-    pub options: physical::projection::Options,
-}
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Actions {
-    pub preparation: Preparation,
-    pub processing: physical::processing::Request,
-}
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
 pub struct ActionProduct {
     pub preparation: Preparation,
-    pub processing: physical::processing::Request,
-    pub selection: physical::processing_projection::Selection,
+    pub selection: physical::projection::Selection,
     pub options: physical::projection::Options,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

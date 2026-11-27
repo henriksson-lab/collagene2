@@ -190,9 +190,6 @@ fn topo_declarations(
         | Operation::CheckedTopo {
             sources, request, ..
         } => Some((sources, request)),
-        Operation::ProcessedTopo { sources, request } => {
-            Some((sources, &request.treatment.preparation))
-        }
         Operation::TopoActions { sources, request } => Some((sources, &request.preparation)),
         _ => None,
     }
@@ -729,7 +726,6 @@ pub fn build(plan: &DesignPlan, target: &Molecule, options: &Options) -> Result<
             ),
             Operation::Topo { .. }
             | Operation::CheckedTopo { .. }
-            | Operation::ProcessedTopo { .. }
             | Operation::TopoActions { .. } => {
                 let (sources, request) = topo_declarations(step)
                     .ok_or_else(|| bad("missing embedded TOPO declaration"))?;

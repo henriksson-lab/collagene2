@@ -1,10 +1,10 @@
 # Binary worker protocol
 
 The web worker and native adapters share Rust DTOs in `core::protocol` and the
-same deterministic scientific engines. Current schemas are worker **100**,
-candidate **26** and native workspace plan **24**; the verifier is **science-27**.
-Only current internal encodings are accepted. Superseded development formats have
-no fallback decoder, migration or capability ladder.
+same deterministic scientific engines. Current schemas are worker **109**,
+candidate **30** and native workspace plan **28**; the verifier is **science-31**.
+Only current internal encodings are accepted. Unsupported development versions
+have no decoder, migration or capability ladder.
 
 ## Envelope and validation
 
@@ -43,8 +43,8 @@ revision and supplied coordinate evidence, with explicit presentation limits.
 
 ## Current job tags
 
-These are indexes in the current Postcard enum, not a compatibility promise for
-superseded development schemas. Change the current schema when changing layouts.
+These are indexes in the current Postcard enum. The current schema must change
+when an internal enum layout changes.
 
 | Tag | Job |
 | ---: | --- |
@@ -134,104 +134,113 @@ superseded development schemas. Change the current schema when changing layouts.
 | 83 | `InspectTopoOrientations` |
 | 84 | `ProjectTopoProduct` |
 | 85 | `CheckTopoTarget` |
-| 86 | `ProjectAnnotatedTopo` |
-| 87 | `CheckAnnotatedTopoTarget` |
-| 88 | `PrepareVariants` |
-| 89 | `VariantPage` |
-| 90 | `CheckVariantReference` |
-| 91 | `PreviewVariantAllele` |
-| 92 | `ExportVariants` |
-| 93 | `DisposeVariants` |
-| 94 | `PreviewOverlapRecipe` |
-| 95 | `PreviewLigationRecipe` |
-| 96 | `InspectAssemblyJunctions` |
-| 97 | `DesignOverlapPrimers` |
-| 98 | `BuildAssemblyIntent` |
-| 99 | `SelectDigestFragment` |
-| 100 | `ExportPlanOligos` |
-| 101 | `ExportProtocolHtml` |
-| 102 | `FinalizeCloningOutputs` |
-| 103 | `DesignGoldenGatePrimers` |
-| 104 | `BuildMutationIntent` |
-| 105 | `CaptureReadCheck` |
-| 106 | `ReplayReadCheck` |
-| 107 | `PreviewReadReview` |
-| 108 | `CommitReadReview` |
-| 109 | `BuildEditedAssemblyIntent` |
-| 110 | `DesignEditedAssemblyPrimers` |
-| 111 | `DesignSelectiveAssemblyPrimers` |
-| 112 | `DesignGoldenGateJunctionPrimers` |
-| 113 | `InspectPreparedGoldenGatePool` |
-| 114 | `SelectPreparedGoldenGateCandidate` |
-| 115 | `InspectGoldenGateReaction` |
-| 116 | `SelectGoldenGateReaction` |
-| 117 | `PreparePcrOutputs` |
-| 118 | `PrepareMismatchPcrOutputs` |
-| 119 | `CompareSequences` |
-| 120 | `CopyReferenceFragment` |
-| 121 | `PasteReferenceFragment` |
-| 122 | `TranslateReference` |
-| 123 | `PrepareTranslatedReference` |
-| 124 | `PredictPinnedGel` |
-| 125 | `ExportPairwiseComparison` |
-| 126 | `SearchPairwiseComparison` |
-| 127 | `PreparePairwiseContext` |
-| 128 | `BeginCombinatorialBatch` |
-| 129 | `AdvanceCombinatorialBatch` |
-| 130 | `CaptureCombinatorialBatch` |
-| 131 | `BeginCombinatorialRelease` |
-| 132 | `AdvanceCombinatorialRelease` |
-| 133 | `InspectCombinatorialRelease` |
-| 134 | `FinishCombinatorialRelease` |
-| 135 | `ExportCombinatorialOutputs` |
-| 136 | `SearchGoldenGateFusions` |
-| 137 | `MaterializeGoldenGateFusions` |
-| 138 | `ScoreLigationFidelity` |
-| 139 | `InspectDomestication` |
-| 140 | `ProposeDomestication` |
-| 141 | `CheckDomestication` |
-| 142 | `PrepareDomestication` |
-| 143 | `ListLigationProfiles` |
-| 144 | `ScorePublishedLigation` |
-| 145 | `RankGoldenGateFusions` |
-| 146 | `ScoreLigationCompetition` |
-| 147 | `SealTopoNicks` |
-| 148 | `ProjectProcessedTopo` |
-| 149 | `LoadProcessedRunEvidence` |
-| 150 | `ProcessTopoActions` |
-| 151 | `InspectTopoActions` |
-| 152 | `SimulateMultiSiteRecombination` |
-| 153 | `ProjectMultiSiteRecombination` |
-| 154 | `CheckMultiSiteRecombination` |
-| 155 | `InspectCombinatorialMultiSite` |
-| 156 | `PreviewTailingRecipe` |
-| 157 | `InspectPcrDigest` |
-| 158 | `InspectRunMaterial` |
-| 159 | `InspectRunPcrDigest` |
-| 160 | `InspectRunCatalogRestriction` |
-| 161 | `BuildSubstitutedAssemblyIntent` |
-| 162 | `InspectMismatchPcrDigest` |
-| 163 | `BuildContributionEditIntent` |
-| 164 | `DesignOverlapExtensionPrimers` |
-| 165 | `InspectOverlapExtensionDigest` |
-| 166 | `DesignEditedOverlapPrimers` |
-| 167 | `PreviewHomologyRecipe` |
-| 168 | `PreviewAnnealingRecipe` |
-| 169 | `InspectTopoRun` |
-| 170 | `InspectMaterialOrigin` |
-| 171 | `MaterialPcrDocuments` |
-| 172 | `PrepareMaterialPcrOutputs` |
-| 173 | `ReviewSequenceExport` |
-| 174 | `PrepareSequenceExport` |
-| 175 | `ExportScfTrace` |
-| 176 | `InstallMaterialDerivation` |
-| 177 | `InspectMaterialDigest` |
-| 178 | `PrepareSavedRunReview` |
-| 179 | `RenderMapSvg` |
-| 180 | `InspectMaterialMismatchPcr` |
-| 181 | `InspectMaterialRepair` |
+| 86 | `PrepareVariants` |
+| 87 | `VariantPage` |
+| 88 | `CheckVariantReference` |
+| 89 | `PreviewVariantAllele` |
+| 90 | `ExportVariants` |
+| 91 | `DisposeVariants` |
+| 92 | `PreviewOverlapRecipe` |
+| 93 | `PreviewLigationRecipe` |
+| 94 | `InspectAssemblyJunctions` |
+| 95 | `DesignOverlapPrimers` |
+| 96 | `BuildAssemblyIntent` |
+| 97 | `SelectDigestFragment` |
+| 98 | `ExportPlanOligos` |
+| 99 | `ExportProtocolHtml` |
+| 100 | `FinalizeCloningOutputs` |
+| 101 | `DesignGoldenGatePrimers` |
+| 102 | `BuildMutationIntent` |
+| 103 | `CaptureReadCheck` |
+| 104 | `ReplayReadCheck` |
+| 105 | `PreviewReadReview` |
+| 106 | `CommitReadReview` |
+| 107 | `BuildEditedAssemblyIntent` |
+| 108 | `DesignEditedAssemblyPrimers` |
+| 109 | `DesignSelectiveAssemblyPrimers` |
+| 110 | `DesignGoldenGateJunctionPrimers` |
+| 111 | `InspectPreparedGoldenGatePool` |
+| 112 | `SelectPreparedGoldenGateCandidate` |
+| 113 | `InspectGoldenGateReaction` |
+| 114 | `SelectGoldenGateReaction` |
+| 115 | `PreparePcrOutputs` |
+| 116 | `PrepareMismatchPcrOutputs` |
+| 117 | `CompareSequences` |
+| 118 | `CopyReferenceFragment` |
+| 119 | `PasteReferenceFragment` |
+| 120 | `TranslateReference` |
+| 121 | `PrepareTranslatedReference` |
+| 122 | `PredictPinnedGel` |
+| 123 | `ExportPairwiseComparison` |
+| 124 | `SearchPairwiseComparison` |
+| 125 | `PreparePairwiseContext` |
+| 126 | `BeginCombinatorialBatch` |
+| 127 | `AdvanceCombinatorialBatch` |
+| 128 | `CaptureCombinatorialBatch` |
+| 129 | `BeginCombinatorialRelease` |
+| 130 | `AdvanceCombinatorialRelease` |
+| 131 | `InspectCombinatorialRelease` |
+| 132 | `FinishCombinatorialRelease` |
+| 133 | `ExportCombinatorialOutputs` |
+| 134 | `SearchGoldenGateFusions` |
+| 135 | `MaterializeGoldenGateFusions` |
+| 136 | `ScoreLigationFidelity` |
+| 137 | `InspectDomestication` |
+| 138 | `ProposeDomestication` |
+| 139 | `CheckDomestication` |
+| 140 | `PrepareDomestication` |
+| 141 | `ListLigationProfiles` |
+| 142 | `ScorePublishedLigation` |
+| 143 | `RankGoldenGateFusions` |
+| 144 | `ScoreLigationCompetition` |
+| 145 | `LoadRunEvidence` |
+| 146 | `ProcessTopoActions` |
+| 147 | `SimulateMultiSiteRecombination` |
+| 148 | `ProjectMultiSiteRecombination` |
+| 149 | `CheckMultiSiteRecombination` |
+| 150 | `InspectCombinatorialMultiSite` |
+| 151 | `PreviewTailingRecipe` |
+| 152 | `InspectPcrDigest` |
+| 153 | `InspectRunMaterial` |
+| 154 | `InspectMaterialPcrDigest` |
+| 155 | `InspectRunCatalogRestriction` |
+| 156 | `BuildSubstitutedAssemblyIntent` |
+| 157 | `InspectMismatchPcrDigest` |
+| 158 | `BuildContributionEditIntent` |
+| 159 | `DesignOverlapExtensionPrimers` |
+| 160 | `InspectOverlapExtensionDigest` |
+| 161 | `DesignEditedOverlapPrimers` |
+| 162 | `PreviewHomologyRecipe` |
+| 163 | `PreviewAnnealingRecipe` |
+| 164 | `InspectTopoRun` |
+| 165 | `InspectMaterialOrigin` |
+| 166 | `MaterialPcrDocuments` |
+| 167 | `PrepareMaterialPcrOutputs` |
+| 168 | `ReviewSequenceExport` |
+| 169 | `PrepareSequenceExport` |
+| 170 | `ExportScfTrace` |
+| 171 | `InstallMaterialDerivation` |
+| 172 | `InspectMaterialDigest` |
+| 173 | `PrepareSavedRunReview` |
+| 174 | `RenderMapSvg` |
+| 175 | `InspectMaterialMismatchPcr` |
+| 176 | `InspectMaterialRepair` |
+| 177 | `PreviewProtocolLayout` |
+| 178 | `CaptureProtocolLayout` |
+| 179 | `ExportProtocolLayout` |
+| 180 | `PreviewProtocolQuantities` |
+| 181 | `CaptureProtocolQuantities` |
+| 182 | `OpenProtocolQuantities` |
+| 183 | `ExportProtocolQuantities` |
+| 184 | `ListProtocolQuantities` |
+| 185 | `ListTopoGraphs` |
+| 186 | `CaptureTopoGraph` |
+| 187 | `InspectTopoGraph` |
 
 ## Current result tags
+
+These are indexes in the current Postcard enum. The current schema must change
+when an internal enum layout changes.
 
 | Tag | Result |
 | ---: | --- |
@@ -313,100 +322,148 @@ superseded development schemas. Change the current schema when changing layouts.
 | 75 | `TopoOrientations` |
 | 76 | `TopoProjection` |
 | 77 | `TopoTarget` |
-| 78 | `AnnotatedTopoProjection` |
-| 79 | `AnnotatedTopoTarget` |
-| 80 | `VariantsPrepared` |
-| 81 | `VariantPage` |
-| 82 | `VariantReferenceChecked` |
-| 83 | `VariantAllelePreview` |
-| 84 | `VariantsExported` |
-| 85 | `VariantsDisposed` |
-| 86 | `OverlapRecipePreview` |
-| 87 | `LigationRecipePreview` |
-| 88 | `AssemblyJunctionInspection` |
-| 89 | `OverlapPrimersDesigned` |
-| 90 | `AssemblyIntent` |
-| 91 | `DigestFragmentSelected` |
-| 92 | `PlanOligosExported` |
-| 93 | `ProtocolHtml` |
-| 94 | `CloningOutputsFinalized` |
-| 95 | `GoldenGatePrimersDesigned` |
-| 96 | `MutationIntent` |
-| 97 | `ReadCheckCaptured` |
-| 98 | `ReadCheckReplayed` |
-| 99 | `ReadReviewPreview` |
-| 100 | `ReadReviewCommitted` |
-| 101 | `EditedAssemblyIntent` |
-| 102 | `EditedAssemblyPrimers` |
-| 103 | `SelectiveAssemblyPrimers` |
-| 104 | `GoldenGateJunctionPrimers` |
-| 105 | `PreparedGoldenGatePool` |
-| 106 | `PreparedGoldenGateCandidate` |
-| 107 | `GoldenGateReaction` |
-| 108 | `GoldenGateReactionCandidate` |
-| 109 | `PcrOutputs` |
-| 110 | `MismatchPcrOutputs` |
-| 111 | `ReviewedComparison` |
-| 112 | `ReferenceFragment` |
-| 113 | `ReferencePaste` |
-| 114 | `TranslatedReference` |
-| 115 | `TranslatedOutputs` |
-| 116 | `PinnedGel` |
-| 117 | `ExportedPairwiseComparison` |
-| 118 | `SearchedPairwiseComparison` |
-| 119 | `PreparedPairwiseContext` |
-| 120 | `CombinatorialBatchStarted` |
-| 121 | `CombinatorialBatchAdvanced` |
-| 122 | `CombinatorialBatchCaptured` |
-| 123 | `CombinatorialReleaseStarted` |
-| 124 | `CombinatorialReleaseAdvanced` |
-| 125 | `CombinatorialReleaseInspected` |
-| 126 | `CombinatorialReleaseFinished` |
-| 127 | `CombinatorialOutputsArchive` |
-| 128 | `GoldenGateFusions` |
-| 129 | `GoldenGateFusionMaterialized` |
-| 130 | `LigationFidelity` |
-| 131 | `DomesticationInspected` |
-| 132 | `DomesticationProposed` |
-| 133 | `DomesticationChecked` |
-| 134 | `DomesticationPrepared` |
-| 135 | `LigationProfiles` |
-| 136 | `PublishedLigationScore` |
-| 137 | `RankedGoldenGateFusions` |
-| 138 | `LigationCompetition` |
-| 139 | `TopoNicksSealed` |
-| 140 | `ProcessedTopoProduct` |
-| 141 | `HistoricalProcessedRunEvidence` |
-| 142 | `TopoActionsProduct` |
-| 143 | `TopoActionsInspected` |
-| 144 | `MultiSiteRecombination` |
-| 145 | `MultiSiteRecombinationProduct` |
-| 146 | `MultiSiteRecombinationChecked` |
-| 147 | `CombinatorialMultiSiteInspection` |
-| 148 | `TailingRecipePreview` |
-| 149 | `PcrDigestInspection` |
-| 150 | `RunMaterialInspection` |
-| 151 | `RunPcrDigestInspection` |
-| 152 | `RunCatalogRestrictionInspection` |
-| 153 | `SubstitutedAssemblyIntent` |
-| 154 | `MismatchPcrDigestInspection` |
-| 155 | `ContributionEditIntent` |
-| 156 | `OverlapExtensionPrimersDesigned` |
-| 157 | `OverlapExtensionDigestInspection` |
-| 158 | `EditedOverlapPrimersDesigned` |
-| 159 | `TopoRunInspection` |
-| 160 | `MaterialOriginInspection` |
-| 161 | `MaterialPcrDocuments` |
-| 162 | `MaterialPcrOutputsPrepared` |
-| 163 | `SequenceExportAssessment` |
-| 164 | `SequenceExportPrepared` |
-| 165 | `ScfTraceExported` |
-| 166 | `MaterialDerivationInstalled` |
-| 167 | `MaterialDigestInspection` |
-| 168 | `SavedRunReviewPrepared` |
-| 169 | `MapSvgExported` |
-| 170 | `MaterialMismatchPcrPreview` |
-| 171 | `MaterialRepairPreview` |
+| 78 | `VariantsPrepared` |
+| 79 | `VariantPage` |
+| 80 | `VariantReferenceChecked` |
+| 81 | `VariantAllelePreview` |
+| 82 | `VariantsExported` |
+| 83 | `VariantsDisposed` |
+| 84 | `OverlapRecipePreview` |
+| 85 | `LigationRecipePreview` |
+| 86 | `AssemblyJunctionInspection` |
+| 87 | `OverlapPrimersDesigned` |
+| 88 | `AssemblyIntent` |
+| 89 | `DigestFragmentSelected` |
+| 90 | `PlanOligosExported` |
+| 91 | `ProtocolHtml` |
+| 92 | `CloningOutputsFinalized` |
+| 93 | `GoldenGatePrimersDesigned` |
+| 94 | `MutationIntent` |
+| 95 | `ReadCheckCaptured` |
+| 96 | `ReadCheckReplayed` |
+| 97 | `ReadReviewPreview` |
+| 98 | `ReadReviewCommitted` |
+| 99 | `EditedAssemblyIntent` |
+| 100 | `EditedAssemblyPrimers` |
+| 101 | `SelectiveAssemblyPrimers` |
+| 102 | `GoldenGateJunctionPrimers` |
+| 103 | `PreparedGoldenGatePool` |
+| 104 | `PreparedGoldenGateCandidate` |
+| 105 | `GoldenGateReaction` |
+| 106 | `GoldenGateReactionCandidate` |
+| 107 | `PcrOutputs` |
+| 108 | `MismatchPcrOutputs` |
+| 109 | `ReviewedComparison` |
+| 110 | `ReferenceFragment` |
+| 111 | `ReferencePaste` |
+| 112 | `TranslatedReference` |
+| 113 | `TranslatedOutputs` |
+| 114 | `PinnedGel` |
+| 115 | `ExportedPairwiseComparison` |
+| 116 | `SearchedPairwiseComparison` |
+| 117 | `PreparedPairwiseContext` |
+| 118 | `CombinatorialBatchStarted` |
+| 119 | `CombinatorialBatchAdvanced` |
+| 120 | `CombinatorialBatchCaptured` |
+| 121 | `CombinatorialReleaseStarted` |
+| 122 | `CombinatorialReleaseAdvanced` |
+| 123 | `CombinatorialReleaseInspected` |
+| 124 | `CombinatorialReleaseFinished` |
+| 125 | `CombinatorialOutputsArchive` |
+| 126 | `GoldenGateFusions` |
+| 127 | `GoldenGateFusionMaterialized` |
+| 128 | `LigationFidelity` |
+| 129 | `DomesticationInspected` |
+| 130 | `DomesticationProposed` |
+| 131 | `DomesticationChecked` |
+| 132 | `DomesticationPrepared` |
+| 133 | `LigationProfiles` |
+| 134 | `PublishedLigationScore` |
+| 135 | `RankedGoldenGateFusions` |
+| 136 | `LigationCompetition` |
+| 137 | `HistoricalRunEvidence` |
+| 138 | `TopoActionsProduct` |
+| 139 | `MultiSiteRecombination` |
+| 140 | `MultiSiteRecombinationProduct` |
+| 141 | `MultiSiteRecombinationChecked` |
+| 142 | `CombinatorialMultiSiteInspection` |
+| 143 | `TailingRecipePreview` |
+| 144 | `PcrDigestInspection` |
+| 145 | `RunMaterialInspection` |
+| 146 | `MaterialPcrDigestInspection` |
+| 147 | `RunCatalogRestrictionInspection` |
+| 148 | `SubstitutedAssemblyIntent` |
+| 149 | `MismatchPcrDigestInspection` |
+| 150 | `ContributionEditIntent` |
+| 151 | `OverlapExtensionPrimersDesigned` |
+| 152 | `OverlapExtensionDigestInspection` |
+| 153 | `EditedOverlapPrimersDesigned` |
+| 154 | `TopoRunInspection` |
+| 155 | `MaterialOriginInspection` |
+| 156 | `MaterialPcrDocuments` |
+| 157 | `MaterialPcrOutputsPrepared` |
+| 158 | `SequenceExportAssessment` |
+| 159 | `SequenceExportPrepared` |
+| 160 | `ScfTraceExported` |
+| 161 | `MaterialDerivationInstalled` |
+| 162 | `MaterialDigestInspection` |
+| 163 | `SavedRunReviewPrepared` |
+| 164 | `MapSvgExported` |
+| 165 | `MaterialMismatchPcrPreview` |
+| 166 | `MaterialRepairPreview` |
+| 167 | `ProtocolLayoutPreview` |
+| 168 | `ProtocolLayoutCaptured` |
+| 169 | `ProtocolLayoutExported` |
+| 170 | `ProtocolQuantitiesPreview` |
+| 171 | `ProtocolQuantitiesCaptured` |
+| 172 | `ProtocolQuantitiesOpened` |
+| 173 | `ProtocolQuantitiesExported` |
+| 174 | `ProtocolQuantitiesListed` |
+| 175 | `TopoGraphsListed` |
+| 176 | `TopoGraphCaptured` |
+| 177 | `TopoGraphInspected` |
+
+## Current source and evidence contracts
+
+Exact PCR requests retain their explicit `template_strand`. Ordinary originals
+use their supported reference frame; saved Run/Derived origins are freshly
+reconstructed and checked against exact source events in the owning workspace.
+PCR-product digest inspection preserves actual native termini and alternative
+geometry. Serialized duplex summaries cannot establish template stock.
+
+TOPO uses one chronological `Step` transcript for transfers, flap hydrolysis and
+nick sealing. `SimulateTopo` and `InspectTopoRun::Simulate` inspect the full graph;
+`ProcessTopoActions` uses the sole faithful tracked-material bridge.
+Reference-only projection and target comparison remain distinct. Native graph
+records retain complete source recipes and prefixes, including byproducts,
+consumed activation and incomplete history. Graph-only continuation invents no
+PCR input. See [graph transport](TOPO_GRAPH_TRANSPORT.md).
+
+`LoadRunEvidence` returns the one `scientific-run-bundle-v1` attachment bundle.
+Current physical graphs are retained by `physical_run_evidence`; producer stamps
+and saved assessments remain documentary. Fresh reconstruction, not attachment
+presence or historical status, establishes current scientific results.
+
+Prepared ligation requests retain their explicit `CleavagePolicy`. Positional
+checked Golden Gate preparation and candidate recutting use exact catalog enzyme
+identity, actual modification states and bounded shared work. Unknown/impaired
+source cleavage withholds the requested pool. Null original-generation
+assumptions remain unknown; saved material cannot be redeclared as original.
+Nested historical replay has its own bounded execution ledger plus the shared
+ancestry limits; reported cleavage work describes the enclosing computation.
+
+Plate assignments and reaction quantities are source-bound documentary records,
+not scientific operations or caller-supplied readiness. Their preview/capture/open/
+list/export receipts pin actual native sources and contexts. Captures preserve
+biological heads and only add the exact reviewed attachment. Quantity arithmetic
+completeness is separate from molecular verification; combined protocol exports
+perform a fresh native check and retain both outcomes. No missing quantity or
+reagent assumption is filled automatically.
+
+Saved inverse-PCR proposals retain their original event and independent target.
+An optional Run/Derived origin adds actual source reconstruction before PCR,
+phosphorylation and intended ligation. Readonly response validation checks exact
+correspondence; it does not replace that native execution.
 
 ## Related contracts
 
@@ -414,72 +471,9 @@ superseded development schemas. Change the current schema when changing layouts.
 - [Portable map export](MAP_SVG_EXPORT.md)
 - [Ligation alternatives](LIGATION_ALTERNATIVES_EXPORT.md)
 - [Native desktop IPC](DESKTOP_PROTOCOL.md)
+- [Plate assignments](PROTOCOL_LAYOUT_TRANSPORT.md)
+- [Combined quantity protocols](PROTOCOL_QUANTITIES_COMPOSITION.md)
+- [Saved inverse-PCR sources](INVERSE_PCR_ORIGIN_TRANSPORT.md)
 
 Compiler and scientific-fixture evidence is tracked in the implementation status.
 Browser acceptance remains deferred until the requested code is complete.
-
-Mismatch-PCR and repair previews (jobs180/181, results170/171) use the explicit
-128 MiB compound lane because their source origins may close native ancestry.
-They bind exact source/origin and operation settings; native replay establishes
-material at installation. Map SVG (job179/result169) retains the ordinary limit.
-
-TOPO insert-template inspection (job169/result159) resolves generic Run or Derived
-origins using their exact retained events. Both use the existing compound lane;
-prepared vector declarations remain separate from saved insert-template chemistry.
-
-
-## Checked cleavage and current source declarations
-
-`PreviewLigationRecipe` (job95) retains an explicit `CleavagePolicy` in its
-request and context. Ordered Type IIS preparation uses positional checked cuts;
-ordinary geometric ligation explicitly uses its assumed-complete model. Finite
-Golden Gate pool/reaction jobs retain checked source and candidate-recut evidence,
-profile identity, work counts and product determination. An undetermined source
-pool is withheld as a whole. The independent target never selects a candidate.
-
-Recipe fragments, whole reaction rows and library choices retain original-source
-generation assumptions. A null declaration leaves actual positions unknown.
-Saved Run/Derived material is reconstructed from its exact origin and cannot be
-redeclared as an original. Newly synthesized PCR is unmodified under the declared
-synthesis model. A whole circular saved source carries its own typed origin;
-there is no linear-only substitution. Current working drafts are version15.
-
-The enclosing preparation/plan/pool computation shares its checked-cleavage
-ledger. Nested saved-origin replay has separate bounded ledgers and existing
-ancestry limits; reported comparison counts do not claim an aggregate bound over
-all historical replays. GG jobs retain their existing ordinary32MiB envelope
-unless explicitly listed for the128MiB lane above. Oversized closed inputs fail
-rather than changing admission or dropping ancestry.
-
-
-## Documentary plate assignments
-
-The plate-layout worker99 checkpoint appends PreviewProtocolLayout/CaptureProtocolLayout/
-ExportProtocolLayout jobs182–184 and results172–174. Candidate26, plan24,
-science27 and draft15 are unchanged: these are documentary assignments, with no
-new scientific operation or accepted material. Workspace requests use the bounded
-workspace lane; the capture result uses its workspace response lane.
-
-Every reply binds the exact requested context. Capture validates that removing
-only its new attachment restores the original complete workspace fingerprint.
-Layout/export records have4MiB bounds, at most384 unique occupied wells and128
-layouts per workspace; referenced immutable batch/release evidence shares a32MiB
-ledger. CSV/HTML/PDF exports preserve full identities and missing quantities.
-[Contract](PROTOCOL_LAYOUT_TRANSPORT.md).
-
-
-## Saved inverse-PCR templates
-
-Current worker100 extends the existing InversePcr job15/result16 with a required
-nullable generic material origin and full `inverse_pcr_revision` context. Existing
-candidate26, plan24, science27 and draft15 remain unchanged: reconstruction, PCR,
-phosphorylation and ligation already exist as native operations. The combined
-borrowed source/target/origin/options input reserves64KiB inside the ordinary
-32MiB lane before cloning or hashing.
-
-No-origin plans retain their three operations. Saved plans reconstruct exact
-Run/Derived material first, then consume that actual private strand state for PCR.
-Fresh PCR strands follow the existing standard-unmodified synthesis model.
-Readonly report validation establishes correspondence with the current request;
-ordinary fresh verification establishes conditional molecular consistency.
-[Contract](INVERSE_PCR_ORIGIN_TRANSPORT.md).

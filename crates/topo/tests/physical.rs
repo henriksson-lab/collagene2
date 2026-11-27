@@ -51,22 +51,42 @@ fn directional() -> Substrates {
         pairing: vec![pair(0, 0, 1, 4, 14), pair(2, 0, 3, 0, 10)],
     }
 }
-fn transfers(geometry: Geometry) -> [Transfer; 2] {
+fn transfers(geometry: Geometry) -> [Step; 2] {
     [
-        Transfer {
-            donor: 0,
-            acceptor: 2,
+        Step::Transfer(Transfer {
+            donor: Call {
+                strand: 0,
+                index: if geometry == Geometry::DirectionalCacc {
+                    13
+                } else {
+                    12
+                },
+            },
+            acceptor: Call {
+                strand: 2,
+                index: 0,
+            },
             geometry,
-        },
-        Transfer {
-            donor: 1,
-            acceptor: 3,
+        }),
+        Step::Transfer(Transfer {
+            donor: Call {
+                strand: 1,
+                index: if geometry == Geometry::DirectionalCacc {
+                    17
+                } else {
+                    12
+                },
+            },
+            acceptor: Call {
+                strand: 3,
+                index: 0,
+            },
             geometry: if geometry == Geometry::DirectionalCacc {
                 Geometry::Flush
             } else {
                 geometry
             },
-        },
+        }),
     ]
 }
 fn bases(r: &Report) -> Vec<&str> {
@@ -81,7 +101,7 @@ fn ta_both_strands_two_bonds_two_unsealed_nicks() {
     let s = ta();
     let t = transfers(Geometry::ThreePrimeTA);
     let r = simulate(&s, &t, &Limits::default()).unwrap();
-    assert!(r.all_requested_transfers_applied);
+    assert!(r.all_requested_steps_applied);
     assert_eq!(
         bases(&r),
         vec!["AGGGGCATCCCTTCGAATGA", "AGGGATGCCCCTTCATTCGA"]
@@ -114,11 +134,7 @@ fn ta_orientation_alternatives_keep_actual_sources() {
     assert_eq!(r.candidates.len(), 2);
     assert!(r.orientation_search_complete);
     assert!(!r.biochemical_mixture_exhaustive);
-    assert!(
-        r.candidates
-            .iter()
-            .all(|r| r.all_requested_transfers_applied)
-    );
+    assert!(r.candidates.iter().all(|r| r.all_requested_steps_applied));
     assert_eq!(
         bases(&r.candidates[1]),
         vec!["AGGGGCATCCCTTCATTCGA", "AGGGATGCCCCTTCGAATGA"]
@@ -132,7 +148,7 @@ fn directional_four_actual_bottom_calls_are_retained_as_attached_flap() {
     let s = directional();
     let t = transfers(Geometry::DirectionalCacc);
     let r = simulate(&s, &t, &Limits::default()).unwrap();
-    assert!(r.all_requested_transfers_applied, "{:?}", r.steps);
+    assert!(r.all_requested_steps_applied, "{:?}", r.steps);
     assert_eq!(
         bases(&r),
         vec!["AAGGGGCATCCCTTCACCATGACG", "GGTGAAGGGATGCCCCTTCGTCATGGTG"]
@@ -148,8 +164,24 @@ fn directional_four_actual_bottom_calls_are_retained_as_attached_flap() {
         &r.product.chains[1].sequence.as_str()[flap.start..flap.end],
         "GGTG"
     );
-    assert_eq!(r.steps[0].removed_pairs.len(), 4);
-    assert_eq!(r.steps[0].added_pairs.len(), 4);
+    assert_eq!(
+        (match &r.steps[0] {
+            StepEvidence::Transfer(e) => e,
+            _ => panic!("transfer evidence"),
+        })
+        .removed_pairs
+        .len(),
+        4
+    );
+    assert_eq!(
+        (match &r.steps[0] {
+            StepEvidence::Transfer(e) => e,
+            _ => panic!("transfer evidence"),
+        })
+        .added_pairs
+        .len(),
+        4
+    );
     assert!(r.product.components.iter().all(|c| !c.covalently_closed));
     audit_sources(&s, &r).unwrap();
 }
@@ -165,10 +197,10 @@ fn directional_reverse_is_unsupported_not_claimed_absent_and_partial_bonds_survi
         &[],
     )
     .unwrap();
-    assert!(r.candidates[0].all_requested_transfers_applied);
+    assert!(r.candidates[0].all_requested_steps_applied);
     let reverse = &r.candidates[1];
-    assert_eq!(reverse.steps[0].outcome, Outcome::Unsupported);
-    assert_eq!(reverse.steps[1].outcome, Outcome::Applied);
+    assert_eq!(reverse.steps[0].outcome(), Outcome::Unsupported);
+    assert_eq!(reverse.steps[1].outcome(), Outcome::Applied);
     assert!(reverse.unsupported_or_unknown);
     assert_eq!(
         reverse.product.released_activations,
@@ -196,15 +228,21 @@ fn single_junction_does_not_seal_opposite_backbone_or_drop_other_overhang() {
     };
     let r = simulate(
         &s,
-        &[Transfer {
-            donor: 0,
-            acceptor: 2,
+        &[Step::Transfer(Transfer {
+            donor: Call {
+                strand: 0,
+                index: s.strands[0].sequence.len() - 1,
+            },
+            acceptor: Call {
+                strand: 2,
+                index: 0,
+            },
             geometry: Geometry::ThreePrimeTA,
-        }],
+        })],
         &Limits::default(),
     )
     .unwrap();
-    assert!(r.all_requested_transfers_applied);
+    assert!(r.all_requested_steps_applied);
     assert_eq!(bases(&r), vec!["GACGCCCTTCGTACGGA", "AGGGCGTC", "CCGTACGA"]);
     assert_eq!(r.product.nicks.len(), 1);
     assert_eq!(
@@ -229,7 +267,7 @@ fn five_prime_phosphate_blocks_transfer_and_unknown_chemistry_stays_unknown() {
         )
         .unwrap();
         assert_eq!(
-            r.steps[0].outcome,
+            r.steps[0].outcome(),
             if five == FivePrime::Unknown {
                 Outcome::Unknown
             } else {
@@ -251,7 +289,7 @@ fn motif_or_sequence_text_never_invents_activation() {
         &Limits::default(),
     )
     .unwrap();
-    assert_eq!(r.steps[0].outcome, Outcome::BlockedUnderDeclaredModel);
+    assert_eq!(r.steps[0].outcome(), Outcome::BlockedUnderDeclaredModel);
     assert!(r.product.released_activations.is_empty());
     let mut s = ta();
     s.strands[0].three_prime = ThreePrime::Phosphotyrosyl {
@@ -266,7 +304,7 @@ fn motif_or_sequence_text_never_invents_activation() {
         )
         .unwrap()
         .steps[0]
-            .outcome,
+            .outcome(),
         Outcome::Unsupported
     );
 }
@@ -315,10 +353,25 @@ fn all_declared_limits_fail_explicitly_and_never_become_absence() {
             6 => l.max_output_bases = 39,
             _ => l.max_report_bytes = 1,
         };
-        assert!(
-            matches!(simulate(&s, &t, &l), Err(Error::Limit { .. })),
-            "limit mode{mode}"
-        );
+        if mode == 1 {
+            // The full transcript first rejects strand3 outside the declared
+            // call namespace. With one in-range transfer, the SAME four-source
+            // substrate must independently reject its explicit source cap.
+            assert!(matches!(simulate(&s, &t, &l), Err(Error::Invalid(_))));
+            assert!(matches!(
+                simulate(&s, &t[..1], &l),
+                Err(Error::Limit {
+                    kind: Budget::Strands,
+                    required: 4,
+                    limit: 3
+                })
+            ));
+        } else {
+            assert!(
+                matches!(simulate(&s, &t, &l), Err(Error::Limit { .. })),
+                "limit mode{mode}"
+            );
+        }
     }
     let l = Limits {
         max_output_bases: 79,
@@ -339,15 +392,21 @@ fn templated_nick_reseal_can_close_one_activated_strand_without_inventing_opposi
     assert_eq!(before.product.nicks.len(), 2);
     let r = simulate(
         &s,
-        &[Transfer {
-            donor: 0,
-            acceptor: 0,
+        &[Step::Transfer(Transfer {
+            donor: Call {
+                strand: 0,
+                index: s.strands[0].sequence.len() - 1,
+            },
+            acceptor: Call {
+                strand: 0,
+                index: 0,
+            },
             geometry: Geometry::NickReseal,
-        }],
+        })],
         &Limits::default(),
     )
     .unwrap();
-    assert!(r.all_requested_transfers_applied);
+    assert!(r.all_requested_steps_applied);
     let circular = r
         .product
         .chains
@@ -379,15 +438,21 @@ fn exact_templated_nick_ligation_retains_all_three_source_strands() {
     };
     let r = simulate(
         &s,
-        &[Transfer {
-            donor: 0,
-            acceptor: 1,
+        &[Step::Transfer(Transfer {
+            donor: Call {
+                strand: 0,
+                index: s.strands[0].sequence.len() - 1,
+            },
+            acceptor: Call {
+                strand: 1,
+                index: 0,
+            },
             geometry: Geometry::NickReseal,
-        }],
+        })],
         &Limits::default(),
     )
     .unwrap();
-    assert!(r.all_requested_transfers_applied);
+    assert!(r.all_requested_steps_applied);
     assert_eq!(bases(&r), vec!["GACGCCCTTCGTACGGA", "TCCGTACGAAGGGCGTC"]);
     assert!(r.product.nicks.is_empty());
     assert_eq!(r.source_bases, 34);
@@ -406,7 +471,7 @@ fn displaced_flap_survives_independent_transfer_order_and_unreacted_species() {
     let mut t = transfers(Geometry::DirectionalCacc);
     t.swap(0, 1);
     let r = simulate(&s, &t, &Limits::default()).unwrap();
-    assert!(r.all_requested_transfers_applied);
+    assert!(r.all_requested_steps_applied);
     assert_eq!(
         bases(&r),
         vec![
@@ -437,7 +502,7 @@ fn ambiguous_pairing_is_explicit_unknown_but_impossible_iupac_pairing_is_invalid
     s.strands[0].sequence = Sequence::dna("AGGGNCATCCCTT").unwrap();
     let r = simulate(&s, &transfers(Geometry::ThreePrimeTA), &Limits::default()).unwrap();
     assert!(!r.fully_specified_dna);
-    assert!(r.steps.iter().all(|e| e.outcome == Outcome::Unknown));
+    assert!(r.steps.iter().all(|e| e.outcome() == Outcome::Unknown));
     assert_eq!(r.product.chains.len(), 4);
     assert_eq!(r.product.chains[0].sequence.as_str(), "AGGGNCATCCCTT");
     audit_sources(&s, &r).unwrap();
@@ -469,13 +534,16 @@ fn actual_strand_permutations_preserve_products_without_reverse_complement_synth
             })
             .collect(),
     };
-    let t = transfers(Geometry::ThreePrimeTA).map(|t| Transfer {
-        donor: inverse[t.donor],
-        acceptor: inverse[t.acceptor],
-        ..t
+    let t = transfers(Geometry::ThreePrimeTA).map(|step| {
+        let Step::Transfer(mut t) = step else {
+            panic!("transfer declaration")
+        };
+        t.donor.strand = inverse[t.donor.strand];
+        t.acceptor.strand = inverse[t.acceptor.strand];
+        Step::Transfer(t)
     });
     let r = simulate(&s, &t, &Limits::default()).unwrap();
-    assert!(r.all_requested_transfers_applied);
+    assert!(r.all_requested_steps_applied);
     let mut actual = bases(&r);
     actual.sort();
     let mut expected = vec!["AGGGGCATCCCTTCGAATGA", "AGGGATGCCCCTTCATTCGA"];
@@ -489,8 +557,8 @@ fn consumed_activation_cannot_form_a_second_bond() {
     let s = ta();
     let step = transfers(Geometry::ThreePrimeTA)[0].clone();
     let r = simulate(&s, &[step.clone(), step], &Limits::default()).unwrap();
-    assert_eq!(r.steps[0].outcome, Outcome::Applied);
-    assert_eq!(r.steps[1].outcome, Outcome::BlockedUnderDeclaredModel);
+    assert_eq!(r.steps[0].outcome(), Outcome::Applied);
+    assert_eq!(r.steps[1].outcome(), Outcome::BlockedUnderDeclaredModel);
     assert_eq!(r.product.released_activations.len(), 1);
     audit_sources(&s, &r).unwrap();
 }
@@ -508,20 +576,32 @@ fn complete_four_base_displacement_is_a_separate_retained_strand_not_an_attached
     };
     let r = simulate(
         &s,
-        &[Transfer {
-            donor: 0,
-            acceptor: 2,
+        &[Step::Transfer(Transfer {
+            donor: Call {
+                strand: 0,
+                index: s.strands[0].sequence.len() - 1,
+            },
+            acceptor: Call {
+                strand: 2,
+                index: 0,
+            },
             geometry: Geometry::DirectionalCacc,
-        }],
+        })],
         &Limits::default(),
     )
     .unwrap();
-    assert!(r.all_requested_transfers_applied);
+    assert!(r.all_requested_steps_applied);
     assert_eq!(bases(&r), vec!["GACGCCCTTCACC", "GGTGAAGGGCGTC", "GGTG"]);
     assert_eq!(r.source_bases, 30);
     assert_eq!(r.product.components.len(), 2);
     assert!(r.product.nicks.is_empty());
-    let d = r.steps[0].displacement.as_ref().unwrap();
+    let d = (match &r.steps[0] {
+        StepEvidence::Transfer(e) => e,
+        _ => panic!("transfer evidence"),
+    })
+    .displacement
+    .as_ref()
+    .unwrap();
     assert_eq!(d.kind, DisplacementKind::FreeDisplacedChain);
     assert_eq!(d.five_prime_continuation, None);
     assert_eq!(d.continuation_pair, None);
@@ -567,15 +647,27 @@ fn unpaired_continuation_is_not_mislabeled_a_duplex_anchored_flap() {
     };
     let r = simulate(
         &s,
-        &[Transfer {
-            donor: 0,
-            acceptor: 2,
+        &[Step::Transfer(Transfer {
+            donor: Call {
+                strand: 0,
+                index: s.strands[0].sequence.len() - 1,
+            },
+            acceptor: Call {
+                strand: 2,
+                index: 0,
+            },
             geometry: Geometry::DirectionalCacc,
-        }],
+        })],
         &Limits::default(),
     )
     .unwrap();
-    let d = r.steps[0].displacement.as_ref().unwrap();
+    let d = (match &r.steps[0] {
+        StepEvidence::Transfer(e) => e,
+        _ => panic!("transfer evidence"),
+    })
+    .displacement
+    .as_ref()
+    .unwrap();
     assert_eq!(d.kind, DisplacementKind::UnpairedTailExtension);
     assert_eq!(
         d.five_prime_continuation,
@@ -595,7 +687,13 @@ fn unpaired_continuation_is_not_mislabeled_a_duplex_anchored_flap() {
         &Limits::default(),
     )
     .unwrap();
-    let a = anchored.steps[0].displacement.as_ref().unwrap();
+    let a = (match &anchored.steps[0] {
+        StepEvidence::Transfer(e) => e,
+        _ => panic!("transfer evidence"),
+    })
+    .displacement
+    .as_ref()
+    .unwrap();
     assert_eq!(a.kind, DisplacementKind::DuplexAnchoredThreePrimeFlap);
     assert_eq!(
         a.five_prime_continuation,

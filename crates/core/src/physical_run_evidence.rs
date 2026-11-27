@@ -281,6 +281,9 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
                 revision,
             });
         }
+        if assembly_recipe::hash(&external)? != assembly_recipe::hash(&report.input_sources)? {
+            return Err(bad("owning run external source identities changed"));
+        }
         let actual = crate::topo::expanded_source_identities(&external, &request.preparation)?;
         if assembly_recipe::hash(&actual)? != assembly_recipe::hash(&report.sources)? {
             return Err(bad(

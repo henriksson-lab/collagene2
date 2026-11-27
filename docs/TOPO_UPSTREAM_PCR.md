@@ -25,9 +25,8 @@ prepared-strand ancestry are inferred from sequence correspondence.
 
 Generic native/MCP plan verification accepts this composition through the existing
 `TopoActions` declaration. Its original `Source::Step` dependency remains in the
-plan, HTML/PDF and full typed report. Existing standalone TOPO inspection continues
-to require original source inputs; there is no public API accepting a serialized
-tracked material as fresh authority. Direct preparation-panel selection of an
+plan, HTML/PDF and full typed report. Public TOPO inspection resolves original reference declarations or exact retained
+native origins; it never accepts serialized tracked material as fresh authority. Direct preparation-panel selection of an
 upstream plan step remains UI work; imported sequence documents are not a shortcut.
 
 Historical graph attachments resolve each upstream identity against the exact
@@ -36,12 +35,11 @@ current heads, document names or equal DNA. Workspace archive and fresh replay
 preserve both intermediate and final products. Re-keying a changed historical
 source identity cannot transplant evidence onto another event.
 
-Worker67/candidate15/plan13 introduce this semantic capability; the fresh verifier
-is science18. No report, operation, RunRecord or RunReceipt fields/ordinals change.
-Existing worker66 report layout and original-input operation20/candidate14/plan12
-remain readable at their original floors. Source-bearing operation20 requests
-need67, and science18 reports cannot masquerade as66. Existing positional migrations
-through65 remain intact.
+All current plans use the single chronological `Step` representation. Reference
+`Topo`/`CheckedTopo` views remain distinct from the sole `TopoActions` material
+bridge. Source dependencies, exact graph prefixes and every new transfer, cut or
+seal stay in current native evidence; there are no phase-format readers or
+historical capability ladders.
 
 ## Validation and boundaries
 
@@ -55,12 +53,14 @@ roles and nicked/staggered templates are exercised separately. Binary capability
 floors, exact upstream history, archive/replay and changed-sidecar rejection are
 covered by the same focused fixture family.
 
-Validation passed: 66 focused native cases across source adapters, old/new TOPO
-plan verification, positional migration and version gates, upstream material,
-history and real MCP SDK calls. The application/worker WASM check and formatting
-checks pass. Core/MCP/web test fixtures also compile. No application browser
-checks or full preview rebuild ran.
+Focused fixtures retain source guards, independent target checks, actual modification
+and nick state, native archive restart, exact historical events and sidecar
+correspondence. Source/format checks do not establish GUI usability or laboratory
+performance.
 
-Actual atom-inheriting upstream preparations, modification mapping through their
-source intervals, broader methods/chemistry, durable graph-only review, direct
-preparation UI composition and remaining delivery/GUI acceptance stay active.
+Supported native [saved graphs](TOPO_GRAPH_HISTORY.md) can continue an explicitly
+captured transfer/processing prefix, including cut-end chemistry and remaining
+activation. This capability does not let ordinary upstream duplexes supply
+activated Prepared intervals. Broader source-atom inheritance through arbitrary
+preparations, unsupported chemistry and kit-specific empirical claims remain
+outside the current PCR-only Step role.

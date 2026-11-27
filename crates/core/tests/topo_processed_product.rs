@@ -4,10 +4,10 @@ use collagene_core::{
     analysis::Enzyme,
     chemistry, modified_duplex as tracked,
     protocol::{self, AnalysisJob, AnalysisResult},
-    topo, topo_nick_sealing as treatment, topo_processed_product as adapter,
+    topo, topo_actions as adapter,
 };
-use topo::physical::{self as p, nick_sealing as n, processed_projection as pp, projection};
-fn fixture(directional: bool) -> (Vec<topo::Input>, treatment::Request) {
+use topo::physical::{self as p, processing as process, projection};
+fn fixture(directional: bool) -> (Vec<topo::Input>, topo::Request) {
     let dna = if directional {
         [
             "AAGGGGCATCCCTT",
@@ -89,50 +89,35 @@ fn fixture(directional: bool) -> (Vec<topo::Input>, treatment::Request) {
     };
     let preparation=topo::Request{
         recipe:topo::GenerationRecipe{schema_version:1,materials:vec![topo::MaterialRecipe::Prepared{declaration_id:"declared original material".into(),assumption:"Activation and supplied strand geometry are explicit hypotheses, never inferred from reference DNA".into(),strands,pairing}]},
-        transfers:vec![p::Transfer{donor:0,acceptor:2,geometry:if directional{p::Geometry::DirectionalCacc}else{p::Geometry::ThreePrimeTA}},p::Transfer{donor:1,acceptor:3,geometry:if directional{p::Geometry::Flush}else{p::Geometry::ThreePrimeTA}}],
+        steps:vec![p::Step::Transfer(p::Transfer{donor: p::Call {strand:0,index:if directional { 13 } else { 12 }},acceptor:p::Call{strand:2,index:0},geometry:if directional{p::Geometry::DirectionalCacc}else{p::Geometry::ThreePrimeTA}}),p::Step::Transfer(p::Transfer{donor: p::Call {strand:1,index:if directional { 17 } else { 12 }},acceptor:p::Call{strand:3,index:0},geometry:if directional{p::Geometry::Flush}else{p::Geometry::ThreePrimeTA}})],
         engine_limits:p::Limits::default(),projection_options:projection::Options::default()
     };
-    let sealing = n::Request {
-        ligase_assumption:
-            "Explicit ligase hypothesis: only templated 3′OH/5′P nick sealing, no repair enzymes"
-                .into(),
-        nicks: vec![
-            n::NickSelection {
-                three: p::Call {
-                    strand: 2,
-                    index: 6,
+    let mut preparation = preparation;
+    for strand in [2, 3] {
+        preparation
+            .steps
+            .push(p::Step::Process(process::Action::SealNick {
+                selection: p::nick_sealing::NickSelection {
+                    three: p::Call { strand, index: 6 },
+                    five: p::Call {
+                        strand: strand - 2,
+                        index: 0,
+                    },
                 },
-                five: p::Call {
-                    strand: 0,
-                    index: 0,
-                },
-            },
-            n::NickSelection {
-                three: p::Call {
-                    strand: 3,
-                    index: 6,
-                },
-                five: p::Call {
-                    strand: 1,
-                    index: 0,
-                },
-            },
-        ],
-    };
-    (
-        inputs,
-        treatment::Request {
-            preparation,
-            sealing,
-        },
-    )
+                ligase_assumption:
+                    "Explicit ligase hypothesis: only templated3OH/5P nick sealing, no repair"
+                        .into(),
+            }));
+    }
+    (inputs, preparation)
 }
-fn selected(inputs: &[topo::Input], treatment: treatment::Request) -> adapter::Request {
-    let native = treatment::inspect(inputs, &treatment).unwrap();
+
+fn selected(inputs: &[topo::Input], preparation: topo::Request) -> adapter::Request {
+    let fresh = topo::simulate(inputs, &preparation).unwrap();
     adapter::Request {
-        treatment,
-        selection: pp::Selection {
-            sealing_context_revision: native.sealing.context_revision,
+        preparation,
+        selection: projection::Selection {
+            source_batch_revision: fresh.physical.batch_revision,
             component: 0,
             reference_seed: p::Call {
                 strand: 0,
@@ -140,12 +125,13 @@ fn selected(inputs: &[topo::Input], treatment: treatment::Request) -> adapter::R
             },
         },
         options: projection::Options {
-            require_all_requested_transfers_applied: true,
+            require_all_requested_steps_applied: true,
             require_known_terminal_chemistry: true,
             ..Default::default()
         },
     }
 }
+
 fn feature() -> Feature {
     Feature {
         kind: "misc_feature".into(),
@@ -214,7 +200,7 @@ fn fresh_ta_bridge_preserves_calls_annotations_and_actual_two_strand_taqi_digest
         tracked::CallState::Unknown
     );
     assert_eq!(
-        report.projection.sealing.product.released_activations,
+        report.projection.physical.product.released_activations,
         vec!["enzyme0", "enzyme1"]
     );
     adapter::replay(&inputs, &request, &report).unwrap();
@@ -222,14 +208,12 @@ fn fresh_ta_bridge_preserves_calls_annotations_and_actual_two_strand_taqi_digest
 #[test]
 fn remaining_ligatable_nick_is_mapped_but_five_oh_nick_is_not_collapsed() {
     let (inputs, mut treatment) = fixture(false);
-    treatment.sealing.nicks.truncate(1);
+    treatment.steps.truncate(3);
     let request = selected(&inputs, treatment.clone());
     let report = adapter::inspect(&inputs, &request).unwrap();
     assert_eq!(report.duplex.as_ref().unwrap().nicks.len(), 1);
-    assert_eq!(report.projection.sealing.product.nicks.len(), 1);
-    let topo::MaterialRecipe::Prepared { strands, .. } =
-        &mut treatment.preparation.recipe.materials[0]
-    else {
+    assert_eq!(report.projection.physical.product.nicks.len(), 1);
+    let topo::MaterialRecipe::Prepared { strands, .. } = &mut treatment.recipe.materials[0] else {
         panic!()
     };
     strands[1].five_prime = p::FivePrime::Hydroxyl;
@@ -248,17 +232,19 @@ fn remaining_ligatable_nick_is_mapped_but_five_oh_nick_is_not_collapsed() {
 #[test]
 fn directional_flap_withholds_material_and_keeps_all_other_calls() {
     let (inputs, mut treatment) = fixture(true);
-    let original = topo::simulate(&inputs, &treatment.preparation).unwrap();
-    treatment.sealing.nicks = original
-        .physical
-        .product
-        .nicks
-        .iter()
-        .map(|k| n::NickSelection {
-            three: k.three,
-            five: k.five,
-        })
-        .collect();
+    treatment.steps.truncate(2);
+    let original = topo::simulate(&inputs, &treatment).unwrap();
+    for nick in &original.physical.product.nicks {
+        treatment
+            .steps
+            .push(p::Step::Process(process::Action::SealNick {
+                selection: p::nick_sealing::NickSelection {
+                    three: nick.three,
+                    five: nick.five,
+                },
+                ligase_assumption: "Explicit ideal ligase, no flap hydrolysis".into(),
+            }));
+    }
     let request = selected(&inputs, treatment);
     let report = adapter::inspect(&inputs, &request).unwrap();
     assert!(matches!(
@@ -272,7 +258,7 @@ fn directional_flap_withholds_material_and_keeps_all_other_calls() {
     assert_eq!(
         report
             .projection
-            .sealing
+            .physical
             .product
             .chains
             .iter()
@@ -280,8 +266,8 @@ fn directional_flap_withholds_material_and_keeps_all_other_calls() {
             .sum::<usize>(),
         52
     );
-    assert!(report.projection.sealing.product.unpaired.iter().any(|u| {
-        &report.projection.sealing.product.chains[u.chain]
+    assert!(report.projection.physical.product.unpaired.iter().any(|u| {
+        &report.projection.physical.product.chains[u.chain]
             .sequence
             .as_str()[u.start..u.end]
             == "GGTG"
@@ -305,31 +291,25 @@ fn linear(five: p::FivePrime, three: p::ThreePrime) -> (Vec<topo::Input>, adapte
             three_prime: three.clone(),
         })
         .collect();
-    let treatment = treatment::Request {
-        preparation: topo::Request {
-            recipe: topo::GenerationRecipe {
-                schema_version: 1,
-                materials: vec![topo::MaterialRecipe::Prepared {
-                    declaration_id: "Declared linear pair".into(),
-                    assumption: "Explicit terminal states, no reference-derived chemistry".into(),
-                    strands,
-                    pairing: vec![p::PairSpan {
-                        strand_a: 0,
-                        start_a: 0,
-                        strand_b: 1,
-                        start_b: 0,
-                        length: 6,
-                    }],
+    let treatment = topo::Request {
+        recipe: topo::GenerationRecipe {
+            schema_version: 1,
+            materials: vec![topo::MaterialRecipe::Prepared {
+                declaration_id: "Declared linear pair".into(),
+                assumption: "Explicit terminal states, no reference-derived chemistry".into(),
+                strands,
+                pairing: vec![p::PairSpan {
+                    strand_a: 0,
+                    start_a: 0,
+                    strand_b: 1,
+                    start_b: 0,
+                    length: 6,
                 }],
-            },
-            transfers: vec![],
-            engine_limits: p::Limits::default(),
-            projection_options: projection::Options::default(),
+            }],
         },
-        sealing: n::Request {
-            ligase_assumption: "No nick requested in this complete linear material".into(),
-            nicks: vec![],
-        },
+        steps: vec![],
+        engine_limits: p::Limits::default(),
+        projection_options: projection::Options::default(),
     };
     let mut request = selected(&inputs, treatment);
     request.options = projection::Options::default();
@@ -363,7 +343,7 @@ fn unknown_linear_ends_remain_unknown_and_unsupported_terminal_species_are_withh
     // A retained actual activation cannot be erased into a generic blocked end.
     let (inputs, mut request) = linear(p::FivePrime::Hydroxyl, p::ThreePrime::Hydroxyl);
     let topo::MaterialRecipe::Prepared { strands, .. } =
-        &mut request.treatment.preparation.recipe.materials[0]
+        &mut request.preparation.recipe.materials[0]
     else {
         panic!()
     };
@@ -371,7 +351,7 @@ fn unknown_linear_ends_remain_unknown_and_unsupported_terminal_species_are_withh
         enzyme: p::Enzyme::VacciniaTypeIBTyr274,
         activation_id: "retained-activation".into(),
     };
-    request = selected(&inputs, request.treatment);
+    request = selected(&inputs, request.preparation);
     request.options = projection::Options::default();
     let report = adapter::inspect(&inputs, &request).unwrap();
     assert!(report.duplex.is_none());
@@ -421,11 +401,15 @@ fn source_selection_limits_and_imported_material_claims_need_fresh_reconstructio
         "unchanged physical geometry may be reconstructed afresh, but metadata edits change source identity"
     );
     let mut changed_treatment = request.clone();
-    changed_treatment
-        .treatment
-        .sealing
-        .ligase_assumption
-        .push_str(" changed condition declaration");
+    {
+        let p::Step::Process(process::Action::SealNick {
+            ligase_assumption, ..
+        }) = &mut changed_treatment.preparation.steps[2]
+        else {
+            panic!()
+        };
+        ligase_assumption.push_str(" changed condition declaration");
+    }
     assert!(
         adapter::inspect(&inputs, &changed_treatment).is_err(),
         "prior physical selection cannot bind a changed treatment context"
@@ -451,7 +435,7 @@ fn binary_worker_148_140_rejects_pre64_and_stale_source_context() {
     let encoded = protocol::encode_request(&protocol::Request {
         id: 1801,
         revision: expected.clone(),
-        job: AnalysisJob::ProjectProcessedTopo {
+        job: AnalysisJob::ProcessTopoActions {
             inputs: inputs.clone(),
             request: request.clone(),
         },
@@ -480,14 +464,14 @@ fn binary_worker_148_140_rejects_pre64_and_stale_source_context() {
     assert!(protocol::decode_response(&old).is_err());
     let decoded = protocol::decode_response(&response).unwrap();
     assert_eq!(decoded.revision, expected);
-    let AnalysisResult::ProcessedTopoProduct(report) = decoded.result else {
+    let AnalysisResult::TopoActionsProduct(report) = decoded.result else {
         panic!("wrong result")
     };
     assert!(report.tracked.is_some());
     let stale = protocol::encode_request(&protocol::Request {
         id: 1802,
         revision: "0".repeat(64),
-        job: AnalysisJob::ProjectProcessedTopo { inputs, request },
+        job: AnalysisJob::ProcessTopoActions { inputs, request },
     })
     .unwrap();
     assert!(protocol::process_request(&stale).is_err());

@@ -5,8 +5,8 @@ use collagene_model::{Alphabet, Sequence};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-pub const ENGINE: &str = "topo-explicit-strand-transfer-1";
-pub const PRIMARY_MODEL: &str = "vaccinia-tyr274-explicit-graph-ta-cacc-1";
+pub const ENGINE: &str = "topo-ordered-source-graph-2";
+pub const PRIMARY_MODEL: &str = "vaccinia-tyr274-ordered-graph-ta-cacc-explicit-processing-2";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum FivePrime {
@@ -71,15 +71,44 @@ pub enum Geometry {
     ThreePrimeTA,
     DirectionalCacc,
 }
-/// Original source strands only. This consumes the donor's actual terminal3′
-/// activation and acceptor's actual terminal5′OH; it is not an end search.
+/// Exact immutable source calls at currently exposed termini. No end search or
+/// activation/repair is inferred; effective private-cursor chemistry is required.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Transfer {
-    pub donor: usize,
-    pub acceptor: usize,
+    pub donor: Call,
+    pub acceptor: Call,
     pub geometry: Geometry,
+}
+/// One current chronological transcript, including all retained source processing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub enum Step {
+    Transfer(Transfer),
+    Process(processing::Action),
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub enum StepEvidence {
+    Transfer(TransferEvidence),
+    Process(processing::ActionEvidence),
+}
+impl StepEvidence {
+    pub fn step(&self) -> usize {
+        match self {
+            Self::Transfer(e) => e.step,
+            Self::Process(e) => e.step(),
+        }
+    }
+    pub fn outcome(&self) -> Outcome {
+        match self {
+            Self::Transfer(e) => e.outcome,
+            Self::Process(e) => e.outcome(),
+        }
+    }
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -224,10 +253,27 @@ fn limits(l: &Limits) -> Result<(), Error> {
     }
     Ok(())
 }
+/// Cheap transcript grammar bounds before source hashing, nested expansion or copies.
+/// Full prior-step/call ownership is checked against fresh expanded substrates.
+pub fn steps_preflight(steps: &[Step], l: &Limits) -> Result<(), Error> {
+    limits(l)?;
+    bounded(steps.len(), l.max_steps, Budget::Steps)?;
+    for step in steps {
+        match step {
+            Step::Transfer(t) => {
+                if !call_bound(t.donor, l) || !call_bound(t.acceptor, l) || t.donor == t.acceptor {
+                    return Err(bad("bounded distinct immutable calls required"));
+                }
+            }
+            Step::Process(action) => processing::action_preflight(action, l)?,
+        }
+    }
+    Ok(())
+}
 /// Borrowed length/string/span checks BEFORE hashing, cloning or allocating
 /// per-base graph arrays. No recursive user structures are accepted.
-pub fn preflight(s: &Substrates, steps: &[Transfer], l: &Limits) -> Result<usize, Error> {
-    limits(l)?;
+pub fn preflight(s: &Substrates, steps: &[Step], l: &Limits) -> Result<usize, Error> {
+    steps_preflight(steps, l)?;
     bounded(s.strands.len(), l.max_strands, Budget::Strands)?;
     bounded(s.pairing.len(), l.max_pair_spans, Budget::PairSpans)?;
     bounded(steps.len(), l.max_steps, Budget::Steps)?;
@@ -244,7 +290,7 @@ pub fn preflight(s: &Substrates, steps: &[Transfer], l: &Limits) -> Result<usize
         {
             return Err(bad("source strand identifiers must be bounded and unique"));
         }
-        if strand.sequence.alphabet() != Alphabet::Dna {
+        if strand.sequence.alphabet() != Alphabet::Dna || strand.sequence.is_empty() {
             return Err(bad("actual DNA strands required"));
         }
         total = add(total, strand.sequence.len())?;
@@ -270,24 +316,48 @@ pub fn preflight(s: &Substrates, steps: &[Transfer], l: &Limits) -> Result<usize
             return Err(bad("pair span outside actual source strands"));
         }
     }
-    for t in steps {
-        if t.donor >= s.strands.len()
-            || t.acceptor >= s.strands.len()
-            || (t.donor == t.acceptor && t.geometry != Geometry::NickReseal)
-        {
-            return Err(bad("distinct donor/acceptor source strands required"));
+    let actual = |c: Call| {
+        s.strands
+            .get(c.strand)
+            .is_some_and(|st| c.index < st.sequence.len())
+    };
+    for (index, step) in steps.iter().enumerate() {
+        match step {
+            Step::Transfer(t) => {
+                if !actual(t.donor) || !actual(t.acceptor) || t.donor == t.acceptor {
+                    return Err(bad("two distinct actual source calls required"));
+                }
+            }
+            Step::Process(action) => {
+                processing::action_preflight(action, l)?;
+                if processing::calls(action).iter().any(|call| !actual(*call)) {
+                    return Err(bad("processing call is not an immutable source nucleotide"));
+                }
+                if let processing::Action::CleaveThreePrimeFlap {
+                    displacement_step, ..
+                } = action
+                {
+                    if *displacement_step >= index
+                        || !matches!(steps.get(*displacement_step), Some(Step::Transfer(_)))
+                    {
+                        return Err(bad(
+                            "flap displacement must identify an earlier transfer in this transcript",
+                        ));
+                    }
+                }
+            }
         }
     }
     // Reserve graph construction, pairing checks, traversal, union/find and source
     // audit work before allocation. Explicit local geometry adds at most64 cells/step.
     bounded(
-        add(mul(total, 64)?, mul(steps.len(), 64)?)?,
+        add(mul(total, 320)?, mul(steps.len(), 256)?)?,
         l.max_work_cells,
         Budget::WorkCells,
     )?;
     bounded(
         add(
-            add(mul(total, 128)?, mul(s.pairing.len(), 128)?)?,
+            add(mul(total, 512)?, mul(s.pairing.len(), 128)?)?,
             add(
                 add(mul(s.strands.len(), 4096)?, mul(steps.len(), 2048)?)?,
                 8192,
@@ -314,9 +384,10 @@ fn hash<T: Serialize>(v: &T) -> Result<String, Error> {
     serde_json::to_writer(&mut h, v).map_err(|_| bad("hash serialization"))?;
     Ok(h.0.finalize().to_hex().to_string())
 }
-pub fn batch_revision(s: &Substrates, steps: &[Transfer], l: &Limits) -> Result<String, Error> {
+pub fn batch_revision(s: &Substrates, steps: &[Step], l: &Limits) -> Result<String, Error> {
     preflight(s, steps, l)?;
-    hash(&(ENGINE, PRIMARY_MODEL, s, steps, l))
+    let sources = s.strands.iter().map(hash).collect::<Result<Vec<_>, _>>()?;
+    hash(&(ENGINE, PRIMARY_MODEL, sources, steps, l))
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -452,11 +523,12 @@ pub struct Report {
     pub batch_revision: String,
     pub limits: Limits,
     pub source_revisions: Vec<String>,
-    pub steps: Vec<TransferEvidence>,
+    pub request: Vec<Step>,
+    pub steps: Vec<StepEvidence>,
     pub product: ProductGraph,
     pub source_bases: usize,
     pub work_complete: bool,
-    pub all_requested_transfers_applied: bool,
+    pub all_requested_steps_applied: bool,
     pub unsupported_or_unknown: bool,
     pub fully_specified_dna: bool,
     pub assumptions: Vec<String>,
@@ -539,48 +611,67 @@ impl Graph {
     fn fully_concrete(&self, _s: &Substrates) -> bool {
         self.concrete
     }
-    fn paired_run(&self, start: usize, len: usize) -> bool {
-        if len == 0 {
-            return false;
-        }
-        let Some(mut other) = self.pairs[start] else {
-            return false;
-        };
-        for k in 0..len {
-            if self.pairs[start + k] != Some(other) {
-                return false;
+    fn path(&self, start: usize, length: usize, forward: bool) -> Option<Vec<usize>> {
+        let mut result = Vec::with_capacity(length);
+        let mut node = start;
+        for i in 0..length {
+            if result.contains(&node) {
+                return None;
             }
-            if k + 1 < len {
-                let Some(previous) = self.prev[other] else {
-                    return false;
+            result.push(node);
+            if i + 1 < length {
+                node = if forward {
+                    self.next[node]?
+                } else {
+                    self.prev[node]?
                 };
-                other = previous;
             }
         }
-        true
+        if !forward {
+            result.reverse();
+        }
+        Some(result)
+    }
+    fn paired_path(&self, nodes: &[usize]) -> bool {
+        if nodes.is_empty() {
+            return false;
+        }
+        nodes.iter().all(|&node| self.pairs[node].is_some())
+            && nodes.windows(2).all(|w| {
+                let a = self.pairs[w[0]].unwrap();
+                let b = self.pairs[w[1]].unwrap();
+                self.prev[a] == Some(b) && self.next[b] == Some(a)
+            })
     }
 }
 type PairChanges = (Vec<(usize, usize)>, Vec<(usize, usize)>);
 fn eligibility(
     s: &Substrates,
     g: &Graph,
+    ends: &TerminalOverrides,
+    consumed: &BTreeSet<String>,
     t: &Transfer,
 ) -> Result<PairChanges, (Outcome, &'static str)> {
-    let donor = &s.strands[t.donor];
-    let acceptor = &s.strands[t.acceptor];
-    let d = g.offsets[t.donor] + donor.sequence.len() - 1;
-    let a = g.offsets[t.acceptor];
+    let d = g.flat(t.donor);
+    let a = g.flat(t.acceptor);
     if g.next[d].is_some() || g.prev[a].is_some() {
         return Err((
             Outcome::BlockedUnderDeclaredModel,
             "one requested terminal has already formed a backbone bond",
         ));
     }
-    match &donor.three_prime {
+    match effective_three(s, g, d, ends) {
         ThreePrime::Phosphotyrosyl {
             enzyme: Enzyme::VacciniaTypeIBTyr274,
-            ..
-        } => {}
+            activation_id,
+        } => {
+            if consumed.contains(&activation_id) {
+                return Err((
+                    Outcome::BlockedUnderDeclaredModel,
+                    "the exact source activation was already consumed",
+                ));
+            }
+        }
         ThreePrime::Phosphotyrosyl { .. } => {
             return Err((
                 Outcome::Unsupported,
@@ -593,11 +684,11 @@ fn eligibility(
         _ => {
             return Err((
                 Outcome::BlockedUnderDeclaredModel,
-                "no declared phosphotyrosyl donor activation",
+                "no actual phosphotyrosyl donor activation; processing cannot invent one",
             ));
         }
     }
-    match acceptor.five_prime {
+    match effective_five(s, g, a, ends) {
         FivePrime::Hydroxyl => {}
         FivePrime::Unknown => return Err((Outcome::Unknown, "acceptor5′ chemistry is unknown")),
         _ => {
@@ -613,37 +704,37 @@ fn eligibility(
             "ambiguous DNA/pairing is retained but transfer is unresolved under the concrete-call profile",
         ));
     }
-    let ds = donor.sequence.as_str().as_bytes();
-    if ds.len() < 5 || !matches!(&ds[ds.len() - 5..], b"CCCTT" | b"TCCTT") {
+    let motif = g.path(d, 5, false).ok_or((
+        Outcome::Unsupported,
+        "donor lacks an intact five-call upstream backbone motif",
+    ))?;
+    let bases = motif
+        .iter()
+        .map(|&node| g.base(s, node))
+        .collect::<Vec<_>>();
+    if !matches!(bases.as_slice(), b"CCCTT" | b"TCCTT") {
         return Err((
             Outcome::Unsupported,
-            "terminal donor context is outside the supported Vaccinia(Y)CCTT profile",
+            "terminal donor context is outside supported Vaccinia(Y)CCTT profile",
         ));
     }
     match t.geometry {
         Geometry::NickReseal => {
-            let Some(dp) = g.pairs[d] else {
-                return Err((Outcome::Unsupported, "nick donor must be paired"));
-            };
-            let Some(ap) = g.pairs[a] else {
-                return Err((Outcome::Unsupported, "nick acceptor must be paired"));
-            };
-            if !g.paired_run(d - 4, 5) || g.prev[dp] != Some(ap) || g.next[ap] != Some(dp) {
+            let dp = g.pairs[d].ok_or((Outcome::Unsupported, "nick donor must be paired"))?;
+            let ap = g.pairs[a].ok_or((Outcome::Unsupported, "nick acceptor must be paired"))?;
+            if !g.paired_path(&motif) || g.prev[dp] != Some(ap) || g.next[ap] != Some(dp) {
                 return Err((
                     Outcome::Unsupported,
-                    "nick transfer requires continuous antiparallel template across exactly adjacent termini",
+                    "nick transfer requires continuous antiparallel template across exact adjacent termini",
                 ));
             }
             Ok((vec![], vec![]))
         }
         Geometry::Flush => {
-            let Some(dp) = g.pairs[d] else {
-                return Err((Outcome::Unsupported, "flush donor end is not paired"));
-            };
-            let Some(ap) = g.pairs[a] else {
-                return Err((Outcome::Unsupported, "flush acceptor end is not paired"));
-            };
-            if g.prev[dp].is_some() || g.next[ap].is_some() || !g.paired_run(d - 4, 5) {
+            let dp = g.pairs[d].ok_or((Outcome::Unsupported, "flush donor end is not paired"))?;
+            let ap =
+                g.pairs[a].ok_or((Outcome::Unsupported, "flush acceptor end is not paired"))?;
+            if g.prev[dp].is_some() || g.next[ap].is_some() || !g.paired_path(&motif) {
                 return Err((
                     Outcome::Unsupported,
                     "not two fully flush supported junction faces",
@@ -652,25 +743,16 @@ fn eligibility(
             Ok((vec![], vec![]))
         }
         Geometry::ThreePrimeTA => {
-            if donor.sequence.len() < 5
-                || acceptor.sequence.is_empty()
-                || g.pairs[d].is_some()
-                || !g.paired_run(d - 4, 4)
-            {
+            if g.pairs[d].is_some() || !g.paired_path(&motif[..4]) {
                 return Err((
                     Outcome::Unsupported,
                     "TA donor requires exactly one unpaired3′T with paired upstream motif",
                 ));
             }
-            let Some(dp) = g.pairs[d - 1] else {
-                return Err((Outcome::Unsupported, "TA donor duplex missing"));
-            };
-            let Some(ap) = g.pairs[a] else {
-                return Err((Outcome::Unsupported, "TA acceptor5′ duplex missing"));
-            };
-            let Some(overhang) = g.next[ap] else {
-                return Err((Outcome::Unsupported, "acceptor lacks a3′A overhang"));
-            };
+            let dp = g.pairs[motif[3]].ok_or((Outcome::Unsupported, "TA donor duplex missing"))?;
+            let ap = g.pairs[a].ok_or((Outcome::Unsupported, "TA acceptor5′duplex missing"))?;
+            let overhang =
+                g.next[ap].ok_or((Outcome::Unsupported, "acceptor lacks a3′A overhang"))?;
             if g.prev[dp].is_some()
                 || g.next[overhang].is_some()
                 || g.pairs[overhang].is_some()
@@ -679,26 +761,35 @@ fn eligibility(
             {
                 return Err((
                     Outcome::Unsupported,
-                    "outside exact complementary1ntTA geometry; mismatch transfer is not ruled out biologically",
+                    "outside exact complementary1nt TA geometry; mismatch transfer is not ruled out biologically",
                 ));
             }
             Ok((vec![], vec![(d, overhang)]))
         }
         Geometry::DirectionalCacc => {
-            let Some(dp) = g.pairs[d] else {
-                return Err((
-                    Outcome::Unsupported,
-                    "directional donor3′ is not duplex paired",
-                ));
-            };
-            let c = g.call(dp);
-            if c.index != 4
-                || g.prev[g.offsets[c.strand]].is_some()
-                || !g.paired_run(d - 4, 5)
-                || ds.len() < 5
-                || acceptor.sequence.len() < 4
-                || &acceptor.sequence.as_str().as_bytes()[..4] != b"CACC"
-                || &s.strands[c.strand].sequence.as_str().as_bytes()[..4] != b"GGTG"
+            let dp = g.pairs[d].ok_or((
+                Outcome::Unsupported,
+                "directional donor3′is not duplex paired",
+            ))?;
+            let over = g
+                .path(dp, 5, false)
+                .ok_or((Outcome::Unsupported, "vector lacks exact4nt5′overhang"))?;
+            let incoming = g.path(a, 4, true).ok_or((
+                Outcome::Unsupported,
+                "incoming strand lacks intact CACC backbone",
+            ))?;
+            if g.prev[over[0]].is_some()
+                || !g.paired_path(&motif)
+                || over[..4]
+                    .iter()
+                    .map(|&node| g.base(s, node))
+                    .collect::<Vec<_>>()
+                    != b"GGTG"
+                || incoming
+                    .iter()
+                    .map(|&node| g.base(s, node))
+                    .collect::<Vec<_>>()
+                    != b"CACC"
             {
                 return Err((
                     Outcome::Unsupported,
@@ -708,17 +799,13 @@ fn eligibility(
             let mut removed = vec![];
             let mut added = vec![];
             for k in 0..4 {
-                let over = g.offsets[c.strand] + 3 - k;
-                let ai = a + k;
-                let Some(old) = g.pairs[ai] else {
-                    return Err((
-                        Outcome::Unsupported,
-                        "incoming CACC must initially be a blunt duplex",
-                    ));
-                };
-                if g.pairs[over].is_some()
-                    || g.base(s, over) != comp(g.base(s, ai)).expect("concrete")
-                {
+                let over = over[3 - k];
+                let ai = incoming[k];
+                let old = g.pairs[ai].ok_or((
+                    Outcome::Unsupported,
+                    "incoming CACC must initially be a blunt duplex",
+                ))?;
+                if g.pairs[over].is_some() || g.base(s, over) != comp(g.base(s, ai)).unwrap() {
                     return Err((
                         Outcome::Unsupported,
                         "vector overhang is not free/complementary",
@@ -727,8 +814,7 @@ fn eligibility(
                 removed.push((ai, old));
                 added.push((ai, over));
             }
-            let old0 = removed[0].1;
-            if g.next[old0].is_some()
+            if g.next[removed[0].1].is_some()
                 || !(1..4).all(|k| g.prev[removed[k - 1].1] == Some(removed[k].1))
             {
                 return Err((
@@ -777,7 +863,7 @@ fn terminal3(s: &Substrates, g: &Graph, node: usize) -> ThreePrime {
         ThreePrime::Unknown
     }
 }
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct TerminalOverrides {
     five: BTreeMap<usize, FivePrime>,
     three: BTreeMap<usize, ThreePrime>,
@@ -797,9 +883,6 @@ fn effective_three(s: &Substrates, g: &Graph, node: usize, ends: &TerminalOverri
         .get(&node)
         .cloned()
         .unwrap_or_else(|| terminal3(s, g, node))
-}
-fn output(s: &Substrates, g: &Graph, released: Vec<String>) -> Result<ProductGraph, Error> {
-    output_with_terminals(s, g, released, &TerminalOverrides::default())
 }
 fn output_with_terminals(
     s: &Substrates,
@@ -992,134 +1075,208 @@ fn displacement(g: &Graph, removed: &[(usize, usize)]) -> Option<Displacement> {
     })
 }
 #[derive(Clone)]
+struct WorkLedger {
+    used: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    limit: usize,
+    peak: usize,
+}
+impl WorkLedger {
+    fn new(l: &Limits, initial: usize) -> Result<Self, Error> {
+        let ledger = Self {
+            used: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            limit: l.max_work_cells,
+            peak: l.max_work_bytes,
+        };
+        ledger.reserve(initial, 0)?;
+        Ok(ledger)
+    }
+    fn reserve(&self, cells: usize, bytes: usize) -> Result<(), Error> {
+        bounded(bytes, self.peak, Budget::WorkBytes)?;
+        self.used
+            .fetch_update(
+                std::sync::atomic::Ordering::Relaxed,
+                std::sync::atomic::Ordering::Relaxed,
+                |old| old.checked_add(cells).filter(|n| *n <= self.limit),
+            )
+            .map_err(|old| Error::Limit {
+                kind: Budget::WorkCells,
+                required: old.saturating_add(cells),
+                limit: self.limit,
+            })?;
+        Ok(())
+    }
+}
+#[derive(Clone)]
 struct ExecutionState {
     graph: Graph,
-    evidence: Vec<TransferEvidence>,
+    evidence: Vec<StepEvidence>,
+    ends: TerminalOverrides,
+    consumed: BTreeSet<String>,
+    work: WorkLedger,
     released: Vec<String>,
 }
 impl ExecutionState {
-    fn new(s: &Substrates, n: usize) -> Result<Self, Error> {
+    fn new(s: &Substrates, n: usize, l: &Limits) -> Result<Self, Error> {
         Ok(Self {
             graph: Graph::new(s, n)?,
             evidence: vec![],
+            ends: TerminalOverrides::default(),
+            consumed: BTreeSet::new(),
+            work: WorkLedger::new(l, mul(n, 256)?)?,
             released: vec![],
         })
     }
-    fn apply(&mut self, s: &Substrates, steps: &[Transfer]) {
-        for (offset, t) in steps.iter().enumerate() {
+    fn apply(&mut self, s: &Substrates, steps: &[Step]) -> Result<(), Error> {
+        for declared in steps {
+            self.work.reserve(256, 0)?;
             let step = self.evidence.len();
-            let _ = offset;
-            let donor_call = Call {
-                strand: t.donor,
-                index: s.strands[t.donor].sequence.len() - 1,
-            };
-            let acceptor_call = Call {
-                strand: t.acceptor,
-                index: 0,
-            };
-            let d = self.graph.flat(donor_call);
-            let a = self.graph.flat(acceptor_call);
-            let (outcome, reason, removed_pairs, added_pairs, released_activation, displacement) =
-                match eligibility(s, &self.graph, t) {
-                    Ok((remove, add)) => {
-                        // Classify the old tail's 5′ continuation before changing any pair.
-                        let displacement = displacement(&self.graph, &remove);
-                        let rp = remove.iter().map(|&(x, y)| self.graph.pair(x, y)).collect();
-                        let ap = add.iter().map(|&(x, y)| self.graph.pair(x, y)).collect();
-                        for (x, y) in remove {
-                            self.graph.pairs[x] = None;
-                            self.graph.pairs[y] = None;
-                            self.graph.displaced[y] = Some(step);
+            match declared {
+                Step::Process(action) => {
+                    let evidence = processing::apply(
+                        s,
+                        &mut self.graph,
+                        &mut self.ends,
+                        &self.evidence,
+                        step,
+                        action,
+                    );
+                    self.evidence.push(StepEvidence::Process(evidence));
+                }
+                Step::Transfer(t) => {
+                    let donor_call = t.donor;
+                    let acceptor_call = t.acceptor;
+                    let d = self.graph.flat(donor_call);
+                    let a = self.graph.flat(acceptor_call);
+                    let (
+                        outcome,
+                        reason,
+                        removed_pairs,
+                        added_pairs,
+                        released_activation,
+                        displacement,
+                    ) = match eligibility(s, &self.graph, &self.ends, &self.consumed, t) {
+                        Ok((remove, add)) => {
+                            let displacement = displacement(&self.graph, &remove);
+                            let rp = remove.iter().map(|&(x, y)| self.graph.pair(x, y)).collect();
+                            let ap = add.iter().map(|&(x, y)| self.graph.pair(x, y)).collect();
+                            for (x, y) in remove {
+                                self.graph.pairs[x] = None;
+                                self.graph.pairs[y] = None;
+                                self.graph.displaced[y] = Some(step);
+                            }
+                            for (x, y) in add {
+                                self.graph.pairs[x] = Some(y);
+                                self.graph.pairs[y] = Some(x);
+                            }
+                            self.graph.next[d] = Some(a);
+                            self.graph.prev[a] = Some(d);
+                            let id = activation(&effective_three(s, &self.graph, d, &self.ends))
+                                .expect("eligible activation")
+                                .to_owned();
+                            self.consumed.insert(id.clone());
+                            self.released.push(id.clone());
+                            (
+                                Outcome::Applied,
+                                "one phosphotyrosyl→5′OH transfer applied; no other bond/repair inferred",
+                                rp,
+                                ap,
+                                Some(id),
+                                displacement,
+                            )
                         }
-                        for (x, y) in add {
-                            self.graph.pairs[x] = Some(y);
-                            self.graph.pairs[y] = Some(x)
-                        }
-                        self.graph.next[d] = Some(a);
-                        self.graph.prev[a] = Some(d);
-                        let id = activation(&s.strands[t.donor].three_prime)
-                            .expect("eligible activation")
-                            .to_owned();
-                        self.released.push(id.clone());
-                        (
-                            Outcome::Applied,
-                            "one phosphotyrosyl→5′OH transfer applied; no other bond/repair inferred",
-                            rp,
-                            ap,
-                            Some(id),
-                            displacement,
-                        )
-                    }
-                    Err((outcome, reason)) => (outcome, reason, vec![], vec![], None, None),
-                };
-            self.evidence.push(TransferEvidence {
-                step,
-                transfer: t.clone(),
-                outcome,
-                reason: reason.into(),
-                donor_call,
-                acceptor_call,
-                removed_pairs,
-                added_pairs,
-                released_activation,
-                displacement,
-            });
+                        Err((outcome, reason)) => (outcome, reason, vec![], vec![], None, None),
+                    };
+                    self.evidence.push(StepEvidence::Transfer(TransferEvidence {
+                        step,
+                        transfer: t.clone(),
+                        outcome,
+                        reason: reason.into(),
+                        donor_call,
+                        acceptor_call,
+                        removed_pairs,
+                        added_pairs,
+                        released_activation,
+                        displacement,
+                    }));
+                }
+            }
         }
+        Ok(())
     }
-    fn finish(
-        self,
-        s: &Substrates,
-        steps: &[Transfer],
-        l: &Limits,
-        n: usize,
-    ) -> Result<Report, Error> {
+    fn finish(self, s: &Substrates, steps: &[Step], l: &Limits, n: usize) -> Result<Report, Error> {
+        self.work.reserve(mul(n, 64)?, mul(n, 512)?)?;
         let batch_revision = batch_revision(s, steps, l)?;
-        let product = output(s, &self.graph, self.released)?;
+        let product = output_with_terminals(s, &self.graph, self.released, &self.ends)?;
         bounded(
             product.source_pairing.len(),
             l.max_pair_spans,
             Budget::PairSpans,
         )?;
-        let report=Report{engine:ENGINE.into(),model:PRIMARY_MODEL.into(),batch_revision,limits:l.clone(),source_revisions:s.strands.iter().map(hash).collect::<Result<_,_>>()?,all_requested_transfers_applied:self.evidence.iter().all(|e|e.outcome==Outcome::Applied),unsupported_or_unknown:self.evidence.iter().any(|e|matches!(e.outcome,Outcome::Unsupported|Outcome::Unknown)),fully_specified_dna:self.graph.fully_concrete(s),steps:self.evidence,product,source_bases:n,work_complete:true,assumptions:vec!["Source strands, pairing and terminal activation are explicitly declared chemical hypotheses; supplier names/reference sequences cannot establish activation.".into(),"Only specified elementary transfers are considered; no kinetic mixture completeness, efficacy, host repair, ligase, polymerase or proprietary kit parity is established.".into(),"All source nucleotides, displaced calls, unreacted chains, existing nicks and retained activation are preserved. Unmodeled chemical modifications remain outside this terminal/backbone model.".into(),"Exact TA and CACC invasion are supported geometry classes; excluded mismatches are unsupported, not proved unable to react.".into(),"CACC invasion classifies a duplex-anchored3′flap, a completely displaced4ntchain, or displacement with unpaired5′continuation. Only anchored duplex continuation matches the standard directional diagram; extended graph branches imply no kit efficiency.".into(),"Unknown/unsupported steps retain their incoming state. Later transfers describe that explicit retained-state branch, not an experimental distribution. Released enzyme recycling/secondary cleavage is not simulated.".into()]};
+        let mut assumptions=vec!["Source strands, pairing and terminal activation are explicitly declared chemical hypotheses; supplier names/reference sequences cannot establish activation.".into(),"Only the specified ordered transfers and processing actions are considered; no kinetic mixture completeness, efficacy, host repair, ligase, polymerase or proprietary kit parity is established.".into(),"All source nucleotides, displaced calls, unreacted chains, existing nicks and retained activation are preserved. Unmodeled chemical modifications remain outside this terminal/backbone model.".into(),"Exact TA and CACC invasion are supported geometry classes; excluded mismatches are unsupported, not proved unable to react.".into(),"CACC invasion classifies a duplex-anchored3′flap, a completely displaced4ntchain, or displacement with unpaired5′continuation. Only anchored duplex continuation matches the standard directional diagram; extended graph branches imply no kit efficiency.".into(),"Unknown/unsupported steps retain their incoming state. Later transfers describe that explicit retained-state branch, not an experimental distribution. Released enzyme recycling/secondary cleavage is not simulated.".into()];
+        for step in steps {
+            if let Step::Process(action) = step {
+                assumptions.push(match action {
+                    processing::Action::CleaveThreePrimeFlap { assumption, .. } => {
+                        assumption.clone()
+                    }
+                    processing::Action::SealNick {
+                        ligase_assumption, ..
+                    } => ligase_assumption.clone(),
+                });
+            }
+        }
+        let report = Report {
+            engine: ENGINE.into(),
+            model: PRIMARY_MODEL.into(),
+            batch_revision,
+            limits: l.clone(),
+            source_revisions: s.strands.iter().map(hash).collect::<Result<_, _>>()?,
+            all_requested_steps_applied: self
+                .evidence
+                .iter()
+                .all(|e| e.outcome() == Outcome::Applied),
+            unsupported_or_unknown: self
+                .evidence
+                .iter()
+                .any(|e| matches!(e.outcome(), Outcome::Unsupported | Outcome::Unknown)),
+            fully_specified_dna: self.graph.fully_concrete(s),
+            request: steps.to_vec(),
+            steps: self.evidence,
+            product,
+            source_bases: n,
+            work_complete: true,
+            assumptions,
+        };
+        report.validate_binding(&report.batch_revision)?;
         audit_sources(s, &report)?;
         report_size(&report, l.max_report_bytes)?;
         Ok(report)
     }
 }
-pub fn simulate(s: &Substrates, steps: &[Transfer], l: &Limits) -> Result<Report, Error> {
+pub fn simulate(s: &Substrates, steps: &[Step], l: &Limits) -> Result<Report, Error> {
     let n = preflight(s, steps, l)?;
-    let mut state = ExecutionState::new(s, n)?;
-    state.apply(s, steps);
+    let mut state = ExecutionState::new(s, n, l)?;
+    state.apply(s, steps)?;
     state.finish(s, steps, l, n)
 }
 /// A read-only checkpoint over an exact whole-source scope. No graph is input.
 #[derive(Debug, Clone)]
 pub struct Checkpoint {
-    pub after_transfers: usize,
+    pub after_steps: usize,
     pub strand_start: usize,
     pub strand_end: usize,
     pub activation_unmap: BTreeMap<String, String>,
-    pub transfer_map: Vec<usize>,
+    pub step_map: Vec<usize>,
 }
 /// Fresh native execution plus documentary source-scope snapshots.
 pub struct Executed {
     report: Report,
     checkpoints: Vec<ProductGraph>,
-    work_cells: usize,
+    work: WorkLedger,
 }
 impl Executed {
     pub fn reserve_work(&mut self, cells: usize, peak_bytes: usize) -> Result<(), Error> {
-        self.work_cells = add(self.work_cells, cells)?;
-        bounded(
-            self.work_cells,
-            self.report.limits.max_work_cells,
-            Budget::WorkCells,
-        )?;
-        bounded(
-            peak_bytes,
-            self.report.limits.max_work_bytes,
-            Budget::WorkBytes,
-        )
+        self.work.reserve(cells, peak_bytes)
     }
     pub fn report(&self) -> &Report {
         &self.report
@@ -1135,9 +1292,10 @@ fn scoped_product(
     s: &Substrates,
     g: &Graph,
     released: &[String],
+    ends: &TerminalOverrides,
     c: &Checkpoint,
 ) -> Result<ProductGraph, Error> {
-    let mut p = output(s, g, released.to_vec())?;
+    let mut p = output_with_terminals(s, g, released.to_vec(), ends)?;
     let inside = |i: usize| c.strand_start <= i && i < c.strand_end;
     let mut indices = BTreeMap::new();
     let mut chains = vec![];
@@ -1201,11 +1359,10 @@ fn scoped_product(
         if let Some(i) = indices.get(&u.chain) {
             u.chain = *i;
             for step in &mut u.displaced_by {
-                *step = c
-                    .transfer_map
-                    .iter()
-                    .position(|x| x == step)
-                    .ok_or_else(|| bad("checkpoint displacement has no retained native owner"))?;
+                *step =
+                    c.step_map.iter().position(|x| x == step).ok_or_else(|| {
+                        bad("checkpoint displacement has no retained native owner")
+                    })?;
             }
             unpaired.push(u)
         }
@@ -1248,7 +1405,7 @@ fn scoped_product(
 /// initialize it. Scope extraction retains all calls/components within its native owner.
 fn execute_prefix(
     s: &Substrates,
-    steps: &[Transfer],
+    steps: &[Step],
     l: &Limits,
     checkpoints: &[Checkpoint],
 ) -> Result<(ExecutionState, Vec<ProductGraph>, usize), Error> {
@@ -1257,21 +1414,24 @@ fn execute_prefix(
         return Err(bad("checkpoint count bound"));
     }
     bounded(
-        mul(mul(n, 64)?, checkpoints.len().saturating_add(1))?,
+        add(
+            mul(n, 320)?,
+            add(mul(mul(n, 64)?, checkpoints.len())?, mul(steps.len(), 256)?)?,
+        )?,
         l.max_work_cells,
         Budget::WorkCells,
     )?;
     bounded(
-        mul(n, add(256, mul(checkpoints.len(), 96)?)?)?,
+        mul(n, add(512, mul(checkpoints.len(), 96)?)?)?,
         l.max_work_bytes,
         Budget::WorkBytes,
     )?;
     for c in checkpoints {
-        if c.after_transfers > steps.len()
+        if c.after_steps > steps.len()
             || c.strand_start >= c.strand_end
             || c.strand_end > s.strands.len()
-            || c.transfer_map.len() > l.max_steps
-            || c.transfer_map.iter().any(|i| *i >= c.after_transfers)
+            || c.step_map.len() > l.max_steps
+            || c.step_map.iter().any(|i| *i >= c.after_steps)
             || c.activation_unmap.len() > l.max_strands
             || c.activation_unmap
                 .iter()
@@ -1280,16 +1440,23 @@ fn execute_prefix(
             return Err(bad("checkpoint source/transcript scope bound"));
         }
     }
-    let mut state = ExecutionState::new(s, n)?;
+    let mut state = ExecutionState::new(s, n, l)?;
     let mut out = vec![None; checkpoints.len()];
     for at in 0..=steps.len() {
         for (i, c) in checkpoints.iter().enumerate() {
-            if c.after_transfers == at {
-                out[i] = Some(scoped_product(s, &state.graph, &state.released, c)?);
+            if c.after_steps == at {
+                state.work.reserve(mul(n, 64)?, mul(n, 512)?)?;
+                out[i] = Some(scoped_product(
+                    s,
+                    &state.graph,
+                    &state.released,
+                    &state.ends,
+                    c,
+                )?);
             }
         }
         if at < steps.len() {
-            state.apply(s, &steps[at..at + 1]);
+            state.apply(s, &steps[at..at + 1])?;
         }
     }
     let checkpoints = out
@@ -1300,21 +1467,18 @@ fn execute_prefix(
 }
 pub fn simulate_with_checkpoints(
     s: &Substrates,
-    steps: &[Transfer],
+    steps: &[Step],
     l: &Limits,
     checkpoints: &[Checkpoint],
 ) -> Result<Executed, Error> {
     let (state, checkpoints, n) = execute_prefix(s, steps, l, checkpoints)?;
+    let work = state.work.clone();
     let report = state.finish(s, steps, l, n)?;
     report_size(&(&report, &checkpoints), l.max_report_bytes)?;
-    let work_cells = add(
-        mul(mul(n, 64)?, checkpoints.len() + 1)?,
-        mul(steps.len(), 128)?,
-    )?;
     Ok(Executed {
         report,
         checkpoints,
-        work_cells,
+        work,
     })
 }
 fn report_size<T: Serialize>(v: &T, max: usize) -> Result<(), Error> {
@@ -1354,43 +1518,76 @@ pub fn audit_sources(s: &Substrates, r: &Report) -> Result<(), Error> {
         }
     }
 
-    bounded(r.product.chains.len(), s.strands.len(), Budget::Strands)?;
-    let mut coverage = vec![false; s.strands.len()];
-    let mut total = 0;
-    for chain in &r.product.chains {
-        let mut cursor = 0;
-        bounded(chain.sources.len(), s.strands.len(), Budget::Strands)?;
-        for p in &chain.sources {
-            if p.source_strand >= s.strands.len()
-                || coverage[p.source_strand]
-                || p.start != 0
-                || p.end != s.strands[p.source_strand].sequence.len()
-                || p.output_start != cursor
-            {
-                return Err(bad(
-                    "source placement is not exact once-only whole-strand ancestry",
-                ));
-            }
-            let next = add(cursor, p.end)?;
-            if chain.sequence.as_str().as_bytes().get(cursor..next)
-                != Some(s.strands[p.source_strand].sequence.as_str().as_bytes())
-            {
-                return Err(bad("output bases differ from immutable source calls"));
-            }
-            coverage[p.source_strand] = true;
-            cursor = next;
-        }
-        if cursor != chain.sequence.len() {
-            return Err(bad("incomplete chain mapping"));
-        }
-        total = add(total, cursor)?;
+    audit_source_partition(s, &r.product, &r.limits)?;
+    Ok(())
+}
+pub fn audit_source_partition(
+    s: &Substrates,
+    product: &ProductGraph,
+    l: &Limits,
+) -> Result<(), Error> {
+    let n = preflight(s, &[], l)?;
+    bounded(
+        product.chains.len(),
+        add(s.strands.len(), l.max_steps)?,
+        Budget::Strands,
+    )?;
+    bounded(
+        product.source_pairing.len(),
+        l.max_pair_spans,
+        Budget::PairSpans,
+    )?;
+    let mut offsets = vec![];
+    let mut cursor = 0;
+    for st in &s.strands {
+        offsets.push(cursor);
+        cursor = add(cursor, st.sequence.len())?;
     }
-    if coverage.iter().any(|x| !*x) || total != r.source_bases {
+    let mut seen = vec![false; n];
+    let mut total = 0;
+    let mut maps = 0;
+    for chain in &product.chains {
+        let mut output = 0;
+        for m in &chain.sources {
+            maps = add(maps, 1)?;
+            bounded(
+                maps,
+                add(s.strands.len(), mul(l.max_steps, 2)?)?,
+                Budget::Strands,
+            )?;
+            let source = s
+                .strands
+                .get(m.source_strand)
+                .ok_or_else(|| bad("unknown source interval"))?;
+            if m.start >= m.end || m.end > source.sequence.len() || m.output_start != output {
+                return Err(bad("source interval/output mapping changed"));
+            }
+            let end = add(output, m.end - m.start)?;
+            if chain.sequence.as_str().as_bytes().get(output..end)
+                != source.sequence.as_str().as_bytes().get(m.start..m.end)
+            {
+                return Err(bad("output differs from immutable source calls"));
+            }
+            for i in m.start..m.end {
+                let at = offsets[m.source_strand] + i;
+                if seen[at] {
+                    return Err(bad("source call duplicated"));
+                }
+                seen[at] = true;
+            }
+            output = end;
+        }
+        if output != chain.sequence.len() {
+            return Err(bad("incomplete source mapping"));
+        }
+        total = add(total, output)?;
+    }
+    if total != n || seen.iter().any(|x| !*x) {
         return Err(bad("source nucleotide conservation failed"));
     }
     Ok(())
 }
-pub fn replay(s: &Substrates, steps: &[Transfer], l: &Limits, r: &Report) -> Result<(), Error> {
+pub fn replay(s: &Substrates, steps: &[Step], l: &Limits, r: &Report) -> Result<(), Error> {
     if r.batch_revision != batch_revision(s, steps, l)?
         || r.engine != ENGINE
         || r.model != PRIMARY_MODEL
@@ -1413,7 +1610,7 @@ pub struct OrientationCandidates {
     pub engine: String,
     pub candidates: Vec<Report>,
     pub checkpoints: Vec<ProductGraph>,
-    pub pending_transfers: Vec<Vec<Transfer>>,
+    pub pending_steps: Vec<Vec<Step>>,
     pub satisfied_prefix_steps: Vec<Vec<usize>>,
     pub orientation_search_complete: bool,
     pub biochemical_mixture_exhaustive: bool,
@@ -1422,7 +1619,7 @@ pub struct OrientationCandidates {
 /// paths remain outside this enumeration, even if only one candidate applies.
 pub fn orientations(
     s: &Substrates,
-    prefix: &[Transfer],
+    prefix: &[Step],
     vector: [usize; 2],
     insert: [usize; 2],
     directional: bool,
@@ -1431,9 +1628,13 @@ pub fn orientations(
 ) -> Result<OrientationCandidates, Error> {
     let mut candidates = vec![];
     let (initial, checkpoints, n) = execute_prefix(s, prefix, l, checkpoints)?;
-    let mut pending_transfers = vec![];
+    let mut pending_steps = vec![];
     let mut satisfied_prefix_steps = vec![];
-    if vector
+    if vector.iter().chain(insert.iter()).any(|i| {
+        s.strands
+            .get(*i)
+            .is_none_or(|strand| strand.sequence.is_empty())
+    }) || vector
         .iter()
         .chain(insert.iter())
         .copied()
@@ -1446,8 +1647,8 @@ pub fn orientations(
     bounded(mul(n, 2)?, l.max_output_bases, Budget::OutputBases)?;
     bounded(
         add(
-            mul(mul(n, 64)?, checkpoints.len() + 3)?,
-            mul(add(prefix.len(), 4)?, 128)?,
+            add(mul(n, 384)?, mul(mul(n, 64)?, checkpoints.len())?)?,
+            mul(add(prefix.len(), 4)?, 256)?,
         )?,
         l.max_work_cells,
         Budget::WorkCells,
@@ -1461,8 +1662,18 @@ pub fn orientations(
         let accept = if flip { [insert[1], insert[0]] } else { insert };
         let steps = [
             Transfer {
-                donor: vector[0],
-                acceptor: accept[0],
+                donor: Call {
+                    strand: vector[0],
+                    index: s.strands[vector[0]]
+                        .sequence
+                        .len()
+                        .checked_sub(1)
+                        .ok_or_else(|| bad("empty vector strand"))?,
+                },
+                acceptor: Call {
+                    strand: accept[0],
+                    index: 0,
+                },
                 geometry: if directional {
                     Geometry::DirectionalCacc
                 } else {
@@ -1470,8 +1681,18 @@ pub fn orientations(
                 },
             },
             Transfer {
-                donor: vector[1],
-                acceptor: accept[1],
+                donor: Call {
+                    strand: vector[1],
+                    index: s.strands[vector[1]]
+                        .sequence
+                        .len()
+                        .checked_sub(1)
+                        .ok_or_else(|| bad("empty vector strand"))?,
+                },
+                acceptor: Call {
+                    strand: accept[1],
+                    index: 0,
+                },
                 geometry: if directional {
                     Geometry::Flush
                 } else {
@@ -1482,12 +1703,15 @@ pub fn orientations(
         let mut pending = vec![];
         let mut satisfied = vec![];
         for t in steps {
-            let donor = initial.graph.offsets[t.donor] + s.strands[t.donor].sequence.len() - 1;
-            let acceptor = initial.graph.offsets[t.acceptor];
-            let prior = initial
-                .evidence
-                .iter()
-                .find(|e| e.transfer == t && e.outcome == Outcome::Applied);
+            let donor = initial.graph.flat(t.donor);
+            let acceptor = initial.graph.flat(t.acceptor);
+            let prior = initial.evidence.iter().find_map(|e| {
+                if let StepEvidence::Transfer(e) = e {
+                    (e.transfer == t && e.outcome == Outcome::Applied).then_some(e)
+                } else {
+                    None
+                }
+            });
             if initial.graph.next[donor] == Some(acceptor)
                 && initial.graph.prev[acceptor] == Some(donor)
             {
@@ -1495,22 +1719,22 @@ pub fn orientations(
                     .ok_or_else(|| bad("existing bond lacks an exact elementary transfer owner"))?;
                 satisfied.push(e.step);
             } else {
-                pending.push(t);
+                pending.push(Step::Transfer(t));
             }
         }
         let all = prefix.iter().chain(&pending).cloned().collect::<Vec<_>>();
         preflight(s, &all, l)?;
         let mut state = initial.clone();
-        state.apply(s, &pending);
+        state.apply(s, &pending)?;
         candidates.push(state.finish(s, &all, l, n)?);
-        pending_transfers.push(pending);
+        pending_steps.push(pending);
         satisfied_prefix_steps.push(satisfied);
     }
     let report = OrientationCandidates {
         engine: ENGINE.into(),
         candidates,
         checkpoints,
-        pending_transfers,
+        pending_steps,
         satisfied_prefix_steps,
         orientation_search_complete: true,
         biochemical_mixture_exhaustive: false,
@@ -1525,10 +1749,567 @@ pub mod projection;
 /// Explicit source-reconstructed downstream DNA ligase nick sealing.
 pub mod nick_sealing;
 
-/// Paired-contour proof after explicit source-reconstructed treatment.
-pub mod processed_projection;
-
 pub mod processing;
 
-/// Contour proof after extensible accounted chemical actions.
-pub mod processing_projection;
+/// Source-map positions are documentary graph correspondence, never an execution
+/// cursor. This helper cannot apply chemistry or construct a fresh capability.
+struct ProductPosition {
+    previous: Option<Call>,
+    next: Option<Call>,
+    five: Option<FivePrime>,
+    three: Option<ThreePrime>,
+}
+fn product_position(product: &ProductGraph, call: Call) -> Result<ProductPosition, Error> {
+    let mut found = None;
+    for chain in &product.chains {
+        for (i, map) in chain.sources.iter().enumerate() {
+            if map.source_strand != call.strand || call.index < map.start || call.index >= map.end {
+                continue;
+            }
+            if found.is_some() {
+                return Err(bad("source call occurs more than once in product"));
+            }
+            let circular = matches!(chain.ends, ChainEnds::CovalentlyCircular);
+            let previous = if call.index > map.start {
+                Some(Call {
+                    strand: call.strand,
+                    index: call.index - 1,
+                })
+            } else {
+                chain
+                    .sources
+                    .get(i.wrapping_sub(1))
+                    .or_else(|| circular.then(|| chain.sources.last()).flatten())
+                    .map(|m| Call {
+                        strand: m.source_strand,
+                        index: m.end - 1,
+                    })
+            };
+            let next = if call.index + 1 < map.end {
+                Some(Call {
+                    strand: call.strand,
+                    index: call.index + 1,
+                })
+            } else {
+                chain
+                    .sources
+                    .get(i + 1)
+                    .or_else(|| circular.then(|| chain.sources.first()).flatten())
+                    .map(|m| Call {
+                        strand: m.source_strand,
+                        index: m.start,
+                    })
+            };
+            let (five, three) = match &chain.ends {
+                ChainEnds::Linear {
+                    five_prime,
+                    three_prime,
+                } => (
+                    previous.is_none().then_some(*five_prime),
+                    next.is_none().then_some(three_prime.clone()),
+                ),
+                ChainEnds::CovalentlyCircular => (None, None),
+            };
+            found = Some(ProductPosition {
+                previous,
+                next,
+                five,
+                three,
+            });
+        }
+    }
+    found.ok_or_else(|| bad("recorded endpoint has no product source call"))
+}
+#[derive(Default)]
+struct DeclaredChanges {
+    next: BTreeMap<Call, Option<Call>>,
+    previous: BTreeMap<Call, Option<Call>>,
+    five: BTreeMap<Call, FivePrime>,
+    three: BTreeMap<Call, ThreePrime>,
+}
+fn declared_changes(steps: &[StepEvidence]) -> DeclaredChanges {
+    let mut changes = DeclaredChanges::default();
+    for step in steps {
+        match step {
+            StepEvidence::Transfer(e) if e.outcome == Outcome::Applied => {
+                changes.next.insert(e.donor_call, Some(e.acceptor_call));
+                changes.previous.insert(e.acceptor_call, Some(e.donor_call));
+            }
+            StepEvidence::Process(processing::ActionEvidence::NickSealing(e))
+                if e.outcome == Outcome::Applied =>
+            {
+                changes
+                    .next
+                    .insert(e.selection.three, Some(e.selection.five));
+                changes
+                    .previous
+                    .insert(e.selection.five, Some(e.selection.three));
+            }
+            StepEvidence::Process(processing::ActionEvidence::FlapCleavage(e))
+                if e.outcome == Outcome::Applied =>
+            {
+                changes.next.insert(e.bond.upstream, None);
+                changes.previous.insert(e.bond.downstream, None);
+                changes.three.insert(e.bond.upstream, ThreePrime::Hydroxyl);
+                changes.five.insert(e.bond.downstream, FivePrime::Phosphate);
+            }
+            _ => {}
+        }
+    }
+    changes
+}
+fn product_partner(product: &ProductGraph, call: Call) -> Result<Option<Call>, Error> {
+    let mut found = None;
+    for span in &product.source_pairing {
+        let paired = if call.strand == span.strand_a
+            && call.index >= span.start_a
+            && call.index - span.start_a < span.length
+        {
+            Some(Call {
+                strand: span.strand_b,
+                index: span.start_b + span.length - 1 - (call.index - span.start_a),
+            })
+        } else if call.strand == span.strand_b
+            && call.index >= span.start_b
+            && call.index - span.start_b < span.length
+        {
+            Some(Call {
+                strand: span.strand_a,
+                index: span.start_a + span.length - 1 - (call.index - span.start_b),
+            })
+        } else {
+            None
+        };
+        if let Some(paired) = paired {
+            if found.replace(paired).is_some() {
+                return Err(bad("product call has multiple pairing partners"));
+            }
+        }
+    }
+    Ok(found)
+}
+fn audit_declared_changes(report: &Report) -> Result<(), Error> {
+    let changes = declared_changes(&report.steps);
+    let product = &report.product;
+    for (call, next) in &changes.next {
+        if product_position(product, *call)?.next != *next {
+            return Err(bad(
+                "product backbone differs from recorded outgoing changes",
+            ));
+        }
+    }
+    for (call, previous) in &changes.previous {
+        if product_position(product, *call)?.previous != *previous {
+            return Err(bad(
+                "product backbone differs from recorded incoming changes",
+            ));
+        }
+    }
+    for (call, five) in &changes.five {
+        if product_position(product, *call)?
+            .five
+            .is_some_and(|found| found != *five)
+        {
+            return Err(bad("newly created5′chemistry changed"));
+        }
+    }
+    for (call, three) in &changes.three {
+        if product_position(product, *call)?
+            .three
+            .is_some_and(|found| found != *three)
+        {
+            return Err(bad("newly created3′chemistry changed"));
+        }
+    }
+    let mut nicks = BTreeSet::new();
+    for nick in &product.nicks {
+        let three = product_position(product, nick.three)?;
+        let five = product_position(product, nick.five)?;
+        if three.next.is_some()
+            || five.previous.is_some()
+            || three.three.as_ref() != Some(&nick.three_prime)
+            || five.five != Some(nick.five_prime)
+            || !nicks.insert((nick.three, nick.five))
+        {
+            return Err(bad(
+                "nick is not the exact exposed product backbone/chemistry",
+            ));
+        }
+    }
+    let mut expected_nicks = BTreeSet::new();
+    for chain in &product.chains {
+        if !matches!(chain.ends, ChainEnds::Linear { .. }) {
+            continue;
+        }
+        let map = chain
+            .sources
+            .last()
+            .ok_or_else(|| bad("empty product chain"))?;
+        let three = Call {
+            strand: map.source_strand,
+            index: map.end - 1,
+        };
+        let Some(partner) = product_partner(product, three)? else {
+            continue;
+        };
+        let Some(previous) = product_position(product, partner)?.previous else {
+            continue;
+        };
+        let Some(five) = product_partner(product, previous)? else {
+            continue;
+        };
+        if five != three && product_position(product, five)?.previous.is_none() {
+            expected_nicks.insert((three, five));
+        }
+    }
+    if nicks != expected_nicks {
+        return Err(bad(
+            "reported nicks differ from exact product pairing/backbone identities",
+        ));
+    }
+    Ok(())
+}
+fn audit_source_ends(s: &Substrates, report: &Report) -> Result<(), Error> {
+    let changes = declared_changes(&report.steps);
+    for chain in &report.product.chains {
+        for map in &chain.sources {
+            let source = &s.strands[map.source_strand];
+            let first = Call {
+                strand: map.source_strand,
+                index: map.start,
+            };
+            let last = Call {
+                strand: map.source_strand,
+                index: map.end - 1,
+            };
+            let before = product_position(&report.product, first)?;
+            let after = product_position(&report.product, last)?;
+            let expected_previous = changes.previous.get(&first).copied().unwrap_or_else(|| {
+                (first.index > 0).then(|| Call {
+                    strand: first.strand,
+                    index: first.index - 1,
+                })
+            });
+            let expected_next = changes.next.get(&last).copied().unwrap_or_else(|| {
+                (last.index + 1 < source.sequence.len()).then(|| Call {
+                    strand: last.strand,
+                    index: last.index + 1,
+                })
+            });
+            if before.previous != expected_previous || after.next != expected_next {
+                return Err(bad(
+                    "source backbone changed without a recorded applied step",
+                ));
+            }
+            if let Some(five) = before.five {
+                let expected = changes
+                    .five
+                    .get(&first)
+                    .copied()
+                    .unwrap_or(if first.index == 0 {
+                        source.five_prime
+                    } else {
+                        FivePrime::Unknown
+                    });
+                if five != expected {
+                    return Err(bad("actual original/created5′chemistry changed"));
+                }
+            }
+            if let Some(three) = after.three {
+                let expected = changes.three.get(&last).cloned().unwrap_or_else(|| {
+                    if last.index + 1 == source.sequence.len() {
+                        source.three_prime.clone()
+                    } else {
+                        ThreePrime::Unknown
+                    }
+                });
+                if three != expected {
+                    return Err(bad("actual original/created3′chemistry changed"));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn is_digest(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit())
+}
+fn call_bound(call: Call, l: &Limits) -> bool {
+    call.strand < l.max_strands && call.index < l.max_source_bases
+}
+impl Report {
+    /// Bounded documentary correspondence only. No incoming graph/material is
+    /// reconstructed here; native simulate/replay alone establishes chemistry.
+    pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
+        limits(&self.limits)?;
+        let l = &self.limits;
+        if self.engine != ENGINE
+            || self.model != PRIMARY_MODEL
+            || !is_digest(expected)
+            || self.batch_revision != expected
+            || self.source_revisions.is_empty()
+            || self.source_revisions.len() > l.max_strands
+            || self.source_revisions.iter().any(|s| !is_digest(s))
+            || self.request.len() > l.max_steps
+            || self.steps.len() != self.request.len()
+            || self.source_bases > l.max_source_bases
+            || !self.work_complete
+            || self.assumptions.len() > 128
+            || self.assumptions.iter().any(|s| !text(s, 4096))
+            || hash(&(
+                ENGINE,
+                PRIMARY_MODEL,
+                &self.source_revisions,
+                &self.request,
+                l,
+            ))? != expected
+        {
+            return Err(bad("canonical source/transcript report binding changed"));
+        }
+        report_size(self, l.max_report_bytes)?;
+        for (i, (declared, evidence)) in self.request.iter().zip(&self.steps).enumerate() {
+            if evidence.step() != i {
+                return Err(bad("reaction evidence order changed"));
+            }
+            match (declared, evidence) {
+                (Step::Transfer(t), StepEvidence::Transfer(e)) => {
+                    if !call_bound(t.donor, l)
+                        || !call_bound(t.acceptor, l)
+                        || t.donor == t.acceptor
+                        || e.transfer != *t
+                        || e.donor_call != t.donor
+                        || e.acceptor_call != t.acceptor
+                        || e.reason.len() > 4096
+                        || e.removed_pairs.len() > 4
+                        || e.added_pairs.len() > 4
+                        || e.removed_pairs
+                            .iter()
+                            .chain(&e.added_pairs)
+                            .any(|p| !call_bound(p.a, l) || !call_bound(p.b, l))
+                        || e.released_activation
+                            .as_ref()
+                            .is_some_and(|s| !text(s, 256))
+                    {
+                        return Err(bad("transfer evidence/declaration changed"));
+                    }
+                    if e.outcome == Outcome::Applied {
+                        if e.released_activation.is_none() {
+                            return Err(bad("applied transfer lacks consumed activation"));
+                        }
+                    } else if e.released_activation.is_some()
+                        || !e.removed_pairs.is_empty()
+                        || !e.added_pairs.is_empty()
+                        || e.displacement.is_some()
+                    {
+                        return Err(bad("unapplied transfer changed state"));
+                    }
+                    if let Some(d) = &e.displacement {
+                        if d.calls_five_to_three.is_empty()
+                            || d.calls_five_to_three.len() > 4
+                            || d.calls_five_to_three.iter().any(|c| !call_bound(*c, l))
+                            || d.five_prime_continuation.is_some_and(|c| !call_bound(c, l))
+                            || d.continuation_pair.is_some_and(|c| !call_bound(c, l))
+                        {
+                            return Err(bad("displacement source calls changed"));
+                        }
+                    }
+                }
+                (Step::Process(action), StepEvidence::Process(e)) => {
+                    processing::action_preflight(action, l)?;
+                    match (action, e) {
+                        (
+                            processing::Action::CleaveThreePrimeFlap {
+                                bond,
+                                displacement_step,
+                                profile,
+                                ..
+                            },
+                            processing::ActionEvidence::FlapCleavage(e),
+                        ) => {
+                            if *displacement_step >= i
+                                || !matches!(
+                                    self.request.get(*displacement_step),
+                                    Some(Step::Transfer(_))
+                                )
+                                || e.bond != *bond
+                                || e.displacement_step != *displacement_step
+                                || e.profile != *profile
+                                || e.reason.len() > 4096
+                                || e.flap_calls.len() > 4
+                                || e.flap_calls.iter().any(|c| !call_bound(*c, l))
+                                || e.anchor_template.is_some_and(|c| !call_bound(c, l))
+                            {
+                                return Err(bad("flap evidence/declaration changed"));
+                            }
+                            if e.outcome == Outcome::Applied {
+                                if e.flap_calls.len() != 4
+                                    || e.created_three_prime != Some(ThreePrime::Hydroxyl)
+                                    || e.created_five_prime != Some(FivePrime::Phosphate)
+                                {
+                                    return Err(bad("hydrolysis terminal chemistry changed"));
+                                }
+                            } else if !e.flap_calls.is_empty()
+                                || e.created_three_prime.is_some()
+                                || e.created_five_prime.is_some()
+                            {
+                                return Err(bad("unapplied cleavage changed chemistry"));
+                            }
+                        }
+                        (
+                            processing::Action::SealNick { selection, .. },
+                            processing::ActionEvidence::NickSealing(e),
+                        ) => {
+                            if e.selection != *selection
+                                || e.reason.len() > 4096
+                                || e.template_three.is_some_and(|c| !call_bound(c, l))
+                                || e.template_five.is_some_and(|c| !call_bound(c, l))
+                                || (e.outcome == Outcome::Applied
+                                    && (e.three_prime != ThreePrime::Hydroxyl
+                                        || e.five_prime != FivePrime::Phosphate))
+                            {
+                                return Err(bad("nick evidence/declaration changed"));
+                            }
+                        }
+                        _ => return Err(bad("processing evidence kind changed")),
+                    }
+                }
+                _ => return Err(bad("reaction evidence kind changed")),
+            }
+        }
+        if self.all_requested_steps_applied
+            != self.steps.iter().all(|e| e.outcome() == Outcome::Applied)
+            || self.unsupported_or_unknown
+                != self
+                    .steps
+                    .iter()
+                    .any(|e| matches!(e.outcome(), Outcome::Unsupported | Outcome::Unknown))
+        {
+            return Err(bad("reaction outcome summary changed"));
+        }
+        let p = &self.product;
+        if p.chains.len() > l.max_strands + l.max_steps
+            || p.components.len() > p.chains.len()
+            || p.source_pairing.len() > l.max_pair_spans
+            || p.nicks.len() > self.source_bases
+            || p.unpaired.len() > self.source_bases
+            || p.released_activations.len() > l.max_steps
+        {
+            return Err(bad("reaction product bounds changed"));
+        }
+        let mut n = 0usize;
+        let mut maps = 0usize;
+        for chain in &p.chains {
+            if chain.sequence.alphabet() != Alphabet::Dna
+                || chain.sequence.is_empty()
+                || chain.sources.is_empty()
+            {
+                return Err(bad("DNA product calls required"));
+            }
+            n = add(n, chain.sequence.len())?;
+            bounded(n, self.source_bases, Budget::SourceBases)?;
+            let mut output = 0;
+            for map in &chain.sources {
+                maps = add(maps, 1)?;
+                bounded(
+                    maps,
+                    add(l.max_strands, mul(l.max_steps, 2)?)?,
+                    Budget::Strands,
+                )?;
+                if map.source_strand >= self.source_revisions.len()
+                    || map.start >= map.end
+                    || map.end > self.source_bases
+                    || map.output_start != output
+                {
+                    return Err(bad("source mapping shape changed"));
+                }
+                output = add(output, map.end - map.start)?;
+            }
+            if output != chain.sequence.len() {
+                return Err(bad("source mapping coverage changed"));
+            }
+        }
+        if n != self.source_bases {
+            return Err(bad("product call count changed"));
+        }
+        for pair in &p.source_pairing {
+            if pair.strand_a >= self.source_revisions.len()
+                || pair.strand_b >= self.source_revisions.len()
+                || pair.strand_a == pair.strand_b
+                || pair.length == 0
+                || pair
+                    .start_a
+                    .checked_add(pair.length)
+                    .is_none_or(|n| n > self.source_bases)
+                || pair
+                    .start_b
+                    .checked_add(pair.length)
+                    .is_none_or(|n| n > self.source_bases)
+            {
+                return Err(bad("product pairing shape changed"));
+            }
+        }
+        for nick in &p.nicks {
+            if !call_bound(nick.three, l) || !call_bound(nick.five, l) {
+                return Err(bad("nick call bounds changed"));
+            }
+        }
+        for run in &p.unpaired {
+            if run.chain>=p.chains.len()||run.start>=run.end||run.end>p.chains[run.chain].sequence.len()||run.displaced_by.len()>l.max_steps
+                ||run.displaced_by.iter().any(|i|!matches!(self.steps.get(*i),Some(StepEvidence::Transfer(e))if e.outcome==Outcome::Applied)){return Err(bad("unpaired source provenance changed"));}
+        }
+        for c in &p.components {
+            if c.chains.is_empty()
+                || c.chains.len() > p.chains.len()
+                || c.chains.iter().any(|i| *i >= p.chains.len())
+                || c.paired_nucleotides
+                    .checked_add(c.unpaired_nucleotides)
+                    .is_none_or(|n| n > self.source_bases)
+            {
+                return Err(bad("component bounds changed"));
+            }
+        }
+        audit_declared_changes(self)?;
+        let released = self
+            .steps
+            .iter()
+            .filter_map(|e| {
+                if let StepEvidence::Transfer(e) = e {
+                    e.released_activation.clone()
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        if released != p.released_activations
+            || released.iter().collect::<BTreeSet<_>>().len() != released.len()
+        {
+            return Err(bad("released activation ownership changed"));
+        }
+        Ok(())
+    }
+}
+/// Readonly source/transcript correspondence. Chemical claims need fresh replay.
+pub fn validate_report(
+    s: &Substrates,
+    steps: &[Step],
+    l: &Limits,
+    report: &Report,
+) -> Result<(), Error> {
+    report.validate_binding(&batch_revision(s, steps, l)?)?;
+    if report.request != steps || report.limits != *l {
+        return Err(bad("reaction source/options changed"));
+    }
+    if report.fully_specified_dna
+        != s.strands.iter().all(|st| {
+            st.sequence
+                .as_str()
+                .bytes()
+                .all(|base| comp(base).is_some())
+        })
+    {
+        return Err(bad("source certainty flag changed"));
+    }
+    audit_sources(s, report)?;
+    audit_source_ends(s, report)
+}

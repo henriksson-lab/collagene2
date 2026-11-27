@@ -7,8 +7,8 @@ use collagene_core::{
     overlap_extension_pcr::{PrimerPair, Request as Preparation},
     restriction_inspection::InspectionOptions,
     run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, Capsule, Selection},
-    verification::{DesignPlan, Operation, PlanInput, Source, Status},
+    run_material::{self, MaterialOrigin, Selection},
+    verification::{DesignPlan, Operation, PlanInput, Source},
     workspace::Workspace,
 };
 const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
@@ -52,9 +52,9 @@ fn three_native_singleton_pcrs_and_extension_supply_real_digest_cuts_and_annotat
     });
     let immutable = serde_json::to_value(&source).unwrap();
     let request = request();
-    let report = inspect::inspect(&source, None, &request).unwrap();
+    let report = inspect::inspect(&source, None, &request, None).unwrap();
     report
-        .validate_binding(&inspect::inspection_revision(&source, None, &request).unwrap())
+        .validate_binding(&inspect::inspection_revision(&source, None, &request, None).unwrap())
         .unwrap();
     assert!(!report.incomplete);
     assert!(report.selectable());
@@ -108,7 +108,7 @@ fn competing_source_or_outer_pcr_geometries_never_select_a_desired_product() {
         Topology::Linear,
     )
     .unwrap();
-    let report = inspect::inspect(&repeated, None, &request()).unwrap();
+    let report = inspect::inspect(&repeated, None, &request(), None).unwrap();
     assert!(report.incomplete);
     assert!(!report.selectable());
     assert!(report.amplicon.is_none());
@@ -117,7 +117,7 @@ fn competing_source_or_outer_pcr_geometries_never_select_a_desired_product() {
     assert!(report.pcr_stages[0].geometries.len() > 1);
     let mut request = request();
     request.preparation.outer = pair("T", "", "A", "");
-    let report = inspect::inspect(&source(), None, &request).unwrap();
+    let report = inspect::inspect(&source(), None, &request, None).unwrap();
     assert!(report.incomplete);
     assert!(report.extension.is_some());
     assert_eq!(report.pcr_stages.len(), 3);
@@ -129,7 +129,7 @@ fn competing_source_or_outer_pcr_geometries_never_select_a_desired_product() {
 fn valid_selected_terminal_geometry_remains_conditional_but_actual_digest_is_selectable() {
     let mut request = request();
     request.preparation.extension.max_comparisons = 18;
-    let report = inspect::inspect(&source(), None, &request).unwrap();
+    let report = inspect::inspect(&source(), None, &request, None).unwrap();
     assert!(report.incomplete);
     assert!(
         !report
@@ -147,7 +147,7 @@ fn valid_selected_terminal_geometry_remains_conditional_but_actual_digest_is_sel
     assert!(tampered.validate().is_err());
     request.preparation.extension.max_comparisons = 20_000_000;
     request.options.max_comparisons = 1;
-    let capped = inspect::inspect(&source(), None, &request).unwrap();
+    let capped = inspect::inspect(&source(), None, &request, None).unwrap();
     assert!(capped.incomplete);
     assert!(!capped.selectable());
     assert!(capped.amplicon.is_some());
@@ -160,7 +160,7 @@ fn binding(w: &Workspace, i: usize) -> EventBinding {
         revision: d.head.clone(),
     }
 }
-fn saved(incomplete: bool) -> (Molecule, Capsule) {
+fn saved(incomplete: bool) -> (Molecule, MaterialOrigin, Workspace) {
     let source = source();
     let mut steps = vec![];
     let target = if incomplete {
@@ -252,30 +252,25 @@ fn saved(incomplete: bool) -> (Molecule, Capsule) {
         },
     )
     .unwrap();
-    (source, origin)
+    (source, MaterialOrigin::Run(origin), commit.workspace)
 }
 #[test]
 fn exact_saved_origin_is_replayed_and_its_original_incompleteness_and_target_are_retained() {
     for incomplete in [false, true] {
-        let (source, origin) = saved(incomplete);
+        let (source, origin, workspace) = saved(incomplete);
         let pin = serde_json::to_value(&origin).unwrap();
         let request = request();
         assert!(chemistry::has_unmapped_physical_evidence(&source));
-        assert!(inspect::source_preflight(&source, None, &request).is_err());
-        let report = inspect::inspect(&source, Some(&origin), &request).unwrap();
+        assert!(inspect::source_preflight(&source, None, &request, None).is_err());
+        let report = inspect::inspect(&source, Some(&origin), &request, Some(&workspace)).unwrap();
         assert_eq!(report.incomplete, incomplete);
         assert!(report.selectable());
-        assert_eq!(
-            report.origin_status,
-            Some(if incomplete {
-                Status::Incomplete
-            } else {
-                Status::ConsistentUnderAssumptions
-            })
-        );
+        assert_eq!(report.origin_incomplete, Some(incomplete));
         let evidence = report.origin_evidence.as_ref().unwrap();
-        assert_eq!(evidence.selection, origin.selection);
-        assert_eq!(evidence.target, origin.target_event);
+        assert_eq!(evidence.selection, origin.selection());
+        assert_eq!(&evidence.source, origin.event());
+        assert_eq!(evidence.incomplete, incomplete);
+        assert!(evidence.findings_total >= evidence.findings.len());
         assert_eq!(
             report.origin_revision,
             Some(
@@ -287,12 +282,14 @@ fn exact_saved_origin_is_replayed_and_its_original_incompleteness_and_target_are
         assert_eq!(serde_json::to_value(&origin).unwrap(), pin);
         let mut altered = source.clone();
         altered.name.push('!');
-        assert!(inspect::source_preflight(&altered, Some(&origin), &request).is_err());
+        assert!(
+            inspect::source_preflight(&altered, Some(&origin), &request, Some(&workspace)).is_err()
+        );
     }
 }
 #[test]
 fn documentary_stage_catalog_context_and_source_binding_tampering_is_rejected() {
-    let report = inspect::inspect(&source(), None, &request()).unwrap();
+    let report = inspect::inspect(&source(), None, &request(), None).unwrap();
     let decoded: inspect::Preview =
         serde_json::from_slice(&serde_json::to_vec(&report).unwrap()).unwrap();
     decoded.validate_binding(&report.context_revision).unwrap();
@@ -325,4 +322,222 @@ fn documentary_stage_catalog_context_and_source_binding_tampering_is_rejected() 
             ..
         }
     ));
+}
+
+#[test]
+fn derived_origin_owns_its_exact_event_and_inherits_limits_without_a_target_verdict() {
+    use collagene_core::{material_derivation as d, workspace};
+    let (_source, origin, w) = saved(true);
+    let next = d::prepare_install(
+        &w,
+        &d::Request {
+            source: origin.event().clone(),
+            origin: d::SourceOrigin::Saved(origin),
+            derivation: d::Derivation::EndRepair {
+                method: chemistry::EndRepairMethod::Blunt,
+            },
+            name: "Exact native repaired descendant".into(),
+            save_primers: false,
+        },
+    )
+    .unwrap();
+    let event = next.receipt.product;
+    let w =
+        workspace::load_workspace(&workspace::save_workspace(&next.workspace).unwrap()).unwrap();
+    let origin = MaterialOrigin::Derived(d::capsule(&w, &event).unwrap());
+    let source = &w.revisions[&event.revision];
+    let r = inspect::inspect(source, Some(&origin), &request(), Some(&w)).unwrap();
+    r.validate_binding(&r.context_revision).unwrap();
+    assert_eq!(r.origin_incomplete, Some(true));
+    assert!(r.incomplete);
+    assert!(r.selectable());
+    assert_eq!(
+        r.origin_evidence.as_ref().unwrap().selection,
+        origin.selection()
+    );
+    assert!(!r.origin_evidence.as_ref().unwrap().findings.is_empty());
+    assert!(inspect::inspect(source, Some(&origin), &request(), None).is_err());
+    let mut foreign = w.clone();
+    foreign
+        .attachments
+        .retain(|_, a| a.kind != d::WORKSPACE_ATTACHMENT_KIND);
+    assert!(inspect::source_preflight(source, Some(&origin), &request(), Some(&foreign)).is_err());
+    // The old source was never renamed, rewritten, or adopted as the derived event.
+    assert_ne!(source.revision(), self::source().revision());
+}
+
+#[test]
+fn bottom_only_source_calls_reach_all_six_oligos_and_real_ecori_ends() {
+    use collagene_core::{
+        assembly_edit_intent::Edit, chemistry::Strand, overlap_extension_primer_design as planner,
+        overlap_primer_design::Fragment,
+    };
+    const BOTTOM: &str = "GGGGTGACGATCTACAGGTCTGAAGTCCTACGTAGCATCGGACT";
+    let top = source();
+    let bottom = Molecule::dna("Independently ordered bottom44", BOTTOM, Topology::Linear).unwrap();
+    let target = Molecule::dna("Independent paired top40", ORIGINAL, Topology::Linear).unwrap();
+    let w = Workspace::from_documents(
+        "Native bottom44 source",
+        vec![top.clone(), bottom.clone(), target.clone()],
+        2,
+    )
+    .unwrap();
+    let plan = DesignPlan {
+        name: "Actual40/44 annealing".into(),
+        target_revision: target.revision(),
+        inputs: vec![
+            PlanInput {
+                id: "top".into(),
+                revision: top.revision(),
+                molecule: top,
+            },
+            PlanInput {
+                id: "bottom".into(),
+                revision: bottom.revision(),
+                molecule: bottom,
+            },
+        ],
+        steps: vec![Operation::AnnealOligos {
+            top: Source::Input("top".into()),
+            bottom: Source::Input("bottom".into()),
+            options: chemistry::AnnealOptions {
+                min_paired_bases: 40,
+                ..Default::default()
+            },
+            candidate_index: 0,
+        }],
+    };
+    let installed = cloning_outputs::finalize(
+        &w,
+        &plan,
+        binding(&w, 2),
+        vec![
+            InputEventBinding {
+                input_id: "top".into(),
+                event: binding(&w, 0),
+            },
+            InputEventBinding {
+                input_id: "bottom".into(),
+                event: binding(&w, 1),
+            },
+        ],
+        &cloning_outputs::Options {
+            name: "Saved native40/44".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let event = installed.receipt.construct;
+    let origin = MaterialOrigin::Run(
+        run_material::capsule(
+            &installed.workspace,
+            &Selection {
+                run_id: installed.receipt.run.run_id,
+                step_index: 0,
+                event: event.clone(),
+            },
+        )
+        .unwrap(),
+    );
+    let source = &installed.workspace.revisions[&event.revision];
+    let mut o = planner::Options::default();
+    o.homology_flank = 4;
+    o.min_paired_bases = 8;
+    o.outer_forward_tail = "ATGCGAATTC".into();
+    o.outer_reverse_tail = "ATGCGAATTC".into();
+    o.primer_options.min_length = 8;
+    o.primer_options.max_length = 8;
+    o.primer_options.max_pairs = 1;
+    o.primer_options.min_gc_fraction = 0.;
+    o.primer_options.max_gc_fraction = 1.;
+    o.primer_options.max_tm_difference_c = 100.;
+    o.primer_options.max_homopolymer = 200;
+    o.primer_options.max_three_prime_complementarity = 200;
+    let proposal = planner::design(
+        source,
+        &planner::Request {
+            fragment: Fragment {
+                role: "insert".into(),
+                input_id: "source".into(),
+                start: 0,
+                end: 44,
+                reverse: false,
+            },
+            edits: vec![Edit {
+                role: "insert".into(),
+                start: 16,
+                end: 20,
+                expected: "GGTC".into(),
+                replacement: "AA".into(),
+            }],
+            options: o,
+            template_strand: Strand::Bottom,
+            material_binding: Some(planner::BoundOrigin {
+                event,
+                origin: origin.clone(),
+            }),
+        },
+        Some(&installed.workspace),
+    )
+    .unwrap();
+    let r = Request {
+        preparation: proposal.preparation,
+        ..request()
+    };
+    let before = collagene_core::workspace::save_workspace(&installed.workspace).unwrap();
+    let preview = inspect::inspect(source, Some(&origin), &r, Some(&installed.workspace)).unwrap();
+    preview.validate_binding(&preview.context_revision).unwrap();
+    assert!(!preview.incomplete, "{:?}", preview.findings);
+    assert!(preview.selectable());
+    assert_eq!(
+        preview.amplicon.as_ref().unwrap().sequence.as_str(),
+        "ATGCGAATTCGGGGTGACGATCTACAAATGAAGTCCTACGTAGCATCGGACTGAATTCGCAT"
+    );
+    assert!(
+        preview.pcr_stages[0]
+            .geometries
+            .iter()
+            .all(|g| g.template_strand == Strand::Bottom)
+    );
+    assert!(
+        preview.pcr_stages[1]
+            .geometries
+            .iter()
+            .all(|g| g.template_strand == Strand::Bottom)
+    );
+    assert!(
+        preview.pcr_stages[2]
+            .geometries
+            .iter()
+            .all(|g| g.template_strand == Strand::Top)
+    );
+    let digest = preview.inspection.as_ref().unwrap();
+    assert_eq!(
+        digest
+            .sites
+            .iter()
+            .map(|s| (s.top_cut, s.bottom_cut))
+            .collect::<Vec<_>>(),
+        vec![(Some(5), Some(9)), (Some(53), Some(57))]
+    );
+    assert_eq!(
+        digest
+            .fragments
+            .iter()
+            .map(|f| f.duplex.top_length)
+            .collect::<Vec<_>>(),
+        vec![5, 48, 9]
+    );
+    let ends = digest.fragments[1].duplex.ends.as_ref().unwrap();
+    assert_eq!(ends.0.overhang, "AATT");
+    assert_eq!(ends.1.overhang, "AATT");
+    assert_eq!(ends.0.chemistry.five_prime, chemistry::FivePrime::Phosphate);
+    assert_eq!(
+        ends.1.chemistry.three_prime,
+        chemistry::ThreePrime::Hydroxyl
+    );
+    assert_eq!(
+        collagene_core::workspace::save_workspace(&installed.workspace).unwrap(),
+        before
+    );
 }

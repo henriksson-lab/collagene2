@@ -153,11 +153,11 @@ fn appended166_158_whole_design_preserves_literal_junction_and_internal_edit_aga
     };
     let bytes = protocol::encode_request(&r).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 164);
+    assert_eq!(tag, 161);
     assert!(protocol::process_request(&wire(b"CGQ\0", 84, &r)).is_err());
     let reply = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&reply[42..]).unwrap();
-    assert_eq!(tag, 156);
+    assert_eq!(tag, 153);
     let response = protocol::decode_response(&reply).unwrap();
     assert!(protocol::decode_response(&wire(b"CGR\0", 84, &response)).is_err());
     let AnalysisResult::EditedOverlapPrimersDesigned(report) = response.result else {

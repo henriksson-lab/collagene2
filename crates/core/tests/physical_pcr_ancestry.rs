@@ -135,10 +135,11 @@ fn sequence_only_overlap_outputs_remain_diagnostic_but_cannot_supply_either_pcr_
                     .contains_key("tracked_modifications")
             );
             assert!(
-                report
-                    .findings
-                    .iter()
-                    .any(|f| f.contains("established physical template")),
+                report.findings.iter().any(|f| f.contains(if mismatches {
+                    "established physical template"
+                } else {
+                    "actual physical source state"
+                })),
                 "{:?}",
                 report.findings
             );
@@ -250,10 +251,11 @@ fn imported_projection_metadata_is_not_reinterpreted_as_an_original_physical_tem
         assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
         assert!(report.products.is_empty());
         assert!(
-            report
-                .findings
-                .iter()
-                .any(|f| f.contains("imported physical")),
+            report.findings.iter().any(|f| f.contains(if mismatches {
+                "imported physical"
+            } else {
+                "fresh native origin"
+            })),
             "{:?}",
             report.findings
         );

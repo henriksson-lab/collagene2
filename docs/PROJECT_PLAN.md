@@ -3770,3 +3770,101 @@ owner and review-generation guards remain explicit. Automated primer proposal an
 reviewed application remain open. The integrated batch passes118 distinct focused native cases and the
 web/worker WASM check. Exact-source cross-platform CI remains pending; browser
 and application HTTP checks remain deferred.
+
+
+### Canonical reaction continuation and staged browser design — integrated checkpoint
+
+The current coherent source batch uses worker109, candidate30, native plan28,
+science31 and editor draft18. The native saved TOPO graph is schema2; unsupported
+internal versions are rejected, with no alternate reader. One ordered transfer/
+processing transcript is freshly replayed from original substrates into private
+reaction state. Cut termini, consumed activation and nicks survive continuation
+through that transcript; imported report graphs never grant physical authority.
+The obsolete separate processed/sealed executors and their transport jobs are
+removed. One physical bridge projects the selected actual component while keeping
+all source calls and other components in evidence and protocol output.
+
+Mismatch-PCR and reciprocal-extension digest inspection now accept generic native
+Run/Derived origins with exact workspace ownership and inherited findings. Each
+branch retains its explicit actual source strand. No reference-only substitute or
+fabricated run target is used for a Derived source.
+
+The thin WebMCP adapter stages bounded literal contribution edits using normal
+declaration commands. It checks exact original literals and draft/epoch pins,
+rejects the whole proposal on conflicts, and requires the visible apply/review
+control before changing the live draft. Nine browser tools expose this scope;
+primer application and scientific acceptance still use existing guarded controls.
+Native and WASM validation of this batch is pending. Browser/application HTTP
+checks remain deferred, and the full delivery goal remains active.
+
+
+The prior19a1a1c exact-source CI has now completed: web passes, while native
+Windows/macOS/Linux report the same eight failing fixture groups. Diagnostics
+identify stale library request shapes, changed physical-source refusal messages,
+and one saved-source inverse-PCR adapter that omitted workspace attestation.
+The current integration batch updates the current request callers/messages and
+carries the owning workspace through inverse-PCR capture, response validation and
+apply. Missing-workspace refusal stays explicit. These repairs await the grouped
+native run; no passing claim is made from source inspection alone.
+
+The same published19a1a1c desktop workflow completes successfully for its fresh
+offline frontend and Windows/macOS/Linux desktop jobs. These are build results;
+installed application and user GUI acceptance remain unproven.
+
+The first executed native subset contains93 cases:89 pass and4 fail. Two refusal-
+message expectations were stale; one new derived mismatch-PCR fixture used the
+aggregate preview identity instead of the selected molecule identity. A genuine
+request-only bound gap allowed an undersized TOPO transcript budget past plan
+hashing and returned Incomplete later. The central literal/physical request
+preflights now call the native transcript grammar/budget guard before hashing or
+copying sources. The strict Invalid/empty-plan-revision assertions are preserved.
+These corrections and the remaining newly compiled cases await the grouped run;
+WASM compilation is in progress. No browser/application HTTP checks were run.
+
+### Next source-confirmed ordinary cloning gaps
+
+A read-only follow-up audit of current source identifies these next coherent
+batches, independently of the superseded milestone notes above:
+
+1. Saved-material domestication preparation. `domestication_preparation::Request`
+   currently has no native origin binding and rejects physical-evidence-marked
+   sources. Carry one exact Run/Derived origin and owning workspace through the
+   existing native source resolver and inverse/OE preparation compilers. Freeze
+   the independently checked requested genotype before preparation; preserve the
+   sequential actual `Source::Step` chain and inherited incomplete findings.
+2. TA/GC library rows. Ordinary `tailing_recipe` supports real `KeepExisting` /
+   `AddTail` chemistry, but `combinatorial_design::Method` has no tailing method
+   and the draft rejects tailing libraries. Add one typed library method through
+   native compilation, batch/release and row controls, preserving source-strand
+   selectors, preparation orientation, actual ends, alternative paths and per-row
+   independent wrong-target refusal.
+3. Target-free reusable OE material. Native physical OE preparation exists, while
+   `material_derivation::Derivation` lacks an OE/outer-PCR transform and standalone
+   OE proposal controls install only oligo declarations. Connect a source-backed,
+   reviewed derivation/install/reopen path without inventing an assembly target
+   or promoting a primer proposal to material authority.
+
+These gaps keep the full cloning-first objective active. Existing BAM/mobile and
+other exclusions/deferrals remain unchanged.
+
+
+### Integrated ordered-reaction validation
+
+The combined native build succeeds. All234 distinct selected cases pass across53
+integration/model target groups, with executable hashes matched to that successful
+build. The independent52-call continuation now saves/reopens the post-cut/sealed
+graph, uses the remaining activation, seals the second nick, retains free GGTG and
+bridges the literal24-base target; independently wrong targets remain Invalid.
+Current graph/worker/native archive/sidecar and in-process MCP fixtures, generic
+Run/Derived digest paths, inverse-PCR workspace attestation and browser proposal
+models pass in the same batch. A valid attachment checksum cannot replace the
+owning run's exact root source identities. Root input identities and expanded
+saved-graph identities are retained and checked separately.
+
+The integrated web/worker WASM check passes after the final production fixes.
+Static parsing of the optional WebMCP JavaScript passes. No browser, screenshot,
+CDP or application HTTP checks were performed. Current worker109/candidate30/
+plan28/science31/draft18 and189 MCP tools are one representation, with no obsolete
+phase wrappers or alternate internal readers. Exact-source cross-platform CI,
+public preview publication, installed/GUI acceptance and the next ordinary cloning
+batches above remain open. The full implementation objective stays active.

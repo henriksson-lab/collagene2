@@ -1,6 +1,6 @@
 # Optional browser WebMCP
 
-The open editor registers seven tools when the browser provides the current
+The open editor registers nine tools when the browser provides the current
 `document.modelContext.registerTool` API. Unsupported browsers retain the ordinary
 application. Tauri WebView availability is not assumed. Registration uses the
 current AbortSignal lifetime API; there is no polyfill or obsolete API fallback.
@@ -14,6 +14,8 @@ current AbortSignal lifetime API; there is no polyfill or obsolete API fallback.
 | `collagene_open_assembly_workspace` | Opens the existing assembly controls without changing the draft or target. |
 | `collagene_review_assembly_draft` | Invokes the existing “Review intended construct” worker action for the exact draft pin. Returns the running review token; completion is read through assembly context. |
 | `collagene_cancel_assembly_review` | Invokes the same cancellation command as the visible controls, only for the exact running owner/generation token and draft pin. |
+| `collagene_propose_assembly_edits` | Stages up to eight literal contribution edits against the exact draft and original source literals. Visible user controls apply the declarations and run the existing intended-reference review. |
+| `collagene_discard_assembly_proposal` | Discards only the exact pending proposal token and current draft pin. |
 
 Read and navigation arguments are `{expected, start, end}`. `expected` is the
 complete `pin` returned by current context:
@@ -76,16 +78,32 @@ As in a normal button click, a successfully admitted request starts a shared UI
 workflow: cancellation of the short WebMCP request after its running receipt does
 not cancel that workflow. Use the explicit cancel command or normal UI control.
 
-The reviewed intended reference exposes the existing primer proposal and apply
-controls. Agents do not bypass those controls, supply a Frozen receipt, apply
-primers, accept a candidate, or assert method success. Existing proposal freshness,
-source attestation, explicit apply and subsequent verification requirements remain
-in force. Automated proposal/application, draft mutation, scientific verification
-commands, storage, exports and unattended automation remain outside this adapter.
-The broader project-plan acceptance for agent-driven design proposals/apply is
-therefore still open. Ordinary MCP remains a separate interface.
+Agents may stage literal substitutions, insertions, deletions or replacements with
+`collagene_propose_assembly_edits({expected: pin, changes: [...]})`. Each change
+names an exact contribution `role` returned by context. A `replace` change uses
+zero-based half-open `start`/`end`, an exact `expected` original literal, and
+`replacement`; a `substitution` uses `offset` and one-base literals. Coordinates
+refer to the original construct-oriented contribution before junction trims,
+including the actual selected strand. Strings are uppercase IUPAC DNA, each at
+most 512 bases. No normalization, source repair or target inference occurs.
 
-Pure model fixtures are in `web_mcp::tests` and `web_mcp_assembly::tests`. Browser registration and Tauri runtime
+The proposal uses the ordinary declaration commands on a private draft copy.
+Conflicting edits, wrong source literals or a stale draft reject the whole request.
+Staging does not mutate the live draft. Assembly context returns the pending
+proposal and its `{owner, generation, revision}` token. Only the visible
+“Apply declarations and review intended construct” button installs it and invokes
+the normal intended-reference review. Navigation between source rows does not
+invalidate a proposal; changes to the declaration or workspace do. Discard uses
+`{expected: pin, proposal: token}`. A pending proposal cannot be silently replaced.
+
+The reviewed intended reference exposes existing primer proposal/apply controls.
+Agents cannot supply a Frozen receipt, apply primers, accept a candidate, or assert
+method success. Source attestation, explicit apply and subsequent independent
+verification remain required. Scientific verification commands, storage, exports
+and unattended automation remain outside this thin adapter. Ordinary MCP remains
+a separate interface.
+
+Pure model fixtures are in `web_mcp::tests`, `web_mcp_assembly::tests` and `web_mcp_design::tests`. Browser registration and Tauri runtime
 availability have not been exercised in this implementation batch.
 
 The API follows the [current WebMCP community draft](https://webmachinelearning.github.io/webmcp/)

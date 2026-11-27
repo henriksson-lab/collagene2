@@ -782,6 +782,15 @@ pub fn AssemblyWorkspace(
     static NEXT_BROWSER_OWNER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let browser_owner = NEXT_BROWSER_OWNER.fetch_add(1, Ordering::Relaxed);
     let browser_alive = Arc::new(AtomicBool::new(true));
+    let design_generation = RwSignal::new(0u32);
+    let design_proposal = RwSignal::new(
+        None::<
+            Arc<(
+                crate::web_mcp_design::Proposal,
+                crate::web_mcp_design::Token,
+            )>,
+        >,
+    );
     let status_command = Callback::new(
         move |expected: browser_assembly::Pin| -> Result<serde_json::Value, String> {
             draft.with_untracked(|draft| {
@@ -804,8 +813,12 @@ pub fn AssemblyWorkspace(
             } else {
                 "stopped"
             };
+            let proposal = design_proposal.with_untracked(|held| held.as_ref().map(|held| serde_json::json!({
+                "token":held.1,"phase":if draft.with_untracked(|draft|held.0.is_current(draft,epoch.get_untracked())) {"awaiting_user_review"} else {"stale"},
+                "changes":held.0.changes(),"application":"Only the visible user review controls can apply these declarations. No primers or physical method have been accepted."
+            })));
             Ok(
-                serde_json::json!({"phase":phase,"review":if same_review {Some(browser_assembly::ReviewToken{owner:browser_owner,generation:generation.get_untracked()})}else{None},
+                serde_json::json!({"phase":phase,"design_proposal":proposal,"review":if same_review {Some(browser_assembly::ReviewToken{owner:browser_owner,generation:generation.get_untracked()})}else{None},
             "message":if same_review {status.get_untracked()}else{"Review this exact draft to build its intended reference.".into()},
             "target":target,"scope":"intended_reference_review","method_verification":"not_performed_by_this_action","primer_apply":"Use the existing reviewed proposal controls; no automatic application is provided."}),
             )
@@ -834,6 +847,56 @@ pub fn AssemblyWorkspace(
                         return Err(status.get_untracked());
                     }
                     status_command.run(expected)
+                }
+                Command::Propose(request) => {
+                    if busy.get_untracked() {
+                        return Err("Wait for intended-reference review to finish before proposing changes.".into());
+                    }
+                    if design_proposal.with_untracked(|held| held.is_some()) {
+                        return Err("A design proposal is already awaiting review. Discard that exact proposal before replacing it.".into());
+                    }
+                    let expected = request.expected.clone();
+                    let review = source_review.get_untracked();
+                    let proposal = draft.with_untracked(|draft| {
+                        crate::web_mcp_design::Proposal::prepare(
+                            draft,
+                            epoch.get_untracked(),
+                            request,
+                            review.as_deref(),
+                        )
+                    })?;
+                    let generation = design_generation
+                        .get_untracked()
+                        .checked_add(1)
+                        .ok_or("Design proposal generation exhausted; reopen the workspace.")?;
+                    let token = crate::web_mcp_design::Token {
+                        owner: browser_owner,
+                        generation,
+                        revision: proposal.revision().into(),
+                    };
+                    design_generation.set(generation);
+                    design_proposal.set(Some(Arc::new((proposal, token))));
+                    status_command.run(expected)
+                }
+                Command::Discard(request) => {
+                    draft.with_untracked(|draft| {
+                        browser_assembly::require_pin(
+                            draft,
+                            epoch.get_untracked(),
+                            &request.expected,
+                        )
+                    })?;
+                    let held = design_proposal
+                        .get_untracked()
+                        .ok_or("No design proposal is awaiting review.")?;
+                    if held.1 != request.proposal {
+                        return Err(
+                            "The pending proposal changed; read the current assembly context."
+                                .into(),
+                        );
+                    }
+                    design_proposal.set(None);
+                    status_command.run(request.expected)
                 }
                 Command::Cancel(expected, token) => {
                     draft.with_untracked(|draft| {
@@ -923,6 +986,18 @@ pub fn AssemblyWorkspace(
         <Show when=move||draft.with(|d|d.methods.mode!=Mode::Tailing)><details class="assembly-library-options"><summary>"Source alternatives / library"</summary><crate::assembly_alternatives_view::AssemblyAlternativesView draft epoch/></details></Show>
         <Show when=move||draft.with(|d|d.methods.mode==Mode::Ligation&&d.alternatives.is_none())><details class="assembly-fragment-options"><summary>"Use an annealed oligo insert"</summary><p class="helper">"Pin the top oligo for this slot using Use whole source, then open the bottom oligo in the viewer and capture it below. Both ordered sequences are 5′→3′. The top source region declares your intended reference contribution; add any intended extra junction bases separately, before reaction simulation."</p><button class="button secondary" on:click=move|_|pin_bottom.run(())>"Capture viewer source as bottom oligo"</button><p class="helper">{move||draft.with(|d|d.slots.get(d.active_slot).and_then(|slot|slot.anneal_bottom.as_ref()).map(|capture|format!("Pinned bottom: {} · {} bases",capture.source.name,capture.molecule.sequence.len())).unwrap_or_else(||"No bottom oligo captured for this slot.".into()))}</p></details></Show>
         <section class="assembly-set-fragment"><p>{move||format!("Active viewer source: {} · set {}",active_source.get().name,draft.with(|d|d.slots.get(d.active_slot).map(|s|s.label.as_str()).unwrap_or("selected slot").to_owned()))}</p><button class="button primary" on:click=move|_|pin.run(1)>"Set from sequence selection"</button><button class="button secondary" on:click=move|_|pin.run(0)>"Use whole source"</button><button class="button secondary" on:click=move|_|pin.run(2)>"Keep outside selection"</button><p class="helper">"Keep outside selection retains the complementary path on circular DNA, including an origin crossing. This sets intended source coordinates; it does not digest, amplify or prove a physical fragment."</p></section></div></details>
+        {move||design_proposal.get().map(|held| {
+            let apply=held.clone();
+            view!{<section class="assembly-intended-review"><h3>"AI proposed design changes"</h3>
+                <p class="helper">"Review these original contribution coordinates and literals. Accepting changes updates only this draft's intended declarations, then runs the normal intended-reference review. Primers and cloning-method verification remain separate."</p>
+                {held.0.changes().iter().map(|change|view!{<pre>{change.description()}</pre>}).collect_view()}
+                <button class="button secondary" disabled=move||busy.get()||workspace_busy.get() on:click=move|_|{
+                    let result=draft.with_untracked(|draft|apply.0.apply(draft,epoch.get_untracked()));
+                    match result {Ok(next)=>{draft.set(next);design_proposal.set(None);review_intent.run(());},Err(error)=>status.set(error)}
+                }>"Apply declarations and review intended construct"</button>
+                <button class="text-tool" on:click=move|_|design_proposal.set(None)>"Discard proposal"</button>
+            </section>}
+        })}
         <button class="button primary" disabled=move||busy.get() on:click=move|_|review_intent.run(())>"Review intended construct"</button><Show when=move||busy.get()><button class="text-tool" on:click=move|_|cancel.run(())>"Cancel intended construct"</button></Show><p class="assembly-workspace-status" role="status">{move||status.get()}</p>
         <Show when=move||draft.with(|d|matches!(d.methods.mode,Mode::Tailing|Mode::Ligation)||!d.substitutions.is_empty()||!d.edits.is_empty())><crate::literal_intent_view::LiteralIntentEditor draft/></Show>
         <ActualStrandSource draft source_review/>

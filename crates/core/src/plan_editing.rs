@@ -29,7 +29,6 @@ fn reference_count(op: &Operation) -> usize {
     match op {
         Operation::Topo { sources, .. }
         | Operation::CheckedTopo { sources, .. }
-        | Operation::ProcessedTopo { sources, .. }
         | Operation::TopoActions { sources, .. }
         | Operation::MultiSiteRecombineReference { sources, .. } => sources.len(),
         Operation::Overlap { fragments, .. }

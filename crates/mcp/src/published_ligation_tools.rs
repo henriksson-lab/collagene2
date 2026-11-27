@@ -30,68 +30,7 @@ pub struct TopoQuery {
     #[serde(deserialize_with = "Option::deserialize")]
     pub template: Option<topo_graph_tools::BoundTemplate>,
 }
-#[derive(Clone, Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct NickQuery {
-    pub sources: Vec<TopoSourceRef>,
-    pub request: topo_graph_tools::Sealing,
-    #[serde(deserialize_with = "Option::deserialize")]
-    pub origin_workspace: Option<WorkspaceRef>,
-}
-#[derive(Clone, Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ProcessedQuery {
-    pub sources: Vec<TopoSourceRef>,
-    pub request: topo_graph_tools::Processed,
-    #[serde(deserialize_with = "Option::deserialize")]
-    pub origin_workspace: Option<WorkspaceRef>,
-}
 impl CollageneServer {
-    pub(super) async fn topo_processed_product(
-        &self,
-        args: ProcessedQuery,
-    ) -> Result<CallToolResult, ErrorData> {
-        let server = self.clone();
-        self.compute(move || {
-            bounded_json_limit(&args.request,2*1024*1024)?;
-            let (preparation,_)=server.hydrate_topo(&args.request.treatment.preparation,args.origin_workspace.as_ref(),&[])?;
-            let native=collagene_core::topo_processed_product::Request{treatment:collagene_core::topo_nick_sealing::Request{preparation,sealing:args.request.treatment.sealing.clone()},selection:args.request.selection.clone(),options:args.request.options.clone()};
-
-            if args.request.treatment.sealing.nicks.len()>16 || args.request.treatment.sealing.ligase_assumption.len()>4096 {
-                return Err(bad("Bounded source-backed treatment required"));
-            }
-            let (inputs,_) = server.topo_sources(&args.sources,&native.treatment.preparation,None)?;
-            let report=collagene_core::topo_processed_product::inspect(&inputs,&native).map_err(bad)?;
-            report.validate_binding(&collagene_core::topo_processed_product::revision(&inputs,&native).map_err(bad)?).map_err(bad)?;
-            let summary=report.duplex.as_ref().map(|d|d.summary()).transpose().map_err(bad)?;
-            let (artifact,document)=server.candidate_document_artifact_bounded(&json!({"sources":args.sources,"origin_workspace":args.origin_workspace,"report":report}),report.product.clone(),"processed-topo-product.json",32*1024*1024)?;
-            output(json!({"state":"source-reconstructed-processed-contour","verified":false,"context_revision":report.context_revision,
-                "contour_proven":matches!(report.projection.outcome,collagene_core::topo::physical::projection::Outcome::Proven(_)),"withheld":match &report.projection.outcome { collagene_core::topo::physical::projection::Outcome::Withheld(reason)=>Some(reason),_=>None },"duplex":summary,"bridge_notes":report.bridge_notes,"document":document,
-                "artifact_id":artifact,"authority":"Fresh original-source transfer, explicit ligase treatment and selected-component paired-contour proof. Full parent/treated graphs and other components remain in evidence. Internal modifications remain unknown; an exported sequence document cannot restore physical state. No independent-target acceptance, isolation or experimental mixture winner is established."}))
-        }).await
-    }
-    pub(super) async fn topo_seal_nicks(
-        &self,
-        args: NickQuery,
-    ) -> Result<CallToolResult, ErrorData> {
-        let server = self.clone();
-        self.compute(move || {
-            bounded_json_limit(&args.request,2*1024*1024)?;
-            let (preparation,_)=server.hydrate_topo(&args.request.preparation,args.origin_workspace.as_ref(),&[])?;
-            let native=collagene_core::topo_nick_sealing::Request{preparation,sealing:args.request.sealing.clone()};
-
-            if args.request.sealing.nicks.len()>16 || args.request.sealing.ligase_assumption.len()>4096 {
-                return Err(bad("Bounded explicit nick and ligase declarations required"));
-            }
-            let (inputs,_) = server.topo_sources(&args.sources,&native.preparation,None)?;
-            let report=collagene_core::topo_nick_sealing::inspect(&inputs,&native).map_err(bad)?;
-            report.validate_binding(&collagene_core::topo_nick_sealing::revision(&inputs,&native).map_err(bad)?).map_err(bad)?;
-            let artifact=server.text_artifact(bounded_json_limit(&json!({"sources":args.sources,"origin_workspace":args.origin_workspace,"report":report}),32*1024*1024)?,"application/json","topo-nick-sealing.json")?;
-            output(json!({"state":"declared-downstream-graph","verified":false,"context_revision":report.context_revision,
-                "sources":args.sources,"steps":report.sealing.steps,"physical":json!({"chains":report.sealing.product.chains.len(),"components":report.sealing.product.components.len(),"nicks":report.sealing.product.nicks.len(),"unpaired_runs":report.sealing.product.unpaired.len(),"released_activations":report.sealing.product.released_activations}),
-                "artifact_id":artifact,"authority":"Fresh explicit ligase-step reconstruction. Every original strand/component/displaced call is retained. No kinase, flap deletion, host repair, graph-to-duplex authority or independent-target acceptance is inferred."}))
-        }).await
-    }
     pub(super) async fn published_profiles_list(
         &self,
         _args: ListQuery,

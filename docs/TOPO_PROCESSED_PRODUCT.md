@@ -1,60 +1,49 @@
-# Post-treatment contour proof and duplex bridge
+# Source-seeded TOPO contour and faithful material bridge
 
-`collagene_topo::processed_projection` composes original source-backed transfer,
-explicit nick treatment and a proof over the **actual treated graph**. It runs the
-transfer/treatment reconstruction once. It neither accepts a serialized product
-as a substrate nor substitutes a treated graph into an old transfer report.
+All transfers, flap cleavage and nick sealing use the one canonical ordered
+transcript and fresh private cursor described in [physical actions](TOPO_PROCESSING_ACTIONS.md).
+`physical::projection` proves a selected paired contour over the final actual
+graph. Its `Selection { source_batch_revision, component, reference_seed }` pins
+the canonical physical revision and original source call. The seed chooses strand
+sense and circular origin; intended target DNA never guides the path.
 
-Selection explicitly pins the sealing context, component and original source
-call. The source call chooses strand sense and circular origin; intended target
-DNA never guides the path. The existing contour algorithm is shared privately
-with ordinary TOPO projection. Full original and treated graphs, other components,
-released activation, displaced calls and remaining nicks remain in the result.
-A selected component is not a declaration of experimental isolation or a unique
-mixture winner.
+`source_batch_revision` is `TopoReport.physical.batch_revision`, distinct from the
+outer source-adapter `TopoReport.batch_revision`. The whole physical report,
+including other components, free calls, conditions, outcomes and activation
+history, stays in `ProjectionReport.physical`. Strict requested-step completion
+and strict known-terminal chemistry are separate options. An unpaired directional
+flap remains withheld until an explicitly supported cleavage actually removes its
+bond from the selected contour; its excised calls remain elsewhere in the graph.
 
-Strict completion requires both original transfers and requested nick treatments
-to have applied. Strict known-chemistry checks remain separate. Unsupported or
-unknown steps retain their incoming graph; permissive inspection does not turn
-those steps into success. A displaced directional flap still prevents an ordinary
-paired contour. Work, live memory, source/output calls and report bounds apply to
-the combined computation.
+There are two different outputs:
 
-## Faithful native duplex state
+- `core::topo::Product` supplies a restrictive reference molecule with optional
+  annotation correspondence. This does not establish reusable physical material.
+- `core::topo_actions::Report` is the sole faithful contour-to-duplex bridge. Its
+  `Request` contains `preparation: topo::Request`, canonical physical `selection`
+  and `options`. It has no separate processing or sealing phase request.
 
-`core::topo_processed_product` performs original preparation once, then the fresh
-processed proof. Its bridge creates `chemistry::Duplex` and `TrackedDuplex` only
-when the proven contour can be represented faithfully: both actual stored5′→3′
-strands, topology, free-end chemistry and retained nick positions. A phosphate,
-adduct or blocked terminal state that the ordinary model cannot represent is not
-silently converted to hydroxyl or promoted through an unknown placeholder.
+The bridge report retains `engine_version`, `context_revision`,
+`preparation_revision`, `request`, `input_sources`, `sources`, `preparation`, canonical `projection`,
+`duplex`, `tracked`, `product`, `annotations` and `bridge_notes`. There is no second
+processed-product API or processed contour representation. Root `input_sources` bind the external caller identities; expanded `sources` bind the native graph/annotation namespace. A graph-only continuation legitimately has empty roots but retained expanded dependencies; both identities are checked independently.
 
-Internal modification states remain Unknown. Terminal/backbone evidence does not
-establish Dam/Dcm/CpG state or newly authenticate inherited chemistry. Actual native
-downstream algorithms can consume the freshly constructed duplex; imported
-reports and sequence documents cannot restore that private reconstruction.
+## Representability and authority
 
-Supported source-coordinate annotations use the existing conservative mapper.
-Unmapped/review evidence remains available. An annotated sequence document retains
-`duplex_model` and exact processing context metadata, so loading/exporting it does
-not silently turn a sequence view into authoritative physical material.
+Only a complete aligned paired contour can become an ordinary duplex. Linear
+termini retain exact representable states. Internal ordinary nicks require
+explicit 3′OH/5′P chemistry. Retained phosphotyrosyl, 3′phosphate, blocked 5′ or
+unrepresentable nick chemistry stays in the graph with an explicit bridge refusal;
+it is never normalized to a convenient end. Circular placeholder termini are
+unused; actual backbone closure comes from the graph.
 
-## Review, transport and MCP
+The bridge retains Unknown internal modification calls. Annotation correspondence
+asserts neither chemical inheritance nor function. The standalone product molecule
+carries the physical-evidence restriction and remains a reference when exported or
+reimported; serialized `tracked` data and positive report JSON do not establish
+native material. A verifier must freshly execute the source-bound transcript.
 
-After explicit nick treatment, choose a component, prepared strand and one-based
-source call in the existing review panel. Strict options start enabled. Fresh
-worker reconstruction displays the actual withheld reason or proven contour,
-source maps, strand sequences, nicks and bridge availability. Changes to source
-events, treatment, selection or options invalidate pending results. Full evidence
-can be downloaded explicitly.
-
-Worker64 appends job148 `ProjectProcessedTopo` / result140 `ProcessedTopoProduct`.
-MCP162 adds `project_processed_topo`, using immutable source bindings and the same
-native request. Product document and full evidence artifact are published
-atomically. Target agreement, isolation and experimental success are not implied.
-Existing plan/candidate/science layouts remain unchanged at this checkpoint.
-
-The full cloning goal still requires typed-plan consumption and retained-run /
-HTML-PDF handoff of processed material, accounted directional flap processing,
-broader method chemistry, portable delivery and final GUI acceptance. The native
-bridge and read-only evidence are not substitutes for those remaining interfaces.
+Component selection is an explicit view, not experimental isolation. Other
+components and released/excised material remain in the full report and in native
+[graph records](TOPO_GRAPH_HISTORY.md). Supported saved graphs can be continued
+without flattening them through this narrower duplex bridge.

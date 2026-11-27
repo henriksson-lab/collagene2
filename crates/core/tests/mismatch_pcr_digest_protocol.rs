@@ -1,4 +1,4 @@
-//! Actual mismatch-PCR catalog inspection is versioned independently of old operations.
+//! Current mismatch-PCR catalog inspection binds source, policy and actual cut geometry.
 use collagene_core::{
     Molecule, Topology,
     analysis::Primer,
@@ -50,13 +50,12 @@ fn wire(magic: &[u8; 4], v: u16, value: &impl serde::Serialize) -> Vec<u8> {
     b
 }
 
-// Explicit historical operation4 fixture; current recipe compilers intentionally emit operation29.
-
 #[test]
 fn inspect162_154_binds_real_policy_amplicon_and_catalog_without_target_or_header_downgrade() {
     let (molecule, request) = fixture();
     let revision =
-        mismatch_pcr_digest_inspection::inspection_revision(&molecule, None, &request).unwrap();
+        mismatch_pcr_digest_inspection::inspection_revision(&molecule, None, &request, None)
+            .unwrap();
     let r = Request {
         id: 162,
         revision: revision.clone(),
@@ -64,15 +63,16 @@ fn inspect162_154_binds_real_policy_amplicon_and_catalog_without_target_or_heade
             molecule,
             origin: None,
             request,
+            workspace: None,
         },
     };
     let bytes = protocol::encode_request(&r).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 160);
+    assert_eq!(tag, 157);
     assert!(protocol::process_request(&wire(b"CGQ\0", 77, &r)).is_err());
     let bytes = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 152);
+    assert_eq!(tag, 149);
     let response = protocol::decode_response(&bytes).unwrap();
     let AnalysisResult::MismatchPcrDigestInspection(p) = &response.result else {
         panic!("inspection")

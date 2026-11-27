@@ -3,7 +3,8 @@ use collagene_core::{topo_graph_history as graph, workspace::Workspace};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CaptureKind {
     InitialVector,
-    Reaction { pending_transfers: usize },
+    ReviewedReaction,
+    Reaction { pending_steps: usize },
 }
 pub struct Scope {
     pub context_revision: String,
@@ -174,8 +175,8 @@ mod tests {
         )
         .unwrap();
         let mut first = orientations.candidate_requests[0].clone();
-        assert_eq!(first.transfers.len(), 2);
-        first.transfers.truncate(1);
+        assert_eq!(first.steps.len(), 2);
+        first.steps.truncate(1);
         let partial = graph::prepare_capture(
             &captured.workspace,
             &graph::CaptureRequest {
@@ -241,7 +242,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            continued.candidate_requests[0].transfers.len(),
+            continued.candidate_requests[0].steps.len(),
             1,
             "Only the pending suffix belongs to the new reaction"
         );

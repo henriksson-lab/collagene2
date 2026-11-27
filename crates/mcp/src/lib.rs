@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 192;
+pub const CURRENT_TOOL_COUNT: usize = 189;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -140,8 +140,8 @@ pub enum SavedTopoTask {
         target: DocumentRef,
         policy: collagene_core::topo::AcceptancePolicy,
     },
-    InspectActions {
-        request: topo_graph_tools::Actions,
+    Simulate {
+        request: topo_graph_tools::Preparation,
     },
     ProcessActions {
         request: topo_graph_tools::ActionProduct,
@@ -152,8 +152,8 @@ impl SavedTopoTask {
         match self {
             Self::Orientations { request, .. }
             | Self::Project { request, .. }
-            | Self::Check { request, .. } => request,
-            Self::InspectActions { request } => &request.preparation,
+            | Self::Check { request, .. }
+            | Self::Simulate { request } => request,
             Self::ProcessActions { request } => &request.preparation,
         }
     }
@@ -193,16 +193,12 @@ impl SavedTopoTask {
                 target: target.ok_or_else(|| bad("Independent target reference is required"))?,
                 policy: policy.clone(),
             },
-            Self::InspectActions { request } => Task::InspectActions {
-                request: collagene_core::topo_actions::ActionsRequest {
-                    preparation,
-                    processing: request.processing.clone(),
-                },
+            Self::Simulate { request: _ } => Task::Simulate {
+                request: preparation,
             },
             Self::ProcessActions { request } => Task::ProcessActions {
                 request: collagene_core::topo_actions::Request {
                     preparation,
-                    processing: request.processing.clone(),
                     selection: request.selection.clone(),
                     options: request.options.clone(),
                 },
@@ -1170,7 +1166,7 @@ pub struct OverlapExtensionDigestInspectionQuery {
     pub document: DocumentRef,
     pub request: collagene_core::overlap_extension_digest_inspection::Request,
     #[serde(default)]
-    pub origin: Option<collagene_core::run_material::Capsule>,
+    pub origin: Option<collagene_core::run_material::MaterialOrigin>,
     /// Required exact retained native workspace when an origin is supplied.
     #[serde(default)]
     pub workspace: Option<WorkspaceRef>,
@@ -2011,7 +2007,7 @@ fn bounded_json_limit<T: Serialize>(value: &T, cap: usize) -> Result<String, Err
 }
 fn topo_summary(report: &collagene_core::topo::physical::Report) -> Value {
     json!({"engine":report.engine,"model":report.model,"physical_batch_revision":report.batch_revision,
-        "work_complete":report.work_complete,"all_requested_transfers_applied":report.all_requested_transfers_applied,
+        "work_complete":report.work_complete,"all_requested_steps_applied":report.all_requested_steps_applied,
         "unsupported_or_unknown":report.unsupported_or_unknown,"fully_specified_dna":report.fully_specified_dna,
         "step_count":report.steps.len(),"component_count":report.product.components.len(),"chain_count":report.product.chains.len(),
         "nick_count":report.product.nicks.len(),"unpaired_run_count":report.product.unpaired.len(),"released_activation_count":report.product.released_activations.len(),
@@ -2038,7 +2034,7 @@ fn topo_projection_summary(product: &collagene_core::topo::Product) -> Value {
         Outcome::Proven(view) => {
             json!({"state":"paired_contour","topology":view.topology,"length":view.top.len(),
             "nick_count":view.nicks.len(),"fully_known_terminal_chemistry":view.fully_known_terminal_chemistry,
-            "all_requested_transfers_applied":view.all_requested_transfers_applied,
+            "all_requested_steps_applied":view.all_requested_steps_applied,
             "reference_available":product.reference.is_some(),"source_map_count":view.source_maps.len()})
         }
         Outcome::Withheld(reason) => {
@@ -2185,10 +2181,10 @@ impl CollageneServer {
         if sources.len() > 32
             || request.recipe.materials.is_empty()
             || request.recipe.materials.len() > 16
-            || request.transfers.len() > 16
+            || request.steps.len() > 16
         {
             return Err(bad(
-                "TOPO requires bounded explicit sources and current native recipe/materials/transfers",
+                "TOPO requires bounded explicit sources and current native recipe/materials/steps",
             ));
         }
         let mut roles = BTreeSet::new();
@@ -3839,7 +3835,7 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             let(inputs,_)=server.topo_sources(&args.sources,&native,None)?;
             let report=collagene_core::topo::inspect_orientations(&inputs,&native,args.vector,args.insert,args.directional).map_err(bad)?;
             let candidates=report.reference.candidates.iter().zip(&report.candidate_requests).enumerate().map(|(index,(physical,request))|{
-                Ok::<_,ErrorData>(json!({"index":index,"batch_revision":collagene_core::topo::batch_revision(&inputs,request).map_err(bad)?,"transfers":request.transfers,"physical":topo_summary(physical)}))
+                Ok::<_,ErrorData>(json!({"index":index,"batch_revision":collagene_core::topo::batch_revision(&inputs,request).map_err(bad)?,"steps":request.steps,"physical":topo_summary(physical)}))
             }).collect::<Result<Vec<_>,_>>()?;
             let evidence=TopoEvidence{origin_workspace:&args.origin_workspace,source_bindings:&args.sources,request:&native,target_requirement:None,report:&report,
                 binding_scope:"Exact immutable MCP roles/revisions; complete candidate requests are retained, never target-selected."};
@@ -5458,9 +5454,9 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
         self.compute(move||{
             let workspace=server.restore_workspace(&args.workspace)?;
             let record=collagene_core::run_lineage::load_run(&workspace,&args.run_id).map_err(bad)?;
-            let evidence=collagene_core::processed_run_evidence::download(&workspace,&args.run_id).map_err(bad)?;
+            let evidence=collagene_core::run_evidence::download(&workspace,&args.run_id).map_err(bad)?;
             let artifact=evidence.bytes.as_ref().map(|bytes|server.text_artifact(String::from_utf8(bytes.clone()).map_err(bad)?,"application/json","historical-cloning-graphs.json")).transpose()?;
-            output(json!({"state":"historical","verified":false,"run_id":record.run_id,"recorded_engine":record.assessment.engine_version,"processed_step_count":evidence.step_count,"artifact_id":artifact,"authority":"Stored historical graph evidence only. Fresh replay of exact original inputs is required for current material state or verification."}))
+            output(json!({"state":"historical","verified":false,"run_id":record.run_id,"recorded_engine":record.assessment.engine_version,"scientific_step_count":evidence.step_count,"artifact_id":artifact,"authority":"Stored historical graph evidence only. Fresh replay of exact original inputs is required for current material state or verification."}))
         }).await
     }
     #[tool(
@@ -6366,17 +6362,15 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
         }
         let server = self.clone();
         self.compute(move || {
+            let workspace = args.workspace.as_ref().map(|reference|server.restore_workspace(reference)).transpose()?;
             let source = {
                 let store = server.store.lock().unwrap();
                 let source = store.document(&args.document)?;
-                collagene_core::overlap_extension_digest_inspection::source_preflight(source, args.origin.as_ref(), &args.request).map_err(bad)?;
+                collagene_core::overlap_extension_digest_inspection::source_preflight(source, args.origin.as_ref(), &args.request, workspace.as_ref()).map_err(bad)?;
                 source.clone()
             };
-            if let Some(origin) = &args.origin {
-                server.attest_run_source(args.workspace.as_ref().ok_or_else(||bad("saved overlap-extension workspace unavailable"))?, origin, &source)?;
-            }
-            let expected = collagene_core::overlap_extension_digest_inspection::inspection_revision(&source, args.origin.as_ref(), &args.request).map_err(bad)?;
-            let preview = collagene_core::overlap_extension_digest_inspection::inspect(&source, args.origin.as_ref(), &args.request).map_err(bad)?;
+            let expected = collagene_core::overlap_extension_digest_inspection::inspection_revision(&source, args.origin.as_ref(), &args.request, workspace.as_ref()).map_err(bad)?;
+            let preview = collagene_core::overlap_extension_digest_inspection::inspect(&source, args.origin.as_ref(), &args.request, workspace.as_ref()).map_err(bad)?;
             preview.validate_binding(&expected).map_err(bad)?;
             let count = preview.inspection.as_ref().map_or(0, |inspection|inspection.fragments.len());
             if args.fragment_start > count { return Err(bad("overlap-extension digest fragment offset exceeds retained evidence")); }
@@ -6385,7 +6379,7 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             output(json!({
                 "document":args.document,"mode":"overlap-extension-pcr","engine_version":preview.engine_version,
                 "context_revision":preview.context_revision,"source_revision":preview.source_revision,
-                "origin_revision":preview.origin_revision,"origin_status":preview.origin_status,
+                "origin_revision":preview.origin_revision,"origin_incomplete":preview.origin_incomplete,
                 "selectable":preview.selectable(),"incomplete":preview.incomplete,
                 "amplicon":preview.amplicon.as_ref().map(|m|json!({"revision":m.revision(),"length":m.sequence.len(),"topology":m.topology})),
                 "pcr_stages":preview.pcr_stages.iter().take(3).map(|stage|json!({
@@ -6425,34 +6419,23 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             ));
         }
         if let Some(pcr_options) = args.pcr_options {
-            let run_origin = match args.origin {
-                Some(collagene_core::run_material::MaterialOrigin::Run(origin)) => Some(origin),
-                Some(collagene_core::run_material::MaterialOrigin::Derived(_)) => {
-                    return Err(bad(
-                        "Saved Derived mismatch-PCR digest inspection is not supported by this route.",
-                    ));
-                }
-                None => None,
-            };
             let request = collagene_core::mismatch_pcr_digest_inspection::Request {
                 base: args.request,
                 pcr_options,
             };
             let server = self.clone();
             return self.compute(move||{
+                let workspace=args.workspace.as_ref().map(|reference|server.restore_workspace(reference)).transpose()?;
                 let source={let store=server.store.lock().unwrap();let source=store.document(&args.document)?;
-                    collagene_core::mismatch_pcr_digest_inspection::source_preflight(source,run_origin.as_ref(),&request).map_err(bad)?;source.clone()};
-                if let Some(origin)=&run_origin {
-                    server.attest_run_source(args.workspace.as_ref().ok_or_else(||bad("saved mismatch-PCR source workspace unavailable"))?,origin,&source)?;
-                }
-                let expected=collagene_core::mismatch_pcr_digest_inspection::inspection_revision(&source,run_origin.as_ref(),&request).map_err(bad)?;
-                let preview=collagene_core::mismatch_pcr_digest_inspection::inspect(&source,run_origin.as_ref(),&request).map_err(bad)?;
+                    collagene_core::mismatch_pcr_digest_inspection::source_preflight(source,args.origin.as_ref(),&request,workspace.as_ref()).map_err(bad)?;source.clone()};
+                let expected=collagene_core::mismatch_pcr_digest_inspection::inspection_revision(&source,args.origin.as_ref(),&request,workspace.as_ref()).map_err(bad)?;
+                let preview=collagene_core::mismatch_pcr_digest_inspection::inspect(&source,args.origin.as_ref(),&request,workspace.as_ref()).map_err(bad)?;
                 preview.validate_binding(&expected).map_err(bad)?;
                 let count=preview.inspection.as_ref().map_or(0,|r|r.fragments.len());
                 if args.fragment_start>count{return Err(bad("mismatch-PCR digest fragment offset exceeds retained evidence"));}
                 let end=args.fragment_start.saturating_add(args.max_fragments).min(count);
                 let result=json!({"document":args.document,"mode":"mismatch-pcr","engine_version":preview.engine_version,"context_revision":preview.context_revision,"source_revision":preview.source_revision,
-                    "origin_revision":preview.origin_revision,"origin_status":preview.origin_status,"pcr_options":preview.request.pcr_options,"incomplete":preview.incomplete,
+                    "origin_revision":preview.origin_revision,"origin_incomplete":preview.origin_incomplete,"origin_findings_total":preview.origin_findings_total,"origin_findings_truncated":preview.origin_findings_truncated,"pcr_options":preview.request.pcr_options,"incomplete":preview.incomplete,
                     "pcr_candidate_count":preview.pcr.report.products.len(),"pcr_search_complete":preview.pcr.report.search_complete,"pcr_enumeration_complete":preview.pcr.report.enumeration_complete,
                     "pcr_candidates":preview.pcr.report.products.iter().take(100).enumerate().map(|(index,p)|json!({"index":index,"forward_start":p.forward_start,"reverse_start":p.reverse_start,"length":p.sequence.len(),"certain":p.certain,"overlapping_domains":p.overlapping_domains,"substitution_count":p.substitutions.len()})).collect::<Vec<_>>(),"pcr_candidates_truncated":preview.pcr.report.products.len()>100,
                     "amplicon":preview.amplicon.as_ref().map(|m|json!({"revision":m.revision(),"length":m.sequence.len(),"topology":m.topology})),
@@ -7158,7 +7141,7 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
         }).await
     }
     #[tool(
-        description = "List, freshly inspect, or explicitly capture a whole native elementary TOPO graph in a pinned workspace. Source/event/record selections are small and session-attested; no supplied graph report or metadata becomes material. Capture returns a NEW immutable archive/receipt without changing heads or live application state. Retains partial-transfer history, activations, nicks, byproducts and inherited limitations. Processing-modified graph reuse is unsupported; no inventory, activation manufacture, isolation or experiment claim."
+        description = "List, freshly inspect, or explicitly capture a whole native TOPO graph in a pinned workspace. Source/event/record selections are small and session-attested; no supplied graph report or metadata becomes material. Capture returns a NEW immutable archive/receipt without changing heads or live application state. Retains partial-transfer history, activations, nicks, byproducts and inherited limitations. Retains the exact ordered transfer, flap-cleavage and nick-sealing transcript; no inventory, activation manufacture, isolation or experiment claim."
     )]
     async fn topo_graph(
         &self,
@@ -7175,33 +7158,7 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
     ) -> Result<CallToolResult, ErrorData> {
         self.topo_compile_preparation(args).await
     }
-    #[tool(
-        description = "Freshly reconstruct source-backed TOPO transfers followed by explicitly selected DNA ligase nick sealing. Requires a declared ligase assumption, actual 3′OH/5′phosphate termini and a continuous paired antiparallel template. Retains blocked/unknown steps, every original call, components, displacement and released activation. Does not phosphorylate, trim flaps, infer kit repair, create a tracked duplex or establish target verification."
-    )]
-    async fn seal_topo_nicks(
-        &self,
-        Parameters(args): Parameters<published_ligation_tools::NickQuery>,
-    ) -> Result<CallToolResult, ErrorData> {
-        self.topo_seal_nicks(args).await
-    }
-    #[tool(
-        description = "Freshly reconstruct original-source TOPO preparation, explicit nick sealing, and a source-seeded paired contour of one selected treated component. Faithfully bridges representable strand/end/nick state with unknown internal modifications, preserving original/treated graphs and all other components. Atomically publishes an annotated sequence view with restrictive physical-evidence metadata and full artifact; imported documents cannot restore physical authority. No target acceptance, isolation or mixture winner is inferred."
-    )]
-    async fn project_processed_topo(
-        &self,
-        Parameters(args): Parameters<published_ligation_tools::ProcessedQuery>,
-    ) -> Result<CallToolResult, ErrorData> {
-        self.topo_processed_product(args).await
-    }
-    #[tool(
-        description = "Freshly inspect ordered, explicit ideal-hydrolytic flap cleavage and nick sealing from original TOPO sources. Every original base, excised chain and component remains accounted for. No named nuclease, host repair, kit efficacy, isolation or target-derived trimming is inferred. Returns actual outcomes, components/nicks and full evidence for explicit later selection."
-    )]
-    async fn inspect_topo_actions(
-        &self,
-        Parameters(args): Parameters<topo_actions_tools::InspectQuery>,
-    ) -> Result<CallToolResult, ErrorData> {
-        self.inspect_actions(args).await
-    }
+
     #[tool(
         description = "Freshly reconstruct source-bound chemical actions and prove a selected paired contour. Uses exact processing context/component/source seed and preserves the excised fragment, all parent/child graphs, created end chemistry and Unknown modifications. An annotated sequence view cannot restore private material; use the TopoActions plan operation with an independent target for full verification."
     )]
@@ -8275,24 +8232,29 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             .cloned()
             .ok_or_else(|| bad("unknown plan revision"))?;
         let report = verification::verify(&saved.plan, &saved.target);
-        let processed_step_count =
-            report.processed_step_reports.len() + report.physical_processing_reports.len();
+        let scientific_step_count = report.physical_processing_reports.len()
+            + report.reference_step_reports.len()
+            + report
+                .step_reports
+                .iter()
+                .filter(|step| step.topo.is_some())
+                .count();
         let reference_step_count = report.reference_step_reports.len();
-        let artifact = if processed_step_count > 0
+        let artifact = if scientific_step_count > 0
             || reference_step_count > 0
             || !report.step_reports.is_empty()
         {
             Some(self.text_artifact(
                 bounded_json_limit(&report, 32 * 1024 * 1024)?,
                 "application/json",
-                "verified-plan-processed-graphs.json",
+                "verified-plan-scientific-evidence.json",
             )?)
         } else {
             None
         };
         let products:Vec<_>=report.products.iter().enumerate().map(|(i,m)|json!({"step":i,"revision":m.revision(),"length":m.sequence.len(),"topology":m.topology,"duplex":m.metadata.get("duplex_model").and_then(|s|serde_json::from_str::<Value>(s).ok()),"tracked_modifications":m.metadata.get("tracked_modifications").and_then(|s|serde_json::from_str::<Value>(s).ok())})).collect();
         output(
-            json!({"plan_revision":report.plan_revision,"target_revision":report.target_revision,"engine_version":report.engine_version,"status":report.status,"findings":report.findings,"assumptions":report.assumptions,"products":products,"exhaustive_alternative_search":report.exhaustive_alternative_search,"processed_step_count":processed_step_count,"reference_step_count":reference_step_count,"artifact_id":artifact}),
+            json!({"plan_revision":report.plan_revision,"target_revision":report.target_revision,"engine_version":report.engine_version,"status":report.status,"findings":report.findings,"assumptions":report.assumptions,"products":products,"exhaustive_alternative_search":report.exhaustive_alternative_search,"scientific_step_count":scientific_step_count,"reference_step_count":reference_step_count,"artifact_id":artifact}),
         )
     }
     #[tool(

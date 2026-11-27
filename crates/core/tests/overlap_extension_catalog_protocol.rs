@@ -187,7 +187,7 @@ fn binding(w: &Workspace, index: usize) -> EventBinding {
         revision: d.head.clone(),
     }
 }
-fn saved() -> (Molecule, run_material::Capsule) {
+fn saved() -> (Molecule, run_material::Capsule, Workspace) {
     let source = source();
     let target = Molecule::dna(
         "Original independent saved stock",
@@ -231,11 +231,15 @@ fn saved() -> (Molecule, run_material::Capsule) {
         event: event.clone(),
     };
     let capsule = run_material::capsule(&commit.workspace, &selected).unwrap();
-    (commit.workspace.revisions[&event.revision].clone(), capsule)
+    (
+        commit.workspace.revisions[&event.revision].clone(),
+        capsule,
+        commit.workspace,
+    )
 }
 #[test]
 fn flat_saved_child8_and_actual_origin_digest_inspection_keep_closed_event_bindings() {
-    let (source, origin) = saved();
+    let (source, origin, workspace) = saved();
     let child = RunPreparation::OverlapExtensionPcrCatalogDigest {
         request: extension(),
         selection: selection(),
@@ -288,16 +292,24 @@ fn flat_saved_child8_and_actual_origin_digest_inspection_keep_closed_event_bindi
         options: Default::default(),
     };
     assert!(
-        overlap_extension_digest_inspection::source_preflight(&source, None, &request).is_err()
+        overlap_extension_digest_inspection::source_preflight(&source, None, &request, None)
+            .is_err()
     );
-    let preview =
-        overlap_extension_digest_inspection::inspect(&source, Some(&origin), &request).unwrap();
+    let material = run_material::MaterialOrigin::Run(origin.clone());
+    let preview = overlap_extension_digest_inspection::inspect(
+        &source,
+        Some(&material),
+        &request,
+        Some(&workspace),
+    )
+    .unwrap();
     preview
         .validate_binding(
             &overlap_extension_digest_inspection::inspection_revision(
                 &source,
-                Some(&origin),
+                Some(&material),
                 &request,
+                Some(&workspace),
             )
             .unwrap(),
         )
@@ -309,7 +321,7 @@ fn flat_saved_child8_and_actual_origin_digest_inspection_keep_closed_event_bindi
     );
     assert_eq!(
         preview.origin_evidence.as_ref().unwrap().selection,
-        origin.selection
+        material.selection()
     );
 }
 #[test]
@@ -322,23 +334,25 @@ fn target_free165_157_inspection_scans_actual58bp_product_and_retains_incomplete
         options: Default::default(),
     };
     let context =
-        overlap_extension_digest_inspection::inspection_revision(&source, None, &request).unwrap();
+        overlap_extension_digest_inspection::inspection_revision(&source, None, &request, None)
+            .unwrap();
     let job = Request {
         id: 165,
         revision: context.clone(),
         job: AnalysisJob::InspectOverlapExtensionDigest {
             source: source.clone(),
             origin: None,
+            workspace: None,
             request: request.clone(),
         },
     };
     let encoded = protocol::encode_request(&job).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&encoded[42..]).unwrap();
-    assert_eq!(tag, 163);
+    assert_eq!(tag, 160);
     assert!(protocol::process_request(&wire(b"CGQ\0", 83, &job)).is_err());
     let reply = protocol::process_request(&encoded).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&reply[42..]).unwrap();
-    assert_eq!(tag, 155);
+    assert_eq!(tag, 152);
     let response = protocol::decode_response(&reply).unwrap();
     assert!(protocol::decode_response(&wire(b"CGR\0", 83, &response)).is_err());
     let AnalysisResult::OverlapExtensionDigestInspection(preview) = response.result else {
@@ -376,7 +390,7 @@ fn target_free165_157_inspection_scans_actual58bp_product_and_retains_incomplete
     let mut bounded = request;
     bounded.preparation.extension.max_comparisons = 18;
     let conditional =
-        overlap_extension_digest_inspection::inspect(&source, None, &bounded).unwrap();
+        overlap_extension_digest_inspection::inspect(&source, None, &bounded, None).unwrap();
     assert!(conditional.incomplete);
     assert!(
         conditional.selectable(),

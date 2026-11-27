@@ -220,7 +220,8 @@ pub fn GraphCaptureControls(
         Result<CaptureCandidate, String>,
     >,
     initial: Memo<bool>,
-    pending_transfers: Memo<Option<usize>>,
+    reviewed: Memo<bool>,
+    pending_steps: Memo<Option<usize>>,
     locked: Memo<bool>,
     snapshot: Callback<(), Result<Workspace, String>>,
     validate: Callback<Workspace, Result<(), String>>,
@@ -356,8 +357,9 @@ pub fn GraphCaptureControls(
             }
         });
     });
-    view! {<details><summary>"Save elementary graph"</summary><p class="helper">"Retain the entire declared graph and its source history. Component selection does not isolate material. Flap cleavage and ligase actions are separate and are not included in this elementary record."</p><label>"Graph name"<input maxlength="256" disabled=move||locked.get()||pending.get() prop:value=move||name.get() on:input=move|e|name.set(event_target_value(&e))/></label>
+    view! {<details><summary>"Save native reaction graph"</summary><p class="helper">"Retain the entire declared graph, exact source history and chronological steps. Saving a reviewed reaction includes its explicit flap cleavage and nick sealing. Every detached component remains; a component view does not isolate material."</p><label>"Graph name"<input maxlength="256" disabled=move||locked.get()||pending.get() prop:value=move||name.get() on:input=move|e|name.set(event_target_value(&e))/></label>
     <Show when=move||initial.get()><button class="button secondary" disabled=move||locked.get()||pending.get() on:click=move|_|save.run(CaptureKind::InitialVector)>"Save initial vector graph"</button></Show>
-    <Show when=move||pending_transfers.get().is_some()><label>"New elementary transfers to retain"<select disabled=move||locked.get()||pending.get() prop:value=move||prefix.get() on:change=move|e|prefix.set(event_target_value(&e))>{move||(0..=pending_transfers.get().unwrap_or(0)).map(|n|view!{<option value=n.to_string()>{format!("First {n} pending transfers")}</option>}).collect_view()}</select></label><button class="button secondary" disabled=move||locked.get()||pending.get() on:click={move|_|{match prefix.get_untracked().parse::<usize>(){Ok(count)=>save.run(CaptureKind::Reaction{pending_transfers:count}),Err(_)=>status.set("Choose an explicit transfer prefix".into())}}}>"Save selected elementary state"</button></Show>
+    <Show when=move||reviewed.get()><button class="button secondary" disabled=move||locked.get()||pending.get() on:click=move|_|save.run(CaptureKind::ReviewedReaction)>"Save reviewed whole reaction"</button></Show>
+    <Show when=move||pending_steps.get().is_some()><label>"New reaction steps to retain"<select disabled=move||locked.get()||pending.get() prop:value=move||prefix.get() on:change=move|e|prefix.set(event_target_value(&e))>{move||(0..=pending_steps.get().unwrap_or(0)).map(|n|view!{<option value=n.to_string()>{format!("First {n} declared steps")}</option>}).collect_view()}</select></label><button class="button secondary" disabled=move||locked.get()||pending.get() on:click={move|_|{match prefix.get_untracked().parse::<usize>(){Ok(count)=>save.run(CaptureKind::Reaction{pending_steps:count}),Err(_)=>status.set("Choose an explicit reaction prefix".into())}}}>"Save declared reaction prefix"</button></Show>
     <Show when=move||pending.get()><button class="text-tool" on:click=cancel>"Cancel graph save"</button></Show><p role="status">{move||status.get()}</p></details>}
 }

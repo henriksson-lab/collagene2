@@ -302,9 +302,6 @@ fn operation_title(operation: &Operation) -> &'static str {
         Operation::CheckedDigest { .. } => "Checked restriction digest",
         Operation::CheckedTopo { .. } => "TOPO graph with explicit target acceptance",
         Operation::Topo { .. } => "TOPO physical strand reconstruction",
-        Operation::ProcessedTopo { .. } => {
-            "Processed TOPO source reconstruction and faithful material bridge"
-        }
         Operation::TopoActions { .. } => "TOPO ordered source-backed physical actions",
         Operation::MultiSiteRecombineReference { .. } => "Multi-parent reference exchange",
         Operation::RecombineReference { .. } => "Reference-only BP/LR exchange",
@@ -613,7 +610,7 @@ pub fn RunDetailsPanel(
                 .ask(Request {
                     id: u32::MAX - 24,
                     revision: fingerprint.clone(),
-                    job: AnalysisJob::LoadProcessedRunEvidence {
+                    job: AnalysisJob::LoadRunEvidence {
                         workspace: frame,
                         run_id: requested_run.clone(),
                     },
@@ -644,7 +641,7 @@ pub fn RunDetailsPanel(
             match reply {
                 Ok(reply) if reply.id == u32::MAX - 24 && reply.revision == fingerprint => {
                     match reply.result {
-                        AnalysisResult::HistoricalProcessedRunEvidence(value) => {
+                        AnalysisResult::HistoricalRunEvidence(value) => {
                             let identity = record.with_value(|record| {
                                 record.as_ref().is_ok_and(|record| {
                                     value.run_id == record.run_id

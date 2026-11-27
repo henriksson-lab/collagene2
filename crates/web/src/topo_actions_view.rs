@@ -1,6 +1,6 @@
 //! Explicit ordered physical processing after a freshly inspected TOPO path.
 //! No target-driven deletion, implicit repair, or advisory-plan handoff.
-use crate::{topo_nick_view::Frame, worker::CachedWorker};
+use crate::worker::CachedWorker;
 use collagene_core::{
     protocol::AnalysisResult,
     topo::{
@@ -20,11 +20,29 @@ use std::{
 };
 use wasm_bindgen_futures::spawn_local;
 
+#[derive(Clone, PartialEq, Eq)]
+pub struct Frame {
+    pub epoch: u64,
+    pub sources: Vec<(String, collagene_core::run_lineage::EventBinding)>,
+    pub target: collagene_core::run_lineage::EventBinding,
+    pub inspection_revision: String,
+    pub inspection_generation: u32,
+    pub orientation: usize,
+    pub graph: Option<collagene_core::topo_graph_history::Selection>,
+}
 /// An advisory declaration, never a positive material receipt.
 pub struct OpenActions {
     pub frame: Frame,
     pub request: topo_actions::Request,
     pub expected_revision: String,
+}
+/// Exact reviewed request plus a cheap source/form guard. No imported report
+/// or selected contour becomes graph authority; capture reruns the native recipe.
+#[derive(Clone)]
+pub struct ReviewedReaction {
+    pub frame: Frame,
+    pub request: Arc<topo::Request>,
+    pub guard: Callback<(), Result<(), String>>,
 }
 pub struct Capture {
     pub inputs: Vec<topo::Input>,
@@ -65,7 +83,8 @@ impl Default for ContourForm {
 struct Inspected {
     frame: Frame,
     form: Form,
-    report: Arc<topo_actions::Inspection>,
+    request: Arc<topo::Request>,
+    report: Arc<topo::TopoReport>,
 }
 struct Projected {
     inspection: Arc<Inspected>,
@@ -135,6 +154,20 @@ fn outcome_text(step: &processing::ActionEvidence) -> String {
         ),
     }
 }
+pub(crate) fn step_text(step: &physical::StepEvidence) -> String {
+    match step {
+        physical::StepEvidence::Transfer(e) => format!(
+            "Step {} transfer {} → {} · {:?} · {} · displacement {:?}",
+            e.step + 1,
+            call_text(e.donor_call),
+            call_text(e.acceptor_call),
+            e.outcome,
+            e.reason,
+            e.displacement.as_ref().map(|d| d.kind)
+        ),
+        physical::StepEvidence::Process(e) => outcome_text(e),
+    }
+}
 struct Json(Vec<u8>);
 impl Write for Json {
     fn write(&mut self, b: &[u8]) -> io::Result<usize> {
@@ -184,6 +217,7 @@ pub fn TopoActionsView(
     frame: Memo<Option<Frame>>,
     capture: Callback<Frame, Result<Capture, String>>,
     on_open: Callback<OpenActions, Result<(), String>>,
+    on_reviewed: Callback<Option<Arc<ReviewedReaction>>>,
     locked: Memo<bool>,
 ) -> impl IntoView {
     let captured = RwSignal::new(None::<(Frame, Arc<Capture>)>);
@@ -209,7 +243,7 @@ pub fn TopoActionsView(
     Effect::new(move |_| {
         let _ = frame.get();
         origin_review.set(None);
-        let _ = locked.get();
+        on_reviewed.run(None);
         cancel.run(());
         captured.set(None);
         form.set(Form::default());
@@ -219,9 +253,17 @@ pub fn TopoActionsView(
         choice.set(ContourForm::default());
         status.set(String::new());
     });
+    Effect::new(move |_| {
+        if locked.get() {
+            cancel.run(());
+            proposal.set(None);
+            projected.set(None);
+        }
+    });
     let action_key = Memo::new(move |_| form.with(|f| f.actions.clone()));
     Effect::new(move |_| {
         let _ = action_key.get();
+        on_reviewed.run(None);
         cancel.run(());
         proposal.set(None);
         inspected.set(None);
@@ -270,6 +312,7 @@ pub fn TopoActionsView(
             Ok(value) => {
                 cancel.run(());
                 form.set(Form::default());
+                on_reviewed.run(None);
                 inspected.set(None);
                 projected.set(None);
                 captured.set(Some((key, Arc::new(value))));
@@ -285,8 +328,14 @@ pub fn TopoActionsView(
         if locked.get_untracked() || busy.get_untracked() || current_capture().is_none() {
             return;
         }
-        if form.with_untracked(|f| f.actions.len() >= 16) {
-            status.set("At most 16 explicit actions can be declared.".into());
+        let Some((_, base)) = current_capture() else {
+            return;
+        };
+        if form.with_untracked(|f| {
+            f.actions.len().saturating_add(base.physical.steps.len())
+                >= base.physical.limits.max_steps
+        }) {
+            status.set("The complete reaction has reached its explicit step limit.".into());
             return;
         }
         form.update(|f| f.actions.push(action));
@@ -400,17 +449,14 @@ pub fn TopoActionsView(
                 return;
             }
         };
-        let request = topo_actions::ActionsRequest {
-            preparation: fresh.request,
-            processing: processing::Request {
-                actions: raw.actions.clone(),
-                limits: Default::default(),
-            },
-        };
+        let mut request = fresh.request;
+        request
+            .steps
+            .extend(raw.actions.iter().cloned().map(physical::Step::Process));
         let revision = match crate::topo_preparation::task_revision(
             &fresh.inputs,
             fresh.template.as_ref(),
-            &collagene_core::topo_run_preparation::Task::InspectActions {
+            &collagene_core::topo_run_preparation::Task::Simulate {
                 request: request.clone(),
             },
         ) {
@@ -422,6 +468,7 @@ pub fn TopoActionsView(
         };
         cancel.run(());
         inspected.set(None);
+        on_reviewed.run(None);
         projected.set(None);
         let executor = match CachedWorker::new() {
             Ok(v) => Rc::new(v),
@@ -442,7 +489,9 @@ pub fn TopoActionsView(
                 ticket,
                 fresh.inputs,
                 fresh.template,
-                collagene_core::topo_run_preparation::Task::InspectActions { request },
+                collagene_core::topo_run_preparation::Task::Simulate {
+                    request: request.clone(),
+                },
             )
             .await;
             executor.close();
@@ -463,13 +512,34 @@ pub fn TopoActionsView(
             });
             match reply {
                 Ok(result) => match result {
-                    AnalysisResult::TopoActionsInspected(report) => {
-                        match report.validate_binding(&revision) {
+                    AnalysisResult::TopoSimulation(report) => {
+                        match collagene_core::topo_worker::validate_simulation(&report, &revision) {
                             Ok(()) => {
-                                inspected.set(Some(Arc::new(Inspected {
+                                let value = Arc::new(Inspected {
                                     frame: key,
                                     form: raw,
+                                    request: Arc::new(request),
                                     report: Arc::new(report),
+                                });
+                                inspected.set(Some(value.clone()));
+                                let held = value.clone();
+                                let guard_alive = alive.clone();
+                                let guard = Callback::new(move |()| -> Result<(), String> {
+                                    if !guard_alive.load(Ordering::Relaxed)
+                                        || frame.get_untracked().as_ref() != Some(&held.frame)
+                                        || form.with_untracked(|f| f.actions != held.form.actions)
+                                        || inspected
+                                            .get_untracked()
+                                            .is_none_or(|current| !Arc::ptr_eq(&current, &held))
+                                    {
+                                        return Err("The reviewed reaction source, steps or inspection changed".into());
+                                    }
+                                    Ok(())
+                                });
+                                on_reviewed.run(Some(Arc::new(ReviewedReaction {
+                                    frame: value.frame.clone(),
+                                    request: value.request.clone(),
+                                    guard,
                                 })));
                                 status.set("Ordered processing inspected. Review every retained component and choose a contour explicitly.".into());
                             }
@@ -507,7 +577,7 @@ pub fn TopoActionsView(
                 .ok()
                 .and_then(|n| n.checked_sub(1))
                 .ok_or("Choose a one-based source call.")?;
-            if component >= i.report.processing.product.components.len() {
+            if component >= i.report.physical.product.components.len() {
                 return Err("The component changed.".into());
             }
             if i.report
@@ -536,15 +606,14 @@ pub fn TopoActionsView(
             }
         };
         let request = topo_actions::Request {
-            preparation: i.report.request.preparation.clone(),
-            processing: i.report.request.processing.clone(),
-            selection: physical::processing_projection::Selection {
-                processing_context_revision: i.report.processing.context_revision.clone(),
+            preparation: i.request.as_ref().clone(),
+            selection: physical::projection::Selection {
+                source_batch_revision: i.report.physical.batch_revision.clone(),
                 component,
                 reference_seed: seed,
             },
             options: physical::projection::Options {
-                require_all_requested_transfers_applied: raw.require_all,
+                require_all_requested_steps_applied: raw.require_all,
                 require_known_terminal_chemistry: raw.require_known,
                 ..Default::default()
             },
@@ -658,6 +727,8 @@ pub fn TopoActionsView(
             inspection_generation: u32,
             orientation: usize,
             material_origin: &'a crate::topo_view::OriginEvidence,
+            /// Simulation lacks its recipe; projection already retains it in report.request.
+            request: Option<&'a topo::Request>,
             report: &'a T,
         }
         let mut output = Json(vec![]);
@@ -680,6 +751,7 @@ pub fn TopoActionsView(
                     inspection_generation: key.inspection_generation,
                     orientation: key.orientation,
                     material_origin: &origin,
+                    request: None,
                     report: p.report.as_ref(),
                 };
                 let result = serde_json::to_writer(&mut output, &evidence);
@@ -707,13 +779,14 @@ pub fn TopoActionsView(
                     inspection_generation: key.inspection_generation,
                     orientation: key.orientation,
                     material_origin: &origin,
+                    request: Some(i.request.as_ref()),
                     report: i.report.as_ref(),
                 };
                 let result = serde_json::to_writer(&mut output, &evidence);
                 Ok((
                     result,
                     key.clone(),
-                    i.report.context_revision.clone(),
+                    i.report.batch_revision.clone(),
                     false,
                     origin,
                 ))
@@ -745,7 +818,7 @@ pub fn TopoActionsView(
                     let revision = if projected {
                         current_projection().map(|p| p.report.context_revision.clone())
                     } else {
-                        current_inspection().map(|i| i.report.context_revision.clone())
+                        current_inspection().map(|i| i.report.batch_revision.clone())
                     };
                     if revision.as_deref() != Some(expected_revision.as_str()) {
                         return Err("Ordered-action evidence changed.".into());
@@ -764,12 +837,12 @@ pub fn TopoActionsView(
                     Ok(())
                 };
                 let completion = check.clone();
+                let completion_alive = export_alive.clone();
                 artifact.complete_guarded(check, move |result| {
-                    if completion().is_err() {
-                        return;
-                    }
+                    if !completion_alive.load(Ordering::Relaxed) || status.try_get_untracked().is_none(){return;}
                     status.set(match result {
-                        Ok(()) => "Ordered-action evidence saved.".into(),
+                        Ok(()) if completion().is_ok()=>"Captured TOPO reaction evidence saved.".into(),
+                        Ok(())=>"Captured TOPO reaction evidence saved; the current source selection has changed.".into(),
                         Err(error) => error,
                     });
                 });
@@ -798,7 +871,7 @@ pub fn TopoActionsView(
         <p class="helper">"Assumption and advanced coordinate fields prepare a new declaration; existing actions change only when explicitly added, removed or reordered."</p>
         <label>"Ligase assumption for a new nick action"<textarea rows="2" maxlength="4096" disabled=move||locked.get()||busy.get() prop:value=move||form.with(|f|f.ligase.clone()) on:input=move|e|form.update(|f|f.ligase=event_target_value(&e))/></label>
         {move||current_capture().map(|(_,value)|{
-            let expected=form.get();let nicks=current_inspection().map(|i|i.report.processing.product.nicks.clone()).unwrap_or_else(||value.physical.product.nicks.clone());
+            let expected=form.get();let nicks=current_inspection().map(|i|i.report.physical.product.nicks.clone()).unwrap_or_else(||value.physical.product.nicks.clone());
             view!{<details><summary>{format!("Explicit available nick choices ({})",nicks.len())}</summary><p>"None are added automatically. After a cut, inspect actions again to obtain its actual remaining nicks."</p>{nicks.into_iter().map(|nick|{let raw=expected.clone();let text=format!("{} ({:?}, 3′) → {} ({:?}, 5′)",call_text(nick.three),nick.three_prime,call_text(nick.five),nick.five_prime);view!{<div><p>{text}</p><button class="text-tool" disabled=move||locked.get()||busy.get() on:click=move|_|add_nick.run((raw.clone(),nick.clone()))>"Add this nick to ordered actions"</button></div>}}).collect_view()}</details>}
         })}
         <h4>"Ordered declarations — require native inspection"</h4>
@@ -808,11 +881,12 @@ pub fn TopoActionsView(
         <p role="status">{move||status.get()}</p>
         {move||current_inspection().map(|i|{
             let steps=i.clone();let assumptions=i.clone();
-            view!{<section><h4>"Actual ordered-action graph"</h4><p>{format!("Original source calls: {} · all actions applied: {} · unsupported or unknown: {} · original transfers complete: {}",i.report.processing.source_bases,i.report.processing.all_requested_actions_applied,i.report.processing.unsupported_or_unknown,i.report.processing.parent.work_complete)}</p><p>{format!("Processing bounds: {} actions; {} product chains; {} mapping segments; {} bytes of report.",i.report.request.processing.limits.max_actions,i.report.request.processing.limits.max_product_chains,i.report.request.processing.limits.max_mapping_segments,i.report.request.processing.limits.max_report_bytes)}</p><Rows label="Action outcomes and actual chemistry" total=i.report.processing.steps.len() row=Callback::new(move|index:usize|outcome_text(&steps.report.processing.steps[index]))/><Rows label="Processing assumptions and limitations" total=i.report.processing.assumptions.len() row=Callback::new(move|index:usize|assumptions.report.processing.assumptions[index].clone())/>{graph_view(Arc::new(i.report.processing.product.clone()))}</section>}
+            view!{<section><h4>"Actual ordered reaction graph"</h4><p>{format!("Original source calls: {} · all requested steps applied: {} · unsupported or unknown: {} · work complete: {}",i.report.physical.source_bases,i.report.physical.all_requested_steps_applied,i.report.physical.unsupported_or_unknown,i.report.physical.work_complete)}</p><p>{format!("Reaction bounds: {} steps; {} work cells; {} bytes of work memory; {} bytes of report.",i.report.physical.limits.max_steps,i.report.physical.limits.max_work_cells,i.report.physical.limits.max_work_bytes,i.report.physical.limits.max_report_bytes)}</p><Rows label="Step outcomes and actual chemistry" total=i.report.physical.steps.len() row=Callback::new(move|index:usize|step_text(&steps.report.physical.steps[index]))/><Rows label="Reaction assumptions and limitations" total=i.report.physical.assumptions.len() row=Callback::new(move|index:usize|assumptions.report.physical.assumptions[index].clone())/>{graph_view(Arc::new(i.report.physical.product.clone()))}</section>}
+
         })}
         {move||current_inspection().map(|i|{
             let strands=i.clone();view!{<section><h4>"Explicit source-derived contour"</h4>
-                <label>"Processed component"<select disabled=move||locked.get()||busy.get() prop:value=move||choice.with(|c|c.component.clone()) on:change=move|e|choice.update(|c|c.component=event_target_value(&e))><option value="">"Choose actual processed component…"</option>{i.report.processing.product.components.iter().enumerate().map(|(index,c)|view!{<option value=index.to_string()>{format!("Component {index}: {} paired / {} unpaired calls",c.paired_nucleotides,c.unpaired_nucleotides)}</option>}).collect_view()}</select></label>
+                <label>"Processed component"<select disabled=move||locked.get()||busy.get() prop:value=move||choice.with(|c|c.component.clone()) on:change=move|e|choice.update(|c|c.component=event_target_value(&e))><option value="">"Choose actual processed component…"</option>{i.report.physical.product.components.iter().enumerate().map(|(index,c)|view!{<option value=index.to_string()>{format!("Component {index}: {} paired / {} unpaired calls",c.paired_nucleotides,c.unpaired_nucleotides)}</option>}).collect_view()}</select></label>
                 <label>"Prepared source strand"<select disabled=move||locked.get()||busy.get() prop:value=move||choice.with(|c|c.strand.clone()) on:change=move|e|choice.update(|c|{c.strand=event_target_value(&e);c.call.clear();})><option value="">"Choose prepared source strand…"</option>{strands.report.preparation.substrates.strands.iter().enumerate().map(|(index,s)|view!{<option value=index.to_string()>{format!("{index}: {} / {} · {} calls",s.role,s.id,s.sequence.len())}</option>}).collect_view()}</select></label>
                 <label>"Source call (one based)"<input type="number" min="1" disabled=move||locked.get()||busy.get() prop:value=move||choice.with(|c|c.call.clone()) on:input=move|e|choice.update(|c|c.call=event_target_value(&e))/></label>
                 <label class="checkbox-label"><input type="checkbox" disabled=move||locked.get()||busy.get() prop:checked=move||choice.with(|c|c.require_all) on:change=move|e|choice.update(|c|c.require_all=event_target_checked(&e))/>"Require every requested transfer and action to apply"</label>

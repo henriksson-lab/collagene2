@@ -134,7 +134,7 @@ mod tests {
                         tail: None,
                     }],
                 },
-                transfers: vec![],
+                steps: vec![],
                 engine_limits: Default::default(),
                 projection_options: Default::default(),
             },

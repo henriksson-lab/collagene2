@@ -230,8 +230,6 @@ mod topo_actions_view;
 mod topo_graph_model;
 #[cfg(target_arch = "wasm32")]
 mod topo_graph_view;
-#[cfg(target_arch = "wasm32")]
-mod topo_nick_view;
 #[cfg(any(target_arch = "wasm32", test))]
 mod topo_preparation;
 #[cfg(target_arch = "wasm32")]
@@ -246,6 +244,8 @@ mod variants_view;
 mod web_mcp;
 #[cfg(any(target_arch = "wasm32", test))]
 mod web_mcp_assembly;
+#[cfg(any(target_arch = "wasm32", test))]
+mod web_mcp_design;
 #[cfg(target_arch = "wasm32")]
 mod workspace_commit;
 #[cfg(target_arch = "wasm32")]

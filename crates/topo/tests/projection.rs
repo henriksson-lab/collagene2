@@ -51,29 +51,41 @@ fn directional() -> Substrates {
         pairing: vec![pair(0, 0, 1, 4, 14), pair(2, 0, 3, 0, 10)],
     }
 }
-fn steps(directional: bool) -> [Transfer; 2] {
+fn steps(directional: bool) -> [Step; 2] {
     [
-        Transfer {
-            donor: 0,
-            acceptor: 2,
+        Step::Transfer(Transfer {
+            donor: Call {
+                strand: 0,
+                index: if directional { 13 } else { 12 },
+            },
+            acceptor: Call {
+                strand: 2,
+                index: 0,
+            },
             geometry: if directional {
                 Geometry::DirectionalCacc
             } else {
                 Geometry::ThreePrimeTA
             },
-        },
-        Transfer {
-            donor: 1,
-            acceptor: 3,
+        }),
+        Step::Transfer(Transfer {
+            donor: Call {
+                strand: 1,
+                index: if directional { 17 } else { 12 },
+            },
+            acceptor: Call {
+                strand: 3,
+                index: 0,
+            },
             geometry: if directional {
                 Geometry::Flush
             } else {
                 Geometry::ThreePrimeTA
             },
-        },
+        }),
     ]
 }
-fn selection(s: &Substrates, t: &[Transfer], component: usize, seed: Call) -> p::Selection {
+fn selection(s: &Substrates, t: &[Step], component: usize, seed: Call) -> p::Selection {
     p::Selection {
         source_batch_revision: batch_revision(s, t, &Limits::default()).unwrap(),
         component,
@@ -280,11 +292,17 @@ fn nick_resealed_circle_does_not_erase_opposite_nick() {
         strands: vec![top, strand("bottom", "CGTCAAGGG", false)],
         pairing: vec![pair(0, 0, 1, 0, 4), pair(0, 4, 1, 4, 5)],
     };
-    let t = [Transfer {
-        donor: 0,
-        acceptor: 0,
+    let t = [Step::Transfer(Transfer {
+        donor: Call {
+            strand: 0,
+            index: s.strands[0].sequence.len() - 1,
+        },
+        acceptor: Call {
+            strand: 0,
+            index: 0,
+        },
         geometry: Geometry::NickReseal,
-    }];
+    })];
     let r = p::project(
         &s,
         &t,
@@ -356,11 +374,17 @@ fn separate_free_strand_is_retained_even_when_another_component_has_a_duplex_vie
         ],
         pairing: vec![pair(0, 0, 1, 4, 9), pair(2, 0, 3, 0, 4)],
     };
-    let t = [Transfer {
-        donor: 0,
-        acceptor: 2,
+    let t = [Step::Transfer(Transfer {
+        donor: Call {
+            strand: 0,
+            index: s.strands[0].sequence.len() - 1,
+        },
+        acceptor: Call {
+            strand: 2,
+            index: 0,
+        },
         geometry: Geometry::DirectionalCacc,
-    }];
+    })];
     let physical = simulate(&s, &t, &Limits::default()).unwrap();
     let duplex = physical
         .product
@@ -458,11 +482,17 @@ fn four_way_branch_and_paired_track_backbone_link_cannot_be_flattened() {
         strands: vec![strand("a", "CCCTT", true), strand("b", "AAGGG", false)],
         pairing: vec![pair(0, 0, 1, 0, 5)],
     };
-    let t = [Transfer {
-        donor: 0,
-        acceptor: 1,
+    let t = [Step::Transfer(Transfer {
+        donor: Call {
+            strand: 0,
+            index: s.strands[0].sequence.len() - 1,
+        },
+        acceptor: Call {
+            strand: 1,
+            index: 0,
+        },
         geometry: Geometry::Flush,
-    }];
+    })];
     let r = p::project(
         &s,
         &t,
@@ -614,11 +644,17 @@ fn geometric_projection_does_not_claim_an_unapplied_transfer_succeeded() {
         ],
         pairing: vec![pair(0, 0, 1, 0, 6)],
     };
-    let t = [Transfer {
-        donor: 0,
-        acceptor: 1,
+    let t = [Step::Transfer(Transfer {
+        donor: Call {
+            strand: 0,
+            index: s.strands[0].sequence.len() - 1,
+        },
+        acceptor: Call {
+            strand: 1,
+            index: 0,
+        },
         geometry: Geometry::Flush,
-    }];
+    })];
     let select = selection(
         &s,
         &t,
@@ -629,15 +665,15 @@ fn geometric_projection_does_not_claim_an_unapplied_transfer_succeeded() {
         },
     );
     let ordinary = p::project(&s, &t, &Limits::default(), &select, &p::Options::default()).unwrap();
-    assert!(!view(&ordinary).all_requested_transfers_applied);
+    assert!(!view(&ordinary).all_requested_steps_applied);
     let strict = p::Options {
-        require_all_requested_transfers_applied: true,
+        require_all_requested_steps_applied: true,
         ..p::Options::default()
     };
     let withheld = p::project(&s, &t, &Limits::default(), &select, &strict).unwrap();
     assert_eq!(
         withheld.outcome,
-        p::Outcome::Withheld(p::Withheld::RequestedTransfersNotApplied)
+        p::Outcome::Withheld(p::Withheld::RequestedStepsNotApplied)
     );
     assert_eq!(ordinary.physical, withheld.physical);
     assert_ne!(ordinary.batch_revision, withheld.batch_revision);

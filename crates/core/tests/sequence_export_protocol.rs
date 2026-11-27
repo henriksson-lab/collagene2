@@ -60,8 +60,8 @@ fn sequence_export_review_and_preparation_are_source_bound_profiles() {
                 format: format.clone(),
             },
             context.clone(),
-            171,
-            161,
+            168,
+            158,
         );
         let AnalysisResult::SequenceExportAssessment(review) = reviewed.result else {
             unreachable!()
@@ -79,8 +79,8 @@ fn sequence_export_review_and_preparation_are_source_bound_profiles() {
                 allow_omissions: true,
             },
             context.clone(),
-            172,
-            162,
+            169,
+            159,
         );
         let AnalysisResult::SequenceExportPrepared(prepared) = result.result else {
             unreachable!()
@@ -144,8 +144,8 @@ fn trace_worker_pins_view_precision_and_actual_signal_and_refuses_fabrication() 
             options: options.clone(),
         },
         context.clone(),
-        173,
-        163,
+        170,
+        160,
     );
     let AnalysisResult::ScfTraceExported(report) = response.result else {
         unreachable!()

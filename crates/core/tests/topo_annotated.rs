@@ -64,7 +64,7 @@ fn prepared() -> (Vec<t::Input>, t::Request) {
                 }],
             }],
         },
-        transfers: vec![],
+        steps: vec![],
         engine_limits: p::Limits::default(),
         projection_options: v::Options::default(),
     };
@@ -172,7 +172,7 @@ fn pcr_template_features_require_review_and_unproven_tailed_contours_get_no_anno
                 tail: None,
             }],
         },
-        transfers: vec![],
+        steps: vec![],
         engine_limits: p::Limits::default(),
         projection_options: v::Options::default(),
     };

@@ -74,7 +74,7 @@ fn plan(directional: bool) -> (DesignPlan, Molecule) {
         declaration_id:"explicit TA strands".into(),assumption:"Declared source-corresponding strands and activation; no supplier state is inferred.".into(),
         strands:sequences.iter().enumerate().map(|(i,(role,dna))|strand(role,dna.len(),i<2)).collect(),
         pairing:if directional {vec![pair(0,0,1,4,14),pair(2,0,3,0,10)]}else{vec![pair(0,0,1,0,12),pair(2,0,3,0,6)]}}]},
-        transfers:vec![p::Transfer{donor:0,acceptor:2,geometry:if directional {p::Geometry::DirectionalCacc}else{p::Geometry::ThreePrimeTA}},p::Transfer{donor:1,acceptor:3,geometry:if directional {p::Geometry::Flush}else{p::Geometry::ThreePrimeTA}}],engine_limits:p::Limits::default(),projection_options:v::Options::default()};
+        steps:vec![p::Step::Transfer(p::Transfer{donor: p::Call {strand:0,index:if directional { 13 } else { 12 }},acceptor:p::Call{strand:2,index:0},geometry:if directional {p::Geometry::DirectionalCacc}else{p::Geometry::ThreePrimeTA}}),p::Step::Transfer(p::Transfer{donor: p::Call {strand:1,index:if directional { 17 } else { 12 }},acceptor:p::Call{strand:3,index:0},geometry:if directional {p::Geometry::Flush}else{p::Geometry::ThreePrimeTA}})],engine_limits:p::Limits::default(),projection_options:v::Options::default()};
     let actual = inputs
         .iter()
         .map(|input| &input.molecule)

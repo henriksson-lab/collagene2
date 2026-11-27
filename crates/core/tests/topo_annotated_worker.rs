@@ -53,7 +53,7 @@ fn fixture() -> (Vec<t::Input>, t::Request, t::Selection) {
                 }],
             }],
         },
-        transfers: vec![],
+        steps: vec![],
         engine_limits: Default::default(),
         projection_options: Default::default(),
     };

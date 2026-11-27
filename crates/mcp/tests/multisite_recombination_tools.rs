@@ -347,11 +347,11 @@ async fn sdk_library_multisite_freezes_original_intent_before_explicit_network_s
             json!({"id":format!("bin-{i}"),"label":format!("Original contribution {i}"),"choices":[{"generation":null,
                 "id":format!("choice-{i}"),"label":format!("Parent {i}"),
                 "source":{"document_id":d.id,"event_id":event.id,"revision":event.revision},
-                "start":start,"end":end,"reverse":false,"preparation":null,"treatment":null
+                "selector":{"ReferenceRange":{"start":start,"end":end,"reverse":false}},"preparation_reverse":false,"preparation":null,"treatment":null
             }]})
         })
         .collect::<Vec<_>>();
-    let mut design = json!({"id":"multisite-library","name":"Declared ordered source-body scars","circular":true,"bins":bins,"method":{"MultiSiteReference":{"request":request(),"selection":null}}});
+    let mut design = json!({"id":"multisite-library","name":"Declared ordered source-body scars","circular":true,"bins":bins,"material_bindings":[],"method":{"MultiSiteReference":{"request":request(),"selection":null}}});
     let construct = json!({"id":"construct-main","name":"Frozen scar-bearing reference","choices":(0..4).map(|i|json!({"bin_id":format!("bin-{i}"),"choice_id":format!("choice-{i}")})).collect::<Vec<_>>(),"target":{"OriginalRegions":{"junction_edits":[],"substitutions":[],"edits":[]}},"overrides":null});
     // Resolve declared intent before invoking reaction discovery at all.
     let intent = call(
@@ -423,7 +423,7 @@ async fn sdk_library_multisite_freezes_original_intent_before_explicit_network_s
         "original-region intent was not an existing target event"
     );
     let mut changed = design.clone();
-    changed["bins"][0]["choices"][0]["start"] = json!(5);
+    changed["bins"][0]["choices"][0]["selector"]["ReferenceRange"]["start"] = json!(5);
     let stale = call(
         &client,
         "evaluate_combinatorial_batch",

@@ -4,31 +4,31 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-Current source uses worker108, candidate29, native plan27, science30, draft18 and
-192 MCP tools. There is one current internal representation; unsupported internal
-schemas are rejected without compatibility readers. The PCR/library integration
-is published as `f66deff`; its178 focused native cases pass, with a local integrated
-WASM check before its final shared-model guard. Its exact-source web CI passed; native CI stopped at missing explicit PCR strand
-fields in peripheral fixture constructors, corrected in the current batch.
+Current source uses worker109, candidate30, native plan28, science31, draft18 and
+189 MCP tools. There is one current internal representation; unsupported internal
+schemas are rejected without compatibility readers. Native TOPO graph records
+use schema2 and a single ordered transfer/flap/sealing transcript, freshly
+replayed from original substrates. One physical bridge replaces the separate
+phase executors. Full reviewed-reaction graph capture retains processing steps,
+all components, effective cut-end chemistry and consumed activation through restart.
 
-The published448de55 batch carries finishing policies through native
-library and whole-primer proposals, adds actual staggered-end3′ annealing,
-records planned E. coli rescue as documentary intent, and adds the first optional
-WebMCP read/navigation tools. Its coordinated native and web/worker WASM checks pass, with167 distinct focused
-native cases and22 protocol rechecks. A final explanatory UI text edit follows
-that compiler check; it changes no Rust behavior. Its web CI passed; native OS CI stopped at missing or misplaced explicit PCR template-strand fields in three digest fixtures, corrected in current source. Scientific completion remains
-separate from documentary rescue. [WebMCP scope](WEBMCP.md).
+The working batch also connects generic Run/Derived mismatch-PCR and reciprocal-
+extension digest inspectors with exact workspace ownership, stages literal
+WebMCP design proposals for visible apply/review, and fixes saved-source inverse-
+PCR's missing workspace attestation. Nine browser tools share existing Rust
+commands. The integrated batch passes234 distinct focused native cases across53 target/
+filter groups, including the52-call post-flap/sealed continuation, root ownership
+and endpoint/backbone/nick tampering refusals. The web/worker WASM check and static
+WebMCP JavaScript syntax check pass. Exact-source CI is pending publication.
 
-The current integrated batch completes generic saved Run/Derived exact-PCR
-digest inspection and source-bound standalone OE planning. Both retain the exact
-owning workspace and actual selected strand. It also adds sequential original-
-coordinate inverse-PCR domestication and WebMCP open-draft/review/cancel tools.
-The latter invoke the normal intended-reference review action; they do not apply
-primers or verify a reaction method. Native and integrated web/worker WASM checks pass. There are118 distinct passing
-focused native cases, including saved-source SDK checks, sequential-round
-semantics, web models and the corrected CI fixture profiles. Publication and
-exact-source cross-platform CI remain pending. The full product goal is active.
-[Sequential preparation](DOMESTICATION_ROUNDS.md) · [Saved-source OE](SAVED_OVERLAP_EXTENSION_PRIMERS.md) · [WebMCP scope](WEBMCP.md).
+Published19a1a1c (worker108/candidate29/plan27/science30/draft18) passed118 focused
+native cases and the integrated WASM check. Exact-source web CI and all three
+desktop build jobs subsequently pass. Full native Windows/macOS/Linux CI found
+the same eight failing fixture groups: outdated library request shapes, changed
+physical-source diagnostics, and the saved-source inverse-PCR attestation gap.
+The current source addresses these without relaxed scientific acceptance; focused
+rechecks pass in the current batch. Full graphical and installed-desktop acceptance, and the
+complete project goal, remain open.
 
 The prior443f51b native CI on Windows, macOS and Linux found the same five stale
 binary selector/size-lane fixture expectations, corrected in f66deff without

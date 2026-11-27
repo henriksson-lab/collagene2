@@ -17,7 +17,6 @@ use collagene_core::{
     topo_preparation::PreparationMode,
     topo_worker,
     transfer::Candidate,
-    verification::{DesignPlan, Operation, PlanInput, Source, TopoSource},
 };
 use leptos::prelude::*;
 use serde::Serialize;
@@ -53,7 +52,7 @@ impl Policies {
         topo::AcceptancePolicy {
             allow_nicks: self.nicks,
             allow_unknown_terminal_chemistry: self.unknown,
-            allow_unapplied_transfers: self.unapplied,
+            allow_unapplied_steps: self.unapplied,
             allow_other_components: self.other,
             allow_circular_rotation: self.rotation,
             allow_reverse_complement: self.reverse,
@@ -152,22 +151,14 @@ fn number(text: &str, label: &str) -> Result<usize, String> {
 }
 fn physical_text(report: &physical::Report) -> String {
     let mut lines = vec![format!(
-        "Work complete: {}; all requested transfers applied: {}; unsupported/unknown: {}; concrete DNA: {}",
+        "Work complete: {}; all requested reaction steps applied: {}; unsupported/unknown: {}; concrete DNA: {}",
         report.work_complete,
-        report.all_requested_transfers_applied,
+        report.all_requested_steps_applied,
         report.unsupported_or_unknown,
         report.fully_specified_dna
     )];
     for step in &report.steps {
-        lines.push(format!(
-            "Transfer {}: {:?} → {:?} · {:?} · {} · displacement {:?}",
-            step.step + 1,
-            step.donor_call,
-            step.acceptor_call,
-            step.outcome,
-            step.reason,
-            step.displacement.as_ref().map(|d| d.kind)
-        ));
+        lines.push(crate::topo_actions_view::step_text(step));
     }
     for (i, component) in report.product.components.iter().enumerate() {
         lines.push(format!(
@@ -440,17 +431,17 @@ pub fn TopoPanel(
             .get()
             .filter(|b| context.with(|c| c.as_ref().ok() == Some(&b.context)) && !locked.get())
     };
+    let reviewed_reaction = RwSignal::new(None::<Arc<crate::topo_actions_view::ReviewedReaction>>);
     let nick_locked = Memo::new(move |_| locked.get() || busy.get());
     let nick_frame =
         Memo::new(move |_| {
-            let b = current_bound()?;
-            if nick_locked.get() {
-                return None;
-            }
+            let b = bound
+                .get()
+                .filter(|b| context.with(|c| c.as_ref().ok() == Some(&b.context)))?;
             let index = orientation.get().parse::<usize>().ok()?;
             b.report.candidate_requests.get(index)?;
             b.report.reference.candidates.get(index)?;
-            Some(crate::topo_nick_view::Frame {
+            Some(crate::topo_actions_view::Frame {
                 epoch: b.context.epoch,
                 sources: b.context.sources.clone(),
                 target: b.context.target.binding.clone(),
@@ -462,34 +453,7 @@ pub fn TopoPanel(
                 }),
             })
         });
-    let nick_capture = Callback::new(move |expected: crate::topo_nick_view::Frame| {
-        if nick_locked.get_untracked() || nick_frame.get_untracked().as_ref() != Some(&expected) {
-            return Err("The inspected source path changed; reload nicks.".into());
-        }
-        let b = current_bound().ok_or("The exact TOPO source context changed.")?;
-        if b.ticket != expected.inspection_generation
-            || orientation.get_untracked().parse::<usize>().ok() != Some(expected.orientation)
-        {
-            return Err("The TOPO orientation changed.".into());
-        }
-        let request = b
-            .report
-            .candidate_requests
-            .get(expected.orientation)
-            .ok_or("No inspected orientation request.")?;
-        let physical = b
-            .report
-            .reference
-            .candidates
-            .get(expected.orientation)
-            .ok_or("No inspected physical graph.")?;
-        Ok(crate::topo_nick_view::Capture {
-            inputs: b.captured.inputs.clone(),
-            request: request.clone(),
-            nicks: physical.product.nicks.clone(),
-        })
-    });
-    let actions_capture=Callback::new(move|expected:crate::topo_nick_view::Frame|->Result<crate::topo_actions_view::Capture,String>{
+    let actions_capture=Callback::new(move|expected:crate::topo_actions_view::Frame|->Result<crate::topo_actions_view::Capture,String>{
         if nick_locked.get_untracked()||nick_frame.get_untracked().as_ref()!=Some(&expected){
             return Err("The exact original TOPO path or target context changed.".into());
         }
@@ -500,107 +464,6 @@ pub fn TopoPanel(
         if nick_frame.get_untracked().as_ref()!=Some(&expected){return Err("The source context changed during capture.".into());}
         Ok(crate::topo_actions_view::Capture{template:fresh.template,inputs:fresh.inputs,request:request.clone(),physical:physical.clone()})
     });
-    let open_processed = Callback::new(
-        move |open: crate::topo_nick_view::OpenProcessed| -> Result<(), String> {
-            if context.with_untracked(|current| {
-                current
-                    .as_ref()
-                    .ok()
-                    .is_some_and(|current| current.template_origin.is_some())
-            }) {
-                return Err(
-                    "Use ordered processing for a reconstructed saved PCR template.".into(),
-                );
-            }
-            if nick_locked.get_untracked()
-                || nick_frame.get_untracked().as_ref() != Some(&open.frame)
-            {
-                return Err(
-                    "The exact processed TOPO source path or independent target changed.".into(),
-                );
-            }
-            let b = current_bound().ok_or("The original TOPO context is unavailable.")?;
-            if b.ticket != open.frame.inspection_generation
-                || b.context.epoch != open.frame.epoch
-                || b.context.target.binding != open.frame.target
-                || b.context.sources != open.frame.sources
-                || orientation.get_untracked().parse::<usize>().ok() != Some(open.frame.orientation)
-            {
-                return Err("The inspected source events, target or orientation changed.".into());
-            }
-            let inspected = b
-                .report
-                .candidate_requests
-                .get(open.frame.orientation)
-                .ok_or("The inspected orientation no longer exists.")?;
-            // The root callback independently resolves exact current source events
-            // and the active independent target before cloning borrowed models.
-            let fresh = capture.run(CaptureRequest {
-                draft: b.context.draft.clone(),
-                sources: b.context.sources.clone(),
-                template_origin: b.context.template_origin.clone(),
-                target: b.context.target.binding.clone(),
-                request: Some(inspected.clone()),
-            })?;
-            let revision =
-                collagene_core::topo_processed_product::revision(&fresh.inputs, &open.request)
-                    .map_err(|e| e.to_string())?;
-            if revision != open.expected_revision
-                || serde_json::to_vec(inspected).map_err(|e| e.to_string())?
-                    != serde_json::to_vec(&open.request.treatment.preparation)
-                        .map_err(|e| e.to_string())?
-            {
-                return Err("The processed declaration differs from the exact inspected source orientation.".into());
-            }
-            if context.get_untracked().as_ref().ok() != Some(&b.context)
-                || nick_frame.get_untracked().as_ref() != Some(&open.frame)
-            {
-                return Err(
-                    "The source or independent target changed during candidate capture.".into(),
-                );
-            }
-            let inputs = fresh
-                .inputs
-                .into_iter()
-                .map(|input| PlanInput {
-                    id: input.role,
-                    revision: input.molecule.revision(),
-                    molecule: input.molecule,
-                })
-                .collect();
-            let sources = b
-                .context
-                .sources
-                .iter()
-                .map(|(role, _)| TopoSource {
-                    role: role.clone(),
-                    source: Source::Input(role.clone()),
-                })
-                .collect();
-            let preferred = b
-                .context
-                .sources
-                .iter()
-                .map(|(role, event)| InputEventBinding {
-                    input_id: role.clone(),
-                    event: event.clone(),
-                })
-                .collect();
-            let proposed = Candidate::new(DesignPlan {
-                name: "Processed TOPO source-bound candidate".into(),
-                target_revision: fresh.target.revision(),
-                inputs,
-                steps: vec![Operation::ProcessedTopo {
-                    sources,
-                    request: open.request,
-                }],
-            });
-            proposed.validate().map_err(|e| e.to_string())?;
-            on_candidate.run((proposed, preferred));
-            // The callback may dispose this panel. Do not access local signals.
-            Ok(())
-        },
-    );
     let open_actions = Callback::new(
         move |open: crate::topo_actions_view::OpenActions| -> Result<(), String> {
             if nick_locked.get_untracked()
@@ -638,8 +501,8 @@ pub fn TopoPanel(
             )
             .map_err(|e| e.to_string())?;
             if revision != open.expected_revision
-                || serde_json::to_vec(inspected).map_err(|e| e.to_string())?
-                    != serde_json::to_vec(&open.request.preparation).map_err(|e| e.to_string())?
+                || topo_preparation::validate_action_append(inspected, &open.request.preparation)
+                    .is_err()
             {
                 return Err("The ordered action declaration differs from the exact inspected source orientation.".into());
             }
@@ -1245,19 +1108,35 @@ pub fn TopoPanel(
             return None;
         }
         let selected = orientation.get().parse::<usize>().ok()?;
-        Some(
-            current
-                .report
-                .candidate_requests
-                .get(selected)?
-                .transfers
-                .len(),
-        )
+        Some(current.report.candidate_requests.get(selected)?.steps.len())
+    });
+    let graph_reviewed = Memo::new(move |_| {
+        reviewed_reaction
+            .get()
+            .is_some_and(|r| nick_frame.get().as_ref() == Some(&r.frame) && r.guard.run(()).is_ok())
     });
     let graph_locked = Memo::new(move |_| locked.get() || busy.get());
     let graph_capture=Callback::new(move|(kind,name):(crate::topo_graph_model::CaptureKind,String)|->Result<crate::topo_graph_view::CaptureCandidate,String>{
         if locked.get_untracked()||busy.get_untracked(){return Err("Wait for current TOPO work to finish".into());}
         match kind {
+            crate::topo_graph_model::CaptureKind::ReviewedReaction=>{
+                let reviewed=reviewed_reaction.get_untracked().ok_or("Inspect the current full reaction before saving")?;
+                reviewed.guard.run(())?;
+                let b=bound.get_untracked().ok_or("The exact source inspection is unavailable")?;
+                if context.get_untracked().as_ref().ok()!=Some(&b.context)||nick_frame.get_untracked().as_ref()!=Some(&reviewed.frame){return Err("The reviewed reaction source context changed".into());}
+                let original=b.report.candidate_requests.get(reviewed.frame.orientation).ok_or("The inspected orientation changed")?;
+                topo_preparation::validate_action_append(original,reviewed.request.as_ref())?;
+                let request=reviewed.request.as_ref().clone();
+                let fresh=capture.run(CaptureRequest{draft:b.context.draft.clone(),sources:b.context.sources.clone(),target:b.context.target.binding.clone(),request:Some(request.clone()),template_origin:b.context.template_origin.clone()})?;
+                let bindings=b.context.sources.iter().map(|(role,event)|collagene_core::topo_graph_history::SourceBinding{role:role.clone(),event:event.clone(),origin:fresh.template.as_ref().filter(|template|template.role==*role).map(|template|template.origin.clone())}).collect();
+                let expected=b.context.clone();let ticket=b.ticket;let chosen=reviewed.frame.orientation;
+                let guard=Callback::new(move|()|->Result<(),String>{
+                    reviewed.guard.run(())?;
+                    if context.get_untracked().as_ref().ok()!=Some(&expected)||orientation.get_untracked().parse::<usize>().ok()!=Some(chosen)||bound.get_untracked().is_none_or(|b|b.ticket!=ticket){return Err("The source events, reviewed transcript or independent target changed before saving".into());}
+                    Ok(())
+                });
+                Ok(crate::topo_graph_view::CaptureCandidate{request:collagene_core::topo_graph_history::CaptureRequest{name,bindings,request},guard})
+            }
             crate::topo_graph_model::CaptureKind::InitialVector=>{
                 let before=draft.get_untracked();let captured_epoch=epoch.get_untracked();let frame=get_workspace.run(())?;
                 let request=crate::topo_graph_model::initial_request(&frame,&before,name)?;
@@ -1265,13 +1144,13 @@ pub fn TopoPanel(
                 let guard=Callback::new(move|()|->Result<(),String>{if epoch.get_untracked()!=captured_epoch||draft.get_untracked()!=before{return Err("The vector declaration changed before saving".into());}if !sources.with_untracked(|all|expected.iter().all(|(_,event)|all.iter().any(|source|source.binding==*event))){return Err("A vector source event changed before saving".into());}Ok(())});
                 Ok(crate::topo_graph_view::CaptureCandidate{request,guard})
             }
-            crate::topo_graph_model::CaptureKind::Reaction{pending_transfers}=>{
+            crate::topo_graph_model::CaptureKind::Reaction{pending_steps}=>{
                 let b=bound.get_untracked().ok_or("Inspect and choose an elementary orientation first")?;
                 if context.get_untracked().as_ref().ok()!=Some(&b.context){return Err("The exact graph/source context changed".into());}
                 let selected=orientation.get_untracked().parse::<usize>().map_err(|_|"Choose an inspected orientation")?;
                 let mut request=b.report.candidate_requests.get(selected).ok_or("The inspected orientation is unavailable")?.clone();
-                if pending_transfers>request.transfers.len(){return Err("The selected transfer prefix exceeds the pending transcript".into());}
-                request.transfers.truncate(pending_transfers);
+                if pending_steps>request.steps.len(){return Err("The selected reaction prefix exceeds the declared transcript".into());}
+                request.steps.truncate(pending_steps);
                 let fresh=capture.run(CaptureRequest{draft:b.context.draft.clone(),sources:b.context.sources.clone(),target:b.context.target.binding.clone(),request:Some(request.clone()),template_origin:b.context.template_origin.clone()})?;
                 let bindings=b.context.sources.iter().map(|(role,event)|collagene_core::topo_graph_history::SourceBinding{role:role.clone(),event:event.clone(),origin:fresh.template.as_ref().filter(|template|template.role==*role).map(|template|template.origin.clone())}).collect();
                 let expected=b.context.clone();let ticket=b.ticket;
@@ -1312,7 +1191,7 @@ pub fn TopoPanel(
                 {move||cacc_proposal.get().map(|(_,ordered)|view!{<section><h4>"Forward oligo prefix proposal — not applied"</h4><pre>{ordered}</pre><p class="helper">"Four new literal bases will be supplied by this ordered primer. The existing annealing length and independent target stay unchanged; native PCR and transfer checks may still reject the design."</p><button class="button secondary" disabled=move||locked.get()||busy.get() on:click=apply_cacc>"Apply this exact forward oligo"</button></section>})}
             </Show>
             </details></Show>
-            <crate::topo_graph_view::GraphCaptureControls capture=graph_capture initial=graph_initial pending_transfers=graph_suffix locked=graph_locked snapshot=get_workspace validate on_restore epoch db workspace_busy save_generation message/>
+            <crate::topo_graph_view::GraphCaptureControls capture=graph_capture initial=graph_initial reviewed=graph_reviewed pending_steps=graph_suffix locked=graph_locked snapshot=get_workspace validate on_restore epoch db workspace_busy save_generation message/>
             <button class="button primary full" disabled=move||busy.get()||locked.get()||context.get().is_err() on:click=move|_|inspect.run(())>{move||draft.with(|value|if value.mode==PreparationMode::Ta{"Inspect both TA orientations"}else{"Inspect both directional orientations"})}</button>
             <Show when=move||busy.get()><button class="button secondary full" on:click=move|_|{cancel.run(());status.set("TOPO calculation cancelled; no late result will be used.".into());}>"Cancel TOPO"</button></Show>
             <p class="helper" role="status">{move||if status.get().is_empty(){context.get().err().unwrap_or_default()}else{status.get()}}</p>
@@ -1328,12 +1207,12 @@ pub fn TopoPanel(
                     <button class="text-tool" disabled=move||busy.get()||locked.get() on:click=move|_|export.run(())>"Download TOPO evidence JSON"</button>
                 </section>
             })}
-            <Show when=move||context.with(|c|c.as_ref().is_ok_and(|c|c.template_origin.is_none()))><crate::topo_nick_view::TopoNickView frame=nick_frame capture=nick_capture on_open=open_processed locked=nick_locked/></Show>
-            <crate::topo_actions_view::TopoActionsView frame=nick_frame capture=actions_capture on_open=open_actions locked=nick_locked/>
+
+            <crate::topo_actions_view::TopoActionsView frame=nick_frame capture=actions_capture on_open=open_actions on_reviewed=Callback::new(move|value|reviewed_reaction.set(value)) locked=nick_locked/>
             <fieldset class="topo-acceptance"><legend>"Explicit independent-target acceptance policy"</legend><p class="helper">"Every permission starts off. Accepting a retained limitation does not repair it or prove laboratory success; changing policy requires fresh projection and target checking."</p>
                 <label class="checkbox-label"><input type="checkbox" disabled=move||locked.get() prop:checked=move||policies.with(|p|p.nicks) on:change=move|e|policies.update(|p|p.nicks=event_target_checked(&e))/>"Accept explicitly retained nicks"</label>
                 <label class="checkbox-label"><input type="checkbox" disabled=move||locked.get() prop:checked=move||policies.with(|p|p.unknown) on:change=move|e|policies.update(|p|p.unknown=event_target_checked(&e))/>"Accept unknown terminal chemistry"</label>
-                <label class="checkbox-label"><input type="checkbox" disabled=move||locked.get() prop:checked=move||policies.with(|p|p.unapplied) on:change=move|e|policies.update(|p|p.unapplied=event_target_checked(&e))/>"Accept requested transfers that did not apply"</label>
+                <label class="checkbox-label"><input type="checkbox" disabled=move||locked.get() prop:checked=move||policies.with(|p|p.unapplied) on:change=move|e|policies.update(|p|p.unapplied=event_target_checked(&e))/>"Accept requested reaction steps that did not apply"</label>
                 <label class="checkbox-label"><input type="checkbox" disabled=move||locked.get() prop:checked=move||policies.with(|p|p.other) on:change=move|e|policies.update(|p|p.other=event_target_checked(&e))/>"Accept other physical components remaining"</label>
                 <label class="checkbox-label"><input type="checkbox" disabled=move||locked.get() prop:checked=move||policies.with(|p|p.rotation) on:change=move|e|policies.update(|p|p.rotation=event_target_checked(&e))/>"Allow circular-origin rotation when comparing target"</label>
                 <label class="checkbox-label"><input type="checkbox" disabled=move||locked.get() prop:checked=move||policies.with(|p|p.reverse) on:change=move|e|policies.update(|p|p.reverse=event_target_checked(&e))/>"Allow reverse-complement target comparison"</label>

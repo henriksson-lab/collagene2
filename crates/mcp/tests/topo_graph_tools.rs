@@ -114,7 +114,7 @@ async fn native_sdk_graph_capture_is_immutable_paged_and_requires_exact_retained
     // Resume capture carries only the retained selection; native hydration restores
     // the whole graph under this exact immutable session workspace.
     let partial = literal::partial(&first.workspace, &first.receipt.selection);
-    let projected = json!({"recipe":{"schema_version":1,"materials":[{"SavedGraph":{"material_id":"retained vector","selection":selection}},partial.request.recipe.materials[1]]},"transfers":partial.request.transfers,"engine_limits":partial.request.engine_limits,"projection_options":partial.request.projection_options});
+    let projected = json!({"recipe":{"schema_version":1,"materials":[{"SavedGraph":{"material_id":"retained vector","selection":selection}},partial.request.recipe.materials[1]]},"steps":partial.request.steps,"engine_limits":partial.request.engine_limits,"projection_options":partial.request.projection_options});
     let resumed=call(&client,"topo_graph",json!({"workspace":saved,"task":{"Capture":{"request":{"name":"One transfer retained whole graph","bindings":partial.bindings,"request":projected}}}})).await;
     assert_eq!(resumed["receipt"]["summary"]["source_bases"], 40);
     assert_eq!(

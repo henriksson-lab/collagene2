@@ -6,15 +6,15 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 108;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 29;
+pub const WORKER_SCHEMA_VERSION: u16 = 109;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 30;
 
 // Current selectors whose accepted payloads can contain complete workspace archives.
 // Stateless and session dispatch must admit the same envelope before routing.
 const WORKSPACE_REQUEST_SELECTORS: &[u32] = &[
     19, 20, 42, 43, 69, 72, 82, 83, 84, 85, 96, 100, 103, 104, 105, 106, 107, 126, 128, 129, 132,
-    133, 145, 146, 147, 148, 149, 153, 156, 159, 161, 164, 166, 167, 168, 169, 170, 171, 172, 173,
-    174, 175, 176, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190,
+    133, 145, 146, 150, 153, 154, 156, 157, 158, 159, 160, 161, 163, 164, 165, 166, 167, 168, 169,
+    170, 171, 172, 173, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187,
 ];
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -847,15 +847,8 @@ pub enum AnalysisJob {
         ends: Vec<String>,
         physical_competitors: Vec<String>,
     },
-    SealTopoNicks {
-        inputs: Vec<crate::topo::Input>,
-        request: crate::topo_nick_sealing::Request,
-    },
-    ProjectProcessedTopo {
-        inputs: Vec<crate::topo::Input>,
-        request: crate::topo_processed_product::Request,
-    },
-    LoadProcessedRunEvidence {
+
+    LoadRunEvidence {
         workspace: crate::workspace::Workspace,
         run_id: String,
     },
@@ -863,10 +856,7 @@ pub enum AnalysisJob {
         inputs: Vec<crate::topo::Input>,
         request: crate::topo_actions::Request,
     },
-    InspectTopoActions {
-        inputs: Vec<crate::topo::Input>,
-        request: crate::topo_actions::ActionsRequest,
-    },
+
     SimulateMultiSiteRecombination {
         inputs: Vec<crate::recombination::reference::Input>,
         request: crate::multisite_recombination::Request,
@@ -922,8 +912,10 @@ pub enum AnalysisJob {
     },
     InspectMismatchPcrDigest {
         molecule: Molecule,
-        origin: Option<crate::run_material::Capsule>,
+        origin: Option<crate::run_material::MaterialOrigin>,
         request: crate::mismatch_pcr_digest_inspection::Request,
+        #[serde(deserialize_with = "crate::assembly_recipe::required_option")]
+        workspace: Option<crate::workspace::Workspace>,
     },
     BuildContributionEditIntent {
         inputs: Vec<crate::verification::PlanInput>,
@@ -939,8 +931,10 @@ pub enum AnalysisJob {
     },
     InspectOverlapExtensionDigest {
         source: Molecule,
-        origin: Option<crate::run_material::Capsule>,
+        origin: Option<crate::run_material::MaterialOrigin>,
         request: crate::overlap_extension_digest_inspection::Request,
+        #[serde(deserialize_with = "crate::assembly_recipe::required_option")]
+        workspace: Option<crate::workspace::Workspace>,
     },
     DesignEditedOverlapPrimers {
         inputs: Vec<crate::verification::PlanInput>,
@@ -1219,11 +1213,8 @@ pub enum AnalysisResult {
     PublishedLigationScore(crate::ligation_profiles::Report),
     RankedGoldenGateFusions(crate::golden_gate_fusion_rank::Report),
     LigationCompetition(crate::ligation_fidelity::CompetitionReport),
-    TopoNicksSealed(crate::topo_nick_sealing::Report),
-    ProcessedTopoProduct(crate::topo_processed_product::Report),
-    HistoricalProcessedRunEvidence(crate::processed_run_evidence::Download),
+    HistoricalRunEvidence(crate::run_evidence::Download),
     TopoActionsProduct(crate::topo_actions::Report),
-    TopoActionsInspected(crate::topo_actions::Inspection),
     MultiSiteRecombination(crate::multisite_recombination::Batch),
     MultiSiteRecombinationProduct(crate::multisite_recombination::ProductDocument),
     MultiSiteRecombinationChecked(crate::multisite_recombination::CheckedProduct),
@@ -1498,22 +1489,26 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             source,
             origin,
             request,
+            workspace,
         } => {
             crate::overlap_extension_digest_inspection::source_preflight(
                 source,
                 origin.as_ref(),
                 request,
+                workspace.as_ref(),
             )?;
         }
         AnalysisJob::InspectMismatchPcrDigest {
             molecule,
             origin,
             request,
+            workspace,
         } => {
             crate::mismatch_pcr_digest_inspection::source_preflight(
                 molecule,
                 origin.as_ref(),
                 request,
+                workspace.as_ref(),
             )?;
         }
         AnalysisJob::BuildAssemblyIntent {
@@ -1654,15 +1649,7 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         AnalysisJob::ProcessTopoActions { inputs, request } => {
             crate::topo_actions::preflight(inputs, request)?
         }
-        AnalysisJob::InspectTopoActions { inputs, request } => {
-            crate::topo_actions::preflight_actions(inputs, request)?
-        }
-        AnalysisJob::ProjectProcessedTopo { inputs, request } => {
-            crate::topo_processed_product::preflight(inputs, request)?
-        }
-        AnalysisJob::SealTopoNicks { inputs, request } => {
-            crate::topo_nick_sealing::preflight(inputs, request)?;
-        }
+
         AnalysisJob::ListLigationProfiles => {
             crate::ligation_profiles::catalog_revision()?;
         }
@@ -1746,10 +1733,7 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::InspectTopoOrientations { .. }
             | AnalysisJob::ProjectTopoProduct { .. }
             | AnalysisJob::CheckTopoTarget { .. }
-            | AnalysisJob::SealTopoNicks { .. }
-            | AnalysisJob::ProjectProcessedTopo { .. }
             | AnalysisJob::ProcessTopoActions { .. }
-            | AnalysisJob::InspectTopoActions { .. }
             | AnalysisJob::ListTopoGraphs { .. }
             | AnalysisJob::CaptureTopoGraph { .. }
             | AnalysisJob::InspectTopoGraph { .. }
@@ -1760,7 +1744,7 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::LoadWorkspace { .. }
             | AnalysisJob::RecordCloningRun { .. }
             | AnalysisJob::ReplayCloningRun { .. }
-            | AnalysisJob::LoadProcessedRunEvidence { .. }
+            | AnalysisJob::LoadRunEvidence { .. }
             | AnalysisJob::FinalizeCloningOutputs { .. }
             | AnalysisJob::CaptureReadCheck { .. }
             | AnalysisJob::ReplayReadCheck { .. }
@@ -1779,6 +1763,8 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::DesignEditedOverlapPrimers { .. }
             | AnalysisJob::DesignOverlapExtensionPrimers { .. }
             | AnalysisJob::InspectMaterialPcrDigest { .. }
+            | AnalysisJob::InspectMismatchPcrDigest { .. }
+            | AnalysisJob::InspectOverlapExtensionDigest { .. }
             | AnalysisJob::InspectTopoRun { .. }
             | AnalysisJob::InspectMaterialOrigin { .. }
             | AnalysisJob::MaterialPcrDocuments { .. }
@@ -1891,28 +1877,23 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         AnalysisResult::TopoActionsProduct(report) => {
             report.validate_binding(&response.revision)?
         }
-        AnalysisResult::TopoActionsInspected(report) => {
-            report.validate_binding(&response.revision)?
-        }
-        AnalysisResult::HistoricalProcessedRunEvidence(value) => {
+
+        AnalysisResult::HistoricalRunEvidence(value) => {
             if value.run_id.len() != 64
                 || value.recorded_engine.len() > 128
-                || value.step_count > 64
+                || value.step_count > 128
                 || value
                     .bytes
                     .as_ref()
-                    .is_some_and(|b| b.len() > crate::processed_run_evidence::MAX_BYTES)
+                    .is_some_and(|b| b.len() > crate::run_evidence::MAX_BYTES)
                 || value.bytes.is_none() != (value.step_count == 0)
             {
                 return Err(Error::Format(
-                    "Invalid historical processed graph download".into(),
+                    "Invalid historical scientific-evidence download".into(),
                 ));
             }
         }
-        AnalysisResult::ProcessedTopoProduct(report) => {
-            report.validate_binding(&response.revision)?
-        }
-        AnalysisResult::TopoNicksSealed(report) => report.validate_binding(&response.revision)?,
+
         AnalysisResult::LigationProfiles(items) => {
             let expected = crate::ligation_profiles::list()?;
             if items.len() != expected.len()
@@ -2589,21 +2570,7 @@ fn validate_verification_report(
             }
         }
     }
-    if !report.processed_step_reports.is_empty() {
-        if report.processed_step_reports.len() > 64 {
-            return Err(Error::TooLarge);
-        }
-        let mut seen = std::collections::BTreeSet::new();
-        for step in &report.processed_step_reports {
-            if step.step_index >= 1000 || !seen.insert(step.step_index) {
-                return Err(Error::Format(
-                    "Invalid processed step evidence index".into(),
-                ));
-            }
-            step.evidence
-                .validate_binding(&step.evidence.context_revision)?;
-        }
-    }
+
     Ok(())
 }
 
@@ -2658,7 +2625,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         AnalysisJob::SelectPreparedGoldenGateCandidate { report, .. } => {
             validate_verification_report(&report.preview.verification)?
         }
-        AnalysisJob::LoadProcessedRunEvidence { run_id, .. } if run_id.len() != 64 => {
+        AnalysisJob::LoadRunEvidence { run_id, .. } if run_id.len() != 64 => {
             return Err(Error::Format("Invalid run identity".into()));
         }
         _ => {}
@@ -2902,11 +2869,13 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             molecule,
             origin,
             request,
+            workspace,
         } => {
             if crate::mismatch_pcr_digest_inspection::inspection_revision(
                 molecule,
                 origin.as_ref(),
                 request,
+                workspace.as_ref(),
             )? != r.revision
             {
                 return Err(Error::Format(
@@ -2964,11 +2933,13 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             source,
             origin,
             request,
+            workspace,
         } => {
             if crate::overlap_extension_digest_inspection::inspection_revision(
                 source,
                 origin.as_ref(),
                 request,
+                workspace.as_ref(),
             )? != r.revision
             {
                 return Err(Error::Format(
@@ -3333,30 +3304,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             }
             None
         }
-        AnalysisJob::InspectTopoActions { inputs, request } => {
-            if crate::topo_actions::revision_actions(inputs, request)? != r.revision {
-                return Err(Error::Format(
-                    "TOPO action inspection context changed".into(),
-                ));
-            }
-            None
-        }
-        AnalysisJob::ProjectProcessedTopo { inputs, request } => {
-            if crate::topo_processed_product::revision(inputs, request)? != r.revision {
-                return Err(Error::Format(
-                    "Processed TOPO source/treatment/contour context changed".into(),
-                ));
-            }
-            None
-        }
-        AnalysisJob::SealTopoNicks { inputs, request } => {
-            if crate::topo_nick_sealing::revision(inputs, request)? != r.revision {
-                return Err(Error::Format(
-                    "TOPO nick-sealing source/request context changed".into(),
-                ));
-            }
-            None
-        }
+
         AnalysisJob::ListLigationProfiles => {
             if crate::ligation_profiles::catalog_revision()? != r.revision {
                 return Err(Error::Format(
@@ -4075,7 +4023,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
         AnalysisJob::RecordCloningRun { workspace, .. }
         | AnalysisJob::ReplayCloningRun { workspace, .. }
-        | AnalysisJob::LoadProcessedRunEvidence { workspace, .. } => {
+        | AnalysisJob::LoadRunEvidence { workspace, .. } => {
             if crate::run_lineage::workspace_fingerprint(workspace)? != r.revision {
                 return Err(Error::Format("run request source workspace changed".into()));
             }
@@ -4289,22 +4237,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         AnalysisJob::ProcessTopoActions { inputs, request } => {
             crate::topo_actions::inspect(&inputs, &request).map(AnalysisResult::TopoActionsProduct)
         }
-        AnalysisJob::InspectTopoActions { inputs, request } => {
-            crate::topo_actions::inspect_actions(&inputs, &request)
-                .map(AnalysisResult::TopoActionsInspected)
+
+        AnalysisJob::LoadRunEvidence { workspace, run_id } => {
+            crate::run_evidence::download(&workspace, &run_id)
+                .map(AnalysisResult::HistoricalRunEvidence)
         }
-        AnalysisJob::LoadProcessedRunEvidence { workspace, run_id } => {
-            crate::processed_run_evidence::download(&workspace, &run_id)
-                .map(AnalysisResult::HistoricalProcessedRunEvidence)
-        }
-        AnalysisJob::ProjectProcessedTopo { inputs, request } => {
-            crate::topo_processed_product::inspect(&inputs, &request)
-                .map(AnalysisResult::ProcessedTopoProduct)
-        }
-        AnalysisJob::SealTopoNicks { inputs, request } => {
-            crate::topo_nick_sealing::inspect(&inputs, &request)
-                .map(AnalysisResult::TopoNicksSealed)
-        }
+
         AnalysisJob::ListLigationProfiles => {
             crate::ligation_profiles::list().map(AnalysisResult::LigationProfiles)
         }
@@ -4403,8 +4341,14 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             molecule,
             origin,
             request,
-        } => crate::mismatch_pcr_digest_inspection::inspect(&molecule, origin.as_ref(), &request)
-            .map(AnalysisResult::MismatchPcrDigestInspection),
+            workspace,
+        } => crate::mismatch_pcr_digest_inspection::inspect(
+            &molecule,
+            origin.as_ref(),
+            &request,
+            workspace.as_ref(),
+        )
+        .map(AnalysisResult::MismatchPcrDigestInspection),
         AnalysisJob::PreviewAnnealingRecipe {
             inputs,
             target,
@@ -4429,10 +4373,14 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             source,
             origin,
             request,
-        } => {
-            crate::overlap_extension_digest_inspection::inspect(&source, origin.as_ref(), &request)
-                .map(AnalysisResult::OverlapExtensionDigestInspection)
-        }
+            workspace,
+        } => crate::overlap_extension_digest_inspection::inspect(
+            &source,
+            origin.as_ref(),
+            &request,
+            workspace.as_ref(),
+        )
+        .map(AnalysisResult::OverlapExtensionDigestInspection),
         AnalysisJob::DesignOverlapExtensionPrimers {
             source,
             request,

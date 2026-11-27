@@ -3994,3 +3994,33 @@ independent-target ligation. The integrated web/worker WASM check passes. Only
 failed or initially uncompiled cases were rerun after fixture repairs. Exact-
 source cross-platform CI and publication of this source remain open. Browser use is limited to the separately requested
 README screenshots; general GUI acceptance remains deferred.
+
+### Saved reaction quantities and selected copying — integrated validation
+
+Saved reports can populate the editable form through exact request-to-form
+reconstruction, preserving rational values, missing inputs, labels/IDs, rounding,
+source operands and independent dilution final volumes. Revisions are saved as
+new immutable reports after fresh review; historical attachments and biological
+heads remain unchanged. Canonical-unit fraction entry avoids lossy decimal
+conversion and high-concentration overflow.
+
+Explicit selected reaction copying preserves destination reaction IDs and
+allocates new component/fill IDs. Matching native operation types and
+unambiguous positional operand mapping are required for every selected row;
+incompatibility refuses the whole edit. No DNA-based source substitution or
+chemical/stock inference is performed. Existing native quantity arithmetic and
+capture/export paths remain the sole implementation. All six focused model
+cases and the integrated web/worker WASM check pass. Exact-source cross-platform
+CI remains open; general browser acceptance remains deferred. [Workflow](REACTION_QUANTITY_EDITING.md).
+
+### Next source-confirmed collaboration delivery
+
+F30 still needs revision-bound lab comments and human review: the current shared
+library protocol/storage exposes folders, document revisions and optimistic save
+conflicts, but no comment/thread or human review records. Add bounded revision-
+bound discussion and review through trusted lab membership/author identity,
+explicit concurrent-update guards and the existing binary service boundary.
+Human review must remain separate from deterministic molecular verification.
+Sequence or source changes cannot inherit a human approval for a different exact
+revision. Preserve local/offline documents and chosen-remote scope; this does not
+introduce ELN, inventory, workflow scheduling or organizational reporting.

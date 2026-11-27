@@ -39,6 +39,9 @@ pub fn ReactionQuantitiesView(
     let reviewed = RwSignal::new(None::<(model::Form, Arc<native::Preview>)>);
     let historical = RwSignal::new(None::<(String, Arc<native::Preview>)>);
     let pending = RwSignal::new(false);
+    let revision_source = RwSignal::new(None::<String>);
+    let copy_source = RwSignal::new(String::new());
+    let copy_targets = RwSignal::new(Vec::<String>::new());
     let worker = StoredValue::new_local(None::<Rc<CachedWorker>>);
     let counter = StoredValue::new_local(Rc::new(Cell::new(0u64)));
     let tx = StoredValue::new_local(Rc::new(RefCell::new(None::<crate::storage::Transaction>)));
@@ -86,6 +89,9 @@ pub fn ReactionQuantitiesView(
         worker.set_value(None);
         reviewed.set(None);
         historical.set(None);
+        revision_source.set(None);
+        copy_source.set(String::new());
+        copy_targets.set(Vec::new());
         records.set(Vec::new());
         scope.set_value(None);
         // Parent identity/epoch changes invalidate proof, but this mounted form
@@ -365,6 +371,52 @@ pub fn ReactionQuantitiesView(
             }
         });
     });
+    let revise = move |_| {
+        if pending.get_untracked() || workspace_busy.get_untracked() {
+            return;
+        }
+        let result = (|| -> Result<_, String> {
+            let (binding, _) = check.run(())?;
+            let (hash, preview) = historical
+                .get_untracked()
+                .ok_or("Open a saved quantity document first.")?;
+            let restored = model::Form::from_request(&preview.request, &binding)?;
+            Ok((hash, restored))
+        })();
+        match result {
+            Ok((hash, restored)) => {
+                form.set(restored);
+                reviewed.set(None);
+                revision_source.set(Some(hash));
+                copy_targets.set(vec![]);
+                status.set("Saved declarations loaded for editing. Review and save a new report; the original remains retained.".into());
+            }
+            Err(e) => status.set(e),
+        }
+    };
+    let apply_quantities = move |_| {
+        if pending.get_untracked() || workspace_busy.get_untracked() {
+            return;
+        }
+        let result = (|| -> Result<_, String> {
+            let (binding, _) = check.run(())?;
+            let mut draft = form.get_untracked();
+            draft.apply_to_reactions(
+                &binding,
+                &copy_source.get_untracked(),
+                &copy_targets.get_untracked(),
+            )?;
+            Ok(draft)
+        })();
+        match result {
+            Ok(draft) => {
+                form.set(draft);
+                reviewed.set(None);
+                status.set("Declarations copied to the selected reactions. Review quantities before saving; molecular verification is unchanged.".into());
+            }
+            Err(e) => status.set(e),
+        }
+    };
     let export_alive = alive.clone();
     let export = Callback::new(move |format: native::ExportFormat| {
         if pending.get_untracked() {
@@ -489,13 +541,22 @@ pub fn ReactionQuantitiesView(
     });
     view! {<details class="assembly-fragment-options"><summary>"Reaction quantities"</summary><p class="helper">"Amounts stay tied to this plan. Missing amounts remain unspecified; these calculations do not change sequence verification."</p>
           <details><summary>"Exact plan and event identities"</summary>{binding.with_value(|b|b.as_ref().map(|b|view!{<p>{format!("Plan {} · independent target document {} · event {} · revision {}",b.plan_revision,b.target.document_id,b.target.event_id,b.target.revision)}</p><ul>{b.inputs.iter().map(|i|view!{<li>{format!("{}: document {} · event {} · revision {}",i.input_id,i.event.document_id,i.event.event_id,i.event.revision)}</li>}).collect_view()}</ul>}))}</details>
-    <fieldset disabled=move||pending.get()||workspace_busy.get()><label>"Quantity document name"<input maxlength="64" prop:value=move||form.with(|f|f.name.clone()) on:input=move|e|form.update(|f|f.name=event_target_value(&e))/></label><button class="button secondary" on:click=move|_|{let mut result=Ok(());form.update(|f|result=f.add_reaction());if let Err(e)=result{status.set(e);}}>"Add explicit reaction"</button>
+    <fieldset disabled=move||pending.get()||workspace_busy.get()><label>"Quantity document name"<input maxlength="256" prop:value=move||form.with(|f|f.name.clone()) on:input=move|e|form.update(|f|f.name=event_target_value(&e))/></label><button class="button secondary" on:click=move|_|{let mut result=Ok(());form.update(|f|result=f.add_reaction());if let Err(e)=result{status.set(e);}}>"Add explicit reaction"</button>
        <For each=move||form.with(|f|f.reactions.iter().map(|r|r.id.clone()).collect::<Vec<_>>()) key=|id|id.clone() children=move|reaction_id|view!{<ReactionEditor form reaction_id binding=binding.get_value()/>}/>
-       <button class="button secondary" on:click=move|_|run.run(false)>"Review quantities"</button><button class="button primary" disabled=move||reviewed.with(|r|r.as_ref().is_none_or(|(f,_)|f!=&form.get())) on:click=move|_|run.run(true)>"Save quantities"</button></fieldset>
+       <details><summary>"Apply quantities to selected reactions"</summary>
+       <p class="helper">"Copy the source reaction's amount, concentration, rounding and fill declarations. Destination rows are replaced only when every selected operation has the same type and each material operand maps unambiguously by position. No compatibility, concentration measurement or experimental success is inferred."</p>
+       <label>"Copy from reaction"<select aria-label="Quantity copy source" prop:value=move||copy_source.get() on:change=move|e|{copy_source.set(event_target_value(&e));copy_targets.set(vec![]);}><option value="">"Choose explicitly"</option>{move||form.with(|f|f.reactions.iter().map(|r|view!{<option value=r.id.clone()>{format!("{} · operation {}",r.id,r.step.parse::<usize>().map(|v|(v+1).to_string()).unwrap_or_else(|_|"unselected".into()))}</option>}).collect_view())}</select></label>
+       <For each=move||form.with(|f|f.reactions.iter().map(|r|r.id.clone()).collect::<Vec<_>>()) key=|id|id.clone() children=move|id|{
+            let held=StoredValue::new(id);
+            view!{<label class="checkbox-label"><input type="checkbox" disabled=move||held.get_value()==copy_source.get() prop:checked=move||copy_targets.with(|v|v.contains(&held.get_value())) on:change=move|e|{let selected=event_target_checked(&e);copy_targets.update(|values|{values.retain(|id|id!=&held.get_value());if selected{values.push(held.get_value());}});}/>{format!("Replace {} declarations",held.get_value())}</label>}
+       }/>
+       <button class="button secondary" disabled=move||copy_source.get().is_empty()||copy_targets.get().is_empty() on:click=apply_quantities>"Apply to selected reactions"</button></details>
+       <p class="helper">"Amounts accept decimal values or exact fractions such as 1/3. Blank values stay unspecified."</p>
+       <button class="button secondary" on:click=move|_|run.run(false)>"Review quantities"</button><button class="button primary" disabled=move||reviewed.with(|r|r.as_ref().is_none_or(|(f,_)|f!=&form.get())) on:click=move|_|run.run(true)>{move||if revision_source.get().is_some(){"Save as new quantity report"}else{"Save quantities"}}</button></fieldset>
        {move||reviewed.get().map(|(_,preview)|view!{<QuantityReport preview/>})}
        <details><summary>"Saved quantities"</summary><button class="button secondary" disabled=move||pending.get() on:click=list>"Load saved quantities"</button>{move||records.get().into_iter().map(|(hash,name,available,findings)|view!{<article><button class="text-tool" disabled={move||pending.get()||!available} on:click=move|_|open.run(hash.clone())>{name}</button><p>{if available{"Plan and source events available"}else{"Unavailable: retained plan or source events are missing. Saved quantities remain retained."}}</p>{findings.into_iter().map(|f|view!{<p>{format!("{}: {}",f.path,f.message)}</p>}).collect_view()}</article>}).collect_view()}</details>
        {move||historical.get().map(|(_,preview)|view!{<h4>"Saved quantities"</h4><QuantityReport preview/>})}
-       <Show when=move||historical.get().is_some()><p class="helper">"Export quantities alone, or include the actual protocol instructions with a fresh sequence check. Quantity completeness and sequence verification remain separate."</p><button class="button secondary" disabled=move||pending.get() on:click=move|_|export.run(native::ExportFormat::ProtocolHtml)>"Export protocol + quantities HTML"</button><button class="button secondary" disabled=move||pending.get() on:click=move|_|export.run(native::ExportFormat::ProtocolPdf)>"Export protocol + quantities PDF"</button><button class="button secondary" disabled=move||pending.get() on:click=move|_|export.run(native::ExportFormat::Csv)>"Export quantities CSV"</button><button class="button secondary" disabled=move||pending.get() on:click=move|_|export.run(native::ExportFormat::Html)>"Export quantities HTML"</button><button class="button secondary" disabled=move||pending.get() on:click=move|_|export.run(native::ExportFormat::Pdf)>"Export quantities PDF"</button></Show><p role="status">{move||status.get()}</p></details>}
+       <Show when=move||historical.get().is_some()><button class="button secondary" disabled=move||pending.get()||workspace_busy.get() on:click=revise>"Revise saved quantities as new report"</button><p class="helper">"Export quantities alone, or include the actual protocol instructions with a fresh sequence check. Quantity completeness and sequence verification remain separate."</p><button class="button secondary" disabled=move||pending.get() on:click=move|_|export.run(native::ExportFormat::ProtocolHtml)>"Export protocol + quantities HTML"</button><button class="button secondary" disabled=move||pending.get() on:click=move|_|export.run(native::ExportFormat::ProtocolPdf)>"Export protocol + quantities PDF"</button><button class="button secondary" disabled=move||pending.get() on:click=move|_|export.run(native::ExportFormat::Csv)>"Export quantities CSV"</button><button class="button secondary" disabled=move||pending.get() on:click=move|_|export.run(native::ExportFormat::Html)>"Export quantities HTML"</button><button class="button secondary" disabled=move||pending.get() on:click=move|_|export.run(native::ExportFormat::Pdf)>"Export quantities PDF"</button></Show><p role="status">{move||status.get()}</p></details>}
 }
 fn edit_reaction(
     form: RwSignal<model::Form>,
@@ -531,7 +592,7 @@ fn ReactionEditor(
     let binding = StoredValue::new(binding);
     let row = move || form.with(|f| f.reactions.iter().find(|r| r.id == id.get_value()).cloned());
     view! {<details open><summary>{id.get_value()}</summary><label>"Canonical operation"<select prop:value=move||row().map(|r|r.step).unwrap_or_default() on:change=move|e|edit_reaction(form,&id.get_value(),|r|r.step=event_target_value(&e))><option value="">"Choose explicitly"</option>{binding.with_value(|b|b.as_ref().map(|b|(0..b.step_count).map(|i|view!{<option value=i.to_string()>{format!("Operation {}",i+1)}</option>}).collect_view()))}</select></label><label>"Final reaction volume"<input maxlength="64" prop:value=move||row().map(|r|r.total).unwrap_or_default() on:input=move|e|edit_reaction(form,&id.get_value(),|r|r.total=event_target_value(&e))/></label><label>"Volume unit"<select prop:value=move||row().map(|r|r.unit).unwrap_or_default() on:change=move|e|edit_reaction(form,&id.get_value(),|r|r.unit=event_target_value(&e))><option value="nL">"nL"</option><option value="uL">"µL"</option><option value="mL">"mL"</option></select></label>
-    <label class="checkbox-label"><input type="checkbox" prop:checked=move||row().is_some_and(|r|r.fill) on:change=move|e|edit_reaction(form,&id.get_value(),|r|r.fill=event_target_checked(&e))/>"Explicitly allocate remaining volume to a named fill component"</label><Show when=move||row().is_some_and(|r|r.fill)><label>"Fill component ID"<input maxlength="64" prop:value=move||row().map(|r|r.fill_id).unwrap_or_default() on:input=move|e|edit_reaction(form,&id.get_value(),|r|r.fill_id=event_target_value(&e))/></label><label>"Fill label (no default reagent)"<input maxlength="64" prop:value=move||row().map(|r|r.fill_label).unwrap_or_default() on:input=move|e|edit_reaction(form,&id.get_value(),|r|r.fill_label=event_target_value(&e))/></label></Show>
+    <label class="checkbox-label"><input type="checkbox" prop:checked=move||row().is_some_and(|r|r.fill) on:change=move|e|edit_reaction(form,&id.get_value(),|r|r.fill=event_target_checked(&e))/>"Explicitly allocate remaining volume to a named fill component"</label><Show when=move||row().is_some_and(|r|r.fill)><label>"Fill component ID"<input maxlength="128" prop:value=move||row().map(|r|r.fill_id).unwrap_or_default() on:input=move|e|edit_reaction(form,&id.get_value(),|r|r.fill_id=event_target_value(&e))/></label><label>"Fill label (no default reagent)"<input maxlength="256" prop:value=move||row().map(|r|r.fill_label).unwrap_or_default() on:input=move|e|edit_reaction(form,&id.get_value(),|r|r.fill_label=event_target_value(&e))/></label></Show>
     <For each=move||row().map(|r|r.components.into_iter().map(|c|c.id).collect::<Vec<_>>()).unwrap_or_default() key=|id|id.clone() children=move|component_id|view!{<ComponentEditor form reaction_id=id.get_value() component_id binding=binding.get_value()/>}/>
     <button class="button secondary" on:click=move|_|{let mut result:Result<(),String>=Err("Reaction no longer exists".into());form.update(|f|if let Some(i)=f.reactions.iter().position(|r|r.id==id.get_value()){result=f.add_component(i)});if let Err(e)=result{note.set(e);}}>"Add component with blank amount"</button><button class="text-tool" on:click=move|_|form.update(|f|f.reactions.retain(|r|r.id!=id.get_value()))>"Remove reaction"</button><p role="status">{move||note.get()}</p></details>}
 }
@@ -562,13 +623,16 @@ fn ComponentEditor(
                 .and_then(|r| r.step.parse::<usize>().ok())
         })
     };
-    view! {<details><summary>{id.get_value()}</summary><label>"Component label"<input maxlength="64" prop:value=move||component().map(|c|c.label).unwrap_or_default() on:input=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.label=event_target_value(&e))/></label><label>"Optional planned material reference"<select prop:value=move||component().map(|c|c.source).unwrap_or_default() on:change=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.source=event_target_value(&e))><option value="">"No biological reference"</option>{move||binding.with_value(|b|b.as_ref().and_then(|b|row_step().and_then(|step|b.component_sources.get(step))).map(|sources|sources.iter().map(|source|match source{collagene_core::verification::Source::Input(input)=>view!{<option value=format!("input:{input}")>{format!("Input {input}")}</option>},collagene_core::verification::Source::Step(step)=>view!{<option value=format!("step:{step}")>{format!("Planned operation {} output",step+1)}</option>}}).collect_view()))}</select></label><p class="helper">"A planned source reference does not assert that material was isolated or that a concentration was measured."</p>
-    <label>"Amount declaration"<select prop:value=move||component().map(|c|c.mode).unwrap_or_default() on:change=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.mode=event_target_value(&e))><option value="direct">"Direct volume"</option><option value="mass">"Declared mass-concentration dilution"</option><option value="molar">"Declared molar-concentration dilution"</option></select></label>
-    <Show when=move||component().is_some_and(|c|c.mode=="direct")><label>"Component volume (blank = missing)"<input maxlength="64" prop:value=move||component().map(|c|c.volume).unwrap_or_default() on:input=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.volume=event_target_value(&e))/></label></Show>
-    <label>"Volume / increment unit"<select prop:value=move||component().map(|c|c.unit).unwrap_or_default() on:change=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.unit=event_target_value(&e))><option value="nL">"nL"</option><option value="uL">"µL"</option><option value="mL">"mL"</option></select></label>
-    <Show when=move||component().is_some_and(|c|c.mode!="direct")><p class="helper">"Stock and target concentrations are declarations. The dilution uses this reaction’s explicitly entered final volume; only the computed stock addition counts toward the mixture. No automatic diluent is inserted."</p><label>"Stock concentration"<input maxlength="64" prop:value=move||component().map(|c|c.stock).unwrap_or_default() on:input=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.stock=event_target_value(&e))/></label><label>"Target concentration"<input maxlength="64" prop:value=move||component().map(|c|c.target).unwrap_or_default() on:input=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.target=event_target_value(&e))/></label><Show when=move||component().is_some_and(|c|c.mode=="mass")><p>"Mass concentration unit: ng/µL"</p></Show><Show when=move||component().is_some_and(|c|c.mode=="molar")><label>"Molar concentration unit"<select prop:value=move||component().map(|c|c.concentration_unit).unwrap_or_default() on:change=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.concentration_unit=event_target_value(&e))><option value="nM">"nM"</option><option value="uM">"µM"</option></select></label></Show>
-    <label>"Rounding policy"<select prop:value=move||component().map(|c|c.rounding).unwrap_or_default() on:change=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.rounding=event_target_value(&e))><option value="">"Exact arithmetic; do not quantize"</option><option value="exact">"Require exact increment multiple"</option><option value="floor">"Round down"</option><option value="ceiling">"Round up"</option><option value="nearest">"Nearest; ties up"</option></select></label><Show when=move||component().is_some_and(|c|!c.rounding.is_empty())><label>"Explicit volume increment"<input maxlength="64" prop:value=move||component().map(|c|c.increment).unwrap_or_default() on:input=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.increment=event_target_value(&e))/></label></Show></Show>
-    <button class="text-tool" on:click=move|_|edit_reaction(form,&reaction.get_value(),|r|r.components.retain(|c|c.id!=id.get_value()))>"Remove component"</button></details>}
+    view! {<details><summary>{id.get_value()}</summary><label>"Component label"<input maxlength="256" prop:value=move||component().map(|c|c.label).unwrap_or_default() on:input=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.label=event_target_value(&e))/></label><label>"Optional planned material reference"<select prop:value=move||component().map(|c|c.source).unwrap_or_default() on:change=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.source=event_target_value(&e))><option value="">"No biological reference"</option>{move||binding.with_value(|b|b.as_ref().and_then(|b|row_step().and_then(|step|b.component_sources.get(step))).map(|sources|sources.iter().map(|source|match source{collagene_core::verification::Source::Input(input)=>view!{<option value=format!("input:{input}")>{format!("Input {input}")}</option>},collagene_core::verification::Source::Step(step)=>view!{<option value=format!("step:{step}")>{format!("Planned operation {} output",step+1)}</option>}}).collect_view()))}</select></label><p class="helper">"A planned source reference does not assert that material was isolated or that a concentration was measured."</p>
+        <label>"Amount declaration"<select prop:value=move||component().map(|c|c.mode).unwrap_or_default() on:change=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|{c.mode=event_target_value(&e);c.concentration_unit=if c.mode=="mass"{"ng/uL".into()}else{"nM".into()};})><option value="direct">"Direct volume"</option><option value="mass">"Declared mass-concentration dilution"</option><option value="molar">"Declared molar-concentration dilution"</option></select></label>
+        <Show when=move||component().is_some_and(|c|c.mode=="direct")><label>"Component volume (blank = missing)"<input maxlength="64" prop:value=move||component().map(|c|c.volume).unwrap_or_default() on:input=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.volume=event_target_value(&e))/></label></Show>
+        <label>"Volume / increment unit"<select prop:value=move||component().map(|c|c.unit).unwrap_or_default() on:change=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.unit=event_target_value(&e))><option value="nL">"nL"</option><option value="uL">"µL"</option><option value="mL">"mL"</option></select></label>
+        <Show when=move||component().is_some_and(|c|c.mode!="direct")><p class="helper">"Stock and target concentrations are declarations. Declare the dilution final volume explicitly; it must match the reaction total for a complete calculation. Only the computed stock addition counts toward the mixture. No automatic diluent is inserted."</p><label>"Dilution final volume (blank = missing)"<input maxlength="64" aria-label="Dilution final volume" prop:value=move||component().map(|c|c.dilution_volume).unwrap_or_default() on:input=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.dilution_volume=event_target_value(&e))/></label>
+        <label>"Dilution volume unit"<select prop:value=move||component().map(|c|c.dilution_unit).unwrap_or_default() on:change=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.dilution_unit=event_target_value(&e))><option value="nL">"nL"</option><option value="uL">"µL"</option><option value="mL">"mL"</option></select></label>
+        <button class="button secondary" on:click=move|_|{let values=form.with_untracked(|f|f.reactions.iter().find(|r|r.id==reaction.get_value()).map(|r|(r.total.clone(),r.unit.clone())));if let Some((volume,unit))=values{edit_component(form,&reaction.get_value(),&id.get_value(),|c|{c.dilution_volume=volume;c.dilution_unit=unit;});}}>"Copy declared reaction total"</button>
+    <label>"Stock concentration"<input maxlength="64" prop:value=move||component().map(|c|c.stock).unwrap_or_default() on:input=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.stock=event_target_value(&e))/></label><label>"Target concentration"<input maxlength="64" prop:value=move||component().map(|c|c.target).unwrap_or_default() on:input=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.target=event_target_value(&e))/></label><Show when=move||component().is_some_and(|c|c.mode=="mass")><label>"Mass concentration unit"<select prop:value=move||component().map(|c|c.concentration_unit).unwrap_or_default() on:change=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.concentration_unit=event_target_value(&e))><option value="ng/uL">"ng/µL"</option><option value="ng/nL">"ng/nL"</option></select></label></Show><Show when=move||component().is_some_and(|c|c.mode=="molar")><label>"Molar concentration unit"<select prop:value=move||component().map(|c|c.concentration_unit).unwrap_or_default() on:change=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.concentration_unit=event_target_value(&e))><option value="nM">"nM"</option><option value="uM">"µM"</option><option value="pmol/nL">"pmol/nL"</option></select></label></Show>
+        <label>"Rounding policy"<select prop:value=move||component().map(|c|c.rounding).unwrap_or_default() on:change=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.rounding=event_target_value(&e))><option value="">"Exact arithmetic; do not quantize"</option><option value="exact">"Require exact increment multiple"</option><option value="floor">"Round down"</option><option value="ceiling">"Round up"</option><option value="nearest">"Nearest; ties up"</option></select></label><Show when=move||component().is_some_and(|c|!c.rounding.is_empty())><label>"Explicit volume increment"<input maxlength="64" prop:value=move||component().map(|c|c.increment).unwrap_or_default() on:input=move|e|edit_component(form,&reaction.get_value(),&id.get_value(),|c|c.increment=event_target_value(&e))/></label></Show></Show>
+        <button class="text-tool" on:click=move|_|edit_reaction(form,&reaction.get_value(),|r|r.components.retain(|c|c.id!=id.get_value()))>"Remove component"</button></details>}
 }
 #[component]
 fn QuantityReport(preview: Arc<native::Preview>) -> impl IntoView {

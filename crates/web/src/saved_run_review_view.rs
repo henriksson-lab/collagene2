@@ -268,6 +268,13 @@ pub fn SavedRunReviewPanel(
                 target: p.target_event.clone(),
                 inputs: p.inputs.clone(),
                 step_count: p.candidate.plan.steps.len(),
+                operation_kinds: p
+                    .candidate
+                    .plan
+                    .steps
+                    .iter()
+                    .map(std::mem::discriminant)
+                    .collect(),
                 component_sources: p
                     .candidate
                     .plan

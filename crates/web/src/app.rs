@@ -2142,6 +2142,7 @@ pub fn App() -> impl IntoView {
                 target: event,
                 inputs,
                 step_count: plan.steps.len(),
+                operation_kinds: plan.steps.iter().map(std::mem::discriminant).collect(),
                 component_sources: plan
                     .steps
                     .iter()

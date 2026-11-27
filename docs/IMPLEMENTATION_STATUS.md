@@ -54,7 +54,7 @@ limitations are checked independently. Exact-source scientific CI passes on
 Windows, macOS and Linux, and web CI passes for3f5ad10.
 [Contract](TERMINAL_PROCESSING_MATERIAL.md).
 
-Working source advances worker113, candidate31, native plan29, editor draft19
+Publishedd5e824c uses worker113, candidate31, native plan29, editor draft19
 and science32 for reusable annealed-oligo material. Native material records and
 capsules use schema2 with complete role-bound sources/snapshots and plural
 receipts. Template methods retain one role; annealing retains both oligos,
@@ -67,6 +67,15 @@ public/private source closure, later independent-target ligation and retained
 alternatives/incompleteness. Only failed or initially uncompiled cases were
 rerun after fixture repairs. Exact-source cross-platform CI remains open.
 [Contract](ANNEALED_OLIGO_MATERIAL.md).
+
+Working source connects exact saved-quantity editing and selected reaction
+copying to existing native review/capture. Native schemas and tool count are
+unchanged. New model fixtures cover fractional/canonical-unit round trips,
+missing/diagnostic declarations, immutable revision and atomic positional source
+mapping. All six focused model cases and the integrated web/worker WASM check
+pass. Exact-source CI for this batch remains open.
+[Workflow](REACTION_QUANTITY_EDITING.md).
+
 
 README documentation was published separately as9da73ad, with two current
 screenshots, compact feature/method/format/platform tables and detailed operating
@@ -109,7 +118,8 @@ Documentary96/384-well layouts are integrated in the saved-batch panel, includin
 explicit planned/released identities, replicates, immutable capture and CSV/HTML/PDF.
 MCP supports explicit whole-layout dependency review/projection; ordinary plasmid
 sharing omits these sidecars. Exact reaction quantities and combined HTML/PDF companions are now implemented.
-Bulk quantity application and revision of saved quantity reports remain open. [Model](PROTOCOL_LAYOUT.md) · [Sharing](PROTOCOL_LAYOUT_TRANSPORT.md).
+Saved-report revision and selected compatible reaction copying are in the
+current validated batch; six model cases and the integrated WASM check pass. [Model](PROTOCOL_LAYOUT.md) · [Sharing](PROTOCOL_LAYOUT_TRANSPORT.md).
 
 Saved-template inverse PCR now reuses the existing compiler, worker and MCP tool.
 It preserves exact origin events, independently frozen targets and fresh native

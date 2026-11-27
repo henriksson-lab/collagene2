@@ -4,7 +4,8 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-Source checkpoint `0e95cb5` uses worker schema 117, candidate schema 31, draft
+Current source builds on checkpoint `0e95cb5` and uses worker schema 117, candidate
+schema 31, draft
 schema 19 and 197 native
 MCP tools. RNA chemistry/declaration review, protein liability screening and
 imported structure viewing are integrated. Antibody numbering currently has
@@ -2116,3 +2117,20 @@ independent path oracle and concrete ambiguity expansion accompany the new kerne
 All 16 selected native cases and focused optional-schema WASM checks pass. Reference
 profiles, full automatic numbering, region derivation, UI/MCP/worker tracks and
 whole-product acceptance remain open.
+
+
+### Embedded human antibody V-prefix references
+
+A CC0 OGRDB-derived corpus now provides 354 human functional V-gene references
+with explicit provider IMGT positions 1–104, aligned DNA/protein, source/allele
+identity, CDR1/2 boundaries, raw-response hashes and a complete exclusion ledger.
+Six atypical conserved-cysteine annotations are preserved and flagged. The
+independently authored local generator reproduces the committed corpus exactly;
+no provider implementation code or runtime download is used.
+
+All three new native cases pass, including translation of every retained sequence
+through the existing Rust scientific core. Focused optional-schema WASM checks
+pass. Unlabeled germline CDR3 tails are excluded; this is not a trained classifier
+or automatic query numbering. Profile calibration, rearranged-domain completion,
+other accepted schemes/species, application tracks and whole-product acceptance
+remain required. [Contract and data attribution](ANTIBODY_NUMBERING.md).

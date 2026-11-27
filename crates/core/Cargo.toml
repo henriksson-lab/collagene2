@@ -36,3 +36,6 @@ json-schema = ["dep:schemars", "collagene-model/json-schema", "collagene-recombi
 [dependencies.schemars]
 version = "1.2"
 optional = true
+
+[dev-dependencies]
+collagene-antibody-numbering = { path = "../antibody-numbering" }

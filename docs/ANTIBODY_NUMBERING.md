@@ -4,8 +4,7 @@
 position labels, the published IMGT CDR3 allocation rule and an embedded profile-
 alignment kernel. These are numbering components, not automatic antibody or
 variable-domain detection. No worker, UI, MCP integration, full-domain numbering,
-Kabat/Chothia assignment or automatic
-CDR/framework derivation is implemented yet. Those remain part of F34.
+Kabat/Chothia assignment or automatic CDR/framework derivation is implemented yet. Those remain part of F34.
 
 ## Labels and conditional CDR3 allocation
 
@@ -60,9 +59,9 @@ will not be assumed to be Kabat, Chothia or IMGT numbering.
 
 The [wwPDB archive policy](https://www.rcsb.org/pages/policies) provides a CC0
 source for future structure-derived fixtures. That policy applies to archive
-data, not every integrated external annotation. No database dump, third-party
-code, antibody sequences or trained model is bundled in this initial module.
-Published numbering rules and entirely authored anchor fixtures are used here.
+data, not every integrated external annotation. No IMGT database dump, third-party code or trained model is bundled. The human
+reference corpus below uses separately attributed CC0 OGRDB data; conditional
+anchor-rule fixtures remain entirely authored examples.
 
 Four native fixture groups and the optional-schema WASM check pass. Fixtures
 include literal published loop allocations, distinct long insertion labels,
@@ -120,3 +119,36 @@ lengths 1–4 for three small profiles (1,020 comparisons); concrete residue exp
 checks ambiguous score bounds. Together with the four numbering and seven affected
 liability fixtures, 16 native cases pass. Optional-schema WASM checks cover both
 consumers of the shared amino-acid alternatives.
+
+
+## Embedded human V-gene references
+
+The `references` module loads a version-pinned CC0 corpus from OGRDB releases
+G00060 v10, G00061 v5 and G00062 v4. It retains 354 provider-annotated functional
+human V alleles: 194 heavy, 74 kappa and 86 lambda. Explicit provider IMGT labels
+cover positions 1–104. Aligned nucleotides, derived protein columns, allele/source
+identity, CDR1/2 boundaries and complete inclusion/exclusion accounting travel
+together. Gaps are preserved; six alleles with atypical conserved cysteines remain
+present and flagged. They must not be silently corrected or admitted as canonical
+conserved-anchor references.
+
+The source API responses are pinned by SHA-256. An authored generator verifies
+source identity, frame, codon gaps, prefix agreement and label/CDR agreement.
+Runtime loading performs no network or executable calls. Corpus version 1 rejects
+unsupported internal versions; its content revision binds the complete retained
+reference data and source/exclusion metadata. Native structural validation checks
+columns, identities, source ownership and region agreement. A separate integration
+fixture checks every generated protein against the existing Rust translation
+engine, independently of the Python generator's codon dictionary.
+
+These are germline V-prefix facts. Unlabeled CDR3 tails are excluded; there is no
+rearranged CDR3, J/FR4 assignment, nonhuman coverage, Kabat/Chothia correspondence
+or calibrated classification model in this corpus. Reference metadata is distinct
+from an automatic query-domain assignment. Automatic detection still requires
+profile construction/calibration, ambiguity and alternative-domain handling,
+numbering reconstruction and independent biological validation, followed by the
+worker/MCP/protein/alignment tracks. The corpus does not complete those gates.
+
+[Source attribution, license and rebuild instructions](../crates/antibody-numbering/data/ogrdb-human-v/ATTRIBUTION.md)
+· [Provider content license](https://ogrdb.airr-community.org/render_page/licensing_statement.html)
+· [AIRR numbering/delineation contract](https://docs.airr-community.org/en/latest/datarep/germline.html).

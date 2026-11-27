@@ -4354,3 +4354,22 @@ and application tracks remain required. Native tests include an independent
 exhaustive path-language oracle over 1,020 small-profile comparisons and concrete
 ambiguity expansion. All 16 selected native cases and the focused optional-schema
 WASM checks pass. This does not complete F34 or the whole delivery goal.
+
+
+### F34 version-pinned human germline reference corpus
+
+A finite CC0 OGRDB reference corpus now retains all 354 provider-annotated
+functional human V alleles from explicit IGH v10, IGK v5 and IGL v4 releases.
+Original-response hashes, provider identity, explicit IMGT columns 1–104, aligned
+DNA/protein, CDR1/2 boundaries and complete exclusions are retained. Six atypical
+conserved-anchor alleles are kept and flagged. The authored local generator
+refuses changed source hashes or unsupported delineations; no external scientific
+executable or runtime download is used. OGRDB implementation code is not borrowed.
+
+These are V-prefix references, not trained profiles or automatic assignments.
+Unlabeled germline CDR3 tails do not acquire invented position labels. Rearranged
+CDR3/J/FR4, broader species/schemes, detector calibration, ambiguity handling and
+application integration remain required. Native fixtures independently compare
+all retained translations with the existing Rust scientific core. All three new
+native cases, focused optional-schema WASM checks and deterministic regeneration
+pass. [Reference contract](ANTIBODY_NUMBERING.md).

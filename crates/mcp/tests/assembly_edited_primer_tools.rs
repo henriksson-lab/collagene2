@@ -84,6 +84,7 @@ fn request() -> Request {
             ..Default::default()
         },
         profile_options: Default::default(),
+        finishing: collagene_core::assembly_recipe::OverlapFinishing::ReferenceOnly,
     }
 }
 async fn setup() -> (Client, tokio::task::JoinHandle<()>) {

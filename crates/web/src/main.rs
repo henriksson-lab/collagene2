@@ -242,6 +242,8 @@ mod trace_validation;
 mod variant_source_library;
 #[cfg(target_arch = "wasm32")]
 mod variants_view;
+#[cfg(any(target_arch = "wasm32", test))]
+mod web_mcp;
 #[cfg(target_arch = "wasm32")]
 mod workspace_commit;
 #[cfg(target_arch = "wasm32")]

@@ -24,6 +24,7 @@ fn input(id: &str, dna: &str) -> PlanInput {
 }
 fn policy() -> Options {
     Options {
+        planned_rescue: None,
         overlaps: vec![4, 4],
         topology: Topology::Circular,
         cuts: vec![Cuts { left: 4, right: 4 }; 2],
@@ -102,7 +103,12 @@ fn worker88_job168_operation26_evidence5_and_portable_schemas_bind_annealing_wit
         "{:?}",
         preview.verification.findings
     );
-    assert!(preview.verification.engine_version.ends_with("/science-28"));
+    assert!(
+        preview
+            .verification
+            .engine_version
+            .eq(collagene_core::verification::ENGINE_VERSION)
+    );
     assert_eq!(
         preview
             .verification

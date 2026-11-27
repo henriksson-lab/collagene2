@@ -472,7 +472,7 @@ pub struct ReferenceStepReport {
     pub evidence: ReferenceStepEvidence,
 }
 
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-29");
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-30");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrDocument {
@@ -1071,6 +1071,7 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
                 return Err(Error::TooLarge);
             }
             policy.validate_shape(fragments.len())?;
+            policy.validate_profile(options.method)?;
             options.validate()?;
             if fragments.len() == 1 && policy.topology != Topology::Circular {
                 return Err(Error::Unsupported("Single linear3′ processing uses ResectThreePrime, not a joining assembly operation".into()));
@@ -1093,6 +1094,7 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
                 return Err(Error::TooLarge);
             }
             policy.validate_shape(fragments.len())?;
+
             options.validate()?;
             if options.method == crate::overlap_profiles::OverlapMethod::InFusion {
                 return Err(Error::Unsupported("The declared 5′ resection/fill/seal model cannot represent In-Fusion 3′ processing and host rescue; retain its reference-only interpretation.".into()));
@@ -2538,6 +2540,7 @@ fn reconstruct(
                     return Err(Error::TooLarge);
                 }
                 policy.validate_shape(fragments.len())?;
+                policy.validate_profile(options.method)?;
                 options.validate()?;
                 if fragments.len() == 1 && policy.topology != Topology::Circular {
                     return Err(Error::Unsupported("Single linear3′ processing uses ResectThreePrime, not a joining assembly operation".into()));
@@ -2546,47 +2549,99 @@ fn reconstruct(
                 let mut oriented = Vec::with_capacity(fragments.len());
                 for fragment in fragments {
                     let material = resolve_tracked(&fragment.source)?;
+                    let bottom_end = material
+                        .duplex
+                        .bottom_start
+                        .checked_add(material.duplex.bottom.len() as i64)
+                        .ok_or(Error::TooLarge)?;
                     tracked.push(if fragment.reverse {
                         material.reverse()?
                     } else {
                         material
                     });
-                    let source = resolve(&fragment.source)?;
-                    if fragment.reverse {
-                        let mut model = Molecule::dna(
-                            format!("Oriented {}", source.name),
-                            source.sequence.reverse_complement()?.as_str(),
-                            source.topology,
-                        )?;
-                        project_into(
-                            source,
-                            &[MappingSegment {
-                                source_start: 0,
-                                source_end: source.sequence.len(),
-                                destination_start: 0,
-                                reverse: true,
-                            }],
-                            &mut model,
-                            findings,
-                        )?;
-                        carry_unmapped_evidence(source, &mut model);
-                        oriented.push(model);
-                    } else {
-                        oriented.push(source.clone());
-                    }
+                    // Keep annotations in their real original top frame. Reversing
+                    // unequal strands does not create a reference stock of bottom DNA.
+                    oriented.push((
+                        resolve(&fragment.source)?.clone(),
+                        fragment.reverse,
+                        bottom_end,
+                    ));
                 }
                 let (_separate_processed_operands, geometry) =
                     modified_duplex::homology_anneal(&tracked.iter().collect::<Vec<_>>(), policy)?;
                 geometry.validate_documentary()?;
-                let mut product = assemble_overlap(
-                    &oriented.iter().collect::<Vec<_>>(),
-                    &policy.overlaps,
-                    policy.topology == Topology::Circular,
-                    index,
-                    findings,
+                // The reference follows actual 5′ termini, including real bottom-only
+                // calls. A top-document concatenation would discard staggered ends.
+                let mut product = Molecule::dna(
+                    format!("Annealed reference {}", index + 1),
+                    geometry.reference.as_str(),
+                    policy.topology,
                 )?;
-                if product.sequence != geometry.reference || product.topology != policy.topology {
-                    return Err(Error::Format("Annotated source-derived contour differs from independently annealed strand reference".into()));
+                for placement in geometry.source_placements()? {
+                    let (source, reverse, bottom_end) = oriented
+                        .get(placement.source)
+                        .ok_or_else(|| Error::Format("missing annealed source placement".into()))?;
+                    let (source_start, source_end, frame_start) = if *reverse {
+                        let low = (*bottom_end - placement.contour_length as i64).max(0) as usize;
+                        let high = (*bottom_end).max(0) as usize;
+                        let high = high.min(source.sequence.len());
+                        (
+                            low.min(high),
+                            high,
+                            usize::try_from(*bottom_end - high as i64)
+                                .map_err(|_| Error::TooLarge)?,
+                        )
+                    } else {
+                        (0, source.sequence.len().min(placement.contour_length), 0)
+                    };
+                    let mut map = Vec::new();
+                    let mut cursor = 0;
+                    let span_length = source_end - source_start;
+                    while cursor < span_length {
+                        let absolute = placement
+                            .reference_start
+                            .checked_add(frame_start)
+                            .and_then(|n| n.checked_add(cursor))
+                            .ok_or(Error::TooLarge)?;
+                        let destination = if policy.topology == Topology::Circular {
+                            absolute % product.sequence.len()
+                        } else {
+                            absolute
+                        };
+                        let span =
+                            (span_length - cursor).min(
+                                product.sequence.len().checked_sub(destination).ok_or_else(
+                                    || {
+                                        Error::Format(
+                                            "annealing placement exceeds linear contour".into(),
+                                        )
+                                    },
+                                )?,
+                            );
+                        if span == 0 || map.len() >= 3 {
+                            return Err(Error::TooLarge);
+                        }
+                        let (start, end) = if *reverse {
+                            (source_end - cursor - span, source_end - cursor)
+                        } else {
+                            (source_start + cursor, source_start + cursor + span)
+                        };
+                        map.push(MappingSegment {
+                            source_start: start,
+                            source_end: end,
+                            destination_start: destination,
+                            reverse: *reverse,
+                        });
+                        cursor += span;
+                    }
+                    project_into_with_collapse(
+                        source,
+                        &map,
+                        &mut product,
+                        findings,
+                        policy.topology == Topology::Circular && oriented.len() == 1,
+                    )?;
+                    carry_unmapped_evidence(source, &mut product);
                 }
                 product.name = format!("Annealed reference {}", index + 1);
                 product.metadata.insert(
@@ -2632,6 +2687,7 @@ fn reconstruct(
                     return Err(Error::TooLarge);
                 }
                 policy.validate_shape(fragments.len())?;
+
                 options.validate()?;
                 // Resolve actual native states first. Reference-only steps and
                 // imported producer metadata cannot supply this operation.
@@ -4310,6 +4366,9 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
             },
             Operation::HomologyAnnealing {fragments,options,policy} => {
                 body.push_str(&format!("<li>Generic3′ processing and exposed5′tail annealing of ordered substrates {}. Explicit policy <code>{}</code>; advisory profile <code>{}</code>. Every nick/gap retains separate covalent strands. The reference contour does not establish a reusable assembled molecule or proprietary In-Fusion/cellular rescue.</li>",fragments.iter().map(|f|format!("{} ({})",source(&f.source),if f.reverse{"reverse complement"}else{"forward"})).collect::<Vec<_>>().join(", "),e(&serde_json::to_string(policy).unwrap_or_default()),e(&serde_json::to_string(options).unwrap_or_default())));
+                if let Some(rescue) = &policy.planned_rescue {
+                    body.push_str(&format!("<li>Planned next step: {}. This is a documentary intention; transformation, host repair, isolation and experimental success are not simulated. The joined reference remains incomplete and is not reusable physical material.</li>", e(rescue.label())));
+                }
             },
             Operation::HomologyAssembly { fragments, options, policy } => {
                 body.push_str(&format!("<li>Physical homology assembly of ordered substrates {}. Declared geometry and 5′ processing/fill/sealing policy: <code>{}</code>. Advisory sequence profile: <code>{}</code>. Surviving source strands retain modifications; only actual template-supported synthesis is unmodified. Eligible paired 3′OH/5′P nicks may seal; unresolved chemistry stays explicit. Linear outer-end processing is retained, not silently blunted. This model does not establish experimental success or a proprietary formulation.</li>",fragments.iter().map(|f|format!("{} ({})",source(&f.source),if f.reverse{"reverse complement"}else{"forward"})).collect::<Vec<_>>().join(", "),e(&serde_json::to_string(policy).unwrap_or_default()),e(&serde_json::to_string(options).unwrap_or_default())));

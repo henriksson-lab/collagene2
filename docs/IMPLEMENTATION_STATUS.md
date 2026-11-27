@@ -4,26 +4,26 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-Current source uses worker106, candidate28, native plan26, science29, draft17 and
+Current source uses worker107, candidate29, native plan27, science30, draft18 and
 192 MCP tools. There is one current internal representation; unsupported internal
-schemas are rejected without compatibility readers. Saved activated TOPO graph
-reuse is pushed in `443f51b`. The current working change adds row-specific library
-substitutions/indels, saved Run/Derived primer proposals, exact source ownership,
-and persistent recovery counts under history v2. The same batch adds typed native
-library selectors, an independent source-binding roster, borrowed actual-strand
-PCR/OE planning, explicit preparation orientation and strand-aware oligo evidence.
-Intended DNA remains independent of physical preparation and verification.
+schemas are rejected without compatibility readers. The PCR/library integration
+is published as `f66deff`; its178 focused native cases pass, with a local integrated
+WASM check before its final shared-model guard. Its exact-source web CI passed; native CI stopped at missing explicit PCR strand
+fields in peripheral fixture constructors, corrected in the current batch.
 
-The integrated batch passes178 distinct focused native cases, including actual
-strand PCR, source ownership, library budgets, transport and web models. Failed
-and related cases received74 focused rechecks; the final processing-policy guard
-passes14 projection cases. The integrated web/worker WASM check passed before
-that final shared-model guard; exact-source WASM and cross-platform CI remain to
-run after publication. Formatting and whitespace checks accompany publication.
-The prior commit's native CI on Windows, macOS and Linux found the same five
-stale binary selector/size-lane fixture expectations, corrected in current source
-without relaxing bounds. Its web and all three desktop build jobs passed. Full
-graphical and installed-desktop acceptance remain open.
+The next integrated working batch carries finishing policies through native
+library and whole-primer proposals, adds actual staggered-end3′ annealing,
+records planned E. coli rescue as documentary intent, and adds the first optional
+WebMCP read/navigation tools. Its coordinated native and web/worker WASM checks pass, with167 distinct focused
+native cases and22 protocol rechecks. A final explanatory UI text edit follows
+that compiler check; it changes no Rust behavior. Publication and exact-source CI
+remain pending. Scientific completion remains
+separate from documentary rescue. [WebMCP scope](WEBMCP.md).
+
+The prior443f51b native CI on Windows, macOS and Linux found the same five stale
+binary selector/size-lane fixture expectations, corrected in f66deff without
+relaxing bounds. Its web and all three desktop build jobs passed. Full graphical
+and installed-desktop acceptance remain open.
 
 Port8082 serves the immutable successful CI frontend for `443f51b` (worker105),
 including saved activated TOPO graph reuse. Static asset integrity, exact process

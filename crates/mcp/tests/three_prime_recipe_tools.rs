@@ -16,6 +16,7 @@ const CIRCLE: &str = "AGTCCGATGCTATTCGAATTC";
 const CUT_FILLED: &str = "AATTCAGTCCGATGCTATTCGAATT";
 fn policy() -> Options {
     Options {
+        planned_rescue: None,
         overlaps: vec![4, 4],
         topology: Topology::Circular,
         cuts: vec![Cuts { left: 4, right: 4 }; 2],

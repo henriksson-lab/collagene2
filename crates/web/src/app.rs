@@ -1921,6 +1921,36 @@ pub fn App() -> impl IntoView {
             Ok(())
         },
     );
+    // Optional browser tools reuse the same exact-event navigation command as
+    // the editor. No document/capsule copy or scientific job runs at registration.
+    crate::web_mcp::install(Callback::new(move |(tool, arguments): (String, String)| {
+        if workspace_restoring.get_untracked() {
+            return Err("The workspace is still loading.".into());
+        }
+        let (response, navigation, source) = documents.with_untracked(|docs| {
+            let doc = docs
+                .get(active.get_untracked())
+                .ok_or("No active sequence document.")?;
+            let source = current_event_binding(doc);
+            let pin = crate::web_mcp::Pin {
+                workspace_epoch: workspace_epoch.get_untracked(),
+                source: source.clone(),
+            };
+            let (response, navigation) = crate::web_mcp::execute(
+                &tool,
+                &arguments,
+                &pin,
+                &doc.molecule,
+                selection.get_untracked(),
+                selected_feature.get_untracked(),
+            )?;
+            Ok::<_, String>((response, navigation, source))
+        })?;
+        if let Some(span) = navigation {
+            navigate_primer_binding.run((source, vec![span]))?;
+        }
+        Ok(response)
+    }));
     // Index event identities on workspace changes, not full DNA on each oligo keystroke.
     let primer_event_index = Memo::new(move |_| {
         documents.with(|docs| {

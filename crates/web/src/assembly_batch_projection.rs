@@ -66,13 +66,13 @@ fn typed_row(
     let mut preparation_state = state.clone();
     let method = match state.mode {
         Mode::Overlap => {
-            if state.homology.as_ref().is_some_and(|form| form.enabled)
-                || state.annealing.as_ref().is_some_and(|form| form.enabled)
-            {
-                return Err("Library rows do not support explicit resection or homology-annealing processing yet. The requested settings are retained.".into());
-            }
             let (overlaps, options) = state.profile()?;
-            Method::Overlap { overlaps, options }
+            let finishing = state.overlap_finishing(overlaps.clone(), state.rows.len())?;
+            Method::Overlap {
+                overlaps,
+                options,
+                finishing,
+            }
         }
         Mode::Ligation => Method::Ligation {
             allow_nicked: state.allow_nicked,
@@ -706,6 +706,7 @@ mod tests {
             } else {
                 let mut form = crate::cloning_methods_model::HomologyForm::default();
                 form.enabled = true;
+                form.exact_homology = false;
                 form.cuts = "unfinished 5-prime cuts".into();
                 draft.methods.homology = Some(form);
             }
@@ -714,7 +715,7 @@ mod tests {
             let projection = project(&draft).unwrap();
             assert!(matches!(&projection.request.rows[0], RowRequest::Ready(_)));
             assert!(
-                matches!(&projection.request.rows[1],RowRequest::DraftError{message,..} if message.contains("do not support explicit resection or homology-annealing"))
+                matches!(&projection.request.rows[1],RowRequest::DraftError{message,..} if !message.is_empty())
             );
             assert_eq!(serde_json::to_vec(&draft).unwrap(), before);
             if three_prime {
@@ -731,6 +732,53 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn explicit_annealing_policy_and_planned_rescue_survive_row_projection_and_draft_recovery() {
+        let mut draft = two_rows();
+        draft.methods.mode = Mode::Overlap;
+        draft.methods.method = collagene_core::overlap_profiles::OverlapMethod::InFusion;
+        draft.methods.homology = None;
+        let mut form = crate::cloning_methods_model::AnnealingForm::default();
+        form.enabled = true;
+        form.cuts = "15:15, 15:15".into();
+        form.min_paired_bases = "4".into();
+        form.planned_ecoli_rescue = true;
+        draft.methods.annealing = Some(form);
+        draft.sync_rows();
+        let before = project(&draft).unwrap();
+        let Some(Method::Overlap {
+            finishing:
+                collagene_core::assembly_recipe::OverlapFinishing::HomologyAnnealing { policy },
+            ..
+        }) = &ready(&before.request, 1).overrides.as_ref().unwrap().method
+        else {
+            panic!("actual annealing policy must be retained");
+        };
+        assert_eq!(policy.cuts[0].left, 15);
+        assert_eq!(
+            policy.planned_rescue,
+            Some(collagene_core::homology_annealing::PlannedRescue::EcoliTransformation)
+        );
+        let restored = crate::assembly_draft_model::decode(
+            &crate::assembly_draft_model::encode(&draft).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(project(&restored).unwrap().revision, before.revision);
+        draft
+            .methods
+            .annealing
+            .as_mut()
+            .unwrap()
+            .planned_ecoli_rescue = false;
+        let invalid = project(&draft).unwrap();
+        assert_ne!(invalid.revision, before.revision);
+        assert!(matches!(
+            &invalid.request.rows[1],
+            RowRequest::DraftError { .. }
+        ));
+        assert!(matches!(&invalid.request.rows[0], RowRequest::Ready(_)));
+    }
+
     #[test]
     fn row_local_literals_enter_the_native_declaration_and_raw_projection_key() {
         let draft = two_rows();

@@ -688,6 +688,7 @@ impl HomologyForm {
 #[serde(deny_unknown_fields)]
 pub struct AnnealingForm {
     pub enabled: bool,
+    pub planned_ecoli_rescue: bool,
     pub cuts: String,
     pub min_paired_bases: String,
     pub max_comparisons: String,
@@ -697,6 +698,7 @@ impl Default for AnnealingForm {
     fn default() -> Self {
         Self {
             enabled: true,
+            planned_ecoli_rescue: false,
             cuts: String::new(),
             min_paired_bases: "12".into(),
             max_comparisons: "20000000".into(),
@@ -756,6 +758,9 @@ impl AnnealingForm {
             return Err("Supply exactly one 3′ cut pair per oriented prepared fragment.".into());
         }
         let policy = Options {
+            planned_rescue: self
+                .planned_ecoli_rescue
+                .then_some(collagene_core::homology_annealing::PlannedRescue::EcoliTransformation),
             overlaps,
             topology: if circular {
                 Topology::Circular
@@ -1096,6 +1101,32 @@ impl MethodsState {
         } else {
             &mut self.insert
         }
+    }
+    pub(crate) fn overlap_finishing(
+        &self,
+        overlaps: Vec<usize>,
+        rows: usize,
+    ) -> Result<collagene_core::assembly_recipe::OverlapFinishing, String> {
+        use collagene_core::assembly_recipe::OverlapFinishing;
+        let finishing = match (
+            self.annealing.as_ref().filter(|form| form.enabled),
+            self.homology.as_ref().filter(|form| form.enabled),
+        ) {
+            (Some(_), Some(_)) => {
+                return Err("Choose one strand-processing route for this construct.".into());
+            }
+            (Some(form), None) => OverlapFinishing::HomologyAnnealing {
+                policy: form.policy(overlaps.clone(), self.circular, rows)?,
+            },
+            (None, Some(form)) => OverlapFinishing::HomologyAssembly {
+                policy: form.policy(overlaps.clone(), self.circular, rows)?,
+            },
+            (None, None) => OverlapFinishing::ReferenceOnly,
+        };
+        finishing
+            .validate_geometry(rows, &overlaps, self.circular, &self.profile_options()?)
+            .map_err(|e| e.to_string())?;
+        Ok(finishing)
     }
     pub(crate) fn profile(&self) -> Result<(Vec<usize>, ProfileOptions), String> {
         // A linear singleton has no joining boundary. An empty declaration is

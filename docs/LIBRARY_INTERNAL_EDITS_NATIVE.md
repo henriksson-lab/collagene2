@@ -64,3 +64,10 @@ Derived PCR source through row-specific extension-PCR proposal, batch restart,
 release and fresh saved-run replay, plus exact ownership, stale literals,
 substitution/indel conflicts and allocation refusal. These are authored native
 fixtures; validation is performed by the parent integration batch.
+
+Whole-primer planning retains the selected finishing policy in its request and
+single composed final preview. Reference-only,5′ fill/seal and3′ unsealed annealing
+are explicit alternatives sharing the existing recipe compiler. Planned host
+rescue is documentary and cannot promote the final reference to physical material.
+The physical terminal comparison allowance is reserved before primer search in
+the existing whole-request work budget.

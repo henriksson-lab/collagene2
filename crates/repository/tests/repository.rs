@@ -474,6 +474,7 @@ fn saved_product_evidence_survives_queue_remote_clone_restart_and_fresh_replay()
             molecule: source,
         }],
         steps: vec![Operation::Pcr {
+            template_strand: collagene_core::chemistry::Strand::Top,
             template: Source::Input("stock".into()),
             forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("R", "TGACGATC", "").unwrap(),

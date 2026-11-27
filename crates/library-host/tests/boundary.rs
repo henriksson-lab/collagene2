@@ -541,6 +541,7 @@ fn real_saved_run_archive_retains_ancestry_while_native_snapshot_never_restores_
             molecule: source,
         }],
         steps: vec![Operation::Pcr {
+            template_strand: collagene_core::chemistry::Strand::Top,
             template: Source::Input("stock".into()),
             forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("R", "TGACGATC", "").unwrap(),

@@ -80,6 +80,7 @@ fn request() -> Request {
         overlap: 8,
         options: options(),
         profile_options: ProfileOptions::default(),
+        finishing: collagene_core::assembly_recipe::OverlapFinishing::ReferenceOnly,
     }
 }
 fn inputs() -> Vec<PlanInput> {
@@ -472,4 +473,41 @@ fn aggregate_work_explicit_tail_policy_stale_literals_and_receipt_tampering_are_
             "tamper{kind}"
         );
     }
+}
+
+#[test]
+fn whole_primer_proposal_keeps_actual_infusion_finishing_and_independent_intent() {
+    use collagene_core::{
+        assembly_recipe::OverlapFinishing,
+        homology_annealing::{Options, PlannedRescue},
+        three_prime_resection::Cuts,
+    };
+    let inputs = inputs();
+    let mut request = request();
+    let reference = design::design(&inputs, &request, None).unwrap();
+    request.profile_options.method = collagene_core::overlap_profiles::OverlapMethod::InFusion;
+    request.finishing = OverlapFinishing::HomologyAnnealing {
+        policy: Options {
+            overlaps: vec![8],
+            topology: Topology::Linear,
+            cuts: vec![Cuts { left: 0, right: 8 }, Cuts { left: 8, right: 0 }],
+            min_paired_bases: 4,
+            max_comparisons: 100_000,
+            max_candidates: 20,
+            planned_rescue: Some(PlannedRescue::EcoliTransformation),
+        },
+    };
+    let actual = design::design(&inputs, &request, None).unwrap();
+    actual.validate_binding(&actual.context_revision).unwrap();
+    assert_eq!(
+        actual.intent.target.sequence,
+        reference.intent.target.sequence
+    );
+    assert_eq!(actual.preview.verification.status, Status::Incomplete);
+    assert!(
+        matches!(actual.preview.compiled.plan.steps.last(), Some(collagene_core::verification::Operation::HomologyAnnealing { policy, .. }) if policy.planned_rescue == Some(PlannedRescue::EcoliTransformation))
+    );
+    let mut changed = actual.clone();
+    changed.request.finishing = OverlapFinishing::ReferenceOnly;
+    assert!(changed.validate_binding(&actual.context_revision).is_err());
 }

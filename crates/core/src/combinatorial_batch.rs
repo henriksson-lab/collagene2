@@ -149,8 +149,25 @@ impl Request {
                         if overrides.preparations.len() > design::MAX_BINS {
                             return Err(Error::TooLarge);
                         }
-                        if let Some(design::Method::Overlap { overlaps, .. }) = &overrides.method {
-                            if overlaps.len() > design::MAX_BINS {
+                        if let Some(design::Method::Overlap {
+                            overlaps,
+                            finishing,
+                            ..
+                        }) = &overrides.method
+                        {
+                            use assembly_recipe::OverlapFinishing;
+                            let excessive_policy = match finishing {
+                                OverlapFinishing::ReferenceOnly => false,
+                                OverlapFinishing::HomologyAssembly { policy } => {
+                                    policy.overlaps.len() > design::MAX_BINS
+                                        || matches!(&policy.resection,crate::homology_assembly::Resection::Explicit{cuts} if cuts.len()>design::MAX_BINS)
+                                }
+                                OverlapFinishing::HomologyAnnealing { policy } => {
+                                    policy.overlaps.len() > design::MAX_BINS
+                                        || policy.cuts.len() > design::MAX_BINS
+                                }
+                            };
+                            if overlaps.len() > design::MAX_BINS || excessive_policy {
                                 return Err(Error::TooLarge);
                             }
                         }

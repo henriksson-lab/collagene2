@@ -1527,6 +1527,7 @@ pub struct EditedOverlapPrimerRequest {
     pub overlap: usize,
     pub options: collagene_core::overlap_extension_primer_design::Options,
     pub profile_options: collagene_core::overlap_profiles::ProfileOptions,
+    pub finishing: collagene_core::assembly_recipe::OverlapFinishing,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -7339,7 +7340,7 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             let frame=args.origin_workspace.as_ref().map(|wr|server.restore_workspace(wr)).transpose()?;
             let request=collagene_core::assembly_edited_primer_design::Request {
                 intent:args.request.intent.native(frame.as_ref())?,overlap:args.request.overlap,
-                options:args.request.options.clone(),profile_options:args.request.profile_options.clone(),
+                options:args.request.options.clone(),profile_options:args.request.profile_options.clone(),finishing:args.request.finishing.clone(),
             };
             let inputs = {
                 let store = server.store.lock().unwrap();

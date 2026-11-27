@@ -91,6 +91,7 @@ fn fixture() -> (Workspace, library::Design, library::SelectedConstruct) {
         name: "Independent row edits".into(),
         circular: false,
         method: library::Method::Overlap {
+            finishing: collagene_core::assembly_recipe::OverlapFinishing::ReferenceOnly,
             overlaps: vec![8],
             options: ProfileOptions::default(),
         },
@@ -191,6 +192,7 @@ fn proposal(
         overlap: 8,
         options: options(),
         profile_options: ProfileOptions::default(),
+        finishing: collagene_core::assembly_recipe::OverlapFinishing::ReferenceOnly,
     };
     let p = primers::design(&resolved.inputs, &request, Some(w)).unwrap();
     p.validate_sources(&resolved.inputs, &p.context_revision, Some(w))
@@ -357,6 +359,7 @@ fn saved_proposal_requires_actual_workspace_and_full_source_and_refuses_document
         overlap: 8,
         options: options(),
         profile_options: ProfileOptions::default(),
+        finishing: collagene_core::assembly_recipe::OverlapFinishing::ReferenceOnly,
     };
     assert!(
         primers::source_preflight(

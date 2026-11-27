@@ -1,6 +1,8 @@
 //! Portable archives of exact released native events. Historical manifests never
 //! supply current scientific authority. Protocols use one fresh private native
-//! reconstruction shared by the existing HTML/PDF renderers.
+//! reconstruction shared by the existing HTML/PDF renderers. The retained typed
+//! finishing route (reference, 5′ homology, or unsealed 3′ annealing) is rebuilt
+//! from independent declarations; export never replaces it with a reference merge.
 use crate::{
     Error, combinatorial_batch as batch, combinatorial_design as design,
     combinatorial_release::{self as release, Manifest, ReleasedRow},

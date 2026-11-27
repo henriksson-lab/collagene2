@@ -38,12 +38,14 @@ preparation overrides, including unselected choices or diagnostic rows, before
 publishing those bytes. It does not upgrade historical verdicts or rerun primer
 searches to turn a diagnostic row into an accepted one.
 
-The current library overlap method is the reference-profile route. Explicit
-physical homology-processing or3′-annealing settings are retained as a row-local
-unsupported-processing diagnostic until that native library recipe is wired.
-They must not be silently omitted while a different reference method runs.
-Ordinary single-assembly physical processing remains a separate supported route;
-the complete connected In-Fusion/library processing workflow remains required.
+The library overlap method requires an explicit `OverlapFinishing`: reference-only
+analysis, native5′ homology processing, or native3′ annealing. Its policy is retained
+in resolved recipes, preview identity, batch capture and release; it is never
+silently omitted. In-Fusion's annealing route requires a documentary planned
+E. coli transformation/rescue declaration. Annealed references retain separate
+strands and cannot become reusable material through that declaration. Physical
+comparison limits are reserved in the same shared batch work ledger. Unsupported
+geometry and unfinished policy fields remain row-local errors.
 
 The native literal acceptance uses a saved21-call top and offset4 bottom, selects
 actual bottom0..10 `AATTCGTAAG`, and separately reconstructs/digests/reverses/ligates
@@ -53,5 +55,6 @@ HTML/PDF, compact MCP selection and both sharing scopes have focused native fixt
 the parent integration batch; no checks were run while authoring this patch.
 The point-mismatched target `AATTCGTAAA` remains invalid; circular rotation is not
 a valid negative oracle. The library slice alone does not claim that a
-reference-only PCR planner can use bottom-only template calls. The separate native
-template-frame integration must supply that physics without fabricating stock.
+reference-only PCR planner can use bottom-only template calls. The integrated native
+template-frame planner supplies that physics from freshly borrowed material
+without fabricating stock.

@@ -6,8 +6,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 106;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 28;
+pub const WORKER_SCHEMA_VERSION: u16 = 107;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 29;
 
 // Current selectors whose accepted payloads can contain complete workspace archives.
 // Stateless and session dispatch must admit the same envelope before routing.

@@ -2,7 +2,8 @@
 //! This is a design-choice layer, independent of reaction-product enumeration.
 use crate::{
     Error, Molecule, Topology, assembly_edit_intent, assembly_intent, assembly_junction_edit,
-    assembly_recipe, assembly_substitution_intent,
+    assembly_recipe::{self, OverlapFinishing},
+    assembly_substitution_intent,
     chemistry::EndTreatment,
     golden_gate::{GoldenGateEnzyme, GoldenGateOptions},
     ligation_recipe,
@@ -33,7 +34,7 @@ dto! {pub struct Choice {
 }}
 dto! {pub struct Bin {pub id:String,pub label:String,pub choices:Vec<Choice>}}
 dto! {pub enum Method {
-    Overlap{overlaps:Vec<usize>,options:ProfileOptions},
+    Overlap{overlaps:Vec<usize>,options:ProfileOptions,finishing:OverlapFinishing},
     Ligation{allow_nicked:bool},
     /// Same existing pinned-site geometry requirement; no kinetic-mixture inference.
     OrderedTypeIis{enzyme:GoldenGateEnzyme,allow_nicked:bool},
@@ -78,7 +79,10 @@ pub enum IndependentIntent {
 }
 #[derive(Clone, Debug)]
 pub enum Recipe {
-    Overlap(assembly_recipe::Recipe),
+    Overlap {
+        recipe: assembly_recipe::Recipe,
+        finishing: OverlapFinishing,
+    },
     Ligation {
         recipe: ligation_recipe::Recipe,
         cleavage_policy: assembly_recipe::CleavagePolicy,
@@ -438,7 +442,12 @@ fn preparation_shape(preparation: &assembly_recipe::Preparation) -> Result<(), E
     Ok(())
 }
 fn method_shape(method: &Method, bins: usize, circular: bool) -> Result<(), Error> {
-    if let Method::Overlap { overlaps, options } = method {
+    if let Method::Overlap {
+        overlaps,
+        options,
+        finishing,
+    } = method
+    {
         if overlaps.len() != bins.saturating_sub(1) + usize::from(circular)
             || overlaps.iter().any(|n| *n == 0 || *n > 10_000)
         {
@@ -446,7 +455,7 @@ fn method_shape(method: &Method, bins: usize, circular: bool) -> Result<(), Erro
                 "declare one positive overlap length per effective junction",
             ));
         }
-        options.validate()?;
+        finishing.validate_geometry(bins, overlaps, circular, options)?;
     }
     if let Method::MultiSiteReference { request, selection } = method {
         if !(2..=5).contains(&bins) {
@@ -872,7 +881,16 @@ fn resolved_work(
                 .ok_or(Error::TooLarge)?;
         }
     }
-    if let Method::Overlap { options, .. } = method {
+    if let Method::Overlap {
+        options, finishing, ..
+    } = method
+    {
+        let physical_search = match finishing {
+            OverlapFinishing::ReferenceOnly => 0,
+            OverlapFinishing::HomologyAssembly { policy } => policy.max_comparisons,
+            OverlapFinishing::HomologyAnnealing { policy } => policy.max_comparisons,
+        };
+        work = work.checked_add(physical_search).ok_or(Error::TooLarge)?;
         if options.scan_repeated_overlaps {
             work = work
                 .checked_add(options.max_comparisons)
@@ -1394,7 +1412,11 @@ pub(crate) fn resolve_validated(
             });
         }
         match method {
-            Method::Overlap { overlaps, options } => {
+            Method::Overlap {
+                overlaps,
+                options,
+                finishing,
+            } => {
                 if choices.iter().any(|(bin, choice)| {
                     preparation_override(construct, &bin.id)
                         .map(|o| o.treatment)
@@ -1412,7 +1434,10 @@ pub(crate) fn resolve_validated(
                     circular,
                     options: options.clone(),
                 };
-                Recipe::Overlap(recipe)
+                Recipe::Overlap {
+                    recipe,
+                    finishing: finishing.clone(),
+                }
             }
             Method::Ligation { allow_nicked } | Method::OrderedTypeIis { allow_nicked, .. } => {
                 if let Method::OrderedTypeIis { enzyme, .. } = method {
@@ -1486,8 +1511,8 @@ fn preflight_resolved(resolved: &Resolved) -> Result<(), Error> {
         .map(|i| (i.id.as_str(), &i.molecule))
         .collect::<Vec<_>>();
     match &resolved.recipe {
-        Recipe::Overlap(recipe) => {
-            assembly_recipe::preflight(&resolved.inputs, &resolved.target, recipe)
+        Recipe::Overlap { recipe, finishing } => {
+            finishing.preflight(&resolved.inputs, &resolved.target, recipe)
         }
         Recipe::Ligation { recipe, .. } => {
             ligation_recipe::source_preflight(&borrowed, &resolved.target, recipe)
@@ -1660,9 +1685,9 @@ pub fn compile(
 /// enumeration. Callers must not treat the resulting plan as verification evidence.
 pub fn compile_resolved(resolved: &Resolved) -> Result<crate::verification::DesignPlan, Error> {
     match &resolved.recipe {
-        Recipe::Overlap(recipe) => {
-            Ok(assembly_recipe::compile(&resolved.inputs, &resolved.target, recipe)?.plan)
-        }
+        Recipe::Overlap { recipe, finishing } => Ok(finishing
+            .compile(&resolved.inputs, &resolved.target, recipe)?
+            .plan),
         Recipe::Ligation {
             recipe,
             cleavage_policy,
@@ -1761,11 +1786,9 @@ pub fn evaluate(
 }
 pub(crate) fn evaluate_resolved(resolved: Resolved) -> Result<Evaluation, Error> {
     let preview = match &resolved.recipe {
-        Recipe::Overlap(recipe) => Preview::Overlap(assembly_recipe::preview(
-            &resolved.inputs,
-            &resolved.target,
-            recipe,
-        )?),
+        Recipe::Overlap { recipe, finishing } => {
+            Preview::Overlap(finishing.preview(&resolved.inputs, &resolved.target, recipe)?)
+        }
         Recipe::Ligation {
             recipe,
             cleavage_policy,

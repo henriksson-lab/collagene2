@@ -105,7 +105,11 @@ fn real_binary_pcr_extension_outer_pcr_matches_independent_target_and_exports() 
         "{:?}",
         report.findings
     );
-    assert!(report.engine_version.ends_with("/science-28"));
+    assert!(
+        report
+            .engine_version
+            .eq(collagene_core::verification::ENGINE_VERSION)
+    );
     assert_eq!(report.products.len(), 4);
     let extension = report
         .physical_processing_reports

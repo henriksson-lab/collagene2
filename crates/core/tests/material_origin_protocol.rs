@@ -300,8 +300,8 @@ fn current_worker_operations_reconstruct_literal_material_and_bind_outputs() {
 }
 #[test]
 fn current_material_origin_encoding_preserves_operation_and_exact_evidence() {
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 27);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 25);
+    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 29);
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 27);
     let (mut w, cap, pin) = digest_fixture();
     let (plan, target) = prepared_plan(&mut w, &cap, &pin);
     assert_eq!(tag(&plan.steps[0]), 27);
@@ -321,7 +321,11 @@ fn current_material_origin_encoding_preserves_operation_and_exact_evidence() {
         "{:?}",
         report.findings
     );
-    assert!(report.engine_version.ends_with("/science-28"));
+    assert!(
+        report
+            .engine_version
+            .eq(collagene_core::verification::ENGINE_VERSION)
+    );
     assert_eq!(tag(&report.physical_processing_reports[0].evidence), 6);
     let request = protocol::Request {
         id: 27,
@@ -392,7 +396,11 @@ fn current_encoding_retains_documentary_producer_stamps_without_granting_authori
             .all(|s| matches!(s, Operation::Pcr { .. }))
     );
     let report = verification::verify(&plan, &origin.target);
-    assert!(report.engine_version.ends_with("/science-28"));
+    assert!(
+        report
+            .engine_version
+            .eq(collagene_core::verification::ENGINE_VERSION)
+    );
     let response = protocol::Response {
         id: 1,
         revision: origin.target.revision(),
@@ -403,7 +411,9 @@ fn current_encoding_retains_documentary_producer_stamps_without_granting_authori
     let AnalysisResult::Verification(report) = &mut historical.result else {
         unreachable!()
     };
-    report.engine_version = report.engine_version.replace("/science-28", "/science-24");
+    report.engine_version = report
+        .engine_version
+        .replace(collagene_core::verification::ENGINE_VERSION, "/science-24");
     protocol::decode_response(&wire(
         b"CGR\0",
         protocol::WORKER_SCHEMA_VERSION,

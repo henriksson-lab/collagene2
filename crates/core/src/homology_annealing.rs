@@ -7,15 +7,33 @@ use crate::{
     three_prime_resection::{self as resection, Cuts},
 };
 use serde::{Deserialize, Serialize};
-pub const ENGINE_VERSION: &str = "homology-annealing-1";
+pub const ENGINE_VERSION: &str = "homology-annealing-2";
 pub const MAX_SOURCES: usize = 32;
 pub const MAX_SOURCE_BASES: usize = 2_000_000;
 pub const MAX_COMPARISONS: usize = 100_000_000;
 pub const MAX_CANDIDATES: usize = 1000;
 macro_rules! dto {($($x:tt)*)=>{#[derive(Debug,Clone,PartialEq,Eq,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($x)*};}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum PlannedRescue {
+    EcoliTransformation,
+}
+impl PlannedRescue {
+    pub fn label(self) -> &'static str {
+        "Planned E. coli transformation/rescue (not simulated)"
+    }
+}
+// Original top-reference coverage only; bottom-only calls have no invented
+// top annotation mapping. A circular contour may cross the origin.
+dto! {pub struct SourcePlacement {
+    pub source:usize,pub reference_start:usize,pub contour_length:usize,pub source_top_end:usize,
+}}
 dto! {pub struct Options {
     pub overlaps:Vec<usize>,pub topology:Topology,pub cuts:Vec<Cuts>,
     pub min_paired_bases:usize,pub max_comparisons:usize,pub max_candidates:usize,
+    #[serde(deserialize_with="crate::assembly_recipe::required_option")]
+    pub planned_rescue:Option<PlannedRescue>,
 }}
 // A whole surviving covalent strand. Reference coordinates increase on top,
 // while actual stored bottom5′→3′ runs from reference_end to reference_start.
@@ -53,6 +71,19 @@ fn bad(s: &str) -> Error {
     Error::Unsupported(format!("homology annealing: {s}"))
 }
 impl Options {
+    pub fn validate_profile(
+        &self,
+        method: crate::overlap_profiles::OverlapMethod,
+    ) -> Result<(), Error> {
+        if method == crate::overlap_profiles::OverlapMethod::InFusion
+            && self.planned_rescue != Some(PlannedRescue::EcoliTransformation)
+        {
+            return Err(bad(
+                "In-Fusion requires an explicit planned E. coli transformation/rescue declaration; rescue is not simulated",
+            ));
+        }
+        Ok(())
+    }
     pub fn validate_shape(&self, n: usize) -> Result<(), Error> {
         if !(1..=MAX_SOURCES).contains(&n)
             || self.cuts.len() != n
@@ -83,38 +114,73 @@ impl Options {
         Ok(())
     }
 }
-// Ordered assembly currently accepts intact blunt operands. General free-end
-// clipping remains available independently via three_prime_resection.
+// Coordinates run between the actual 5′ termini. Any original 3′ extension
+// outside that contour must be explicitly removed, never silently clipped.
+fn domain(p: &Duplex) -> Result<(usize, usize, usize), Error> {
+    let start = usize::try_from(p.bottom_start)
+        .map_err(|_| bad("remaining left 3′ extension requires explicit resection"))?;
+    let end = start.checked_add(p.bottom.len()).ok_or(Error::TooLarge)?;
+    if p.top.len() > end {
+        return Err(bad(
+            "remaining right 3′ extension requires explicit resection",
+        ));
+    }
+    Ok((end, start, end - p.top.len()))
+}
+fn source_domain(s: &Duplex, c: &Cuts) -> Result<(usize, usize, usize), Error> {
+    resection::preflight(s, c)?;
+    let start = s
+        .bottom_start
+        .checked_add(c.left as i64)
+        .ok_or(Error::TooLarge)?;
+    let end = s
+        .bottom_start
+        .checked_add(s.bottom.len() as i64)
+        .ok_or(Error::TooLarge)?;
+    if start < 0 || end < (s.top.len() - c.right) as i64 {
+        return Err(bad("remaining 3′ extension requires explicit resection"));
+    }
+    Ok((
+        end as usize,
+        start as usize,
+        end as usize - (s.top.len() - c.right),
+    ))
+}
 pub fn preflight_borrowed(sources: &[&Duplex], options: &Options) -> Result<(), Error> {
     options.validate_shape(sources.len())?;
     let mut bases = 0usize;
-    for source in sources {
+    for s in sources {
         bases = bases
-            .checked_add(source.top.len())
-            .and_then(|n| n.checked_add(source.bottom.len()))
+            .checked_add(s.top.len())
+            .and_then(|n| n.checked_add(s.bottom.len()))
             .filter(|n| *n <= MAX_SOURCE_BASES)
             .ok_or(Error::TooLarge)?;
     }
-    for (source, cuts) in sources.iter().zip(&options.cuts) {
-        if source.bottom_start != 0 || source.top.len() != source.bottom.len() {
-            return Err(bad(
-                "ordered annealing requires initially blunt intact duplexes; unsupported end geometry must not be flattened",
-            ));
-        }
-        resection::preflight(source, cuts)?;
-    }
+    let domains = sources
+        .iter()
+        .zip(&options.cuts)
+        .map(|(s, c)| source_domain(s, c))
+        .collect::<Result<Vec<_>, _>>()?;
     for (i, &h) in options.overlaps.iter().enumerate() {
         let j = (i + 1) % sources.len();
-        if h >= sources[i].top.len().min(sources[j].top.len())
-            || options.cuts[i].right < h
-            || options.cuts[j].left < h
-        {
+        if h >= domains[i].0.min(domains[j].0) || h > domains[i].2 || h > domains[j].1 {
             return Err(bad(
                 "each chosen homology must be proper and completely exposed in both5′tails",
             ));
         }
     }
     Ok(())
+}
+fn contour(p: &Duplex) -> Result<String, Error> {
+    let (end, _, _) = domain(p)?;
+    let mut text = p.top.as_str().to_owned();
+    for x in p.top.len()..end {
+        text.push(crate::model::complement(
+            p.bottom.as_str().as_bytes()[end - 1 - x],
+            crate::Alphabet::Dna,
+        ) as char);
+    }
+    Ok(text)
 }
 struct Budget {
     used: usize,
@@ -145,6 +211,19 @@ pub fn geometry(sources: &[Duplex], options: &Options) -> Result<Report, Error> 
 pub fn geometry_borrowed(sources: &[&Duplex], options: &Options) -> Result<Report, Error> {
     preflight_borrowed(sources, options)?;
     let n = sources.len();
+    let prepared = sources
+        .iter()
+        .zip(&options.cuts)
+        .map(|(s, c)| resection::geometry(s, c))
+        .collect::<Result<Vec<_>, _>>()?;
+    let contours = prepared
+        .iter()
+        .map(|p| contour(&p.product))
+        .collect::<Result<Vec<_>, _>>()?;
+    let domains = prepared
+        .iter()
+        .map(|p| domain(&p.product))
+        .collect::<Result<Vec<_>, _>>()?;
     let circular = options.topology == Topology::Circular;
     let mut budget = Budget {
         used: 0,
@@ -154,8 +233,8 @@ pub fn geometry_borrowed(sources: &[&Duplex], options: &Options) -> Result<Repor
     // Target letters never select a pairing or supply missing biological data.
     for (i, &h) in options.overlaps.iter().enumerate() {
         let j = (i + 1) % n;
-        let a = sources[i].top.as_str().as_bytes();
-        let b = sources[j].top.as_str().as_bytes();
+        let a = contours[i].as_bytes();
+        let b = contours[j].as_bytes();
         match budget.equal(&a[a.len() - h..], &b[..h]) {
             Some(true) => {}
             Some(false) => {
@@ -172,26 +251,28 @@ pub fn geometry_borrowed(sources: &[&Duplex], options: &Options) -> Result<Repor
     }
     let mut offsets = vec![0usize; n];
     for i in 1..n {
-        offsets[i] = offsets[i - 1] + sources[i - 1].top.len() - options.overlaps[i - 1];
+        offsets[i] = offsets[i - 1] + domains[i - 1].0 - options.overlaps[i - 1];
     }
-    let last_end = offsets[n - 1] + sources[n - 1].top.len();
+    let last_end = offsets[n - 1] + domains[n - 1].0;
     let length = last_end - if circular { options.overlaps[n - 1] } else { 0 };
     if length == 0 || length > MAX_SOURCE_BASES / 2 {
         return Err(Error::TooLarge);
     }
     let mut text = String::with_capacity(length);
-    for (i, source) in sources.iter().enumerate() {
+    for (i, source) in contours.iter().enumerate() {
         let trim = options.overlaps.get(i).copied().unwrap_or(0);
-        text.push_str(&source.top.as_str()[..source.top.len() - trim]);
+        text.push_str(&source[..source.len() - trim]);
     }
     if text.len() != length {
         return Err(bad("source contour length accounting differs"));
     }
+    if domains.iter().any(|d| d.0 > length.saturating_mul(2)) {
+        return Err(bad("source contour would require multiple circular wraps"));
+    }
     let reference = Sequence::dna(&text)?;
     let mut preparations = Vec::with_capacity(n);
     let mut segments = Vec::with_capacity(2 * n);
-    for (i, source) in sources.iter().enumerate() {
-        let report = resection::geometry(source, &options.cuts[i])?;
+    for (i, report) in prepared.into_iter().enumerate() {
         let p = &report.product;
         segments.push(Segment {
             source: i,
@@ -210,8 +291,8 @@ pub fn geometry_borrowed(sources: &[&Duplex], options: &Options) -> Result<Repor
             source_start: 0,
             source_end: p.bottom.len(),
             sequence: p.bottom.clone(),
-            reference_start: offsets[i] + options.cuts[i].left,
-            reference_end: offsets[i] + source.top.len(),
+            reference_start: offsets[i] + domains[i].1,
+            reference_end: offsets[i] + domains[i].0,
             five_prime: p.right.five_prime,
             three_prime: p.left.three_prime,
         });
@@ -223,14 +304,11 @@ pub fn geometry_borrowed(sources: &[&Duplex], options: &Options) -> Result<Repor
     let mut limits = vec![];
     for (i, &h) in options.overlaps.iter().enumerate() {
         let j = (i + 1) % n;
-        let a = sources[i].top.as_str().as_bytes();
-        let b = sources[j].top.as_str().as_bytes();
+        let a = contours[i].as_bytes();
+        let b = contours[j].as_bytes();
         let mut alternatives = vec![];
         let mut complete = true;
-        let maximum = options.cuts[i]
-            .right
-            .min(options.cuts[j].left)
-            .min(a.len().min(b.len()) - 1);
+        let maximum = domains[i].2.min(domains[j].1).min(a.len().min(b.len()) - 1);
         for size in options.min_paired_bases..=maximum {
             if size == h {
                 continue;
@@ -258,7 +336,7 @@ pub fn geometry_borrowed(sources: &[&Duplex], options: &Options) -> Result<Repor
         let left_end = offsets[i] + a.len();
         let top = Discontinuity {
             strand: Strand::Top,
-            start: left_end - options.cuts[i].right,
+            start: offsets[i] + preparations[i].product.top.len(),
             end: right_offset,
             five_prime: preparations[j].product.left.five_prime,
             three_prime: preparations[i].product.right.three_prime,
@@ -266,7 +344,7 @@ pub fn geometry_borrowed(sources: &[&Duplex], options: &Options) -> Result<Repor
         let bottom = Discontinuity {
             strand: Strand::Bottom,
             start: left_end,
-            end: right_offset + options.cuts[j].left,
+            end: right_offset + domains[j].1,
             five_prime: preparations[i].product.right.five_prime,
             three_prime: preparations[j].product.left.three_prime,
         };
@@ -279,7 +357,7 @@ pub fn geometry_borrowed(sources: &[&Duplex], options: &Options) -> Result<Repor
             left_source: i,
             right_source: j,
             overlap: h,
-            homology: sources[j].top.as_str()[..h].into(),
+            homology: contours[j][..h].into(),
             homology_start: right_offset,
             homology_end: left_end,
             top,
@@ -298,9 +376,9 @@ pub fn geometry_borrowed(sources: &[&Duplex], options: &Options) -> Result<Repor
         let right_cut = if circular {
             0
         } else {
-            options.cuts[n - 1].right
+            length - (offsets[n - 1] + preparations[n - 1].product.top.len())
         };
-        let left_cut = if circular { 0 } else { options.cuts[0].left };
+        let left_cut = if circular { 0 } else { domains[0].1 };
         let mut nicks = vec![];
         for j in &junctions {
             nicks.push(Nick {
@@ -345,6 +423,26 @@ pub fn replay(sources: &[Duplex], options: &Options, report: &Report) -> Result<
 }
 
 impl Report {
+    pub fn source_placements(&self) -> Result<Vec<SourcePlacement>, Error> {
+        self.validate_documentary()?;
+        let mut at = 0;
+        self.preparations
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let (length, _, _) = domain(&p.product)?;
+                let placement = SourcePlacement {
+                    source: i,
+                    reference_start: at,
+                    contour_length: length,
+                    source_top_end: (p.product.top.len() + p.cuts.right).min(length),
+                };
+                at += length - self.options.overlaps.get(i).copied().unwrap_or(0);
+                Ok(placement)
+            })
+            .collect()
+    }
+
     /// Linear bounded literal/shape checks, without source recovery, terminal
     /// search, polymerase work or any conversion into private tracked material.
     pub fn validate_documentary(&self) -> Result<(), Error> {
@@ -368,6 +466,7 @@ impl Report {
             return Err(bad("report engine/shape/bounds mismatch"));
         }
         let mut lengths = Vec::with_capacity(n);
+        let mut domains = Vec::with_capacity(n);
         let mut total = 0usize;
         for (i, p) in self.preparations.iter().enumerate() {
             let length = p
@@ -376,32 +475,32 @@ impl Report {
                 .len()
                 .checked_add(p.cuts.right)
                 .ok_or(Error::TooLarge)?;
-            if p.product.bottom.len().checked_add(p.cuts.left) != Some(length)
-                || p.product.bottom_start != p.cuts.left as i64
-                || p.cuts != self.options.cuts[i]
+            if p.cuts != self.options.cuts[i]
                 || p.source_geometry_revision != self.source_geometry_revisions[i]
             {
                 return Err(bad(
-                    "preparation geometry differs from original blunt-source profile",
+                    "preparation geometry differs from declared source cuts",
                 ));
             }
             total = total
-                .checked_add(length.checked_mul(2).ok_or(Error::TooLarge)?)
+                .checked_add(
+                    length
+                        .checked_add(p.product.bottom.len())
+                        .and_then(|n| n.checked_add(p.cuts.left))
+                        .ok_or(Error::TooLarge)?,
+                )
                 .filter(|n| *n <= MAX_SOURCE_BASES)
                 .ok_or(Error::TooLarge)?;
-            lengths.push(length);
-        }
-        for p in &self.preparations {
             p.validate_documentary()?;
+            let d = domain(&p.product)?;
+            lengths.push(d.0);
+            domains.push(d);
         }
         let circular = self.options.topology == Topology::Circular;
         let mut offsets = vec![0usize; n];
         for (i, &h) in self.options.overlaps.iter().enumerate() {
             let j = (i + 1) % n;
-            if h >= lengths[i].min(lengths[j])
-                || self.options.cuts[i].right < h
-                || self.options.cuts[j].left < h
-            {
+            if h >= lengths[i].min(lengths[j]) || domains[i].2 < h || domains[j].1 < h {
                 return Err(bad("report homology exposure differs"));
             }
         }
@@ -414,7 +513,10 @@ impl Report {
             } else {
                 0
             };
-        if length == 0 || self.reference.len() != length {
+        if length == 0
+            || self.reference.len() != length
+            || lengths.iter().any(|n| *n > length.saturating_mul(2))
+        {
             return Err(bad("reference contour length differs from copied sources"));
         }
         let reference = self.reference.as_str().as_bytes();
@@ -434,7 +536,7 @@ impl Report {
                     1,
                     Strand::Bottom,
                     &p.bottom,
-                    offsets[i] + self.options.cuts[i].left,
+                    offsets[i] + domains[i].1,
                     offsets[i] + lengths[i],
                     p.right.five_prime,
                     p.left.three_prime,
@@ -484,7 +586,7 @@ impl Report {
             let left = offsets[i] + lengths[i];
             let top = Discontinuity {
                 strand: Strand::Top,
-                start: left - self.options.cuts[i].right,
+                start: offsets[i] + self.preparations[i].product.top.len(),
                 end: right,
                 five_prime: self.preparations[j].product.left.five_prime,
                 three_prime: self.preparations[i].product.right.three_prime,
@@ -492,7 +594,7 @@ impl Report {
             let bottom = Discontinuity {
                 strand: Strand::Bottom,
                 start: left,
-                end: right + self.options.cuts[j].left,
+                end: right + domains[j].1,
                 five_prime: self.preparations[i].product.right.five_prime,
                 three_prime: self.preparations[j].product.left.three_prime,
             };
@@ -514,9 +616,9 @@ impl Report {
             {
                 return Err(bad("declared homology differs from actual exposed tails"));
             }
-            let maximum = self.options.cuts[i]
-                .right
-                .min(self.options.cuts[j].left)
+            let maximum = domains[i]
+                .2
+                .min(domains[j].1)
                 .min(lengths[i].min(lengths[j]) - 1);
             if junction
                 .alternatives
@@ -540,15 +642,11 @@ impl Report {
             return Err(bad("report completeness/diagnostic scope changed"));
         }
         if let Some(d) = &self.paired_diagnostic {
-            let left = if circular {
-                0
-            } else {
-                self.options.cuts[0].left
-            };
+            let left = if circular { 0 } else { domains[0].1 };
             let right = if circular {
                 0
             } else {
-                self.options.cuts[n - 1].right
+                length - (offsets[n - 1] + self.preparations[n - 1].product.top.len())
             };
             if d.topology != self.options.topology
                 || d.bottom_start != left as i64

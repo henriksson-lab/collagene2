@@ -2458,6 +2458,10 @@ fn AnnealingControls(config: RwSignal<MethodsState>) -> impl IntoView {
     let form = move || config.with(|c| c.annealing.clone().unwrap_or_default());
     view! {<section class="three-prime-annealing-options">
         <p class="helper">"Shorten declared accessible 3′ ends, then pair the exposed 5′ homology tails. Surviving covalent strands remain separate. No gap fill, nick sealing or host rescue is performed."</p>
+        <label><input type="checkbox" prop:checked=move||form().planned_ecoli_rescue on:change=move|e|config.update(|c|c.annealing.get_or_insert_with(Default::default).planned_ecoli_rescue=event_target_checked(&e))/>
+            "Plan E. coli transformation and cellular rescue after annealing"
+        </label>
+        <p class="helper">"Required for the In-Fusion workflow. This records a planned next step; it does not simulate host repair, seal nicks or establish a reusable physical product."</p>
         <label>"3′ cuts, left:right per oriented prepared fragment"<input type="text" maxlength="1024" aria-label="Explicit 3 prime resection source cuts" placeholder="0:20, 20:0" prop:value=move||form().cuts on:input=move|e|config.update(|c|c.annealing.get_or_insert_with(Default::default).cuts=event_target_value(&e))/></label>
         <p class="helper">"One pair per fragment in product order. Left shortens the stored bottom-strand 3′ suffix; right shortens the stored top-strand 3′ suffix. Include any outer-end cuts explicitly. Original 5′ groups are retained; positive cuts require an accessible 3′ hydroxyl."</p>
         <details><summary>"Annealing and work limits"</summary><div class="primer-grid">
@@ -2466,6 +2470,6 @@ fn AnnealingControls(config: RwSignal<MethodsState>) -> impl IntoView {
             <label>"Retained terminal candidates"<input type="text" maxlength="20" prop:value=move||form().max_candidates on:input=move|e|config.update(|c|c.annealing.get_or_insert_with(Default::default).max_candidates=event_target_value(&e))/></label>
         </div></details>
         <Show when=move||config.with(|c|c.rows.len()==1&&!c.circular)><p role="alert">"An annealing recipe needs two or more fragments, or one fragment for self-circularization. A standalone linear 3′ resection is a separate source-processing operation."</p></Show>
-        <p class="helper">"This ordered model accepts intact, initially blunt linear sources. It reports separate strands, gaps and nicks against a source-derived reference. The assembled reference stays incomplete and cannot be reused as physical material."</p>
+        <p class="helper">"This ordered model accepts intact linear sources with explicitly accounted blunt or staggered ends. Existing 5′ extensions contribute real homology; any 3′ extension outside the joined contour must be explicitly removed. It reports separate strands, gaps and nicks against a source-derived reference. The assembled reference stays incomplete and cannot be reused as physical material."</p>
     </section>}
 }

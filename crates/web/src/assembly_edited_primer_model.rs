@@ -301,11 +301,19 @@ pub fn request(
     let (inputs, base, _) = assembly_draft_model::inputs_request(draft, workspace)?;
     let (intent_kind, intent_context_revision, declared) =
         independent(draft, intent, &inputs, base, workspace)?;
+    let finishing = draft.methods.overlap_finishing(
+        vec![
+            options.overlap;
+            declared.base.base.fragments.len() - 1 + usize::from(declared.base.base.circular)
+        ],
+        declared.base.base.fragments.len(),
+    )?;
     let native = native::Request {
         intent: declared,
         overlap: options.overlap,
         options: options.preparation.clone(),
         profile_options: draft.methods.profile_options()?,
+        finishing,
     };
     native::preflight(&inputs, &native, workspace).map_err(|e| e.to_string())?;
     if native.intent.base.base.material_bindings.is_empty() {

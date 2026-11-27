@@ -76,6 +76,9 @@ fn fixture(circular: bool) -> (Vec<PlanInput>, recipe::Recipe, Options) {
         options: profile,
     };
     let policy = Options {
+        planned_rescue: Some(
+            collagene_core::homology_annealing::PlannedRescue::EcoliTransformation,
+        ),
         overlaps,
         topology: if circular {
             Topology::Circular
@@ -465,6 +468,7 @@ fn source_accessibility_and_single_linear_vs_self_circle_policies_are_not_implic
             }],
             options: Default::default(),
             policy: Options {
+                planned_rescue: None,
                 overlaps: vec![],
                 topology: Topology::Linear,
                 cuts: vec![Cuts { left: 2, right: 3 }],
@@ -498,6 +502,7 @@ fn source_accessibility_and_single_linear_vs_self_circle_policies_are_not_implic
             }],
             options: Default::default(),
             policy: Options {
+                planned_rescue: None,
                 overlaps: vec![8],
                 topology: Topology::Circular,
                 cuts: vec![Cuts { left: 8, right: 8 }],
@@ -556,4 +561,209 @@ fn printable_protocols_describe_explicit_cuts_gaps_and_unsealed_joining_bonds() 
     let pdf = collagene_core::pdf::export_protocol_pdf(&p.plan, &target).unwrap();
     assert!(pdf.bytes.starts_with(b"%PDF-"));
     assert_eq!(pdf.status, Status::Incomplete);
+}
+
+#[test]
+fn infusion_rescue_is_explicit_documentary_and_cannot_change_physical_completion() {
+    let (inputs, request, mut policy) = fixture(true);
+    let target = Molecule::dna("Independent circle", CIRCLE, Topology::Circular).unwrap();
+    policy.planned_rescue = None;
+    assert!(recipe::compile_annealing(&inputs, &target, &request, &policy).is_err());
+    policy.planned_rescue =
+        Some(collagene_core::homology_annealing::PlannedRescue::EcoliTransformation);
+    let preview = recipe::preview_annealing(&inputs, &target, &request, &policy).unwrap();
+    assert_eq!(preview.verification.status, Status::Incomplete);
+    assert_eq!(
+        annealed(&preview).options.planned_rescue,
+        policy.planned_rescue
+    );
+    let mut generic = request.clone();
+    generic.options.method = collagene_core::overlap_profiles::OverlapMethod::HiFi;
+    policy.planned_rescue = None;
+    let no_rescue = recipe::preview_annealing(&inputs, &target, &generic, &policy).unwrap();
+    assert_eq!(annealed(&preview).reference, annealed(&no_rescue).reference);
+    assert_eq!(annealed(&preview).segments, annealed(&no_rescue).segments);
+    let html = verification::export_protocol_html(&preview.compiled.plan, &target);
+    assert!(html.contains("Planned next step"));
+    assert!(html.contains("not simulated"));
+}
+
+#[test]
+fn infusion_native_ecori_vector_reverse_insert_and_linker_keep_bottom_extension_calls() {
+    use collagene_core::{
+        homology_annealing::PlannedRescue,
+        overlap_profiles::{OverlapMethod, ProfileOptions},
+    };
+    let mut vector = Molecule::dna(
+        "EcoRI vector",
+        "AATTCCTACGATTCGACGTACCGGATACCGTACCTGAGCTAACG",
+        Topology::Circular,
+    )
+    .unwrap();
+    vector.features.push(Feature {
+        kind: "misc_feature".into(),
+        location: Location::range(0, 4),
+        qualifiers: vec![("label".into(), Some("Existing vector calls".into()))],
+        needs_review: false,
+    });
+    let mut first =
+        Molecule::dna("Reverse insert", "TTCAGACCTGTAGATCGTCA", Topology::Linear).unwrap();
+    first.features.push(Feature {
+        kind: "misc_feature".into(),
+        location: Location::range(0, 8),
+        qualifiers: vec![("label".into(), Some("Reversed insert calls".into()))],
+        needs_review: false,
+    });
+    let second = Molecule::dna(
+        "Second insert",
+        "TGCAGATCCGTAACGCTTGAAGTCCGATGCTACGTAGGAC",
+        Topology::Linear,
+    )
+    .unwrap();
+    let inputs = vec![
+        input("vector", vector),
+        input("first", first),
+        input("second", second),
+    ];
+    // The independent intended genotype retains the four real bottom-extension
+    // AATT calls and the explicitly declared GGC linker; neither is target repair.
+    let target = Molecule::dna("Independent111", "AATTCCTACGATTCGACGTACCGGATACCGTACCTGAGCTAACGAATTTGACGATCTACAGGTCTGAAGGCTGCAGATCCGTAACGCTTGAAGTCCGATGCTACGTAGGAC", Topology::Circular).unwrap();
+    assert_eq!(target.sequence.len(), 111);
+    let request = recipe::Recipe {
+        name: "Three-part native-end In-Fusion declaration".into(),
+        circular: true,
+        overlaps: vec![20, 20, 20],
+        options: ProfileOptions {
+            method: OverlapMethod::InFusion,
+            scan_repeated_overlaps: false,
+            ..Default::default()
+        },
+        fragments: vec![
+            FragmentSpec {
+                role: "vector".into(),
+                input_id: "vector".into(),
+                generation: None,
+                reverse: false,
+                preparation: Preparation::Digest {
+                    enzymes: vec!["EcoRI".into()],
+                    fragment_index: 0,
+                    repair: None,
+                },
+            },
+            FragmentSpec {
+                role: "first".into(),
+                input_id: "first".into(),
+                generation: None,
+                reverse: true,
+                preparation: Preparation::ExactPcr {
+                    forward: Primer::new(
+                        "First F + linker/overlap",
+                        "TTCAGACC",
+                        "TCAAGCGTTACGGATCTGCAGCC",
+                    )
+                    .unwrap(),
+                    reverse: Primer::new(
+                        "First R + vector overlap",
+                        "TGACGATC",
+                        "CGTACCTGAGCTAACGAATT",
+                    )
+                    .unwrap(),
+                    template_strand: chemistry::Strand::Top,
+                },
+            },
+            FragmentSpec {
+                role: "second".into(),
+                input_id: "second".into(),
+                generation: None,
+                reverse: false,
+                preparation: Preparation::ExactPcr {
+                    forward: Primer::new("Second F", "TGCAGATC", "").unwrap(),
+                    reverse: Primer::new(
+                        "Second R + vector overlap",
+                        "GTCCTACG",
+                        "TACGTCGAATCGTAGGAATT",
+                    )
+                    .unwrap(),
+                    template_strand: chemistry::Strand::Top,
+                },
+            },
+        ],
+    };
+    let policy = Options {
+        overlaps: vec![20, 20, 20],
+        topology: Topology::Circular,
+        cuts: vec![
+            Cuts {
+                left: 16,
+                right: 16,
+            },
+            Cuts {
+                left: 20,
+                right: 20,
+            },
+            Cuts {
+                left: 20,
+                right: 20,
+            },
+        ],
+        min_paired_bases: 12,
+        max_comparisons: 100_000,
+        max_candidates: 50,
+        planned_rescue: Some(PlannedRescue::EcoliTransformation),
+    };
+    let preview = recipe::preview_annealing(&inputs, &target, &request, &policy).unwrap();
+    assert_eq!(
+        preview.verification.status,
+        Status::Incomplete,
+        "{:?}",
+        preview.verification
+    );
+    let product = preview.verification.products.last().unwrap();
+    let reversed_feature = product
+        .features
+        .iter()
+        .find(|feature| {
+            feature.qualifiers.iter().any(|(key, value)| {
+                key == "label" && value.as_deref() == Some("Reversed insert calls")
+            })
+        })
+        .unwrap();
+    assert_eq!(
+        reversed_feature.location,
+        Location::Complement(Box::new(Location::range(60, 68)))
+    );
+    let evidence = annealed(&preview);
+    assert_eq!(evidence.reference.as_str(), target.sequence.as_str());
+    assert_eq!(evidence.segments.len(), 6);
+    assert_eq!(
+        evidence
+            .segments
+            .iter()
+            .map(|s| s.sequence.len())
+            .sum::<usize>(),
+        222
+    );
+    assert_eq!(evidence.junctions.len(), 3);
+    assert!(
+        evidence
+            .junctions
+            .iter()
+            .all(|j| j.top.start == j.top.end && j.bottom.start == j.bottom.end)
+    );
+    assert_eq!(evidence.preparations[0].product.top.len(), 28);
+    assert_eq!(evidence.preparations[0].product.bottom.len(), 28);
+    let html = verification::export_protocol_html(&preview.compiled.plan, &target);
+    assert!(html.contains("Planned next step"));
+    assert!(
+        collagene_core::pdf::export_protocol_pdf(&preview.compiled.plan, &target)
+            .unwrap()
+            .bytes
+            .starts_with(b"%PDF-")
+    );
+    let mut wrong = target.clone();
+    wrong.sequence =
+        collagene_core::Sequence::dna(&format!("{}A", &target.sequence.as_str()[..110])).unwrap();
+    let mismatch = recipe::preview_annealing(&inputs, &wrong, &request, &policy).unwrap();
+    assert_eq!(mismatch.verification.status, Status::Invalid);
+    assert_eq!(annealed(&mismatch).reference, evidence.reference);
 }

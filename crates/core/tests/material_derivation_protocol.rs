@@ -165,8 +165,8 @@ fn reconstruction_operation_and_evidence_are_explicit_and_replayable() {
         }],
     };
     assert_eq!(tag(&plan.steps[0]), 27);
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 27);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 25);
+    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 29);
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 27);
     let bytes = transfer::save_candidate(&transfer::Candidate::new(plan.clone())).unwrap();
     assert_eq!(
         &bytes[4..6],
@@ -183,7 +183,11 @@ fn reconstruction_operation_and_evidence_are_explicit_and_replayable() {
         "{:?}",
         report.findings
     );
-    assert!(report.engine_version.ends_with("/science-28"));
+    assert!(
+        report
+            .engine_version
+            .eq(collagene_core::verification::ENGINE_VERSION)
+    );
     assert_eq!(tag(&report.physical_processing_reports[0].evidence), 6);
 }
 #[test]

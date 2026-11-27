@@ -22,6 +22,13 @@ pub(crate) const MAX_ROLE_BASES: usize = 16 << 20;
 const MAX_PREPARATION_WORK: usize = 100_000_000;
 pub(crate) const MAX_STEPS_PER_ROW: usize = 7;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
+// Explicit finishing semantics shared by ordinary recipes and source libraries.
+// A planned host rescue remains documentary; it does not fill or seal strands.
+dto! {pub enum OverlapFinishing {
+    ReferenceOnly,
+    HomologyAssembly {policy:crate::homology_assembly::Options},
+    HomologyAnnealing {policy:crate::homology_annealing::Options},
+}}
 dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},PcrCatalogDigest{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},AnnealedOligos{bottom_input_id:String,options:crate::chemistry::AnnealOptions,candidate_index:usize},FromRun{origin:crate::run_material::Capsule,preparation:RunPreparation},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},OverlapExtensionPcr{request:crate::overlap_extension_pcr::Request},OverlapExtensionPcrCatalogDigest{request:crate::overlap_extension_pcr::Request,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},FromDerived{origin:crate::material_derivation::Capsule,preparation:RunPreparation}}}
 dto! {pub enum RunPreparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand},PcrCatalogDigest{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},OverlapExtensionPcr{request:crate::overlap_extension_pcr::Request},OverlapExtensionPcrCatalogDigest{request:crate::overlap_extension_pcr::Request,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>}}}
 pub(crate) fn required_option<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
@@ -1828,6 +1835,7 @@ pub fn annealing_source_preflight(
     policy: &crate::homology_annealing::Options,
 ) -> Result<(), Error> {
     policy.validate_shape(recipe.fragments.len())?;
+    policy.validate_profile(recipe.options.method)?;
     if recipe.fragments.len() == 1 && policy.topology != Topology::Circular {
         return Err(bad(
             "Single linear3′ resection uses a standalone ResectThreePrime operation; an annealing recipe must join2+ sources or self-circularize one source",
@@ -2115,5 +2123,113 @@ impl Preview {
             ));
         }
         Ok(())
+    }
+}
+
+impl OverlapFinishing {
+    pub fn validate_geometry(
+        &self,
+        rows: usize,
+        overlaps: &[usize],
+        circular: bool,
+        options: &overlap_profiles::ProfileOptions,
+    ) -> Result<(), Error> {
+        options.validate()?;
+        let topology = if circular {
+            Topology::Circular
+        } else {
+            Topology::Linear
+        };
+        let (actual_overlaps, actual_topology) = match self {
+            Self::ReferenceOnly => return Ok(()),
+            Self::HomologyAssembly { policy } => {
+                policy.validate_shape(rows)?;
+                if options.method == overlap_profiles::OverlapMethod::InFusion {
+                    return Err(bad(
+                        "In-Fusion requires its distinct 3′ annealing and planned host-rescue interpretation, not 5′ fill/seal processing",
+                    ));
+                }
+                (&policy.overlaps, policy.topology)
+            }
+            Self::HomologyAnnealing { policy } => {
+                policy.validate_shape(rows)?;
+                policy.validate_profile(options.method)?;
+                if rows == 1 && !circular {
+                    return Err(bad(
+                        "a single linear source requires standalone 3′ resection rather than an annealing assembly",
+                    ));
+                }
+                (&policy.overlaps, policy.topology)
+            }
+        };
+        if actual_overlaps != overlaps || actual_topology != topology {
+            return Err(bad(
+                "finishing policy differs from the independent declared junctions or topology",
+            ));
+        }
+        Ok(())
+    }
+    pub fn preflight(
+        &self,
+        inputs: &[PlanInput],
+        target: &Molecule,
+        recipe: &Recipe,
+    ) -> Result<(), Error> {
+        self.validate_geometry(
+            recipe.fragments.len(),
+            &recipe.overlaps,
+            recipe.circular,
+            &recipe.options,
+        )?;
+        match self {
+            Self::ReferenceOnly => preflight(inputs, target, recipe),
+            Self::HomologyAssembly { policy } => homology_preflight(inputs, target, recipe, policy),
+            Self::HomologyAnnealing { policy } => {
+                annealing_preflight(inputs, target, recipe, policy)
+            }
+        }
+    }
+    pub fn compile(
+        &self,
+        inputs: &[PlanInput],
+        target: &Molecule,
+        recipe: &Recipe,
+    ) -> Result<Compiled, Error> {
+        self.preflight(inputs, target, recipe)?;
+        match self {
+            Self::ReferenceOnly => compile(inputs, target, recipe),
+            Self::HomologyAssembly { policy } => compile_homology(inputs, target, recipe, policy),
+            Self::HomologyAnnealing { policy } => compile_annealing(inputs, target, recipe, policy),
+        }
+    }
+    pub fn preview_revision(
+        &self,
+        inputs: &[PlanInput],
+        target: &Molecule,
+        recipe: &Recipe,
+    ) -> Result<String, Error> {
+        self.preflight(inputs, target, recipe)?;
+        match self {
+            Self::ReferenceOnly => preview_revision(inputs, target, recipe),
+            Self::HomologyAssembly { policy } => {
+                homology_preview_revision(inputs, target, recipe, policy)
+            }
+            Self::HomologyAnnealing { policy } => {
+                annealing_preview_revision(inputs, target, recipe, policy)
+            }
+        }
+    }
+    pub fn preview(
+        &self,
+        inputs: &[PlanInput],
+        target: &Molecule,
+        recipe: &Recipe,
+    ) -> Result<Preview, Error> {
+        self.preflight(inputs, target, recipe)?;
+        match self {
+            Self::ReferenceOnly => preview(inputs, target, recipe),
+            Self::HomologyAssembly { policy } => preview_homology(inputs, target, recipe, policy),
+            Self::HomologyAnnealing { policy } => preview_annealing(inputs, target, recipe, policy),
+        }
     }
 }

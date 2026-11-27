@@ -974,6 +974,7 @@ fn saved_product_native_history_crosses_dsq_queue_and_clone_without_becoming_met
             molecule: source,
         }],
         steps: vec![Operation::Pcr {
+            template_strand: collagene_core::chemistry::Strand::Top,
             template: Source::Input("stock".into()),
             forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("R", "TGACGATC", "").unwrap(),

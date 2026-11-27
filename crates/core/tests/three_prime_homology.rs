@@ -28,6 +28,7 @@ fn options(circle: bool) -> Options {
         min_paired_bases: 4,
         max_comparisons: 100_000,
         max_candidates: 100,
+        planned_rescue: None,
     }
 }
 #[test]
@@ -216,6 +217,7 @@ fn one_fragment_linear_processing_and_self_circularization_keep_distinct_contrac
         min_paired_bases: 4,
         max_comparisons: 100,
         max_candidates: 10,
+        planned_rescue: None,
     };
     let r = homology_annealing::geometry(&[pcr(A)], &o).unwrap();
     assert!(r.junctions.is_empty());

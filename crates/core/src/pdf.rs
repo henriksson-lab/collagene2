@@ -1540,7 +1540,7 @@ fn export_protocol_pdf_checked_inner(
                 options,
                 policy,
             } => format!(
-                "Generic3′ processing/exposed5′tail annealing of {} ordered operands with {:?} advisory guidance. Explicit overlaps {:?}, cuts {:?}, topology {:?}, minimum paired {} bases, comparison/candidate bounds {}/{}. Every joining strand remains separate at a nick or gap: no cellular rescue, filling, sealing or reusable assembled material is inferred.",
+                "Generic3′ processing/exposed5′tail annealing of {} ordered operands with {:?} advisory guidance. Explicit overlaps {:?}, cuts {:?}, topology {:?}, minimum paired {} bases, comparison/candidate bounds {}/{}. Planned next step: {} (documentary only; no transformation or host repair is simulated). Every joining strand remains separate at a nick or gap: no cellular rescue, filling, sealing or reusable assembled material is inferred.",
                 fragments.len(),
                 options.method,
                 policy.overlaps,
@@ -1548,7 +1548,12 @@ fn export_protocol_pdf_checked_inner(
                 policy.topology,
                 policy.min_paired_bases,
                 policy.max_comparisons,
-                policy.max_candidates
+                policy.max_candidates,
+                policy
+                    .planned_rescue
+                    .as_ref()
+                    .map(|r| r.label())
+                    .unwrap_or("none declared")
             ),
             Operation::HomologyAssembly {
                 fragments,

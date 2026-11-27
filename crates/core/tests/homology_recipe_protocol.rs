@@ -153,7 +153,12 @@ fn worker86_job167_operation24_evidence3_and_portable_schemas_keep_explicit_poli
         "{:?}",
         preview.verification.findings
     );
-    assert!(preview.verification.engine_version.ends_with("/science-28"));
+    assert!(
+        preview
+            .verification
+            .engine_version
+            .eq(collagene_core::verification::ENGINE_VERSION)
+    );
     assert_eq!(
         preview
             .verification

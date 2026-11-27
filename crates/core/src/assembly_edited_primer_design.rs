@@ -24,7 +24,7 @@ const MAX_WORK: usize = 100_000_000;
 const MAX_BYTES: usize = 32 << 20;
 const MAX_ROWS: usize = 32;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
-dto! {pub struct Request{pub intent:assembly_edit_intent::Request,pub overlap:usize,pub options:extension::Options,pub profile_options:ProfileOptions}}
+dto! {pub struct Request{pub intent:assembly_edit_intent::Request,pub overlap:usize,pub options:extension::Options,pub profile_options:ProfileOptions,pub finishing:assembly_recipe::OverlapFinishing}}
 dto! {#[derive(PartialEq,Eq)] pub struct TailDeclaration{pub role:String,pub input_id:String,pub forward_tail:String,pub reverse_tail:String,pub outgoing_insert:String,pub homology:String,pub downstream_role:Option<String>}}
 // Documentary source-view evidence for inspecting a proposal. This cannot be
 // constructed into FreshMaterial or used as a physical template by the verifier.
@@ -110,6 +110,12 @@ fn shape(r: &Request) -> Result<(), Error> {
         ));
     }
     r.profile_options.validate()?;
+    r.finishing.validate_geometry(
+        base.fragments.len(),
+        &vec![r.overlap; base.fragments.len() - 1 + usize::from(base.circular)],
+        base.circular,
+        &r.profile_options,
+    )?;
     overlap_primer_design::options(&overlap_primer_design::Request {
         name: base.name.clone(),
         fragments: base
@@ -628,7 +634,14 @@ fn reserved_scope(
         .and_then(|n| n.checked_mul(junctions))
         .ok_or(Error::TooLarge)?
         .min(r.profile_options.max_comparisons);
+    let finishing_work = match &r.finishing {
+        assembly_recipe::OverlapFinishing::ReferenceOnly => 0,
+        assembly_recipe::OverlapFinishing::HomologyAssembly { policy } => policy.max_comparisons,
+        assembly_recipe::OverlapFinishing::HomologyAnnealing { policy } => policy.max_comparisons,
+    };
     work = work
+        .checked_add(finishing_work)
+        .ok_or(Error::TooLarge)?
         .checked_add(profile.checked_mul(2).ok_or(Error::TooLarge)?)
         .filter(|n| *n <= MAX_WORK)
         .ok_or(Error::TooLarge)?;
@@ -919,7 +932,7 @@ pub fn design(
         circular: base.circular,
         options: r.profile_options.clone(),
     };
-    let preview = assembly_recipe::preview(inputs, &intent.target, &recipe)?;
+    let preview = r.finishing.preview(inputs, &intent.target, &recipe)?;
     let report=Report{engine_version:ENGINE_VERSION.into(),context_revision,source_revisions:inputs.iter().map(|i|i.revision.clone()).collect(),source_frames,request:r.clone(),intent,recipe,tails,rows,preview,warnings:vec![
         "Every source contribution, junction trim/insert, SNP and internal edit is a literal declaration built independently of molecular reconstruction. Outgoing homology is taken from the next edited retained source core, never chosen from a successful reconstructed product or arbitrary target.".into(),
         "Ordinary rows use source-bound ranked exact PCR; edited rows use two PCR branches, physical reciprocal extension and outer PCR. One shared100M comparison-work/material ledger covers native primer/PCR/junction searches and the declared final whole-recipe molecular search reservation; no role receives an independent100M allowance. Literal-reference/annotation construction and closed-origin replay retain their separate native aggregate/copy/replay bounds;100M is not an absolute end-to-end runtime bound.".into(),
@@ -1372,7 +1385,7 @@ impl Report {
             }
         }
         self.preview
-            .validate_binding(&assembly_recipe::preview_revision(
+            .validate_binding(&self.request.finishing.preview_revision(
                 inputs,
                 &self.intent.target,
                 &self.recipe,
@@ -1386,17 +1399,34 @@ impl Report {
             crate::assembly_recipe::CleavagePolicy::AssumedComplete,
         )?;
         let assembly_step = expected_steps.len();
-        expected_steps.push(Operation::ProfiledOverlap {
-            fragments: expected_rows
-                .iter()
-                .map(|row| verification::OrientedSource {
-                    source: row.prepared_source.clone(),
-                    reverse: row.reverse,
-                })
-                .collect(),
-            overlaps: self.recipe.overlaps.clone(),
-            circular: self.recipe.circular,
-            options: self.recipe.options.clone(),
+        let fragments = expected_rows
+            .iter()
+            .map(|row| verification::OrientedSource {
+                source: row.prepared_source.clone(),
+                reverse: row.reverse,
+            })
+            .collect();
+        expected_steps.push(match &self.request.finishing {
+            assembly_recipe::OverlapFinishing::ReferenceOnly => Operation::ProfiledOverlap {
+                fragments,
+                overlaps: self.recipe.overlaps.clone(),
+                circular: self.recipe.circular,
+                options: self.recipe.options.clone(),
+            },
+            assembly_recipe::OverlapFinishing::HomologyAssembly { policy } => {
+                Operation::HomologyAssembly {
+                    fragments,
+                    options: self.recipe.options.clone(),
+                    policy: policy.clone(),
+                }
+            }
+            assembly_recipe::OverlapFinishing::HomologyAnnealing { policy } => {
+                Operation::HomologyAnnealing {
+                    fragments,
+                    options: self.recipe.options.clone(),
+                    policy: policy.clone(),
+                }
+            }
         });
         if self.preview.compiled.assembly_step != assembly_step
             || self.preview.compiled.plan.name != self.recipe.name

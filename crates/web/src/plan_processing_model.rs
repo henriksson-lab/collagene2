@@ -203,6 +203,7 @@ mod tests {
             }],
             options: Default::default(),
             policy: collagene_core::homology_annealing::Options {
+                planned_rescue: None,
                 overlaps: vec![4],
                 topology: Topology::Circular,
                 cuts: vec![Cuts { left: 4, right: 4 }],

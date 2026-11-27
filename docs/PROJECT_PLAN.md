@@ -709,7 +709,9 @@ Ordinary MCP remains available for external clients, unattended jobs and native
 use. Unsupported browsers retain the full application without WebMCP. Check
 Tauri webview availability separately. Acceptance requires live unsaved-context
 handling, selection-aware proposals, stale-result refusal and the same verification
-outcomes as ordinary commands. This optional adapter remains planned, not delivered.
+outcomes as ordinary commands. The first working implementation exposes live context, bounded reference reads
+and exact pinned range navigation. Design proposal/reviewed apply remain open;
+compiler and runtime acceptance are recorded separately in [WebMCP scope](WEBMCP.md).
 See the [official comparison](https://developer.chrome.com/docs/ai/webmcp/compare-mcp)
 and [experimental browser availability](https://developer.chrome.com/docs/ai/webmcp).
 
@@ -3710,3 +3712,31 @@ preview. Complete In-Fusion still requires actual staggered-end handling,
 method-bound planned host-rescue evidence and the acceptance cases above.
 Standalone Derived PCR-digest and single-contribution material OE controls also
 remain open. This checkpoint does not complete the full product goal.
+
+### Connected In-Fusion and optional WebMCP — integration in progress
+
+The next coherent source batch uses worker107, candidate29, native plan27,
+science30 and draft18. The existing3′ annealing adapter now accounts for actual
+5′ extensions and explicitly removed3′ tails. Native reference placement follows
+real5′ termini; bottom-only contour bases cannot acquire fabricated top-source
+annotations. Reversal projects original annotations through the actual strand
+frame. Joined strands remain separate and incomplete.
+
+Whole-primer requests and library methods carry the same explicit finishing
+contract: reference analysis,5′ homology processing or3′ annealing. Planned
+E. coli transformation/rescue is a required explicit documentary declaration for
+In-Fusion's annealing workflow, retained in plan/history and HTML/PDF. It never
+creates physical completion or reusable material. Existing exact ownership,
+independent target, row-local failures and bounded work admission remain in force.
+Independent fixtures include real EcoRI vector ends, a reversed insert and added
+linker, plus a separate3′ overhang case. Native167 distinct cases and the integrated
+web/worker WASM check pass;22 focused protocol rechecks repair old literal engine
+assertions. A subsequent explanatory UI text edit changes no Rust behavior.
+Exact-source CI remains pending;
+GUI/installed acceptance and complete product delivery remain open.
+
+The optional WebMCP adapter registers current-document context, bounded reference
+reads and source-pinned range navigation through existing Rust editor callbacks.
+It uses current document.modelContext with lifetime cancellation and no obsolete
+API fallback. Design proposals and reviewed apply are still required to complete
+the broader adapter scope. No browser/application HTTP checks were performed.

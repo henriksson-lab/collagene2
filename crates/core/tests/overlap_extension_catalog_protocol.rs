@@ -160,7 +160,12 @@ fn extension_digest_preparation_preserves_physical_steps_and_current_encoding() 
         preview.compiled.rows[0].preparation.prepared_source,
         Source::Step(5)
     ));
-    assert!(preview.verification.engine_version.ends_with("/science-28"));
+    assert!(
+        preview
+            .verification
+            .engine_version
+            .eq(collagene_core::verification::ENGINE_VERSION)
+    );
     let candidate = Candidate::new(preview.compiled.plan);
     let encoded_candidate = transfer::save_candidate(&candidate).unwrap();
     assert_eq!(

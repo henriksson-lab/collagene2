@@ -317,6 +317,7 @@ fn identical_choices_keep_per_construct_topology_and_method_overrides() {
     overlap.overrides = Some(ConstructOverrides {
         preparations: vec![],
         method: Some(Method::Overlap {
+            finishing: collagene_core::assembly_recipe::OverlapFinishing::ReferenceOnly,
             overlaps: vec![1],
             options: Default::default(),
         }),
@@ -395,6 +396,7 @@ fn all_draft_errors_and_aggregate_budget_exhaustion_remain_explicit() {
         row.overrides = Some(ConstructOverrides {
             preparations: vec![],
             method: Some(Method::Overlap {
+                finishing: collagene_core::assembly_recipe::OverlapFinishing::ReferenceOnly,
                 overlaps: vec![1],
                 options: collagene_core::overlap_profiles::ProfileOptions {
                     max_comparisons: 50_000_000,

@@ -119,6 +119,7 @@ async fn selected_saved_pcr_closure_replays_fromrun_without_private_documents_or
             molecule: source,
         }],
         steps: vec![Operation::Pcr {
+            template_strand: collagene_core::chemistry::Strand::Top,
             template: Source::Input("stock".into()),
             forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("R", "TGACGATC", "").unwrap(),

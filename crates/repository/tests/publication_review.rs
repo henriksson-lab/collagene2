@@ -168,6 +168,7 @@ fn fixture(alternatives: bool) -> (Workspace, Selection, run_material::Selection
             molecule: stock,
         }],
         steps: vec![Operation::Pcr {
+            template_strand: collagene_core::chemistry::Strand::Top,
             template: Source::Input("stock".into()),
             forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("R", "TGACGATC", "").unwrap(),

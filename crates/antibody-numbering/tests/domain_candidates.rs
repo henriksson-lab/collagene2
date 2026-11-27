@@ -297,3 +297,45 @@ fn resource_bounds_cancellation_and_source_report_reconstruction_are_current() {
     let dna = Molecule::dna("DNA", "ACGT", Topology::Linear).unwrap();
     assert!(find_candidates(&dna, &options(), &limits(), &mut || false).is_err());
 }
+
+#[test]
+fn observed_antibody_with_tied_v_positions_keeps_conditional_cdr3_and_explicit_ambiguity() {
+    // Independent archival 1BJ1 entity2 sequence; this checks conditional anchor
+    // reconstruction, not complete IMGT assignment from depositor residue IDs.
+    let panel: serde_json::Value =
+        serde_json::from_str(include_str!("../data/rcsb-assessment/panel.json")).unwrap();
+    let row = panel["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["id"] == "1BJ1:2")
+        .unwrap();
+    let m = source(row["sequence"].as_str().unwrap());
+    let r = find_candidates(&m, &options(), &limits(), &mut || false).unwrap();
+    let c = r
+        .candidates
+        .iter()
+        .find(|c| c.locus == Locus::Heavy && c.cdr3.start == 96)
+        .unwrap();
+    assert_eq!(
+        c.v_projection_issue,
+        Some(ProjectionIssue::TiedOptimalPaths)
+    );
+    assert_eq!(
+        c.cdr3
+            .residues
+            .iter()
+            .map(|r| r.residue)
+            .collect::<String>(),
+        "AKYPHYYGSSHWYFDV"
+    );
+    assert_eq!(c.fr4.iter().map(|r| r.residue).collect::<String>(), J);
+    let v = r.v_evidence.mappings[0]
+        .projections
+        .iter()
+        .find(|p| p.end == 96)
+        .unwrap();
+    assert!(v.projection.is_none());
+    assert!(v.terminal_anchor.is_some());
+    r.validate_for(&m, &options(), &limits()).unwrap();
+}

@@ -4452,3 +4452,27 @@ tandem and competing-site fixtures cover this coherent native batch. All 10 sele
 native cases (six new pairing cases and four shared-rule cases), focused optional-
 schema WASM checks and formatting pass. Biological calibration, full numbering/CDR
 schemes and application tracks remain required. [Contract](ANTIBODY_NUMBERING.md).
+
+
+### F34 external chain panel and invariant-anchor correction
+
+A pinned CC0 RCSB assessment panel now contains 30 whole-chain sequences with
+12 antibody and 18 non-antibody identities fixed before algorithm inspection.
+Four short/ambiguous entities are explicitly excluded. Public-archive molecule/
+sequence facts are separate from third-party numbering annotations. A native
+assessment example emits exact inputs, engines, options, every miss/candidate
+and source coordinates; the authored generator verifies all 48 source responses.
+
+The panel exposed four misses caused by blocking CDR3 pairing on internal V-path
+ties. V-mapping engine 3 now retains the invariant terminal C104 anchor separately
+from unresolved internal correspondences. Candidate engine 2 uses that anchor,
+retains its V projection issue and labels its start as representative. Old
+representations are replaced directly. No V-path tie is promoted to a unique map.
+
+All 13 selected native cases and focused optional-schema WASM checks pass. With
+one or three allowed FR4 substitutions the unchanged scoring options yield matching
+chain-class candidates on all 12 antibody chains and none on the 18 controls.
+Exact-tail matching finds 10 antibody chains. This finite chain-level assessment
+does not complete biological calibration, lambda/nonhuman coverage, full numbering/
+region validation, application integration or whole-product acceptance.
+[Contract and assessment](ANTIBODY_NUMBERING.md).

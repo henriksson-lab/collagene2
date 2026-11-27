@@ -5,7 +5,7 @@ use super::*;
 use crate::{profile, references};
 use collagene_model::PROTEIN_RESIDUES;
 use std::collections::BTreeSet;
-pub const MAPPING_ENGINE: &str = "antibody-v-reference-mapping-2";
+pub const MAPPING_ENGINE: &str = "antibody-v-reference-mapping-3";
 data! {pub enum Locus {Heavy,Kappa,Lambda}}
 data! {pub struct Scoring {
     pub observed_reward:i16,pub frequency_bonus:i16,pub unseen_penalty:i16,
@@ -35,7 +35,7 @@ data! {pub struct Model {
 }}
 fn model_revision(model: &Model) -> Result<String> {
     hash(
-        b"antibody-v-reference-model-2\0",
+        b"antibody-v-reference-model-3\0",
         &(profile::PROFILE_ENGINE, model),
         1 << 20,
     )
@@ -181,6 +181,9 @@ data! {pub struct Projection {
 }}
 data! {pub struct EndpointProjection {
     pub end:usize,pub projection:Option<Projection>,pub projection_issue:Option<ProjectionIssue>,
+    /// Invariant over all state paths at this fixed end, even when internal
+    /// correspondence paths tie. Withheld for ambiguous sources.
+    pub terminal_anchor:Option<Correspondence>,
 }}
 data! {pub struct Mapping {
     pub locus:Locus,pub model_revision:String,pub alignment:profile::EndpointReport,
@@ -221,7 +224,7 @@ pub fn map_query(
         .ok_or(Error::Limit("V-reference aggregate cells"))?;
     let corpus_revision = models[0].corpus_revision.clone();
     let context_revision = hash(
-        b"antibody-v-reference-context-2\0",
+        b"antibody-v-reference-context-3\0",
         &(
             MAPPING_ENGINE,
             profile::PROFILE_ENGINE,
@@ -230,7 +233,7 @@ pub fn map_query(
             &corpus_revision,
             scoring,
             limits,
-            "per-endpoint optima; exact endpoint counts and explicit truncation; distinct protein weighting; C23/C104 required; all-gap positions omitted; no classification; no inferred insertion labels; ambiguous/tied projections withheld",
+            "invariant terminal C104 separate from tied internal correspondence; per-endpoint optima; exact endpoint counts and explicit truncation; distinct protein weighting; C23/C104 required; all-gap positions omitted; no classification; no inferred insertion labels; ambiguous/tied projections withheld",
         ),
         65536,
     )?;
@@ -247,8 +250,36 @@ pub fn map_query(
             },
             cancel,
         )?;
+        let last = model.profile.states.len() - 1;
+        let state = &model.profile.states[last];
+        if model.positions[last] != position(104)
+            || !state.required
+            || state.allow_insert_after
+            || state
+                .emissions
+                .iter()
+                .enumerate()
+                .any(|(i, e)| e.is_some() && PROTEIN_RESIDUES[i] != b'C')
+        {
+            return Err(Error::Invalid("V model invariant terminal anchor"));
+        }
         let mut projections = vec![];
         for endpoint in &alignment.endpoints {
+            let terminal_anchor = if alignment.ambiguous_residues == 0 {
+                let index = endpoint.end.checked_sub(1).ok_or(Error::Binding)?;
+                if source.sequence.as_str().as_bytes().get(index) != Some(&b'C')
+                    || !matches!(endpoint.upper.steps.last(),Some(profile::Step::Match{source_index,model_index}) if *source_index==index && *model_index==last)
+                {
+                    return Err(Error::Binding);
+                }
+                Some(Correspondence {
+                    source_index: index,
+                    residue: 'C',
+                    reference_position: position(104),
+                })
+            } else {
+                None
+            };
             let projection_issue = if alignment.ambiguous_residues > 0 {
                 Some(ProjectionIssue::AmbiguousSource)
             } else if endpoint.upper.alternative_optimal_paths {
@@ -290,6 +321,7 @@ pub fn map_query(
                 end: endpoint.end,
                 projection,
                 projection_issue,
+                terminal_anchor,
             });
         }
         mappings.push(Mapping {

@@ -343,3 +343,46 @@ fn query_insertions_remain_unassigned_and_forged_correspondences_fail_reconstruc
         Err(Error::Binding)
     );
 }
+
+#[test]
+fn fixed_terminal_anchor_survives_tied_internal_correspondences_without_projecting_them() {
+    let panel: serde_json::Value =
+        serde_json::from_str(include_str!("../data/rcsb-assessment/panel.json")).unwrap();
+    let row = panel["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["id"] == "1HZH:1")
+        .unwrap();
+    let m = source(row["sequence"].as_str().unwrap());
+    let r = map_query(&m, &scoring(), &limits(), &mut || false).unwrap();
+    let heavy = &r.mappings[0];
+    let end = heavy.projections.iter().find(|p| p.end == 96).unwrap();
+    assert_eq!(
+        end.projection_issue,
+        Some(ProjectionIssue::TiedOptimalPaths)
+    );
+    assert!(end.projection.is_none());
+    let anchor = end.terminal_anchor.as_ref().unwrap();
+    assert_eq!(anchor.source_index, 95);
+    assert_eq!(anchor.residue, 'C');
+    assert_eq!(anchor.reference_position.number, 104);
+    let model = models(&scoring(), &mut || false).unwrap().remove(0);
+    let last = model.profile.states.last().unwrap();
+    assert!(last.required && !last.allow_insert_after);
+    assert_eq!(model.positions.last().unwrap().number, 104);
+    let mut forged = r.clone();
+    forged.mappings[0]
+        .projections
+        .iter_mut()
+        .find(|p| p.end == 96)
+        .unwrap()
+        .terminal_anchor
+        .as_mut()
+        .unwrap()
+        .source_index += 1;
+    assert_eq!(
+        forged.validate_for(&m, &scoring(), &limits()),
+        Err(Error::Binding)
+    );
+}

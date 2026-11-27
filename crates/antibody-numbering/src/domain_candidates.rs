@@ -3,7 +3,7 @@
 use super::*;
 use crate::{references, v_mapping};
 use std::collections::BTreeMap;
-pub const CANDIDATE_ENGINE: &str = "antibody-vj-candidates-1";
+pub const CANDIDATE_ENGINE: &str = "antibody-vj-candidates-2";
 pub const MAX_CANDIDATES: usize = 64;
 pub const MAX_SCAN_WINDOWS: usize = 2_000_000;
 data! {pub struct Options {
@@ -22,7 +22,9 @@ data! {pub struct JMatch {
 }}
 data! {pub struct Candidate {
     pub id:String,pub locus:v_mapping::Locus,pub v_endpoint:usize,
-    pub source_start:usize,pub source_end:usize,
+    pub representative_v_start:usize,pub source_end:usize,
+    /// Internal V positions can remain ambiguous even with a fixed C104 anchor.
+    pub v_projection_issue:Option<v_mapping::ProjectionIssue>,
     pub cdr3:ConditionalCdr3,pub fr4:Vec<NumberedResidue>,pub j_matches:Vec<JMatch>,
 }}
 data! {pub struct VEndpoint {pub locus:v_mapping::Locus,pub end:usize}}
@@ -33,7 +35,7 @@ data! {pub struct Report {
     pub engine:String,pub source_revision:String,pub context_revision:String,
     pub options:Options,pub limits:Limits,pub v_evidence:v_mapping::Report,
     pub windows_examined:usize,
-    /// Exact pair count within retained, uniquely projected V endpoints only.
+    /// Exact pair count within retained, invariant-terminal-anchor V endpoints only.
     pub qualified_pairs_in_retained_v:usize,pub matching_j_groups:usize,
     pub v_retention_truncated:bool,pub pair_retention_truncated:bool,
     pub blocked_v_endpoints:Vec<BlockedV>,pub v_endpoints_without_j:Vec<VEndpoint>,
@@ -63,7 +65,7 @@ fn source_index(locus: &v_mapping::Locus) -> usize {
     }
 }
 /// Exhaustive complete-FR4 substitution windows inside the declared loop range
-/// for retained, unique best-per-end V projections. Suboptimal/tied V paths and
+/// for retained, invariant-anchor best-per-end V results. Suboptimal V paths and
 /// omitted V endpoints are not silently treated as searched or absent domains.
 pub fn find_candidates(
     source: &Molecule,
@@ -81,7 +83,7 @@ pub fn find_candidates(
         return Err(Error::Binding);
     }
     let context_revision = hash(
-        b"antibody-vj-candidate-context-1\0",
+        b"antibody-vj-candidate-context-2\0",
         &(
             CANDIDATE_ENGINE,
             v_mapping::MAPPING_ENGINE,
@@ -92,7 +94,7 @@ pub fn find_candidates(
             &v_evidence.context_revision,
             options,
             limits,
-            "retained unique V ends only; all complete J FR4 windows; literal locus anchor and G119/G121; bounded substitutions; no indels; source-order retention; no biological classification",
+            "retained invariant terminal C104 anchors; internal V ambiguity retained; all complete J FR4 windows; literal locus anchor and G119/G121; bounded substitutions; no indels; source-order retention; no biological classification",
         ),
         65536,
     )?;
@@ -121,7 +123,7 @@ pub fn find_candidates(
             if endpoint.end != projected.end {
                 return Err(Error::Binding);
             }
-            let Some(projection) = &projected.projection else {
+            let Some(anchor) = &projected.terminal_anchor else {
                 blocked_v_endpoints.push(BlockedV {
                     endpoint: VEndpoint {
                         locus: mapping.locus.clone(),
@@ -131,12 +133,10 @@ pub fn find_candidates(
                 });
                 continue;
             };
-            let cysteine = projection
-                .matches
-                .iter()
-                .find(|r| r.reference_position == position(104))
-                .ok_or(Error::Binding)?
-                .source_index;
+            if anchor.reference_position != position(104) || anchor.residue != 'C' {
+                return Err(Error::Binding);
+            }
+            let cysteine = anchor.source_index;
             if cysteine + 1 != endpoint.end || bytes[cysteine] != b'C' {
                 return Err(Error::Binding);
             }
@@ -233,7 +233,7 @@ pub fn find_candidates(
                     })
                     .collect();
                 let id = hash(
-                    b"antibody-vj-candidate-id-1\0",
+                    b"antibody-vj-candidate-id-2\0",
                     &(
                         &context_revision,
                         &mapping.locus,
@@ -247,7 +247,8 @@ pub fn find_candidates(
                     id,
                     locus: mapping.locus.clone(),
                     v_endpoint: endpoint.end,
-                    source_start: endpoint.upper.start,
+                    representative_v_start: endpoint.upper.start,
+                    v_projection_issue: projected.projection_issue.clone(),
                     source_end: end,
                     cdr3,
                     fr4,

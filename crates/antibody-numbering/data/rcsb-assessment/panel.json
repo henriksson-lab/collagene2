@@ -1,0 +1,719 @@
+{
+  "version": 1,
+  "license": "CC0-1.0",
+  "license_url": "https://www.rcsb.org/pages/policies",
+  "retrieved": "2026-11-27",
+  "truth_scope": "deposited-chain-identity-only-not-residue-numbering",
+  "inputs": {
+    "1AO7-1-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1AO7/1",
+      "sha256": "77d7e307f4bd049eefcd731ffb2e909ea14611fc2a4cb00aca3722e0aa02b4ad"
+    },
+    "1AO7-2-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1AO7/2",
+      "sha256": "18d11785596ebd5a0ed9523b937d90ad74990e61b80196da806167fdb4f23739"
+    },
+    "1AO7-3-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1AO7/3",
+      "sha256": "965c986dce63827101ff6cf2d850969446c947f3cc022be8caccea12c62ee8d3"
+    },
+    "1AO7-4-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1AO7/4",
+      "sha256": "4b2e170e96e0ddc6c64b9f2c71f5cea8866fae8b0d948fae82177bd6665e2730"
+    },
+    "1AO7-5-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1AO7/5",
+      "sha256": "f3d7e91d07a09fa2b2698c0e031baf0535894d5f904080862c0b95dabe49ec92"
+    },
+    "1AO7-entry.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/entry/1AO7",
+      "sha256": "496a7ce86b3d31e196b288a937ad118e92927f4463a835ce82ee38b1d6004766"
+    },
+    "1BJ1-1-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1BJ1/1",
+      "sha256": "d96f8dbdfe67b513c36cc61d0b7f62f4f0a31fbb8dcac9e196cc6d266b231271"
+    },
+    "1BJ1-2-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1BJ1/2",
+      "sha256": "0d4c77bf711d91a70193bdac254f3905a9be7b85bc872b84b43a8368a295d481"
+    },
+    "1BJ1-3-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1BJ1/3",
+      "sha256": "c738eabf416e839c3a584b0968c07af3b04c19b97afbcc52ee507826abc61be3"
+    },
+    "1BJ1-entry.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/entry/1BJ1",
+      "sha256": "059205fb159cae4207dffac46e2b6c44f6904ec6988549fe0b8804548a3569d3"
+    },
+    "1CD8-1-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1CD8/1",
+      "sha256": "d75e960bd94c885063eafa8dac4e998d83d563e2b95d3d76da557f8bbebeac8d"
+    },
+    "1CD8-entry.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/entry/1CD8",
+      "sha256": "3ea6e71840180900e5f4b9c444e6a8cc41c2488bf5d0861c0c1f048acc76ba6c"
+    },
+    "1CDH-1-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1CDH/1",
+      "sha256": "7545676c0b954c0e734af816b2bcbb0c2d8becf01deed3688407a3328b5c821e"
+    },
+    "1CDH-entry.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/entry/1CDH",
+      "sha256": "627c618aef26b6a355150dbcd08c43cf6a92c2fe8d0254e354c1a1d11d1df5df"
+    },
+    "1D9K-1-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1D9K/1",
+      "sha256": "668bbe6c8405851ef15931d6a7c21d70acab8994eb1826bbca1a0432eab59b08"
+    },
+    "1D9K-2-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1D9K/2",
+      "sha256": "01591095ccc3acb831ac3d2267838edba946ebf7ea1b1ae4dd878f3c297df360"
+    },
+    "1D9K-3-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1D9K/3",
+      "sha256": "055fddd66481efb2971102c349de52a2587d852ca58918b2d302144a4476c6a2"
+    },
+    "1D9K-4-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1D9K/4",
+      "sha256": "ad322d374866c200fb8149fd2b2a2327a62c4e610645eb4a2582795026e9af88"
+    },
+    "1D9K-5-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1D9K/5",
+      "sha256": "a58323408f008cab0adace2a88be84e6245f070873df23533655eeaf58959512"
+    },
+    "1D9K-entry.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/entry/1D9K",
+      "sha256": "c84613b1e95002bb3d9e51ecaa113a14639cdfb46ba85801a8f5f76d1a16239e"
+    },
+    "1EMA-1-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1EMA/1",
+      "sha256": "e79010dfe47b6f024a717679ee6a5fb0ec88e828a6310a66b940c788d391bf08"
+    },
+    "1EMA-entry.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/entry/1EMA",
+      "sha256": "45bf2db086b46db059faf756b0133de96525f595197fa159de8f6763a2868fff"
+    },
+    "1HSA-1-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1HSA/1",
+      "sha256": "8864eeb41d8a0db74114d5e3b67951b3db45996adc6ec37348b7c515f1a76403"
+    },
+    "1HSA-2-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1HSA/2",
+      "sha256": "48f9e26972411ea98093eb938808508546a5e3001d01b65b32b4cbdccf4c0dec"
+    },
+    "1HSA-3-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1HSA/3",
+      "sha256": "693e7a90845c50127085cb2bda07b30df31d1b5b2381a909404356cbd83ff89b"
+    },
+    "1HSA-entry.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/entry/1HSA",
+      "sha256": "1485218bc173306f020d307009f2d12637b7d4f5804e0a6790710b6226e6b954"
+    },
+    "1HZH-1-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1HZH/1",
+      "sha256": "c98c93621f4c5b0c21898bdb54c79b222e8d6accef862993e5008bb45ab3ea3d"
+    },
+    "1HZH-2-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1HZH/2",
+      "sha256": "764cd4f80b88e32de182e1bcde8b5cded21da98065b3bf6600d712f0efcacb70"
+    },
+    "1HZH-entry.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/entry/1HZH",
+      "sha256": "9f1963442124e93749a811cf2bafcbfb802dadca5b05ac74859e07d88f24c6ca"
+    },
+    "1LYZ-1-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1LYZ/1",
+      "sha256": "e8775754bd48bdb546901b1eb34576e1d090692789a7cfdbbea9ee3bf068439d"
+    },
+    "1LYZ-entry.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/entry/1LYZ",
+      "sha256": "77859874b8d932ca0ce0b9b41b696ffa392729c15a7089fdff354526796a319a"
+    },
+    "1N8Z-1-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1N8Z/1",
+      "sha256": "7c9cd76ca40ce9b56900b68a323d4854cd01b74c9659d63c9e48141e6925f44f"
+    },
+    "1N8Z-2-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1N8Z/2",
+      "sha256": "c9e82f8080d630ee19e856beb87398f9ca325ca6b2d5c48401e6e60d01695f51"
+    },
+    "1N8Z-3-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1N8Z/3",
+      "sha256": "e97b03fd9dcc4d43044407f27073b2ccb700f7b7fd0d5cfaf303ca898e6510ef"
+    },
+    "1N8Z-entry.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/entry/1N8Z",
+      "sha256": "7d86208b30f290f045ce5444f071bca574e417fa1f2a1b8bac463cf7c19bff70"
+    },
+    "1TEN-1-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/1TEN/1",
+      "sha256": "aa05bb53547b32a7ec225e36b53239899a0934044473cf4a87562fbfb353539d"
+    },
+    "1TEN-entry.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/entry/1TEN",
+      "sha256": "69c598b0df8ee931a64fdf4b6113e5f1082f8866d4b534214bcac1710b4ead3b"
+    },
+    "5GGQ-1-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/5GGQ/1",
+      "sha256": "18e7331bd9b6ebf489e91cb6191c5c242830f8d119df7166a523b60bf5faafc4"
+    },
+    "5GGQ-2-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/5GGQ/2",
+      "sha256": "bcb1f5be752e0efe0a301eed88130e2a068bb80e48abac50d7e7fb0272a4cd04"
+    },
+    "5GGQ-entry.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/entry/5GGQ",
+      "sha256": "b9c006f61b72446109340213fbf9c4fd1d4e82252103f5217b6dfdb76bbf8312"
+    },
+    "5GGS-1-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/5GGS/1",
+      "sha256": "ac2a7aad598b07c139c9a33327892f821eb9044cd0f988d0251c660e51b3bc27"
+    },
+    "5GGS-2-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/5GGS/2",
+      "sha256": "6b55821cdd959deb8a1cfd01dffead94af83daf131bcefee898348090a71b2f2"
+    },
+    "5GGS-3-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/5GGS/3",
+      "sha256": "c363880b65e6fb1fdda32a04d6628a5fa2f63951f87973567aedaa8a8d3d6703"
+    },
+    "5GGS-entry.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/entry/5GGS",
+      "sha256": "ed55b1be42834c89f6b786cbcc134b4714e922ce3eb60ecfc86f588e0ae60e4f"
+    },
+    "5GGT-1-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/5GGT/1",
+      "sha256": "e289200bc2f1706218ddac47fcf401a93b2deada9251f6c34cd92ce56323ee11"
+    },
+    "5GGT-2-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/5GGT/2",
+      "sha256": "047d8324ca7ec8db1f8fb7a9c89d6d992dd373bd5282ed9f9cbbdd4aa31f949d"
+    },
+    "5GGT-3-entity.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/polymer_entity/5GGT/3",
+      "sha256": "294286661b3d47f3608c485125af718ce2bb7fe56d5ef13cdd7e32764450942e"
+    },
+    "5GGT-entry.json": {
+      "url": "https://data.rcsb.org/rest/v1/core/entry/5GGT",
+      "sha256": "f54efe4f4b29a5711bbffc944a08879dfd7fc05728b6aae8dd30c7edf2961d1a"
+    }
+  },
+  "cases": [
+    {
+      "id": "1AO7:1",
+      "truth": "Other",
+      "sequence": "GSHSMRYFFTSVSRPGRGEPRFIAVGYVDDTQFVRFDSDAASQRMEPRAPWIEQEGPEYWDGETRKVKAHSQTHRVDLGTLRGYYNQSEAGSHTVQRMYGCDVGSDWRFLRGYHQYAYDGKDYIALKEDLRSWTAADMAAQTTKHKWEAAHVAEQLRAYLEGTCVEWLRRYLENGKETLQRTDAPKTHMTHHAVSDHEATLRCWALSFYPAEITLTWQRDGEDQTQDTELVETRPAGDGTFQKWAAVVVPSGQEQRYTCHVQHEGLPKPLTLRWE",
+      "sequence_sha256": "35e13cca776c7a52d53ac0a84018868d76dc305c1c317d7334ed4f606408310e",
+      "sources": [
+        {
+          "pdb": "1AO7",
+          "entity": "1",
+          "description": "HLA-A 0201",
+          "sequence_source": "1AO7-1-entity.json",
+          "entry_source": "1AO7-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "1AO7:2",
+      "truth": "Other",
+      "sequence": "MIQRTPKIQVYSRHPAENGKSNFLNCYVSGFHPSDIEVDLLKNGERIEKVEHSDLSFSKDWSFYLLYCTEFTPTEKDEYACRVNHVTLSQPCIVKWDRDM",
+      "sequence_sha256": "15ab2807fd4ca44e29fc54c8acb9de6fa291bac3cd701c899ecbe33ed4549b6b",
+      "sources": [
+        {
+          "pdb": "1AO7",
+          "entity": "2",
+          "description": "BETA-2 MICROGLOBULIN",
+          "sequence_source": "1AO7-2-entity.json",
+          "entry_source": "1AO7-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "1AO7:4",
+      "truth": "Other",
+      "sequence": "KEVEQNSGPLSVPEGAIASLNCTYSDRGSQSFFWYRQYSGKSPELIMSIYSNGDKEDGRFTAQLNKASQYVSLLIRDSQPSDSATYLCAVTTDSWGKLQFGAGTQVVVTPDIQNPDPAVYQLRDSKSSDKSVCLFTDFDSQTNVSQSKDSDVYITDKTVLDMRSMDFKSNSAVAWSNKSDFACANAFNNSIIPEDTFFPSPESS",
+      "sequence_sha256": "2db920a7a6d86d764978bbdb5bd87c1c54d9d6d1211c4f2e73af80495756a318",
+      "sources": [
+        {
+          "pdb": "1AO7",
+          "entity": "4",
+          "description": "T CELL RECEPTOR ALPHA",
+          "sequence_source": "1AO7-4-entity.json",
+          "entry_source": "1AO7-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "1AO7:5",
+      "truth": "Other",
+      "sequence": "NAGVTQTPKFQVLKTGQSMTLQCAQDMNHEYMSWYRQDPGMGLRLIHYSVGAGITDQGEVPNGYNVSRSTTEDFPLRLLSAAPSQTSVYFCASRPGLAGGRPEQYFGPGTRLTVTEDLKNVFPPEVAVFEPSEAEISHTQKATLVCLATGFYPDHVELSWWVNGKEVHSGVSTDPQPLKEQPALNDSRYALSSRLRVSATFWQNPRNHFRCQVQFYGLSENDEWTQDRAKPVTQIVSAEAWGRAD",
+      "sequence_sha256": "0ad98212df8ecca8a5a756eaccdf24cfff2d41bb6f557942aa289cd0f4e536ef",
+      "sources": [
+        {
+          "pdb": "1AO7",
+          "entity": "5",
+          "description": "T CELL RECEPTOR BETA",
+          "sequence_source": "1AO7-5-entity.json",
+          "entry_source": "1AO7-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "1BJ1:1",
+      "truth": "IgLight",
+      "sequence": "DIQMTQSPSSLSASVGDRVTITCSASQDISNYLNWYQQKPGKAPKVLIYFTSSLHSGVPSRFSGSGSGTDFTLTISSLQPEDFATYYCQQYSTVPWTFGQGTKVEIKRTVAAPSVFIFPPSDEQLKSGTASVVCLLNNFYPREAKVQWKVDNALQSGNSQESVTEQDSKDSTYSLSSTLTLSKADYEKHKVYACEVTHQGLSSPVTKSFNRGEC",
+      "sequence_sha256": "d1950121c2bcab186d1d8628b672b63b54d4bf6fd61c8868036323f4b638330f",
+      "sources": [
+        {
+          "pdb": "1BJ1",
+          "entity": "1",
+          "description": "Fab fragment, light chain",
+          "sequence_source": "1BJ1-1-entity.json",
+          "entry_source": "1BJ1-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "1BJ1:2",
+      "truth": "IgHeavy",
+      "sequence": "EVQLVESGGGLVQPGGSLRLSCAASGYTFTNYGMNWVRQAPGKGLEWVGWINTYTGEPTYAADFKRRFTFSLDTSKSTAYLQMNSLRAEDTAVYYCAKYPHYYGSSHWYFDVWGQGTLVTVSSASTKGPSVFPLAPSSKSTSGGTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSSLGTQTYICNVNHKPSNTKVDKKVEPKSCDKTHT",
+      "sequence_sha256": "4654391546d4c53904e23e74b1731c2135f9adfcfd799d52886b54907001f094",
+      "sources": [
+        {
+          "pdb": "1BJ1",
+          "entity": "2",
+          "description": "Fab fragment, heavy chain",
+          "sequence_source": "1BJ1-2-entity.json",
+          "entry_source": "1BJ1-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "1BJ1:3",
+      "truth": "Other",
+      "sequence": "GQNHHEVVKFMDVYQRSYCHPIETLVDIFQEYPDEIEYIFKPSCVPLMRCGGCCNDEGLECVPTEESNITMQIMRIKPHQGQHIGEMSFLQHNKCECRPKKD",
+      "sequence_sha256": "7af9039ac76deadec47cbaf40a15fb496b4aa88f3044a41b1424fe0691c0c81d",
+      "sources": [
+        {
+          "pdb": "1BJ1",
+          "entity": "3",
+          "description": "Vascular endothelial growth factor A",
+          "sequence_source": "1BJ1-3-entity.json",
+          "entry_source": "1BJ1-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "1CD8:1",
+      "truth": "Other",
+      "sequence": "SQFRVSPLDRTWNLGETVELKCQVLLSNPTSGCSWLFQPRGAAASPTFLLYLSQNKPKAAEGLDTQRFSGKRLGDTFVLTLSDFRRENEGYYFCSALSNSIMYFSHFVPVFLPA",
+      "sequence_sha256": "c773d19e93d104bb36bc8e28df2b98a5c169388157e52c098318bf170b382dfd",
+      "sources": [
+        {
+          "pdb": "1CD8",
+          "entity": "1",
+          "description": "T CELL CORECEPTOR CD8",
+          "sequence_source": "1CD8-1-entity.json",
+          "entry_source": "1CD8-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "1CDH:1",
+      "truth": "Other",
+      "sequence": "KKVVLGKKGDTVELTCTASQKKSIQFHWKNSNQIKILGNQGSFLTKGPSKLNDRADSRRSLWDQGNFPLIIKNLKIEDSDTYICEVEDQKEEVQLLVFGLTANSDTHLLQGQSLTLTLESPPGSSPSVQCRSPRGKNIQGGKTLSVSQLELQDSGTWTCTVLQNQKKVEFKIDIVVLA",
+      "sequence_sha256": "738fef2205f28ee6ea782a04b98f2bc2ce0ccefdb470d8118b8e152adc468b61",
+      "sources": [
+        {
+          "pdb": "1CDH",
+          "entity": "1",
+          "description": "T CELL SURFACE GLYCOPROTEIN CD4",
+          "sequence_source": "1CDH-1-entity.json",
+          "entry_source": "1CDH-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "1D9K:1",
+      "truth": "Other",
+      "sequence": "QVRQSPQSLTVWEGETTILNCSYEDSTFDYFPWYRQFPGKSPALLIAISLVSNKKEDGRFTIFFNKREKKLSLHITDSQPGDSATYFCAATGSFNKLTFGAGTRLAVSPY",
+      "sequence_sha256": "18f49a1e60f35cd2f008f4bb2a8b6e63bca8bebb126d0c4ddcbc754ea3ffc7a0",
+      "sources": [
+        {
+          "pdb": "1D9K",
+          "entity": "1",
+          "description": "T-CELL RECEPTOR D10 (ALPHA CHAIN)",
+          "sequence_source": "1D9K-1-entity.json",
+          "entry_source": "1D9K-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "1D9K:2",
+      "truth": "Other",
+      "sequence": "AVTQSPRNKVAVTGGKVTLSCNQTNNHNNMYWYRQDTGHGLRLIHYSYGAGSTEKGDIPDGYKASRPSQENFSLILELATPSQTSVYFCASGGQGRAEQFFGPGTRLTVLGS",
+      "sequence_sha256": "c0f84640f2a04a8d85d506c9d97767e8801f341dbf0d64a6d058598a86563ae5",
+      "sources": [
+        {
+          "pdb": "1D9K",
+          "entity": "2",
+          "description": "T-CELL RECEPTOR D10 (BETA CHAIN)",
+          "sequence_source": "1D9K-2-entity.json",
+          "entry_source": "1D9K-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "1D9K:3",
+      "truth": "Other",
+      "sequence": "IEADHVGSYGITVYQSPGDIGQYTFEFDGDELFYVDLDKKETVWMLPEFAQLRRFEPQGGLQNIATGKHNLEILTKRSNSTPATNEAPQATVFPKSPVLLGQPNTLICFVDNIFPPVINITWLRNSKSVTDGVYETSFFVNRDYSFHKLSYLTFIPSDDDIYDCKVEHWGLEEPVLKHWEPEI",
+      "sequence_sha256": "2ade25f62b62f0485fda1d837661a4abf3df3e843b24cf36db32557cb55b8799",
+      "sources": [
+        {
+          "pdb": "1D9K",
+          "entity": "3",
+          "description": "MHC I-AK A CHAIN (ALPHA CHAIN)",
+          "sequence_source": "1D9K-3-entity.json",
+          "entry_source": "1D9K-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "1D9K:4",
+      "truth": "Other",
+      "sequence": "GSERHFVHQFQPFCYFTNGTQRIRLVIRYIYNREEYVRFDSDVGEYRAVTELGRPDAEYWNKQYLERTRAELDTVCRHNYEKTETPTSLRRLEQPSVVISLSRTEALNHHNTLVCSVTDFYPAKIKVRWFRNGQEETVGVSSTQLIRNGDWTFQVLVMLEMTPRRGEVYTCHVEHPSLKSPITVEWRA",
+      "sequence_sha256": "3d28ace2acf9821d245b1744345443cfed67efc777d87481a1f324e68f3ab9e5",
+      "sources": [
+        {
+          "pdb": "1D9K",
+          "entity": "4",
+          "description": "MHC I-AK B CHAIN (BETA CHAIN)",
+          "sequence_source": "1D9K-4-entity.json",
+          "entry_source": "1D9K-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "1HSA:1",
+      "truth": "Other",
+      "sequence": "GSHSMRYFHTSVSRPGRGEPRFITVGYVDDTLFVRFDSDAASPREEPRAPWIEQEGPEYWDRETQICKAKAQTDREDLRTLLRYYNQSEAGSHTLQNMYGCDVGPDGRLLRGYHQDAYDGKDYIALNEDLSSWTAADTAAQITQRKWEAARVAEQLRAYLEGECVEWLRRYLENGKETLQRADPPKTHVTHHPISDHEATLRCWALGFYPAEITLTWQRDGEDQTQDTELVETRPAGDRTFQKWAAVVVPSGEEQRYTCHVQHEGLPKPLTLRWEP",
+      "sequence_sha256": "19637aadcc38c56d127819ec5acfd26867dc75e64e48e7d5d3362504ac86ada5",
+      "sources": [
+        {
+          "pdb": "1HSA",
+          "entity": "1",
+          "description": "CLASS I HISTOCOMPATIBILITY ANTIGEN (HLA-B*2705)",
+          "sequence_source": "1HSA-1-entity.json",
+          "entry_source": "1HSA-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "1HSA:2",
+      "truth": "Other",
+      "sequence": "IQRTPKIQVYSRHPAENGKSNFLNCYVSGFHPSDIEVDLLKNGERIEKVEHSDLSFSKDWSFYLLYYTEFTPTEKDEYACRVNHVTLSQPKIVKWDRDM",
+      "sequence_sha256": "19916695f0fea2713c1617e79f23e054164c645cadbd8c368d7a9f44fdd20624",
+      "sources": [
+        {
+          "pdb": "1HSA",
+          "entity": "2",
+          "description": "BETA 2-MICROGLOBULIN",
+          "sequence_source": "1HSA-2-entity.json",
+          "entry_source": "1HSA-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "1HZH:1",
+      "truth": "IgHeavy",
+      "sequence": "QVQLVQSGAEVKKPGASVKVSCQASGYRFSNFVIHWVRQAPGQRFEWMGWINPYNGNKEFSAKFQDRVTFTADTSANTAYMELRSLRSADTAVYYCARVGPYSWDDSPQDNYYMDVWGKGTTVIVSSASTKGPSVFPLAPSSKSTSGGTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSSLGTQTYICNVNHKPSNTKVDKKAEPKSCDKTHTCPPCPAPELLGGPSVFLFPPKPKDTLMISRTPEVTCVVVDVSHEDPEVKFNWYVDGVEVHNAKTKPREEQYNSTYRVVSVLTVLHQDWLNGKEYKCKVSNKALPAPIEKTISKAKGQPREPQVYTLPPSRDELTKNQVSLTCLVKGFYPSDIAVEWESNGQPENNYKTTPPVLDSDGSFFLYSKLTVDKSRWQQGNVFSCSVMHEALHNHYTQKSLSLSPGK",
+      "sequence_sha256": "42af1841e4be41e847332ad96e5daf74df25d0588b2249d2123b59ff5aab2e16",
+      "sources": [
+        {
+          "pdb": "1HZH",
+          "entity": "1",
+          "description": "IMMUNOGLOBULIN HEAVY CHAIN",
+          "sequence_source": "1HZH-1-entity.json",
+          "entry_source": "1HZH-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "1HZH:2",
+      "truth": "IgLight",
+      "sequence": "EIVLTQSPGTLSLSPGERATFSCRSSHSIRSRRVAWYQHKPGQAPRLVIHGVSNRASGISDRFSGSGSGTDFTLTITRVEPEDFALYYCQVYGASSYTFGQGTKLERKRTVAAPSVFIFPPSDEQLKSGTASVVCLLNNFYPREAKVQWKVDNALQSGNSQESVTEQDSKDSTYSLSSTLTLSKADYEKHKVYACEVTHQGLRSPVTKSFNRGEC",
+      "sequence_sha256": "467b35fcf991fc67f33ac5f96609b5239a0d2b5f5e3a688dc0ee7cb570e69362",
+      "sources": [
+        {
+          "pdb": "1HZH",
+          "entity": "2",
+          "description": "IMMUNOGLOBULIN LIGHT CHAIN,Uncharacterized protein",
+          "sequence_source": "1HZH-2-entity.json",
+          "entry_source": "1HZH-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "1LYZ:1",
+      "truth": "Other",
+      "sequence": "KVFGRCELAAAMKRHGLDNYRGYSLGNWVCAAKFESNFNTQATNRNTDGSTDYGILQINSRWWCNDGRTPGSRNLCNIPCSALLSSDITASVNCAKKIVSDGNGMNAWVAWRNRCKGTDVQAWIRGCRL",
+      "sequence_sha256": "eaf1f8d7f5bf78bbefe1100d912a09893361c57dda057f634adb5c5af6dfe79c",
+      "sources": [
+        {
+          "pdb": "1LYZ",
+          "entity": "1",
+          "description": "HEN EGG WHITE LYSOZYME",
+          "sequence_source": "1LYZ-1-entity.json",
+          "entry_source": "1LYZ-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "1N8Z:1",
+      "truth": "IgLight",
+      "sequence": "DIQMTQSPSSLSASVGDRVTITCRASQDVNTAVAWYQQKPGKAPKLLIYSASFLYSGVPSRFSGSRSGTDFTLTISSLQPEDFATYYCQQHYTTPPTFGQGTKVEIKRTVAAPSVFIFPPSDEQLKSGTASVVCLLNNFYPREAKVQWKVDNALQSGNSQESVTEQDSKDSTYSLSSTLTLSKADYEKHKVYACEVTHQGLSSPVTKSFNRGEC",
+      "sequence_sha256": "0f847c39eaff090a7f9198e71cf17124e1624b165e94e5714a70f50760a63238",
+      "sources": [
+        {
+          "pdb": "1N8Z",
+          "entity": "1",
+          "description": "Herceptin Fab (antibody) - light chain",
+          "sequence_source": "1N8Z-1-entity.json",
+          "entry_source": "1N8Z-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "1N8Z:2",
+      "truth": "IgHeavy",
+      "sequence": "EVQLVESGGGLVQPGGSLRLSCAASGFNIKDTYIHWVRQAPGKGLEWVARIYPTNGYTRYADSVKGRFTISADTSKNTAYLQMNSLRAEDTAVYYCSRWGGDGFYAMDYWGQGTLVTVSSASTKGPSVFPLAPSSKSTSGGTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSSLGTQTYICNVNHKPSNTKVDKKVEP",
+      "sequence_sha256": "333ef9a6e212d5d812057b329c5c026315079e676b939d7665003b218a22a179",
+      "sources": [
+        {
+          "pdb": "1N8Z",
+          "entity": "2",
+          "description": "Herceptin Fab (antibody) - heavy chain",
+          "sequence_source": "1N8Z-2-entity.json",
+          "entry_source": "1N8Z-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "1N8Z:3",
+      "truth": "Other",
+      "sequence": "TQVCTGTDMKLRLPASPETHLDMLRHLYQGCQVVQGNLELTYLPTNASLSFLQDIQEVQGYVLIAHNQVRQVPLQRLRIVRGTQLFEDNYALAVLDNGDPLNNTTPVTGASPGGLRELQLRSLTEILKGGVLIQRNPQLCYQDTILWKDIFHKNNQLALTLIDTNRSRACHPCSPMCKGSRCWGESSEDCQSLTRTVCAGGCARCKGPLPTDCCHEQCAAGCTGPKHSDCLACLHFNHSGICELHCPALVTYNTDTFESMPNPEGRYTFGASCVTACPYNYLSTDVGSCTLVCPLHNQEVTAEDGTQRCEKCSKPCARVCYGLGMEHLREVRAVTSANIQEFAGCKKIFGSLAFLPESFDGDPASNTAPLQPEQLQVFETLEEITGYLYISAWPDSLPDLSVFQNLQVIRGRILHNGAYSLTLQGLGISWLGLRSLRELGSGLALIHHNTHLCFVHTVPWDQLFRNPHQALLHTANRPEDECVGEGLACHQLCARGHCWGPGPTQCVNCSQFLRGQECVEECRVLQGLPREYVNARHCLPCHPECQPQNGSVTCFGPEADQCVACAHYKDPPFCVARCPSGVKPDLSYMPIWKFPDEEGACQPCPIN",
+      "sequence_sha256": "ae38d43ea82403ec59e716cdfe9c5d3d27cb911a968e3cd9a2172ec8b554c78d",
+      "sources": [
+        {
+          "pdb": "1N8Z",
+          "entity": "3",
+          "description": "Receptor protein-tyrosine kinase erbB-2",
+          "sequence_source": "1N8Z-3-entity.json",
+          "entry_source": "1N8Z-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "1TEN:1",
+      "truth": "Other",
+      "sequence": "RLDAPSQIEVKDVTDTTALITWFKPLAEIDGIELTYGIKDVPGDRTTIDLTEDENQYSIGNLKPDTEYEVSLISRRGDMSSNPAKETFTT",
+      "sequence_sha256": "097fd915fdff69e3196a4cf5e97e8b85c6ba66c4f84c4efb648d3e5e3d7df4ba",
+      "sources": [
+        {
+          "pdb": "1TEN",
+          "entity": "1",
+          "description": "TENASCIN",
+          "sequence_source": "1TEN-1-entity.json",
+          "entry_source": "1TEN-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "5GGQ:1",
+      "truth": "IgLight",
+      "sequence": "EIVLTQSPATLSLSPGERATLSCRASQSVSSYLAWYQQKPGQAPRLLIYDASNRATGIPARFSGSGSGTDFTLTISSLEPEDFAVYYCQQSSNWPRTFGQGTKVEIKRTVAAPSVFIFPPSDEQLKSGTASVVCLLNNFYPREAKVQWKVDNALQSGNSQESVTEQDSKDSTYSLSSTLTLSKADYEKHKVYACEVTHQGLSSPVTKSFNRGEC",
+      "sequence_sha256": "8e3529025f085179f947a5be5b5726f7f85a191a216c5c367e22309348ab607a",
+      "sources": [
+        {
+          "pdb": "5GGQ",
+          "entity": "1",
+          "description": "nivolumab light chain",
+          "sequence_source": "5GGQ-1-entity.json",
+          "entry_source": "5GGQ-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "5GGQ:2",
+      "truth": "IgHeavy",
+      "sequence": "QVQLVESGGGVVQPGRSLRLDCKASGITFSNSGMHWVRQAPGKGLEWVAVIWYDGSKRYYADSVKGRFTISRDNSKNTLFLQMNSLRAEDTAVYYCATNDDYWGQGTLVTVSSASTKGPSVFPLAPSSKSTSGGTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSSLGTQTYICNVNHKPSNTKVDKKVEPKSCDKTHHHHHH",
+      "sequence_sha256": "e625d24ea706ba9ae7ae06ae715946046fcb92f20adf539765940fb8f2953c50",
+      "sources": [
+        {
+          "pdb": "5GGQ",
+          "entity": "2",
+          "description": "nivolumab heavy chain",
+          "sequence_source": "5GGQ-2-entity.json",
+          "entry_source": "5GGQ-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "5GGS:1",
+      "truth": "IgHeavy",
+      "sequence": "QVQLVQSGVEVKKPGASVKVSCKASGYTFTNYYMYWVRQAPGQGLEWMGGINPSNGGTNFNEKFKNRVTLTTDSSTTTAYMELKSLQFDDTAVYYCARRDYRFDMGFDYWGQGTTVTVSSASTKGPSVFPLAPSSKSTSGGTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSSLGTQTYICNVNHKPSNTKVDKKVEPKSCDKTHHHHHH",
+      "sequence_sha256": "5b822fd95c97f4a10744eed399d9f21a48f4d81516a03bf2ab0eeec82956bee7",
+      "sources": [
+        {
+          "pdb": "5GGS",
+          "entity": "1",
+          "description": "heavy chain",
+          "sequence_source": "5GGS-1-entity.json",
+          "entry_source": "5GGS-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "5GGS:2",
+      "truth": "IgLight",
+      "sequence": "EIVLTQSPATLSLSPGERATLSCRASKGVSTSGYSYLHWYQQKPGQAPRLLIYLASYLESGVPARFSGSGSGTDFTLTISSLEPEDFAVYYCQHSRDLPLTFGGGTKVEIKRTVAAPSVFIFPPSDEQLKSGTASVVCLLNNFYPREAKVQWKVDNALQSGNSQESVTEQDSKDSTYSLSSTLTLSKADYEKHKVYACEVTHQGLSSPVTKSFNRGEC",
+      "sequence_sha256": "4e30d46ac3ad3d123c7e4f4681fe27fca0bbde1347b0f607c24d3c4d507af0ac",
+      "sources": [
+        {
+          "pdb": "5GGS",
+          "entity": "2",
+          "description": "light chain",
+          "sequence_source": "5GGS-2-entity.json",
+          "entry_source": "5GGS-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "5GGS:3",
+      "truth": "Other",
+      "sequence": "DSPDRPWNPPTFSPALLVVTEGDNATFTCSFSNTSESFVLNWYRMSPSNQTDKLAAFPEDRSQPGQDSRFRVTQLPNGRDFHMSVVRARRNDSGTYLCGAISLAPKAQIKESLRAELRVTERR",
+      "sequence_sha256": "556634bf86084b73fc2d2e9230193324285d94376bdaf927d84da74a1b045423",
+      "sources": [
+        {
+          "pdb": "5GGS",
+          "entity": "3",
+          "description": "Programmed cell death protein 1",
+          "sequence_source": "5GGS-3-entity.json",
+          "entry_source": "5GGS-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "5GGT:1",
+      "truth": "Other",
+      "sequence": "AFTVTVPKDLYVVEYGSNMTIECKFPVEKQLDLAALIVYWEMEDKNIIQFVHGEEDLKVQHSSYRQRARLLKDQLSLGNAALQITDVKLQDAGVYRCMISYGGADYKRITVKVNAPY",
+      "sequence_sha256": "91a462e42a393613df45cc3b3376bd3bc7a3db08c35d1405b390b4f208f06c8b",
+      "sources": [
+        {
+          "pdb": "5GGT",
+          "entity": "1",
+          "description": "Programmed cell death 1 ligand 1",
+          "sequence_source": "5GGT-1-entity.json",
+          "entry_source": "5GGT-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "5GGT:2",
+      "truth": "IgHeavy",
+      "sequence": "QVQLVQSGAEVKKPGSSVKVSCKTSGDTFSTYAISWVRQAPGQGLEWMGGIIPIFGKAHYAQKFQGRVTITADESTSTAYMELSSLRSEDTAVYFCARKFHFVSGSPFGMDVWGQGTTVTVSSASTKGPSVFPLAPSSKSTSGGTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSSLGTQTYICNVNHKPSNTKVDKKVEPKSCDKTHHHHHH",
+      "sequence_sha256": "f79a8cbdbb110179040cc5960e77273fbdf076b1eae73bca712d8e137f2ea44c",
+      "sources": [
+        {
+          "pdb": "5GGT",
+          "entity": "2",
+          "description": "IgG H chain",
+          "sequence_source": "5GGT-2-entity.json",
+          "entry_source": "5GGT-entry.json"
+        }
+      ]
+    },
+    {
+      "id": "5GGT:3",
+      "truth": "IgLight",
+      "sequence": "EIVLTQSPATLSLSPGERATLSCRASQSVSSYLAWYQQKPGQAPRLLIYDASNRATGIPARFSGSGSGTDFTLTISSLEPEDFAVYYCQQRSNWPTFGQGTKVEIKRTVAAPSVFIFPPSDEQLKSGTASVVCLLNNFYPREAKVQWKVDNALQSGNSQESVTEQDSKDSTYSLSSTLTLSKADYEKHKVYACEVTHQGLSSPVTKSFNRGEC",
+      "sequence_sha256": "ee112382329dbc634bf824e2f9af81e9a50f451fb7eb5e9e76f81d93d1267dca",
+      "sources": [
+        {
+          "pdb": "5GGT",
+          "entity": "3",
+          "description": "IGK@ protein",
+          "sequence_source": "5GGT-3-entity.json",
+          "entry_source": "5GGT-entry.json"
+        }
+      ]
+    }
+  ],
+  "excluded": [
+    {
+      "id": "1AO7:3",
+      "truth": "Other",
+      "sequence": "LLFGYPVYV",
+      "sequence_sha256": "4d850e91f4a0ff1ed4b27a2a78bfa6e1b3debd4bbc6364dfae9220d030ce470b",
+      "sources": [
+        {
+          "pdb": "1AO7",
+          "entity": "3",
+          "description": "TAX PEPTIDE",
+          "sequence_source": "1AO7-3-entity.json",
+          "entry_source": "1AO7-entry.json"
+        }
+      ],
+      "reason": "shorter-than-50-residues"
+    },
+    {
+      "id": "1D9K:5",
+      "truth": "Other",
+      "sequence": "GNSHRGAIEWEGIESG",
+      "sequence_sha256": "f1337b48a76576eb67558deef9d985c47840bdd6c77c51d7069d84e6689363ce",
+      "sources": [
+        {
+          "pdb": "1D9K",
+          "entity": "5",
+          "description": "CONALBUMIN PEPTIDE",
+          "sequence_source": "1D9K-5-entity.json",
+          "entry_source": "1D9K-entry.json"
+        }
+      ],
+      "reason": "shorter-than-50-residues"
+    },
+    {
+      "id": "1EMA:1",
+      "truth": "Other",
+      "sequence": "MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLTLKFICTTGKLPVPWPTLVTTFXVQCFSRYPDHMKRHDFFKSAMPEGYVQERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNYNSHNVYIMADKQKNGIKVNFKIRHNIEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSTQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK",
+      "sequence_sha256": "e0f959b845b2d3217fd6127f376da18186d568da0c2129df1b0b108e12f12965",
+      "sources": [
+        {
+          "pdb": "1EMA",
+          "entity": "1",
+          "description": "GREEN FLUORESCENT PROTEIN",
+          "sequence_source": "1EMA-1-entity.json",
+          "entry_source": "1EMA-entry.json"
+        }
+      ],
+      "reason": "ambiguous-canonical-sequence"
+    },
+    {
+      "id": "1HSA:3",
+      "truth": "Other",
+      "sequence": "ARAAAAAAA",
+      "sequence_sha256": "341648dff2b0c6618e45962f9e997d68f461d5e3b885a6949896c0e7c571f960",
+      "sources": [
+        {
+          "pdb": "1HSA",
+          "entity": "3",
+          "description": "MODEL PEPTIDE SEQUENCE - ARAAAAAAA",
+          "sequence_source": "1HSA-3-entity.json",
+          "entry_source": "1HSA-entry.json"
+        }
+      ],
+      "reason": "shorter-than-50-residues"
+    }
+  ]
+}

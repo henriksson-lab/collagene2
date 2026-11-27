@@ -2205,3 +2205,24 @@ authored heavy/kappa/lambda reference joins, tandem constructs and competing sit
 they are not independent naturally observed biological assignments. Full biological
 calibration, complete numbering/region schemes and worker/MCP/application tracks
 remain required. [Contract](ANTIBODY_NUMBERING.md).
+
+
+### External chain assessment and fixed terminal-anchor evidence
+
+An independently sourced CC0 RCSB panel now assesses 30 whole protein chains:
+12 antibody heavy/light chains and 18 non-antibody controls, with four explicit
+short/ambiguous exclusions. Truth identities precede algorithm inspection;
+third-party numbering annotations are not copied. Source responses are hash-pinned
+and reproducibly transformed; the native assessment emits all outcomes and options.
+
+The assessment found four antibody misses where internal V ties blocked a terminal
+C104 coordinate that was invariant at that endpoint. V-mapping engine 3 exposes
+that anchor without resolving the V-position map. Candidate engine 2 permits
+conditional loop reconstruction, retains the unresolved V issue and explicitly
+marks the representative V start. All 13 selected native cases and focused-schema
+WASM checks pass. At one/three FR4 substitutions, all 12 antibody chains yield
+matching-chain candidates and all 18 controls yield none; exact-tail scope finds
+10 antibody chains. No retention cap was reached. These selected, chain-level
+results do not prove numbering, lambda/nonhuman coverage or broad calibration.
+Full region/scheme and application/delivery work remain open.
+[Assessment contract and limitations](ANTIBODY_NUMBERING.md).

@@ -4129,3 +4129,21 @@ activation-journal formats are unchanged. All 53 focused native/model cases pass
 including real startup, adoption/rollback, cancellation, wrong scope, malformed
 archives and refusal of unsupported schema metadata. Current-source CI and
 graphical acceptance remain separate gates. The integrated WASM check also passes.
+
+### F34 imported structure foundation
+
+`collagene-structures` adds independently written MIT PDB/mmCIF coordinate import
+and source-indexed scene preparation. Original source bytes and hashes bind the
+current import; model, label/author namespaces, alternate locations, insertion
+codes and declared element/connection data remain explicit. The scene normalizes
+geometry without modifying f64 source coordinates and resolves only supported,
+unambiguous deposited connections within an aggregate work budget. CIF unknown,
+not-applicable and quoted literal identifiers remain distinct. There is no
+folding, inferred bond generation, symmetry expansion or automatic sequence link.
+
+Ten distinct native fixture groups and the final crate WASM check pass. CI includes
+the new crate on Windows/macOS/Linux and WASM. This is the scientific foundation,
+not completed structure visualization: worker transport, retained workspace
+attachments, WebGL controls and MCP access remain next. RNA modifications,
+antibody-specific analysis and the existing platform/interoperability/graphical
+gates retain their full scope. [Contract and limits](STRUCTURE_IMPORT.md).

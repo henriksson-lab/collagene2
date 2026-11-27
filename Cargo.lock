@@ -1139,6 +1139,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "collagene-structures"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "collagene-topo"
 version = "0.1.0"
 dependencies = [

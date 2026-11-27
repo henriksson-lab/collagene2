@@ -1839,3 +1839,22 @@ case and four web recovery-model cases. The receipt fixture also rejects schema
 0, superseded schema 1 and the next unknown schema. The integrated WASM check
 also passes. Exact-source cross-platform CI remains a delivery gate.
 [Recovery contract](DESKTOP_CATALOG_BACKUP.md).
+
+### Imported structure coordinate and scene core
+
+The new MIT `collagene-structures` crate implements bounded PDB and mmCIF
+coordinate import with exact retained bytes/hash, separate models and identity
+namespaces, alternate/insertion qualifiers and declared connections. The scene
+preparer keeps source atom indices, normalizes f64 geometry into finite f32 GPU
+positions and refuses ambiguous, conflicting or unsupported connection resolution.
+No distance-based bonds, folding, symmetry expansion or sequence correspondence
+are inferred. Deserialized projections must reparse from the exact current source.
+
+Ten distinct authored fixture groups pass across the integration batch, including
+fixed columns, quoting, nonpolymer identities, unknown/not-applicable/literal
+selectors, category admission, original-byte retention, geometric expectations,
+extreme finite coordinates and tampering. Only affected fixture groups were
+rechecked after parser/selector corrections. The final crate WASM check also
+passes. Native three-platform and WASM CI now include this crate. Worker, GUI,
+workspace and MCP integration remain to be implemented; this core does not
+complete F34 or establish graphical acceptance. [Profile](STRUCTURE_IMPORT.md).

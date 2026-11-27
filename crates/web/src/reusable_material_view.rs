@@ -1,6 +1,8 @@
 //! Explicit target-free material review; installation uses the shared native archive transaction.
 use crate::{
-    material_derivation_model::{MismatchChoice, OverlapExtensionChoice, RepairChoice, SourcePin},
+    material_derivation_model::{
+        MismatchChoice, OverlapExtensionChoice, RepairChoice, SourcePin, TerminalChoice,
+    },
     run_origin_model::PinnedOrigin,
     source_identity::SourceInfo,
     worker::CachedWorker,
@@ -30,6 +32,7 @@ pub enum Kind {
     MismatchPcr,
     EndRepair,
     OverlapExtensionPcr,
+    TerminalProcessing,
 }
 impl Kind {
     fn title(self) -> &'static str {
@@ -37,6 +40,7 @@ impl Kind {
             Self::MismatchPcr => "Open reusable mismatch-PCR material",
             Self::EndRepair => "Repair saved material directly",
             Self::OverlapExtensionPcr => "Reconstruct reusable overlap-extension PCR material",
+            Self::TerminalProcessing => "Treat or tail source material directly",
         }
     }
     fn product_name(self) -> &'static str {
@@ -44,6 +48,7 @@ impl Kind {
             Self::MismatchPcr => "Reusable mismatch-PCR product",
             Self::EndRepair => "Repaired material",
             Self::OverlapExtensionPcr => "Reusable overlap-extension PCR product",
+            Self::TerminalProcessing => "Terminally processed material",
         }
     }
     fn preview_label(self) -> &'static str {
@@ -51,6 +56,7 @@ impl Kind {
             Self::MismatchPcr => "Preview reusable mismatch PCR",
             Self::EndRepair => "Preview direct end repair",
             Self::OverlapExtensionPcr => "Preview reusable overlap-extension PCR",
+            Self::TerminalProcessing => "Preview terminal processing",
         }
     }
     fn evidence_name(self) -> &'static str {
@@ -58,6 +64,7 @@ impl Kind {
             Self::MismatchPcr => "material-mismatch-pcr.json",
             Self::EndRepair => "material-end-repair.json",
             Self::OverlapExtensionPcr => "material-overlap-extension-pcr.json",
+            Self::TerminalProcessing => "material-terminal-processing.json",
         }
     }
 }
@@ -74,11 +81,15 @@ pub enum Settings {
     OverlapExtension {
         preparation: collagene_core::overlap_extension_pcr::Request,
     },
+    TerminalProcessing {
+        action: native::TerminalAction,
+    },
 }
 enum Preview {
     Mismatch(native::MismatchPreview),
     Repair(native::RepairPreview),
     OverlapExtension(native::OverlapExtensionPreview),
+    TerminalProcessing(native::TerminalProcessingPreview),
 }
 struct Reviewed {
     source: SourcePin,
@@ -253,6 +264,21 @@ pub fn ReusableMaterialView(
                         preparation: preparation.clone(),
                     },
                 ),
+                Settings::TerminalProcessing { action } => (
+                    native::terminal_processing_preview_revision(
+                        &frame,
+                        pin.event(),
+                        &pin.native_origin(),
+                        action,
+                    )
+                    .map_err(|e| e.to_string())?,
+                    AnalysisJob::InspectMaterialTerminalProcessing {
+                        workspace: frame,
+                        source: pin.event().clone(),
+                        origin: pin.native_origin(),
+                        action: *action,
+                    },
+                ),
                 Settings::Repair { method } => (
                     native::repair_preview_revision(&molecule, &pin.native_origin(), *method)
                         .map_err(|e| e.to_string())?,
@@ -339,6 +365,19 @@ pub fn ReusableMaterialView(
                         }
                         Ok(Preview::OverlapExtension(p))
                     }
+                    (
+                        Kind::TerminalProcessing,
+                        AnalysisResult::MaterialTerminalProcessingPreview(p),
+                    ) => {
+                        p.validate_binding(&revision).map_err(|e| e.to_string())?;
+                        if &p.source != pin.event() || p.source_revision != pin.event().revision {
+                            return Err(
+                                "Terminal-processing preview names another exact source event."
+                                    .into(),
+                            );
+                        }
+                        Ok(Preview::TerminalProcessing(p))
+                    }
                     (_, AnalysisResult::Error(e)) => Err(e),
                     _ => Err("Unexpected material preview reply.".into()),
                 }
@@ -410,6 +449,16 @@ pub fn ReusableMaterialView(
                     &name.get_untracked(),
                     save_primers.get_untracked(),
                 )?,
+                (Settings::TerminalProcessing { action }, Preview::TerminalProcessing(preview)) => {
+                    TerminalChoice::from_preview(
+                        review.source.clone(),
+                        &molecule,
+                        &frame,
+                        *action,
+                        preview,
+                    )?
+                    .request(&frame, &name.get_untracked())?
+                }
                 (Settings::Repair { method }, Preview::Repair(preview)) => {
                     RepairChoice::from_preview(review.source.clone(), &molecule, *method, preview)?
                         .request(&frame, &name.get_untracked())?
@@ -451,6 +500,7 @@ pub fn ReusableMaterialView(
                 Preview::Mismatch(p) => serde_json::to_vec_pretty(p),
                 Preview::Repair(p) => serde_json::to_vec_pretty(p),
                 Preview::OverlapExtension(p) => serde_json::to_vec_pretty(p),
+                Preview::TerminalProcessing(p) => serde_json::to_vec_pretty(p),
             }
             .map_err(|e| e.to_string())?;
             Ok((
@@ -503,10 +553,20 @@ pub fn ReusableMaterialView(
                     let product=p.product.as_ref().map(|m|format!("Outer-PCR product · {} bases\n{}",m.sequence.len(),snippet(m.sequence.as_str()))).unwrap_or_else(||"Reusable outer-PCR product withheld: review the stage diagnostics.".into());
                     (format!("{} PCR stages · reusable outer product {}",p.pcr_stages.len(),p.reusable()),format!("{stages}\n\n{extension}\n\n{product}\n\n{}",p.findings.join("\n")),p.incomplete,p.findings_total,p.findings_truncated)
                 },
+                Preview::TerminalProcessing(p)=>{
+                    let action=match p.action {
+                        native::TerminalAction::TreatEnds{treatment}=>match treatment {
+                            collagene_core::chemistry::EndTreatment::Phosphorylate=>"Phosphorylate accessible 5′ ends".to_string(),
+                            collagene_core::chemistry::EndTreatment::Dephosphorylate=>"Dephosphorylate accessible 5′ ends".to_string(),
+                        },
+                        native::TerminalAction::Tail3Prime{base}=>format!("Add one {} to each eligible 3′ end",base.as_str()),
+                    };
+                    (format!("{action} · {} top-reference bases",p.product.sequence.len()),format!("Source chemistry:\n{}\n\nResult chemistry:\n{}\n\nResult top-reference DNA:\n{}\n\n{}",p.source_duplex.describe(),p.duplex.describe(),snippet(p.product.sequence.as_str()),p.findings.join("\n")),p.incomplete,p.findings_total,p.findings_truncated)
+                },
                 Preview::Repair(p)=>(format!("{} bases after explicit repair",p.molecule.sequence.len()),format!("Source chemistry:\n{}\n\nResult chemistry:\n{}\n\nTop 3′ added '{}' / removed '{}'; bottom 3′ added '{}' / removed '{}'\nResult DNA:\n{}\n\n{}",p.source_duplex.describe(),p.repair.duplex.summary().map(|v|v.describe()).unwrap_or_else(|e|e.to_string()),p.repair.top_added_3prime,p.repair.top_removed_3prime,p.repair.bottom_added_3prime,p.repair.bottom_removed_3prime,snippet(p.molecule.sequence.as_str()),p.findings.join("\n")),p.incomplete,p.findings_total,p.findings_truncated)
             };
             view!{<section><h4>{summary}</h4><pre>{details}</pre><p class="helper">{format!("Inherited/operation incompleteness: {incomplete}. {total} findings; excerpt truncated: {truncated}. At most 100 geometries and 240 bases per sequence are shown; the evidence download retains the full native preview.")}</p></section>}
         })}
-        <Show when=move||reviewed.get().is_some()><Show when=move||kind==Kind::MismatchPcr><label>"Geometry number"<input aria-label="Reusable mismatch PCR geometry" type="number" min="1" prop:value=move||selected.get() on:input=move|e|selected.set(event_target_value(&e))/></label></Show><Show when=move||kind!=Kind::EndRepair><label class="checkbox-label"><input type="checkbox" prop:checked=move||save_primers.get() on:change=move|e|save_primers.set(event_target_checked(&e))/>"Save ordered primer collection"</label></Show><label>"Material product name"<input aria-label="Reusable material name" prop:value=move||name.get() on:input=move|e|name.set(event_target_value(&e))/></label><button class="button secondary full" on:click=download.clone()>"Download full material evidence"</button><button class="button primary full" disabled=move||busy.get()||reviewed.with(|r|r.as_ref().is_none_or(|r|match &r.preview {Preview::Mismatch(p)=>!p.reusable(),Preview::Repair(_)=>false,Preview::OverlapExtension(p)=>!p.reusable()})) on:click=open.clone()>"Review reusable material installation"</button></Show>
+        <Show when=move||reviewed.get().is_some()><Show when=move||kind==Kind::MismatchPcr><label>"Geometry number"<input aria-label="Reusable mismatch PCR geometry" type="number" min="1" prop:value=move||selected.get() on:input=move|e|selected.set(event_target_value(&e))/></label></Show><Show when=move||matches!(kind,Kind::MismatchPcr|Kind::OverlapExtensionPcr)><label class="checkbox-label"><input type="checkbox" prop:checked=move||save_primers.get() on:change=move|e|save_primers.set(event_target_checked(&e))/>"Save ordered primer collection"</label></Show><label>"Material product name"<input aria-label="Reusable material name" prop:value=move||name.get() on:input=move|e|name.set(event_target_value(&e))/></label><button class="button secondary full" on:click=download.clone()>"Download full material evidence"</button><button class="button primary full" disabled=move||busy.get()||reviewed.with(|r|r.as_ref().is_none_or(|r|match &r.preview {Preview::Mismatch(p)=>!p.reusable(),Preview::Repair(_)=>false,Preview::OverlapExtension(p)=>!p.reusable(),Preview::TerminalProcessing(_)=>false})) on:click=open.clone()>"Review reusable material installation"</button></Show>
     </details>}
 }

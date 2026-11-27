@@ -1013,6 +1013,9 @@ pub struct MaterialPcrChoice {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub enum MaterialDerivationOperation {
+    TerminalProcessing {
+        action: collagene_core::material_derivation::TerminalAction,
+    },
     OverlapExtensionPcr {
         preparation: collagene_core::overlap_extension_pcr::Request,
         selection: collagene_core::material_derivation::OverlapExtensionSelection,
@@ -1050,6 +1053,11 @@ pub struct MaterialDerivationInstallRequest {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub enum MaterialDerivationTask {
+    PreviewTerminalProcessing {
+        source: collagene_core::run_lineage::EventBinding,
+        origin: MaterialDerivationOrigin,
+        action: collagene_core::material_derivation::TerminalAction,
+    },
     PreviewOverlapExtensionPcr {
         source: collagene_core::run_lineage::EventBinding,
         origin: MaterialDerivationOrigin,
@@ -6493,7 +6501,7 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
         }).await
     }
     #[tool(
-        description = "Preview or install target-free native exact PCR, intentional-mismatch PCR, overlap-extension PCR, catalog digestion or saved-material end repair from an exact current source event in an immutable workspace. Preview tasks return bounded metadata plus complete reference/geometry artifacts; they create no material documents. Install freshly reconstructs actual source strands, validates the literal selected PCR geometry or actual digest fragment and atomically returns a NEW session workspace, receipt and native archive, with optional newly performed PCR primers. No independent target, isolation, yield, experimental success, database write or filesystem authority is fabricated. Pass saved-origin MaterialSelection handles and explicit PCR preview index/revision or OE context/product revisions only; closed capsules and whole amplicon geometry are resolved natively, never copied into requests. Saved Run/Derived handles must match their exact retained source events; marked reference-only documents cannot bypass replay as plain originals."
+        description = "Preview or install target-free native exact PCR, intentional-mismatch PCR, overlap-extension PCR, catalog digestion, end treatment, single-base 3′ tailing or saved-material end repair from an exact current source event in an immutable workspace. Preview tasks return bounded metadata plus complete reference/geometry artifacts; they create no material documents. Install freshly reconstructs actual source strands, validates the literal selected PCR geometry or actual digest fragment and atomically returns a NEW session workspace, receipt and native archive, with optional newly performed PCR primers. No independent target, isolation, yield, experimental success, database write or filesystem authority is fabricated. Pass saved-origin MaterialSelection handles and explicit PCR preview index/revision or OE context/product revisions only; closed capsules and whole amplicon geometry are resolved natively, never copied into requests. Saved Run/Derived handles must match their exact retained source events; marked reference-only documents cannot bypass replay as plain originals."
     )]
     async fn material_derivation(
         &self,
@@ -6506,6 +6514,15 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             struct MaterialPreviewEvidence<'a,T:Serialize,P:Serialize>{workspace:&'a WorkspaceRef,source:&'a collagene_core::run_lineage::EventBinding,parameters:P,preview:&'a T}
             let mut workspace=server.restore_workspace(&args.workspace)?;
             match args.task {
+                MaterialDerivationTask::PreviewTerminalProcessing{source,origin,action}=>{
+                    let origin=server.resolve_material_derivation_origin(&workspace,&source,&origin)?;
+                    server.material_derivation_source(&workspace,&source,&origin)?;
+                    let context=native::terminal_processing_preview_revision(&workspace,&source,&origin,&action).map_err(bad)?;
+                    let preview=native::preview_terminal_processing(&workspace,&source,&origin,&action).map_err(bad)?;
+                    preview.validate_binding(&context).map_err(bad)?;
+                    let artifact=server.text_artifact(bounded_json_limit(&MaterialPreviewEvidence{workspace:&args.workspace,source:&source,parameters:&action,preview:&preview},32*1024*1024)?,"application/json","material-terminal-processing-preview.json")?;
+                    output(json!({"workspace":args.workspace,"source":source,"context_revision":context,"action":action,"product":{"revision":preview.product.revision(),"length":preview.product.sequence.len(),"topology":preview.product.topology},"source_duplex":preview.source_duplex,"duplex":preview.duplex,"source_modifications":preview.source_modifications,"modifications":preview.modifications,"incomplete":preview.incomplete,"findings":preview.findings,"findings_total":preview.findings_total,"findings_truncated":preview.findings_truncated,"artifact_id":artifact,"authority":"Target-free explicit terminal treatment or single-base 3′ tailing preview on freshly reconstructed source strands. Native end-geometry guards and positional modifications remain in force. Installation independently executes the selected action. No ligation, target agreement, nick sealing, new primers, isolation or experimental yield is established."}))
+                },
                 MaterialDerivationTask::PreviewOverlapExtensionPcr{source,origin,preparation}=>{
                     let origin=server.resolve_material_derivation_origin(&workspace,&source,&origin)?;
                     server.material_derivation_source(&workspace,&source,&origin)?;
@@ -6579,6 +6596,7 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
                             native::Derivation::MismatchPcr{forward,reverse,options,selection:native::MismatchPcrSelection{selected_index:selection.selected_index,expected_preview_revision:selection.expected_preview_revision,geometry}}
                         },
                         MaterialDerivationOperation::OverlapExtensionPcr{preparation,selection}=>native::Derivation::OverlapExtensionPcr{preparation,selection},
+                        MaterialDerivationOperation::TerminalProcessing{action}=>native::Derivation::TerminalProcessing{action},
                         MaterialDerivationOperation::EndRepair{method}=>native::Derivation::EndRepair{method},
                         MaterialDerivationOperation::CatalogDigest{selection,options,fragment_index}=>native::Derivation::CatalogDigest{selection,options,fragment_index},
                     };

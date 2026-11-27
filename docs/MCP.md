@@ -1018,3 +1018,16 @@ primer export contains the six newly performed uses; historical source primers
 remain ancestry. Native replay and source closure govern later Derived reuse.
 No intended target, cloning success, isolation, stock quantity or probability is
 invented. There is no additional MCP tool or external scientific executable.
+
+### Reusable terminal treatment and tailing
+
+The existing `material_derivation` tool adds
+`PreviewTerminalProcessing { source, origin, action }` and install operation
+`TerminalProcessing { action }`. Actions explicitly choose
+`TreatEnds { treatment }` or `Tail3Prime { base }`. Native source reconstruction
+and terminal-geometry rules govern both preview and installation. Summaries
+retain actual source/result duplexes, positional modifications and inherited
+limitations, with a full documentary artifact. Processing creates no new
+primers, target, ligation, nick sealing or experimentally established stock.
+Later cloning consumes the exact installed Derived event and independently
+checks the intended path and alternative products.

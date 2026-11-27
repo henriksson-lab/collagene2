@@ -1,7 +1,7 @@
 # Binary worker protocol
 
 The web worker and native adapters share Rust DTOs in `core::protocol` and the
-same deterministic scientific engines. Current schemas are worker **111**,
+same deterministic scientific engines. Current schemas are worker **112**,
 candidate **30** and native workspace plan **28**; the verifier is **science-31**.
 Only current internal encodings are accepted. Unsupported development versions
 have no decoder, migration or capability ladder.
@@ -237,6 +237,7 @@ when an internal enum layout changes.
 | 186 | `CaptureTopoGraph` |
 | 187 | `InspectTopoGraph` |
 | 188 | `InspectMaterialOverlapExtension` |
+| 189 | `InspectMaterialTerminalProcessing` |
 
 ## Current result tags
 
@@ -424,6 +425,7 @@ when an internal enum layout changes.
 | 176 | `TopoGraphCaptured` |
 | 177 | `TopoGraphInspected` |
 | 178 | `MaterialOverlapExtensionPreview` |
+| 179 | `MaterialTerminalProcessingPreview` |
 
 ## Current source and evidence contracts
 
@@ -499,4 +501,16 @@ the existing generic material-derivation lane and freshly executes the retained
 recipe. The inspector and saved derivation share one native OE executor.
 Both branches and outer PCR require unique supported geometry. Inherited
 incomplete evidence survives outer PCR and archive restart. No intended assembly
-target is generated or assessed. Only current worker111 is accepted.
+target is generated or assessed. Only the current worker schema is accepted.
+
+## Reusable terminal processing
+
+`InspectMaterialTerminalProcessing` (request189/result179) receives the exact
+owning workspace, source event, original/saved origin and explicit terminal
+action. The context includes the source sequence hash, exact event, origin hash
+and action. Native kernels perform 5′ phosphate treatment or one base at both
+3′ termini. The report retains source/result geometry and positional-modification
+summaries; it does not supply material state. The current generic derivation
+install lane independently repeats processing and rejects requests for new
+primers. No automatic end repair, nick sealing, complement choice or independent
+target is inserted.

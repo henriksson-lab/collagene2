@@ -338,6 +338,57 @@ impl OverlapExtensionChoice {
     }
 }
 
+/// A deterministic terminal action is reviewed against its exact source before
+/// native installation; supplied product/chemistry summaries do not initialize material.
+#[derive(Debug, Clone)]
+pub struct TerminalChoice {
+    source: SourcePin,
+    action: native::TerminalAction,
+}
+impl TerminalChoice {
+    pub fn from_preview(
+        source: SourcePin,
+        molecule: &Molecule,
+        workspace: &Workspace,
+        action: native::TerminalAction,
+        preview: &native::TerminalProcessingPreview,
+    ) -> Result<Self, String> {
+        source.validate_current(source.event(), source.epoch(), molecule, source.origin())?;
+        source.attest(workspace)?;
+        let revision = native::terminal_processing_preview_revision(
+            workspace,
+            source.event(),
+            &source.native_origin(),
+            &action,
+        )
+        .map_err(|e| e.to_string())?;
+        preview
+            .validate_binding(&revision)
+            .map_err(|e| e.to_string())?;
+        if &preview.source != source.event()
+            || preview.source_revision != molecule.revision()
+            || preview.action != action
+        {
+            return Err("The terminal-processing preview differs from its exact source event or declared action.".into());
+        }
+        Ok(Self { source, action })
+    }
+    pub fn request(&self, workspace: &Workspace, name: &str) -> Result<native::Request, String> {
+        self.source.attest(workspace)?;
+        let request = native::Request {
+            source: self.source.event.clone(),
+            origin: self.source.native_origin(),
+            derivation: Derivation::TerminalProcessing {
+                action: self.action,
+            },
+            name: name.into(),
+            save_primers: false,
+        };
+        native::preflight(workspace, &request).map_err(|e| e.to_string())?;
+        Ok(request)
+    }
+}
+
 /// Repair acts on freshly reconstructed saved material, never imported end summaries.
 #[derive(Debug, Clone)]
 pub struct RepairChoice {
@@ -1055,5 +1106,219 @@ mod overlap_extension_tests {
             OverlapExtensionChoice::from_preview(pin, &source, &frame, preparation, &preview)
                 .is_err()
         );
+    }
+}
+
+#[cfg(test)]
+mod terminal_processing_tests {
+    use super::*;
+    use collagene_core::{
+        Topology,
+        chemistry::{EndTreatment, FivePrime, Polarity, Strand, ThreePrime},
+        tailing::TailingBase,
+        workspace,
+    };
+    const DNA: &str = "AGTCCGATGCTAGACT";
+    fn event(frame: &Workspace) -> EventBinding {
+        let doc = &frame.documents[0];
+        EventBinding {
+            document_id: doc.id.clone(),
+            event_id: doc.head_event.clone().unwrap(),
+            revision: doc.head.clone(),
+        }
+    }
+    fn original() -> (Workspace, Molecule, EventBinding) {
+        let source = Molecule::dna("Original PCR template", DNA, Topology::Linear).unwrap();
+        let frame =
+            Workspace::from_documents("Terminal material review", vec![source.clone()], 0).unwrap();
+        let event = event(&frame);
+        (frame, source, event)
+    }
+    fn pcr_material() -> (Workspace, Molecule, EventBinding, Arc<MaterialOrigin>) {
+        let (frame, source, event) = original();
+        let forward = Primer::new("Historical stock forward", "AGTCCG", "").unwrap();
+        let reverse = Primer::new("Historical stock reverse", "AGTCTA", "").unwrap();
+        let previews = native::preview_pcr(
+            &source,
+            &SourceOrigin::OriginalReference,
+            &forward,
+            &reverse,
+            Strand::Top,
+        )
+        .unwrap();
+        assert_eq!(previews.len(), 1);
+        let choice = PcrChoice::capture(
+            SourcePin::capture(event, 1, &source, None).unwrap(),
+            forward,
+            reverse,
+            0,
+            Arc::new(previews[0].clone()),
+        )
+        .unwrap();
+        let request = choice
+            .request(&frame, "Native blunt PCR stock", true)
+            .unwrap();
+        let prepared = native::prepare_install(&frame, &request).unwrap();
+        let product = prepared.receipt.product;
+        let source = prepared.workspace.revisions[&product.revision].clone();
+        let origin = Arc::new(MaterialOrigin::Derived(
+            native::capsule(&prepared.workspace, &product).unwrap(),
+        ));
+        (prepared.workspace, source, product, origin)
+    }
+    #[test]
+    fn terminal_review_keeps_real_pcr_da_tails_and_phosphates_through_restart_without_new_primers()
+    {
+        let (frame, source, event, origin) = pcr_material();
+        let before = serde_json::to_vec(&frame).unwrap();
+        let old_primers = frame
+            .attachments
+            .values()
+            .filter(|a| a.kind == "oligo-table-v1")
+            .count();
+        let action = native::TerminalAction::Tail3Prime {
+            base: TailingBase::A,
+        };
+        let preview = native::preview_terminal_processing(
+            &frame,
+            &event,
+            &SourceOrigin::Saved(origin.as_ref().clone()),
+            &action,
+        )
+        .unwrap();
+        let (left, right) = preview.duplex.ends.as_ref().unwrap();
+        assert_eq!(
+            (left.polarity, right.polarity),
+            (Polarity::ThreePrime, Polarity::ThreePrime)
+        );
+        assert_eq!((&left.overhang[..], &right.overhang[..]), ("A", "A"));
+        let pin = SourcePin::capture(event, 2, &source, Some(origin)).unwrap();
+        let choice = TerminalChoice::from_preview(pin, &source, &frame, action, &preview).unwrap();
+        let request = choice.request(&frame, "Reviewed dA-tailed stock").unwrap();
+        assert!(!request.save_primers);
+        let installed = native::install(&frame, &request).unwrap();
+        assert!(installed.receipt.primer_attachment.is_none());
+        let reopened = workspace::load_workspace(&installed.archive).unwrap();
+        installed.receipt.validate_archive(&reopened).unwrap();
+        assert_eq!(
+            reopened
+                .attachments
+                .values()
+                .filter(|a| a.kind == "oligo-table-v1")
+                .count(),
+            old_primers
+        );
+        let product = installed.receipt.product;
+        let fresh = native::reconstruct(&reopened, &product).unwrap();
+        assert_eq!(fresh.tracked().duplex.top.as_str(), "AGTCCGATGCTAGACTA");
+        assert_eq!(fresh.tracked().duplex.bottom.as_str(), "AGTCTAGCATCGGACTA");
+        assert_eq!(fresh.tracked().duplex.bottom_start, -1);
+        assert_eq!(fresh.tracked().duplex.left.five_prime, FivePrime::Hydroxyl);
+        assert_eq!(
+            fresh.tracked().duplex.right.three_prime,
+            ThreePrime::Hydroxyl
+        );
+        let source = reopened.revisions[&product.revision].clone();
+        let origin = Arc::new(MaterialOrigin::Derived(
+            native::capsule(&reopened, &product).unwrap(),
+        ));
+        let action = native::TerminalAction::TreatEnds {
+            treatment: EndTreatment::Phosphorylate,
+        };
+        let preview = native::preview_terminal_processing(
+            &reopened,
+            &product,
+            &SourceOrigin::Saved(origin.as_ref().clone()),
+            &action,
+        )
+        .unwrap();
+        let pin = SourcePin::capture(product, 3, &source, Some(origin)).unwrap();
+        let request = TerminalChoice::from_preview(pin, &source, &reopened, action, &preview)
+            .unwrap()
+            .request(&reopened, "Phosphorylated dA-tailed stock")
+            .unwrap();
+        let installed = native::install(&reopened, &request).unwrap();
+        assert!(installed.receipt.primer_attachment.is_none());
+        let reopened = workspace::load_workspace(&installed.archive).unwrap();
+        let fresh = native::reconstruct(&reopened, &installed.receipt.product).unwrap();
+        assert_eq!(fresh.tracked().duplex.top.as_str(), "AGTCCGATGCTAGACTA");
+        assert_eq!(fresh.tracked().duplex.bottom_start, -1);
+        assert_eq!(fresh.tracked().duplex.left.five_prime, FivePrime::Phosphate);
+        assert_eq!(
+            fresh.tracked().duplex.right.five_prime,
+            FivePrime::Phosphate
+        );
+        assert_eq!(serde_json::to_vec(&frame).unwrap(), before);
+    }
+    #[test]
+    fn terminal_review_refuses_unknown_ends_unpinned_material_and_changed_action_or_source() {
+        let (original, molecule, original_event) = original();
+        let before = serde_json::to_vec(&original).unwrap();
+        let tail = native::TerminalAction::Tail3Prime {
+            base: TailingBase::A,
+        };
+        assert!(
+            native::preview_terminal_processing(
+                &original,
+                &original_event,
+                &SourceOrigin::OriginalReference,
+                &tail
+            )
+            .is_err()
+        );
+        assert_eq!(serde_json::to_vec(&original).unwrap(), before);
+        let (frame, source, event, origin) = pcr_material();
+        let before = serde_json::to_vec(&frame).unwrap();
+        assert!(
+            native::preview_terminal_processing(
+                &frame,
+                &event,
+                &SourceOrigin::OriginalReference,
+                &tail
+            )
+            .is_err()
+        );
+        let preview = native::preview_terminal_processing(
+            &frame,
+            &event,
+            &SourceOrigin::Saved(origin.as_ref().clone()),
+            &tail,
+        )
+        .unwrap();
+        let pin = SourcePin::capture(event.clone(), 7, &source, Some(origin)).unwrap();
+        assert!(
+            pin.validate_current(&event, 8, &source, pin.origin())
+                .is_err()
+        );
+        let mut alias = event.clone();
+        alias.event_id = "equal-DNA-different-event".into();
+        assert!(
+            pin.validate_current(&alias, 7, &source, pin.origin())
+                .is_err()
+        );
+        assert!(
+            TerminalChoice::from_preview(
+                pin.clone(),
+                &source,
+                &frame,
+                native::TerminalAction::Tail3Prime {
+                    base: TailingBase::T
+                },
+                &preview
+            )
+            .is_err()
+        );
+        let mut changed = source.clone();
+        changed.name = "Different source snapshot".into();
+        assert!(
+            TerminalChoice::from_preview(pin.clone(), &changed, &frame, tail, &preview).is_err()
+        );
+        assert!(
+            TerminalChoice::from_preview(pin.clone(), &source, &original, tail, &preview).is_err()
+        );
+        let choice = TerminalChoice::from_preview(pin, &source, &frame, tail, &preview).unwrap();
+        assert!(choice.request(&frame, "").is_err());
+        assert_eq!(serde_json::to_vec(&frame).unwrap(), before);
+        assert_eq!(molecule.sequence.as_str(), DNA);
     }
 }

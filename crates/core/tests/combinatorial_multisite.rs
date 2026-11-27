@@ -185,7 +185,7 @@ fn pin(w: &Workspace, d: &mut Design, row: &SelectedConstruct) -> design::MultiS
 #[test]
 fn original_contribution_intent_is_frozen_before_whole_parent_discovery_and_explicit_selection() {
     let (w, mut d, row) = fixture(false);
-    assert_eq!(postcard::to_allocvec(&d.method).unwrap()[0], 4);
+    assert_eq!(postcard::to_allocvec(&d.method).unwrap()[0], 5);
     let resolved = design::resolve_multisite(&d, &row, &w).unwrap();
     assert_eq!(resolved.target.sequence.as_str(), MAIN);
     assert!(resolved.target_binding.is_none());

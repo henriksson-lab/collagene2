@@ -33,13 +33,25 @@ web/worker WASM check pass; exact-source web CI passes and all three desktop bui
 a missed sharing-test caller and outdated unsupported-version assertion; those
 are corrected and checked in the working batch.
 
-Working source advances worker111 for target-free reusable OE PCR material.
+Publishedf65723f uses worker111 for target-free reusable OE PCR material.
 The existing native material-derivation install/replay path gains a source-bound
 OE preview and selected outer-PCR product. Core execution is shared with OE digest
 inspection, and explicit web/MCP review retains all six newly performed primer
 uses. All97 distinct selected native/SDK/web-model cases and the integrated web/worker
 WASM check pass. Native fixture repairs were checked directly. Exact-source
-cross-platform CI for this increment remains open. [Contract](OE_REUSABLE_MATERIAL.md).
+web CI passes. Linux native CI found one outdated nested-method
+enum tag; its scientific assertions are unchanged and the corrected case passes
+in the terminal-processing batch. [Contract](OE_REUSABLE_MATERIAL.md).
+
+Working source advances worker112 to retain target-free terminal treatments and
+single-base 3′ tails through the existing material derivation lifecycle. Native
+chemistry, explicit source/origin guards, modification mappings and inherited
+limitations remain authoritative. All48 distinct selected native/SDK/worker/web-model cases and the integrated
+web/worker WASM check pass. These include real PCR → tails → phosphorylation
+→ native restart → ligation with retained alternatives and HTML instructions;
+source markers, positional modifications, internal nick behavior and inherited
+limitations are checked independently. Exact-source CI for this increment
+remains open. [Contract](TERMINAL_PROCESSING_MATERIAL.md).
 
 Published19a1a1c (worker108/candidate29/plan27/science30/draft18) passed118 focused
 native cases and the integrated WASM check. Exact-source web CI and all three

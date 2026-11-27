@@ -3926,3 +3926,50 @@ Saved reaction-quantity reports also still need lossless request-to-form editing
 explicit revision as a new immutable report and selected compatible reaction
 copy/apply. Existing quantity arithmetic, capture and exports remain the shared
 implementation. These gaps do not reopen excluded inventory or scheduling.
+
+### Reusable terminal processing — integrated validation
+
+Worker112 adds explicit phosphate treatment and single-base 3′ tailing to the
+existing native derivation, source-bound preview, save/replay, web review and MCP
+`material_derivation` paths. The native tracked-duplex kernels remain the sole
+science implementation. Original reference hypotheses cannot invent a known 3′
+OH; saved Run/Derived source chemistry and exact events are reconstructed first.
+Unsupported geometry stays diagnostic, retained modifications remain mapped,
+and new primers are not created. PCR → dA/T/GC-tail or phosphorylation → later
+ligation can retain its actual end state without manufacturing an assembly target.
+All48 distinct selected native/SDK/worker/web-model cases pass, including
+retained alternatives in actual ligation HTML, native restart, exact ownership,
+unknown-3′-OH refusal, original Dam-call preservation, and real nick behavior.
+The integrated web/worker WASM check passes. A preceding full Linux native CI
+run exposed one stale nested-method enum tag; the corrected exact case passes
+without relaxing scientific assertions. Exact-source CI remains open; the
+complete goal remains active.
+
+### Next coherent batch: reusable annealed oligos
+
+Replace unary material-source fields directly with bounded role-keyed source
+rows. Existing operations require exactly `template`; annealing requires
+`top_oligo` and `bottom_oligo`. Each row binds an exact event and its explicit
+source hypothesis. Capsules retain every role-bound full source snapshot,
+receipts retain all source events, and replay attests every source. Distinct
+roles may use the same oligo event; product parents are the deduplicated exact
+source-event set. Reuse native multi-parent `derive_from_events`. Do not invent
+a requirement for different documents or duplicate parent events.
+
+Annealing explicitly declares standard unmodified single-strand DNA and each
+strand's terminal groups. A saved duplex cannot be silently denatured or flattened
+into an oligo. Reuse native annealing enumeration, annotation mapping and tracked
+unmodified oligo chemistry. Selection binds both source roles/events, all options,
+preview context and chosen candidate; retain alternatives and capped-search
+limitations without implying isolation or covalent sealing.
+
+Update material records/capsules, the mixed ancestry/resource ledger, source
+closure/sharing, TOPO source-binding collection, transaction guards, worker, MCP
+and web callers as one representation. Replace the current internal schema and
+protocol stamps directly; add no unary fallback or old-record reader. The
+existing `ReconstructMaterial.template` remains the saved product-reference
+input; its capsule can reconstruct the complete plural-source ancestry.
+Required evidence includes sticky-adapter literal strands, exact multi-parent
+archive/replay/sharing, two-role self-complementary oligos, source swap/alias/
+tamper refusal, conditional alternatives, new-only order provenance and later
+ligation against a separately declared target.

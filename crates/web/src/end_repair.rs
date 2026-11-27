@@ -47,6 +47,7 @@ pub fn EndRepairPanel(
 ) -> impl IntoView {
     let mode = RwSignal::new("repair");
     let source_index = RwSignal::new(0usize);
+    let terminal_action = RwSignal::new(String::new());
     let bottom_index = RwSignal::new(0usize);
     let source = Memo::new(move |_| get_query.run(source_index.get()));
     let bottom = Memo::new(move |_| get_query.run(bottom_index.get()));
@@ -380,13 +381,39 @@ pub fn EndRepairPanel(
             }
         });
     });
-    view! {<div class="inspector-content end-repair-panel"><h2>"End repair and annealing"</h2><p class="helper">"Reconstruct actual strands and end chemistry. The active document remains the independently chosen target; previews never choose or replace that target."</p>
-        <label>"Physical operation"<select aria-label="End repair mode" prop:value=move||mode.get() on:change=move|event|mode.set(match event_target_value(&event).as_str(){"anneal"=>"anneal","saved"=>"saved",_=>"repair"})><option value="saved">"Repair selected saved material directly"</option><option value="repair">"Restriction digest → end repair"</option><option value="anneal">"Anneal two oligos"</option></select></label>
-        <label>{move||if mode.get()=="anneal"{"Top oligo (ordered 5′→3′)"}else if mode.get()=="saved"{"Saved source material"}else{"Source before restriction digest"}}<select aria-label="End repair source" prop:value=move||source_index.get().to_string() on:change=move|event|source_index.set(event_target_value(&event).parse().unwrap_or(0))>{move||query_options.get().into_iter().map(|(index,name)|view!{<option value=index.to_string()>{name}</option>}).collect_view()}</select></label>
+    view! {<div class="inspector-content end-repair-panel"><h2>"DNA ends and annealing"</h2><p class="helper">{move||if matches!(mode.get(),"saved"|"terminal"){"Reconstruct actual strands and end chemistry from the selected source, then review the reusable material product."}else{"Reconstruct actual strands and end chemistry. Assembly candidates retain the active document as their independently chosen target."}}</p>
+        <label>"Physical operation"<select aria-label="End repair mode" prop:value=move||mode.get() on:change=move|event|mode.set(match event_target_value(&event).as_str(){"anneal"=>"anneal","saved"=>"saved","terminal"=>"terminal",_=>"repair"})><option value="saved">"Repair selected saved material directly"</option><option value="terminal">"Tail or treat source material directly"</option><option value="repair">"Restriction digest → end repair"</option><option value="anneal">"Anneal two oligos"</option></select></label>
+        <label>{move||if mode.get()=="anneal"{"Top oligo (ordered 5′→3′)"}else if mode.get()=="saved"{"Saved source material"}else if mode.get()=="terminal"{"Source material"}else{"Source before restriction digest"}}<select aria-label="End repair source" prop:value=move||source_index.get().to_string() on:change=move|event|source_index.set(event_target_value(&event).parse().unwrap_or(0))>{move||query_options.get().into_iter().map(|(index,name)|view!{<option value=index.to_string()>{name}</option>}).collect_view()}</select></label>
         <Show when=move||mode.get()=="saved"><label>"Explicit end-repair method"<select aria-label="Saved material end repair method" prop:value=move||match method.get(){EndRepairMethod::Blunt=>"blunt",EndRepairMethod::FillFivePrimeOverhangs=>"fill",EndRepairMethod::RemoveThreePrimeOverhangs=>"chew"} on:change=move|e|method.set(match event_target_value(&e).as_str(){"fill"=>EndRepairMethod::FillFivePrimeOverhangs,"chew"=>EndRepairMethod::RemoveThreePrimeOverhangs,_=>EndRepairMethod::Blunt})><option value="blunt">"Blunt: fill 5′ overhangs / remove 3′ overhangs"</option><option value="fill">"Fill recessed 3′ ends from 5′ overhangs"</option><option value="chew">"Remove protruding 3′ ends"</option></select></label>
             <crate::reusable_material_view::ReusableMaterialView source source_info=Memo::new(move|_|source_info.run(source_index.get())) settings=Callback::new(move|()|Ok(crate::reusable_material_view::Settings::Repair{method:method.get_untracked()})) settings_revision=Memo::new(move|_|format!("{:?}",method.get())) kind=crate::reusable_material_view::Kind::EndRepair origin=RwSignal::new(None) epoch get_workspace on_open=on_material/>
         </Show>
-        <Show when=move||mode.get()!="saved">
+        <Show when=move||mode.get()=="terminal">
+            <label>"Explicit terminal action"<select aria-label="Reusable material terminal action" prop:value=move||terminal_action.get() on:change=move|e|terminal_action.set(event_target_value(&e))>
+                <option value="">"Choose an action…"</option>
+                <option value="phosphorylate">"Phosphorylate accessible 5′ ends"</option>
+                <option value="dephosphorylate">"Dephosphorylate accessible 5′ ends"</option>
+                <option value="tail-a">"Add one A to both 3′ ends (dA tailing)"</option>
+                <option value="tail-t">"Add one T to both 3′ ends"</option>
+                <option value="tail-g">"Add one G to both 3′ ends"</option>
+                <option value="tail-c">"Add one C to both 3′ ends"</option>
+            </select></label>
+            <p class="helper">"Only the selected terminal action is performed. Review the actual strands and ends; tailing requires a blunt duplex with known free 3′ OH termini. This records source-derived material without selecting a complementary partner or an assembly target."</p>
+            <crate::reusable_material_view::ReusableMaterialView source source_info=Memo::new(move|_|source_info.run(source_index.get()))
+                settings=Callback::new(move|()|{
+                    use collagene_core::{material_derivation::TerminalAction,chemistry::EndTreatment,tailing::TailingBase};
+                    let action=match terminal_action.get_untracked().as_str() {
+                        "phosphorylate"=>TerminalAction::TreatEnds{treatment:EndTreatment::Phosphorylate},
+                        "dephosphorylate"=>TerminalAction::TreatEnds{treatment:EndTreatment::Dephosphorylate},
+                        "tail-a"=>TerminalAction::Tail3Prime{base:TailingBase::A},
+                        "tail-t"=>TerminalAction::Tail3Prime{base:TailingBase::T},
+                        "tail-g"=>TerminalAction::Tail3Prime{base:TailingBase::G},
+                        "tail-c"=>TerminalAction::Tail3Prime{base:TailingBase::C},
+                        _=>return Err("Choose the explicit terminal action before previewing material.".into()),
+                    };
+                    Ok(crate::reusable_material_view::Settings::TerminalProcessing{action})
+                }) settings_revision=Memo::new(move|_|terminal_action.get()) kind=crate::reusable_material_view::Kind::TerminalProcessing origin=RwSignal::new(None) epoch get_workspace on_open=on_material/>
+        </Show>
+        <Show when=move||!matches!(mode.get(),"saved"|"terminal")>
         <Show when=move||mode.get()=="repair"><label>"Restriction enzymes (comma separated)"<input aria-label="End repair enzymes" prop:value=move||enzymes.get() on:input=move|event|enzymes.set(event_target_value(&event))/></label><label>"Digest fragment number"<input aria-label="End repair fragment" type="number" min="1" prop:value=move||fragment.get() on:input=move|event|fragment.set(event_target_value(&event))/></label><p class="helper">"Fragment numbers follow ascending top-reference cuts, not fragment size. Imported physical-intermediate metadata cannot establish the starting duplex."</p><label>"Repair method"<select aria-label="End repair method" prop:value=move||match method.get(){EndRepairMethod::Blunt=>"blunt",EndRepairMethod::FillFivePrimeOverhangs=>"fill",EndRepairMethod::RemoveThreePrimeOverhangs=>"chew"} on:change=move|event|method.set(match event_target_value(&event).as_str(){"fill"=>EndRepairMethod::FillFivePrimeOverhangs,"chew"=>EndRepairMethod::RemoveThreePrimeOverhangs,_=>EndRepairMethod::Blunt})><option value="blunt">"Blunt: fill 5′ overhangs / remove 3′ overhangs"</option><option value="fill">"Fill recessed 3′ ends from 5′ overhangs"</option><option value="chew">"Remove protruding 3′ ends"</option></select></label></Show>
         <Show when=move||mode.get()=="anneal"><label>"Bottom oligo (ordered 5′→3′)"<select aria-label="Annealing bottom oligo" prop:value=move||bottom_index.get().to_string() on:change=move|event|bottom_index.set(event_target_value(&event).parse().unwrap_or(0))>{move||query_options.get().into_iter().map(|(index,name)|view!{<option value=index.to_string()>{name}</option>}).collect_view()}</select></label><label>"Minimum paired bases"<input aria-label="Annealing minimum paired bases" type="number" min="1" prop:value=move||minimum.get() on:input=move|event|minimum.set(event_target_value(&event))/></label><label>"Comparison budget"<input aria-label="Annealing comparison budget" type="number" prop:value=move||budget.get() on:input=move|event|budget.set(event_target_value(&event))/></label><label>"Maximum alternatives"<input aria-label="Annealing maximum alternatives" type="number" prop:value=move||maximum.get() on:input=move|event|maximum.set(event_target_value(&event))/></label><label class="checkbox-label"><input type="checkbox" aria-label="Top oligo ordered phosphorylated" prop:checked=move||top_phosphate.get() on:change=move|event|top_phosphate.set(event_target::<HtmlInputElement>(&event).checked())/>"Top oligo ordered with 5′ phosphate"</label><label class="checkbox-label"><input type="checkbox" aria-label="Bottom oligo ordered phosphorylated" prop:checked=move||bottom_phosphate.get() on:change=move|event|bottom_phosphate.set(event_target::<HtmlInputElement>(&event).checked())/>"Bottom oligo ordered with 5′ phosphate"</label><p class="helper">"Both oligos are supplied as linear single-strand material with free 3′ OH. Phosphates are explicit input declarations. Only concrete complementary overlap is modeled; no mismatch repair, hairpin, self-association or thermodynamic ranking."</p></Show>
         <button class="button primary full" disabled=move||busy.get() on:click=run.clone()>"Compute physical intermediates"</button><p class="end-repair-status" role="status">{move||status.get()}</p>

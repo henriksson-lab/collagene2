@@ -75,6 +75,7 @@ pub mod view_tracks;
 
 pub mod protein_formats;
 pub mod protein_properties;
+pub mod structure_view;
 
 pub mod tailing;
 

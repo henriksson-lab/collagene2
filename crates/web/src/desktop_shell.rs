@@ -102,6 +102,11 @@ const TOOLS: &[Tool] = &[
         target: Target::Panel("codons"),
     },
     Tool {
+        label: "Structures",
+        group: "Sequence analysis",
+        target: Target::Panel("structures"),
+    },
+    Tool {
         label: "Compare",
         group: "Sequence analysis",
         target: Target::Panel("compare"),

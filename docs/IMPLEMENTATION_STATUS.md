@@ -1866,5 +1866,32 @@ reached the discussion backup fixture but failed creating its temporary director
 two concurrent tests received the same timestamp-derived name. The helper now
 includes an atomic process-local counter, as the other native disk fixtures do.
 No production behavior, recovery assertion or scientific passing criterion is
-relaxed. Both affected disk-backed fixture groups pass locally; cross-platform CI
-must confirm the correction on macOS.
+relaxed. Both affected disk-backed fixture groups pass locally. Commit `540c7e0`
+now passes macOS and Linux scientific CI and the web job; Windows was still
+running when checked. [Exact run](https://github.com/henriksson-lab/collagene2/actions/runs/46045090052).
+
+### Structure worker, workspace sources and WebGL inspector
+
+Worker 115 adds source/options-bound structure preparation (job 192/result 182).
+Fresh native import resolves deposited connections; response validation checks
+source hash, exact selection, atom coverage, finite geometry and original-index
+edges. The large result budget is limited to its registered selector. Parsing
+and scene preparation run in an isolated cancellable worker; camera movement uses
+uniforms on retained GPU buffers.
+
+Tools → Structures opens or retains original PDB/mmCIF workspace attachments,
+applies explicit model/chain/alternate/H-D filters and exports original bytes.
+Rotation, pan, zoom, source-indexed atom picking, keyboard camera controls and
+Previous/Next atom inspection are implemented. Exact chain/alternate text fields
+and bounded examples avoid unbounded option lists. Workspace epochs, request
+generation, view disposal and export guards refuse stale completion. This is
+documentary viewing; sequence/history, candidate and material state are unchanged.
+
+All nine focused native/model cases pass: three structure worker/workspace groups,
+one existing worker-schema fixture, three independent camera/picking cases and
+two scientific ancestry fixtures updated after deleting an unused run-only
+conversion helper. No compatibility adapter remains for that obsolete helper.
+The final integrated web/worker WASM check also passes. Current-source
+graphical/performance and cross-platform acceptance remain open.
+MCP structure access, RNA modifications and antibody-specific analysis remain
+planned. [Profile and usage](STRUCTURE_IMPORT.md).

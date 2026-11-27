@@ -4147,3 +4147,27 @@ not completed structure visualization: worker transport, retained workspace
 attachments, WebGL controls and MCP access remain next. RNA modifications,
 antibody-specific analysis and the existing platform/interoperability/graphical
 gates retain their full scope. [Contract and limits](STRUCTURE_IMPORT.md).
+
+### F34 structure viewing integration
+
+The structure core now has worker 115 job 192/result 182, source/options-bound
+display reports and a workspace-backed WebGL inspector under Tools → Structures.
+Original files remain independent source attachments; explicit model, chain and
+alternate filters prepare scenes in an isolated cancellable worker. Camera
+rotation/pan/zoom uses retained GPU geometry. Exact original atom indices support
+frontmost picking, keyboard-accessible inspection and original-coordinate display.
+Source/epoch guards cover late replies, retention, removal and original export.
+Bounded identifier examples and exact inputs keep controls independent of the
+number of distinct chain/alternate IDs. No sequence link or scientific authority
+is inferred from a structure file.
+
+Nine focused native/model cases pass, including binary framing, source/geometry
+tampering, workspace originals, camera geometry and preserved material ancestry.
+An obsolete unused run-only conversion helper and its test-only guard are removed;
+fixture callers use the current typed material representation directly. Main
+branch CI now lets an active cross-platform check finish while retaining the
+latest pending batch, so frequent pushes do not repeatedly cancel Windows work.
+Graphical/performance acceptance, exact-source CI, structure MCP access, RNA
+modification semantics and antibody-specific analysis remain in scope.
+The final integrated web/worker WASM check also passes; no browser or application
+HTTP checks were run.

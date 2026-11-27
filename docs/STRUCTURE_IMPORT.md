@@ -2,9 +2,34 @@
 
 `collagene-structures` is an independent MIT Rust crate for bounded PDB/mmCIF
 coordinate import and source-indexed scene preparation, available on native and
-WASM targets. This core batch does not yet expose a graphical viewer, worker job,
-workspace attachment control or MCP tool. Those integrations remain part of F34.
-RNA modification and antibody-specific analysis remain separate planned work.
+WASM targets. The application's **Tools → Structures** inspector uses this core
+through the binary analysis worker and a WebGL2 point/connection viewer. Original
+files are retained as workspace attachments. MCP structure tools, RNA modification
+semantics and antibody-specific analysis remain separate planned work.
+
+## Open and inspect
+
+Choose a PDB or mmCIF file in **Structures**. The filename supplies a format hint;
+the selected parser validates its contents. Use the explicit profile selector for
+other filenames. Successful imports retain the original file in the current
+workspace. The workspace source list opens an existing attachment or explicitly
+removes it. These files are independent coordinate evidence; opening one does not
+change the active sequence, annotations, cloning candidate or history.
+
+Drag to rotate, Shift-drag to pan and scroll to zoom. Keyboard arrows rotate;
+plus/minus zoom and Home resets. Click an atom to highlight it and inspect its
+source identities, original coordinates and deposited quantities. The atom
+inspector's Previous/Next buttons also support keyboard access. Display filters
+choose an exact model, label/author chain, alternate label and H/D visibility;
+**Apply display filters** prepares a new scene. The displayed-model/count caption
+describes the current scene, including while form changes await application.
+Chain and alternate IDs use exact text fields with at most 16 example identifiers;
+large structures do not generate an option element for every distinct identifier.
+
+**Download original** exports exact retained bytes through the normal browser or
+native export boundary. Workspace archives and desktop working-state recovery
+retain these attachments. No automatic structure/sequence link or publication
+into a plasmid's shared-library record is inferred.
 
 ## Source and meaning
 
@@ -72,6 +97,36 @@ No folds, ribbons, secondary structure, symmetry mates, biological assemblies,
 distance-inferred bonds or structure-to-sequence correspondence are generated.
 Such additions require explicit models and independent checks.
 
+## Worker, rendering and lifecycle
+
+Worker schema 115 adds `PrepareStructure` (job 192) and `StructurePrepared`
+(result 182). `structure-view-1` binds exact source-byte hash, selected format,
+parser identity and requested display selection. The default chooses the lowest
+deposited model ID. A fresh import resolves connections in the worker. The
+response returns atoms, import notes and GPU-ready geometry; it does not duplicate
+the full source bytes. Source ownership remains with the request/workspace.
+
+The decoder checks context, bounds, model/source identities, selected atom
+coverage, finite geometry, original-index edges and source-coordinate projection.
+These are display/transport checks, not experimental or material verification.
+Only this result selector admits the larger response budget. Source input keeps
+its 16 MiB bound; ordinary jobs retain their existing transport bounds.
+
+The view uses an isolated cancellable worker, with the existing 30-second job
+timeout. Replacement, explicit cancel, workspace change or view disposal discards
+late work; source retention additionally checks the captured workspace epoch.
+Camera movement changes uniforms on existing GPU buffers. It does not reparse
+files, rebuild coordinates or upload geometry. Geometry buffers and shader
+programs are released when a scene is replaced or the view is disposed. A lost
+WebGL context reports an error and requires reopening the view.
+
+Canvas backing dimensions are bounded to 4,096 pixels per axis while preserving
+aspect. Original-index CPU picking shares the orthographic camera convention and
+chooses the frontmost visible point. Fixed point sizes and element colors are
+display conventions, not atomic radii. The selected atom receives an orange
+highlight. Unsupported or unresolved deposited connections remain counted rather
+than being filled in with guessed bonds.
+
 ## Specifications and verification
 
 The coordinate profiles follow the published
@@ -84,5 +139,8 @@ including quoted values and line-delimited text fields.
 Authored fixtures cover fixed columns, separate models/namespaces, nonpolymer
 identifiers, alternates, original bytes, connection ambiguity, missing versus
 literal identifiers, malformed syntax, nonfinite values, bounded input, exact
-camera geometry and tampered projections. Native fixtures and a WASM compiler
-check validate this core; they do not establish GUI or vendor-corpus acceptance.
+camera geometry and tampered projections. Worker fixtures additionally cover
+binary roundtrips, exact source/options pins, stale versions, modified geometry,
+source-index filtering and workspace preservation. Camera fixtures cover screen
+coordinates, bounded movement and frontmost picking after rotation. These checks
+do not establish GUI, hardware-performance or vendor-corpus acceptance.

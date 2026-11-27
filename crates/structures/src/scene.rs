@@ -52,7 +52,7 @@ pub struct Scene {
     pub unresolved_connections: usize,
     pub withheld_symmetry_or_relation: usize,
 }
-fn selected(a: &Atom, s: &Selection) -> bool {
+pub fn includes(a: &Atom, s: &Selection) -> bool {
     a.model == s.model
         && (s.hydrogens || !matches!(a.element.as_deref(), Some("H" | "D")))
         && match &s.chains {
@@ -179,7 +179,7 @@ pub fn build(structure: &Structure, selection: Selection) -> Result<Scene> {
         .atoms
         .iter()
         .enumerate()
-        .filter(|(_, a)| selected(a, &selection))
+        .filter(|(_, a)| includes(a, &selection))
         .map(|(i, _)| i)
         .collect();
     if included.is_empty() {

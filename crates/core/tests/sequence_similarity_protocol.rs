@@ -30,7 +30,7 @@ fn current_worker_job_and_retained_session_bind_sources_and_original_coordinates
         },
     };
     let bytes = protocol::encode_request(&request).unwrap();
-    assert_eq!(&bytes[4..6], &114u16.to_le_bytes());
+    assert_eq!(&bytes[4..6], &115u16.to_le_bytes());
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
     assert_eq!(tag, 191);
     let mut session = protocol::AnalysisSession::default();
@@ -51,7 +51,7 @@ fn current_worker_job_and_retained_session_bind_sources_and_original_coordinates
         assert_eq!(report.subjects[0].length, 7);
     }
     let mut old = bytes;
-    old[4..6].copy_from_slice(&113u16.to_le_bytes());
+    old[4..6].copy_from_slice(&114u16.to_le_bytes());
     assert!(protocol::process_request(&old).is_err());
     assert!(session.process_request(&old).is_err());
 }

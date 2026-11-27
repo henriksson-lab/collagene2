@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 114;
+pub const WORKER_SCHEMA_VERSION: u16 = 115;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 31;
 
 // Current selectors whose accepted payloads can contain complete workspace archives.
@@ -1090,6 +1090,11 @@ pub enum AnalysisJob {
         subjects: Vec<crate::sequence_similarity::Source>,
         options: crate::sequence_similarity::Options,
     },
+    PrepareStructure {
+        bytes: Vec<u8>,
+        format: crate::structure_view::coordinates::Format,
+        selection: Option<crate::structure_view::coordinates::scene::Selection>,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1284,6 +1289,7 @@ pub enum AnalysisResult {
     MaterialTerminalProcessingPreview(crate::material_derivation::TerminalProcessingPreview),
     MaterialAnnealedOligosPreview(crate::material_derivation::AnnealedOligosPreview),
     SequenceSimilarity(crate::sequence_similarity::Report),
+    StructurePrepared(crate::structure_view::Prepared),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1462,6 +1468,13 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             crate::material_derivation::annealed_oligos_preview_revision(
                 workspace, top, bottom, options,
             )?;
+        }
+        AnalysisJob::PrepareStructure {
+            bytes,
+            format,
+            selection,
+        } => {
+            crate::structure_view::revision(bytes, *format, selection)?;
         }
         AnalysisJob::FindSimilarSequences {
             query,
@@ -1879,7 +1892,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         bytes,
         &[
             20, 21, 40, 41, 62, 65, 92, 95, 98, 120, 124, 125, 157, 158, 159, 160, 161, 162, 163,
-            164, 165, 166, 168, 169, 171, 174, 176, 178, 179, 180,
+            164, 165, 166, 168, 169, 171, 174, 176, 178, 179, 180, 182,
         ],
     )?;
 
@@ -1937,6 +1950,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         AnalysisResult::MaterialAnnealedOligosPreview(report) => {
             report.validate_binding(&response.revision)?;
         }
+        AnalysisResult::StructurePrepared(report) => report.validate_binding(&response.revision)?,
         AnalysisResult::SequenceSimilarity(report) => {
             report.validate_binding(&response.revision)?;
         }
@@ -2916,6 +2930,16 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
                 return Err(Error::Format(
                     "Annealed-material source events/options changed".into(),
                 ));
+            }
+            None
+        }
+        AnalysisJob::PrepareStructure {
+            bytes,
+            format,
+            selection,
+        } => {
+            if crate::structure_view::revision(bytes, *format, selection)? != r.revision {
+                return Err(Error::Format("Structure source/options changed".into()));
             }
             None
         }
@@ -4400,6 +4424,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             crate::material_derivation::preview_annealed_oligos(&workspace, &top, &bottom, &options)
                 .map(AnalysisResult::MaterialAnnealedOligosPreview)
         }
+        AnalysisJob::PrepareStructure {
+            bytes,
+            format,
+            selection,
+        } => crate::structure_view::prepare(&bytes, format, selection)
+            .map(AnalysisResult::StructurePrepared),
         AnalysisJob::FindSimilarSequences {
             query,
             subjects,
@@ -5362,6 +5392,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             | AnalysisResult::ProtocolLayoutCaptured(_)
             | AnalysisResult::ProtocolQuantitiesCaptured(_)
             | AnalysisResult::TopoGraphCaptured(_)
+            | AnalysisResult::StructurePrepared(_)
     ) {
         MAX_WORKSPACE_MESSAGE_BYTES
     } else {

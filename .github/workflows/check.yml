@@ -3,7 +3,8 @@ on: [push, pull_request]
 
 concurrency:
   group: check-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Let long Windows checks finish on main; retain the latest pending batch.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # Keep the native test binaries within hosted-runner disk budgets.
 env:

@@ -445,3 +445,10 @@ mod library_discussion_client;
 mod sequence_similarity_model;
 #[cfg(target_arch = "wasm32")]
 mod sequence_similarity_view;
+
+#[cfg(any(target_arch = "wasm32", test))]
+mod structure_camera;
+#[cfg(target_arch = "wasm32")]
+mod structure_renderer;
+#[cfg(target_arch = "wasm32")]
+mod structure_view;

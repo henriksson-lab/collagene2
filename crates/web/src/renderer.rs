@@ -225,7 +225,7 @@ struct State {
     _resize: Option<ResizeListener>,
 }
 
-fn shader(gl: &Gl, kind: u32, source: &str) -> Result<WebGlShader, String> {
+pub(crate) fn shader(gl: &Gl, kind: u32, source: &str) -> Result<WebGlShader, String> {
     let shader = gl.create_shader(kind).ok_or("Cannot create shader")?;
     gl.shader_source(&shader, source);
     gl.compile_shader(&shader);
@@ -236,7 +236,9 @@ fn shader(gl: &Gl, kind: u32, source: &str) -> Result<WebGlShader, String> {
     {
         Ok(shader)
     } else {
-        Err(gl.get_shader_info_log(&shader).unwrap_or_default())
+        let error = gl.get_shader_info_log(&shader).unwrap_or_default();
+        gl.delete_shader(Some(&shader));
+        Err(error)
     }
 }
 fn arc_segments(start: f64, end: f64) -> usize {

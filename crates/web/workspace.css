@@ -548,3 +548,16 @@
 .similarity-hits { padding-left:20px; }
 .similarity-hits li { margin:6px 0; }
 .similarity-hits small { display:block; }
+
+/* Deposited structure coordinates: controls remain inside the tool inspector. */
+.structure-panel { display: grid; gap: .65rem; min-width: 0; }
+.structure-panel details { border-top: 1px solid #dde4e9; padding-top: .5rem; }
+.structure-panel details > label { display: grid; gap: .25rem; margin: .65rem 0; }
+.structure-panel summary { cursor: pointer; font-weight: 600; }
+.structure-panel select, .structure-panel input[type=file] { width: 100%; min-width: 0; }
+.structure-canvas { width: 100%; height: 360px; display: block; border: 1px solid #dce3e9; border-radius: 6px; touch-action: none; cursor: grab; }
+.structure-canvas:active { cursor: grabbing; }
+.structure-canvas:focus-visible { outline: 2px solid #237a89; outline-offset: 2px; }
+.structure-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+.structure-hash, .structure-atom { overflow-wrap: anywhere; font-size: .8rem; }
+.structure-atom { border-left: 3px solid #418c9b; padding-left: .65rem; }

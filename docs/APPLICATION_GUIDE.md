@@ -21,6 +21,13 @@ Installation and graphical offline acceptance remain unfinished.
 
 The immediate desktop MVP focuses on the sequence/plasmid viewer, GenBank import and virtual restriction digest. Features and Digest are primary; More tools retains the advanced modules. The shared [molecular model](../crates/model/README.md), format adapters, worker API and renderer remain foundations for the full product. [MVP model and acceptance](MVP_DESKTOP.md).
 
+**Tools → Structures** imports PDB/mmCIF coordinates into a separate WebGL view
+and retains original files in the workspace. Drag to rotate, Shift-drag to pan,
+or use keyboard arrows and plus/minus. Model/chain/alternate filters apply through
+the worker; atom picking and the Previous/Next controls show original identities
+and coordinates. This does not assign a sequence link. See
+[structure import and controls](STRUCTURE_IMPORT.md) for profiles and limits.
+
 Annotated protein exchange supports GenPept and UniProt with explicit identifiers,
 source retention and export-loss review. Alignment exchange supports aligned FASTA,
 CLUSTAL, Stockholm, strict/relaxed PHYLIP, MSF, NEXUS, PIR/NBRF, GDE flat and SELEX;

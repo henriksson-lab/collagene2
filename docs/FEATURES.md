@@ -34,6 +34,7 @@ See the [application guide](APPLICATION_GUIDE.md) for usage instructions, [deskt
 | SnapGene DNA/protein, XDNA v0, GCG | Selected import/export profiles |
 | ABIF, SCF | Trace import, original download; SCF regeneration |
 | Original Collagene XML | Import and original download |
+| PDB, mmCIF coordinates | Source-preserving import, 3D view and original download |
 | Aligned FASTA, CLUSTAL, Stockholm, PHYLIP, MSF, NEXUS, PIR, GDE, SELEX | Alignment import/export; no external aligner |
 | FASTQ, GFF3/GTF/BED, primer CSV/TSV | Quality, annotation and oligo exchange |
 | SBOL 3.1 JSON-LD | Selected structural profile |

@@ -760,6 +760,7 @@ dependencies = [
  "collagene-protocol-units",
  "collagene-read-alignments",
  "collagene-recombination",
+ "collagene-structures",
  "collagene-topo",
  "collagene-variants",
  "csv",

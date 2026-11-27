@@ -247,3 +247,6 @@ pub mod protocol_layout;
 pub mod protocol_quantities;
 
 mod overlap_extension_execution;
+
+/// Bounded local similarity ranking over explicit nucleotide source collections.
+pub mod sequence_similarity;

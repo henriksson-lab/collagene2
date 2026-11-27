@@ -4071,3 +4071,23 @@ and unchanged local scientific history/outbox. All 25 focused native/model cases
 pass and the integrated WASM check passes. Exact-source cross-platform CI remains
 a delivery gate. Application HTTP and browser acceptance remain deferred under the current
 instruction. [Workflow and protocol scope](LAB_COLLABORATION.md).
+
+
+### F33 collection similarity core and remaining-delivery triage
+
+Source inspection corrects two obsolete backlog claims: protected codon ranges
+already exist in `ConstrainedPolicy`, and documentary96/384-well layouts already
+have native/web/MCP and CSV/HTML/PDF paths. Existing motif Find and two-source
+Compare do not supply collection similarity search, so that is the next concrete
+cloning-oriented code gap. [Current triage](DELIVERY_AUDIT.md).
+
+The new pure Rust `sequence_similarity` core ranks selected typed nucleotide
+subjects through the existing affine local aligner, with exact canonical
+substring upper-bound proofs, both query strands, original/circular coordinates,
+explicit score completeness, source/options revisions and aggregate resource
+bounds. No existing scientific algorithm or internal plan representation was
+replaced. Protein similarity and cyclic-query seam enumeration are not inferred
+from this profile. Worker transport, source/event-bound UI and MCP discovery are
+required next; native core presence does not complete F33. F34 specialized biology
+and the existing platform/interoperability/graphical gates remain in the full
+scope. [Scientific contract](SEQUENCE_SIMILARITY.md).

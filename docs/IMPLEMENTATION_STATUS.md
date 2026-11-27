@@ -1801,3 +1801,16 @@ cases pass, including identity and scope refusal, uncertain replies, full-page
 bounds and native cancellation. The integrated WASM check also passes;
 exact-source cross-platform CI remains open. No running service/database or application HTTP/browser check
 was used for this batch. [Controls and scope](LAB_COLLABORATION.md).
+
+
+### Collection sequence similarity core
+
+A pure Rust collection-search core now reuses native affine nucleotide alignment
+and proves optimal scores for exact full-query canonical substring hits. It keeps
+reverse/circular coordinates, uncertain bases, unsearched subjects, origin caps,
+work/cancellation and hit truncation explicit. Source keys/revisions/options bind
+the report. Eight focused fixtures pass, including an independent small-score oracle. The
+changed cell-limit and custom-scoring fixture groups were rechecked; the final
+core WASM compiler check also passes. No WASM runtime/browser check was performed. This is a core implementation:
+worker, web and MCP integration remain required before the feature is available.
+[Search profile](SEQUENCE_SIMILARITY.md) · [Remaining-delivery triage](DELIVERY_AUDIT.md).

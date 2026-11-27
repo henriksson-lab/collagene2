@@ -26,6 +26,7 @@ macro_rules! data {($($t:tt)*)=>{#[derive(Clone,Debug,PartialEq,Eq,Serialize,Des
 pub mod domain_candidates;
 pub mod domain_tracks;
 pub mod imgt_loops;
+pub mod numbering_windows;
 pub mod profile;
 pub mod references;
 pub mod v_mapping;

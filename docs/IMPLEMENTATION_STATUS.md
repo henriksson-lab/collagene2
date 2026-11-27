@@ -2364,3 +2364,21 @@ the detached static-only server. Desktop build/embedded-MCP checks for that sour
 pass on Windows/macOS/Linux. No browser/application HTTP checks were run. That
 preview includes the antibody inspector; viewer overlays and current alignment-row
 work are newer source changes awaiting later frontend artifacts.
+
+
+### Versioned published Kabat/Chothia window calculations
+
+The independent native numbering crate now provides Kabat1991/Chothia1997 source-
+order window rules with explicit locus/length scope and primary-source citations.
+They retain source-bound assumptions and anchor labels, distinguish first-window
+flanks from CDRs, preserve nontrivial insertion/gap patterns and reject unsupported
+profiles. Exact source/provenance, convention and rule revisions bind report
+reconstruction; no alternative full-domain application mode is implied.
+
+All five native fixture groups and optional-schema WASM checks pass. Literal
+published examples and the 79-configuration source-bound sweep verify current
+allocators and integrity bounds, not broad independent biological numbering.
+Framework/window assembly, independent region-definition selection, application
+worker/MCP/UI integration and broader biology/whole-product acceptance remain open.
+The top-level scientific contract is updated to reflect current delivered IMGT
+worker/viewer/MCP support. [Rules and sources](NUMBERING_WINDOWS.md).

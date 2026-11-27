@@ -1,10 +1,19 @@
 # Antibody numbering implementation
 
-`collagene-antibody-numbering` is a new independent MIT Rust/WASM module for exact
-position labels, published IMGT CDR3 allocation, profile alignment and conditional
-V/J candidate reconstruction. These are numbering components, not automatic antibody or
-variable-domain detection. No worker, UI, MCP integration, full-domain numbering,
-Kabat/Chothia assignment or automatic CDR/framework derivation is implemented yet. Those remain part of F34.
+`collagene-antibody-numbering` is an independently implemented MIT Rust/WASM
+module for explicit position labels, bounded profile alignment and source-bound
+conditional antibody numbering. Current human V/J reference analysis produces
+conditional IMGT tracks in workers, the Biology inspector, protein/alignment
+viewers and native MCP. Unresolved paths/positions remain explicit. This is not a
+calibrated universal antibody/domain classifier or independently certified
+biological numbering system.
+
+Native [published Kabat/Chothia window rules](NUMBERING_WINDOWS.md) now supply
+source-bound, explicitly versioned calculations for selected published profiles.
+Full-domain Kabat/Chothia assembly, independent region definitions and application
+selection, broader reference/species coverage and independent residue-level
+validation remain part of F34. The sections below describe the component contracts
+and the validation evidence for each stage.
 
 ## Labels and conditional CDR3 allocation
 

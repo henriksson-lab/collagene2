@@ -4612,3 +4612,24 @@ build/MCP smoke jobs pass on Windows, macOS and Linux; this does not establish
 installed GUI acceptance. Protein viewer overlays (`83cd37a`) and subsequent row
 analysis follow that preview source checkpoint and await their own frontend
 artifact refresh. The preview server exposes only its explicit static snapshot.
+
+
+### F34 versioned Kabat/Chothia window rules
+
+The native numbering module adds explicitly versioned Kabat1991/Chothia1997 window
+profiles from inspected primary correspondence charts. Rules operate on supplied
+Cys/Trp, middle-loop or Cys/J counterpart boundaries, retain exact integer/letter
+labels in source order and preserve locus/length-specific exceptions. These whole
+windows are not CDR definitions; junction windows include residues outside Kabat
+heavy CDR3. Source, anchor/provenance assumptions, convention/locus/window and rule
+catalog bind reconstruction. Unsupported profiles, wrong anchors, stops and stale
+source/context refuse rather than extrapolate a general offset or insertion rule.
+
+Five native fixture groups and focused optional-schema WASM checks pass, including
+literal published examples and a source-bound sweep over all 79 supported profile
+configurations. This is a native component checkpoint: full-domain framework/window
+assembly, independently selected region definitions, worker/UI/MCP scheme selection
+and broader independent biological validation remain required. The existing IMGT
+application analysis remains the current application mode. The antibody contract
+introduction now reflects the already delivered worker/viewer/MCP integration.
+[Rule profiles, primary sources and limits](NUMBERING_WINDOWS.md).

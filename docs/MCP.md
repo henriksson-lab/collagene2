@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current registry has 184 tools. Selected-construct design and batch operations
+The current registry has 189 tools. Internal exchange uses only worker 98, candidate 26, native workspace plan 24, verifier `science-27`, and assembly draft 15. Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
 add exact-version matrix paging, native inspection, historical capture/list/open
 and explicit fresh replay. [Batch contracts](COMBINATORIAL_BATCHES.md).
 Reference recombination retains explicit profile discovery, source inspection,
@@ -11,7 +11,7 @@ optional `plan_sources` bridge binds a returned selection to typed plan sources
 without requiring a client to reproduce internal hash recipes.
 [Recombination tool contracts](RECOMBINATION_MCP.md).
 
-Sequence compatibility adds `import_compat_sequence`, `export_snapgene` and
+Sequence-file exchange provides `import_compat_sequence`, `export_snapgene` and
 `export_gcg`. Imports require explicit profiles/alphabet. Lossy exports return a
 review without an artifact until omissions are acknowledged, and restrictive
 physical or modified-protein evidence cannot be erased through that choice.
@@ -76,7 +76,7 @@ At most four uploads can be pending. Each reserves its full expected decoded byt
 
 `list_workspaces` returns immutable workspace IDs/revisions and bounded candidate summaries. `export_workspace_archive` requires `{id, revision}` and reconstructs the complete native archive. Its binary artifact stores raw bytes; `read_artifact` encodes only the requested base64 text interval, including arbitrary non-four-character-aligned offsets. Concatenate chunks before decoding. No file path, external writer or executable is accepted. Existing and future source documents are not replaced by an archive import.
 
-`list_documents` remains compatible with `{}` and now returns the first 128 summaries plus `total` and `next_start`. Supply `{start, limit}` for later pages, with a limit of 1–128. A session can hold up to 10,000 distinct molecule revisions, accommodating native workspaces with 1,000 document identities and retained history. Plan/artifact/workspace/oligo-collection limits remain separate.
+`list_documents {start?, limit?}` returns the first 128 summaries plus `total` and `next_start`. Supply `{start, limit}` for later pages, with a limit of 1–128. A session can hold up to 10,000 distinct molecule revisions, accommodating native workspaces with 1,000 document identities and retained history. Plan/artifact/workspace/oligo-collection limits remain separate.
 
 ## Caller reads and oligo collections
 
@@ -150,22 +150,27 @@ Plans also accept:
       {"source": {"Step": 2}, "reverse": true}
     ],
     "circular": true,
-    "allow_nicked": true
+    "allow_nicked": true,
+    "options": {
+      "max_enumeration_fragments": 8, "max_path_checks": 4096,
+      "max_products": 100, "max_total_product_bases": 8000000,
+      "max_report_bytes": 33554432, "max_work": 20000000
+    }
   }}
 ]
 ```
 
-These steps require separately bound `vector` and `insert` inputs; step indexes refer to earlier reconstructed products. Forward/self-references are invalid. Digest fragment indexes are zero-based in the API, while the manual web form numbers them from one. `Phosphorylate` is the other terminal treatment. Ligation reconstructs both strands and accounts for junction bonds; `allow_nicked` does not repair a nick or make a non-ligatable junction valid. Verification returns end/nick summaries, and incomplete/invalid plans retain already reconstructed intermediates. This checks one ordered candidate, not all products in a reaction mixture. PCR on a known staggered/nicked physical intermediate is explicitly incomplete until a two-strand PCR template model is available.
+These steps require separately bound `vector` and `insert` inputs; step indexes refer to earlier reconstructed products. Forward/self-references are invalid. Digest fragment indexes are zero-based in the API, while the manual web form numbers them from one. `Phosphorylate` is the other terminal treatment. Ligation reconstructs both strands and accounts for junction bonds; `allow_nicked` does not repair a nick or make a non-ligatable junction valid. Verification returns end/nick summaries, and incomplete/invalid plans retain already reconstructed intermediates. The intended path and independently reconstructed alternatives retain actual DNA, topology, ends, nicks and modification summaries. Enumeration limits do not change target acceptance or imply isolation. This is a bounded one-copy path model, not probabilities or exhaustive real-mixture behavior. PCR on a known staggered/nicked physical intermediate is explicitly incomplete until a two-strand PCR template model is available.
 
 `import_url` accepts `{url: "NC_001422.1"}` (or a supported URL) and imports bounded source records through the native Rust HTTP client. NCBI key/contact may be supplied through the server process environment; they are never stored in sequence metadata or exported URLs. For Addgene, configure `COLLAGENE_ADDGENE_API_TOKEN` with approved catalog/sequence access. Call `list_source_sequences` with the plasmid URL/ID, review its full/partial/deposited/Addgene choices, then call `import_url` with that URL and an explicit `sequence_id`. The catalog is refreshed and downloaded sequence is checked against available catalog evidence. Choice previews are capped at 100 with 512-character descriptions; the full safe public summary is a JSON artifact. No token, raw sequence or transient download URL appears in that summary.
 
 After native URL import, `export_document` takes `{id, revision}` and returns a base64 `.cg2` artifact. Read chunks, concatenate and decode before opening it in the browser. This preserves the exact fetched revision, annotations and evidence when CORS blocks direct import. [URL adapters](URL_IMPORT.md) documents policies and unverified live Addgene interoperability.
 
-The `.cg2plan` protocol writes schema version 6, accepting original version-1 PCR/overlap, version-2 physical operations and version-3 Golden Gate/mismatch-PCR layouts. Worker messages write version 21 and accept supported version-1 through version-20 layouts; see the [worker compatibility profile](WORKER_PROTOCOL.md). Original verification responses without an engine field migrate explicitly with an unrecorded-engine marker; they never acquire the current engine identity. Variants and nested plans, including plans in PDF jobs, cannot claim a schema that did not define them. Single-document `.cg2` and planning-workspace `.cg2design` schemas remain version 1. Unknown future versions fail explicitly.
+The `.cg2plan` candidate and native workspace plan use the current internal encodings listed above. Nested plans, capsules and worker requests/replies must satisfy those same current encodings, integrity checks and aggregate resource bounds. Unsupported versions fail explicitly; no engine identity is synthesized. Single-molecule `.cg2` has its own molecule format version and does not grant retained physical history. See [worker protocol](WORKER_PROTOCOL.md).
 
 ## Golden Gate, mutagenesis and gels
 
-`simulate_golden_gate` takes immutable `documents` and `GoldenGateOptions`. It returns bounded directed candidate paths, stable physical sequence-group counts, recut/carryover evidence, finite-search completeness and a full report artifact. To propose a specific construction, use `GoldenGate {templates, options, candidate_index}` in a separately target-bound plan. The verifier reconstructs it again from current inputs or trusted prior physical steps. A site-free candidate does not establish kinetic success or exhaustive mixture uniqueness.
+`simulate_golden_gate` takes immutable original `documents` and `GoldenGateOptions`. It starts with unknown original modification state, which can withhold undetermined products. Use the prepared/whole-reaction inspection tools for explicit generation assumptions or saved native material origins. It returns bounded directed candidate paths, stable physical sequence-group counts, recut/carryover evidence, finite-search completeness and a full report artifact. To propose a specific construction, use `GoldenGate {templates, options, candidate_index}` in a separately target-bound plan. The verifier reconstructs it again from current inputs or trusted prior physical steps. A site-free candidate does not establish kinetic success or exhaustive mixture uniqueness.
 
 `simulate_mismatch_pcr` takes `document`, actual `forward`/`reverse` primers and `PcrOptions`. Its artifact retains introduced source/product changes, both binding orientations, overlap/ambiguity evidence and completeness flags. `PcrWithMismatches {template, forward, reverse, options}` is the corresponding verified step; uncertain/overlapping or multiple-product cases cannot silently become a unique verified duplex.
 
@@ -177,7 +182,7 @@ Model details: [Golden Gate](GOLDEN_GATE.md), [mutagenesis](MUTAGENESIS.md), [ge
 
 ## Reusable feature libraries and annotation exchange
 
-The server has 96 tools. These ten tools extend session-only, immutable evidence handling:
+These tools provide session-only, immutable evidence handling:
 
 - `create_feature_library` takes `{name, version, features: [{document, feature_index}]}`. Each source is an exact imported `DocumentRef`; biological extraction handles supported compound/reverse locations. A collection may combine features from several documents. Duplicate selections, unsupported extraction or size limits reject the entire operation. No proprietary feature database is bundled.
 - `import_feature_library` takes `{data_base64}` containing validated library JSON, at most 8 MiB decoded. `list_feature_libraries` lists bounded summaries. `export_feature_library` takes `{library: {id, revision}}` and returns the complete source/version/entry JSON artifact.
@@ -221,9 +226,9 @@ Collagene's application code is MIT. The [official Rust MCP SDK](https://github.
 
 The tool enumerates antiparallel placements, retaining competing offsets and completeness. Full-length/longest pairing is never silently selected. Only complete search with one candidate establishes unique placement under this model. The artifact includes both input revisions and full pair/mapping evidence. An `AnnealOligos {top, bottom, options, candidate_index}` plan operation selects one explicit offset. Alternative or unproven placement remains incomplete, even if that selected reference sequence matches the target. Annealing creates no covalent bond or implicit phosphate; `TreatEnds(Phosphorylate)` and `Ligate` remain separate operations when appropriate. A completely reconstructed product that misses its separately bound target remains invalid.
 
-Worker schema 8 appends `RepairPreview`, `AnnealPreview` and `AnnealedDocument`; physical preview documents carry evidence only. Candidate schema 4 is required for the new operations. Earlier supported worker/candidate layouts remain readable, but new operations/results cannot claim older schema labels, including plans nested inside PDF jobs. Those operations were introduced with verifier engine `science-6`; the current engine is `science-8`. HTML/PDF protocols include the actual new steps and their assumptions. See [end repair and annealing models](END_REPAIR.md).
+Physical preview documents carry documentary evidence only. HTML/PDF protocols include the explicit end-repair and annealing operations, actual strand/terminal state and stated assumptions. See [end repair and annealing models](END_REPAIR.md).
 
-Original Collagene XML is accepted by `import_document` through the shared text parser, subject to the 4 MiB MCP text limit and legacy profile guards. Binary XDNA can pass through the web/native workspace exchange; a direct generic binary-file upload tool is not yet provided. Legacy original-file attachments remain source data and cannot grant duplex chemistry.
+Original Collagene XML is accepted by `import_document` through the shared text parser, subject to the 4 MiB MCP text limit and explicit external-format profile guards. Binary XDNA can pass through the web/native workspace exchange; a direct generic binary-file upload tool is not yet provided. Original external-file attachments remain source data and cannot grant duplex chemistry.
 
 
 ## Unified search and browser tracks
@@ -232,7 +237,7 @@ Original Collagene XML is accepted by `import_document` through the shared text 
 
 `view_tracks { document, window, options }` uses the same bounded reference track engine as the web viewer. `window` has zero-based half-open `start`/`end`; circular windows can cross the origin once. Explicit options select annotations, saved primers, enzyme recognition and actual strand cuts, translations, validated CDS and ORFs. Source revision, engine/version, viewport, complete options, work/residue budgets and completeness are retained. The preview contains at most 100 items; the full report is a JSON artifact. Codon mappings preserve whole-reference frame/residue identity across viewport changes. No tool changes the selected region, installs annotations or upgrades search/track evidence to scientific verification. See [browser track semantics](VIEW_TRACKS.md).
 
-Worker schema 9 introduced `ViewTracks`, `SearchDocument`, `PrepareTracks` and `CachedViewTracks`, with typed track/search/prepared responses. `AnalysisSession` retains one validated immutable source/index; cached viewport requests carry only their options/window and exact expected source revision. Missing, stale and replaced sources fail explicitly; replacing a prepared source is atomic. One-shot calls remain available. Earlier supported layouts and the ordinary 32 MiB message cap are retained; at that introduction candidate schema 4, workspace plan schema 2 and verifier science-6 were unchanged; the later tracked-modification contract now writes candidate 6/plan 4/science-8.
+`AnalysisSession` retains one validated immutable source/index; cached viewport requests carry their options/window and exact expected source revision. Missing, stale and replaced sources fail explicitly; replacing a prepared source is atomic. One-shot calls remain available. Resource caps and source identity apply to both routes.
 
 ## Alignment exchange and protein estimates
 
@@ -247,7 +252,7 @@ Six session-only alignment tools integrate the independent exchange profiles:
 
 Alignment session evidence shares the 64 MiB accounting budget and 128-collection cap. Summary row previews cap 100 rows, names/identifiers/descriptions cap 256 characters, and larger collections remain accessible through paged reads/full exports. Importing a native workspace atomically exposes its retained alignment collections to these tools, with deduplicated identities and shared session accounting. It validates recognized `alignment-document-v1` attachments before installing any state; arbitrary future attachment kinds remain opaque. No tool runs MAFFT, MUSCLE, Clustal or any other installed aligner. Client/transport message limits still apply to direct base64 imports; the decoded file bound does not establish arbitrary JSON-RPC frame capacity.
 
-`analyze_protein` accepts an exact immutable molecule `document` and `protein_properties::ProteinOptions`. It returns the report and a full JSON artifact: explicit stop/ambiguity/disulfide/modification assumptions, composition, available mass/charge/pI/extinction estimates, model IDs and unavailable-value diagnostics. This is a deterministic sequence-model calculation with no browser editing authority or claim of measured folding/activity. Worker schema 10 carries corresponding typed exchange/property jobs while preserving all supported earlier layouts; that introduction retained candidate 4/plan 2/science-6. The later tracked-modification contract now uses candidate 6/plan 4/science-8.
+`analyze_protein` accepts an exact immutable molecule `document` and `protein_properties::ProteinOptions`. It returns the report and a full JSON artifact: explicit stop/ambiguity/disulfide/modification assumptions, composition, available mass/charge/pI/extinction estimates, model IDs and unavailable-value diagnostics. This is a deterministic sequence-model calculation with no browser editing authority or claim of measured folding/activity.
 
 
 ## Explicit tailing and overlap-method checks
@@ -256,7 +261,7 @@ Alignment session evidence shares the 64 MiB accounting budget and 128-collectio
 
 `check_overlap_profile` accepts immutable `documents`, equally sized `reverse` flags, ordered `overlaps`, `circular`, and `ProfileOptions`. Reports bind original source revisions/orientations, exact endpoint homology, original-coordinate spans, GC and advisory method guidance, plus bounded repeat evidence. Published Gibson/HiFi/In-Fusion recommendations do not prove reagent compatibility or empirical success and do not invalidate an otherwise exact DNA design merely because a length recommendation is unmet. The inline preview bounds junctions/occurrences/homology text; its full artifact retains the complete bounded report.
 
-To propose a physical TA/GC design, use explicit `Digest`/`RepairEnds` or `Pcr` steps, `Tail3Prime`, optional `TreatEnds`, and `Ligate`. Both added junction bases and all 5′/3′ chemistry are reconstructed against the independently bound target; symmetric tails do not establish orientation or mixture uniqueness. `ProfiledOverlap` uses `OrientedSource` entries with explicit reverse-complement flags and the declared profile options. It performs source-bound checks and the same exact sequence/annotation reconstruction as ordinary overlaps. A known blocked 3′ physical terminus cannot be silently removed by a sequence profile. HTML/PDF protocols print these operations and their assumptions. Candidate schema 5, workspace plan schema 3 and verifier science-7 distinguish the new semantics; imported reports never confer verification authority.
+To propose a physical TA/GC design, use explicit `Digest`/`RepairEnds` or `Pcr` steps, `Tail3Prime`, optional `TreatEnds`, and `Ligate`. Both added junction bases and all 5′/3′ chemistry are reconstructed against the independently bound target; symmetric tails do not establish orientation or mixture uniqueness. `ProfiledOverlap` uses `OrientedSource` entries with explicit reverse-complement flags and the declared profile options. It performs source-bound checks and the same exact sequence/annotation reconstruction as ordinary overlaps. A known blocked 3′ physical terminus cannot be silently removed by a sequence profile. HTML/PDF protocols print these operations and their assumptions. Imported reports never confer verification authority.
 
 
 ## Retained cloning runs
@@ -303,11 +308,11 @@ Sources are bounded before cloning or hashing. Invalid page ranges and artifact 
 
 ## Tracked source generation and checked digest plans
 
-`propose_plan` accepts two appended operations: `DeclareSourceModifications {template: {Input: id}, assumptions: {dam, dcm, cpg}}` and `CheckedDigest {template, enzymes, profile_revision, fragment_index}`. The existing tool count remains 72. `list_enzymes` exposes `checked_digest_profile_revision` and its profile version. This positional profile is distinct from the standalone sequence-context assessment profile.
+`propose_plan` accepts `DeclareSourceModifications {template: {Input: id}, assumptions: {dam, dcm, cpg}}` and `CheckedDigest {template, selection, options, fragment_index}`. `selection` is the full exact `CatalogSelection`: edition/content hash, ordered enzyme identities and strand geometry. `options` is `restriction_inspection::InspectionOptions`, including comparison/site/fragment/report bounds. The positional sensitivity profile is fixed by the current core and its profile revision is recorded in evidence; callers cannot choose a different profile by passing an arbitrary revision. `list_enzymes` exposes the current profile identity. This is distinct from documentary supplier-context assessment.
 
-`verify_plan`, HTML export and PDF export reconstruct the exact saved inputs and independent target using science-8. Input-generation declarations establish explicit assumptions in a closed Dam/Dcm/CpG model, not a measurement of the sample. The checked digest requires a pinned profile and tracked physical state reconstructed through preceding operations; unknown, mixed, unsupported or stale evidence cannot silently become an ordinary digest. Product summaries expose `tracked_modifications` counts, state revision and generation provenance for inspection. Imported producer metadata grants no physical authority.
+`verify_plan`, HTML export and PDF export reconstruct original inputs and the independent target using the current verifier. Input-generation declarations state assumptions in the closed Dam/Dcm/CpG model, not sample measurements. `generation` on shared preparation `FragmentSpec`, whole-reaction `Row`, combinatorial `Choice` and `PreparationOverride` is a required nullable field. `null` means unknown source generation, never unmodified. A present declaration records explicit Dam/Dcm/CpG states before preparation. A present override's `generation: null` explicitly clears that declaration; only absence of the entire override inherits a choice. Saved Run/Derived sources inherit freshly replayed positional state and reject redeclaration. Standard newly synthesized PCR strands are unmodified under the model; parental modifications are not copied to them.
 
-Exported candidates write schema 6; workspace plan schema is 4, and these tracked operations require worker schema 17 or later. Historical science-7 reports and older retained runs remain historical evidence; fresh verification is required. The operations create no additional persistent application permissions.
+Checked cleavage preserves blocked sites as uncut and withholds undetermined physical products when unknown, mixed, impaired, unsupported or capped evidence cannot determine them. Reports expose positional site outcomes, profile/catalog pins, shared comparisons, limits and warnings. Product summaries retain tracked modification counts, state revision and generation provenance. Imported producer metadata grants no physical authority. Recorded scientific history is documentary; fresh native replay remains necessary.
 
 ## CRISPR guides, selected references and literal editing donors
 
@@ -318,11 +323,11 @@ These four sequence-bound CRISPR tools create immutable computational evidence, 
 - `design_edit_template` takes `{source, target, options, guide?}`. The independent target is a noncausal requirement. Donor arms and the edited reference are reconstructed from the source and explicit edit/deletion/replacement options. An optional guide binds the exact source candidate/options and declared cut-distance condition. The full draft report is always retained when design returns; an immutable donor document is installed only if the independent sequence check is consistent. Artifact/document capacity checks precede installation, so failures cannot leave orphan donors.
 - `check_edit_template` takes `{source, target, donor, options, guide?}`, with exact immutable document references for all three DNA inputs. It independently checks the supplied bounded linear donor sequence against source-derived arms/edit and the target requirement. The result preserves its exact candidate sequence hash, source/target/options bindings and all component booleans in a complete immutable JSON artifact. Imported donor metadata or a foreign positive report cannot substitute for this calculation.
 
-All sources and aggregate reference sets are preflighted while borrowed, before owned copies or revision hashing. Pages are deterministic and source-bound. Full reports are session-only artifacts. A consistent donor check proves literal sequence agreement under these options; it does not predict cellular HDR, editing efficiency, repair outcome or organism-level safety. Candidate schema 6, workspace plan schema 4 and cloning science-8 remain unchanged. [Guide/off-target model](CRISPR.md); [editing-template model](EDIT_TEMPLATE.md).
+All sources and aggregate reference sets are preflighted while borrowed, before owned copies or revision hashing. Pages are deterministic and source-bound. Full reports are session-only artifacts. A consistent donor check proves literal sequence agreement under these options; it does not predict cellular HDR, editing efficiency, repair outcome or organism-level safety. [Guide/off-target model](CRISPR.md); [editing-template model](EDIT_TEMPLATE.md).
 
 ## File-backed large references and cooperative genome searches
 
-The server now exposes 96 tools. Large references use managed private scratchfiles, outside the 64 MiB small-document store. No tool accepts an arbitrary filesystem path. Normal disposal uses platform-specific owned-handle cleanup: Unix unlinks a matching managed entry while it is open, and Windows uses delete-on-close with delete sharing denied. The backend supports two active imports, four published datasets and four live searches, with a separate 64 GiB managed-byte reservation budget.
+Large references use managed private scratchfiles, outside the 64 MiB small-document store. No tool accepts an arbitrary filesystem path. Normal disposal uses platform-specific owned-handle cleanup: Unix unlinks a matching managed entry while it is open, and Windows uses delete-on-close with delete sharing denied. The backend supports two active imports, four published datasets and four live searches, with a separate 64 GiB managed-byte reservation budget.
 
 The eleven new tools are:
 
@@ -340,21 +345,21 @@ The eleven new tools are:
 
 `source_integrity_verified` requires all canonical contig hashes; `exhaustive_for_manifest` requires every owned start under the declared model without a work/hit limit; expected-component completeness refers only to the explicitly declared component set. Even all three cannot authenticate a public assembly accession or establish biological safety. Native stores retain original-stream provenance such as `raw_source_hash`; when the original FASTA stream is unavailable, its provenance remains producer metadata rather than a newly measured input hash. The supplied upload hash, when present, checks the actual uploaded bytes.
 
-The native tests stream 70 MiB of FASTA into a `.cgref` larger than 32 MiB, export/reimport it in bounded chunks and repeat full semantic readback without a whole-file RAM buffer. Actual SDK tests exercise private file lifecycle, cross-block guides, ordered search, native reimport, corruption, stale handles, cancellation, strict path/checkpoint rejection and unchanged small-document inventory. Candidate schema 6, workspace plan schema 4 and cloning science-8 are unchanged. [Scientific coverage model](GENOME_CRISPR.md).
+The native tests stream 70 MiB of FASTA into a `.cgref` larger than 32 MiB, export/reimport it in bounded chunks and repeat full semantic readback without a whole-file RAM buffer. Actual SDK tests exercise private file lifecycle, cross-block guides, ordered search, native reimport, corruption, stale handles, cancellation, strict path/checkpoint rejection and unchanged small-document inventory. [Scientific coverage model](GENOME_CRISPR.md).
 
 
 ## Desktop restriction inspection
 
-The server exposes 96 tools. `inspect_restriction {document, source_role, enzymes, catalog_pin?, options?, site_start?, max_sites?, fragment_start?, max_fragments?}` inspects an exact immutable DNA document with 1–64 embedded catalog enzyme IDs or uniquely resolved names/aliases. Names resolve case-insensitively; aliases that name multiple identities fail rather than choosing one. The report pins the exact resolved geometry, ordered selection, source role/revision and computational limits. Additive catalog fields bind actual edition/hash and exact identities; the original flat fields and raw report artifact remain compatible. Each site/fragment page contains at most 100 records (default 20); a complete immutable JSON artifact is available through `read_artifact`. Repeating the same request with different page offsets yields the same artifact. Invalid offsets, stale document revisions and extra authority fields fail before an artifact is installed.
+`inspect_restriction {document, source_role, enzymes, catalog_pin?, options?, site_start?, max_sites?, fragment_start?, max_fragments?}` inspects an exact immutable DNA document with 1–64 embedded catalog enzyme IDs or uniquely resolved names/aliases. Names resolve case-insensitively; aliases that name multiple identities fail rather than choosing one. The report pins the exact resolved geometry, ordered selection, source role/revision and computational limits. The exact catalog wrapper binds edition/hash and identities; the single tagged artifact contract below retains the complete evidence. Each site/fragment page contains at most 100 records (default 20); a complete immutable JSON artifact is available through `read_artifact`. Repeating the same request with different page offsets yields the same artifact. Invalid offsets, stale document revisions and extra authority fields fail before an artifact is installed.
 
 The tool preserves possible recognition sites, exact origin-split spans, cuts outside substrate and bounded-search diagnostics. `scan_complete` describes recognition enumeration; `products_determined` separately describes whether the assumed-complete duplex product set exists. Neither empirical cleavage nor methylation/condition permission is inferred. Fragment summaries use stable source-cut-order indices, original strand boundaries and explicit end geometry; reference-strand lengths are a separate view. Limited scans and possible/edge evidence do not authorize releasing a product. The tool creates no sequence documents or persistent history. Browser product opening uses fresh source-event-bound worker reconstruction and native history installation.
 
-The existing strict `analyze_restriction` and `digest_fragments` behaviors remain compatible. Actual SDK tests cover the new tool's negotiation/schema, exact multi-enzyme evidence, immutable artifact pages, stale source/role changes, malformed pages, unchanged document inventory, possible/edge evidence and computational limits. Protocol tests exercise the same native/WASM dispatch kernel, append-only schema20 guards, ordinary message caps, fresh product derivation and exact source-event installation. A real executable stdio smoke also exercises the new tool; test results are recorded in the implementation status after execution.
+`analyze_restriction` reports reference-strand lengths; `digest_fragments` reports assumed-complete duplex summaries from the starter enzyme model. Actual SDK tests cover the new tool's negotiation/schema, exact multi-enzyme evidence, immutable artifact pages, stale source/role changes, malformed pages, unchanged document inventory, possible/edge evidence and computational limits. Protocol tests exercise the same native/WASM dispatch kernel, current-schema rejection and integrity guards, ordinary message caps, fresh product derivation and exact source-event installation. A real executable stdio smoke also exercises the new tool; test results are recorded in the implementation status after execution.
 
 
 ## Exact protocol arithmetic
 
-Three stateless tools use `collagene-protocol-units` directly: `calculate_dilution`, `balance_mixture` and `calculate_dna_molar_ratios`. The server has **96 tools**. These calculations neither inspect inventory nor verify chemistry, measured stock concentrations or reaction success. They do not create documents, plans or artifacts. No source DNA, network call or external program is required.
+Three stateless tools use `collagene-protocol-units` directly: `calculate_dilution`, `balance_mixture` and `calculate_dna_molar_ratios`. These calculations neither inspect inventory nor verify chemistry, measured stock concentrations or reaction success. They do not create documents, plans or artifacts. No source DNA, network call or external program is required.
 
 Quantity values are nonnegative **decimal strings**, at most 64 bytes and 19 fractional digits, without exponent notation. Volume units are the closed enum `nL`, `uL`, `mL`; mass units are `ng`, `ug`; molar concentration units are `nM`, `uM`. Mass concentrations specify separate `mass_unit` and `volume_unit`. Input dimensions cannot be interchanged. Exact outputs use canonical units (`nL`, `ng`, `pmol`, `ng/nL`, `pmol/nL`) and `{numerator: "…", denominator: "…"}` string pairs, avoiding floating-point loss. Arithmetic that cannot fit the bounded reduced rational returns an explicit overflow error.
 
@@ -381,17 +386,17 @@ Library errors retain typed MCP error data `{domain: "protocol_units", code: "�
 
 `resolve_enzyme_evidence {formulation, condition, context?, catalog_pin?}` uses an explicit formulation identity, typed condition and optional exact assay context. Conditions are `{kind: "incubation_temperature"}`, `{kind: "buffer_activity", buffer: "…", temperature_milli_c: 37000}`, or `{kind: "methylation", system: "dam"|"dcm"|"cp_g"}`. `Known`, `Unknown`, `Conflict` and `ContextRequired` remain distinct. Evidence keeps original contexts, qualifiers, citations and source metadata/URLs. A documented `less_than_percent` remains an inequality, and approximate relative unit-assay activity cannot become predicted digestion efficiency. Missing evidence and conflicting observations never become compatibility, an unmodified-source assumption or permission to cleave. Documentary source hashes identify the curated claims; they do not authenticate laboratory activity.
 
-The existing `list_enzymes` fields still describe the original12-enzyme geometry and separate pinned tracked-modification profile. Additive discovery metadata points callers to the catalog tools/resource, with an explicit geometry-only scope; old callers do not silently acquire supplier facts. Strict legacy `analyze_restriction` and `digest_fragments` continue using their existing starter geometry model.
+`list_enzymes` describes the starter enzyme geometry and separate pinned tracked-modification profile. Catalog resources provide the broader identity/geometry dataset. `analyze_restriction` and `digest_fragments` have the explicit starter-model scopes described above; supplier observations are not silently interpreted as permission to cleave.
 
-`inspect_restriction` now resolves real catalog identities, including enzymes beyond the starter12. An optional full `catalog_pin` is the exact `CatalogSelection` returned by an earlier inspection: schema1, edition/hash and ordered IDs with full geometry. Selection mismatch, forged geometry and stale editions fail before source cloning/computation. The old scalar meanings and `artifact_id` remain the raw `RestrictionInspection` layout, so strict historical readers still decode it. New `catalog_pin`, `catalog_batch_revision`, `catalog_engine_version` and `catalog_artifact_id` fields expose the complete domain-bound `CatalogRestrictionInspection` wrapper. Both raw and wrapped JSON artifacts publish atomically after byte/item capacity checks, deduplicate across pages, and preserve possible/partial/edge evidence. Neither a catalog pin nor documentary methylation/buffer facts upgrade assumed-complete products to experimentally verified cleavage.
+`inspect_restriction` resolves real catalog identities, including enzymes beyond the starter12. An optional full `catalog_pin` is the exact `CatalogSelection` returned by an earlier inspection: schema1, edition/hash and ordered IDs with full geometry. Selection mismatch, forged geometry and stale editions fail before source cloning/computation. Inline fields and pages are bounded summaries. The sole `artifact_id` identifies a complete JSON `RestrictionInspectionEvidence`, tagged by `source`: `Original` contains `inspection: CatalogRestrictionInspection`; `SavedRun` contains `inspection: run_catalog_digest::Inspection`, including the full catalog report, freshly reconstructed strand/end/modification evidence and origin findings. Each artifact publishes as one bounded atomic reservation and deduplicates across pages. No separate raw report or second artifact ID is produced. Neither a catalog pin nor documentary methylation/buffer facts upgrade assumed-complete products to experimentally verified cleavage.
 
-Fresh catalog fragment products retain the old recipe1 plus separate catalog selection/engine/product-revision producer fields. GenBank COMMENT and EMBL CC export preserve them in bounded physical-producer marker chunks. Reimport stores only `source:restriction_catalog:*` claims and marks chemistry unmapped; it never promotes comments into native fresh-product keys. Invalid/truncated claims stay disclosed and cannot restore physical or scientific authority. FASTA remains sequence-only. Current source-event ancestry and a fresh embedded calculation are required for product installation, using worker21 without changing candidate6/plan4/science8.
+Fresh catalog fragment products retain exact source-event, catalog selection, engine and product-revision producer fields. GenBank COMMENT and EMBL CC export preserve them in bounded physical-producer marker chunks. Reimport stores only `source:restriction_catalog:*` claims and marks chemistry unmapped; it never promotes comments into native fresh-product keys. Invalid/truncated claims stay disclosed and cannot restore physical or scientific authority. FASTA remains sequence-only. Current source-event ancestry and a fresh embedded calculation are required for product installation.
 
-Independent protocol fixtures cover appended tags, exact selection and source binding, old literal schema20 reports, ordinary32MiB versus installation-only128MiB budgets and fresh native event ancestry. Format fixtures cover both annotated text formats, exact claims, malformed/truncated producer data and nonrestoration of chemistry. Actual SDK fixtures cover versioned resource discovery, old starter scope, contextual/unknown evidence with citations, expanded geometry, paired-compatible artifacts and atomic capacity rejection. A separate adapter fixture preserves conflicting/context-dependent evidence without modifying the installed runtime catalog.
+Protocol fixtures cover current request/result selectors, exact selection and source binding, rejection of noncurrent encodings, ordinary 32 MiB versus installation-only 128 MiB budgets and fresh native event ancestry. Format fixtures cover both annotated text formats, exact claims, malformed/truncated producer data and nonrestoration of chemistry. Actual SDK fixtures cover versioned resource discovery, explicit starter scope, contextual/unknown evidence with citations, expanded geometry, complete tagged artifacts and atomic single-item capacity rejection. A separate adapter fixture preserves conflicting/context-dependent evidence without modifying the installed runtime catalog.
 
 ## Reference-only BP/LR exchange
 
-`inspect_recombination`, `check_recombination_target` and `select_recombination_component` require two ordered immutable source roles and a mandatory pinned full-site profile/reaction/limits request. Selection replays source-derived reference DNA and independently checks the specifically selected component before atomic session installation. All reciprocal components and uncertainty remain evidence; no biochemical activity or experimental winner is inferred. Explicit profile discovery is available through `collagene://recombination/profile/manufacturer-context-v1`. See [contracts, privacy and limits](RECOMBINATION_MCP.md). Worker22/candidate7/plan5/science9 support the typed reference-only operation while retaining historical layouts.
+`inspect_recombination`, `check_recombination_target` and `select_recombination_component` require two ordered immutable source roles and a mandatory pinned full-site profile/reaction/limits request. Selection replays source-derived reference DNA and independently checks the specifically selected component before atomic session installation. All reciprocal components and uncertainty remain evidence; no biochemical activity or experimental winner is inferred. Explicit profile discovery is available through `collagene://recombination/profile/manufacturer-context-v1`. See [contracts, privacy and limits](RECOMBINATION_MCP.md). The typed operation remains reference-only; imported graphs cannot restore material authority.
 
 
 ### Ordered overlap assembly recipes
@@ -420,9 +425,9 @@ Resolution creates no document or proof. Explicitly pass the returned `primer` i
 
 ### Ordered ligation recipes
 
-`propose_ligation_assembly` accepts `{inputs, target, recipe}` with the same exact immutable source document references and independent target as overlap recipes. Its recipe is `{name, fragments, circular, allow_nicked}`. Each fragment is `{source: FragmentSpec, treatment}`: `source` declares actual `role`, `input_id`, `preparation` (WholeLinear, Digest with optional explicit end repair, or exact PCR) and `reverse`. `treatment` is explicitly `null`, `"Phosphorylate"` or `"Dephosphorylate"`. The compiler emits each actual preparation, optional repair and terminal treatment before its final ordered ligation step. It does not infer phosphorylation, nick repair or physical duplex state from imported metadata.
+`propose_ligation_assembly` accepts `{inputs, target, recipe}` with the same exact immutable source document references and independent target as overlap recipes. Its recipe is `{name, fragments, circular, allow_nicked}`. Each fragment is `{source: FragmentSpec, treatment}`: `source` declares actual `role`, `input_id`, `preparation` (WholeLinear, Digest with optional explicit end repair, or exact PCR) and `reverse`, plus required nullable `generation`. `treatment` is explicitly `null`, `"Phosphorylate"` or `"Dephosphorylate"`. The compiler emits each actual preparation, optional repair and terminal treatment before its final ordered ligation step. It does not infer phosphorylation, nick repair or physical duplex state from imported metadata.
 
-Fresh verifier reconstruction establishes actual oriented strands, 5′/3′ overhangs and terminal chemistry before checking target sequence/topology. `allow_nicked: true` permits explicitly retained nicks; it never seals or hides them. Unknown or blocked termini, incompatible ends, omitted required treatment and mismatching targets remain explicit failed drafts with their available preparation evidence. The declared fragment order is not an exhaustive mixture search or evidence that another orientation/product cannot form.
+Fresh verifier reconstruction establishes actual oriented strands, 5′/3′ overhangs and terminal chemistry before checking target sequence/topology. `allow_nicked: true` permits explicitly retained nicks; it never seals or hides them. Unknown or blocked termini, incompatible ends, omitted required treatment and mismatching targets remain explicit failed drafts with their available preparation evidence. The intended order remains explicit. The ligation-outcome evidence also retains alternative compatible one-copy paths under recorded work/product/enumeration limits; completion within that scope is not exhaustive real-mixture behavior or evidence of isolation.
 
 Atomic candidate/evidence publication uses the existing session caps and 32 MiB JSON artifact limit. Returned `plan_revision` works with `verify_plan`, binary candidate export and HTML/PDF protocols. `verified: false` records candidate status; the separate fresh `verification` summary and `product_physical` summary show conditional results. Complete preparation rows, physical fragment summaries, each junction (including circular closure), product nick/end evidence and verifier findings remain in `ligation-assembly-recipe.json`. Full source documents remain unchanged in the plan; imported annotations and saved artifact claims never grant chemistry authority.
 
@@ -452,7 +457,7 @@ Inline previews retain at most ten junctions, six local frames and ten CDS descr
 
 ### Explicit original-source terminal assumptions
 
-The existing typed plan and overlap/ligation recipe tools expose `Operation::DeclareSourceTermini {template, left, right}` and `Preparation::DeclaredDuplex {left, right}`. Tool count is unchanged. Each terminus must explicitly declare `five_prime` (`Phosphate`, `Hydroxyl` or `Unknown`) and `three_prime` (`Hydroxyl`, `Blocked` or `Unknown`); there is no default terminal state. In a recipe, for example, `{"DeclaredDuplex":{"left":{"five_prime":"Phosphate","three_prime":"Hydroxyl"},"right":{"five_prime":"Phosphate","three_prime":"Hydroxyl"}}}` states an operator hypothesis about an original intact linear duplex input. It does not report measured chemistry, perform synthesis or infer state from source annotations.
+The typed plan and overlap/ligation recipe tools expose `Operation::DeclareSourceTermini {template, left, right}` and `Preparation::DeclaredDuplex {left, right}`. Each terminus must explicitly declare `five_prime` (`Phosphate`, `Hydroxyl` or `Unknown`) and `three_prime` (`Hydroxyl`, `Blocked` or `Unknown`); there is no default terminal state. In a recipe, for example, `{"DeclaredDuplex":{"left":{"five_prime":"Phosphate","three_prime":"Hydroxyl"},"right":{"five_prime":"Phosphate","three_prime":"Hydroxyl"}}}` states an operator hypothesis about an original intact linear duplex input. It does not report measured chemistry, perform synthesis or infer state from source annotations.
 
 The operation accepts only an original `Source::Input`. Circular, ambiguous, single/mixed-stranded, source-step, imported physical, tracked, variant or reference-only states cannot be promoted into intact duplexes. Source sequence, features and citations are retained unchanged; methylation remains unknown. Existing physical/guard metadata cannot be overridden by a declaration, and its presence never grants authority. Descendants require their originating graph. This is not nick repair, end repair, denaturation, chemical recovery or a generic materialization bypass.
 
@@ -496,8 +501,7 @@ its independent intended target and export HTML/PDF from that same plan.
 Fresh evaluation checks the catalog edition/content/IDs and exact geometry before
 using the existing tracked digest engine. The catalog pin does not predict
 methylation compatibility, reaction conditions or experimental completion.
-Candidate 11, workspace-plan 9, worker 37 and science-14 identify this extension;
-older supported operation layouts remain readable under their original rules.
+Native plans reconstruct the selected pinned catalog geometry and explicit processing against the separate target.
 
 ### Order sheets for a reviewed plan
 
@@ -693,7 +697,13 @@ cycling, optimize fusion choices or domesticate internal sites. See
 
 ## Prepared Golden Gate alternatives
 
-`inspect_prepared_golden_gate_pool {inputs,target,request}` uses fresh actual
+`OrderedTypeIis {enzyme, allow_nicked}` is the combinatorial ordered Type IIS restriction/ligation method. It uses positional checked preparative cleavage, specified fragment order and independent-target verification; it does not model cycling or enumerate a reaction mixture. `GoldenGatePool` is the distinct finite-pool method with explicit substrates, candidate paths and recut assessment. There is no `Method::GoldenGate` alias for the ordered method.
+
+Both `inspect_prepared_golden_gate_pool` and `inspect_golden_gate_reaction` require `origin_workspaces` in their request, including an explicit empty list when no saved origin is used. Every saved-source role must name its exact retained immutable workspace/event proof. Source and target document references, native material origins, catalog/profile pins and generation declarations are checked before reconstruction. Whole-source substrates use `WholeSource {origin}` with required nullable origin: `null` is an original source, otherwise the saved Run/Derived material is freshly replayed without flattening it to sequence.
+
+All preparative cuts, source-pool cleavage and candidate recut checks share one comparison budget. `source_cleavage`, `profile_revision`, `products_determined` and `comparisons` disclose the source assessment. If any requested source has undetermined products, the entire pool is withheld rather than enumerating an available subset. Each candidate retains its checked recut evidence and each recognition site its permitted/blocked/impaired/unknown outcome. Candidate uncertainty is not a site-free, isolated-product or successful-reaction claim.
+
+`inspect_prepared_golden_gate_pool {inputs,target,request,origin_workspaces}` uses fresh actual
 preparation strands with the existing bounded Golden Gate pool model. It reports
 all compact candidate summaries, target matches, subset/source roles, recutting
 and exact search completeness; the full immutable JSON artifact retains source
@@ -727,8 +737,7 @@ Target mismatch does not hide actual reconstructed windows; failed final assembl
 does not substitute a preparation. Finite-pool enumeration status remains separate
 from geometry/window completeness. Inspection does not promote a candidate or
 claim a functional fusion. Large Golden Gate reconstruction runs outside the
-session store lock after borrowed source/target preflight. Tool count stays134;
-worker48 protects the new nested method representation.
+session store lock after borrowed source/target preflight. The current typed report binds the selected native path.
 
 
 ## Declared whole-reaction Golden Gate
@@ -754,13 +763,13 @@ mode. The source is resolved historically without moving heads and must equal th
 lane's immutable document. The tool rejects missing or stale workspace proofs,
 wrong event owners/revisions and metadata/content aliases, then freshly inspects
 source DNA. The exported analysis JSON retains all declared lane recipes/references.
-Legacy uncut, starter-digest and PCR lanes retain their existing inputs.
+Uncut, starter-digest and PCR lanes use their explicitly typed preparations.
 
 Saved setup capture/reopen in the browser remains historical until explicitly
 recomputed. See [named digest semantics](NAMED_DIGESTS.md).
 
 
-## Published profiles and source-backed TOPO declarations (160 tools)
+## Published profiles and source-backed TOPO declarations
 
 `list_ligation_profiles` returns five exact pinned experimental profiles with
 formulation, conditions and separately licensed data provenance.
@@ -782,7 +791,7 @@ projection/check tools. Declared activation is an assumption; neither compilatio
 nor a transferred source-call graph implies a repaired or closed clone.
 
 
-## Explicit downstream TOPO nick sealing (161 tools)
+## Explicit downstream TOPO nick sealing
 
 `seal_topo_nicks` accepts immutable `sources` and
 `request: { preparation, sealing: { ligase_assumption, nicks: [{ three, five }] } }`.
@@ -793,7 +802,7 @@ released activation remain in the evidence artifact. A sealed graph is not an
 accepted candidate or ordinary tracked duplex. [Contract](TOPO_NICK_SEALING.md).
 
 
-## Source-backed processed TOPO contours (162 tools)
+## Source-backed processed TOPO contours
 
 `project_processed_topo` accepts immutable `sources` and
 `request: { treatment: { preparation, sealing }, selection, options }`.
@@ -809,9 +818,9 @@ remain unknown, unsupported chemistry is not erased, and no independent-target
 acceptance follows from this tool. [Contract](TOPO_PROCESSED_PRODUCT.md).
 
 
-## Retained processed plans and historical graphs (163 tools)
+## Retained processed plans and historical graphs
 
-`propose_plan` accepts the appended ProcessedTopo declaration with original role
+`propose_plan` accepts the ProcessedTopo declaration with original role
 bindings and literal processing request. `verify_plan` reconstructs it afresh,
 returns processed_step_count and a complete processed-graph artifact, including
 withheld paths. A successful material result can feed later native operations;
@@ -825,7 +834,7 @@ fabricated attachment. Use replay_workspace_run for current-engine evidence.
 [Formats, handoff, protocols and limits](TOPO_PROCESSED_PLAN.md).
 
 
-## Ordered physical TOPO processing (165 tools)
+## Ordered physical TOPO processing
 
 `inspect_topo_actions` reconstructs original declared sources and explicit ordered
 flap-cleavage/nick-sealing actions. `project_topo_actions` adds a source-seeded
@@ -836,13 +845,12 @@ generic evidence; historical inspection supports exact generic/mixed-run bundles
 [Full contract and remaining scope](TOPO_PROCESSING_ACTIONS.md).
 
 
-## Native upstream PCR composition (165 tools, worker67)
+## Native upstream PCR composition
 
 Generic `propose_plan`/`verify_plan` support a `TopoActions` role bound to a prior
 step only when that role is solely an ExactPcr template. Fresh native tracked
 material is required; no serialized graph restores it. Historical run inspection
-retains the exact upstream product identity. Standalone source-inspection tools
-remain original-input interfaces. [Contract and limits](TOPO_UPSTREAM_PCR.md).
+retains the exact upstream product identity. `inspect_saved_topo` resolves explicit immutable workspace/event-bound Run or Derived origins and freshly replays only the supported PCR-template role; prepared vectors remain explicit original inputs and unsupported staggered/nicked templates are refused without automatic repair. [Contract and limits](TOPO_UPSTREAM_PCR.md).
 
 ## Source-bound TA/GC assembly
 
@@ -880,13 +888,13 @@ The existing overlap, ligation and tailing recipe tools also accept `Preparation
 
 ## PCR-product digest fragment inspection
 
-`inspect_pcr_digest` accepts `{document, request, fragment_start, max_fragments}`. `document` is an exact immutable original-source reference; `request` is `{source_role, forward, reverse, selection, options}`, using typed primers (annealing domains and 5′ extensions separately), a full exact catalog pin and restriction-inspection limits. Pagination defaults to the first100 fragments and permits1–100 per call. The registry currently has174 tools.
+`inspect_pcr_digest` accepts `{document, request, fragment_start, max_fragments}`. `document` is an exact immutable original-source reference; `request` is `{source_role, forward, reverse, selection, options}`, using typed primers (annealing domains and 5′ extensions separately), a full exact catalog pin and restriction-inspection limits. Pagination defaults to the first100 fragments and permits1–100 per call.
 
 The backend freshly reconstructs actual unique PCR geometry and then inspects the resulting catalog digest. The response includes geometry count, bounded geometry preview, amplicon length, scan/product status, actual fragment/terminus summaries, findings and an immutable complete `pcr-digest-inspection.json` artifact. The fragment page retains its source/request context, and repeated identical inspection reuses the artifact. Competing PCR geometries withhold digest products; outer PCR5′OH and cut-derived5′P termini remain distinct. This tool creates no plan, target or product document and selects no fragment. Existing `propose_ligation_assembly`/`propose_overlap_assembly` recipes can subsequently bind a deliberately selected PCR/catalog fragment to the same original source and independent target.
 
 ## Saved-run material origins
 
-`list_run_material_origins {workspace, event}` discovers exact retained run/step choices in an explicitly supplied immutable `WorkspaceRef`. It returns documentary selections and an immutable `run-material-origins.json` inspection artifact, without automatically choosing even a sole match. `prepare_run_material {workspace, selection}` deliberately chooses one run/step/exact event and freshly builds its bounded `Capsule`; retrieve it from the complete `run-material-preparation.json` artifact's `selected` field. Both tools check the exact source workspace and event ownership. Equal sequence letters in another document or event do not substitute for the requested source. The registry has174 tools.
+`list_run_material_origins {workspace, event}` discovers exact retained run/step choices in an explicitly supplied immutable `WorkspaceRef`. It returns documentary selections and an immutable `run-material-origins.json` inspection artifact, without automatically choosing even a sole match. `prepare_run_material {workspace, selection}` deliberately chooses one run/step/exact event and freshly builds its bounded `Capsule`; retrieve it from the complete `run-material-preparation.json` artifact's `selected` field. Both tools check the exact source workspace and event ownership. Equal sequence letters in another document or event do not substitute for the requested source.
 
 The capsule is a reproducible documentary request, not serialized live material. Existing recipe tools accept `Preparation::FromRun {origin: Capsule, preparation: RunPreparation}` with one flat explicit WholeLinear, Digest, CatalogDigest, ExactPcr, PcrCatalogDigest or MismatchPcr downstream preparation. They freshly reconstruct the original run again before preparing its actual material and comparing the separately chosen target. Discovery/preparation tools create no documents, candidates or targets, and an imported artifact alone grants no scientific authority.
 
@@ -898,7 +906,7 @@ When `inspect_pcr_digest` supplies an `origin`, it must also supply `workspace: 
 
 Existing `inspect_restriction` accepts optional `origin: Capsule` and `workspace: WorkspaceRef` (the workspace is required when origin is present). It checks exact retained source/run/independent-target/input/product bindings and event lineage before one fresh saved-material inspection. These documentary checks share the same server helper as saved-run PCR/digest inspection and run no duplicate reconstruction. Tool count stays173.
 
-Without an origin, existing flat fields and both ordinary inspection artifact layouts remain unchanged. With an origin, both `artifact_id` and `catalog_artifact_id` identify a complete `run-catalog-restriction-inspection.json` wrapper: `{engine_version, context_revision, origin_revision, origin_status, source_modifications, fragment_modifications, inspection, findings}`. `inspection` retains the existing catalog report and batch format. The response adds outer `context_revision`, `origin_revision`, `origin_status` and `origin_findings`; ordinary site/fragment pages and actual termini remain available. Outer PCR hydroxyl groups, cut-derived phosphate groups and tracked modification summaries are preserved rather than inferred from saved sequence metadata. The tool neither publishes a document nor selects/installs a digest product. Cleavage is the declared complete-cleavage model, not evidence of enzyme activity, methylation permission, isolation or experimental success.
+Without an origin, existing flat fields and both ordinary inspection artifact layouts remain unchanged. With an origin, both `artifact_id` identify a complete `run-catalog-restriction-inspection.json` wrapper: `{engine_version, context_revision, origin_revision, origin_status, source_modifications, fragment_modifications, inspection, findings}`. `inspection` retains the existing catalog report and batch format. The response adds outer `context_revision`, `origin_revision`, `origin_status` and `origin_findings`; ordinary site/fragment pages and actual termini remain available. Outer PCR hydroxyl groups, cut-derived phosphate groups and tracked modification summaries are preserved rather than inferred from saved sequence metadata. The tool neither publishes a document nor selects/installs a digest product. Cleavage is the declared complete-cleavage model, not evidence of enzyme activity, methylation permission, isolation or experimental success.
 
 
 Shared overlap, ordered-ligation and TA/GC recipe tools also accept
@@ -908,24 +916,23 @@ mismatch-PCR binding/search policy. These tools still require the separate targe
 and freshly verify against it; they never replace the target with a simulated
 mutant product. Complete-amplicon reaction substrates preserve the mismatch
 policy. Existing protocol HTML/PDF export describes the original mismatch-PCR
-operation and explicit oligo sequences. No tool or scientific operation was
-added; the registry remains174 tools.
+operation and explicit oligo sequences. The same native mismatch policy is retained throughout preparation and verification.
 
 ## Independently declared internal substitutions
 
-`build_substituted_assembly_intent {inputs, request}` accepts1–32 exact immutable `BoundInput {id, document: DocumentRef}` snapshots and the native request `{base, junction_edits, substitutions}`. Each substitution is `{role, offset, expected, replacement}` with a zero-based offset in the original contribution's construct orientation and single concrete DNA bases. Expected source bases, retained-core placement, role identities and bounds are checked before copying/building. Junction trims/inserts and substitutions define the intended reference independently; primers and simulated products never supply its DNA. Repeated contributions of the same original source retain distinct roles and may carry separate declared changes. The registry now has174 tools.
+`build_substituted_assembly_intent {inputs, request}` accepts1–32 exact immutable `BoundInput {id, document: DocumentRef}` snapshots and the native request `{base, junction_edits, substitutions}`. Each substitution is `{role, offset, expected, replacement}` with a zero-based offset in the original contribution's construct orientation and single concrete DNA bases. Expected source bases, retained-core placement, role identities and bounds are checked before copying/building. Junction trims/inserts and substitutions define the intended reference independently; primers and simulated products never supply its DNA. Repeated contributions of the same original source retain distinct roles and may carry separate declared changes.
 
 The tool atomically returns an unverified intended-reference session target and complete `substituted-assembly-intent.json` artifact, including exact source refs, the native report and applied source/output coordinates. `verified` and `preparation_simulated` are false. Source snapshots, including historical imported revisions, stay immutable; stale expected bases or source refs reject without publishing a partial target. As with existing standalone assembly-intent tools, bindings cover MCP document roles/revisions only. This tool creates no native workspace/event ancestry, physical material, primer proposal or scientific acceptance; explicit native adoption establishes actual event parents separately.
 
 `inspect_pcr_digest` additionally accepts optional `pcr_options: mutagenesis::PcrOptions`. Omitting it preserves the exact-PCR tool behavior, response and artifact layouts. Supplying it selects the distinct native mismatch-PCR/catalog inspector and `mismatch-pcr-digest-inspection.json` artifact. The request's existing primer/catalog fields remain in `request`; explicit mismatch/3′-exact/search policy is separate in `pcr_options`. Primer tails, encoded substitutions, candidate binding evidence and the actual selected amplicon remain inspectable in the full typed artifact.
 
-Mismatch mode returns `mode: "mismatch-pcr"`, actual policy, native search/enumeration completeness, candidate summaries, selected amplicon summary, paged real fragments and `incomplete`. A certain nonoverlapping conditional singleton may be inspectable under a capped search; the incomplete flag stays explicit and no uniqueness or successful reaction is inferred. A saved-run `origin` still requires its exact `workspace` and shares the existing full ownership attestation before fresh science. No independent target, plan or product document is created. Tool count remains174. Existing shared recipe tools also accept explicit `MismatchPcrCatalogDigest` preparations and their flat saved-run equivalent; an explicit fragment index is verified separately against the independently declared target.
+Mismatch mode returns `mode: "mismatch-pcr"`, actual policy, native search/enumeration completeness, candidate summaries, selected amplicon summary, paged real fragments and `incomplete`. A certain nonoverlapping conditional singleton may be inspectable under a capped search; the incomplete flag stays explicit and no uniqueness or successful reaction is inferred. A saved-run `origin` still requires its exact `workspace` and shares the existing full ownership attestation before fresh science. No independent target, plan or product document is created. Existing shared recipe tools also accept explicit `MismatchPcrCatalogDigest` preparations and their flat saved-run equivalent; an explicit fragment index is verified separately against the independently declared target.
 
 
-`verify_plan` retains a complete verification artifact whenever legacy TOPO
+`verify_plan` retains a complete verification artifact whenever TOPO
 `step_reports` or `annotation_reports` contain evidence, including graph-only
 outcomes with no DNA contour. These use the existing artifact field alongside
-newer processed, physical and reference evidence. A plain plan with no typed
+processed, physical and reference evidence. A plain plan with no typed
 step-evidence arrays keeps its existing response. Artifacts remain documentary;
 no intermediate or graph-only result is published as a molecule by verification.
 
@@ -938,7 +945,7 @@ reconstructs declared 5′ resection, template-supported fill and eligible seali
 `homology_annealing::Options` policy with explicit per-oriented-source left/right
 3′ cuts, junction lengths, topology and pairing-search limits. Neither operation
 infers its physical policy from a vendor profile or selects source sequence to
-match the target. Every saved `FromRun` role additionally requires its exact
+match the target. Every saved `FromRun` or `FromDerived` role additionally requires its exact
 `origin_workspaces` binding and fresh closed-origin replay.
 
 Both previews save no candidate or product; their bounded JSON artifacts include
@@ -949,3 +956,12 @@ nicks. Its joined reference always remains incomplete and cannot be recovered as
 reusable assembled physical material. Standalone `ResectThreePrime` is available
 as a typed plan operation and preserves its actual shortened substrate for later
 explicit processing. [Scientific contract](THREE_PRIME_HOMOLOGY.md).
+
+
+## Current saved-material and review tools
+
+`material_derivation {workspace, task}` uses an immutable native `WorkspaceRef` and exact source `EventBinding`. An original reference is explicit; a saved origin is a small `MaterialSelection`, resolved and replayed natively rather than a client-supplied physical capsule. PCR preview exposes bounded geometry indices, lengths and a preview revision. Installation names the exact index and expected preview revision; the server reconstructs the full geometry itself. Exact/mismatch PCR, pinned catalog digestion and explicit end repair use the single derivation path. New standalone products retain exact native source events and derivation evidence; inherited incompleteness and search limits remain visible. Optional primer collections publish atomically with the new immutable workspace/archive. No tool writes a native desktop catalog or invents an independent assembly target. Later assembly verification still requires its separately declared target.
+
+`prepare_saved_run_review {workspace, run_id}` prepares the exact retained native run with its original source and independent-target events. It returns the documentary review JSON and a portable unverified candidate artifact; it does not adopt the recorded verdict, material status or workspace heads. Fresh verification is required.
+
+`export_map_svg {id, revision}` exports canonical features of that exact immutable native document to a bounded UTF-8 SVG artifact. It returns the exact source revision, warnings and artifact identity. The MCP route requests no restriction overlay; it makes no cloning/physical-material claim and changes no source or native catalog.

@@ -78,6 +78,7 @@ fn fixture(wrong_second: bool, pcr: bool, rich: bool) -> (Workspace, Request) {
                 id: format!("bin-{i}"),
                 label: format!("Bin {i}"),
                 choices: vec![Choice {
+                    generation: None,
                     id: format!("choice-{i}"),
                     label: format!("Choice {i}"),
                     source: binding(&workspace, i),

@@ -59,6 +59,11 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
             id: (*id).into(),
             label: (*id).into(),
             choices: vec![Choice {
+                generation: Some(collagene_core::modified_duplex::GenerationAssumptions {
+                    dam: collagene_core::methylation::MethylationState::Unmodified,
+                    dcm: collagene_core::methylation::MethylationState::Unmodified,
+                    cpg: collagene_core::methylation::MethylationState::Unmodified,
+                }),
                 id: format!("{id}-choice"),
                 label: (*id).into(),
                 source: binding(&w, i),
@@ -174,7 +179,7 @@ fn all_digest_material_and_carryover_remain_visible_without_implicit_selection()
     assert!(selection.is_none());
     assert!(matches!(
         request.rows[0].substrate,
-        golden_gate_reaction::Substrate::WholeSource
+        golden_gate_reaction::Substrate::WholeSource { origin: None }
     ));
     let report = design::inspect_pool(&d, &row, &w).unwrap();
     let pool = report.pool.unwrap();
@@ -190,10 +195,14 @@ fn explicit_native_pin_preserves_preparation_and_wrong_target_cannot_choose_a_pr
     let (w, mut d, row) = fixture();
     pin_literal_ab(&w, &mut d, &row);
     let compiled = design::compile(&d, &row, &w).unwrap();
-    assert_eq!(compiled.plan.steps.len(), 2);
-    assert!(matches!(compiled.plan.steps[0], Operation::Pcr { .. }));
+    assert_eq!(compiled.plan.steps.len(), 5);
     assert!(matches!(
-        compiled.plan.steps[1],
+        compiled.plan.steps[0],
+        Operation::DeclareSourceModifications { .. }
+    ));
+    assert!(matches!(compiled.plan.steps[1], Operation::Pcr { .. }));
+    assert!(matches!(
+        compiled.plan.steps[4],
         Operation::SelectedGoldenGate { .. }
     ));
     let evaluated = design::evaluate(&d, &row, &w).unwrap();
@@ -256,8 +265,8 @@ fn changed_search_context_or_forged_candidate_keys_never_gain_authority() {
     assert_eq!(invalid.verification().status, Status::Invalid);
     assert_eq!(
         invalid.verification().products.len(),
-        1,
-        "only PCR prefix exists; forged pool candidate was withheld"
+        4,
+        "only three declared-generation prefixes and PCR exist; forged pool candidate was withheld"
     );
 }
 #[test]

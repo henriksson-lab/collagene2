@@ -610,11 +610,11 @@ The initial assessment profile covers the starter enzyme set with independently 
 
 The assessment remains a source-generation context model. The implemented tracked-strand foundation separately binds positional N6-methyladenine and 5-methylcytosine states and retains them through supported physical operations. Rescanning a product for complete methylase motifs cannot recover modifications that survived after a motif was cut. Basic digest operations and gel predictions remain explicitly conditional; declared modified or uncertain material requires the appropriate tracked-state checks before a complete-cleavage conclusion. Supplier buffer/temperature/star-activity compatibility, richer catalogs, source strain presets and empirical condition validation remain required F21 work.
 
-The physical implementation now wraps the existing serialized `Duplex` in `TrackedDuplex`, preserving old payload layouts. It stores chemical identities and explicit modified/unmodified/unknown coverage in bounded strand-local 5′→3′ coordinates. Generation assumptions expand once against the original immutable input and retain that provenance. Geometry mappings must slice/concatenate/rotate modification coverage with each actual strand; annotation projection is not a substitute. Existing end-repair `StrandMapping` provides a useful copy-versus-synthesis primitive.
+The physical implementation wraps `Duplex` in `TrackedDuplex`; current internal encodings are updated directly when their representation changes. It stores chemical identities and explicit modified/unmodified/unknown coverage in bounded strand-local 5′→3′ coordinates. Generation assumptions expand once against the original immutable input and retain that provenance. Geometry mappings must slice/concatenate/rotate modification coverage with each actual strand; annotation projection is not a substitute. Existing end-repair `StrandMapping` provides a useful copy-versus-synthesis primitive.
 
 Propagation coverage includes reverse, circular and linear digest, ligation with bottom-strand order/origin realignment, terminal treatments, retained versus synthesized repair bases, tailing, PCR and supplied oligo annealing. Newly synthesized bases require explicit nucleotide/primer assumptions and do not inherit template methylation. Newly formed ligation motifs are not automatically methylated. Sequence-only overlap products retain unavailable physical state until a supported mechanism supplies strand mappings. Independent cases must retain a modified base after its original motif is split and then assess a newly formed junction.
 
-Checked digestion requires curated positional chemical susceptibility predicates, not reuse of source-generation motif results as descendant authority. It must retain blocked sites, cut permitted sites, preserve an entirely blocked circular substrate as circular, and treat unknown/impaired sites as incomplete without choosing an arbitrary partial-digest mixture. Keep per-enzyme evidence at coincident cuts. The appended `DeclareSourceModifications` and `CheckedDigest` operations use science-8, plan schema 4, candidate 6 and worker 17, with historical layouts preserved. Legacy `Digest` remains its recorded assumption. Reconstruction binds every public sequence product to its private tracked physical product; producer metadata never substitutes for that state. Golden Gate selected fragment paths preserve strand state while methylation-aware cycling/recutting remains unfinished. Retained runs, MCP, protocols and workspace gates preserve exact source/history and current-engine replay checks. [Implemented positional profile](MODIFIED_DUPLEX.md) · [Checked web workflow](CHECKED_RESTRICTION_UI.md).
+Checked digestion requires curated positional chemical susceptibility predicates, not reuse of source-generation motif results as descendant authority. It must retain blocked sites, cut permitted sites, preserve an entirely blocked circular substrate as circular, and treat unknown/impaired sites as incomplete without choosing an arbitrary partial-digest mixture. Keep per-enzyme evidence at coincident cuts. The current `DeclareSourceModifications` and `CheckedDigest` operations retain exact generation declarations and catalog selections. Assumed-complete digestion remains an explicit scientific model; it does not establish positional chemical susceptibility. Reconstruction binds every public sequence product to its private tracked physical product; producer metadata never substitutes for that state. Golden Gate preparative cuts, initial cleavage and candidate recutting inspect actual positional strand state under exact catalog/profile identities. Unknown cleavage withholds the undetermined pool; blocked material survives. See [checked Golden Gate](CHECKED_GOLDEN_GATE.md) for the current model and limits. Retained runs, MCP, protocols and workspace gates preserve exact source/history and current-engine replay checks. [Implemented positional profile](MODIFIED_DUPLEX.md) · [Checked web workflow](CHECKED_RESTRICTION_UI.md).
 
 ### CRISPR guides, reference scope and editing templates
 
@@ -3265,7 +3265,7 @@ admission rechecks exact source, target and selected evidence. Browser and
 application HTTP acceptance remain deferred.
 
 
-The next Golden Gate scientific integration must use actual positional modification
+Golden Gate scientific integration uses actual positional modification
 state for both initial cleavage and reconstructed-product recutting. Existing
 fragment mapping already propagates modifications; broad source-generation flags
 are not a substitute for checked cleavage. Unknown or impaired cuts must withhold
@@ -3273,7 +3273,9 @@ an undetermined fragment pool, while known blocked sites survive as intact
 material. Original-source generation declarations belong before every preparative
 cut. Saved origins retain inherited positions; new PCR strands use the established
 standard-unmodified synthesis model. Keep explicit source/candidate checked-site
-and profile evidence, one aggregate work budget and the independent target.
+and profile evidence, one enclosing-plan work budget and the independent target.
+Nested historical-origin replays have separate bounded ledgers; reported work
+does not claim to include their transitive cost.
 Current positional profiles do not justify an invented blocked BsaI/BsmBI example
 or substituting HF/vendor formulations. Unsupported positional contexts remain
 unresolved until primary-source evidence supports a rule.
@@ -3293,5 +3295,30 @@ static references and integrity before writing a new immutable snapshot. Older
 worker-retention flags, merge logic and compatibility-only tests are removed.
 Three offline staging tests pass, including rejection of a second worker version;
 CI runs them with the two static preview-boundary cases. Application HTTP and
-browser checks remain deferred. Port8082 is refreshed from the CI frontend for
-62474ba; the newer TOPO frontend awaits its CI artifact.
+browser checks remain deferred. Port8082 now serves the CI frontend for6c97320 (worker97), verified through
+static integrity and process/socket inspection. Unverified Golden Gate changes
+are not served.
+
+
+### Positional checked Golden Gate
+
+The worktree now uses actual tracked substrates for checked initial cleavage and
+candidate recutting. Original generation choices are retained in recipes and
+library rows; saved whole circular sources retain Run/Derived origins, and actual
+new PCR remains unmodified. Both finite GG compilers check preparative cuts before
+pool enumeration. Ordered Type IIS restriction/ligation remains an explicitly
+separate scientific model, with no claim to cycling. Its shared workflow replaces
+the deleted standalone GG panel. Current schemas are worker98, candidate26,
+plan24, science27 and draft15. All current callers are updated directly.
+
+GG MCP saved-role inspection and selection require exact immutable native
+workspace attestations. Restriction inspection now publishes one tagged complete
+catalog-bound artifact; its duplicate raw artifact and compatibility key are
+removed. Existing oligo/report artifacts remain distinct outputs where they carry
+different data. A review found and corrected incompatible generic defaults for
+checked preparative site limits, and incomplete recut scans no longer claim that
+motifs were observed. Native verification covers490 distinct cases:469 initially
+passed and21 corrected cases passed their exact rechecks. All affected native test
+callers compile. Web/worker WASM validation is running; browser and application
+HTTP acceptance remain deferred. Remaining F13 work includes internal Type IIS
+domestication and library-row internal edits; this checkpoint does not complete F13.

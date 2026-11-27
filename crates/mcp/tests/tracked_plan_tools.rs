@@ -54,7 +54,7 @@ async fn setup() -> (Client, tokio::task::JoinHandle<()>) {
 }
 
 #[tokio::test]
-async fn checked_digest_plans_pin_profiles_rebuild_physical_state_and_export_without_trusting_metadata()
+async fn checked_digest_plans_pin_catalogs_rebuild_physical_state_and_export_without_trusting_metadata()
  {
     let (c, s) = setup().await;
     let imported = call(
@@ -68,7 +68,18 @@ async fn checked_digest_plans_pin_profiles_rebuild_physical_state_and_export_wit
     let enzymes = call(&c, "list_enzymes", json!({})).await;
     let profile = enzymes["checked_digest_profile_revision"].clone();
     assert_eq!(profile.as_str().unwrap().len(), 64);
-    let steps = json!([{"DeclareSourceModifications":{"template":{"Input":"s"},"assumptions":{"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"}}},{"CheckedDigest":{"template":{"Step":0},"enzymes":["EcoRI"],"profile_revision":profile,"fragment_index":0}}]);
+    let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+    let enzyme = catalog
+        .edition()
+        .enzymes
+        .iter()
+        .find(|e| e.name == "EcoRI")
+        .unwrap()
+        .id
+        .clone();
+    let selection = collagene_core::catalog_digest::select(&catalog, &[enzyme]).unwrap();
+    let options = collagene_core::modified_duplex::checked_inspection_options();
+    let steps = json!([{"DeclareSourceModifications":{"template":{"Input":"s"},"assumptions":{"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"}}},{"CheckedDigest":{"template":{"Step":0},"selection":selection,"options":options,"fragment_index":0}}]);
     let propose = |steps: Value| json!({"name":"checked source generation","target":target,"inputs":[{"id":"s","document":source}],"steps":steps});
     let candidate = call(&c, "propose_plan", propose(steps.clone())).await;
     assert_eq!(candidate["verified"], false);
@@ -120,9 +131,9 @@ async fn checked_digest_plans_pin_profiles_rebuild_physical_state_and_export_wit
         &collagene_core::protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
     );
     collagene_core::transfer::load_candidate(&bytes).unwrap();
-    let mut wrong_profile = steps.clone();
-    wrong_profile[1]["CheckedDigest"]["profile_revision"] = json!("0".repeat(64));
-    let candidate = call(&c, "propose_plan", propose(wrong_profile)).await;
+    let mut wrong_catalog = steps.clone();
+    wrong_catalog[1]["CheckedDigest"]["selection"]["catalog_content_hash"] = json!("0".repeat(64));
+    let candidate = call(&c, "propose_plan", propose(wrong_catalog)).await;
     let report = call(
         &c,
         "verify_plan",
@@ -136,8 +147,8 @@ async fn checked_digest_plans_pin_profiles_rebuild_physical_state_and_export_wit
         json!({"plan_revision":candidate["plan_revision"]}),
     )
     .await;
-    assert_ne!(invalid_pdf["status"], "ConsistentUnderAssumptions");
-    let direct = json!([{"CheckedDigest":{"template":{"Input":"s"},"enzymes":["EcoRI"],"profile_revision":profile,"fragment_index":0}}]);
+    assert_eq!(invalid_pdf["status"], "Invalid");
+    let direct = json!([{"CheckedDigest":{"template":{"Input":"s"},"selection":selection,"options":options,"fragment_index":0}}]);
     let candidate = call(&c, "propose_plan", propose(direct)).await;
     let report = call(
         &c,

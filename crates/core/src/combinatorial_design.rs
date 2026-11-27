@@ -13,7 +13,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io};
 
-const VERSION: &str = "combinatorial-source-design-1";
+const VERSION: &str = "combinatorial-source-design-2";
 pub const MAX_BINS: usize = 12;
 pub const MAX_CHOICES: usize = 256;
 pub const MAX_SELECTED: usize = 256;
@@ -28,13 +28,14 @@ dto! {pub struct Choice {
     /// Unfinished alternatives can be retained; an explicitly chosen one needs preparation.
     pub preparation:Option<assembly_recipe::Preparation>,
     pub treatment:Option<EndTreatment>,
+    #[serde(deserialize_with="assembly_recipe::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]pub generation:Option<crate::modified_duplex::GenerationAssumptions>,
 }}
 dto! {pub struct Bin {pub id:String,pub label:String,pub choices:Vec<Choice>}}
 dto! {pub enum Method {
     Overlap{overlaps:Vec<usize>,options:ProfileOptions},
     Ligation{allow_nicked:bool},
     /// Same existing pinned-site geometry requirement; no kinetic-mixture inference.
-    GoldenGate{enzyme:GoldenGateEnzyme,allow_nicked:bool},
+    OrderedTypeIis{enzyme:GoldenGateEnzyme,allow_nicked:bool},
     /// Physical reaction substrates are independent of original target-contribution
     /// coordinates. An absent pin is an editable inspection draft, never candidate zero.
     GoldenGatePool{options:GoldenGateOptions,substrates:Vec<PoolSubstrate>,selection:Option<PoolSelection>},
@@ -59,7 +60,7 @@ dto! {pub enum TargetDeclaration {
     /// Uses existing independent intent builder, never the reconstructed product.
     OriginalRegions{junction_edits:Vec<assembly_junction_edit::Edit>},
 }}
-dto! {pub struct PreparationOverride {pub bin_id:String,pub preparation:Option<assembly_recipe::Preparation>,pub treatment:Option<EndTreatment>}}
+dto! {pub struct PreparationOverride {pub bin_id:String,pub preparation:Option<assembly_recipe::Preparation>,pub treatment:Option<EndTreatment>,#[serde(deserialize_with="assembly_recipe::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]pub generation:Option<crate::modified_duplex::GenerationAssumptions>}}
 dto! {pub struct ConstructOverrides {pub preparations:Vec<PreparationOverride>,pub method:Option<Method>,pub circular:Option<bool>}}
 dto! {pub struct SelectedConstruct {
     pub id:String,pub name:String,pub choices:Vec<ChoiceSelection>,pub target:TargetDeclaration,
@@ -74,7 +75,10 @@ pub enum IndependentIntent {
 #[derive(Clone, Debug)]
 pub enum Recipe {
     Overlap(assembly_recipe::Recipe),
-    Ligation(ligation_recipe::Recipe),
+    Ligation {
+        recipe: ligation_recipe::Recipe,
+        cleavage_policy: assembly_recipe::CleavagePolicy,
+    },
     GoldenGatePool {
         request: crate::golden_gate_reaction::Request,
         selection: Option<PoolSelection>,
@@ -990,7 +994,13 @@ pub(crate) fn resolve_validated(
                         if treatment.is_some() {
                             return Err(bad("whole-source reaction substrate cannot silently apply a terminal treatment; choose an explicit prepared route"));
                         }
-                        crate::golden_gate_reaction::Substrate::WholeSource
+                        let source_preparation=preparation_override(construct,&bin.id).map(|o|o.preparation.as_ref()).unwrap_or(choice.preparation.as_ref());
+                        let origin=match source_preparation {
+                            Some(assembly_recipe::Preparation::FromRun{origin,..})=>Some(crate::run_material::MaterialOrigin::Run(origin.clone())),
+                            Some(assembly_recipe::Preparation::FromDerived{origin,..})=>Some(crate::run_material::MaterialOrigin::Derived(origin.clone())),
+                            _=>None,
+                        };
+                        crate::golden_gate_reaction::Substrate::WholeSource{origin}
                     }
                     PoolSubstrateKind::Prepared => {
                         let preparation = preparation_override(construct, &bin.id)
@@ -1005,6 +1015,7 @@ pub(crate) fn resolve_validated(
                     role: role.clone(),
                     input_id: id.clone(),
                     substrate,
+                    generation:preparation_override(construct,&bin.id).map(|o|o.generation.clone()).unwrap_or_else(||choice.generation.clone()),
                 })
             })
             .collect::<Result<Vec<_>, Error>>()?;
@@ -1050,6 +1061,9 @@ pub(crate) fn resolve_validated(
                 .clone()
                 .ok_or_else(|| bad("chosen alternative has no explicit preparation"))?;
             rows.push(assembly_recipe::FragmentSpec {
+                generation: preparation_override(construct, &bin.id)
+                    .map(|o| o.generation.clone())
+                    .unwrap_or_else(|| choice.generation.clone()),
                 role: role.clone(),
                 input_id: id.clone(),
                 preparation,
@@ -1078,8 +1092,8 @@ pub(crate) fn resolve_validated(
                 assembly_recipe::preflight(&inputs, &target, &recipe)?;
                 Recipe::Overlap(recipe)
             }
-            Method::Ligation { allow_nicked } | Method::GoldenGate { allow_nicked, .. } => {
-                if let Method::GoldenGate { enzyme, .. } = method {
+            Method::Ligation { allow_nicked } | Method::OrderedTypeIis { allow_nicked, .. } => {
+                if let Method::OrderedTypeIis { enzyme, .. } = method {
                     let profile = enzyme.profile();
                     for row in &rows {
                         let selection=assembly_recipe::preparation_catalog_selection(&row.preparation).ok_or_else(||bad("Golden Gate needs pinned existing-site or explicit PCR/catalog-digest preparation"))?;
@@ -1112,7 +1126,14 @@ pub(crate) fn resolve_validated(
                     allow_nicked: *allow_nicked,
                 };
                 ligation_recipe::source_preflight(&native, &target, &recipe)?;
-                Recipe::Ligation(recipe)
+                Recipe::Ligation {
+                    recipe,
+                    cleavage_policy: if matches!(method, Method::OrderedTypeIis { .. }) {
+                        assembly_recipe::CleavagePolicy::PositionalChecked
+                    } else {
+                        assembly_recipe::CleavagePolicy::AssumedComplete
+                    },
+                }
             }
             Method::GoldenGatePool { .. } | Method::MultiSiteReference { .. } => {
                 unreachable!("whole-parent reaction compiled above")
@@ -1303,9 +1324,16 @@ pub fn compile_resolved(resolved: &Resolved) -> Result<crate::verification::Desi
         Recipe::Overlap(recipe) => {
             Ok(assembly_recipe::compile(&resolved.inputs, &resolved.target, recipe)?.plan)
         }
-        Recipe::Ligation(recipe) => {
-            Ok(ligation_recipe::compile(&resolved.inputs, &resolved.target, recipe)?.plan)
-        }
+        Recipe::Ligation {
+            recipe,
+            cleavage_policy,
+        } => Ok(ligation_recipe::compile(
+            &resolved.inputs,
+            &resolved.target,
+            recipe,
+            *cleavage_policy,
+        )?
+        .plan),
         Recipe::MultiSiteReference {
             request,
             selection,
@@ -1406,10 +1434,14 @@ fn evaluate_resolved(resolved: Resolved) -> Result<Evaluation, Error> {
             &resolved.target,
             recipe,
         )?),
-        Recipe::Ligation(recipe) => Preview::Ligation(ligation_recipe::preview(
+        Recipe::Ligation {
+            recipe,
+            cleavage_policy,
+        } => Preview::Ligation(ligation_recipe::preview(
             &resolved.inputs,
             &resolved.target,
             recipe,
+            *cleavage_policy,
         )?),
         Recipe::MultiSiteReference { .. } => {
             let plan = compile_resolved(&resolved)?;

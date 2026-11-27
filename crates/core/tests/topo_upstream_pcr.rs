@@ -362,7 +362,20 @@ fn prepared_correspondence_unused_roles_and_nicked_or_staggered_templates_cannot
     let r = v::verify(&nicked, &target);
     assert_eq!(r.products.len(), 2, "{:?}", r.findings);
     assert_ne!(r.status, Status::ConsistentUnderAssumptions);
-    assert!(r.physical_processing_reports.is_empty());
+    // The successful upstream ligation retains its actual nick/alternative
+    // evidence even though TOPO refuses that template. No TOPO PCR product or
+    // physical transfer graph is created for the rejected third step.
+    assert_eq!(r.physical_processing_reports.len(), 1);
+    let evidence = &r.physical_processing_reports[0];
+    assert_eq!(evidence.step_index, 1);
+    let v::PhysicalProcessingEvidence::LigationOutcomes(ligation) = &evidence.evidence else {
+        panic!("upstream ligation evidence")
+    };
+    assert_eq!(ligation.report.intended.duplex.nicks.len(), 1);
+    assert!(!r.physical_processing_reports.iter().any(|step| matches!(
+        &step.evidence,
+        v::PhysicalProcessingEvidence::TopoActions(_)
+    )));
     assert!(r.findings.iter().any(|f| f.contains("nicked or staggered")));
 }
 fn event(w: &Workspace, i: usize) -> EventBinding {

@@ -36,6 +36,7 @@ fn fixture(circular: bool) -> (Vec<PlanInput>, recipe::Recipe, Options) {
     let inputs = vec![input("left", left), input("right", right)];
     let fragments = vec![
         FragmentSpec {
+            generation: None,
             role: "left-role".into(),
             input_id: "left".into(),
             reverse: false,
@@ -46,6 +47,7 @@ fn fixture(circular: bool) -> (Vec<PlanInput>, recipe::Recipe, Options) {
             },
         },
         FragmentSpec {
+            generation: None,
             role: "right-role".into(),
             input_id: "right".into(),
             reverse: false,

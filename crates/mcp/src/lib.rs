@@ -1150,6 +1150,17 @@ pub struct OverlapExtensionDigestInspectionQuery {
     #[serde(default = "default_methylation_page")]
     pub max_fragments: usize,
 }
+/// Complete catalog-bound restriction evidence from one immutable source.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "source", deny_unknown_fields)]
+pub enum RestrictionInspectionEvidence {
+    Original {
+        inspection: collagene_core::catalog_digest::CatalogRestrictionInspection,
+    },
+    SavedRun {
+        inspection: collagene_core::run_catalog_digest::Inspection,
+    },
+}
 /// Bounded recognition evidence and assumed-complete digest summaries for one immutable source.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1286,7 +1297,7 @@ pub struct OverlapExtensionPrimerDesignQuery {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct EditedOverlapOriginWorkspace {
+pub struct MaterialOriginWorkspace {
     pub role: String,
     pub workspace: WorkspaceRef,
 }
@@ -1299,7 +1310,7 @@ pub struct HomologyRecipePreviewQuery {
     /// Explicit native strand resection/fill/sealing policy; not inferred from a vendor label.
     pub policy: collagene_core::homology_assembly::Options,
     #[serde(default)]
-    pub origin_workspaces: Vec<EditedOverlapOriginWorkspace>,
+    pub origin_workspaces: Vec<MaterialOriginWorkspace>,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1310,7 +1321,7 @@ pub struct AnnealingRecipePreviewQuery {
     /// Explicit native 3′ resection/annealing policy, with no fill or sealing; not inferred from a vendor label.
     pub policy: collagene_core::homology_annealing::Options,
     #[serde(default)]
-    pub origin_workspaces: Vec<EditedOverlapOriginWorkspace>,
+    pub origin_workspaces: Vec<MaterialOriginWorkspace>,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1319,7 +1330,7 @@ pub struct EditedOverlapPrimerDesignQuery {
     pub request: collagene_core::assembly_edited_primer_design::Request,
     /// One exact native workspace attestation for every requested saved-source role.
     #[serde(default)]
-    pub origin_workspaces: Vec<EditedOverlapOriginWorkspace>,
+    pub origin_workspaces: Vec<MaterialOriginWorkspace>,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1416,6 +1427,7 @@ pub struct PreparedGoldenGatePoolQuery {
     pub inputs: Vec<BoundInput>,
     pub target: DocumentRef,
     pub request: collagene_core::prepared_golden_gate::Request,
+    pub origin_workspaces: Vec<MaterialOriginWorkspace>,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1429,6 +1441,7 @@ pub struct GoldenGateReactionQuery {
     pub inputs: Vec<BoundInput>,
     pub target: DocumentRef,
     pub request: collagene_core::golden_gate_reaction::Request,
+    pub origin_workspaces: Vec<MaterialOriginWorkspace>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1437,6 +1450,7 @@ struct GoldenGateReactionEvidence {
     inputs: Vec<BoundInput>,
     target: DocumentRef,
     report: collagene_core::golden_gate_reaction::Report,
+    origin_workspaces: Vec<MaterialOriginWorkspace>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1445,6 +1459,7 @@ struct PreparedGoldenGateEvidence {
     inputs: Vec<BoundInput>,
     target: DocumentRef,
     report: collagene_core::prepared_golden_gate::Report,
+    origin_workspaces: Vec<MaterialOriginWorkspace>,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -2248,7 +2263,6 @@ impl CollageneServer {
         ];
         self.paired_text_artifacts(entries)
     }
-    // A complete compatible report and its catalog wrapper publish atomically too.
     // Publish the documentary receipt, binary candidate and unverified session
     // plan atomically. Neither workspace heads nor historical status are adopted.
     fn saved_review_artifacts(
@@ -2556,6 +2570,73 @@ impl CollageneServer {
             .validate_for_workspace(workspace, event)
             .map_err(bad)?;
         Ok(selected)
+    }
+    fn attest_material_origins(
+        &self,
+        inputs: &[PlanInput],
+        bindings: &[MaterialOriginWorkspace],
+        origins: &[(
+            &str,
+            &str,
+            collagene_core::run_material::MaterialOriginRef<'_>,
+        )],
+    ) -> Result<(), ErrorData> {
+        use collagene_core::run_material::{MaterialOrigin, MaterialOriginRef, MaterialSelection};
+        if bindings.len() != origins.len() || bindings.len() > 128 {
+            return Err(bad(
+                "Every saved reaction role requires exactly one retained workspace binding.",
+            ));
+        }
+        let mut seen = BTreeSet::new();
+        for binding in bindings {
+            if binding.role.is_empty()
+                || binding.role.len() > 128
+                || !seen.insert(binding.role.as_str())
+                || !origins.iter().any(|(role, _, _)| *role == binding.role)
+            {
+                return Err(bad(
+                    "Invalid, duplicate or unrelated saved reaction workspace role.",
+                ));
+            }
+        }
+        for (role, input_id, origin) in origins {
+            let binding = bindings
+                .iter()
+                .find(|b| b.role == *role)
+                .ok_or_else(|| bad("Saved reaction workspace is unavailable."))?;
+            let selection = match origin {
+                MaterialOriginRef::Run(c) => MaterialSelection::Run(c.selection.clone()),
+                MaterialOriginRef::Derived(c) => MaterialSelection::Derived(c.product.clone()),
+            };
+            let frame = self.restore_workspace(&binding.workspace)?;
+            let actual = self.resolve_material_origin(&frame, selection.event(), &selection)?;
+            let source = inputs
+                .iter()
+                .find(|i| i.id == *input_id)
+                .ok_or_else(|| bad("Saved reaction source role is unavailable."))?;
+            if frame.revisions.get(&selection.event().revision) != Some(&source.molecule) {
+                return Err(bad(
+                    "Saved reaction source differs from its exact retained event.",
+                ));
+            }
+            let same = match (&actual, origin) {
+                (MaterialOrigin::Run(a), MaterialOriginRef::Run(b)) => {
+                    bounded_json_limit(a, 32 * 1024 * 1024)?
+                        == bounded_json_limit(b, 32 * 1024 * 1024)?
+                }
+                (MaterialOrigin::Derived(a), MaterialOriginRef::Derived(b)) => {
+                    bounded_json_limit(a, 32 * 1024 * 1024)?
+                        == bounded_json_limit(b, 32 * 1024 * 1024)?
+                }
+                _ => false,
+            };
+            if !same {
+                return Err(bad(
+                    "Supplied reaction origin differs from the freshly resolved retained native origin.",
+                ));
+            }
+        }
+        Ok(())
     }
     fn material_derivation_source(
         &self,
@@ -5268,7 +5349,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Enumerate finite one-copy Golden Gate fragment assemblies from immutable source revisions using complete Type IIS cleavage and actual duplex ends. Distinguishes stable site-free candidates, recut paths, uncut carryover, source histories and budget completeness. This is not an exhaustive kinetic reaction-mixture search. Full JSON evidence artifact included; candidate index can be used in a separately target-bound GoldenGate plan step."
+        description = "Enumerate finite one-copy Golden Gate fragment assemblies using actual tracked-position cleavage checks. These bare originals have unknown modification state; unresolved cleavage withholds the requested pool. Use inspect_golden_gate_reaction for explicit original-generation or saved-material/PCR declarations. Distinguishes stable site-free candidates, recut paths, uncut carryover, source histories and budget completeness. This is not an exhaustive kinetic reaction-mixture search. Full JSON evidence artifact included; candidate index can be used in a separately target-bound GoldenGate plan step."
     )]
     async fn simulate_golden_gate(
         &self,
@@ -5279,7 +5360,7 @@ impl CollageneServer {
             let sources={let store=server.store.lock().unwrap();args.documents.iter().map(|r|store.document(r).cloned()).collect::<Result<Vec<_>,_>>()?};
             let report=collagene_core::golden_gate::simulate(&sources,&args.options).map_err(bad)?;
             let artifact=server.analysis_artifact(&json!({"documents":args.documents,"engine_version":verification::ENGINE_VERSION,"golden_gate":report}))?;
-            output(json!({"documents":args.documents,"candidate_count":report.candidates.len(),"stable_physical_product_count":report.stable_physical_product_count,"enumeration_complete":report.enumeration_complete,"exhaustive_mixture_search":report.exhaustive_mixture_search,"states_examined":report.states_examined,"carryover_sources":report.carryover_sources,"truncation_reasons":report.truncation_reasons,"warnings":report.warnings,"display_truncated":report.candidates.len()>50,"candidates":report.candidates.iter().enumerate().take(50).map(|(i,c)|json!({"candidate_index":i,"length":c.duplex.top.len(),"topology":c.duplex.topology,"path":c.path,"restriction_site_free":c.restriction_site_free,"recut_site_count":c.recut_sites.len(),"directed_sequence_key":c.directed_sequence_key,"physical_sequence_key":c.physical_sequence_key})).collect::<Vec<_>>(),"artifact_id":artifact}))
+            output(json!({"documents":args.documents,"candidate_count":report.candidates.len(),"profile_revision":report.profile_revision,"products_determined":report.products_determined,"cleavage_comparisons":report.comparisons,"stable_physical_product_count":report.stable_physical_product_count,"enumeration_complete":report.enumeration_complete,"exhaustive_mixture_search":report.exhaustive_mixture_search,"states_examined":report.states_examined,"carryover_sources":report.carryover_sources,"truncation_reasons":report.truncation_reasons,"warnings":report.warnings,"display_truncated":report.candidates.len()>50,"candidates":report.candidates.iter().enumerate().take(50).map(|(i,c)|json!({"candidate_index":i,"length":c.duplex.top.len(),"topology":c.duplex.topology,"path":c.path,"restriction_site_free":c.restriction_site_free,"recut_site_count":c.recut_sites.len(),"recut_complete":c.cleavage.complete,"recut_products_determined":c.cleavage.products_determined,"directed_sequence_key":c.directed_sequence_key,"physical_sequence_key":c.physical_sequence_key})).collect::<Vec<_>>(),"artifact_id":artifact}))
         }).await
     }
     #[tool(
@@ -6236,7 +6317,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Inspect an immutable DNA source with one or more exact catalog enzyme identities or uniquely resolved names. Legacy flat report fields and raw artifact_id remain compatible; additive catalog_pin/catalog_batch_revision/catalog_artifact_id expose full edition/hash/ordered-identity/geometry binding. Preserves certain/possible recognition sites, exact origin-split spans, cuts outside substrate, bounded-scan limits and separate scan_complete/products_determined flags. Returns paged site and duplex-fragment summaries plus a complete immutable JSON artifact, bound to source role/revision, exact enzyme geometry and options. Products assume complete cleavage without blocking methylation or conditions; reports are evidence, not experimental activity or permission to release imported products. Existing analyze_restriction retains its strict legacy behavior."
+        description = "Inspect an immutable DNA source with one or more exact catalog enzyme identities or uniquely resolved names. One artifact_id contains complete tagged Original or SavedRun evidence with full edition/hash/ordered-identity/geometry binding; inline pages remain bounded summaries. Preserves certain/possible recognition sites, exact origin-split spans, cuts outside substrate, bounded-scan limits and separate scan_complete/products_determined flags. Returns paged site and duplex-fragment summaries plus a complete immutable JSON artifact, bound to source role/revision, exact enzyme geometry and options. Products assume complete cleavage without blocking methylation or conditions; reports are evidence, not experimental activity or permission to release imported products."
     )]
     async fn inspect_restriction(
         &self,
@@ -6300,12 +6381,6 @@ impl CollageneServer {
             }
             let site_end = args.site_start.saturating_add(args.max_sites).min(report.sites.len());
             let fragment_end = args.fragment_start.saturating_add(args.max_fragments).min(report.fragments.len());
-            let(artifact_id,catalog_artifact_id)=if let Some(run)=&from_run{
-                let id=server.text_artifact(bounded_json_limit(run,32*1024*1024)?,"application/json","run-catalog-restriction-inspection.json")?;(id.clone(),id)
-            }else{server.paired_text_artifacts([
-                (bounded_json(report)?,"application/json","restriction-inspection.json"),
-                (bounded_json(pinned)?,"application/json","catalog-restriction-inspection.json"),
-            ])?};
             let mut response=json!({
                 "document":args.document,"engine_version":report.engine_version,"source_role":report.source_role,
                 "source_revision":report.source_revision,"source_length":report.source_length,"topology":report.topology,
@@ -6318,8 +6393,8 @@ impl CollageneServer {
                 "sites":&report.sites[args.site_start..site_end],"fragment_count":report.fragments.len(),
                 "fragment_start":args.fragment_start,"next_fragment_start":fragment_end,
                 "fragments_done":fragment_end==report.fragments.len(),"fragments":&report.fragments[args.fragment_start..fragment_end],
-                "artifact_id":artifact_id,"catalog_pin":pinned.selection,"catalog_batch_revision":pinned.batch_revision,
-                "catalog_artifact_id":catalog_artifact_id,"catalog_engine_version":pinned.engine_version,
+                "catalog_pin":pinned.selection,"catalog_batch_revision":pinned.batch_revision,
+                "catalog_engine_version":pinned.engine_version,
                 "authority":"Recognition evidence and assumed-complete cleavage summaries only; possible/partial/edge evidence cannot authorize a digest product. Reconstruct selected products from current source inputs."
             });
             if let Some(run)=&from_run {
@@ -6329,6 +6404,21 @@ impl CollageneServer {
                 response["origin_findings"]=json!(run.findings);
                 response["authority"]=json!("Fresh saved-run tracked material and catalog cleavage inspection only. Serialized evidence never grants material, isolation, target acceptance or permission to install a reference-only digest product.");
             }
+            let complete_evidence = match (ordinary, from_run) {
+                (Some(inspection), None) => RestrictionInspectionEvidence::Original {
+                    inspection,
+                },
+                (None, Some(inspection)) => RestrictionInspectionEvidence::SavedRun {
+                    inspection,
+                },
+                _ => return Err(bad("catalog inspection source evidence is inconsistent")),
+            };
+            let artifact_id = server.text_artifact(
+                bounded_json_limit(&complete_evidence, 32 * 1024 * 1024)?,
+                "application/json",
+                "catalog-restriction-inspection.json",
+            )?;
+            response["artifact_id"] = json!(artifact_id);
             output(response)
         }).await
     }
@@ -6973,7 +7063,7 @@ impl CollageneServer {
                 }
             }
             #[derive(Serialize)]
-            struct Evidence<'a> { inputs:&'a [BoundInput],origin_workspaces:&'a [EditedOverlapOriginWorkspace],report:&'a collagene_core::assembly_edited_primer_design::Report,interpretation:&'static str }
+            struct Evidence<'a> { inputs:&'a [BoundInput],origin_workspaces:&'a [MaterialOriginWorkspace],report:&'a collagene_core::assembly_edited_primer_design::Report,interpretation:&'static str }
             let evidence = Evidence { inputs:&args.inputs,origin_workspaces:&args.origin_workspaces,report:&report,
                 interpretation:"Read-only whole-construct primer proposal. Independent intended DNA is built only from exact original source contributions and explicit edit declarations. Primer tails and selected native source geometry never select or replace that intended target; whole-recipe reconstruction remains diagnostic until separate review/finalization." };
             let artifact = server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","edited-overlap-primer-design.json")?;
@@ -7168,7 +7258,7 @@ impl CollageneServer {
             preview.validate_binding(&context).map_err(bad)?;
             let diagnostics=collagene_core::assembly_diagnostics::overlap(&preview).map_err(bad)?;
             #[derive(Serialize)]
-            struct Evidence<'a>{inputs:&'a[BoundInput],target:&'a DocumentRef,recipe:&'a collagene_core::assembly_recipe::Recipe,policy:&'a collagene_core::homology_assembly::Options,origin_workspaces:&'a[EditedOverlapOriginWorkspace],preview:&'a collagene_core::assembly_recipe::Preview,diagnostics:&'a collagene_core::assembly_diagnostics::Report}
+            struct Evidence<'a>{inputs:&'a[BoundInput],target:&'a DocumentRef,recipe:&'a collagene_core::assembly_recipe::Recipe,policy:&'a collagene_core::homology_assembly::Options,origin_workspaces:&'a[MaterialOriginWorkspace],preview:&'a collagene_core::assembly_recipe::Preview,diagnostics:&'a collagene_core::assembly_diagnostics::Report}
             let evidence=Evidence{inputs:&args.inputs,target:&args.target,recipe:&args.recipe,policy:&args.policy,origin_workspaces:&args.origin_workspaces,preview:&preview,diagnostics:&diagnostics};
             let artifact=server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","physical-homology-recipe.json")?;
             let product=(preview.verification.products.len()==preview.compiled.plan.steps.len()).then(||preview.verification.products.last()).flatten();
@@ -7252,7 +7342,7 @@ impl CollageneServer {
             preview.validate_binding(&context).map_err(bad)?;
             let diagnostics=collagene_core::assembly_diagnostics::overlap(&preview).map_err(bad)?;
             #[derive(Serialize)]
-            struct Evidence<'a>{inputs:&'a[BoundInput],target:&'a DocumentRef,recipe:&'a collagene_core::assembly_recipe::Recipe,policy:&'a collagene_core::homology_annealing::Options,origin_workspaces:&'a[EditedOverlapOriginWorkspace],preview:&'a collagene_core::assembly_recipe::Preview,diagnostics:&'a collagene_core::assembly_diagnostics::Report}
+            struct Evidence<'a>{inputs:&'a[BoundInput],target:&'a DocumentRef,recipe:&'a collagene_core::assembly_recipe::Recipe,policy:&'a collagene_core::homology_annealing::Options,origin_workspaces:&'a[MaterialOriginWorkspace],preview:&'a collagene_core::assembly_recipe::Preview,diagnostics:&'a collagene_core::assembly_diagnostics::Report}
             let evidence=Evidence{inputs:&args.inputs,target:&args.target,recipe:&args.recipe,policy:&args.policy,origin_workspaces:&args.origin_workspaces,preview:&preview,diagnostics:&diagnostics};
             let artifact=server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","three-prime-annealing-recipe.json")?;
             let product=(preview.verification.products.len()==preview.compiled.plan.steps.len()).then(||preview.verification.products.last()).flatten();
@@ -7378,8 +7468,8 @@ impl CollageneServer {
                 }).collect::<Vec<_>>();
                 (inputs,target.clone())
             };
-            let preview = collagene_core::ligation_recipe::preview(&inputs,&target,&args.recipe).map_err(bad)?;
-            let expected = collagene_core::ligation_recipe::preview_revision(&inputs,&target,&args.recipe).map_err(bad)?;
+            let preview = collagene_core::ligation_recipe::preview(&inputs,&target,&args.recipe, collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete).map_err(bad)?;
+            let expected = collagene_core::ligation_recipe::preview_revision(&inputs,&target,&args.recipe, collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete).map_err(bad)?;
             preview.validate_binding(&expected).map_err(bad)?;
             // Typed locations come from the checked execution prefix, never finding strings.
             let diagnostics = collagene_core::assembly_diagnostics::ligation(&preview).map_err(bad)?;
@@ -7524,6 +7614,7 @@ impl CollageneServer {
                 collagene_core::prepared_golden_gate::preflight(&sources,target,&args.request).map_err(bad)?;
                 (sources.into_iter().map(|(id,m)|PlanInput{id:id.into(),revision:m.revision(),molecule:m.clone()}).collect::<Vec<_>>(),target.clone())
             };
+            server.attest_material_origins(&inputs,&args.origin_workspaces,&collagene_core::prepared_golden_gate::material_origins(&args.request))?;
             let report = collagene_core::prepared_golden_gate::inspect(&inputs,&target,&args.request).map_err(bad)?;
             let expected = collagene_core::prepared_golden_gate::inspect_revision(&inputs,&target,&args.request).map_err(bad)?;
             report.validate_binding(&expected).map_err(bad)?;
@@ -7531,15 +7622,15 @@ impl CollageneServer {
                 let c=report.pool.as_ref().and_then(|pool|pool.candidates.get(a.candidate_index)).ok_or_else(||bad("pool assessment has no bound candidate"))?;
                 Ok(json!({"candidate_index":a.candidate_index,"directed_sequence_key":a.directed_sequence_key,"physical_sequence_key":a.physical_sequence_key,
                     "target_matches":a.target_matches,"source_roles":a.source_roles,"length":c.duplex.top.len(),"topology":c.duplex.topology,
-                    "restriction_site_free":c.restriction_site_free,"recut_sites":c.recut_sites.len()}))
+                    "restriction_site_free":c.restriction_site_free,"recut_sites":c.recut_sites.len(),"recut_complete":c.cleavage.complete,"recut_products_determined":c.cleavage.products_determined}))
             }).collect::<Result<Vec<_>,ErrorData>>()?;
             #[derive(Serialize)]
-            struct Evidence<'a> {kind:&'static str,inputs:&'a [BoundInput],target:&'a DocumentRef,report:&'a collagene_core::prepared_golden_gate::Report}
-            let text = bounded_json_limit(&Evidence {kind:"prepared-golden-gate-pool-v1",inputs:&args.inputs,target:&args.target,report:&report},32*1024*1024)?;
+            struct Evidence<'a> {kind:&'static str,inputs:&'a [BoundInput],target:&'a DocumentRef,origin_workspaces:&'a[MaterialOriginWorkspace],report:&'a collagene_core::prepared_golden_gate::Report}
+            let text = bounded_json_limit(&Evidence {kind:"prepared-golden-gate-pool-v1",inputs:&args.inputs,target:&args.target,origin_workspaces:&args.origin_workspaces,report:&report},32*1024*1024)?;
             let artifact = server.text_artifact(text,"application/json","prepared-golden-gate-pool.json")?;
             output(json!({"state":"advisory","verified":false,"context_revision":report.context_revision,
                 "plan_revision":report.preview.verification.plan_revision,"target_revision":report.preview.verification.target_revision,
-                "inputs":args.inputs,"target":args.target,"preparation_complete":report.preview.preparation_complete,"missing_physical":report.missing_physical,
+                "inputs":args.inputs,"target":args.target,"preparation_complete":report.preview.preparation_complete,"missing_physical":report.missing_physical,"products_determined":report.pool.as_ref().map(|p|p.products_determined),"profile_revision":report.pool.as_ref().map(|p|p.profile_revision.clone()),"cleavage_comparisons":report.pool.as_ref().map(|p|p.comparisons),"cleavage_budget_scope":"Preparative checked cuts plus Golden Gate source/candidate scans in this native plan; saved-ancestry replay has separate bounded scopes.",
                 "ordered_verification":{"status":report.preview.verification.status,"engine_version":report.preview.verification.engine_version,
                     "findings":report.preview.verification.findings.iter().take(100).collect::<Vec<_>>(),"findings_truncated":report.preview.verification.findings.len()>100,
                     "assumptions":report.preview.verification.assumptions.iter().take(100).collect::<Vec<_>>(),"assumptions_truncated":report.preview.verification.assumptions.len()>100},
@@ -7581,6 +7672,7 @@ impl CollageneServer {
                 let target=target.clone();
                 (evidence,target)
             };
+            server.attest_material_origins(&evidence.report.preview.compiled.plan.inputs,&evidence.origin_workspaces,&collagene_core::prepared_golden_gate::material_origins(&evidence.report.request))?;
             let selected=collagene_core::prepared_golden_gate::select(&evidence.report,&args.selection).map_err(bad)?;
             let expected=collagene_core::prepared_golden_gate::selection_revision(&evidence.report,&args.selection).map_err(bad)?;
             selected.validate_binding(&expected).map_err(bad)?;
@@ -7606,7 +7698,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Inspect an explicitly declared Golden Gate reaction from whole original circular/linear DNA, complete PCR amplicons or selected preparations. Complete digestion includes all fragments of every declared substrate and reports uncut circular carryover separately. Actual preparation strands and enumeration come from one native pass; metadata cannot supply physical state. Retains recuttable products, backgrounds and search limits. Index0 probe diagnostics do not nominate a candidate or establish kinetics, repeated-copy stoichiometry, methylation clearance or experimental yield."
+        description = "Inspect an explicitly declared Golden Gate reaction from whole original circular/linear DNA, complete PCR amplicons or selected preparations. Checked positional cleavage includes all established fragments of every declared substrate and reports proven intact circular carryover separately. Unknown or impaired source cleavage withholds the entire requested pool; candidate recut evidence retains uncertainty. Actual preparation strands and enumeration come from one native pass; metadata cannot supply physical state. Retains recuttable products, backgrounds and search limits. Index0 probe diagnostics do not nominate a candidate or establish kinetics, repeated-copy stoichiometry, methylation clearance or experimental yield."
     )]
     async fn inspect_golden_gate_reaction(
         &self,
@@ -7629,6 +7721,7 @@ impl CollageneServer {
                 collagene_core::golden_gate_reaction::preflight(&sources,target,&args.request).map_err(bad)?;
                 (sources.into_iter().map(|(id,m)|PlanInput{id:id.into(),revision:m.revision(),molecule:m.clone()}).collect::<Vec<_>>(),target.clone())
             };
+            server.attest_material_origins(&inputs,&args.origin_workspaces,&collagene_core::golden_gate_reaction::material_origins(&args.request))?;
             let report = collagene_core::golden_gate_reaction::inspect(&inputs,&target,&args.request).map_err(bad)?;
             let expected = collagene_core::golden_gate_reaction::inspect_revision(&inputs,&target,&args.request).map_err(bad)?;
             report.validate_binding(&expected).map_err(bad)?;
@@ -7636,15 +7729,15 @@ impl CollageneServer {
                 let c=report.pool.as_ref().and_then(|pool|pool.candidates.get(a.candidate_index)).ok_or_else(||bad("pool assessment has no bound candidate"))?;
                 Ok(json!({"candidate_index":a.candidate_index,"directed_sequence_key":a.directed_sequence_key,"physical_sequence_key":a.physical_sequence_key,
                     "target_matches":a.target_matches,"source_roles":a.source_roles,"length":c.duplex.top.len(),"topology":c.duplex.topology,
-                    "restriction_site_free":c.restriction_site_free,"recut_sites":c.recut_sites.len()}))
+                    "restriction_site_free":c.restriction_site_free,"recut_sites":c.recut_sites.len(),"recut_complete":c.cleavage.complete,"recut_products_determined":c.cleavage.products_determined}))
             }).collect::<Result<Vec<_>,ErrorData>>()?;
             #[derive(Serialize)]
-            struct Evidence<'a> {kind:&'static str,inputs:&'a [BoundInput],target:&'a DocumentRef,report:&'a collagene_core::golden_gate_reaction::Report}
-            let text = bounded_json_limit(&Evidence {kind:"golden-gate-reaction-v1",inputs:&args.inputs,target:&args.target,report:&report},32*1024*1024)?;
+            struct Evidence<'a> {kind:&'static str,inputs:&'a [BoundInput],target:&'a DocumentRef,origin_workspaces:&'a[MaterialOriginWorkspace],report:&'a collagene_core::golden_gate_reaction::Report}
+            let text = bounded_json_limit(&Evidence {kind:"golden-gate-reaction-v1",inputs:&args.inputs,target:&args.target,origin_workspaces:&args.origin_workspaces,report:&report},32*1024*1024)?;
             let artifact = server.text_artifact(text,"application/json","golden-gate-reaction.json")?;
             output(json!({"state":"advisory","verified":false,"context_revision":report.context_revision,
                 "probe_plan_revision":report.verification.plan_revision,"target_revision":report.verification.target_revision,
-                "inputs":args.inputs,"target":args.target,"preparation_complete":(report.verification.products.len()+1>=report.probe_plan.steps.len()),"pool_available":report.pool.is_some(),
+                "inputs":args.inputs,"target":args.target,"preparation_complete":(report.verification.products.len()+1>=report.probe_plan.steps.len()),"pool_available":report.pool.is_some(),"products_determined":report.pool.as_ref().map(|p|p.products_determined),"profile_revision":report.pool.as_ref().map(|p|p.profile_revision.clone()),"cleavage_comparisons":report.pool.as_ref().map(|p|p.comparisons),"cleavage_budget_scope":"Preparative checked cuts plus Golden Gate source/candidate scans in this native plan; saved-ancestry replay has separate bounded scopes.",
                 "probe_verification":{"status":report.verification.status,"engine_version":report.verification.engine_version,
                     "findings":report.verification.findings.iter().take(100).collect::<Vec<_>>(),"findings_truncated":report.verification.findings.len()>100,
                     "assumptions":report.verification.assumptions.iter().take(100).collect::<Vec<_>>(),"assumptions_truncated":report.verification.assumptions.len()>100},
@@ -7687,6 +7780,7 @@ impl CollageneServer {
                 let target=target.clone();
                 (evidence,target)
             };
+            server.attest_material_origins(&evidence.report.probe_plan.inputs,&evidence.origin_workspaces,&collagene_core::golden_gate_reaction::material_origins(&evidence.report.request))?;
             let selected=collagene_core::golden_gate_reaction::select(&evidence.report,&args.selection).map_err(bad)?;
             let expected=collagene_core::golden_gate_reaction::selection_revision(&evidence.report,&args.selection).map_err(bad)?;
             selected.validate_binding(&expected).map_err(bad)?;
@@ -7712,7 +7806,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Save an immutable candidate plan binding an independent target and input revisions. DeclareSourceModifications accepts only an explicit Input source with Dam/Dcm/CpG generation assumptions; CheckedDigest pins the positional profile revision from list_enzymes and consumes freshly reconstructed tracked strand state. DeclareSourceTermini requires an original intact linear DNA Input and explicit left/right5-prime/3-prime assumptions; it cannot promote Step, ssDNA, circular, imported physical or reference-only states, infer chemistry from metadata or repair a graph. OverlapExtension requires two freshly reconstructed intact linear duplexes, explicit orientations and terminal pairing/search options; it reciprocally extends A.top/B.bottom and can feed actual outer-primer PCR. A sequence-only Overlap/ProfiledOverlap cannot supply that physical template. Saving never verifies or applies a plan. Duplicate submissions are idempotent."
+        description = "Save an immutable candidate plan binding an independent target and input revisions. DeclareSourceModifications accepts only an explicit Input source with Dam/Dcm/CpG generation assumptions; CheckedDigest pins an exact CatalogSelection and explicit inspection limits, consumes freshly reconstructed tracked strands and reports the fixed current positional profile. DeclareSourceTermini requires an original intact linear DNA Input and explicit left/right5-prime/3-prime assumptions; it cannot promote Step, ssDNA, circular, imported physical or reference-only states, infer chemistry from metadata or repair a graph. OverlapExtension requires two freshly reconstructed intact linear duplexes, explicit orientations and terminal pairing/search options; it reciprocally extends A.top/B.bottom and can feed actual outer-primer PCR. A sequence-only Overlap/ProfiledOverlap cannot supply that physical template. Saving never verifies or applies a plan. Duplicate submissions are idempotent."
     )]
     fn propose_plan(
         &self,

@@ -88,8 +88,8 @@ async fn actual_ligation_crossing_codon_keeps_source_cds_conditional_and_target_
     );
     let imported = call(&client, "import_document", json!({"text":text})).await;
     let recipe = json!({"name":"Source-bound junction literal","fragments":[
-        {"source":{"role":"left","input_id":"l","preparation":{"ExactPcr":{"forward":Primer::new("LF","ATGACCCC","").unwrap(),"reverse":Primer::new("LR","TCTGGAAA","").unwrap()}},"reverse":false},"treatment":"Phosphorylate"},
-        {"source":{"role":"right","input_id":"r","preparation":{"ExactPcr":{"forward":Primer::new("RF","ATCCGTTA","").unwrap(),"reverse":Primer::new("RR","TTCCAAGG","").unwrap()}},"reverse":false},"treatment":"Phosphorylate"}
+        {"source":{"generation":null,"role":"left","input_id":"l","preparation":{"ExactPcr":{"forward":Primer::new("LF","ATGACCCC","").unwrap(),"reverse":Primer::new("LR","TCTGGAAA","").unwrap()}},"reverse":false},"treatment":"Phosphorylate"},
+        {"source":{"generation":null,"role":"right","input_id":"r","preparation":{"ExactPcr":{"forward":Primer::new("RF","ATCCGTTA","").unwrap(),"reverse":Primer::new("RR","TTCCAAGG","").unwrap()}},"reverse":false},"treatment":"Phosphorylate"}
     ],"circular":false,"allow_nicked":false});
     let args = json!({"inputs":[{"id":"l","document":named(&imported,"left_template")},{"id":"r","document":named(&imported,"right_template")}],"target":named(&imported,"target"),"recipe":recipe});
     let plan = call(&client, "propose_ligation_assembly", args.clone()).await;
@@ -180,7 +180,7 @@ async fn overlap_homology_and_circular_closing_window_are_actual_not_synthetic_f
         json!({"text":">left\nAAAACCCC\n>right\nCCCCGGGG\n>target\nAAAACCCCGGGG\n"}),
     )
     .await;
-    let plan=call(&client,"propose_overlap_assembly",json!({"inputs":[{"id":"l","document":named(&imported,"left")},{"id":"r","document":named(&imported,"right")}],"target":named(&imported,"target"),"recipe":{"name":"Literal homology","fragments":[{"role":"l","input_id":"l","preparation":"WholeLinear","reverse":false},{"role":"r","input_id":"r","preparation":"WholeLinear","reverse":false}],"overlaps":[4],"circular":false,"options":{"method":"HiFi","scan_repeated_overlaps":false,"max_comparisons":10000,"max_occurrences":100}}})).await;
+    let plan=call(&client,"propose_overlap_assembly",json!({"inputs":[{"id":"l","document":named(&imported,"left")},{"id":"r","document":named(&imported,"right")}],"target":named(&imported,"target"),"recipe":{"name":"Literal homology","fragments":[{"generation":null,"role":"l","input_id":"l","preparation":"WholeLinear","reverse":false},{"generation":null,"role":"r","input_id":"r","preparation":"WholeLinear","reverse":false}],"overlaps":[4],"circular":false,"options":{"method":"HiFi","scan_repeated_overlaps":false,"max_comparisons":10000,"max_occurrences":100}}})).await;
     let inspected = call(
         &client,
         "inspect_assembly_junctions",
@@ -194,7 +194,7 @@ async fn overlap_homology_and_circular_closing_window_are_actual_not_synthetic_f
     );
     let circles = "LOCUS       vector                      14 bp    DNA     circular SYN 01-JAN-2026\nFEATURES             Location/Qualifiers\nORIGIN\n        1 aaaagaattctttt\n//\nLOCUS       independent_circle          14 bp    DNA     circular SYN 01-JAN-2026\nFEATURES             Location/Qualifiers\nORIGIN\n        1 aaaagaattctttt\n//\n";
     let imported = call(&client, "import_document", json!({"text":circles})).await;
-    let circle=call(&client,"propose_ligation_assembly",json!({"inputs":[{"id":"v","document":named(&imported,"vector")}],"target":named(&imported,"independent_circle"),"recipe":{"name":"Actual EcoRI reclosure","fragments":[{"source":{"role":"cut vector","input_id":"v","preparation":{"Digest":{"enzymes":["EcoRI"],"fragment_index":0,"repair":null}},"reverse":false},"treatment":null}],"circular":true,"allow_nicked":false}})).await;
+    let circle=call(&client,"propose_ligation_assembly",json!({"inputs":[{"id":"v","document":named(&imported,"vector")}],"target":named(&imported,"independent_circle"),"recipe":{"name":"Actual EcoRI reclosure","fragments":[{"source":{"generation":null,"role":"cut vector","input_id":"v","preparation":{"Digest":{"enzymes":["EcoRI"],"fragment_index":0,"repair":null}},"reverse":false},"treatment":null}],"circular":true,"allow_nicked":false}})).await;
     let inspected = call(
         &client,
         "inspect_assembly_junctions",

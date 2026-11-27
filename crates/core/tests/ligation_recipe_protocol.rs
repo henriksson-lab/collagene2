@@ -28,6 +28,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, Recipe) {
     .into_iter()
     .map(|(id, f, r)| Fragment {
         source: FragmentSpec {
+            generation: None,
             role: id.into(),
             input_id: id.into(),
             preparation: Preparation::ExactPcr {
@@ -53,11 +54,18 @@ fn fixture() -> (Vec<PlanInput>, Molecule, Recipe) {
     )
 }
 fn request(inputs: Vec<PlanInput>, target: Molecule, recipe: Recipe) -> Vec<u8> {
-    let revision = ligation_recipe::preview_revision(&inputs, &target, &recipe).unwrap();
+    let revision = ligation_recipe::preview_revision(
+        &inputs,
+        &target,
+        &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     protocol::encode_request(&Request {
         id: 955,
         revision,
         job: AnalysisJob::PreviewLigationRecipe {
+            policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
             inputs,
             target,
             recipe,
@@ -107,13 +115,20 @@ fn fresh_three_piece_ligation_has_sealed_physical_state_and_schema_thirty_two() 
 #[test]
 fn treatment_and_target_are_part_of_worker_binding_and_retained_nicks_are_explicit() {
     let (inputs, target, mut recipe) = fixture();
-    let prior = ligation_recipe::preview_revision(&inputs, &target, &recipe).unwrap();
+    let prior = ligation_recipe::preview_revision(
+        &inputs,
+        &target,
+        &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     recipe.fragments[0].treatment = None;
     recipe.allow_nicked = true;
     let stale = protocol::encode_request(&Request {
         id: 955,
         revision: prior,
         job: AnalysisJob::PreviewLigationRecipe {
+            policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
             inputs: inputs.clone(),
             target: target.clone(),
             recipe: recipe.clone(),

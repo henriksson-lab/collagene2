@@ -685,7 +685,7 @@ mod tests {
         frame.attachments.insert(
             blake3::hash(&bytes).to_hex().to_string(),
             WorkspaceAttachment {
-                kind: "assembly-draft-v14".into(),
+                kind: "assembly-draft-v15".into(),
                 name: "Active draft".into(),
                 media_type: "application/json".into(),
                 bytes,
@@ -1036,7 +1036,7 @@ mod tests {
         let active_hash = damaged
             .attachments
             .iter()
-            .find(|(_, asset)| asset.kind == "assembly-draft-v14")
+            .find(|(_, asset)| asset.kind == "assembly-draft-v15")
             .unwrap()
             .0;
         assert!(discard_malformed(&damaged, active_hash).is_err());

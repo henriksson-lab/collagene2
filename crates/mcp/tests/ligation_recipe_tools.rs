@@ -80,8 +80,8 @@ async fn actual_two_pcr_fragments_require_explicit_phosphorylation_and_independe
     let left = named(&imported, "left_template");
     let right = named(&imported, "right_template");
     let recipe = json!({"name":"Two actual PCR products, explicit phosphorylation","fragments":[
-        {"source":{"role":"left","input_id":"left_template","preparation":{"ExactPcr":{"forward":Primer::new("ordered LF","ACGACCCC","").unwrap(),"reverse":Primer::new("ordered LR","GTTACCCC","").unwrap()}},"reverse":false},"treatment":"Phosphorylate"},
-        {"source":{"role":"right","input_id":"right_template","preparation":{"ExactPcr":{"forward":Primer::new("ordered RF","TATGAGCT","").unwrap(),"reverse":Primer::new("ordered RR","TGACCTGG","").unwrap()}},"reverse":false},"treatment":"Phosphorylate"}
+        {"source":{"generation":null,"role":"left","input_id":"left_template","preparation":{"ExactPcr":{"forward":Primer::new("ordered LF","ACGACCCC","").unwrap(),"reverse":Primer::new("ordered LR","GTTACCCC","").unwrap()}},"reverse":false},"treatment":"Phosphorylate"},
+        {"source":{"generation":null,"role":"right","input_id":"right_template","preparation":{"ExactPcr":{"forward":Primer::new("ordered RF","TATGAGCT","").unwrap(),"reverse":Primer::new("ordered RR","TGACCTGG","").unwrap()}},"reverse":false},"treatment":"Phosphorylate"}
     ],"circular":false,"allow_nicked":false});
     let args = json!({"inputs":[{"id":"left_template","document":left},{"id":"right_template","document":right}],"target":named(&imported,"literal_target"),"recipe":recipe});
     let result = call(&client, "propose_ligation_assembly", args.clone()).await;
@@ -166,7 +166,7 @@ async fn three_actual_circular_ecori_digests_keep_compatible_cohesive_ends_and_a
         .take(3)
         .map(|(name, _)| json!({"id":name,"document":named(&imported,name)}))
         .collect::<Vec<_>>();
-    let fragments=sequences.iter().take(3).map(|(name,_)|json!({"source":{"role":name,"input_id":name,"preparation":{"Digest":{"enzymes":["EcoRI"],"fragment_index":0,"repair":null}},"reverse":false},"treatment":null})).collect::<Vec<_>>();
+    let fragments=sequences.iter().take(3).map(|(name,_)|json!({"source":{"generation":null,"role":name,"input_id":name,"preparation":{"Digest":{"enzymes":["EcoRI"],"fragment_index":0,"repair":null}},"reverse":false},"treatment":null})).collect::<Vec<_>>();
     let result=call(&client,"propose_ligation_assembly",json!({"inputs":inputs,"target":named(&imported,"target"),"recipe":{"name":"Three compatible EcoRI fragments","fragments":fragments,"circular":true,"allow_nicked":false}})).await;
     assert_eq!(
         result["verification"]["status"],

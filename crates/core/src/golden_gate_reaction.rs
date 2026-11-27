@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 pub const ENGINE_VERSION: &str = "golden-gate-reaction-1";
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
-dto! {pub enum Substrate{WholeSource,Prepared{preparation:Preparation,treatment:Option<EndTreatment>}}}
-dto! {pub struct Row{pub role:String,pub input_id:String,pub substrate:Substrate}}
+dto! {pub enum Substrate{WholeSource{#[serde(deserialize_with="assembly_recipe::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]origin:Option<crate::run_material::MaterialOrigin>},Prepared{preparation:Preparation,treatment:Option<EndTreatment>}}}
+dto! {pub struct Row{pub role:String,pub input_id:String,pub substrate:Substrate,#[serde(deserialize_with="assembly_recipe::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]pub generation:Option<crate::modified_duplex::GenerationAssumptions>}}
 dto! {pub struct Request{pub name:String,pub rows:Vec<Row>,pub options:GoldenGateOptions}}
 dto! {pub struct Material{pub index:usize,pub role:String,pub input_id:String,pub source:Source}}
 dto! {pub struct Report{pub context_revision:String,pub request:Request,pub target:Molecule,pub probe_plan:DesignPlan,pub materials:Vec<Material>,pub verification:VerificationReport,#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]pub pool:Option<GoldenGateReport>,pub assessments:Vec<Assessment>,pub warnings:Vec<String>}}
@@ -40,13 +40,42 @@ fn specs(r: &Request) -> Vec<FragmentSpec> {
     r.rows
         .iter()
         .filter_map(|row| match &row.substrate {
-            Substrate::WholeSource => None,
+            Substrate::WholeSource { .. } => None,
             Substrate::Prepared { preparation, .. } => Some(FragmentSpec {
                 role: row.role.clone(),
                 input_id: row.input_id.clone(),
                 preparation: preparation.clone(),
                 reverse: false,
+                generation: row.generation.clone(),
             }),
+        })
+        .collect()
+}
+pub fn material_origins(
+    r: &Request,
+) -> Vec<(&str, &str, crate::run_material::MaterialOriginRef<'_>)> {
+    use crate::run_material::{MaterialOrigin, MaterialOriginRef};
+    r.rows
+        .iter()
+        .filter_map(|row| {
+            let origin = match &row.substrate {
+                Substrate::WholeSource {
+                    origin: Some(MaterialOrigin::Run(c)),
+                } => MaterialOriginRef::Run(c),
+                Substrate::WholeSource {
+                    origin: Some(MaterialOrigin::Derived(c)),
+                } => MaterialOriginRef::Derived(c),
+                Substrate::Prepared {
+                    preparation: Preparation::FromRun { origin, .. },
+                    ..
+                } => MaterialOriginRef::Run(origin),
+                Substrate::Prepared {
+                    preparation: Preparation::FromDerived { origin, .. },
+                    ..
+                } => MaterialOriginRef::Derived(origin),
+                _ => return None,
+            };
+            Some((row.role.as_str(), row.input_id.as_str(), origin))
         })
         .collect()
 }
@@ -64,6 +93,9 @@ pub fn preflight(
     {
         return Err(bad("choose1..32 bound inputs and explicit reaction roles"));
     }
+    crate::run_material::material_capsules_preflight(
+        material_origins(r).into_iter().map(|(_, _, origin)| origin),
+    )?;
     let mut models = inputs.iter().map(|(_, m)| *m).collect::<Vec<_>>();
     models.push(target);
     crate::model::bounds::model_preflight(&models)?;
@@ -97,6 +129,25 @@ pub fn preflight(
         }
     }
     assembly_recipe::hash(r)?;
+    for row in &r.rows {
+        if let Substrate::WholeSource { origin } = &row.substrate {
+            if origin.is_some() && row.generation.is_some() {
+                return Err(bad(
+                    "Saved whole-source material cannot receive new original-generation declarations",
+                ));
+            }
+            if let Some(origin) = origin {
+                let source = inputs
+                    .iter()
+                    .find(|(id, _)| *id == row.input_id)
+                    .ok_or_else(|| bad("whole source missing"))?
+                    .1;
+                if origin.event().revision != source.revision() {
+                    return Err(bad("whole saved origin differs from exact source revision"));
+                }
+            }
+        }
+    }
     let prepared = specs(r);
     if !prepared.is_empty() {
         assembly_recipe::preparation_source_preflight(inputs, target, &r.name, &prepared)?;
@@ -141,13 +192,48 @@ fn compile(
     let (mut steps, prepared_rows) = if prepared.is_empty() {
         (vec![], vec![])
     } else {
-        let c = assembly_recipe::compile_preparations(inputs, target, &r.name, &prepared)?;
+        let c = assembly_recipe::compile_preparations(
+            inputs,
+            target,
+            &r.name,
+            &prepared,
+            assembly_recipe::CleavagePolicy::PositionalChecked,
+        )?;
         (c.steps, c.rows)
     };
     let mut materials = Vec::with_capacity(r.rows.len());
     for (index, row) in r.rows.iter().enumerate() {
         let mut source = match &row.substrate {
-            Substrate::WholeSource => Source::Input(row.input_id.clone()),
+            Substrate::WholeSource { origin } => {
+                let template = Source::Input(row.input_id.clone());
+                let op = match origin {
+                    Some(crate::run_material::MaterialOrigin::Run(origin)) => {
+                        Some(Operation::ReconstructRunProduct {
+                            template: template.clone(),
+                            origin: origin.clone(),
+                        })
+                    }
+                    Some(crate::run_material::MaterialOrigin::Derived(origin)) => {
+                        Some(Operation::ReconstructMaterial {
+                            template: template.clone(),
+                            origin: origin.clone(),
+                        })
+                    }
+                    None => row.generation.as_ref().map(|assumptions| {
+                        Operation::DeclareSourceModifications {
+                            template: template.clone(),
+                            assumptions: assumptions.clone(),
+                        }
+                    }),
+                };
+                if let Some(op) = op {
+                    let i = steps.len();
+                    steps.push(op);
+                    Source::Step(i)
+                } else {
+                    template
+                }
+            }
             Substrate::Prepared { .. } => prepared_rows
                 .iter()
                 .find(|p| p.role == row.role)

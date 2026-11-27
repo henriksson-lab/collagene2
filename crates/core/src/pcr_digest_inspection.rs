@@ -68,6 +68,7 @@ fn preflight(source: &Molecule, request: &Request, reject_imported: bool) -> Res
         ));
     }
     let fragment = assembly_recipe::FragmentSpec {
+        generation: None,
         role: request.source_role.clone(),
         input_id: request.source_role.clone(),
         preparation: assembly_recipe::Preparation::PcrCatalogDigest {

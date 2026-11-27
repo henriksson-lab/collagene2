@@ -103,9 +103,9 @@ fn modified_circle() -> Commit {
                 },
             },
             Operation::CheckedDigest {
+                selection: checked_selection(vec!["NotI".into()]),
+                options: collagene_core::modified_duplex::checked_inspection_options(),
                 template: Source::Step(0),
-                enzymes: vec!["NotI".into()],
-                profile_revision: modified_duplex::profile_revision(),
                 fragment_index: 0,
             },
         ],
@@ -345,9 +345,9 @@ fn saved_modified_circle_remains_noti_blocked_in_durable_checked_digest() {
         )
         .unwrap(),
         Operation::CheckedDigest {
+            selection: checked_selection(vec!["NotI".into()]),
+            options: collagene_core::modified_duplex::checked_inspection_options(),
             template: Source::Step(0),
-            enzymes: vec!["NotI".into()],
-            profile_revision: modified_duplex::profile_revision(),
             fragment_index: 0,
         },
     );
@@ -1011,4 +1011,22 @@ fn pdf_text(bytes: &[u8]) -> String {
         start = content + length;
     }
     out
+}
+
+fn checked_selection(names: Vec<String>) -> collagene_core::catalog_digest::CatalogSelection {
+    let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+    let ids = names
+        .iter()
+        .map(|name| {
+            catalog
+                .edition()
+                .enzymes
+                .iter()
+                .find(|e| e.name.eq_ignore_ascii_case(name))
+                .unwrap()
+                .id
+                .clone()
+        })
+        .collect::<Vec<_>>();
+    collagene_core::catalog_digest::select(&catalog, &ids).unwrap()
 }

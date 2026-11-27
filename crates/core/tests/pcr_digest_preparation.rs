@@ -21,6 +21,7 @@ fn recipe() -> l::Recipe {
         name: "PCR-added sites then digest".into(),
         fragments: vec![l::Fragment {
             source: FragmentSpec {
+                generation: None,
                 role: "insert".into(),
                 input_id: "s".into(),
                 preparation: Preparation::PcrCatalogDigest {
@@ -45,7 +46,13 @@ fn target(dna: &str) -> Molecule {
 fn pcr_added_bsai_sites_have_independent_top_bottom_geometry_and_original_source() {
     let inputs = vec![input("ACGACCCCGGGGTAAC")];
     let before = serde_json::to_value(&inputs).unwrap();
-    let report = l::preview(&inputs, &target("ACGACCCCGGGG"), &recipe()).unwrap();
+    let report = l::preview(
+        &inputs,
+        &target("ACGACCCCGGGG"),
+        &recipe(),
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert_eq!(
         report.verification.status,
         Status::ConsistentUnderAssumptions,
@@ -109,6 +116,7 @@ fn optional_repair_is_a_separate_chain_step_and_overlap_receipt_accepts_chain_ma
         &target("ACGACCCCGGGG"),
         &recipe.name,
         &[recipe.fragments[0].source.clone()],
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(prepared.steps.len(), 3);
@@ -142,7 +150,13 @@ fn optional_repair_is_a_separate_chain_step_and_overlap_receipt_accepts_chain_ma
 #[test]
 fn wrong_target_internal_cut_and_fragment_index_do_not_select_a_matching_reference() {
     let inputs = vec![input("ACGACCCCGGGGTAAC")];
-    let wrong = l::preview(&inputs, &target("AAAAAAAAAAAA"), &recipe()).unwrap();
+    let wrong = l::preview(
+        &inputs,
+        &target("AAAAAAAAAAAA"),
+        &recipe(),
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert_eq!(wrong.verification.status, Status::Invalid);
     assert_eq!(wrong.prepared[0].sequence.as_str(), "ACGACCCCGGGG");
     let mut r = recipe();
@@ -151,13 +165,20 @@ fn wrong_target_internal_cut_and_fragment_index_do_not_select_a_matching_referen
     {
         *fragment_index = 99;
     }
-    let absent = l::preview(&inputs, &target("ACGACCCCGGGG"), &r).unwrap();
+    let absent = l::preview(
+        &inputs,
+        &target("ACGACCCCGGGG"),
+        &r,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert!(!absent.preparation_complete);
     assert_eq!(absent.verification.products.len(), 1);
     let inside = l::preview(
         &[input("ACGACCCCGGTCTCGGGGTAAC")],
         &target("ACGACCCCGGTCTCGGGG"),
         &recipe(),
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_ne!(
@@ -177,7 +198,15 @@ fn tampered_catalog_stale_original_and_aggregate_amplicon_work_fail_preflight() 
     assert!(l::source_preflight(&[("s", &inputs[0].molecule)], &t, &r).is_err());
     let mut stale = inputs.clone();
     stale[0].revision = "0".repeat(64);
-    assert!(l::compile(&stale, &t, &recipe()).is_err());
+    assert!(
+        l::compile(
+            &stale,
+            &t,
+            &recipe(),
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete
+        )
+        .is_err()
+    );
     let huge = input(&"A".repeat(100_000));
     let mut r = recipe();
     if let Preparation::PcrCatalogDigest {

@@ -51,6 +51,7 @@ fn fixture() -> (Vec<PlanInput>, Request) {
         circular: false,
     };
     let manual = FragmentSpec {
+        generation: None,
         role: "manual".into(),
         input_id: "b".into(),
         preparation: Preparation::ExactPcr {
@@ -61,6 +62,7 @@ fn fixture() -> (Vec<PlanInput>, Request) {
         reverse: false,
     };
     let cut = FragmentSpec {
+        generation: None,
         role: "cut".into(),
         input_id: "c".into(),
         preparation: Preparation::CatalogDigest {

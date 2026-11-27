@@ -388,7 +388,12 @@ fn fixed(
         };
         // Only unchanged manual preparations run here, once outside the search loop.
         // The final-only target assessment of this partial recipe is not consumed.
-        let preview = ligation_recipe::preview(inputs, &intent.target, &recipe)?;
+        let preview = ligation_recipe::preview(
+            inputs,
+            &intent.target,
+            &recipe,
+            crate::assembly_recipe::CleavagePolicy::PositionalChecked,
+        )?;
         for ((original, _), physical) in rows.iter().zip(&preview.physical) {
             let pair = physical
                 .as_ref()

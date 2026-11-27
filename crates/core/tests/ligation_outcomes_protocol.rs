@@ -112,7 +112,7 @@ fn current_worker_and_candidate_roundtrips_validate_full_outcome_geometry() {
         transfer::load_candidate(&bytes).unwrap().plan_revision,
         candidate.plan_revision
     );
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 23);
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 24);
     let request = protocol::Request {
         id: 4,
         revision: target.revision(),

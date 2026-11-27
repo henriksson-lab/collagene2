@@ -147,7 +147,7 @@ async fn prepared_pool_keeps_self_backgrounds_and_selected_plans_reconstruct_aga
     for doc in &docs {
         originals.push(call(&c, "export_document", doc.clone()).await);
     }
-    let args = json!({"inputs":inputs,"target":target,"request":request});
+    let args = json!({"origin_workspaces":[],"inputs":inputs,"target":target,"request":request});
     let pool = call(&c, "inspect_prepared_golden_gate_pool", args.clone()).await;
     assert_eq!(pool["state"], "advisory");
     assert_eq!(pool["verified"], false);
@@ -255,7 +255,7 @@ async fn finite_caps_missing_physical_and_stale_candidate_keys_remain_explicit()
     let baseline = call(
         &c,
         "inspect_prepared_golden_gate_pool",
-        json!({"inputs":inputs,"target":target,"request":request}),
+        json!({"origin_workspaces":[],"inputs":inputs,"target":target,"request":request}),
     )
     .await;
     let candidate = &baseline["candidates"][0];
@@ -285,7 +285,7 @@ async fn finite_caps_missing_physical_and_stale_candidate_keys_remain_explicit()
     reject(
         &c,
         "inspect_prepared_golden_gate_pool",
-        json!({"inputs":stale_inputs,"target":target,"request":request}),
+        json!({"origin_workspaces":[],"inputs":stale_inputs,"target":target,"request":request}),
     )
     .await;
     let mut capped = request.clone();
@@ -293,7 +293,7 @@ async fn finite_caps_missing_physical_and_stale_candidate_keys_remain_explicit()
     let partial = call(
         &c,
         "inspect_prepared_golden_gate_pool",
-        json!({"inputs":inputs,"target":target,"request":capped}),
+        json!({"origin_workspaces":[],"inputs":inputs,"target":target,"request":capped}),
     )
     .await;
     assert_eq!(partial["preparation_complete"], true);
@@ -307,7 +307,7 @@ async fn finite_caps_missing_physical_and_stale_candidate_keys_remain_explicit()
     let withheld = call(
         &c,
         "inspect_prepared_golden_gate_pool",
-        json!({"inputs":inputs,"target":target,"request":failed}),
+        json!({"origin_workspaces":[],"inputs":inputs,"target":target,"request":failed}),
     )
     .await;
     assert_eq!(withheld["preparation_complete"], false);

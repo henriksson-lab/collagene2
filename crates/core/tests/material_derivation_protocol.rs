@@ -96,7 +96,7 @@ fn installed() -> (Workspace, EventBinding) {
 }
 #[test]
 fn current_install_and_digest_jobs_bind_actual_material() {
-    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 97);
+    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 98);
     let (w, product) = installed();
     let source = w.revisions[&product.revision].clone();
     let origin = native::SourceOrigin::Saved(MaterialOrigin::Derived(
@@ -157,8 +157,8 @@ fn reconstruction_operation_and_evidence_are_explicit_and_replayable() {
         }],
     };
     assert_eq!(tag(&plan.steps[0]), 27);
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 25);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 23);
+    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 26);
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 24);
     let bytes = transfer::save_candidate(&transfer::Candidate::new(plan.clone())).unwrap();
     assert_eq!(
         &bytes[4..6],
@@ -175,7 +175,7 @@ fn reconstruction_operation_and_evidence_are_explicit_and_replayable() {
         "{:?}",
         report.findings
     );
-    assert!(report.engine_version.ends_with("/science-26"));
+    assert!(report.engine_version.ends_with("/science-27"));
     assert_eq!(tag(&report.physical_processing_reports[0].evidence), 6);
 }
 #[test]
@@ -257,6 +257,7 @@ fn ordinary_preparation_compiler_owns_reconstruction_new_pcr_and_physical_assemb
         name: "Fresh preparation from reusable material".into(),
         fragments: vec![
             FragmentSpec {
+                generation: None,
                 role: "amplicon-role".into(),
                 input_id: "amplicon".into(),
                 reverse: false,
@@ -269,6 +270,7 @@ fn ordinary_preparation_compiler_owns_reconstruction_new_pcr_and_physical_assemb
                 },
             },
             FragmentSpec {
+                generation: None,
                 role: "other-role".into(),
                 input_id: "other".into(),
                 reverse: false,

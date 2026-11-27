@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 pub const KIND: &str = "assembly-library-history-v1";
-pub const ACTIVE_DRAFT_VERSION: u32 = 14;
-pub const ACTIVE_DRAFT_KIND: &str = "assembly-draft-v14";
+pub const ACTIVE_DRAFT_VERSION: u32 = 15;
+pub const ACTIVE_DRAFT_KIND: &str = "assembly-draft-v15";
 pub const MEDIA_TYPE: &str = "application/x-collagene-assembly-library-history+postcard";
 pub const MAX_RECORD_BYTES: usize = 32 << 20;
 pub const MAX_HISTORY_BYTES: usize = 32 << 20;

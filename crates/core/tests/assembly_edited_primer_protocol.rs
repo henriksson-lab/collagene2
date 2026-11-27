@@ -204,7 +204,7 @@ fn appended166_158_whole_design_preserves_literal_junction_and_internal_edit_aga
             .preview
             .verification
             .engine_version
-            .ends_with("/science-26")
+            .ends_with("/science-27")
     );
     assert_eq!(
         verification::verify(&candidate.plan, &report.intent.target).status,

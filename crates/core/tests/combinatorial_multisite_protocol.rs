@@ -72,6 +72,7 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
             id: format!("bin-{i}"),
             label: format!("Parent {i}"),
             choices: vec![Choice {
+                generation: None,
                 id: format!("choice-{i}"),
                 label: format!("Original parent {i}"),
                 source: binding(&w, i),

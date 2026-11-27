@@ -112,8 +112,8 @@ async fn explicit_original_source_termini_enable_declared_ligation_without_mutat
     let before = call(&client, "export_document", l.clone()).await;
     let inputs = json!([{"id":"l","document":l},{"id":"r","document":r}]);
     let recipe = json!({"name":"Explicit original duplex assumptions","fragments":[
-        {"source":{"role":"left","input_id":"l","preparation":{"DeclaredDuplex":{"left":terminus(),"right":terminus()}},"reverse":false},"treatment":null},
-        {"source":{"role":"right","input_id":"r","preparation":{"DeclaredDuplex":{"left":terminus(),"right":terminus()}},"reverse":false},"treatment":null}
+        {"source":{"role":"left","input_id":"l","generation":null,"preparation":{"DeclaredDuplex":{"left":terminus(),"right":terminus()}},"reverse":false},"treatment":null},
+        {"source":{"role":"right","input_id":"r","generation":null,"preparation":{"DeclaredDuplex":{"left":terminus(),"right":terminus()}},"reverse":false},"treatment":null}
     ],"circular":false,"allow_nicked":false});
     let args = json!({"inputs":inputs,"target":target,"recipe":recipe});
     let result = call(&client, "propose_ligation_assembly", args.clone()).await;
@@ -175,7 +175,7 @@ async fn explicit_original_source_termini_enable_declared_ligation_without_mutat
     );
     // The direct typed tool exposes the same explicit operation; no recipe-only
     // bypass and no ability to redeclare a prior Step as an intact original.
-    let direct=call(&client,"propose_plan",json!({"name":"Direct terminal declarations","target":target,"inputs":inputs,"steps":[declaration("l"),declaration("r"),{"Ligate":{"fragments":[{"source":{"Step":0},"reverse":false},{"source":{"Step":1},"reverse":false}],"circular":false,"allow_nicked":false}}]})).await;
+    let direct=call(&client,"propose_plan",json!({"name":"Direct terminal declarations","target":target,"inputs":inputs,"steps":[declaration("l"),declaration("r"),{"Ligate":{"fragments":[{"source":{"Step":0},"reverse":false},{"source":{"Step":1},"reverse":false}],"circular":false,"allow_nicked":false,"options":collagene_core::ligation_outcomes::Options::default()}}]})).await;
     assert_eq!(
         call(
             &client,

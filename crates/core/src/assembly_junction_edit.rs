@@ -520,6 +520,7 @@ pub fn design(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
         pair.forward.analysis.name = pair.forward.primer.name.clone();
         pair.reverse.analysis.name = pair.reverse.primer.name.clone();
         fragments.push(FragmentSpec {
+            generation: None,
             role: f.role.clone(),
             input_id: f.input_id.clone(),
             preparation: Preparation::ExactPcr {

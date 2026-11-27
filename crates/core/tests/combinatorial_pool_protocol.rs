@@ -26,6 +26,11 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
     let w = Workspace::from_documents("selected reaction format fixture", vec![source], 0).unwrap();
     let doc = &w.documents[0];
     let choice = Choice {
+        generation: Some(collagene_core::modified_duplex::GenerationAssumptions {
+            dam: collagene_core::methylation::MethylationState::Unmodified,
+            dcm: collagene_core::methylation::MethylationState::Unmodified,
+            cpg: collagene_core::methylation::MethylationState::Unmodified,
+        }),
         id: "vector-choice".into(),
         label: "literal original contribution".into(),
         source: EventBinding {

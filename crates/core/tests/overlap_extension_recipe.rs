@@ -45,6 +45,7 @@ fn request() -> Request {
 }
 fn row(id: &str, preparation: Preparation, reverse: bool) -> FragmentSpec {
     FragmentSpec {
+        generation: None,
         role: format!("{id}-role"),
         input_id: id.into(),
         preparation,
@@ -175,7 +176,13 @@ fn actual_prepared_duplex_can_be_phosphorylated_and_ligated_without_reference_ma
         circular: false,
         allow_nicked: false,
     };
-    let preview = lig::preview(&inputs, &target, &recipe).unwrap();
+    let preview = lig::preview(
+        &inputs,
+        &target,
+        &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert_eq!(
         preview.verification.status,
         Status::ConsistentUnderAssumptions,

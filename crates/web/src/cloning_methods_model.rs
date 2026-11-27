@@ -181,11 +181,58 @@ impl OverlapExtensionPcrInput {
         Ok(request)
     }
 }
+/// Editable source declarations; invalid unfinished text remains draft data only.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceGenerationInput {
+    pub dam: String,
+    pub dcm: String,
+    pub cpg: String,
+}
+impl Default for SourceGenerationInput {
+    fn default() -> Self {
+        Self {
+            dam: "unknown".into(),
+            dcm: "unknown".into(),
+            cpg: "unknown".into(),
+        }
+    }
+}
+impl SourceGenerationInput {
+    pub(crate) fn validate_raw(&self) -> Result<(), String> {
+        if [&self.dam, &self.dcm, &self.cpg]
+            .iter()
+            .any(|s| s.len() > 32)
+        {
+            return Err("Source generation fields exceed32 bytes.".into());
+        }
+        Ok(())
+    }
+    pub(crate) fn typed(
+        &self,
+    ) -> Result<collagene_core::modified_duplex::GenerationAssumptions, String> {
+        use collagene_core::{
+            methylation::MethylationState as S, modified_duplex::GenerationAssumptions,
+        };
+        self.validate_raw()?;
+        let parse = |v: &str| {
+            match v {"unknown"=>Ok(S::Unknown),"unmodified"=>Ok(S::Unmodified),"fully"=>Ok(S::FullyModified),"mixed"=>Ok(S::HemiOrMixed),_=>Err("Complete the explicit Dam/Dcm/CpG source-generation choices before preparing material.".to_string())}
+        };
+        Ok(GenerationAssumptions {
+            dam: parse(&self.dam)?,
+            dcm: parse(&self.dcm)?,
+            cpg: parse(&self.cpg)?,
+        })
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OverlapInput {
     #[serde(deserialize_with = "required_option")]
     pub run_origin: Option<crate::run_origin_model::PinnedOrigin>,
+    #[serde(deserialize_with = "required_option")]
+    pub source_generation: Option<SourceGenerationInput>,
     pub document: usize,
     pub interval_start: String,
     pub interval_end: String,
@@ -274,6 +321,7 @@ impl Default for OverlapInput {
     fn default() -> Self {
         Self {
             run_origin: None,
+            source_generation: None,
             document: 0,
             interval_start: "1".into(),
             interval_end: String::new(),
@@ -309,6 +357,24 @@ impl Default for OverlapInput {
     }
 }
 impl OverlapInput {
+    /// Original declaration settings remain inactive while an exact saved origin
+    /// supplies its own freshly reconstructed positional state.
+    pub(crate) fn generation(
+        &self,
+    ) -> Result<Option<collagene_core::modified_duplex::GenerationAssumptions>, String> {
+        if let Some(raw) = &self.source_generation {
+            raw.validate_raw()?;
+        }
+        if self.run_origin.is_some() {
+            Ok(None)
+        } else {
+            self.source_generation
+                .as_ref()
+                .map(SourceGenerationInput::typed)
+                .transpose()
+        }
+    }
+
     pub(crate) fn is_pcr(&self) -> bool {
         matches!(
             self.preparation,
@@ -868,6 +934,13 @@ impl Default for MethodsState {
     }
 }
 impl MethodsState {
+    pub(crate) fn cleavage_policy(&self) -> collagene_core::assembly_recipe::CleavagePolicy {
+        if self.mode == Mode::GoldenGate {
+            collagene_core::assembly_recipe::CleavagePolicy::PositionalChecked
+        } else {
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete
+        }
+    }
     pub(crate) fn validate_processing_selection(&self) -> Result<(), String> {
         if self.homology.as_ref().is_some_and(|f| f.enabled)
             && self.annealing.as_ref().is_some_and(|f| f.enabled)
@@ -1333,4 +1406,77 @@ fn required_option<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
     deserializer: D,
 ) -> Result<Option<T>, D::Error> {
     Option::deserialize(deserializer)
+}
+
+#[cfg(test)]
+mod source_generation_tests {
+    use super::*;
+    use collagene_core::methylation::MethylationState;
+    #[test]
+    fn defaults_are_unknown_and_partial_text_is_never_a_scientific_declaration() {
+        let mut row = OverlapInput::default();
+        assert!(row.generation().unwrap().is_none());
+        row.source_generation = Some(SourceGenerationInput::default());
+        let unknown = row.generation().unwrap().unwrap();
+        assert!(
+            unknown.dam == MethylationState::Unknown
+                && unknown.dcm == MethylationState::Unknown
+                && unknown.cpg == MethylationState::Unknown
+        );
+        row.source_generation.as_mut().unwrap().dam = "unfinished".into();
+        row.source_generation
+            .as_ref()
+            .unwrap()
+            .validate_raw()
+            .unwrap();
+        assert!(row.generation().is_err());
+        let restored: OverlapInput =
+            serde_json::from_value(serde_json::to_value(&row).unwrap()).unwrap();
+        assert!(restored == row);
+        row.source_generation.as_mut().unwrap().dam = "fully".into();
+        row.source_generation.as_mut().unwrap().dcm = "unmodified".into();
+        row.source_generation.as_mut().unwrap().cpg = "mixed".into();
+        let declared = row.generation().unwrap().unwrap();
+        assert!(
+            declared.dam == MethylationState::FullyModified
+                && declared.dcm == MethylationState::Unmodified
+                && declared.cpg == MethylationState::HemiOrMixed
+        );
+        row.source_generation.as_mut().unwrap().dam = "x".repeat(33);
+        assert!(
+            row.source_generation
+                .as_ref()
+                .unwrap()
+                .validate_raw()
+                .is_err()
+        );
+    }
+    #[test]
+    fn explicit_generation_follows_reordered_sources_and_changes_context() {
+        let mut state = MethodsState::default();
+        state.rows[1].document = 1;
+        assert!(matches!(
+            state.cleavage_policy(),
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete
+        ));
+        state.mode = Mode::GoldenGate;
+        assert!(matches!(
+            state.cleavage_policy(),
+            collagene_core::assembly_recipe::CleavagePolicy::PositionalChecked
+        ));
+        let before = state.preparation_context();
+        state.rows[0].source_generation = Some(SourceGenerationInput {
+            dam: "fully".into(),
+            dcm: "unmodified".into(),
+            cpg: "unknown".into(),
+        });
+        assert!(state.preparation_context() != before);
+        let declaration = state.rows[0].source_generation.clone();
+        state.swap_rows(0, 1);
+        assert!(state.rows[0].source_generation.is_none());
+        assert!(state.rows[1].source_generation == declaration);
+        assert_eq!(state.rows[1].document, 0);
+        state.swap_rows(1, 0);
+        assert!(state.rows[0].source_generation == declaration);
+    }
 }

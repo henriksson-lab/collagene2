@@ -183,7 +183,7 @@ fn chemical_compatibility_conflicting_spans_and_foreign_metadata_are_rejected() 
 fn checked_full_cpg_blocked_circle_and_mixed_or_unknown_sites_withhold_products() {
     let source = tracked("AAGCGGCCGCAA", Topology::Circular);
     let o = CheckedDigestOptions {
-        enzymes: vec!["NotI".into()],
+        selection: checked_selection("NotI").unwrap(),
         ..Default::default()
     };
     let r = checked_digest(&source, &o).unwrap();
@@ -207,16 +207,16 @@ fn checked_full_cpg_blocked_circle_and_mixed_or_unknown_sites_withhold_products(
     );
 }
 #[test]
-fn checked_comparison_bounds_and_stale_profiles_do_not_produce_a_complete_product_set() {
+fn checked_comparison_bounds_and_stale_catalog_do_not_produce_a_complete_product_set() {
     let source = tracked("AAGAATTCCGAATTCGCGGCCGC", Topology::Circular);
     let mut o = CheckedDigestOptions {
-        enzymes: vec!["EcoRI".into()],
+        selection: checked_selection("EcoRI").unwrap(),
         ..Default::default()
     };
     o.max_comparisons = 1;
     let r = checked_digest(&source, &o).unwrap();
     assert!(!r.complete && !r.products_determined && r.fragments.is_empty());
-    o.profile_revision = "0".repeat(64);
+    o.selection.catalog_content_hash = "0".repeat(64);
     assert!(checked_digest(&source, &o).is_err());
 }
 #[test]
@@ -253,7 +253,7 @@ fn inherited_methyladenine_survives_a_broken_motif_and_single_stranded_sites_can
         Some(CallState::Modified)
     );
     let o = CheckedDigestOptions {
-        enzymes: vec!["XbaI".into()],
+        selection: checked_selection("XbaI").unwrap(),
         ..Default::default()
     };
     let report = checked_digest(product, &o).unwrap();

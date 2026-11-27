@@ -991,6 +991,7 @@ mod overlap_extension_digest_tests {
             &target,
             "Fresh conditional preparation",
             &fragments,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
         )
         .unwrap();
         let plan = collagene_core::verification::DesignPlan {

@@ -10,7 +10,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 pub const ENGINE_VERSION: &str = "modified-duplex-1";
-pub const PROFILE_VERSION: &str = "positional-neb-starter-2026-11-24-v1";
+pub const PROFILE_VERSION: &str = "positional-catalog-1";
 const MAX_BASES: usize = 1_000_000;
 const MAX_SPANS: usize = 16_384;
 const MAX_BYTES: usize = 32 * 1024 * 1024;
@@ -33,12 +33,21 @@ impl Default for GenerationAssumptions {
 dto! {pub struct GenerationRecord{pub source_revision:String,pub assumptions:GenerationAssumptions}}
 dto! {pub struct TrackedDuplex{pub duplex:Duplex,pub top_modifications:StrandModifications,pub bottom_modifications:StrandModifications,pub generation:Vec<GenerationRecord>}}
 dto! {pub struct TrackedDigestFragment{pub duplex:TrackedDuplex,pub top_start:usize,pub bottom_start:i64}}
-dto! {pub struct CheckedDigestOptions{pub enzymes:Vec<String>,pub profile_revision:String,pub max_comparisons:usize,pub max_sites:usize}}
+dto! {pub struct CheckedDigestOptions{pub selection:crate::catalog_digest::CatalogSelection,pub max_comparisons:usize,pub max_sites:usize}}
+/// Current checked-cleavage model defaults. These are authored limits, never a
+/// clamp or conversion of an operator's explicit request.
+pub fn checked_inspection_options() -> crate::restriction_inspection::InspectionOptions {
+    crate::restriction_inspection::InspectionOptions {
+        max_comparisons: 50_000_000,
+        max_sites: 4096,
+        max_fragments: 4097,
+        max_report_bytes: 4 * 1024 * 1024,
+    }
+}
 impl Default for CheckedDigestOptions {
     fn default() -> Self {
         Self {
-            enzymes: vec!["EcoRI".into()],
-            profile_revision: profile_revision(),
+            selection: checked_selection("EcoRI").expect("embedded checked enzyme"),
             max_comparisons: 20_000_000,
             max_sites: 4096,
         }
@@ -47,6 +56,49 @@ impl Default for CheckedDigestOptions {
 dto! {pub struct CheckedSite{pub enzyme:String,pub recognition_start:usize,pub reverse:bool,pub top_cut:Option<usize>,pub bottom_cut:Option<usize>,pub outcome:Outcome,pub evidence:Vec<PositionEvidence>,pub reason:String}}
 dto! {pub struct PositionEvidence{pub strand:Strand,pub index:usize,pub chemical:Chemical,pub state:CallState}}
 dto! {pub struct CheckedDigestReport{pub engine_version:String,pub profile_version:String,pub profile_revision:String,pub source_revision:String,pub options:CheckedDigestOptions,pub complete:bool,pub products_determined:bool,pub comparisons:usize,pub sites:Vec<CheckedSite>,pub fragments:Vec<TrackedDigestFragment>,pub warnings:Vec<String>,pub limits:Vec<String>}}
+dto! {
+/// Bounded documentary cleavage evidence; no fragment DNA or private state.
+pub struct CheckedCleavageEvidence{pub engine_version:String,pub profile_version:String,pub profile_revision:String,pub source_revision:String,pub options:CheckedDigestOptions,pub complete:bool,pub products_determined:bool,pub comparisons:usize,pub sites:Vec<CheckedSite>,pub warnings:Vec<String>,pub limits:Vec<String>}}
+/// One enclosing-plan ledger shared by its preparation, source and recut scans.
+/// Nested saved-origin replay remains a separate bounded native scope.
+#[derive(Debug)]
+pub struct CleavageBudget {
+    limit: usize,
+    used: usize,
+}
+impl CleavageBudget {
+    pub fn new(limit: usize) -> Result<Self, Error> {
+        if limit == 0 || limit > 100_000_000 {
+            return Err(Error::TooLarge);
+        }
+        Ok(Self { limit, used: 0 })
+    }
+    pub fn remaining(&self) -> usize {
+        self.limit - self.used
+    }
+    pub fn used(&self) -> usize {
+        self.used
+    }
+    pub fn charge(&mut self, comparisons: usize) -> Result<(), Error> {
+        self.used = self
+            .used
+            .checked_add(comparisons)
+            .filter(|n| *n <= self.limit)
+            .ok_or(Error::TooLarge)?;
+        Ok(())
+    }
+}
+/// Exact canonical identity, never an alias, isoschizomer or formulation lookup.
+pub fn checked_selection(name: &str) -> Result<crate::catalog_digest::CatalogSelection, Error> {
+    let c = crate::catalog_digest::builtin_catalog()?;
+    let e = c
+        .edition()
+        .enzymes
+        .iter()
+        .find(|e| e.name == name)
+        .ok_or_else(|| bad("exact embedded enzyme identity absent"))?;
+    crate::catalog_digest::select(&c, &[e.id.clone()])
+}
 dto! {pub struct ModificationSummary{pub engine_version:String,pub state_revision:String,pub top_length:usize,pub bottom_length:usize,pub known_modified:usize,pub unknown_eligible:usize,pub known_unmodified:usize,pub generation:Vec<GenerationRecord>}}
 impl std::ops::Deref for TrackedDuplex {
     type Target = Duplex;
@@ -963,27 +1015,18 @@ pub fn homology_anneal(
 }
 
 pub fn profile_revision() -> String {
-    hash(&(PROFILE_VERSION,methylation::profile_revision(),"Full internal CpG duplex at NotI/SmaI blocked; unmodified recognition permitted; other positional modification contexts remain unknown unless a published insensitive methylase context matches actual chemical position.")).expect("fixed bounded profile")
+    hash(&(PROFILE_VERSION,methylation::profile_revision(),"Exact canonical catalog identity/geometry; actual unmodified recognition permits arbitrary catalog cuts. NotI/SmaI full internal CpG and XbaI overlapping Dam rules; inherited unknown/modified positions require exact matching positional rules. Shared bounded recognition/context ledger; no formulation substitution.")).expect("fixed bounded profile")
 }
 impl CheckedDigestOptions {
     pub fn validate(&self) -> Result<(), Error> {
-        if self.enzymes.is_empty()
-            || self.enzymes.len() > 12
-            || self.enzymes.iter().any(|s| s.len() > 32)
+        self.selection.validate()?;
+        if self.selection.enzymes.len() > 12
+            || self.max_comparisons == 0
+            || self.max_comparisons > 100_000_000
+            || self.max_sites == 0
+            || self.max_sites > 4096
         {
-            return Err(bad("invalid checked enzyme bounds"));
-        }
-        let o = methylation::MethylationOptions {
-            enzymes: self.enzymes.clone(),
-            max_comparisons: self.max_comparisons,
-            max_sites: self.max_sites,
-            ..Default::default()
-        };
-        o.validate()?;
-        if self.profile_revision != profile_revision() {
-            return Err(bad(
-                "checked digest profile revision is stale or unsupported",
-            ));
+            return Err(bad("invalid checked enzyme/site/comparison bounds"));
         }
         Ok(())
     }
@@ -1157,45 +1200,210 @@ pub fn checked_digest(
     source: &TrackedDuplex,
     o: &CheckedDigestOptions,
 ) -> Result<CheckedDigestReport, Error> {
+    let mut budget = CleavageBudget::new(o.max_comparisons)?;
+    checked_digest_with_budget(source, o, &mut budget)
+}
+/// Only fresh tracked operands enter this kernel. Catalog membership is checked
+/// before scanning, and no identity inherits a rule merely by sharing geometry.
+pub fn checked_digest_with_budget(
+    source: &TrackedDuplex,
+    o: &CheckedDigestOptions,
+    budget: &mut CleavageBudget,
+) -> Result<CheckedDigestReport, Error> {
     source_preflight(source, o)?;
+    let catalog = crate::catalog_digest::builtin_catalog()?;
+    let enzymes = o.selection.resolved_enzymes(&catalog)?;
     let sequence = Molecule::dna(
         "checked source",
         source.duplex.top.as_str(),
         source.duplex.topology,
     )?;
-    let scan = methylation::assess(
+    let initial = budget.used();
+    let allowed = o.max_comparisons.min(budget.remaining());
+    let mut r=CheckedDigestReport{engine_version:ENGINE_VERSION.into(),profile_version:PROFILE_VERSION.into(),profile_revision:profile_revision(),source_revision:hash(source)?,options:o.clone(),complete:true,products_determined:true,comparisons:0,sites:vec![],fragments:vec![],warnings:vec![
+        "Actual positional N6-methyladenine/5-methylcytosine under declared generation and standard-unmodified synthesis assumptions; not measured modifications or experimental cleavage.".into(),
+        "Exact catalog identity/geometry is retained. Unsupported identities do not inherit another enzyme/formulation's methylation rule; genuinely unmodified eligible positions need no sensitivity substitution.".into(),
+        "Unknown/impaired sites withhold all determined fragments; blocked sites survive. Conditions, other modifications, kinetics and star activity remain outside this model.".into()],limits:vec![]};
+    if allowed == 0 {
+        r.complete = false;
+        r.products_determined = false;
+        r.limits.push("Shared cleavage comparison budget exhausted before scan; absent sites/products are not established.".into());
+        r.validate()?;
+        return Ok(r);
+    }
+    // Recognition scan supports all exact catalog geometries, including nonstarter
+    // enzymes. It does not perform assumed-complete cleavage.
+    let scan = crate::restriction_inspection::scan(
+        "checked source",
         &sequence,
-        &methylation::MethylationOptions {
-            enzymes: o.enzymes.clone(),
-            dam: MethylationState::Unmodified,
-            dcm: MethylationState::Unmodified,
-            cpg: MethylationState::Unmodified,
-            max_comparisons: o.max_comparisons,
+        &enzymes,
+        &crate::restriction_inspection::InspectionOptions {
+            max_comparisons: allowed as u64,
             max_sites: o.max_sites,
+            max_fragments: o.max_sites + 1,
+            max_report_bytes: 8 * 1024 * 1024,
         },
     )?;
-    let mut r=CheckedDigestReport{engine_version:ENGINE_VERSION.into(),profile_version:PROFILE_VERSION.into(),profile_revision:profile_revision(),source_revision:hash(source)?,options:o.clone(),complete:scan.complete,products_determined:scan.complete,comparisons:scan.comparisons,sites:vec![],fragments:vec![],warnings:vec!["Positional N6-methyladenine/5-methylcytosine model under explicit source-generation and standard-unmodified synthesis assumptions; no measurement or experimental outcome is inferred.".into(),"Supplier formulation, buffer, temperature, star activity, kinetics and other modifications remain separate conditions/limitations. Current positional profiles are deliberately conservative.".into(),"Every unresolved or impaired site withholds the fully determined product set. Blocked sites survive; a cut-free circular source remains circular.".into()],limits:scan.limits};
-    let enzymes = analysis::starter_enzymes();
+    budget.charge(scan.comparisons as usize)?;
+    if !scan.scan_complete {
+        r.complete = false;
+        r.products_determined = false;
+        r.limits.push(
+            "Bounded catalog recognition scan incomplete; missing sites are not excluded.".into(),
+        );
+    }
+    // Existing positional rules are applicable only to the exact canonical
+    // starter identity AND matching recognition/cut geometry. Context work is
+    // charged to the same ledger, including unsuccessful scans.
+    let starters = analysis::starter_enzymes();
+    let supported = enzymes
+        .iter()
+        .filter(|e| {
+            starters.iter().any(|p| {
+                p.name == e.name
+                    && p.recognition == e.recognition
+                    && p.top_cut == e.top_cut
+                    && p.bottom_cut == e.bottom_cut
+            })
+        })
+        .map(|e| e.name.clone())
+        .collect::<Vec<_>>();
+    let published = methylation::profiles();
+    for selected in &o.selection.enzymes {
+        let note = if supported.contains(&selected.enzyme.name) {
+            let p = published
+                .iter()
+                .find(|p| p.enzyme == selected.enzyme.name)
+                .ok_or_else(|| bad("missing positional identity profile"))?;
+            format!(
+                "Exact positional model for catalog {}: {}. {}",
+                selected.id,
+                p.supplier_identity,
+                p.notes.join(" ")
+            )
+        } else {
+            format!(
+                "Catalog {} has no exact applicable positional methylation profile here; only actually known unmodified relevant chemical positions permit cleavage. No same-cut/formulation substitution.",
+                selected.id
+            )
+        };
+        r.warnings.push(note);
+    }
+    // A proven absent site needs no methylase-context search. Likewise actual
+    // known-unmodified recognition residues cannot require a sensitivity rule.
+    // Reserve context work only for supported identities with an observed site
+    // carrying a relevant modified/unknown actual position.
+    let contextual_names = supported
+        .iter()
+        .filter(|name| {
+            scan.sites.iter().any(|site| {
+                if site.enzyme.as_str() != name.as_str() {
+                    return false;
+                }
+                (0..site.recognition_length).any(|j| {
+                    let at = (site.recognition_start + j) % source.duplex.top.len();
+                    [Strand::Top, Strand::Bottom].into_iter().any(|strand| {
+                        [Chemical::N6A, Chemical::C5C].into_iter().any(|chemical| {
+                            evidence_at(source, strand, chemical, at)
+                                .is_some_and(|e| e.state != CallState::Unmodified)
+                        })
+                    })
+                })
+            })
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let remaining = allowed.saturating_sub(budget.used() - initial);
+    let contextual = if !contextual_names.is_empty() && remaining > 0 {
+        let c = methylation::assess(
+            &sequence,
+            &methylation::MethylationOptions {
+                enzymes: contextual_names.clone(),
+                dam: MethylationState::Unmodified,
+                dcm: MethylationState::Unmodified,
+                cpg: MethylationState::Unmodified,
+                max_comparisons: remaining,
+                max_sites: o.max_sites,
+            },
+        )?;
+        budget.charge(c.comparisons)?;
+        if !c.complete {
+            r.complete = false;
+            r.products_determined = false;
+            r.limits.push(
+                "Bounded positional context scan incomplete; no complete cleavage set established."
+                    .into(),
+            );
+        }
+        Some(c)
+    } else {
+        None
+    };
+    if remaining == 0 && !contextual_names.is_empty() {
+        r.complete = false;
+        r.products_determined = false;
+        r.limits.push(
+            "Shared cleavage comparison budget exhausted before positional context scan.".into(),
+        );
+    }
     let mut cuts = vec![];
     for site in &scan.sites {
-        let profile = scan
-            .profiles
-            .iter()
-            .find(|p| p.enzyme == site.enzyme)
-            .unwrap();
-        let (outcome, evidence, reason) = site_outcome(source, site, profile);
-        let outcome = if outcome == Outcome::PermittedUnderProfile
+        let mut evidence = vec![];
+        for j in 0..site.recognition_length {
+            let at = (site.recognition_start + j) % source.duplex.top.len();
+            for strand in [Strand::Top, Strand::Bottom] {
+                for chemical in [Chemical::N6A, Chemical::C5C] {
+                    if let Some(e) = evidence_at(source, strand, chemical, at) {
+                        evidence.push(e)
+                    }
+                }
+            }
+        }
+        let n = source.duplex.top.len();
+        let paired = source.duplex.topology == Topology::Circular
+            || (site.recognition_start as i64 >= source.duplex.bottom_start.max(0)
+                && (site.recognition_start + site.recognition_length) as i64
+                    <= (source.duplex.bottom_start + source.duplex.bottom.len() as i64)
+                        .min(n as i64));
+        let (mut outcome, reason) = if !site.certain || !paired {
+            (
+                Outcome::Unknown,
+                "Recognition is ambiguous or not an established complete paired-strand substrate."
+                    .into(),
+            )
+        } else if let Some((c, known)) = contextual.as_ref().and_then(|c| {
+            c.sites
+                .iter()
+                .find(|x| {
+                    x.enzyme == site.enzyme
+                        && x.recognition_start == site.recognition_start
+                        && x.reverse == site.reverse
+                })
+                .map(|known| (c, known))
+        }) {
+            let profile = c
+                .profiles
+                .iter()
+                .find(|p| p.enzyme == known.enzyme)
+                .ok_or_else(|| bad("missing exact positional profile"))?;
+            let (outcome, actual, reason) = site_outcome(source, known, profile);
+            evidence = actual;
+            (outcome, reason)
+        } else if evidence.iter().all(|e| e.state == CallState::Unmodified) {
+            (Outcome::PermittedUnderProfile,"Every relevant eligible chemical position is actually known unmodified; exact catalog cut geometry is used without borrowing a methylation profile.".into())
+        } else {
+            (Outcome::Unknown,"Modified/unknown actual positions lack an exact applicable positional rule; another formulation or same-cut enzyme is not substituted.".into())
+        };
+        if outcome == Outcome::PermittedUnderProfile
             && (site.top_cut.is_none() || site.bottom_cut.is_none())
         {
-            Outcome::Unknown
-        } else {
-            outcome
-        };
+            outcome = Outcome::Unknown
+        }
         if matches!(outcome, Outcome::Unknown | Outcome::Impaired) {
             r.products_determined = false
         }
         if outcome == Outcome::PermittedUnderProfile {
-            let enzyme = enzymes.iter().find(|e| e.name == site.enzyme).unwrap();
+            let e = &enzymes[site.enzyme_index];
             cuts.push((
                 analysis::CutSite {
                     enzyme: site.enzyme.clone(),
@@ -1206,7 +1414,7 @@ pub fn checked_digest(
                     certain: true,
                 },
                 site.recognition_length,
-                i64::from(enzyme.bottom_cut) - i64::from(enzyme.top_cut),
+                i64::from(e.bottom_cut) - i64::from(e.top_cut),
             ));
         }
         r.sites.push(CheckedSite {
@@ -1220,6 +1428,7 @@ pub fn checked_digest(
             reason,
         });
     }
+    r.comparisons = budget.used() - initial;
     if r.products_determined {
         match chemistry::digest_sites(&source.duplex, &cuts) {
             Ok(fragments) => {
@@ -1234,7 +1443,7 @@ pub fn checked_digest(
                         r.complete = false;
                         r.products_determined = false;
                         r.fragments.clear();
-                        r.limits.push("Tracked product evidence exceeds bounded output size; no fully determined product set returned.".into());
+                        r.limits.push("Tracked fragment evidence exceeds bounded output; no complete product set returned.".into());
                         break;
                     }
                     bytes += size;
@@ -1268,10 +1477,8 @@ impl CheckedDigestReport {
                     s.bytes()
                         .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
                 })
-            || self.options.profile_revision != self.profile_revision
-            || self.options.enzymes.is_empty()
-            || self.options.enzymes.len() > 12
-            || self.options.enzymes.iter().any(|s| s.len() > 32)
+            || self.options.selection.validate().is_err()
+            || self.options.selection.enzymes.len() > 12
             || self.options.max_sites == 0
             || self.options.max_sites > 4096
             || self.options.max_comparisons == 0
@@ -1293,13 +1500,14 @@ impl CheckedDigestReport {
             return Err(bad("invalid bounded checked report shape"));
         }
         for site in &self.sites {
-            if site.enzyme.len() > 32
+            if site.enzyme.len() > 64
                 || !self
                     .options
+                    .selection
                     .enzymes
                     .iter()
-                    .any(|e| e.eq_ignore_ascii_case(&site.enzyme))
-                || site.evidence.len() > 128
+                    .any(|e| e.enzyme.name == site.enzyme)
+                || site.evidence.len() > 256
                 || site.reason.len() > 4096
                 || self.products_determined
                     && matches!(site.outcome, Outcome::Unknown | Outcome::Impaired)
@@ -1314,6 +1522,21 @@ impl CheckedDigestReport {
         Ok(())
     }
 
+    pub fn evidence(&self) -> CheckedCleavageEvidence {
+        CheckedCleavageEvidence {
+            engine_version: self.engine_version.clone(),
+            profile_version: self.profile_version.clone(),
+            profile_revision: self.profile_revision.clone(),
+            source_revision: self.source_revision.clone(),
+            options: self.options.clone(),
+            complete: self.complete,
+            products_determined: self.products_determined,
+            comparisons: self.comparisons,
+            sites: self.sites.clone(),
+            warnings: self.warnings.clone(),
+            limits: self.limits.clone(),
+        }
+    }
     pub fn validate_bindings_for(
         &self,
         source: &TrackedDuplex,
@@ -1359,4 +1582,53 @@ pub fn replay_checked(
         return Err(bad("checked report differs from fresh positional replay"));
     }
     Ok(())
+}
+
+impl CheckedCleavageEvidence {
+    pub fn validate(&self) -> Result<(), Error> {
+        self.options.validate()?;
+        if self.engine_version.is_empty()
+            || self.engine_version.len() > 128
+            || self.profile_version.is_empty()
+            || self.profile_version.len() > 128
+            || [&self.profile_revision, &self.source_revision]
+                .iter()
+                .any(|s| {
+                    s.len() != 64
+                        || !s
+                            .bytes()
+                            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                })
+            || self.comparisons > self.options.max_comparisons
+            || self.sites.len() > self.options.max_sites
+            || self.complete != self.limits.is_empty()
+            || self.products_determined && !self.complete
+            || self.limits.len() > 8
+            || self.warnings.len() > 16
+            || self
+                .limits
+                .iter()
+                .chain(&self.warnings)
+                .any(|s| s.len() > 4096)
+        {
+            return Err(bad("invalid checked cleavage documentary evidence"));
+        }
+        for site in &self.sites {
+            if site.enzyme.len() > 64
+                || !self
+                    .options
+                    .selection
+                    .enzymes
+                    .iter()
+                    .any(|e| e.enzyme.name == site.enzyme)
+                || site.evidence.len() > 256
+                || site.reason.len() > 4096
+                || self.products_determined
+                    && matches!(site.outcome, Outcome::Unknown | Outcome::Impaired)
+            {
+                return Err(bad("invalid checked cleavage site evidence"));
+            }
+        }
+        bounded(self)
+    }
 }

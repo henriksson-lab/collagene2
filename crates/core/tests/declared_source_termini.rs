@@ -182,6 +182,7 @@ fn preparation_and_operation_are_append_only_and_whole_linear_is_not_upgraded() 
         name: "declaration reuse".into(),
         fragments: vec![
             a::FragmentSpec {
+                generation: None,
                 role: "left".into(),
                 input_id: "a".into(),
                 preparation: a::Preparation::DeclaredDuplex {
@@ -191,6 +192,7 @@ fn preparation_and_operation_are_append_only_and_whole_linear_is_not_upgraded() 
                 reverse: false,
             },
             a::FragmentSpec {
+                generation: None,
                 role: "right".into(),
                 input_id: "b".into(),
                 preparation: a::Preparation::WholeLinear,

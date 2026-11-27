@@ -18,6 +18,7 @@ fn input(id: &str, m: Molecule) -> PlanInput {
 }
 fn row(role: &str, id: &str, preparation: a::Preparation, reverse: bool) -> a::FragmentSpec {
     a::FragmentSpec {
+        generation: None,
         role: role.into(),
         input_id: id.into(),
         preparation,

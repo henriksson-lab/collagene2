@@ -57,6 +57,7 @@ pub fn source_preflight(
         ));
     }
     let fragment = assembly_recipe::FragmentSpec {
+        generation: None,
         role: request.base.source_role.clone(),
         input_id: request.base.source_role.clone(),
         reverse: false,

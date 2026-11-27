@@ -46,12 +46,14 @@ fn recipe(preparation: Preparation) -> Recipe {
         name: "Mutate an insert before multipart assembly".into(),
         fragments: vec![
             FragmentSpec {
+                generation: None,
                 role: "edited_insert".into(),
                 input_id: "insert".into(),
                 preparation,
                 reverse: false,
             },
             FragmentSpec {
+                generation: None,
                 role: "vector".into(),
                 input_id: "vector".into(),
                 preparation: Preparation::ExactPcr {
@@ -162,7 +164,7 @@ fn branched_extension_preparation_roundtrips_current_plan_and_independent_target
     );
     assert_eq!(serde_json::to_value(inputs).unwrap(), sources_before);
     assert!(protocol::decode_response(&wire(b"CGR\0", 81, &response)).is_err());
-    assert!(preview.verification.engine_version.ends_with("/science-26"));
+    assert!(preview.verification.engine_version.ends_with("/science-27"));
     let candidate = Candidate::new(preview.compiled.plan.clone());
     let encoded_candidate = transfer::save_candidate(&candidate).unwrap();
     assert_eq!(

@@ -155,7 +155,15 @@ fn method_overview(methods: &MethodsState) -> String {
             }
         ),
         Mode::Ligation => "Ordered ligation".into(),
-        Mode::GoldenGate => format!("Golden Gate · {:?}", methods.golden_gate.enzyme),
+        Mode::GoldenGate => format!(
+            "{} · {:?}",
+            if methods.golden_gate_pool.is_some() {
+                "Finite Golden Gate reaction"
+            } else {
+                "Ordered Type IIS restriction/ligation"
+            },
+            methods.golden_gate.enzyme
+        ),
         Mode::MultiSiteReference => "Multi-parent BP/LR reference exchange".into(),
         Mode::Tailing => "TA / GC tailing and ligation".into(),
     }
@@ -720,7 +728,7 @@ pub fn AssemblyWorkspace(
             d.methods.mode=match event_target_value(&e).as_str(){"ligation"=>Mode::Ligation,"golden_gate"=>Mode::GoldenGate,"multisite"=>Mode::MultiSiteReference,"tailing"=>Mode::Tailing,_=>Mode::Overlap};
             if d.methods.mode==Mode::MultiSiteReference && d.methods.multisite.is_none(){d.methods.multisite=Some(crate::multisite_form::Form::default());}
             d.sync_rows();
-        })><option value="overlap">"Gibson / HiFi / In-Fusion overlap"</option><option value="ligation">"Ordered ligation"</option><option value="golden_gate">"Golden Gate"</option><option value="multisite">"BP/LR multi-parent reference exchange"</option><option value="tailing">"TA / GC tailing and ligation"</option></select></label>
+        })><option value="overlap">"Gibson / HiFi / In-Fusion overlap"</option><option value="ligation">"Ordered ligation"</option><option value="golden_gate">"Type IIS / Golden Gate"</option><option value="multisite">"BP/LR multi-parent reference exchange"</option><option value="tailing">"TA / GC tailing and ligation"</option></select></label>
         <Show when=move||draft.with(|d|d.methods.mode==Mode::MultiSiteReference)><crate::assembly_multisite_view::MultisiteSettings draft epoch busy=workspace_busy/></Show>
         <p class="helper" aria-label="Current assembly method"><strong>"Current method: "</strong>{move||draft.with(|d|method_overview(&d.methods))}". Review the intended construct to edit preparation settings in step 3."</p>
         </details>
@@ -1394,6 +1402,7 @@ fn JunctionEditor(
             for (i, selected) in selected_rows.iter().enumerate() {
                 if *selected {
                     retained.rows[i] = OverlapInput {
+                        source_generation: before.methods.rows[i].source_generation.clone(),
                         document: i,
                         reverse: before.slots[i].reverse,
                         ..Default::default()

@@ -1133,6 +1133,13 @@ impl Layout {
         self.pages
             .push(std::mem::replace(&mut self.current, Content::new()));
         let count = self.pages.len();
+        let revision_label = |revision: &str| {
+            if revision.is_empty() {
+                "unavailable".to_owned()
+            } else {
+                revision.chars().take(12).collect::<String>()
+            }
+        };
         // Add final page count without disturbing the scientific content layout.
         for index in 0..count {
             let page = std::mem::replace(&mut self.pages[index], Content::new());
@@ -1149,13 +1156,13 @@ impl Layout {
                     } else {
                         "Plan"
                     },
-                    &plan_revision[..12],
+                    revision_label(plan_revision),
                     if self.review_label.is_some() {
                         "Query"
                     } else {
                         "Target"
                     },
-                    &target_revision[..12]
+                    revision_label(target_revision)
                 ),
                 8.0,
                 INK,
@@ -1598,15 +1605,22 @@ fn export_protocol_pdf_checked_inner(
             ),
             Operation::CheckedDigest {
                 template,
-                enzymes,
-                profile_revision,
+                selection,
+                options,
                 fragment_index,
             } => format!(
-                "Checked digest of {} with {}; select fragment index {} (zero based) under positional sensitivity profile {}. Reconstructed tracked strand modifications must permit cleavage; unknown, mixed or unsupported effects cannot silently become an unchecked digest.",
+                "Checked digest of {} with {}; select fragment index {} (zero based) under current positional profile {}. Catalog edition {} and complete limits {} are pinned; unknown/impaired effects withhold products. No enzyme conditions or reaction completion are inferred.",
                 source_name(template),
-                enzymes.join(", "),
+                selection
+                    .enzymes
+                    .iter()
+                    .map(|e| e.enzyme.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", "),
                 fragment_index,
-                profile_revision
+                crate::modified_duplex::profile_revision(),
+                selection.catalog_edition,
+                serde_json::to_string(options).map_err(|e| Error::Format(e.to_string()))?
             ),
             Operation::PcrWithMismatches {
                 template,

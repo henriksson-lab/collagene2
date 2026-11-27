@@ -165,10 +165,10 @@ fn map179_reply169_keeps_safe_xml_and_exact_supplied_cut_coordinates() {
 }
 #[test]
 fn current_plan_data_replays_only_through_current_transport() {
-    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 97);
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 25);
-    assert_eq!(collagene_core::workspace::PLAN_SCHEMA_VERSION, 23);
-    assert!(verification::ENGINE_VERSION.ends_with("/science-26"));
+    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 98);
+    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 26);
+    assert_eq!(collagene_core::workspace::PLAN_SCHEMA_VERSION, 24);
+    assert!(verification::ENGINE_VERSION.ends_with("/science-27"));
     let (w, id) = saved();
     let request = protocol::Request {
         id: 1,

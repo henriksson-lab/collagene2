@@ -732,6 +732,7 @@ pub fn design(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
             preparation = from_run(preparation, &origin.origin)?;
         }
         fragments.push(FragmentSpec {
+            generation: None,
             role: row.fragment.role.clone(),
             input_id: row.fragment.input_id.clone(),
             preparation,
@@ -1174,8 +1175,11 @@ impl Report {
         if self.preview.compiled.plan.target_revision != self.intent.target.revision() {
             return Err(bad("whole recipe replaced its independent target"));
         }
-        let (mut expected_steps, expected_rows) =
-            assembly_recipe::preparation_steps(inputs, &self.recipe.fragments)?;
+        let (mut expected_steps, expected_rows) = assembly_recipe::preparation_steps(
+            inputs,
+            &self.recipe.fragments,
+            crate::assembly_recipe::CleavagePolicy::AssumedComplete,
+        )?;
         let assembly_step = expected_steps.len();
         expected_steps.push(Operation::ProfiledOverlap {
             fragments: expected_rows

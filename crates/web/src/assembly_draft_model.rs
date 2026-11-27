@@ -278,6 +278,10 @@ pub(crate) fn bounded_size(value: &impl Serialize) -> Result<(), String> {
     serde_json::to_writer(&mut Count(0), value).map_err(|e| e.to_string())
 }
 pub(crate) fn validate_preparation_input(row: &OverlapInput) -> Result<(), String> {
+    if let Some(raw) = &row.source_generation {
+        raw.validate_raw()?;
+    }
+
     if let Some(raw) = &row.overlap_extension_pcr {
         raw.validate_raw()?;
     }
@@ -1834,6 +1838,29 @@ mod run_origin_tests {
     }
 
     #[test]
+    fn saved_origin_preserves_inactive_original_generation_text_without_redeclaration() {
+        let mut draft = saved_pcr();
+        draft.methods.rows[0].source_generation =
+            Some(crate::cloning_methods_model::SourceGenerationInput {
+                dam: "unfinished".into(),
+                dcm: "fully".into(),
+                cpg: "unknown".into(),
+            });
+        draft.validate().unwrap();
+        let restored = decode(&encode_raw(&draft).unwrap()).unwrap();
+        assert!(restored == draft);
+        let (_, rows) = crate::cloning_preparations::prepared_rows(&restored.methods, 1).unwrap();
+        assert!(rows[0].generation.is_none());
+        assert!(matches!(
+            rows[0].preparation,
+            collagene_core::assembly_recipe::Preparation::FromRun { .. }
+        ));
+        let mut original = restored;
+        original.methods.rows[0].run_origin = None;
+        assert!(crate::cloning_preparations::prepared_rows(&original.methods, 1).is_err());
+    }
+
+    #[test]
     fn derived_digest_roundtrip_retains_actual_preparation_and_refuses_run_only_routes() {
         let (original, mut workspace) = saved_pcr_workspace();
         let run = original.methods.rows[0]
@@ -2748,6 +2775,7 @@ mod current_codec_tests {
             "/methods/homology",
             "/methods/annealing",
             "/methods/rows/0/run_origin",
+            "/methods/rows/0/source_generation",
             "/methods/rows/0/overlap_extension_pcr",
             "/methods/rows/0/catalog_selection",
             "/methods/rows/0/mismatch_max_mismatches",

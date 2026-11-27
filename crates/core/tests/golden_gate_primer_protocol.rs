@@ -90,6 +90,7 @@ fn new_preparation_cannot_hide_inside_an_old_recipe_envelope() {
         name: "literal PCR digest".into(),
         fragments: vec![ligation_recipe::Fragment {
             source: FragmentSpec {
+                generation: None,
                 role: "insert".into(),
                 input_id: "source".into(),
                 reverse: false,
@@ -110,11 +111,18 @@ fn new_preparation_cannot_hide_inside_an_old_recipe_envelope() {
         circular: false,
         allow_nicked: false,
     };
-    let revision = ligation_recipe::preview_revision(&inputs, &target, &recipe).unwrap();
+    let revision = ligation_recipe::preview_revision(
+        &inputs,
+        &target,
+        &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     let job = Request {
         id: 402,
         revision,
         job: AnalysisJob::PreviewLigationRecipe {
+            policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
             inputs,
             target,
             recipe,

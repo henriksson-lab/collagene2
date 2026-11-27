@@ -126,6 +126,7 @@ fn fixture() -> (Workspace, Value) {
                 id: format!("bin-{i}"),
                 label: format!("Bin {i}"),
                 choices: vec![Choice {
+                    generation: None,
                     id: format!("choice-{i}"),
                     label: format!("Choice {i}"),
                     source: binding(&w, i),

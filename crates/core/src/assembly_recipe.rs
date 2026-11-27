@@ -24,6 +24,54 @@ pub(crate) const MAX_STEPS_PER_ROW: usize = 7;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
 dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},AnnealedOligos{bottom_input_id:String,options:crate::chemistry::AnnealOptions,candidate_index:usize},FromRun{origin:crate::run_material::Capsule,preparation:RunPreparation},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},OverlapExtensionPcr{request:crate::overlap_extension_pcr::Request},OverlapExtensionPcrCatalogDigest{request:crate::overlap_extension_pcr::Request,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},FromDerived{origin:crate::material_derivation::Capsule,preparation:RunPreparation}}}
 dto! {pub enum RunPreparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},OverlapExtensionPcr{request:crate::overlap_extension_pcr::Request},OverlapExtensionPcrCatalogDigest{request:crate::overlap_extension_pcr::Request,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>}}}
+pub(crate) fn required_option<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
+    d: D,
+) -> Result<Option<T>, D::Error> {
+    Option::deserialize(d)
+}
+/// Actual cleavage model selected by the compiling workflow, never inferred from metadata.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum CleavagePolicy {
+    AssumedComplete,
+    PositionalChecked,
+}
+fn digest_operation(
+    template: Source,
+    selection: crate::catalog_digest::CatalogSelection,
+    fragment_index: usize,
+    policy: CleavagePolicy,
+) -> Operation {
+    match policy {
+        CleavagePolicy::AssumedComplete => Operation::CatalogDigest {
+            template,
+            selection,
+            fragment_index,
+        },
+        CleavagePolicy::PositionalChecked => Operation::CheckedDigest {
+            template,
+            selection,
+            options: crate::modified_duplex::checked_inspection_options(),
+            fragment_index,
+        },
+    }
+}
+fn starter_selection(enzymes: &[String]) -> Result<crate::catalog_digest::CatalogSelection, Error> {
+    let catalog = crate::catalog_digest::builtin_catalog()?;
+    let ids = enzymes
+        .iter()
+        .map(|name| {
+            catalog
+                .edition()
+                .enzymes
+                .iter()
+                .find(|e| e.name.eq_ignore_ascii_case(name))
+                .map(|e| e.id.clone())
+                .ok_or_else(|| bad("starter digest enzyme has no exact current catalog identity"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    crate::catalog_digest::select(&catalog, &ids)
+}
 /// Literal catalog pin used by a preparation, including a flat saved-origin
 /// child. This is structural lookup only, never replay or cleavage authority.
 pub fn preparation_catalog_selection(
@@ -217,7 +265,7 @@ pub(crate) fn from_derived_shape(
     preparation.preparation()?;
     Ok(())
 }
-dto! {pub struct FragmentSpec {pub role:String,pub input_id:String,pub preparation:Preparation,pub reverse:bool}}
+dto! {pub struct FragmentSpec {pub role:String,pub input_id:String,pub preparation:Preparation,pub reverse:bool,#[serde(deserialize_with="required_option")]#[cfg_attr(feature="json-schema",schemars(required))]pub generation:Option<crate::modified_duplex::GenerationAssumptions>}}
 dto! {pub struct Recipe {pub name:String,pub fragments:Vec<FragmentSpec>,pub overlaps:Vec<usize>,pub circular:bool,pub options:ProfileOptions}}
 dto! {pub struct PreparedRow {pub row_index:usize,pub role:String,pub input_id:String,pub input_revision:String,pub preparation_step:Option<usize>,pub repair_step:Option<usize>,pub prepared_source:Source,pub reverse:bool}}
 dto! {pub struct Compiled {pub plan:DesignPlan,pub rows:Vec<PreparedRow>,pub assembly_step:usize}}
@@ -430,6 +478,8 @@ fn preparation_template(op: &Operation) -> Option<&Source> {
         | Operation::PcrWithMismatches { template, .. }
         | Operation::Digest { template, .. }
         | Operation::CatalogDigest { template, .. }
+        | Operation::CheckedDigest { template, .. }
+        | Operation::DeclareSourceModifications { template, .. }
         | Operation::DeclareSourceTermini { template, .. }
         | Operation::ReconstructRunProduct { template, .. }
         | Operation::ReconstructMaterial { template, .. } => Some(template),
@@ -486,6 +536,8 @@ pub(crate) fn prepared_chain(
             | Operation::PcrWithMismatches { .. }
             | Operation::Digest { .. }
             | Operation::CatalogDigest { .. }
+            | Operation::CheckedDigest { .. }
+            | Operation::DeclareSourceModifications { .. }
             | Operation::DeclareSourceTermini { .. } => {
                 preparation_template(op).is_some_and(|s| same_source(s, &input))
             }
@@ -500,9 +552,11 @@ pub(crate) fn prepared_chain(
         *cursor += 1;
         if matches!(
             op,
-            Operation::ReconstructRunProduct { .. } | Operation::ReconstructMaterial { .. }
+            Operation::ReconstructRunProduct { .. }
+                | Operation::ReconstructMaterial { .. }
+                | Operation::DeclareSourceModifications { .. }
         ) && *cursor < assembly
-            && matches!(plan.steps.get(*cursor),Some(Operation::Pcr{template:Source::Step(n),..}|Operation::PcrWithMismatches{template:Source::Step(n),..}|Operation::Digest{template:Source::Step(n),..}|Operation::CatalogDigest{template:Source::Step(n),..}) if *n==first)
+            && matches!(plan.steps.get(*cursor),Some(Operation::Pcr{template:Source::Step(n),..}|Operation::PcrWithMismatches{template:Source::Step(n),..}|Operation::Digest{template:Source::Step(n),..}|Operation::CatalogDigest{template:Source::Step(n),..}|Operation::CheckedDigest{template:Source::Step(n),..}) if *n==first)
         {
             steps.push(*cursor);
             *cursor += 1;
@@ -540,7 +594,7 @@ pub(crate) fn prepared_chain(
             plan.steps[preceding],
             Operation::Pcr { .. } | Operation::PcrWithMismatches { .. }
         ) && *cursor < assembly
-            && matches!(plan.steps.get(*cursor),Some(Operation::CatalogDigest{template:Source::Step(n),..})if *n==preceding)
+            && matches!(plan.steps.get(*cursor),Some(Operation::CatalogDigest{template:Source::Step(n),..}|Operation::CheckedDigest{template:Source::Step(n),..})if *n==preceding)
         {
             steps.push(*cursor);
             *cursor += 1;
@@ -553,7 +607,9 @@ pub(crate) fn prepared_chain(
                 || repair >= assembly
                 || !matches!(
                     plan.steps[last],
-                    Operation::Digest { .. } | Operation::CatalogDigest { .. }
+                    Operation::Digest { .. }
+                        | Operation::CatalogDigest { .. }
+                        | Operation::CheckedDigest { .. }
                 )
                 || !matches!(plan.steps.get(repair),Some(Operation::RepairEnds{template:Source::Step(n),..})if *n==last)
             {
@@ -874,6 +930,24 @@ fn preparation_preflight_inner(
         } else {
             &row.preparation
         };
+        if row.generation.is_some()
+            && matches!(
+                row.preparation,
+                Preparation::FromRun { .. }
+                    | Preparation::FromDerived { .. }
+                    | Preparation::DeclaredDuplex { .. }
+                    | Preparation::AnnealedOligos { .. }
+            )
+        {
+            return Err(bad(
+                "Source generation may only be declared on an original input and cannot reset saved, declared-terminal or paired-oligo state.",
+            ));
+        }
+        if row.generation.is_some() && crate::chemistry::has_unmapped_physical_evidence(m) {
+            return Err(bad(
+                "Imported physical evidence cannot become original generation authority.",
+            ));
+        }
         let units = match preparation {
             Preparation::OverlapExtensionPcrCatalogDigest {
                 request,
@@ -1139,6 +1213,7 @@ pub fn compile_preparations(
     target: &Molecule,
     name: &str,
     fragments: &[FragmentSpec],
+    policy: CleavagePolicy,
 ) -> Result<PreparedCompilation, Error> {
     if inputs.is_empty() || inputs.len() > MAX_ROWS {
         return Err(Error::TooLarge);
@@ -1156,7 +1231,7 @@ pub fn compile_preparations(
         return Err(bad("source revisions must be explicit canonical hashes"));
     }
     let target_revision = bound_revisions(inputs, target)?;
-    let (steps, rows) = preparation_steps(inputs, fragments)?;
+    let (steps, rows) = preparation_steps(inputs, fragments, policy)?;
     Ok(PreparedCompilation {
         inputs: inputs.to_vec(),
         target_revision,
@@ -1169,6 +1244,7 @@ pub fn compile_preparations(
 pub(crate) fn preparation_steps(
     inputs: &[PlanInput],
     fragments: &[FragmentSpec],
+    policy: CleavagePolicy,
 ) -> Result<(Vec<Operation>, Vec<PreparedRow>), Error> {
     let mut steps = Vec::new();
     let mut rows = Vec::with_capacity(fragments.len());
@@ -1203,6 +1279,13 @@ pub(crate) fn preparation_steps(
             });
             effective = preparation.preparation()?;
             (Source::Step(first), Some(first), &effective)
+        } else if let Some(assumptions) = &row.generation {
+            let first = steps.len();
+            steps.push(Operation::DeclareSourceModifications {
+                template: original_input,
+                assumptions: assumptions.clone(),
+            });
+            (Source::Step(first), Some(first), &row.preparation)
         } else {
             (original_input, None, &row.preparation)
         };
@@ -1220,11 +1303,12 @@ pub(crate) fn preparation_steps(
             } = preparation
             {
                 let index = steps.len();
-                steps.push(Operation::CatalogDigest {
-                    template: prepared_source,
-                    selection: selection.clone(),
-                    fragment_index: *fragment_index,
-                });
+                steps.push(digest_operation(
+                    prepared_source,
+                    selection.clone(),
+                    *fragment_index,
+                    policy,
+                ));
                 prepared_source = Source::Step(index);
                 if let Some(method) = repair {
                     let index = steps.len();
@@ -1276,19 +1360,28 @@ pub(crate) fn preparation_steps(
                 selection,
                 fragment_index,
                 ..
-            } => Some(Operation::CatalogDigest {
-                template: input.clone(),
-                selection: selection.clone(),
-                fragment_index: *fragment_index,
-            }),
+            } => Some(digest_operation(
+                input.clone(),
+                selection.clone(),
+                *fragment_index,
+                policy,
+            )),
             Preparation::Digest {
                 enzymes,
                 fragment_index,
                 ..
-            } => Some(Operation::Digest {
-                template: input.clone(),
-                enzymes: enzymes.clone(),
-                fragment_index: *fragment_index,
+            } => Some(match policy {
+                CleavagePolicy::AssumedComplete => Operation::Digest {
+                    template: input.clone(),
+                    enzymes: enzymes.clone(),
+                    fragment_index: *fragment_index,
+                },
+                CleavagePolicy::PositionalChecked => digest_operation(
+                    input.clone(),
+                    starter_selection(enzymes)?,
+                    *fragment_index,
+                    policy,
+                ),
             }),
             Preparation::MismatchPcr {
                 forward,
@@ -1335,11 +1428,12 @@ pub(crate) fn preparation_steps(
         } = preparation
         {
             let index = steps.len();
-            steps.push(Operation::CatalogDigest {
-                template: prepared_source,
-                selection: selection.clone(),
-                fragment_index: *fragment_index,
-            });
+            steps.push(digest_operation(
+                prepared_source,
+                selection.clone(),
+                *fragment_index,
+                policy,
+            ));
             prepared_source = Source::Step(index);
         }
         let repair_step = if let Preparation::Digest {
@@ -1389,7 +1483,13 @@ pub fn compile(
     recipe: &Recipe,
 ) -> Result<Compiled, Error> {
     preflight(inputs, target, recipe)?;
-    let prepared = compile_preparations(inputs, target, &recipe.name, &recipe.fragments)?;
+    let prepared = compile_preparations(
+        inputs,
+        target,
+        &recipe.name,
+        &recipe.fragments,
+        CleavagePolicy::AssumedComplete,
+    )?;
     let mut steps = prepared.steps;
     let rows = prepared.rows;
     let fragments = rows

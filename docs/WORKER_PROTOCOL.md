@@ -1,8 +1,8 @@
 # Binary worker protocol
 
 The web worker and native adapters share Rust DTOs in `core::protocol` and the
-same deterministic scientific engines. Current schemas are worker **97**,
-candidate **25** and native workspace plan **23**; the verifier is **science-26**.
+same deterministic scientific engines. Current schemas are worker **98**,
+candidate **26** and native workspace plan **24**; the verifier is **science-27**.
 Only current internal encodings are accepted. Superseded development formats have
 no fallback decoder, migration or capability ladder.
 
@@ -426,3 +426,27 @@ material at installation. Map SVG (job179/result169) retains the ordinary limit.
 TOPO insert-template inspection (job169/result159) resolves generic Run or Derived
 origins using their exact retained events. Both use the existing compound lane;
 prepared vector declarations remain separate from saved insert-template chemistry.
+
+
+## Checked cleavage and current source declarations
+
+`PreviewLigationRecipe` (job95) retains an explicit `CleavagePolicy` in its
+request and context. Ordered Type IIS preparation uses positional checked cuts;
+ordinary geometric ligation explicitly uses its assumed-complete model. Finite
+Golden Gate pool/reaction jobs retain checked source and candidate-recut evidence,
+profile identity, work counts and product determination. An undetermined source
+pool is withheld as a whole. The independent target never selects a candidate.
+
+Recipe fragments, whole reaction rows and library choices retain original-source
+generation assumptions. A null declaration leaves actual positions unknown.
+Saved Run/Derived material is reconstructed from its exact origin and cannot be
+redeclared as an original. Newly synthesized PCR is unmodified under the declared
+synthesis model. A whole circular saved source carries its own typed origin;
+there is no linear-only substitution. Current working drafts are version15.
+
+The enclosing preparation/plan/pool computation shares its checked-cleavage
+ledger. Nested saved-origin replay has separate bounded ledgers and existing
+ancestry limits; reported comparison counts do not claim an aggregate bound over
+all historical replays. GG jobs retain their existing ordinary32MiB envelope
+unless explicitly listed for the128MiB lane above. Oversized closed inputs fail
+rather than changing admission or dropping ancestry.

@@ -268,8 +268,6 @@ mod editors;
 #[cfg(target_arch = "wasm32")]
 mod gel;
 #[cfg(target_arch = "wasm32")]
-mod golden_gate;
-#[cfg(target_arch = "wasm32")]
 mod methylation;
 #[cfg(target_arch = "wasm32")]
 mod multisite;

@@ -89,6 +89,7 @@ pub fn source_preflight(
     // The borrowed guards ran before these bounded request-field copies. There
     // is no intended target and no copied/sliced original declared as new stock.
     let row = assembly_recipe::FragmentSpec {
+        generation: None,
         role: request.source_role.clone(),
         input_id: request.source_role.clone(),
         preparation: assembly_recipe::Preparation::OverlapExtensionPcrCatalogDigest {

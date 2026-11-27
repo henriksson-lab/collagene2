@@ -23,9 +23,9 @@ fn declare(cpg: M) -> Operation {
 }
 fn checked(template: Source, name: &str) -> Operation {
     Operation::CheckedDigest {
+        selection: checked_selection(vec![name.into()]),
+        options: collagene_core::modified_duplex::checked_inspection_options(),
         template,
-        enzymes: vec![name.into()],
-        profile_revision: modified_duplex::profile_revision(),
         fragment_index: 0,
     }
 }
@@ -205,19 +205,16 @@ fn imported_summary_cannot_supply_physical_modification_authority() {
     }
 }
 #[test]
-fn stale_positional_profile_is_not_rebound_to_the_current_catalog() {
+fn stale_catalog_selection_is_refused_before_native_processing() {
     let source = source();
     let mut step = checked(Source::Step(0), "NotI");
-    if let Operation::CheckedDigest {
-        profile_revision, ..
-    } = &mut step
-    {
-        *profile_revision = "0".repeat(64);
+    if let Operation::CheckedDigest { selection, .. } = &mut step {
+        selection.catalog_content_hash = "0".repeat(64);
     }
     let p = plan(source.clone(), &source, vec![declare(M::Unmodified), step]);
     let r = verify(&p, &source);
     assert_ne!(r.status, Status::ConsistentUnderAssumptions);
-    assert_eq!(r.products.len(), 1);
+    assert!(r.products.is_empty());
 }
 #[test]
 fn text_exports_disclose_the_loss_of_positional_state_and_do_not_restore_it() {
@@ -263,4 +260,22 @@ fn text_exports_disclose_the_loss_of_positional_state_and_do_not_restore_it() {
         );
         assert_eq!(verify(&p, &m).status, Status::Incomplete);
     }
+}
+
+fn checked_selection(names: Vec<String>) -> collagene_core::catalog_digest::CatalogSelection {
+    let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+    let ids = names
+        .iter()
+        .map(|name| {
+            catalog
+                .edition()
+                .enzymes
+                .iter()
+                .find(|e| e.name.eq_ignore_ascii_case(name))
+                .unwrap()
+                .id
+                .clone()
+        })
+        .collect::<Vec<_>>();
+    collagene_core::catalog_digest::select(&catalog, &ids).unwrap()
 }

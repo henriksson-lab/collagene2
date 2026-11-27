@@ -4,42 +4,39 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-Current source uses worker95, candidate25, native plan23, science26 and189 MCP
-tools. One Ligate operation retains the intended path and bounded alternatives
-in native history, HTML and PDF, including extractable strand FASTA/JSON. DTQ/DTR5
-has one Bootstrap API supporting editor-only startup and exact pending-switch
-cancellation. DSQ/DSR3 handles remote review. Unsupported internal schemas are
-rejected; development compatibility branches have been removed.
+Current source uses worker98, candidate26, native plan24, science27, draft15 and
+189 MCP tools. Unsupported internal schemas are rejected; implementations and
+callers are updated directly without compatibility readers. The shared cloning
+workflow now carries original generation declarations and exact Run/Derived
+origins through positional checked Golden Gate preparation, initial cutting and
+candidate recutting. Undetermined source cleavage withholds the pool. Actual
+tracked candidate strands, exact catalog/profile evidence and bounded enclosing
+work remain separate from the independent intended target.
+[Scientific scope and limits](CHECKED_GOLDEN_GATE.md).
 
-Published checkpoint `9172c2f` has successful web compilation and unsigned desktop
-builds on Windows/macOS/Linux. Its scientific CI stopped on an outdated protocol
-text assertion. Local follow-up also exposed a circular-substrate classification
-regression; both are corrected in current source, retaining the strict Invalid
-expectation and the underlying chemistry checks.
+Native verification covers490 distinct cases across core, MCP, UI models and
+sharing after21 corrected-case rechecks. All affected native test callers compile;
+formatting passes. The web/worker WASM check is being corrected for a checked-digest
+button-handler compile error. Browser and application HTTP acceptance remain
+deferred until all in-scope code is complete.
 
-Current cleanup removes the dedicated saved-digest implementation. Generic Run
-and Derived origins preserve exact events, actual chemistry, inherited incomplete
-evidence, oligo exclusion and publication dependencies through one ancestry ledger.
-417 focused native scientific/model/SDK and publication cases pass, including332
-web-model cases. Core/MCP/web/host/sharing test callers compile, formatting passes,
-and the integrated web/worker WASM check passes. Browser/application HTTP
-acceptance remains deferred.
+Port8082 serves the immutable CI frontend for `6c97320` (worker97). Its13 assets,
+static integrity, snapshot process and listening socket were checked without
+application requests. Staging requires exactly one current worker bundle; older
+worker retention and merge flags are removed. Unverified source changes are not
+served. The same checkpoint produced unsigned packages on Windows/macOS/Linux.
+Its scientific CI failures were the same10 failing targets on all three systems;
+current source fixes their stale wire/option fixtures and coherent historical
+replay evidence, preserving the scientific and unsupported-version assertions.
+Installation, graphical/offline acceptance and new cross-platform CI remain open.
 
-The format checkpoint `73fd9d8` passes scientific tests, WASM, desktop builds/MCP
-and unsigned package builds on Windows/macOS/Linux. Desktop builds/MCP and WASM
-also pass for `ebe44ae`. Its wider scientific run found an outdated web capability
-fixture still expecting embedded TOPO oligos to be unavailable. That fixture now
-checks the supported collection while retaining independent graph-failure gates;
-all three related model cases pass locally. The prior draft11/unknown-draft12
-boundary correction remains intact. Committed `3077971` and `ac0ba0d` now pass scientific tests, WASM and desktop
-builds/MCP on Windows/macOS/Linux. New source requires its own CI. Installation
-and graphical/offline acceptance remain separate unfinished gates.
+Saved-run editing is the next integration: explicit handoff to the existing DAG
+editor must preserve original source and target events after their document heads
+advance, clear cached assessments and verify edits afresh. Prepared patches are
+under review; they are not yet part of this source checkpoint.
 
-Checkpoint `320adb5` also passes scientific, web and desktop builds/MCP on all
-three operating systems. Its immutable frontend is published on port8082 with
-static integrity verification and the immediately preceding worker retained.
-No browser or application HTTP checks were performed. New source is not yet
-included in that published checkpoint.
+The checkpoint evidence below records earlier implementation stages. Current
+schema and public-preview claims are the ones above.
 
 Parallel format work now adds selected XDNA v0 reference export, SCF regeneration
 from retained real trace signals, and direct MCP annotated text exports. These
@@ -1332,9 +1329,9 @@ WebGL2 supplies circular/linear map geometry, rotation and zoom; sequence text i
 
 The Plan panel can retain a complete reconstructed graph through **Keep reconstructed products**. Exact source events are selected explicitly when identical content is ambiguous; operation inputs become product parents and the independent target stays separate and active. Capture re-verifies before an atomic current/previous workspace installation. History lists saved reconstructions as unverified historical evidence, with explicit current-engine replay, product/status/engine comparison and JSON download. Source heads and undo/redo remain unchanged. This covers retained full plans; standalone preview exports still need equivalent source-event retention. [Run lineage](RUN_LINEAGE.md).
 
-Rust/WASM workers use Postcard and transferable binary buffers, with 30-second job limits and obsolete-result rejection. Worker envelopes write schema version 44 and retain supported historical schemas 1–43, including streamed reference stores, cooperative genomic search, checked digestion and reference recombination. Candidate files write 11, workspace plans 9 and the verifier is science-14. Exact workspace-bearing tags allow bounded 128 MiB payloads; ordinary scientific messages retain 32 MiB limits. Explicit migration handles original verification reports without an engine field, marking that engine as unrecorded. Variants, nested plans and archive bytes cannot conceal operations or reports from a later schema. Document/planning-snapshot and archive formats remain version 1. Historical verification reports remain data; fresh replay/install requires the current engine. Independent legacy structs and literal Postcard bytes exercise backward decoding, field preservation and truncated inputs. Sequence tracks debounce viewport jobs, reject obsolete replies and terminate the retained worker on source replacement/unmount. Large-reference jobs use private retained sessions and bounded owner-block advances with cancellation. A general worker pool, cooperative cancellation for older one-shot analyses and chunked plasmid-document caches remain pending. [Binary protocol](WORKER_PROTOCOL.md).
+Rust/WASM workers use Postcard and transferable binary buffers, bounded job limits and obsolete-result rejection. Current worker98/candidate26/plan24/science27 encodings are updated together; unsupported internal versions are rejected without fallback readers or migrations. Exact workspace-bearing jobs permit bounded128MiB payloads, while ordinary scientific messages retain32MiB limits. Recorded report engines remain documentary provenance; scientific reuse requires fresh current-engine replay. Sequence tracks debounce viewport jobs, reject obsolete replies and terminate retained workers on source replacement/unmount. Large-reference work uses private retained sessions and bounded owner-block advances with cancellation. A general worker pool and chunked plasmid-document caches remain pending. [Binary protocol](WORKER_PROTOCOL.md).
 
-The session-only stdio MCP server uses the official Rust SDK, typed tool schemas, immutable resources and bounded outputs. Browser snapshots can pass through the actual MCP server and return as candidates for UI review, independent current-revision binding and WASM verification. Its 130 tools expose restriction/PCR/duplex analysis, URL import and Addgene sequence choices, translation/CDS/ORFs, primer analysis/design, PDF export, Golden Gate/mismatch-PCR simulation, inverse-PCR candidates, gel/diagnostic artifacts, pairwise/circular comparison, read validation, explicit-encoding FASTQ, oligo collections/selections and full native workspace exchange, versioned feature libraries and GFF3/BED annotation datasets, plus end-repair/oligo-annealing previews, source-bound unified search/viewport tracks, immutable alignment collections/exchange/column inspection/row extraction, protein-property models, explicit tailing previews, oriented overlap-profile checks and immutable retained-run capture/list/replay plus source-bound codon design, independent candidate checking and paginated dot-plot analysis with JSON/SVG artifacts and source-bound read contigs with immutable report/consensus resources, plus paginated methylation assessments, CRISPR guide/off-target reports and independently checked edit-template resources, plus managed streamed reference import/export, global interval reads/guides and private cooperative genome searches. Native workspace upload uses bounded offset/hash-checked chunks and atomic installation, including a tested archive above 8 MiB and a 1,000-document archive with retained history, candidates and evidence. It has no implicit browser/project-write authority. Live synchronization, persistent authorized writes, hosted HTTP and cooperative cancellation for older one-shot scientific analyses remain pending. See [MCP usage](MCP.md).
+The session-only stdio MCP server uses the official Rust SDK, typed tool schemas, immutable resources and bounded outputs. Browser snapshots can pass through the actual MCP server and return as candidates for UI review, independent current-revision binding and WASM verification. Its189 tools expose restriction/PCR/duplex analysis, URL import and Addgene sequence choices, translation/CDS/ORFs, primer analysis/design, PDF export, Golden Gate/mismatch-PCR simulation, inverse-PCR candidates, gel/diagnostic artifacts, pairwise/circular comparison, read validation, explicit-encoding FASTQ, oligo collections/selections and full native workspace exchange, versioned feature libraries and GFF3/BED annotation datasets, plus end-repair/oligo-annealing previews, source-bound unified search/viewport tracks, immutable alignment collections/exchange/column inspection/row extraction, protein-property models, explicit tailing previews, oriented overlap-profile checks and immutable retained-run capture/list/replay plus source-bound codon design, independent candidate checking and paginated dot-plot analysis with JSON/SVG artifacts and source-bound read contigs with immutable report/consensus resources, plus paginated methylation assessments, CRISPR guide/off-target reports and independently checked edit-template resources, plus managed streamed reference import/export, global interval reads/guides and private cooperative genome searches. Native workspace upload uses bounded offset/hash-checked chunks and atomic installation, including a tested archive above 8 MiB and a 1,000-document archive with retained history, candidates and evidence. It has no implicit browser/project-write authority. Live synchronization, persistent authorized writes, hosted HTTP and cooperative cancellation for older one-shot scientific analyses remain pending. See [MCP usage](MCP.md).
 
 The History inspector now renders recorded event DAG branches/merges and exact parent links with bounded SVG/DOM pages, keyboard inspection, navigation-stack badges and external-parent details. Equal-content events remain distinct. Opening an old event as a new document retains its exact source-event parent through native archive/reload. Graph content/candidate matches carry no scientific verification authority. [History graph](HISTORY_GRAPH.md).
 
@@ -1344,7 +1341,7 @@ Reference-free read assembly uses the independent `contig-1` affine overlap/layo
 
 F21 now has a source-bound methylation assessment engine and web planning review. Its versioned supplier profile covers all twelve starter identities, records Dam/Dcm/CpG assumptions separately, inspects both-strand/circular motif context and preserves exact potential modified-base coordinates. Unknown or unsupported hemi/mixed states, possible-only contexts, unresolved some-overlap rules and conflicting formulation evidence stay explicit. Generic BsmBI is not silently replaced by BsmBI-v2, and the conflicting generic BsaI Dcm descriptions remain unsupported. Reports do not measure modifications or change existing assumed-cleavage products. A separate tracked-strand foundation and checked plan operations now preserve positional state through physical reconstruction. Supplier conditions, broader catalogs, more positional susceptibility rules and modification chemistries remain required F21 work. [Scientific profile](METHYLATION.md) · [Web review](METHYLATION_UI.md).
 
-Science-8 plan reconstruction now carries a sparse `TrackedDuplex` alongside each established physical product. Original-input `DeclareSourceModifications` binds closed Dam/Dcm/CpG assumptions; `CheckedDigest` pins the positional profile, retains blocked sites and withholds the product set for unknown/impaired/incomplete sites. Reverse, legacy/checked digestion, ligation including bottom-origin realignment, end treatment, repair, tailing and Golden Gate strand mappings preserve inherited calls. Ideal PCR and supported standard unmodified oligo annealing use explicit unmodified-base models; sequence-only overlap still provides no established physical state. New motifs are not methylated automatically. Legacy assumed-cleavage operations on explicitly tracked modified/uncertain material remain incomplete. Bounded producer summaries never restore chemistry from imported metadata; native source/operation graphs and fresh replay remain necessary. [Positional model](MODIFIED_DUPLEX.md) · [Checked planning UI](CHECKED_RESTRICTION_UI.md).
+Current plan reconstruction carries a sparse `TrackedDuplex` alongside each established physical product. Original-input `DeclareSourceModifications` binds closed Dam/Dcm/CpG assumptions; `CheckedDigest` pins the exact catalog selection and reports the current positional profile, retains blocked sites and withholds the product set for unknown/impaired/incomplete sites. Reverse, assumed-complete/checked digestion, ligation including bottom-origin realignment, end treatment, repair, tailing and Golden Gate strand mappings preserve inherited calls. Ideal PCR and supported standard unmodified oligo annealing use explicit unmodified-base models; sequence-only overlap still provides no established physical state. New motifs are not methylated automatically. Assumed-cleavage operations on explicitly tracked modified/uncertain material remain incomplete. Bounded producer summaries never restore chemistry from imported metadata; native source/operation graphs and fresh replay remain necessary. [Positional model](MODIFIED_DUPLEX.md) · [Checked planning UI](CHECKED_RESTRICTION_UI.md).
 
 F25 now has a declared-profile guide/PAM engine and a bounded pigeonhole-seed off-target index with exhaustive ambiguous-reference fallback. SpCas9 NGG/20-nt, declared Cas12a TTTV/23-nt and custom geometry retain both strands, circular-origin coordinates, nominal cuts, exact rational GC filters and explicit model limits. Selected references retain named roles, revisions, build/accession labels and min/max IUPAC mismatches; only an exact intended tuple is tagged, and equal DNA elsewhere stays visible. Coverage is selected-record scope, not a verified whole build or biological specificity. Literal homology donors derive from the source and replacement while a separate checker reconstructs the edit and compares an independent target. Fresh worker design/check, source-only design parents, atomic native installation and unverified producer provenance prevent restored claims from becoming current checks. [Guide/search profile](CRISPR.md) · [Donor model](EDIT_TEMPLATE.md) · [Web workflow](CRISPR_UI.md).
 

@@ -30,6 +30,7 @@ fn recipe() -> assembly_recipe::Recipe {
         fragments: ["a", "b"]
             .into_iter()
             .map(|id| FragmentSpec {
+                generation: None,
                 role: id.into(),
                 input_id: id.into(),
                 preparation: Preparation::DeclaredDuplex {

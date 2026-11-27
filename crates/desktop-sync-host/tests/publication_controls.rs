@@ -197,7 +197,8 @@ fn queued(r: wire::ResponseEnvelope) -> wire::PendingPush {
     }
 }
 #[test]
-fn metadata_new_folder_review_binary_floors_and_lost_queue_reply_reuse_same_outbox_nonce() {
+fn metadata_new_folder_review_current_binary_version_and_lost_queue_reply_reuse_same_outbox_nonce()
+{
     let (disk, mut repo, adapter, remote) = setup();
     let local = folder(&mut repo, "Offline folder");
     let mut host = SyncHost::new(repo, adapter).unwrap();
@@ -206,7 +207,10 @@ fn metadata_new_folder_review_binary_floors_and_lost_queue_reply_reuse_same_outb
         remote: remote.id.clone(),
     });
     let frame = wire::encode_request(&q).unwrap();
-    assert_eq!(u16::from_le_bytes([frame[4], frame[5]]), 2);
+    assert_eq!(
+        u16::from_le_bytes([frame[4], frame[5]]),
+        wire::SCHEMA_VERSION
+    );
     let mut unsupported = frame.clone();
     unsupported[4..6].copy_from_slice(&1u16.to_le_bytes());
     assert!(wire::decode_request(&unsupported).is_err());
@@ -249,12 +253,18 @@ fn metadata_new_folder_review_binary_floors_and_lost_queue_reply_reuse_same_outb
             .folder_binding(&local.id, remote.id.as_str())
             .is_some()
     );
-    let legacy = request(wire::Command::Remotes);
-    let frame = wire::encode_request(&legacy).unwrap();
-    assert_eq!(u16::from_le_bytes([frame[4], frame[5]]), 1);
+    let current = request(wire::Command::Remotes);
+    let frame = wire::encode_request(&current).unwrap();
+    assert_eq!(
+        u16::from_le_bytes([frame[4], frame[5]]),
+        wire::SCHEMA_VERSION
+    );
     let reply = host.dispatch_raw(&frame, &mut || true).unwrap();
-    assert_eq!(u16::from_le_bytes([reply[4], reply[5]]), 1);
-    wire::decode_response_for(&reply, &legacy).unwrap();
+    assert_eq!(
+        u16::from_le_bytes([reply[4], reply[5]]),
+        wire::SCHEMA_VERSION
+    );
+    wire::decode_response_for(&reply, &current).unwrap();
 }
 #[test]
 fn changed_local_metadata_rejects_previous_review_without_new_outbox_or_network() {

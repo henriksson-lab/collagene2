@@ -40,6 +40,7 @@ fn fixture(gc: bool) -> (Vec<PlanInput>, Molecule, Recipe) {
     .into_iter()
     .map(|(id, f, r, base)| Fragment {
         source: FragmentSpec {
+            generation: None,
             role: id.into(),
             input_id: id.into(),
             preparation: Preparation::ExactPcr {

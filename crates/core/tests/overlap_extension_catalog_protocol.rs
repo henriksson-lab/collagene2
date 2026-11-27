@@ -64,6 +64,7 @@ fn recipe(preparation: Preparation) -> ligation_recipe::Recipe {
         name: "Edit, actually amplify, digest and fill".into(),
         fragments: vec![ligation_recipe::Fragment {
             source: FragmentSpec {
+                generation: None,
                 role: "insert".into(),
                 input_id: "source".into(),
                 preparation,
@@ -113,8 +114,15 @@ fn extension_digest_preparation_preserves_physical_steps_and_current_encoding() 
     let recipe = recipe(compound());
     let request = Request {
         id: 84,
-        revision: ligation_recipe::preview_revision(&inputs, &target, &recipe).unwrap(),
+        revision: ligation_recipe::preview_revision(
+            &inputs,
+            &target,
+            &recipe,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        )
+        .unwrap(),
         job: AnalysisJob::PreviewLigationRecipe {
+            policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
             inputs,
             target: target.clone(),
             recipe,
@@ -151,7 +159,7 @@ fn extension_digest_preparation_preserves_physical_steps_and_current_encoding() 
         preview.compiled.rows[0].preparation.prepared_source,
         Source::Step(5)
     ));
-    assert!(preview.verification.engine_version.ends_with("/science-26"));
+    assert!(preview.verification.engine_version.ends_with("/science-27"));
     let candidate = Candidate::new(preview.compiled.plan);
     let encoded_candidate = transfer::save_candidate(&candidate).unwrap();
     assert_eq!(
@@ -241,8 +249,15 @@ fn flat_saved_child8_and_actual_origin_digest_inspection_keep_closed_event_bindi
     });
     let request = Request {
         id: 84,
-        revision: ligation_recipe::preview_revision(&inputs, &target, &recipe).unwrap(),
+        revision: ligation_recipe::preview_revision(
+            &inputs,
+            &target,
+            &recipe,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        )
+        .unwrap(),
         job: AnalysisJob::PreviewLigationRecipe {
+            policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
             inputs,
             target,
             recipe,

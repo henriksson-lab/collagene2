@@ -237,9 +237,9 @@ fn inherited_cpg_positions_survive_conditional_not_i_cleavage_without_claiming_p
                 },
             },
             Operation::CheckedDigest {
+                selection: checked_selection(vec!["NotI".into()]),
+                options: collagene_core::modified_duplex::checked_inspection_options(),
                 template: Source::Step(0),
-                enzymes: vec!["NotI".into()],
-                profile_revision: collagene_core::modified_duplex::profile_revision(),
                 fragment_index: 0,
             },
         ],
@@ -458,4 +458,22 @@ fn saved_staggered_source_uses_actual_bottom_free_ends_for_both_cut_paths() {
     let mut tampered = report.clone();
     tampered.source_duplex.bottom_length -= 1;
     assert!(tampered.validate_binding(&report.context_revision).is_err());
+}
+
+fn checked_selection(names: Vec<String>) -> collagene_core::catalog_digest::CatalogSelection {
+    let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+    let ids = names
+        .iter()
+        .map(|name| {
+            catalog
+                .edition()
+                .enzymes
+                .iter()
+                .find(|e| e.name.eq_ignore_ascii_case(name))
+                .unwrap()
+                .id
+                .clone()
+        })
+        .collect::<Vec<_>>();
+    collagene_core::catalog_digest::select(&catalog, &ids).unwrap()
 }

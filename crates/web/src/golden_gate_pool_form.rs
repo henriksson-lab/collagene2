@@ -449,7 +449,8 @@ mod tests {
                 rows: vec![reaction::Row {
                     role: "substrate".into(),
                     input_id: "source".into(),
-                    substrate: reaction::Substrate::WholeSource,
+                    generation: None,
+                    substrate: reaction::Substrate::WholeSource { origin: None },
                 }],
                 options: native,
             };

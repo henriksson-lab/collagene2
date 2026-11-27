@@ -59,6 +59,7 @@ fn preparation(repair: Option<EndRepairMethod>) -> Preparation {
 }
 fn fragment(preparation: Preparation, reverse: bool) -> FragmentSpec {
     FragmentSpec {
+        generation: None,
         role: "edited-role".into(),
         input_id: "original".into(),
         preparation,
@@ -88,7 +89,13 @@ fn outer_actual_pcr_is_cut_under_exact_catalog_pin_and_closes_real_sticky_ends()
         circular: true,
         allow_nicked: false,
     };
-    let p = lig::preview(&inputs, &target, &recipe).unwrap();
+    let p = lig::preview(
+        &inputs,
+        &target,
+        &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert_eq!(
         p.verification.status,
         Status::ConsistentUnderAssumptions,

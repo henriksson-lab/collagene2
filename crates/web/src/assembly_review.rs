@@ -699,7 +699,13 @@ mod tests {
                 })
                 .collect(),
         };
-        let compiled = ligation_recipe::compile(&inputs, intent.target(), &recipe).unwrap();
+        let compiled = ligation_recipe::compile(
+            &inputs,
+            intent.target(),
+            &recipe,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        )
+        .unwrap();
         assert_eq!(compiled.plan.inputs.len(), 3);
         assert_eq!(
             verification::verify(&compiled.plan, intent.target()).status,
@@ -891,9 +897,14 @@ mod tests {
                 .collect(),
         };
         let candidate = Candidate::new(
-            ligation_recipe::compile(&inputs, intent.target(), &recipe)
-                .unwrap()
-                .plan,
+            ligation_recipe::compile(
+                &inputs,
+                intent.target(),
+                &recipe,
+                collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            )
+            .unwrap()
+            .plan,
         );
         assert_eq!(
             verification::verify(&candidate.plan, intent.target()).status,
@@ -941,9 +952,14 @@ mod tests {
         let wrong = build("AATC");
         assert_eq!(wrong.target().sequence.as_str(), "AATTCTTACGGGAATCGCTACG");
         let candidate = Candidate::new(
-            ligation_recipe::compile(&inputs, wrong.target(), &recipe)
-                .unwrap()
-                .plan,
+            ligation_recipe::compile(
+                &inputs,
+                wrong.target(),
+                &recipe,
+                collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            )
+            .unwrap()
+            .plan,
         );
         assert_eq!(
             verification::verify(&candidate.plan, wrong.target()).status,
@@ -1088,9 +1104,14 @@ mod tests {
                 .collect(),
         };
         let candidate = Candidate::new(
-            ligation_recipe::compile(&ordered, intent.target(), &recipe)
-                .unwrap()
-                .plan,
+            ligation_recipe::compile(
+                &ordered,
+                intent.target(),
+                &recipe,
+                collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            )
+            .unwrap()
+            .plan,
         );
         assert_eq!(
             verification::verify(&candidate.plan, intent.target()).status,

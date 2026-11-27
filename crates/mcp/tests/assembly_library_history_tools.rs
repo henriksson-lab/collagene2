@@ -67,13 +67,26 @@ async fn sdk_lists_and_opens_exact_raw_recovery_without_restoring_any_state() {
     .unwrap();
     // Deliberately opaque host data. Native history attests the version/counter
     // header and declared event pins; these bytes are not claimed as a valid WebDraft.
-    let persisted =
-        br#"{"version":3,"alternatives":{"id":"library-sdk","next_id":7},"pending":"persisted"}"#
-            .to_vec();
-    let before="{\n  \"version\":3,\n  \"alternatives\":{\"id\":\"library-sdk\",\"next_id\":7},\n  \"pending\":\"unsaved Ω primer: ACGT??  \",\n  \"removed_sources\":[\"source two\"]\n}\n".as_bytes().to_vec();
-    let after =
-        br#"{"version":3,"alternatives":{"id":"library-sdk","next_id":9},"pending":"after"}"#
-            .to_vec();
+    let persisted = format!(
+        r#"{{"version":{},"alternatives":{{"id":"library-sdk","next_id":7}},"pending":"persisted"}}"#,
+        history::ACTIVE_DRAFT_VERSION
+    ).into_bytes();
+    let before = format!(
+        r#"{{
+  "version":{},
+  "alternatives":{{"id":"library-sdk","next_id":7}},
+  "pending":"unsaved Ω primer: ACGT??  ",
+  "removed_sources":["source two"]
+}}
+"#,
+        history::ACTIVE_DRAFT_VERSION
+    )
+    .into_bytes();
+    let after = format!(
+        r#"{{"version":{},"alternatives":{{"id":"library-sdk","next_id":9}},"pending":"after"}}"#,
+        history::ACTIVE_DRAFT_VERSION
+    )
+    .into_bytes();
     let oldhash = blake3::hash(&persisted).to_hex().to_string();
     w.attachments.insert(
         oldhash,

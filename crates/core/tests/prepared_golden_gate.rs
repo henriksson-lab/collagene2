@@ -181,6 +181,7 @@ fn missing_middle_preparation_and_metadata_only_end_claims_withhold_the_entire_p
         .enumerate()
         .map(|(i, s)| ligation_recipe::Fragment {
             source: FragmentSpec {
+                generation: None,
                 role: format!("raw-{i}"),
                 input_id: s.id.clone(),
                 preparation: Preparation::WholeLinear,
@@ -229,6 +230,7 @@ fn bounded_search_retains_candidates_without_claiming_complete_or_exhaustive_mix
             name: "Explicit intact prepared circle".into(),
             fragments: vec![ligation_recipe::Fragment {
                 source: FragmentSpec {
+                    generation: None,
                     role: "carryover".into(),
                     input_id: "uncut".into(),
                     preparation: Preparation::Digest {

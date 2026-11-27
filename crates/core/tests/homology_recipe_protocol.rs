@@ -48,6 +48,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, assembly_recipe::Recipe) {
             fragments: ["a", "b"]
                 .into_iter()
                 .map(|id| FragmentSpec {
+                    generation: None,
                     role: id.into(),
                     input_id: id.into(),
                     preparation: Preparation::DeclaredDuplex {
@@ -152,7 +153,7 @@ fn worker86_job167_operation24_evidence3_and_portable_schemas_keep_explicit_poli
         "{:?}",
         preview.verification.findings
     );
-    assert!(preview.verification.engine_version.ends_with("/science-26"));
+    assert!(preview.verification.engine_version.ends_with("/science-27"));
     assert_eq!(
         preview
             .verification
@@ -293,6 +294,7 @@ fn saved_homology_replays_actual_material_for_pcr_and_digest_and_retains_histori
             name: "Actual homology product reuse".into(),
             fragments: vec![ligation_recipe::Fragment {
                 source: FragmentSpec {
+                    generation: None,
                     role: "saved".into(),
                     input_id: "saved".into(),
                     preparation: Preparation::FromRun {
@@ -308,8 +310,15 @@ fn saved_homology_replays_actual_material_for_pcr_and_digest_and_retains_histori
         };
         let request = Request {
             id: 86,
-            revision: ligation_recipe::preview_revision(&inputs, &target, &recipe).unwrap(),
+            revision: ligation_recipe::preview_revision(
+                &inputs,
+                &target,
+                &recipe,
+                collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            )
+            .unwrap(),
             job: AnalysisJob::PreviewLigationRecipe {
+                policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
                 inputs,
                 target,
                 recipe,

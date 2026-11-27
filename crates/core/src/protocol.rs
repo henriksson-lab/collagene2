@@ -6,8 +6,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 97;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 25;
+pub const WORKER_SCHEMA_VERSION: u16 = 98;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 26;
 
 // Current selectors whose accepted payloads can contain complete workspace archives.
 // Stateless and session dispatch must admit the same envelope before routing.
@@ -623,6 +623,7 @@ pub enum AnalysisJob {
         inputs: Vec<crate::verification::PlanInput>,
         target: Molecule,
         recipe: crate::ligation_recipe::Recipe,
+        policy: crate::assembly_recipe::CleavagePolicy,
     },
     InspectAssemblyJunctions {
         plan: crate::verification::DesignPlan,
@@ -3275,8 +3276,11 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             inputs,
             target,
             recipe,
+            policy,
         } => {
-            if crate::ligation_recipe::preview_revision(inputs, target, recipe)? != r.revision {
+            if crate::ligation_recipe::preview_revision(inputs, target, recipe, *policy)?
+                != r.revision
+            {
                 return Err(Error::Format(
                     "ligation preparation source/target/options changed".into(),
                 ));
@@ -4267,7 +4271,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             inputs,
             target,
             recipe,
-        } => crate::ligation_recipe::preview(&inputs, &target, &recipe)
+            policy,
+        } => crate::ligation_recipe::preview(&inputs, &target, &recipe, policy)
             .map(AnalysisResult::LigationRecipePreview),
         AnalysisJob::PreviewOverlapRecipe {
             inputs,

@@ -35,6 +35,7 @@ fn fixture() -> (Workspace, String) {
     )
     .unwrap();
     let choice = |id: &str, index| Choice {
+        generation: None,
         id: id.into(),
         label: id.into(),
         source: binding(&frame, index),

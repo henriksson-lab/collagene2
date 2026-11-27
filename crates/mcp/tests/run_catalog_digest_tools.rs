@@ -145,8 +145,12 @@ async fn explicit_workspace_saved_catalog_inspection_retains_outer_oh_and_cut_p_
     let before = call(&client, "list_documents", json!({})).await["total"].clone();
     let mut args = json!({"document":{"id":selected.event.revision,"revision":selected.event.revision},"source_role":"saved","enzymes":["EcoRI"],"max_sites":10,"max_fragments":1});
     let plain = call(&client, "inspect_restriction", args.clone()).await;
-    let recognition: collagene_core::restriction_inspection::RestrictionInspection =
+    let full: collagene_mcp::RestrictionInspectionEvidence =
         serde_json::from_value(evidence(&client, &plain["artifact_id"]).await).unwrap();
+    let collagene_mcp::RestrictionInspectionEvidence::Original { inspection } = full else {
+        panic!("unattested source inspection must remain explicitly original-reference evidence");
+    };
+    let recognition = inspection.inspection;
     assert!(recognition.scan_complete);
     assert_eq!(recognition.sites.len(), 1);
     assert_eq!(recognition.sites[0].recognition_start, 4);
@@ -169,8 +173,11 @@ async fn explicit_workspace_saved_catalog_inspection_retains_outer_oh_and_cut_p_
     assert_eq!(result["products_determined"], true);
     assert_eq!(result["fragments"].as_array().unwrap().len(), 1);
     assert_eq!(result["fragments_done"], false);
-    let report: collagene_core::run_catalog_digest::Inspection =
+    let full: collagene_mcp::RestrictionInspectionEvidence =
         serde_json::from_value(evidence(&client, &result["artifact_id"]).await).unwrap();
+    let collagene_mcp::RestrictionInspectionEvidence::SavedRun { inspection: report } = full else {
+        panic!("saved source inspection must retain full replay evidence");
+    };
     report
         .validate_binding(result["context_revision"].as_str().unwrap())
         .unwrap();
@@ -204,7 +211,7 @@ async fn explicit_workspace_saved_catalog_inspection_retains_outer_oh_and_cut_p_
             .five_prime,
         collagene_core::chemistry::FivePrime::Phosphate
     );
-    assert_eq!(result["artifact_id"], result["catalog_artifact_id"]);
+    assert!(result.get("catalog_artifact_id").is_none());
     let mut next = args.clone();
     next["fragment_start"] = result["next_fragment_start"].clone();
     let page = call(&client, "inspect_restriction", next).await;

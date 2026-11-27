@@ -453,6 +453,7 @@ pub(crate) fn design_row_with_flanks(
         ));
     }
     let fragment = FragmentSpec {
+        generation: None,
         role: f.role.clone(),
         input_id: f.input_id.clone(),
         reverse: f.reverse,

@@ -64,6 +64,7 @@ fn recipe(preparation: Preparation) -> lig::Recipe {
         name: "Mutant PCR and actual pinned digest".into(),
         fragments: vec![lig::Fragment {
             source: FragmentSpec {
+                generation: None,
                 role: "insert".into(),
                 input_id: "source".into(),
                 preparation,
@@ -90,7 +91,13 @@ fn ordinary_mismatch_amplicon_and_two_cuts_keep_real_outer_oh_and_internal_phosp
     )];
     let r = recipe(prep(None));
     let t = target("AATTCAGACCCC");
-    let p = lig::preview(&inputs, &t, &r).unwrap();
+    let p = lig::preview(
+        &inputs,
+        &t,
+        &r,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert_eq!(
         p.verification.status,
         Status::ConsistentUnderAssumptions,
@@ -129,9 +136,23 @@ fn ordinary_mismatch_amplicon_and_two_cuts_keep_real_outer_oh_and_internal_phosp
     assert_eq!(left.chemistry.five_prime, FivePrime::Hydroxyl);
     assert_eq!(right.chemistry.five_prime, FivePrime::Hydroxyl);
     collagene_core::assembly_diagnostics::ligation(&p).unwrap();
-    p.validate_binding(&lig::preview_revision(&inputs, &t, &r).unwrap())
-        .unwrap();
-    let wrong = lig::preview(&inputs, &target("AATTCAAACCCC"), &r).unwrap();
+    p.validate_binding(
+        &lig::preview_revision(
+            &inputs,
+            &t,
+            &r,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let wrong = lig::preview(
+        &inputs,
+        &target("AATTCAAACCCC"),
+        &r,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert_eq!(wrong.verification.status, Status::Invalid);
     assert!(wrong.product_physical.is_some());
 }
@@ -204,7 +225,13 @@ fn saved_origin_chain_replays_before_mismatch_digest_and_explicit_repair() {
     );
     // Filling the actual two 5′ extensions adds right TCGA to the top reference.
     let t = target("AATTCAGACCCCTCGA");
-    let p = lig::preview(&inputs, &t, &r).unwrap();
+    let p = lig::preview(
+        &inputs,
+        &t,
+        &r,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert_eq!(
         p.verification.status,
         Status::ConsistentUnderAssumptions,
@@ -267,7 +294,13 @@ fn incomplete_singleton_stays_conditionally_usable_and_never_becomes_verified_un
         options.max_products = 1;
     }
     let r = recipe(preparation);
-    let p = lig::preview(&inputs, &target("AATTCAGACCCC"), &r).unwrap();
+    let p = lig::preview(
+        &inputs,
+        &target("AATTCAGACCCC"),
+        &r,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert!(p.preparation_complete);
     assert!(p.product_physical.is_some());
     assert_eq!(
@@ -283,7 +316,13 @@ fn incomplete_singleton_stays_conditionally_usable_and_never_becomes_verified_un
             .any(|f| f.contains("incomplete"))
     );
     collagene_core::assembly_diagnostics::ligation(&p).unwrap();
-    let wrong = lig::preview(&inputs, &target("AATTCAAACCCC"), &r).unwrap();
+    let wrong = lig::preview(
+        &inputs,
+        &target("AATTCAAACCCC"),
+        &r,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert_eq!(wrong.verification.status, Status::Invalid);
 }
 #[test]
@@ -293,7 +332,13 @@ fn policy_pins_fragment_indices_and_secondary_operation_tampering_stay_bound() {
     )];
     let r = recipe(prep(None));
     let t = target("AATTCAGACCCC");
-    let p = lig::preview(&inputs, &t, &r).unwrap();
+    let p = lig::preview(
+        &inputs,
+        &t,
+        &r,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     let mut changed = r.clone();
     if let Preparation::MismatchPcrCatalogDigest { options, .. } =
         &mut changed.fragments[0].source.preparation
@@ -301,14 +346,25 @@ fn policy_pins_fragment_indices_and_secondary_operation_tampering_stay_bound() {
         options.binding.max_mismatches = 0;
     }
     assert_ne!(
-        lig::preview_revision(&inputs, &t, &changed).unwrap(),
+        lig::preview_revision(
+            &inputs,
+            &t,
+            &changed,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete
+        )
+        .unwrap(),
         p.context_revision
     );
     assert_ne!(
-        lig::preview(&inputs, &t, &changed)
-            .unwrap()
-            .verification
-            .status,
+        lig::preview(
+            &inputs,
+            &t,
+            &changed,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete
+        )
+        .unwrap()
+        .verification
+        .status,
         Status::ConsistentUnderAssumptions
     );
     let mut changed = r.clone();
@@ -317,7 +373,15 @@ fn policy_pins_fragment_indices_and_secondary_operation_tampering_stay_bound() {
     {
         selection.catalog_content_hash = "0".repeat(64);
     }
-    assert!(lig::compile(&inputs, &t, &changed).is_err());
+    assert!(
+        lig::compile(
+            &inputs,
+            &t,
+            &changed,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete
+        )
+        .is_err()
+    );
     let mut changed = r.clone();
     if let Preparation::MismatchPcrCatalogDigest { fragment_index, .. } =
         &mut changed.fragments[0].source.preparation
@@ -392,6 +456,7 @@ fn actual_bsa_i_mutant_fragment_passes_golden_gate_filter_and_saved_catalog_repl
             id: "insert".into(),
             label: "Insert".into(),
             choices: vec![Choice {
+                generation: None,
                 id: "mutant".into(),
                 label: "Explicit mismatch and BsaI".into(),
                 source: binding(&w, 0),
@@ -402,7 +467,7 @@ fn actual_bsa_i_mutant_fragment_passes_golden_gate_filter_and_saved_catalog_repl
                 treatment: None,
             }],
         }],
-        method: Method::GoldenGate {
+        method: Method::OrderedTypeIis {
             enzyme: GoldenGateEnzyme::BsaI,
             allow_nicked: false,
         },
@@ -506,7 +571,13 @@ fn actual_bsa_i_mutant_fragment_passes_golden_gate_filter_and_saved_catalog_repl
         assembly_recipe::preparation_catalog_selection(&existing),
         Some(&selection)
     );
-    let replayed = lig::preview(&[input(saved)], &intended, &recipe(existing)).unwrap();
+    let replayed = lig::preview(
+        &[input(saved)],
+        &intended,
+        &recipe(existing),
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert_eq!(
         replayed.verification.status,
         Status::ConsistentUnderAssumptions,

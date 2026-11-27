@@ -37,6 +37,7 @@ fn fixture() -> (Workspace, Design) {
         start: 0,
         end: 4,
         reverse: false,
+        generation: None,
         preparation: Some(Preparation::WholeLinear),
         treatment: None,
     };
@@ -331,6 +332,7 @@ fn circular_unrolled_contribution_and_explicit_reverse_keep_source_geometry() {
                 start: 4,
                 end: 8,
                 reverse: true,
+                generation: None,
                 preparation: Some(Preparation::ExactPcr {
                     forward: Primer::new("F", "AAAC", "").unwrap(),
                     reverse: Primer::new("R", "GTTT", "").unwrap(),
@@ -360,7 +362,7 @@ fn circular_unrolled_contribution_and_explicit_reverse_keep_source_geometry() {
     overrun.bins[0].choices[0].end = 11;
     assert!(design::resolve(&overrun, &row, &w).is_err());
     let mut unsupported = d.clone();
-    unsupported.method = Method::GoldenGate {
+    unsupported.method = Method::OrderedTypeIis {
         enzyme: collagene_core::golden_gate::GoldenGateEnzyme::BsaI,
         allow_nicked: false,
     };

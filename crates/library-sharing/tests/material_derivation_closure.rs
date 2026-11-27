@@ -239,7 +239,7 @@ fn fixture() -> Fixture {
     w.candidates.push(Candidate::new(candidate));
     w.active_candidate = Some(w.candidates.last().unwrap().plan_revision.clone());
     let draft = WorkspaceAttachment {
-        kind: "assembly-draft-v14".into(),
+        kind: collagene_core::assembly_library_history::ACTIVE_DRAFT_KIND.into(),
         name: "Private draft".into(),
         media_type: "application/json".into(),
         bytes: br#"{"private":"UNPUBLISHED DRAFT"}"#.to_vec(),
@@ -280,7 +280,7 @@ fn check_projected(f: &Fixture, projection: sharing::Projection) {
     assert!(
         !w.attachments
             .values()
-            .any(|a| a.kind == "assembly-draft-v14")
+            .any(|a| a.kind == collagene_core::assembly_library_history::ACTIVE_DRAFT_KIND)
     );
     let restored = workspace::load_workspace(&workspace::save_workspace(&w).unwrap()).unwrap();
     let fresh = run_material::reconstruct(&restored, &f.final_run).unwrap();

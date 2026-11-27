@@ -62,6 +62,7 @@ fn recipe() -> Recipe {
         name: "Replace GGAC with TT before inserting into vector".into(),
         fragments: vec![
             FragmentSpec {
+                generation: None,
                 role: "edited_insert".into(),
                 input_id: "insert".into(),
                 preparation: Preparation::OverlapExtensionPcr {
@@ -79,6 +80,7 @@ fn recipe() -> Recipe {
                 reverse: false,
             },
             FragmentSpec {
+                generation: None,
                 role: "vector".into(),
                 input_id: "vector".into(),
                 preparation: Preparation::ExactPcr {

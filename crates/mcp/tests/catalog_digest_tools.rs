@@ -1,10 +1,6 @@
-//! Actual SDK lookup/evidence and compatible flat plus fully pinned inspection artifacts.
-use collagene_core::{
-    catalog_digest::*,
-    formats,
-    restriction_inspection::{InspectionOptions, RestrictionInspection},
-};
-use collagene_mcp::CollageneServer;
+//! Actual SDK lookup/evidence and complete catalog-bound inspection artifacts.
+use collagene_core::{catalog_digest::*, formats, restriction_inspection::InspectionOptions};
+use collagene_mcp::{CollageneServer, RestrictionInspectionEvidence};
 use rmcp::{
     RoleClient, ServiceExt,
     model::{CallToolRequestParams, ReadResourceRequestParams},
@@ -179,7 +175,7 @@ async fn catalog_discovery_is_versioned_and_assay_qualifiers_unknown_and_citatio
     s.await.unwrap();
 }
 #[tokio::test]
-async fn expanded_digest_keeps_strict_legacy_artifact_and_adds_exact_catalog_pin() {
+async fn expanded_digest_publishes_one_exact_catalog_bound_artifact() {
     let (c, s) = setup().await;
     let d = import(&c, "source", "AAGGCCTT").await;
     let before = call(&c, "list_documents", json!({})).await;
@@ -193,14 +189,14 @@ async fn expanded_digest_keeps_strict_legacy_artifact_and_adds_exact_catalog_pin
     assert_eq!(first["fragment_count"], 2);
     assert_eq!(first["catalog_pin"]["enzymes"][0]["id"], "haeiii");
     assert_ne!(first["catalog_batch_revision"], first["batch_revision"]);
-    let raw = artifact(&c, &first["artifact_id"]).await;
-    assert!(raw.get("catalog_pin").is_none());
-    let legacy: RestrictionInspection = serde_json::from_value(raw.clone()).unwrap();
-    assert_eq!(legacy.sites[0].top_cut, Some(4));
-    assert_eq!(legacy.sites[0].bottom_cut, Some(4));
-    let pinned: CatalogRestrictionInspection =
-        serde_json::from_value(artifact(&c, &first["catalog_artifact_id"]).await).unwrap();
-    assert_eq!(serde_json::to_value(&pinned.inspection).unwrap(), raw);
+    assert!(first.get("catalog_artifact_id").is_none());
+    let full: RestrictionInspectionEvidence =
+        serde_json::from_value(artifact(&c, &first["artifact_id"]).await).unwrap();
+    let RestrictionInspectionEvidence::Original { inspection: pinned } = full else {
+        panic!("ordinary inspection must retain its explicit source kind");
+    };
+    assert_eq!(pinned.inspection.sites[0].top_cut, Some(4));
+    assert_eq!(pinned.inspection.sites[0].bottom_cut, Some(4));
     assert_eq!(pinned.batch_revision, first["catalog_batch_revision"]);
     let catalog = builtin_catalog().unwrap();
     let selection = select(&catalog, &["haeiii".into()]).unwrap();
@@ -222,7 +218,6 @@ async fn expanded_digest_keeps_strict_legacy_artifact_and_adds_exact_catalog_pin
     next["catalog_pin"] = first["catalog_pin"].clone();
     let next = call(&c, "inspect_restriction", next).await;
     assert_eq!(next["artifact_id"], first["artifact_id"]);
-    assert_eq!(next["catalog_artifact_id"], first["catalog_artifact_id"]);
     assert_eq!(next["fragments"][0]["top_start"], 4);
     let mut stale = args.clone();
     stale["catalog_pin"] = first["catalog_pin"].clone();
@@ -243,11 +238,11 @@ async fn expanded_digest_keeps_strict_legacy_artifact_and_adds_exact_catalog_pin
     s.await.unwrap();
 }
 #[tokio::test]
-async fn paired_catalog_and_legacy_artifacts_publish_atomically_at_session_capacity() {
+async fn single_catalog_artifact_refuses_full_session_without_partial_publication() {
     let (c, s) = setup().await;
     let d = import(&c, "capacity", "AAGGCCTT").await;
     let before = call(&c, "list_documents", json!({})).await;
-    for work in 1..=127 {
+    for work in 1..=128 {
         let mut o = collagene_core::methylation::MethylationOptions::default();
         o.max_comparisons = work;
         call(&c, "assess_methylation", json!({"document":d,"options":o})).await;
@@ -266,10 +261,8 @@ async fn paired_catalog_and_legacy_artifacts_publish_atomically_at_session_capac
         &InspectionOptions::default(),
     )
     .unwrap();
-    let raw_id = blake3::hash(&serde_json::to_vec(&report.inspection).unwrap())
-        .to_hex()
-        .to_string();
-    let pinned_id = blake3::hash(&serde_json::to_vec(&report).unwrap())
+    let evidence = RestrictionInspectionEvidence::Original { inspection: report };
+    let artifact_id = blake3::hash(&serde_json::to_vec(&evidence).unwrap())
         .to_hex()
         .to_string();
     reject(
@@ -278,14 +271,13 @@ async fn paired_catalog_and_legacy_artifacts_publish_atomically_at_session_capac
         json!({"document":d,"source_role":"capacity-role","enzymes":["haeiii"]}),
     )
     .await;
-    for id in [raw_id, pinned_id] {
-        reject(
-            &c,
-            "read_artifact",
-            json!({"artifact_id":id,"start":0,"max_bytes":1024}),
-        )
-        .await;
-    }
+    reject(
+        &c,
+        "read_artifact",
+        json!({"artifact_id":artifact_id,"start":0,"max_bytes":1024}),
+    )
+    .await;
+    // Refusing one new item must not invalidate any already published item.
     let mut o = collagene_core::methylation::MethylationOptions::default();
     o.max_comparisons = 128;
     call(&c, "assess_methylation", json!({"document":d,"options":o})).await;

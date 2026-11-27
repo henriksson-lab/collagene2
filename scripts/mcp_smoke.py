@@ -157,7 +157,7 @@ def main():
             inspection=tool("inspect_restriction",{"document":ref("target"),"source_role":"mvp-source","enzymes":["EcoRI","BamHI"],"max_sites":1,"max_fragments":1})
             assert inspection["scan_complete"] and inspection["products_determined"]
             assert inspection["site_count"]==0 and inspection["fragment_count"]==1
-            evidence=full_json_artifact(inspection["artifact_id"])
+            evidence=full_json_artifact(inspection["artifact_id"])["inspection"]["inspection"]
             assert evidence["batch_revision"]==inspection["batch_revision"] and evidence["source_revision"]==ref("target")["revision"]
             assert len(evidence["enzymes"])==2 and evidence["fragments"][0]["duplex"]["top_length"]==12
             reject_tool("inspect_restriction",{"document":ref("target"),"source_role":"mvp-source","enzymes":["invented"]})
@@ -166,7 +166,7 @@ def main():
         digest_args={"document":digest_ref(0),"source_role":"mvp-source-event","enzymes":["ecori","BamHI"],"max_sites":1,"max_fragments":1}
         digest=tool("inspect_restriction",digest_args)
         assert digest["scan_complete"] and digest["products_determined"] and digest["site_count"]==2 and digest["fragment_count"]==3
-        digest_full=full_json_artifact(digest["artifact_id"])
+        digest_full=full_json_artifact(digest["artifact_id"])["inspection"]["inspection"]
         assert [f["duplex"]["top_length"] for f in digest_full["fragments"]]==[5,10,9]
         digest_page=tool("inspect_restriction",dict(digest_args,site_start=1,fragment_start=1))
         assert digest_page["artifact_id"]==digest["artifact_id"] and digest_page["sites"][0]["recognition_start"]==14 and digest_page["fragments"][0]["top_start"]==5
@@ -178,9 +178,11 @@ def main():
         catalog_digest=tool("inspect_restriction",catalog_args)
         assert catalog_digest["products_determined"] and [f["duplex"]["top_length"] for f in catalog_digest["fragments"]]==[4,4]
         assert catalog_digest["catalog_pin"]["catalog_content_hash"]==catalog["catalog_content_hash"] and catalog_digest["catalog_pin"]["enzymes"][0]["id"]=="haeiii"
-        wrapped=full_json_artifact(catalog_digest["catalog_artifact_id"])
-        raw=full_json_artifact(catalog_digest["artifact_id"])
-        assert wrapped["inspection"]==raw and "catalog_pin" not in raw and wrapped["batch_revision"]==catalog_digest["catalog_batch_revision"] and wrapped["selection"]==catalog_digest["catalog_pin"]
+        evidence=full_json_artifact(catalog_digest["artifact_id"])
+        assert evidence["source"]=="Original" and "catalog_artifact_id" not in catalog_digest
+        wrapped=evidence["inspection"]
+        assert wrapped["batch_revision"]==catalog_digest["catalog_batch_revision"] and wrapped["selection"]==catalog_digest["catalog_pin"]
+        assert [f["duplex"]["top_length"] for f in wrapped["inspection"]["fragments"]]==[4,4]
         stale_pin=dict(catalog_digest["catalog_pin"],catalog_content_hash="0"*64)
         reject_tool("inspect_restriction",dict(catalog_args,catalog_pin=stale_pin))
         search_options={"query":"CCCC","mode":"Sequence","both_strands":True,"case_sensitive":False,"whole_word":False,"enzymes":[],"max_hits":100,"max_rows":1000,"max_work":10000}
@@ -353,8 +355,9 @@ def main():
         assert not tool("inspect_genome",{})["datasets"]
         tracked_docs=tool("import_document",{"text":">tracked_source\nAAAAGAATTCCCC\n>tracked_target\nAAAAG\n"})["documents"]
         tracked_refs={d["name"]:{"id":d["id"],"revision":d["revision"]} for d in tracked_docs}
-        tracked_profile=tool("list_enzymes",{})["checked_digest_profile_revision"]
-        tracked_steps=[{"DeclareSourceModifications":{"template":{"Input":"s"},"assumptions":{"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"}}},{"CheckedDigest":{"template":{"Step":0},"enzymes":["EcoRI"],"profile_revision":tracked_profile,"fragment_index":0}}]
+        tracked_pin=tool("inspect_restriction",{"document":tracked_refs["tracked_source"],"source_role":"tracked-source-catalog","enzymes":["EcoRI"]})["catalog_pin"]
+        tracked_limits={"max_comparisons":100000,"max_sites":32,"max_fragments":32,"max_report_bytes":1048576}
+        tracked_steps=[{"DeclareSourceModifications":{"template":{"Input":"s"},"assumptions":{"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"}}},{"CheckedDigest":{"template":{"Step":0},"selection":tracked_pin,"options":tracked_limits,"fragment_index":0}}]
         tracked=tool("propose_plan",{"name":"Stdio checked digest","target":tracked_refs["tracked_target"],"inputs":[{"id":"s","document":tracked_refs["tracked_source"]}],"steps":tracked_steps})
         tracked_report=tool("verify_plan",{"plan_revision":tracked["plan_revision"]})
         assert tracked_report["status"]=="ConsistentUnderAssumptions" and tracked_report["engine_version"].endswith(current_engine_suffix),tracked_report
@@ -371,8 +374,8 @@ def main():
             "inputs":[{"id":name,"document":ref(name)} for name in ["left","right"]],
             "target":ref("target"),
             "recipe":{"name":"Stdio prepared overlap recipe","fragments":[
-                {"role":"left-fragment","input_id":"left","preparation":"WholeLinear","reverse":False},
-                {"role":"right-fragment","input_id":"right","preparation":"WholeLinear","reverse":False}],
+                {"role":"left-fragment","input_id":"left","generation":None,"preparation":"WholeLinear","reverse":False},
+                {"role":"right-fragment","input_id":"right","generation":None,"preparation":"WholeLinear","reverse":False}],
                 "overlaps":[4],"circular":False,
                 "options":{"method":"HiFi","scan_repeated_overlaps":False,"max_comparisons":10000,"max_occurrences":100}}})
         assert recipe_candidate["verified"] is False and recipe_candidate["preparation_complete"],recipe_candidate
@@ -418,7 +421,7 @@ def main():
         ligation_docs=tool("import_document",{"text":ligation_text})["documents"]
         ligation_refs={document["name"]:immutable_ref(document) for document in ligation_docs}
         ligation_inputs=[{"id":name,"document":ligation_refs[name]} for name,_ in ligation_sequences[:3]]
-        ligation_fragments=[{"source":{"role":name,"input_id":name,"preparation":{"Digest":{"enzymes":["EcoRI"],"fragment_index":0,"repair":None}},"reverse":False},"treatment":None} for name,_ in ligation_sequences[:3]]
+        ligation_fragments=[{"source":{"role":name,"input_id":name,"generation":None,"preparation":{"Digest":{"enzymes":["EcoRI"],"fragment_index":0,"repair":None}},"reverse":False},"treatment":None} for name,_ in ligation_sequences[:3]]
         ligation=tool("propose_ligation_assembly",{"inputs":ligation_inputs,"target":ligation_refs["ligation_target"],"recipe":{"name":"Stdio three-piece cohesive ligation","fragments":ligation_fragments,"circular":True,"allow_nicked":False}})
         assert ligation["verified"] is False and ligation["verification"]["status"]=="ConsistentUnderAssumptions",ligation
         assert ligation["junction_count"]==3 and ligation["product_physical"]["top_length"]==42 and ligation["product_physical"]["nick_count"]==0,ligation
@@ -428,7 +431,7 @@ def main():
         declared_docs=tool("import_document",{"text":">declared_left\nAAAA\n>declared_right\nCCCC\n>declared_independent_target\nAAAACCCC\n"})["documents"]
         declared_refs={document["name"]:immutable_ref(document) for document in declared_docs}
         declared_terminus={"five_prime":"Phosphate","three_prime":"Hydroxyl"}
-        declared_fragments=[{"source":{"role":name,"input_id":name,"preparation":{"DeclaredDuplex":{"left":declared_terminus,"right":declared_terminus}},"reverse":False},"treatment":None} for name in ["declared_left","declared_right"]]
+        declared_fragments=[{"source":{"role":name,"input_id":name,"generation":None,"preparation":{"DeclaredDuplex":{"left":declared_terminus,"right":declared_terminus}},"reverse":False},"treatment":None} for name in ["declared_left","declared_right"]]
         declared_args={"inputs":[{"id":name,"document":declared_refs[name]} for name in ["declared_left","declared_right"]],"target":declared_refs["declared_independent_target"],"recipe":{"name":"Explicit original duplex termini","fragments":declared_fragments,"circular":False,"allow_nicked":False}}
         declared=tool("propose_ligation_assembly",declared_args)
         assert declared["verification"]["status"]=="ConsistentUnderAssumptions" and declared["verification"]["engine_version"].endswith(current_engine_suffix),declared

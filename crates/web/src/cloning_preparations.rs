@@ -169,6 +169,7 @@ pub(crate) fn prepared_rows(
             preparation
         };
         fragments.push(FragmentSpec {
+            generation: row.generation()?,
             role: roles[i].role.clone(),
             input_id: ids[i].clone(),
             preparation,
@@ -616,8 +617,13 @@ mod annealed_tests {
             circular: true,
             allow_nicked: false,
         };
-        let preview =
-            collagene_core::ligation_recipe::preview(&inputs, &intent.target, &recipe).unwrap();
+        let preview = collagene_core::ligation_recipe::preview(
+            &inputs,
+            &intent.target,
+            &recipe,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        )
+        .unwrap();
         assert_eq!(preview.compiled.plan.inputs.len(), 3);
         assert_eq!(preview.compiled.rows.len(), 2);
         assert_eq!(
@@ -1037,5 +1043,78 @@ mod overlap_extension_tests {
         assert!(s == before);
         s.rows[0].catalog_selection = None;
         assert!(prepared_rows(&s, 2).is_err());
+    }
+}
+
+#[cfg(test)]
+mod source_generation_tests {
+    use super::*;
+    use crate::cloning_methods_model::SourceGenerationInput;
+    use collagene_core::{
+        Molecule, Topology,
+        modified_duplex::ModificationSummary,
+        verification::{self, DesignPlan, Operation, PlanInput},
+    };
+    #[test]
+    fn original_generation_precedes_pcr_and_new_strands_do_not_copy_modifications() {
+        let source = Molecule::dna(
+            "Dam declared original",
+            "CAGTGATCGTACGTAC",
+            Topology::Linear,
+        )
+        .unwrap();
+        let target = Molecule::dna(
+            "Independent intended PCR",
+            "CAGTGATCGTACGTAC",
+            Topology::Linear,
+        )
+        .unwrap();
+        let mut state = MethodsState::default();
+        state.rows.truncate(1);
+        let row = &mut state.rows[0];
+        row.preparation = OverlapPreparation::ExactPcr;
+        row.forward = "CAGTGATC".into();
+        row.reverse_primer = "GTACGTAC".into();
+        row.source_generation = Some(SourceGenerationInput {
+            dam: "fully".into(),
+            dcm: "unmodified".into(),
+            cpg: "unmodified".into(),
+        });
+        let (ids, fragments) = prepared_rows(&state, 1).unwrap();
+        assert!(fragments[0].generation.is_some());
+        let inputs = vec![PlanInput {
+            id: ids[0].clone(),
+            revision: source.revision(),
+            molecule: source,
+        }];
+        let compiled = collagene_core::assembly_recipe::compile_preparations(
+            &inputs,
+            &target,
+            "Original declaration before PCR",
+            &fragments,
+            collagene_core::assembly_recipe::CleavagePolicy::PositionalChecked,
+        )
+        .unwrap();
+        assert!(matches!(
+            &compiled.steps[0],
+            Operation::DeclareSourceModifications { .. }
+        ));
+        assert!(matches!(&compiled.steps[1], Operation::Pcr { .. }));
+        let plan = DesignPlan {
+            name: "Actual generated strands".into(),
+            target_revision: target.revision(),
+            inputs,
+            steps: compiled.steps,
+        };
+        let report = verification::verify(&plan, &target);
+        assert_eq!(report.products.len(), 2, "{:?}", report.findings);
+        let before: ModificationSummary =
+            serde_json::from_str(&report.products[0].metadata["tracked_modifications"]).unwrap();
+        let after: ModificationSummary =
+            serde_json::from_str(&report.products[1].metadata["tracked_modifications"]).unwrap();
+        assert!(before.known_modified > 0);
+        assert_eq!(after.known_modified, 0);
+        assert_eq!(after.unknown_eligible, 0);
+        assert_eq!(report.products[1].sequence.as_str(), "CAGTGATCGTACGTAC");
     }
 }

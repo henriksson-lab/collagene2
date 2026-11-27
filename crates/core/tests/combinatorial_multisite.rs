@@ -99,6 +99,7 @@ fn fixture(existing: bool) -> (Workspace, Design, SelectedConstruct) {
             id: format!("parent-{i}"),
             label: format!("Parent {i}"),
             choices: vec![Choice {
+                generation: None,
                 id: format!("parent-{i}-choice"),
                 label: format!("Original parent {i} with explicit intended contribution"),
                 source: event(&w, i),
@@ -274,6 +275,7 @@ fn preparation_treatment_and_topology_are_explicit_and_per_construct_reference_o
     assert!(design::inspect_multisite(&d, &row, &w).is_err());
     row.overrides = Some(ConstructOverrides {
         preparations: vec![PreparationOverride {
+            generation: None,
             bin_id: d.bins[0].id.clone(),
             preparation: None,
             treatment: None,

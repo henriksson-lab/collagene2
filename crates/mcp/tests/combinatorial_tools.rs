@@ -117,6 +117,7 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
     )
     .unwrap();
     let choice = |id: &str, index: usize| Choice {
+        generation: None,
         id: id.into(),
         label: id.into(),
         source: binding(&original, index),
@@ -307,7 +308,7 @@ async fn fresh_selected_batches_save_historical_records_and_replay_exact_rows_wi
     missing.id = "missing-prep".into();
     missing.name = "Explicit unresolved preparation override".into();
     let mut missing = serde_json::to_value(missing).unwrap();
-    missing["overrides"] = json!({"preparations":[{"bin_id":"right-bin","preparation":null,"treatment":null}],"method":null,"circular":null});
+    missing["overrides"] = json!({"preparations":[{"generation":null,"bin_id":"right-bin","preparation":null,"treatment":null}],"method":null,"circular":null});
     let matrix = json!({"design":d,"rows":[{"Ready":row},{"Ready":wrong},{"Ready":missing},{"DraftError":{"id":"unfinished-row","name":"Unfinished literal primer","choices":row.choices,"message":"Literal primer input has an unfinished ? call; no replacement or threshold relaxation."}}]});
     let args = json!({"workspace":wr,"matrix":matrix});
     let saved = call(&c, "evaluate_combinatorial_batch", args.clone()).await;

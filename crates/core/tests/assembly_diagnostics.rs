@@ -20,6 +20,7 @@ fn target(seq: &str) -> Molecule {
 }
 fn pcr(role: &str, id: &str, f: &str, r: &str) -> FragmentSpec {
     FragmentSpec {
+        generation: None,
         role: role.into(),
         input_id: id.into(),
         preparation: Preparation::ExactPcr {
@@ -91,12 +92,14 @@ fn raw(mismatch: bool, max_comparisons: usize, scan: bool, wrong_target: bool) -
         name: "Explicit raw reference overlap".into(),
         fragments: vec![
             FragmentSpec {
+                generation: None,
                 role: "left".into(),
                 input_id: "left".into(),
                 preparation: Preparation::WholeLinear,
                 reverse: false,
             },
             FragmentSpec {
+                generation: None,
                 role: "right".into(),
                 input_id: "right".into(),
                 preparation: Preparation::WholeLinear,
@@ -182,7 +185,13 @@ fn ligation_treatments_are_after_all_preparations_and_missing_assembly_never_nam
         circular: false,
         allow_nicked: false,
     };
-    let p = l::preview(&inputs, &t, &recipe).unwrap();
+    let p = l::preview(
+        &inputs,
+        &t,
+        &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert_eq!(p.verification.products.len(), 1);
     let report = d::ligation(&p).unwrap();
     assert_eq!(
@@ -220,6 +229,7 @@ fn ligation_treatments_are_after_all_preparations_and_missing_assembly_never_nam
         &inputs,
         &target("ACGACCCCGGGGTAACTATGAGCTCCAGGTCA"),
         &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert!(p.preparation_complete);
@@ -241,6 +251,7 @@ fn ligation_treatments_are_after_all_preparations_and_missing_assembly_never_nam
         &inputs,
         &target("ACGACCCCGGGGTAACTATGAGCTCCAGGTCA"),
         &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(
@@ -290,6 +301,7 @@ fn forged_source_prepared_mapping_engine_and_context_shape_fail_closed() {
         &inputs[..2],
         &target("ACGACCCCGGGGTAACTATGAGCTCCAGGTCA"),
         &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     p.compiled.rows[0].preparation.preparation_step = Some(1);

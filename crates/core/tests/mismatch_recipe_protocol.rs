@@ -43,6 +43,7 @@ fn input(molecule: Molecule) -> PlanInput {
 }
 fn fragment(preparation: Preparation) -> FragmentSpec {
     FragmentSpec {
+        generation: None,
         role: "source".into(),
         input_id: "source".into(),
         preparation,
@@ -93,8 +94,15 @@ fn mismatch_preparations_roundtrip_current_plans_and_reject_unsupported_versions
     };
     let request = Request {
         id: 1,
-        revision: ligation_recipe::preview_revision(&inputs, &target, &recipe).unwrap(),
+        revision: ligation_recipe::preview_revision(
+            &inputs,
+            &target,
+            &recipe,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        )
+        .unwrap(),
         job: AnalysisJob::PreviewLigationRecipe {
+            policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
             inputs: inputs.clone(),
             target: target.clone(),
             recipe,
@@ -258,8 +266,15 @@ fn saved_run_flat_mismatch_variant5_cannot_hide_under_existing_from_run_floor74_
     };
     let request = Request {
         id: 5,
-        revision: ligation_recipe::preview_revision(&inputs, &target, &recipe).unwrap(),
+        revision: ligation_recipe::preview_revision(
+            &inputs,
+            &target,
+            &recipe,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        )
+        .unwrap(),
         job: AnalysisJob::PreviewLigationRecipe {
+            policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
             inputs,
             target,
             recipe,

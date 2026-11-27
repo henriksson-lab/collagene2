@@ -174,7 +174,7 @@ fn fixture() -> (Workspace, Selection, run_material::Selection, String) {
     let ui = WorkspaceAttachment {
         // App's current homology-capable autosave kind (app.rs). Closure treats
         // working bytes opaquely, including unfinished/recovery-only drafts.
-        kind: "assembly-draft-v14".into(),
+        kind: collagene_core::assembly_library_history::ACTIVE_DRAFT_KIND.into(),
         name: "Private draft".into(),
         media_type: "application/json".into(),
         bytes: br#"{"version":14,"name":"PRIVATE WORKING DRAFT","unpublished_source":"DO NOT PUBLISH"}"#.to_vec(),
@@ -205,7 +205,7 @@ fn published_pcr_history_reopens_and_replays_nested_saved_material_without_priva
             .workspace
             .attachments
             .values()
-            .any(|a| a.kind == "assembly-draft-v14")
+            .any(|a| a.kind == collagene_core::assembly_library_history::ACTIVE_DRAFT_KIND)
     );
     assert_eq!(export.workspace.name, "Plasmid publication");
     assert_eq!(
@@ -345,7 +345,7 @@ fn current_and_historical_app_state_is_local_but_future_or_scientific_schemas_ar
         revision: selected.head.clone(),
         head_event: selected.head_event.clone(),
     };
-    let mut kinds = vec!["assembly-draft-v14".to_owned()];
+    let mut kinds = vec![collagene_core::assembly_library_history::ACTIVE_DRAFT_KIND.to_owned()];
     kinds.extend(
         [
             "assembly-design-v1",
@@ -396,8 +396,12 @@ fn current_and_historical_app_state_is_local_but_future_or_scientific_schemas_ar
         "AGTCCGAT"
     );
 
+    let future_draft = format!(
+        "assembly-draft-v{}",
+        collagene_core::assembly_library_history::ACTIVE_DRAFT_VERSION + 1
+    );
     for kind in [
-        "assembly-draft-v15",
+        future_draft.as_str(),
         "assembly-draft-v13",
         "primer-pair-draft-v1",
         "primer-pair-draft-v3",

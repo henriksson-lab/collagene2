@@ -38,6 +38,26 @@ fn options(o: &GoldenGateOptions) -> Result<(), Error> {
     }
     Ok(())
 }
+pub fn material_origins(
+    r: &Request,
+) -> Vec<(&str, &str, crate::run_material::MaterialOriginRef<'_>)> {
+    r.recipe
+        .fragments
+        .iter()
+        .filter_map(|f| {
+            let origin = match &f.source.preparation {
+                assembly_recipe::Preparation::FromRun { origin, .. } => {
+                    crate::run_material::MaterialOriginRef::Run(origin)
+                }
+                assembly_recipe::Preparation::FromDerived { origin, .. } => {
+                    crate::run_material::MaterialOriginRef::Derived(origin)
+                }
+                _ => return None,
+            };
+            Some((f.source.role.as_str(), f.source.input_id.as_str(), origin))
+        })
+        .collect()
+}
 pub fn preflight(
     inputs: &[(&str, &Molecule)],
     target: &Molecule,
@@ -128,7 +148,14 @@ fn target_matches(plan: &DesignPlan, duplex: &crate::chemistry::Duplex, target: 
 }
 pub fn inspect(inputs: &[PlanInput], target: &Molecule, r: &Request) -> Result<Report, Error> {
     let context_revision = inspect_revision(inputs, target, r)?;
-    let (preview, physical) = ligation_recipe::preview_with_physical(inputs, target, &r.recipe)?;
+    let mut budget = crate::modified_duplex::CleavageBudget::new(100_000_000)?;
+    let (preview, physical) = ligation_recipe::preview_with_tracked(
+        inputs,
+        target,
+        &r.recipe,
+        assembly_recipe::CleavagePolicy::PositionalChecked,
+        &mut budget,
+    )?;
     let missing_physical = (0..r.recipe.fragments.len())
         .filter(|i| *i >= preview.prepared.len() || physical.get(*i).is_none_or(Option::is_none))
         .collect::<Vec<_>>();
@@ -137,11 +164,16 @@ pub fn inspect(inputs: &[PlanInput], target: &Molecule, r: &Request) -> Result<R
             .into_iter()
             .map(|d| d.ok_or_else(|| bad("fresh prepared physical state unavailable")))
             .collect::<Result<Vec<_>, _>>()?;
-        Some(golden_gate::simulate_reconstructed(
-            &preview.prepared,
-            &substrates,
-            &r.options,
-        )?)
+        Some(
+            golden_gate::simulate_tracked(
+                &preview.prepared,
+                &substrates,
+                &r.options,
+                None,
+                &mut budget,
+            )?
+            .report,
+        )
     } else {
         None
     };
@@ -182,6 +214,17 @@ fn texts(v: &[String]) -> Result<(), Error> {
     Ok(())
 }
 fn pool_guard(report: &Report, pool: &GoldenGateReport) -> Result<(), Error> {
+    if pool.profile_revision != crate::modified_duplex::profile_revision()
+        || pool.comparisons > 100_000_000
+    {
+        return Err(bad("checked cleavage profile/budget differs"));
+    }
+    for source in &pool.source_cleavage {
+        source.validate()?;
+    }
+    for candidate in &pool.candidates {
+        candidate.cleavage.validate()?;
+    }
     let n = report.preview.prepared.len();
     if pool.options != report.request.options
         || pool.model != golden_gate::MODEL
@@ -262,7 +305,7 @@ fn pool_guard(report: &Report, pool: &GoldenGateReport) -> Result<(), Error> {
                     Topology::Linear
                 }
             || c.recut_sites.len() > 1_000_000
-            || c.restriction_site_free != c.recut_sites.is_empty()
+            || c.restriction_site_free != (c.cleavage.complete && c.cleavage.sites.is_empty())
             || !c.duplex.nicks.is_empty()
         {
             return Err(bad("invalid candidate path/topology/recut shape"));
@@ -323,9 +366,14 @@ impl Report {
                 inputs,
                 &self.target,
                 &self.request.recipe,
+                assembly_recipe::CleavagePolicy::PositionalChecked,
             )?)?;
-        let expected_compiled =
-            ligation_recipe::compile(inputs, &self.target, &self.request.recipe)?;
+        let expected_compiled = ligation_recipe::compile(
+            inputs,
+            &self.target,
+            &self.request.recipe,
+            assembly_recipe::CleavagePolicy::PositionalChecked,
+        )?;
         if assembly_recipe::hash(&expected_compiled)?
             != assembly_recipe::hash(&self.preview.compiled)?
         {
@@ -491,6 +539,7 @@ impl SelectionReport {
                 .collect::<Vec<_>>(),
         )?;
         verification::validate_reference_steps(&self.plan)?;
+        assembly_recipe::validate_prepared_inputs(&self.plan.inputs, &self.plan.steps)?;
         let mut ids = BTreeSet::new();
         for i in &self.plan.inputs {
             if i.id.is_empty()
@@ -508,9 +557,14 @@ impl SelectionReport {
                 && !matches!(
                     op,
                     Operation::Pcr { .. }
-                        | Operation::Digest { .. }
-                        | Operation::CatalogDigest { .. }
+                        | Operation::PcrWithMismatches { .. }
+                        | Operation::OverlapExtension { .. }
+                        | Operation::ReconstructRunProduct { .. }
+                        | Operation::ReconstructMaterial { .. }
+                        | Operation::AnnealOligos { .. }
+                        | Operation::DeclareSourceModifications { .. }
                         | Operation::DeclareSourceTermini { .. }
+                        | Operation::CheckedDigest { .. }
                         | Operation::RepairEnds { .. }
                         | Operation::TreatEnds { .. }
                 )
@@ -518,6 +572,30 @@ impl SelectionReport {
                 return Err(bad(
                     "selection altered the preparation/reference prefix scope",
                 ));
+            }
+            if let Operation::DeclareSourceModifications { template, .. }
+            | Operation::DeclareSourceTermini { template, .. } = op
+            {
+                let Source::Input(id) = template else {
+                    return Err(bad(
+                        "original chemistry declaration must retain its exact original input",
+                    ));
+                };
+                let input = self
+                    .plan
+                    .inputs
+                    .iter()
+                    .find(|i| &i.id == id)
+                    .ok_or_else(|| bad("original chemistry declaration lost its input"))?;
+                match op {
+                    Operation::DeclareSourceModifications { .. } => {
+                        crate::methylation::source_preflight(&input.molecule, &Default::default())?
+                    }
+                    Operation::DeclareSourceTermini { .. } => {
+                        verification::declared_source_termini_preflight(&input.molecule)?
+                    }
+                    _ => unreachable!(),
+                }
             }
             for source in verification::operation_sources(op) {
                 match source {

@@ -36,6 +36,7 @@ fn fixture(circular: bool) -> (Vec<PlanInput>, recipe::Recipe, Options) {
     let inputs = vec![input("left", left), input("right", right)];
     let fragments = vec![
         FragmentSpec {
+            generation: None,
             role: "left-role".into(),
             input_id: "left".into(),
             reverse: false,
@@ -46,6 +47,7 @@ fn fixture(circular: bool) -> (Vec<PlanInput>, recipe::Recipe, Options) {
             },
         },
         FragmentSpec {
+            generation: None,
             role: "right-role".into(),
             input_id: "right".into(),
             reverse: false,
@@ -202,6 +204,7 @@ fn pcr_five_prime_oh_fragments_form_a_native_circle_then_closed_origin_supplies_
         allow_nicked: false,
         fragments: vec![ligation_recipe::Fragment {
             source: FragmentSpec {
+                generation: None,
                 role: "actual-circle".into(),
                 input_id: "circle".into(),
                 reverse: false,
@@ -224,6 +227,7 @@ fn pcr_five_prime_oh_fragments_form_a_native_circle_then_closed_origin_supplies_
         &[input("circle", source.clone())],
         &independent,
         &downstream,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(

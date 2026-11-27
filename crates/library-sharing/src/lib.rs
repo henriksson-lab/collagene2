@@ -81,16 +81,14 @@ pub struct Projection {
 /// The supported run schema has self-contained plans. Standalone candidate
 /// proposals and workspace UI state are not required foreign keys of a plasmid.
 fn presentation(kind: &str) -> bool {
-    matches!(
-        kind,
-        "cloning-output-visibility-v1"
+    kind == collagene_core::assembly_library_history::ACTIVE_DRAFT_KIND
+        || matches!(
+            kind,
+            "cloning-output-visibility-v1"
             | "oligo-table-v1"
             | "restriction-enzyme-sets-v1"
             | "named-digest-setup-v1"
             | "assembly-library-history-v1"
-            // Only current internal drafts are presentation state. Unknown or
-            // superseded schemas are refused rather than guessed or migrated.
-            | "assembly-draft-v14"
             // Named working designs, unfinished primer text and visibility
             // preferences produce no immutable plasmid/run event themselves.
             | "assembly-design-v1"
@@ -98,7 +96,7 @@ fn presentation(kind: &str) -> bool {
             | "annotation-display-v1"
             | "lab-library-bindings-v1"
             | "lab-library-branches-v1"
-    )
+        )
 }
 fn run_evidence(kind: &str) -> bool {
     matches!(

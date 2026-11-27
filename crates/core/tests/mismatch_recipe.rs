@@ -35,6 +35,7 @@ fn input(molecule: Molecule) -> PlanInput {
 }
 fn fragment(preparation: Preparation) -> FragmentSpec {
     FragmentSpec {
+        generation: None,
         role: "mutated-fragment".into(),
         input_id: "source".into(),
         preparation,
@@ -80,7 +81,13 @@ fn primer_encoded_changes_follow_literal_target_and_real_pcr_chemistry() {
     )
     .unwrap();
     let mut r = recipe(ordinary());
-    let untreated = lig::preview(&inputs, &target, &r).unwrap();
+    let untreated = lig::preview(
+        &inputs,
+        &target,
+        &r,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert!(untreated.preparation_complete);
     assert!(untreated.product_physical.is_none());
     assert_eq!(
@@ -96,7 +103,13 @@ fn primer_encoded_changes_follow_literal_target_and_real_pcr_chemistry() {
         FivePrime::Hydroxyl
     );
     r.fragments[0].treatment = Some(EndTreatment::Phosphorylate);
-    let p = lig::preview(&inputs, &target, &r).unwrap();
+    let p = lig::preview(
+        &inputs,
+        &target,
+        &r,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert_eq!(
         p.verification.status,
         Status::ConsistentUnderAssumptions,
@@ -126,7 +139,13 @@ fn primer_encoded_changes_follow_literal_target_and_real_pcr_chemistry() {
         Topology::Circular,
     )
     .unwrap();
-    let wrong = lig::preview(&inputs, &wrong, &r).unwrap();
+    let wrong = lig::preview(
+        &inputs,
+        &wrong,
+        &r,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert_eq!(wrong.verification.status, Status::Invalid);
     assert!(wrong.product_physical.is_some());
 }
@@ -138,7 +157,13 @@ fn mismatch_three_prime_and_search_budgets_remain_explicit_and_cannot_inherit_a_
     let target = Molecule::dna("Independent mutant", INTENDED, Topology::Circular).unwrap();
     let mut r = recipe(ordinary());
     r.fragments[0].treatment = Some(EndTreatment::Phosphorylate);
-    let original = lig::preview(&inputs, &target, &r).unwrap();
+    let original = lig::preview(
+        &inputs,
+        &target,
+        &r,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     for case in 0..3 {
         let mut changed = r.clone();
         if let Preparation::MismatchPcr { options, .. } =
@@ -150,10 +175,22 @@ fn mismatch_three_prime_and_search_budgets_remain_explicit_and_cannot_inherit_a_
                 _ => options.binding.max_work = 1,
             }
         }
-        let context = lig::preview_revision(&inputs, &target, &changed).unwrap();
+        let context = lig::preview_revision(
+            &inputs,
+            &target,
+            &changed,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        )
+        .unwrap();
         assert_ne!(context, original.context_revision);
         assert!(original.validate_binding(&context).is_err());
-        let checked = lig::preview(&inputs, &target, &changed).unwrap();
+        let checked = lig::preview(
+            &inputs,
+            &target,
+            &changed,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        )
+        .unwrap();
         assert_ne!(
             checked.verification.status,
             Status::ConsistentUnderAssumptions
@@ -220,7 +257,13 @@ fn mismatch_preparation_reuses_a_fresh_saved_origin_and_preserves_the_replay_dep
     r.fragments[0].treatment = Some(EndTreatment::Phosphorylate);
     let inputs = vec![input(saved)];
     let target = Molecule::dna("Independent mutant circle", INTENDED, Topology::Circular).unwrap();
-    let p = lig::preview(&inputs, &target, &r).unwrap();
+    let p = lig::preview(
+        &inputs,
+        &target,
+        &r,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert_eq!(
         p.verification.status,
         Status::ConsistentUnderAssumptions,
@@ -307,6 +350,7 @@ fn tailing_recipe_keeps_literal_mismatch_policy_and_checks_it_readonly() {
             },
             tail::Fragment {
                 source: FragmentSpec {
+                    generation: None,
                     role: "insert-role".into(),
                     input_id: "insert".into(),
                     reverse: false,

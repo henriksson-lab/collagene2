@@ -250,6 +250,7 @@ fn compile(f: &Fixture) -> (Vec<PlanInput>, Molecule, a::Recipe, a::Compiled) {
         name: "Saved digest then new PCR and physical assembly".into(),
         fragments: vec![
             FragmentSpec {
+                generation: None,
                 role: "vector-role".into(),
                 input_id: "vector".into(),
                 preparation: match primers("CACGTTCG", vector_reverse) {
@@ -261,6 +262,7 @@ fn compile(f: &Fixture) -> (Vec<PlanInput>, Molecule, a::Recipe, a::Compiled) {
                 reverse: false,
             },
             FragmentSpec {
+                generation: None,
                 role: "fragment-role".into(),
                 input_id: "fragment".into(),
                 preparation: Preparation::FromDerived {
@@ -494,6 +496,7 @@ fn saved_digest_preparation_preserves_actual_source_modifications_before_any_new
         &cut_target,
         "Reuse actual cut material",
         &[FragmentSpec {
+            generation: None,
             role: "cut-role".into(),
             input_id: "cut".into(),
             reverse: false,
@@ -502,6 +505,7 @@ fn saved_digest_preparation_preserves_actual_source_modifications_before_any_new
                 preparation: RunPreparation::WholeLinear,
             },
         }],
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     let plan = DesignPlan {

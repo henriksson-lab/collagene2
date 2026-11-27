@@ -141,6 +141,7 @@ fn mismatch_digest_preparations_roundtrip_current_native_evidence() {
         name: "Mismatch PCR then pinned EcoRI".into(),
         fragments: vec![ligation_recipe::Fragment {
             source: FragmentSpec {
+                generation: None,
                 role: "insert".into(),
                 input_id: "source".into(),
                 preparation: prep,
@@ -153,8 +154,15 @@ fn mismatch_digest_preparations_roundtrip_current_native_evidence() {
     };
     let request = Request {
         id: 2,
-        revision: ligation_recipe::preview_revision(&inputs, &target, &recipe).unwrap(),
+        revision: ligation_recipe::preview_revision(
+            &inputs,
+            &target,
+            &recipe,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        )
+        .unwrap(),
         job: AnalysisJob::PreviewLigationRecipe {
+            policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
             inputs,
             target: target.clone(),
             recipe,

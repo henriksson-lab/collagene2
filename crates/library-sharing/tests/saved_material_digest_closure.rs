@@ -345,7 +345,7 @@ fn newest_editable_drafts_are_presentation_only_not_publication_dependencies() {
     w.attachments.insert(
         hash.clone(),
         WorkspaceAttachment {
-            kind: "assembly-draft-v14".into(),
+            kind: collagene_core::assembly_library_history::ACTIVE_DRAFT_KIND.into(),
             name: "private draft".into(),
             media_type: "application/json".into(),
             bytes,

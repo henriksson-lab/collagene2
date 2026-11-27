@@ -59,6 +59,7 @@ fn shape(recipe: &Recipe) -> Result<(), Error> {
             .and_then(|n| {
                 n.checked_add(
                     usize::from(matches!(fragment.action, Action::AddTail { .. }))
+                        + usize::from(fragment.source.generation.is_some())
                         + usize::from(fragment.treatment.is_some()),
                 )
             })
@@ -165,7 +166,11 @@ fn compile_bound(
             return Err(bad("original source revision changed"));
         }
     }
-    let (mut steps, prepared_rows) = preparation::preparation_steps(inputs, &specs)?;
+    let (mut steps, prepared_rows) = preparation::preparation_steps(
+        inputs,
+        &specs,
+        crate::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )?;
     let mut rows = Vec::with_capacity(prepared_rows.len());
     let mut fragments = Vec::with_capacity(prepared_rows.len());
     for (row, request) in prepared_rows.into_iter().zip(&recipe.fragments) {

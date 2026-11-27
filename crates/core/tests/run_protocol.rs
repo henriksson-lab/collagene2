@@ -68,7 +68,7 @@ fn record(
     }
 }
 #[test]
-fn record_replay_source_binding_and_schema_twelve_roundtrip() {
+fn record_replay_source_binding_and_current_schema_roundtrip() {
     let (w, p, t, i) = fixture();
     let original = workspace_fingerprint(&w).unwrap();
     let req = record(w, p, t, i);
@@ -155,7 +155,7 @@ fn record_replay_source_binding_and_schema_twelve_roundtrip() {
     assert!(protocol::process_request(&protocol::encode_request(&wrong).unwrap()).is_err());
 }
 #[test]
-fn large_run_workspace_payloads_are_explicitly_whitelisted_only_in_schema_twelve() {
+fn large_run_workspace_payloads_are_whitelisted_but_ordinary_current_payloads_remain_bounded() {
     let (mut w, p, t, i) = fixture();
     for value in [7u8, 9] {
         let bytes = vec![value; 16 * 1024 * 1024 + 1];
@@ -188,13 +188,13 @@ fn large_run_workspace_payloads_are_explicitly_whitelisted_only_in_schema_twelve
     };
     assert!(protocol::encode_request(&replay).unwrap().len() > 32 * 1024 * 1024);
     assert!(protocol::process_request(&protocol::encode_request(&replay).unwrap()).is_ok());
-    // A borrowed prefix must reject an oversized ordinary or newly introduced old-labeled
-    // payload before attempting to deserialize its intentionally invalid body.
-    for (magic, tags) in [(b"CGQ\0", vec![0, 42, 43]), (b"CGR\0", vec![2, 40, 41])] {
+    // Current ordinary variants remain bounded before their intentionally invalid
+    // oversized bodies are deserialized. Run/workspace variants above are larger.
+    for (magic, tags) in [(b"CGQ\0", vec![0]), (b"CGR\0", vec![2])] {
         for tag in tags {
             let mut p = vec![1, 1, b'x', tag];
             p.resize(32 * 1024 * 1024 + 1, 0);
-            let b = raw(magic, if tag < 40 { 12 } else { 11 }, &p);
+            let b = raw(magic, protocol::WORKER_SCHEMA_VERSION, &p);
             let r = if magic == b"CGQ\0" {
                 protocol::process_request(&b).map(|_| ())
             } else {

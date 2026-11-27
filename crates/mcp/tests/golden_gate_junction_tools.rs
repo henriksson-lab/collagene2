@@ -76,7 +76,7 @@ fn edits() -> Value {
 fn request() -> Value {
     let catalog = catalog_digest::builtin_catalog().unwrap();
     let selection = catalog_digest::select(&catalog, &["bsai".into()]).unwrap();
-    let manual = json!({"source":{"role":"manual","input_id":"b","reverse":false,"preparation":{"PcrCatalogDigest":{"forward":Primer::new("Retained manual BF","ATCCGTTA","ATGCGGTCTCA").unwrap(),"reverse":Primer::new("Retained manual BR","TTCCAAGG","ATGCGGTCTCATCAT").unwrap(),"selection":selection,"fragment_index":1,"repair":null}}},"treatment":null});
+    let manual = json!({"source":{"generation":null,"role":"manual","input_id":"b","reverse":false,"preparation":{"PcrCatalogDigest":{"forward":Primer::new("Retained manual BF","ATCCGTTA","ATGCGGTCTCA").unwrap(),"reverse":Primer::new("Retained manual BR","TTCCAAGG","ATGCGGTCTCATCAT").unwrap(),"selection":selection,"fragment_index":1,"repair":null}}},"treatment":null});
     json!({"base":base(),"edits":edits(),"rows":[{"DesignPcr":{"role":"left","input_id":"a","reverse":false,"forward_length":8,"reverse_length":8}},{"Retain":manual}],"enzyme":"BsaI","clamp":"ATGC","spacer":"A","terminal_right_overhang":null,"allow_nicked":false})
 }
 async fn sources(c: &Client) -> (Value, Vec<Value>) {

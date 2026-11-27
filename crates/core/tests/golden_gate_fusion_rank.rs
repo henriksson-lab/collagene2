@@ -154,6 +154,7 @@ fn published_ranking_retains_original_candidates_and_never_defaults_a_selection(
         &inputs,
         &materialized.original_intent.target,
         &materialized.recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(

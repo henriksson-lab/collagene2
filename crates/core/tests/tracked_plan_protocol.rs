@@ -29,9 +29,9 @@ fn fixture() -> (Molecule, DesignPlan) {
                 },
             },
             Operation::CheckedDigest {
+                selection: checked_selection(vec!["EcoRI".into()]),
+                options: collagene_core::modified_duplex::checked_inspection_options(),
                 template: Source::Step(0),
-                enzymes: vec!["EcoRI".into()],
-                profile_revision: collagene_core::modified_duplex::profile_revision(),
                 fragment_index: 0,
             },
         ],
@@ -308,4 +308,22 @@ fn retained_run_replay_binds_current_plan_and_scientific_assessment() {
             .is_err()
         );
     }
+}
+
+fn checked_selection(names: Vec<String>) -> collagene_core::catalog_digest::CatalogSelection {
+    let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+    let ids = names
+        .iter()
+        .map(|name| {
+            catalog
+                .edition()
+                .enzymes
+                .iter()
+                .find(|e| e.name.eq_ignore_ascii_case(name))
+                .unwrap()
+                .id
+                .clone()
+        })
+        .collect::<Vec<_>>();
+    collagene_core::catalog_digest::select(&catalog, &ids).unwrap()
 }

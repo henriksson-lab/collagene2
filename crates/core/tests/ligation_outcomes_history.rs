@@ -287,6 +287,7 @@ fn large_recipe_retains_intended_outcomes_and_native_history_without_enumeration
         fragments: (0..33)
             .map(|i| ligation_recipe::Fragment {
                 source: FragmentSpec {
+                    generation: None,
                     role: format!("row-{i}"),
                     input_id: "stock".into(),
                     preparation: Preparation::DeclaredDuplex {
@@ -301,7 +302,13 @@ fn large_recipe_retains_intended_outcomes_and_native_history_without_enumeration
         circular: true,
         allow_nicked: false,
     };
-    let preview = ligation_recipe::preview(&inputs, &target, &recipe).unwrap();
+    let preview = ligation_recipe::preview(
+        &inputs,
+        &target,
+        &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert!(matches!(
         preview.compiled.plan.steps.last(),
         Some(Operation::Ligate { .. })

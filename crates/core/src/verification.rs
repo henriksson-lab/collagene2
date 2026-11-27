@@ -112,8 +112,8 @@ pub enum Operation {
     /// Positional modification-aware cleavage under an explicitly pinned profile.
     CheckedDigest {
         template: Source,
-        enzymes: Vec<String>,
-        profile_revision: String,
+        selection: crate::catalog_digest::CatalogSelection,
+        options: crate::restriction_inspection::InspectionOptions,
         fragment_index: usize,
     },
     /// Bounded reference-sequence exchange only. No chemical duplex state is established.
@@ -485,7 +485,7 @@ pub struct ReferenceStepReport {
     pub evidence: ReferenceStepEvidence,
 }
 
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-26");
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-27");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrDocument {
@@ -1063,17 +1063,35 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
     if plan.steps.len() > 1000 || plan.inputs.len() > 1000 {
         return Err(Error::TooLarge);
     }
-    let pinned_catalog = if plan
-        .steps
-        .iter()
-        .any(|s| matches!(s, Operation::CatalogDigest { .. }))
-    {
+    let pinned_catalog = if plan.steps.iter().any(|s| {
+        matches!(
+            s,
+            Operation::CatalogDigest { .. } | Operation::CheckedDigest { .. }
+        )
+    }) {
         Some(crate::catalog_digest::builtin_catalog()?)
     } else {
         None
     };
     let mut count = 0usize;
     for step in &plan.steps {
+        if let Operation::CheckedDigest {
+            selection,
+            options,
+            fragment_index,
+            ..
+        } = step
+        {
+            selection.validate_for(
+                pinned_catalog
+                    .as_ref()
+                    .ok_or_else(|| Error::Format("missing checked catalog".into()))?,
+            )?;
+            options.validate()?;
+            if *fragment_index >= options.max_fragments {
+                return Err(Error::TooLarge);
+            }
+        }
         if let Operation::ResectThreePrime { cuts, .. } = step {
             count += 1;
             if count > 64
@@ -1486,7 +1504,13 @@ pub(crate) fn verify_with_golden_gate_trace(
     Option<crate::golden_gate::GoldenGateReport>,
 ) {
     let mut captured = None;
-    let (report, physical) = evaluate_captured(plan, target, &mut captured);
+    let (report, physical) = evaluate_captured(
+        plan,
+        target,
+        &mut captured,
+        &mut modified_duplex::CleavageBudget::new(100_000_000)
+            .expect("fixed native cleavage bound"),
+    );
     (
         report,
         physical.into_iter().map(|s| s.map(|t| t.duplex)).collect(),
@@ -1498,12 +1522,26 @@ fn evaluate(
     plan: &DesignPlan,
     target: &Molecule,
 ) -> (VerificationReport, Vec<Option<TrackedDuplex>>) {
-    evaluate_captured(plan, target, &mut None)
+    evaluate_captured(
+        plan,
+        target,
+        &mut None,
+        &mut modified_duplex::CleavageBudget::new(100_000_000)
+            .expect("fixed native cleavage bound"),
+    )
+}
+pub(crate) fn verify_with_tracked_budget(
+    plan: &DesignPlan,
+    target: &Molecule,
+    budget: &mut modified_duplex::CleavageBudget,
+) -> (VerificationReport, Vec<Option<TrackedDuplex>>) {
+    evaluate_captured(plan, target, &mut None, budget)
 }
 fn evaluate_captured(
     plan: &DesignPlan,
     target: &Molecule,
     final_golden_gate: &mut Option<crate::golden_gate::GoldenGateReport>,
+    cleavage_budget: &mut modified_duplex::CleavageBudget,
 ) -> (VerificationReport, Vec<Option<TrackedDuplex>>) {
     // New embedded profile snapshots are bounded before hashing their public native DTOs.
     let preflight = validate_reference_steps(plan).and_then(|()| {
@@ -1543,7 +1581,7 @@ fn evaluate_captured(
             "ProcessedTopo freshly composes original declared preparations, transfer and selected nick-sealing steps before proving a source-call-selected paired contour. A faithful bridge can feed private downstream physical operations under explicit projection options. Unknown modifications remain unknown; imported reports/sequence summaries cannot restore authority. Other components, unsealed nicks and unapplied branches remain evidence; component selection is not isolation or experimental success.".into(),
             "Exact-PCR operations consider exact non-overlapping binding sites within one template turn, including competing oligo orientations and single-oligo products. Intentional-mismatch PCR uses its separately recorded mismatch and 3′ policy; ambiguous and overlapping-domain products remain incomplete previews.".into(),
             "Golden Gate enumerates a bounded one-copy fragment pool under explicit options; recut paths, carryover and alternative source histories remain evidence, not a claim of exhaustive kinetic mixture uniqueness.".into(),
-            "Legacy digest and Golden Gate cleavage remain explicit complete-cleavage assumptions. CheckedDigest evaluates the pinned positional modification profile only; reaction conditions, secondary structure and genome-wide specificity are not established.".into(),
+            "Ordinary digest is an explicit complete-cleavage assumption. Golden Gate and CheckedDigest evaluate actual tracked positions under the current pinned sensitivity profile; reaction conditions, secondary structure and genome-wide specificity are not established.".into(),
             "Ordered overlap/ligation candidates are checked for consistency; alternative mixture products are not exhaustively searched.".into(),
             "Legacy Digest assumes complete cleavage with 5′-phosphate/3′-OH ends. DeclareSourceModifications applies only to original inputs under a closed Dam/Dcm/CpG generation model; it is not a methylation measurement or evidence about other modification systems. Tracked descendants preserve actual strand states; unknown/impaired checked sites withhold fully determined products.".into(),
             "Exact PCR physical intermediates are ideal blunt duplexes with unmodified 5′-OH/3′-OH termini. Polymerase-specific terminal additions and modified primers are not inferred; single-nucleotide additions require an explicit Tail3Prime operation.".into(),
@@ -1566,6 +1604,7 @@ fn evaluate_captured(
         &mut report.reference_step_reports,
         &mut physical,
         final_golden_gate,
+        cleavage_budget,
     ) {
         Ok(incomplete) => {
             let product = report.products.last().expect("nonempty reconstructed plan");
@@ -2395,6 +2434,7 @@ fn reconstruct(
     reference_step_reports: &mut Vec<ReferenceStepReport>,
     physical: &mut Vec<Option<TrackedDuplex>>,
     final_golden_gate: &mut Option<crate::golden_gate::GoldenGateReport>,
+    cleavage_budget: &mut modified_duplex::CleavageBudget,
 ) -> Result<Vec<String>, Error> {
     target.validate()?;
     if plan.target_revision != target.revision() {
@@ -3394,22 +3434,17 @@ fn reconstruct(
                     .collect::<Result<Vec<_>, _>>()?;
                 let substrates = templates
                     .iter()
-                    .map(&resolve_physical)
+                    .map(&resolve_tracked)
                     .collect::<Result<Vec<_>, _>>()?;
-                for source in templates {
-                    let tracked = resolve_tracked(source)?;
-                    if !tracked.generation.is_empty() {
-                        let state = modified_duplex::summary(&tracked)?;
-                        if state.known_modified > 0 || state.unknown_eligible > 0 {
-                            incomplete.push(format!("Step {} Golden Gate uses assumed-complete cleavage of explicitly tracked modified/unknown material; methylation-aware cycling is not established.",index+1));
-                        }
-                    }
-                }
-                let mut local_report = Some(crate::golden_gate::simulate_reconstructed(
+                let fresh_gate = crate::golden_gate::simulate_tracked(
                     &sources,
                     &substrates,
                     options,
-                )?);
+                    Some(*candidate_index),
+                    cleavage_budget,
+                )?;
+                let selected_tracked = fresh_gate.selected;
+                let mut local_report = Some(fresh_gate.report);
                 let report = if index + 1 == plan.steps.len() {
                     *final_golden_gate = local_report.take();
                     final_golden_gate.as_ref().expect("fresh final enumeration")
@@ -3432,6 +3467,9 @@ fn reconstruct(
                     {
                         return Err(Error::Format("Golden Gate explicit candidate keys disagree with the fresh native enumeration".into()));
                     }
+                }
+                if !selected.cleavage.complete {
+                    return Err(Error::Unsupported("Golden Gate candidate site absence is unproven: bounded recut evidence is incomplete; no site-free cycling-product claim is established".into()));
                 }
                 if !selected.restriction_site_free {
                     return Err(Error::Format("Golden Gate candidate retains recognition sites; it is not a site-free cycling product".into()));
@@ -3489,27 +3527,7 @@ fn reconstruct(
                     project_into(&intermediate, &map, &mut product, findings)?;
                     offset += oriented_duplex.top.len();
                 }
-                let mut tracked_fragments = Vec::new();
-                for oriented in &selected.path {
-                    let fragment = &report.fragments[oriented.fragment];
-                    let substrate = resolve_tracked(&templates[fragment.source_index])?;
-                    let legacy = chemistry::DigestFragment {
-                        duplex: fragment.duplex.clone(),
-                        top_start: fragment.top_start,
-                        bottom_start: fragment.bottom_start,
-                    };
-                    let tracked = modified_duplex::map_digest_fragment(&substrate, &legacy)?.duplex;
-                    tracked_fragments.push(if oriented.reverse {
-                        tracked.reverse()?
-                    } else {
-                        tracked
-                    });
-                }
-                let tracked = modified_duplex::ligate(&tracked_fragments, options.circular, false)?;
-                if tracked.duplex != duplex {
-                    return Err(Error::Format("Golden Gate positional propagation disagrees with independently selected duplex geometry".into()));
-                }
-                next_physical = Some(tracked);
+                next_physical=Some(selected_tracked.ok_or_else(||Error::Unsupported("Selected Golden Gate material was not freshly reconstructed under checked cleavage".into()))?);
                 product
             }
             Operation::Overlap {
@@ -3613,17 +3631,26 @@ fn reconstruct(
             }
             Operation::CheckedDigest {
                 template,
-                enzymes,
-                profile_revision,
+                selection,
+                options,
                 fragment_index,
             } => {
+                options.validate()?;
                 let tracked = resolve_tracked(template)?;
-                let options = CheckedDigestOptions {
-                    enzymes: enzymes.clone(),
-                    profile_revision: profile_revision.clone(),
-                    ..Default::default()
-                };
-                let report = modified_duplex::checked_digest(&tracked, &options)?;
+                let report = modified_duplex::checked_digest_with_budget(
+                    &tracked,
+                    &CheckedDigestOptions {
+                        selection: selection.clone(),
+                        max_comparisons: usize::try_from(options.max_comparisons)
+                            .map_err(|_| Error::TooLarge)?,
+                        max_sites: options.max_sites,
+                    },
+                    cleavage_budget,
+                )?;
+                evidence_bytes(&report, options.max_report_bytes)?;
+                if report.fragments.len() > options.max_fragments {
+                    return Err(Error::TooLarge);
+                }
                 for site in report.sites.iter().take(100) {
                     findings.push(format!(
                         "Step {} checked {} site at source base {}: {:?}. {}",
@@ -4293,7 +4320,7 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
             Operation::Pcr { template, forward, reverse } => body.push_str(&format!("<li>PCR of {} with {}: <code>{}</code> and {}: <code>{}</code>. Primers shown 5′→3′. Reaction conditions and quantities are unspecified.</li>",source(template),e(&forward.name),e(&forward.ordered_sequence()),e(&reverse.name),e(&reverse.ordered_sequence()))),
             Operation::DeclareSourceTermini{template,left,right}=>body.push_str(&format!("<li>Declare original intact linear duplex source termini for {}: left <code>{}</code>, right <code>{}</code>. Explicit operator hypothesis only; not measured chemistry, synthesis, repair, recovered imported physical state or experimental success. Original sequence/features/citations are retained; methylation remains unknown.</li>",source(template),e(&serde_json::to_string(left).unwrap_or_default()),e(&serde_json::to_string(right).unwrap_or_default()))),
             Operation::DeclareSourceModifications{template,assumptions}=>body.push_str(&format!("<li>Declare closed Dam/Dcm/CpG source generation for {} under explicit assumptions <code>{}</code>. Bind the original input revision; these are not measured modifications. Descendant strand states are propagated without resynthesizing methylation.</li>",source(template),e(&serde_json::to_string(assumptions).unwrap_or_default()))),
-            Operation::CheckedDigest{template,enzymes,profile_revision,fragment_index}=>body.push_str(&format!("<li>Checked positional-modification digest of {} with {}. Profile <code>{}</code>; zero-based fragment {}. Blocked sites remain intact; unknown/impaired or incomplete evidence withholds fully determined products. Reaction conditions and experimental success remain unspecified.</li>",source(template),e(&enzymes.join(", ")),e(profile_revision),fragment_index)),
+            Operation::CheckedDigest{template,selection,options,fragment_index}=>body.push_str(&format!("<li>Checked positional-modification digest of {} with {}. Profile <code>{}</code>; zero-based fragment {}. Analysis limits: {} comparisons, {} sites, {} fragments, {} report bytes. Blocked sites remain intact; unknown/impaired or incomplete evidence withholds fully determined products. Reaction conditions and experimental success remain unspecified.</li>",source(template),e(&selection.enzymes.iter().map(|e|e.enzyme.name.clone()).collect::<Vec<_>>().join(", ")),e(&modified_duplex::profile_revision()),fragment_index,options.max_comparisons,options.max_sites,options.max_fragments,options.max_report_bytes)),
             Operation::CatalogDigest{template,selection,fragment_index}=>body.push_str(&format!("<li>Catalog-pinned complete digest of {} under exact selection <code>{}</code>; select zero-based fragment {} in top-reference cut ordering. Identity/name/geometry are checked against the embedded catalog. Complete cleavage and compatible conditions remain assumptions; supplier observations do not establish kinetics, methylation compatibility or experimental completion.</li>",source(template),e(&serde_json::to_string(selection).unwrap_or_default()),fragment_index)),
             Operation::Digest{template,enzymes,fragment_index}=>body.push_str(&format!("<li>Complete restriction digest of {} with {}. Select zero-based fragment index {} in ascending top-reference cut order. Cleavage assumes compatible conditions and no blocking methylation.</li>",source(template),e(&enzymes.join(", ")),fragment_index)),
             Operation::TreatEnds{template,treatment}=>body.push_str(&format!("<li>Terminal {:?} treatment of {}. Internal nick repair is not assumed; reaction conditions and quantities are unspecified.</li>",treatment,source(template))),

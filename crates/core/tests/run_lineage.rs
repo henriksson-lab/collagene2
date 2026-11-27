@@ -369,54 +369,162 @@ fn fingerprint_binds_navigation_and_attachment_metadata() {
 fn historical_engines_are_retained_but_current_replay_reports_the_difference() {
     let (w, p) = fixture();
     let mut c = capture(&w, &p);
-    let h = c.receipt.attachment_hash.clone();
-    let mut a = c.workspace.attachments.remove(&h).unwrap();
+    let mut a = c
+        .workspace
+        .attachments
+        .remove(&c.receipt.attachment_hash)
+        .unwrap();
     let mut r = load_run_record(&a.bytes).unwrap();
     let old_id = r.run_id.clone();
+    let graph_hash = c
+        .workspace
+        .attachments
+        .iter()
+        .find_map(|(hash, attachment)| {
+            if attachment.kind != physical_run_evidence::KIND {
+                return None;
+            }
+            let graph: physical_run_evidence::Evidence =
+                serde_json::from_slice(&attachment.bytes).unwrap();
+            (graph.run_id == old_id).then(|| hash.clone())
+        })
+        .unwrap();
+    let mut graph_attachment = c.workspace.attachments.remove(&graph_hash).unwrap();
+    let mut graph: physical_run_evidence::Evidence =
+        serde_json::from_slice(&graph_attachment.bytes).unwrap();
     r.assessment.engine_version = "0.0.1/science-previous".into();
-    r.run_id = identity(&r); // A historical fixture changes producer metadata and rebinds canonical event labels and downstream parents.
+    // Historical scientific stamps bind the nested report, its context, the
+    // full-evidence product receipt, immutable revision and owning native events.
+    for step in &mut graph.steps {
+        let PhysicalProcessingEvidence::LigationOutcomes(evidence) = &mut step.evidence else {
+            continue;
+        };
+        evidence.report.scientific_engine = r.assessment.engine_version.clone();
+        evidence.report.context_revision = blake3::hash(
+            &serde_json::to_vec(&(
+                &evidence.report.engine_version,
+                &evidence.report.scientific_engine,
+                &evidence.report.material_engine,
+                &evidence.report.sources,
+                &evidence.report.request,
+            ))
+            .unwrap(),
+        )
+        .to_hex()
+        .to_string();
+        evidence.validate_documentary().unwrap();
+        let product = r
+            .products
+            .iter_mut()
+            .find(|p| p.step_index == step.step_index)
+            .unwrap();
+        let mut molecule = c.workspace.revisions[&product.revision].clone();
+        molecule.metadata.insert(
+            "source:ligation_outcomes:context".into(),
+            evidence.report.context_revision.clone(),
+        );
+        molecule.metadata.insert(
+            "source:ligation_outcomes:evidence_hash".into(),
+            blake3::hash(&serde_json::to_vec(&*evidence).unwrap())
+                .to_hex()
+                .to_string(),
+        );
+        product.revision = molecule.revision();
+        c.workspace
+            .revisions
+            .insert(product.revision.clone(), molecule);
+    }
+    r.run_id = identity(&r);
+    assert_ne!(old_id, r.run_id);
     let mut previous = std::collections::BTreeMap::new();
-    for (i, b) in r.products.iter_mut().enumerate() {
-        let e = c
+    for (i, binding) in r.products.iter_mut().enumerate() {
+        let event = c
             .workspace
             .history
             .iter_mut()
-            .find(|e| e.id == b.event_id)
+            .find(|e| e.id == binding.event_id)
             .unwrap();
-        let old = e.id.clone();
-        let parents = e
+        let old = event.id.clone();
+        let parents = event
             .parents
             .iter()
             .map(|id| previous.get(id).cloned().unwrap_or_else(|| id.clone()))
             .collect();
         let replacement = RevisionEvent::new(
-            e.document_id.clone(),
-            e.revision.clone(),
+            event.document_id.clone(),
+            binding.revision.clone(),
             parents,
             format!("Cloning run {} step {}", r.run_id, i + 1),
         )
         .unwrap();
-        let d = c
+        let document = c
             .workspace
             .documents
             .iter_mut()
-            .find(|d| d.id == b.document_id)
+            .find(|d| d.id == binding.document_id)
             .unwrap();
-        d.head_event = Some(replacement.id.clone());
-        b.event_id = replacement.id.clone();
+        document.head = binding.revision.clone();
+        document.head_event = Some(replacement.id.clone());
+        binding.event_id = replacement.id.clone();
         previous.insert(old, replacement.id.clone());
-        *e = replacement;
+        *event = replacement;
     }
-    assert_ne!(old_id, r.run_id);
+    graph.run_id = r.run_id.clone();
+    graph.engine_version = r.assessment.engine_version.clone();
+    graph.products = r.products.clone();
+    graph_attachment.name = format!("{}.physical-processing-graphs.json", r.run_id);
+    graph_attachment.bytes = serde_json::to_vec(&graph).unwrap();
+    c.workspace.attachments.insert(
+        blake3::hash(&graph_attachment.bytes).to_hex().to_string(),
+        graph_attachment,
+    );
+    a.name = format!("{}.cloning-run.json", r.run_id);
     a.bytes = save_run_record(&r).unwrap();
-    let h = blake3::hash(&a.bytes).to_hex().to_string();
-    c.workspace.attachments.insert(h, a);
+    c.workspace
+        .attachments
+        .insert(blake3::hash(&a.bytes).to_hex().to_string(), a);
     c.workspace.validate().unwrap();
-    let replay = replay_run(&c.workspace, &r.run_id).unwrap();
+    let restarted =
+        workspace::load_workspace(&workspace::save_workspace(&c.workspace).unwrap()).unwrap();
+    let retained = physical_run_evidence::load(&restarted, &r.run_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(retained.products, r.products);
+    assert_eq!(retained.engine_version, r.assessment.engine_version);
+    let replay = replay_run(&restarted, &r.run_id).unwrap();
     assert!(!replay.engine_matches);
     assert!(replay.status_matches);
-    assert!(replay.products_match);
+    // Current native evidence carries its actual current scientific stamp. Equal
+    // reference DNA cannot substitute for the historical evidence-bearing revision.
+    assert!(!replay.products_match);
+    assert_eq!(replay.current_report.products.len(), r.products.len());
+    for (current, historical) in replay.current_report.products.iter().zip(&r.products) {
+        assert_eq!(
+            current.sequence,
+            restarted.revisions[&historical.revision].sequence
+        );
+        assert_eq!(
+            current.topology,
+            restarted.revisions[&historical.revision].topology
+        );
+    }
     assert_eq!(replay.current_report.engine_version, ENGINE_VERSION);
+    let last = r.products.last().unwrap();
+    assert!(
+        run_material::reconstruct(
+            &restarted,
+            &run_material::Selection {
+                run_id: r.run_id,
+                step_index: last.step_index,
+                event: EventBinding {
+                    document_id: last.document_id.clone(),
+                    event_id: last.event_id.clone(),
+                    revision: last.revision.clone()
+                }
+            }
+        )
+        .is_err()
+    );
 }
 
 #[test]

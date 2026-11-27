@@ -1250,6 +1250,7 @@ mod tests {
             &p.worker.expected,
             "Actual saved material preparation",
             &fragments,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
         )
         .unwrap();
         let physical = DesignPlan {

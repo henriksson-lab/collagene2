@@ -44,6 +44,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, lig::Recipe) {
         fragments: vec![
             lig::Fragment {
                 source: FragmentSpec {
+                    generation: None,
                     role: "vector".into(),
                     input_id: "backbone".into(),
                     preparation: Preparation::CatalogDigest {
@@ -57,6 +58,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, lig::Recipe) {
             },
             lig::Fragment {
                 source: FragmentSpec {
+                    generation: None,
                     role: "adaptor".into(),
                     input_id: "top".into(),
                     preparation: Preparation::AnnealedOligos {
@@ -79,9 +81,23 @@ fn fixture() -> (Vec<PlanInput>, Molecule, lig::Recipe) {
 fn original_catalog_backbone_and_actual_annealed_pair_ligate_to_literal_intent() {
     let (inputs, target, recipe) = fixture();
     let before = serde_json::to_vec(&inputs).unwrap();
-    let preview = lig::preview(&inputs, &target, &recipe).unwrap();
+    let preview = lig::preview(
+        &inputs,
+        &target,
+        &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     preview
-        .validate_binding(&lig::preview_revision(&inputs, &target, &recipe).unwrap())
+        .validate_binding(
+            &lig::preview_revision(
+                &inputs,
+                &target,
+                &recipe,
+                collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            )
+            .unwrap(),
+        )
         .unwrap();
     assert_eq!(
         preview.verification.status,
@@ -126,14 +142,42 @@ fn original_catalog_backbone_and_actual_annealed_pair_ligate_to_literal_intent()
 #[test]
 fn stale_secondary_binding_and_row_source_substitution_are_rejected() {
     let (mut inputs, target, recipe) = fixture();
-    let mut preview = lig::preview(&inputs, &target, &recipe).unwrap();
+    let mut preview = lig::preview(
+        &inputs,
+        &target,
+        &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     inputs[2].molecule.sequence = collagene_core::Sequence::dna("AATTCGTAGG").unwrap();
-    assert!(lig::compile(&inputs, &target, &recipe).is_err());
-    assert!(lig::preview_revision(&inputs, &target, &recipe).is_err());
+    assert!(
+        lig::compile(
+            &inputs,
+            &target,
+            &recipe,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete
+        )
+        .is_err()
+    );
+    assert!(
+        lig::preview_revision(
+            &inputs,
+            &target,
+            &recipe,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete
+        )
+        .is_err()
+    );
     preview.compiled.plan.inputs[2].molecule = inputs[2].molecule.clone();
     assert!(preview.validate().is_err());
     let (inputs, target, recipe) = fixture();
-    let mut preview = lig::preview(&inputs, &target, &recipe).unwrap();
+    let mut preview = lig::preview(
+        &inputs,
+        &target,
+        &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     if let Operation::AnnealOligos { top, .. } = &mut preview.compiled.plan.steps[1] {
         *top = Source::Input("bottom".into());
     }
@@ -144,7 +188,13 @@ fn stale_secondary_binding_and_row_source_substitution_are_rejected() {
 #[test]
 fn candidate_and_chemistry_changes_require_fresh_search_and_never_reuse_stock() {
     let (inputs, target, mut recipe) = fixture();
-    let original = lig::preview_revision(&inputs, &target, &recipe).unwrap();
+    let original = lig::preview_revision(
+        &inputs,
+        &target,
+        &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     if let Preparation::AnnealedOligos {
         candidate_index, ..
     } = &mut recipe.fragments[1].source.preparation
@@ -153,9 +203,21 @@ fn candidate_and_chemistry_changes_require_fresh_search_and_never_reuse_stock() 
     }
     assert_ne!(
         original,
-        lig::preview_revision(&inputs, &target, &recipe).unwrap()
+        lig::preview_revision(
+            &inputs,
+            &target,
+            &recipe,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete
+        )
+        .unwrap()
     );
-    let unavailable = lig::preview(&inputs, &target, &recipe).unwrap();
+    let unavailable = lig::preview(
+        &inputs,
+        &target,
+        &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert!(!unavailable.preparation_complete);
     assert!(unavailable.product_physical.is_none());
     if let Preparation::AnnealedOligos {
@@ -168,7 +230,13 @@ fn candidate_and_chemistry_changes_require_fresh_search_and_never_reuse_stock() 
         options.top_chemistry = Terminus::UNKNOWN;
         options.bottom_chemistry = Terminus::UNKNOWN;
     }
-    let unknown = lig::preview(&inputs, &target, &recipe).unwrap();
+    let unknown = lig::preview(
+        &inputs,
+        &target,
+        &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert_ne!(
         unknown.verification.status,
         Status::ConsistentUnderAssumptions
@@ -177,10 +245,15 @@ fn candidate_and_chemistry_changes_require_fresh_search_and_never_reuse_stock() 
     let (inputs, mut wrong, recipe) = fixture();
     wrong.sequence = collagene_core::Sequence::dna("AATTCTTACGGGAATTGCTACC").unwrap();
     assert_eq!(
-        lig::preview(&inputs, &wrong, &recipe)
-            .unwrap()
-            .verification
-            .status,
+        lig::preview(
+            &inputs,
+            &wrong,
+            &recipe,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete
+        )
+        .unwrap()
+        .verification
+        .status,
         Status::Invalid
     );
 }
@@ -226,9 +299,14 @@ fn shared_overlap_compiler_retains_the_real_secondary_input_and_operation() {
         .iter()
         .map(|f| f.source.clone())
         .collect::<Vec<_>>();
-    let prepared =
-        assembly_recipe::compile_preparations(&inputs, &target, "Shared native preparation", &rows)
-            .unwrap();
+    let prepared = assembly_recipe::compile_preparations(
+        &inputs,
+        &target,
+        "Shared native preparation",
+        &rows,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert_eq!(prepared.inputs.len(), 3);
     assert_eq!(prepared.rows.len(), 2);
     assert!(matches!(
@@ -245,7 +323,13 @@ fn shared_overlap_compiler_retains_the_real_secondary_input_and_operation() {
 fn diagnostics_locate_two_original_annealing_without_accepting_forged_sources() {
     use collagene_core::assembly_diagnostics::{self as diagnostics, RowState, Stage};
     let (inputs, target, mut recipe) = fixture();
-    let preview = lig::preview(&inputs, &target, &recipe).unwrap();
+    let preview = lig::preview(
+        &inputs,
+        &target,
+        &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     let located = diagnostics::ligation(&preview).unwrap();
     assert_eq!(located.rows.len(), 2);
     assert!(
@@ -281,7 +365,13 @@ fn diagnostics_locate_two_original_annealing_without_accepting_forged_sources() 
     {
         *candidate_index = 1;
     }
-    let missing = lig::preview(&inputs, &target, &recipe).unwrap();
+    let missing = lig::preview(
+        &inputs,
+        &target,
+        &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     let located = diagnostics::ligation(&missing).unwrap();
     let failure = located.failure.unwrap();
     assert_eq!(

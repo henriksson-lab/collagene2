@@ -437,7 +437,7 @@ async fn restriction_ligation_tools_keep_nicks_and_strand_geometry_explicit() {
         digest["fragments"][0]["duplex"]["ends"][0]["chemistry"]["five_prime"],
         "Phosphate"
     );
-    let proposal = json!({"name":"Nicked restriction ligation","target":reference("ligation_target"),"inputs":[{"id":"vector","document":reference("vector_fixture")},{"id":"insert","document":reference("insert_fixture")}],"steps":[{"Digest":{"template":{"Input":"vector"},"enzymes":["EcoRI"],"fragment_index":0}},{"Digest":{"template":{"Input":"insert"},"enzymes":["EcoRI"],"fragment_index":0}},{"TreatEnds":{"template":{"Step":0},"treatment":"Dephosphorylate"}},{"Ligate":{"fragments":[{"source":{"Step":2},"reverse":false},{"source":{"Step":1},"reverse":false}],"circular":true,"allow_nicked":true}}]});
+    let proposal = json!({"name":"Nicked restriction ligation","target":reference("ligation_target"),"inputs":[{"id":"vector","document":reference("vector_fixture")},{"id":"insert","document":reference("insert_fixture")}],"steps":[{"Digest":{"template":{"Input":"vector"},"enzymes":["EcoRI"],"fragment_index":0}},{"Digest":{"template":{"Input":"insert"},"enzymes":["EcoRI"],"fragment_index":0}},{"TreatEnds":{"template":{"Step":0},"treatment":"Dephosphorylate"}},{"Ligate":{"fragments":[{"source":{"Step":2},"reverse":false},{"source":{"Step":1},"reverse":false}],"circular":true,"allow_nicked":true,"options":collagene_core::ligation_outcomes::Options::default()}}]});
     let candidate = call!("propose_plan", proposal.clone());
     let bound = json!({"plan_revision":candidate["plan_revision"]});
     let report = call!("verify_plan", bound.clone());

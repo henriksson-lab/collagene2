@@ -110,6 +110,7 @@ fn shared_pinned_preparation_feeds_actual_cohesive_ligation_against_independent_
             .into_iter()
             .map(|id| l::Fragment {
                 source: a::FragmentSpec {
+                    generation: None,
                     role: id.into(),
                     input_id: id.into(),
                     preparation: a::Preparation::CatalogDigest {
@@ -125,7 +126,13 @@ fn shared_pinned_preparation_feeds_actual_cohesive_ligation_against_independent_
         circular: true,
         allow_nicked: false,
     };
-    let preview = l::preview(&inputs, &target, &recipe).unwrap();
+    let preview = l::preview(
+        &inputs,
+        &target,
+        &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert_eq!(
         preview.verification.status,
         Status::ConsistentUnderAssumptions,
@@ -162,6 +169,7 @@ fn optional_repair_is_explicit_and_uses_existing_tracked_end_transform() {
     let recipe = a::Recipe {
         name: "explicit postdigest repair".into(),
         fragments: vec![a::FragmentSpec {
+            generation: None,
             role: "arm".into(),
             input_id: "a".into(),
             preparation: a::Preparation::CatalogDigest {
@@ -268,6 +276,7 @@ fn reversed_digest_intent_uses_actual_global_bottom_interval_not_reversed_top_re
         name: "explicit reversed cohesive arm".into(),
         fragments: vec![l::Fragment {
             source: a::FragmentSpec {
+                generation: None,
                 role: "reversed".into(),
                 input_id: "a".into(),
                 preparation: a::Preparation::CatalogDigest {
@@ -282,7 +291,14 @@ fn reversed_digest_intent_uses_actual_global_bottom_interval_not_reversed_top_re
         circular: false,
         allow_nicked: false,
     };
-    let mut plan = l::compile(&inputs, &target, &recipe).unwrap().plan;
+    let mut plan = l::compile(
+        &inputs,
+        &target,
+        &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap()
+    .plan;
     let report = v::verify(&plan, &target);
     assert_eq!(
         report.status,

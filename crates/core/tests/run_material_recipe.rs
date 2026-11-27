@@ -99,6 +99,7 @@ fn circle_saved() -> (Molecule, Capsule) {
 fn row(id: &str, preparation: Preparation, treatment: Option<EndTreatment>) -> lig::Fragment {
     lig::Fragment {
         source: FragmentSpec {
+            generation: None,
             role: format!("{id}-role"),
             input_id: id.into(),
             preparation,
@@ -170,7 +171,13 @@ fn saved_circle_is_freshly_digested_and_ligated_with_two_real_oligos() {
             ),
         ],
     };
-    let preview = lig::preview(&inputs, &target, &recipe).unwrap();
+    let preview = lig::preview(
+        &inputs,
+        &target,
+        &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert_eq!(
         preview.verification.status,
         Status::ConsistentUnderAssumptions,
@@ -250,7 +257,13 @@ fn saved_material_pcr_and_whole_material_keep_real_oh_ends_until_treatment() {
                 ),
             ],
         };
-        let untreated = lig::preview(&inputs, &target, &recipe).unwrap();
+        let untreated = lig::preview(
+            &inputs,
+            &target,
+            &recipe,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        )
+        .unwrap();
         assert!(untreated.product_physical.is_none());
         assert_eq!(
             untreated.physical[0]
@@ -265,7 +278,13 @@ fn saved_material_pcr_and_whole_material_keep_real_oh_ends_until_treatment() {
             FivePrime::Hydroxyl
         );
         recipe.fragments[0].treatment = Some(EndTreatment::Phosphorylate);
-        let preview = lig::preview(&inputs, &target, &recipe).unwrap();
+        let preview = lig::preview(
+            &inputs,
+            &target,
+            &recipe,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        )
+        .unwrap();
         assert_eq!(
             preview.verification.status,
             Status::ConsistentUnderAssumptions,
@@ -280,7 +299,15 @@ fn saved_material_pcr_and_whole_material_keep_real_oh_ends_until_treatment() {
                 .covalently_closed_in_model
         );
         preview
-            .validate_binding(&lig::preview_revision(&inputs, &target, &recipe).unwrap())
+            .validate_binding(
+                &lig::preview_revision(
+                    &inputs,
+                    &target,
+                    &recipe,
+                    collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+                )
+                .unwrap(),
+            )
             .unwrap();
         collagene_core::assembly_diagnostics::ligation(&preview).unwrap();
     }
@@ -306,7 +333,13 @@ fn stale_origin_and_cross_row_or_skipped_replay_chain_cannot_pass_readonly_valid
             None,
         )],
     };
-    let preview = lig::preview(&inputs, &target, &recipe).unwrap();
+    let preview = lig::preview(
+        &inputs,
+        &target,
+        &recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert_eq!(
         preview.verification.status,
         Status::ConsistentUnderAssumptions
@@ -321,7 +354,15 @@ fn stale_origin_and_cross_row_or_skipped_replay_chain_cannot_pass_readonly_valid
     if let Preparation::FromRun { origin, .. } = &mut recipe.fragments[0].source.preparation {
         origin.selection.event.revision = "0".repeat(64);
     }
-    assert!(lig::compile(&inputs, &target, &recipe).is_err());
+    assert!(
+        lig::compile(
+            &inputs,
+            &target,
+            &recipe,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -355,6 +396,7 @@ fn replay_pcr_catalog_repair_tail_and_treatment_preserve_the_full_typed_chain() 
         fragments: vec![
             tail::Fragment {
                 source: FragmentSpec {
+                    generation: None,
                     role: "reused".into(),
                     input_id: "saved".into(),
                     reverse: false,
@@ -376,6 +418,7 @@ fn replay_pcr_catalog_repair_tail_and_treatment_preserve_the_full_typed_chain() 
             },
             tail::Fragment {
                 source: FragmentSpec {
+                    generation: None,
                     role: "new-insert".into(),
                     input_id: "other".into(),
                     reverse: false,

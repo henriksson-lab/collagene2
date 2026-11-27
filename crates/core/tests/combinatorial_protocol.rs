@@ -63,6 +63,7 @@ fn fixture() -> (Workspace, batch::Request) {
                     id: bin.into(),
                     label: bin.into(),
                     choices: vec![Choice {
+                        generation: None,
                         id: id.into(),
                         label: id.into(),
                         source: binding(&workspace, index),

@@ -206,7 +206,7 @@ fn worker_review_and_prepare_append_only_tags_use_the_same_context_and_old_heade
         postcard::take_from_bytes::<u32>(&postcard::to_allocvec(&request.job).unwrap())
             .unwrap()
             .0,
-        174
+        173
     );
     let bytes = protocol::encode_request(&request).unwrap();
     let mut old = bytes.clone();
@@ -217,7 +217,7 @@ fn worker_review_and_prepare_append_only_tags_use_the_same_context_and_old_heade
         postcard::take_from_bytes::<u32>(&postcard::to_allocvec(&response.result).unwrap())
             .unwrap()
             .0,
-        164
+        163
     );
     let protocol::AnalysisResult::SequenceExportAssessment(review) = response.result else {
         panic!("export assessment")
@@ -237,7 +237,7 @@ fn worker_review_and_prepare_append_only_tags_use_the_same_context_and_old_heade
         postcard::take_from_bytes::<u32>(&postcard::to_allocvec(&request.job).unwrap())
             .unwrap()
             .0,
-        175
+        174
     );
     let response = protocol::process_request(&protocol::encode_request(&request).unwrap()).unwrap();
     let mut old = response.clone();
@@ -248,7 +248,7 @@ fn worker_review_and_prepare_append_only_tags_use_the_same_context_and_old_heade
         postcard::take_from_bytes::<u32>(&postcard::to_allocvec(&response.result).unwrap())
             .unwrap()
             .0,
-        165
+        164
     );
     let protocol::AnalysisResult::SequenceExportPrepared(prepared) = response.result else {
         panic!("prepared export")

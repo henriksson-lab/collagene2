@@ -168,6 +168,7 @@ fn declared_preparation_cannot_hide_in_an_old_existing_recipe_job() {
     let recipe = Recipe {
         name: "declared overlap source".into(),
         fragments: vec![FragmentSpec {
+            generation: None,
             role: "arm".into(),
             input_id: "s".into(),
             preparation: Preparation::DeclaredDuplex {

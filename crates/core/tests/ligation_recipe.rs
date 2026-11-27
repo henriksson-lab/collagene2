@@ -1,7 +1,7 @@
 use collagene_core::{
     Molecule, Topology,
     analysis::Primer,
-    assembly_recipe::{FragmentSpec, Preparation},
+    assembly_recipe::{CleavagePolicy, FragmentSpec, Preparation},
     chemistry::{EndTreatment, FivePrime, ThreePrime},
     ligation_recipe as l,
     verification::{Operation, PlanInput, Source, Status},
@@ -19,6 +19,7 @@ fn input(id: &str, m: Molecule) -> PlanInput {
 fn pcr(role: &str, id: &str, f: &str, r: &str, treatment: Option<EndTreatment>) -> l::Fragment {
     l::Fragment {
         source: FragmentSpec {
+            generation: None,
             role: role.into(),
             input_id: id.into(),
             preparation: Preparation::ExactPcr {
@@ -65,7 +66,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, l::Recipe) {
 #[test]
 fn actual_pcr_phosphorylation_and_junctions_come_from_fresh_physical_trace() {
     let (inputs, target, recipe) = fixture();
-    let p = l::preview(&inputs, &target, &recipe).unwrap();
+    let p = l::preview(&inputs, &target, &recipe, CleavagePolicy::AssumedComplete).unwrap();
     assert_eq!(
         p.verification.status,
         Status::ConsistentUnderAssumptions,
@@ -92,8 +93,10 @@ fn actual_pcr_phosphorylation_and_junctions_come_from_fresh_physical_trace() {
         p.verification.products.last().unwrap().sequence,
         target.sequence
     );
-    p.validate_binding(&l::preview_revision(&inputs, &target, &recipe).unwrap())
-        .unwrap();
+    p.validate_binding(
+        &l::preview_revision(&inputs, &target, &recipe, CleavagePolicy::AssumedComplete).unwrap(),
+    )
+    .unwrap();
     let mut forged = p.clone();
     forged.junctions[0].upstream_end.as_mut().unwrap().overhang = "A".into();
     assert!(forged.validate().is_err());
@@ -102,11 +105,11 @@ fn actual_pcr_phosphorylation_and_junctions_come_from_fresh_physical_trace() {
 fn nick_acceptance_circular_closure_and_wrong_target_are_explicit() {
     let (inputs, mut target, mut recipe) = fixture();
     recipe.fragments[1].treatment = None;
-    let rejected = l::preview(&inputs, &target, &recipe).unwrap();
+    let rejected = l::preview(&inputs, &target, &recipe, CleavagePolicy::AssumedComplete).unwrap();
     assert_eq!(rejected.verification.status, Status::Invalid);
     assert!(rejected.product_physical.is_none());
     recipe.allow_nicked = true;
-    let nicked = l::preview(&inputs, &target, &recipe).unwrap();
+    let nicked = l::preview(&inputs, &target, &recipe, CleavagePolicy::AssumedComplete).unwrap();
     assert_eq!(
         nicked.verification.status,
         Status::ConsistentUnderAssumptions,
@@ -116,7 +119,7 @@ fn nick_acceptance_circular_closure_and_wrong_target_are_explicit() {
     assert_eq!(nicked.product_physical.as_ref().unwrap().nicks.len(), 1);
     recipe.circular = true;
     target.topology = Topology::Circular;
-    let circle = l::preview(&inputs, &target, &recipe).unwrap();
+    let circle = l::preview(&inputs, &target, &recipe, CleavagePolicy::AssumedComplete).unwrap();
     assert_eq!(
         circle.verification.status,
         Status::ConsistentUnderAssumptions,
@@ -135,7 +138,7 @@ fn nick_acceptance_circular_closure_and_wrong_target_are_explicit() {
         Topology::Circular,
     )
     .unwrap();
-    let mismatch = l::preview(&inputs, &wrong, &recipe).unwrap();
+    let mismatch = l::preview(&inputs, &wrong, &recipe, CleavagePolicy::AssumedComplete).unwrap();
     assert_eq!(mismatch.verification.status, Status::Invalid);
     assert!(mismatch.product_physical.is_some());
     assert!(mismatch.preparation_complete);
@@ -144,7 +147,7 @@ fn nick_acceptance_circular_closure_and_wrong_target_are_explicit() {
 fn orientation_and_unphosphorylated_products_cannot_be_auto_repaired() {
     let (inputs, target, mut recipe) = fixture();
     recipe.fragments[1].source.reverse = true;
-    let reverse = l::preview(&inputs, &target, &recipe).unwrap();
+    let reverse = l::preview(&inputs, &target, &recipe, CleavagePolicy::AssumedComplete).unwrap();
     assert_eq!(reverse.verification.status, Status::Invalid);
     assert!(reverse.product_physical.is_some());
     for f in &mut recipe.fragments {
@@ -152,7 +155,7 @@ fn orientation_and_unphosphorylated_products_cannot_be_auto_repaired() {
         f.source.reverse = false;
     }
     recipe.allow_nicked = true;
-    let unsealed = l::preview(&inputs, &target, &recipe).unwrap();
+    let unsealed = l::preview(&inputs, &target, &recipe, CleavagePolicy::AssumedComplete).unwrap();
     assert_eq!(unsealed.verification.status, Status::Invalid);
     assert!(unsealed.product_physical.is_none());
     assert!(
@@ -169,7 +172,7 @@ fn plain_reference_unknown_ends_and_mixed_strands_are_not_physical_authority() {
     for f in &mut recipe.fragments {
         f.source.preparation = Preparation::WholeLinear;
     }
-    let p = l::preview(&inputs, &target, &recipe).unwrap();
+    let p = l::preview(&inputs, &target, &recipe, CleavagePolicy::AssumedComplete).unwrap();
     assert_eq!(
         p.verification.status,
         Status::Incomplete,
@@ -189,7 +192,7 @@ fn plain_reference_unknown_ends_and_mixed_strands_are_not_physical_authority() {
         .insert("genbank.molecule_type".into(), "ss-DNA".into());
     mixed[0].revision = mixed[0].molecule.revision();
     recipe.fragments[0].treatment = None;
-    let p = l::preview(&mixed, &target, &recipe).unwrap();
+    let p = l::preview(&mixed, &target, &recipe, CleavagePolicy::AssumedComplete).unwrap();
     assert_eq!(p.verification.status, Status::Incomplete);
     assert!(p.physical[0].is_none());
 }
@@ -208,6 +211,7 @@ fn three_fresh_cohesive_digest_arms_close_but_opposite_polarities_do_not() {
         inputs.push(input(&id, m));
         fragments.push(l::Fragment {
             source: FragmentSpec {
+                generation: None,
                 role: format!("arm-{index}"),
                 input_id: id,
                 preparation: Preparation::Digest {
@@ -232,7 +236,7 @@ fn three_fresh_cohesive_digest_arms_close_but_opposite_polarities_do_not() {
         circular: true,
         allow_nicked: false,
     };
-    let joined = l::preview(&inputs, &target, &recipe).unwrap();
+    let joined = l::preview(&inputs, &target, &recipe, CleavagePolicy::AssumedComplete).unwrap();
     assert_eq!(
         joined.verification.status,
         Status::ConsistentUnderAssumptions,
@@ -263,7 +267,7 @@ fn three_fresh_cohesive_digest_arms_close_but_opposite_polarities_do_not() {
     if let Preparation::Digest { enzymes, .. } = &mut recipe.fragments[1].source.preparation {
         *enzymes = vec!["PstI".into()];
     }
-    let mismatch = l::preview(&inputs, &target, &recipe).unwrap();
+    let mismatch = l::preview(&inputs, &target, &recipe, CleavagePolicy::AssumedComplete).unwrap();
     assert!(mismatch.preparation_complete);
     assert_eq!(mismatch.verification.status, Status::Invalid);
     assert!(mismatch.product_physical.is_none());

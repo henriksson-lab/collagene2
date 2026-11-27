@@ -32,6 +32,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, ligation_recipe::Recipe) {
     let fragments = vec![
         ligation_recipe::Fragment {
             source: FragmentSpec {
+                generation: None,
                 role: "vector".into(),
                 input_id: "vector".into(),
                 preparation: Preparation::Digest {
@@ -45,6 +46,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, ligation_recipe::Recipe) {
         },
         ligation_recipe::Fragment {
             source: FragmentSpec {
+                generation: None,
                 role: "insert".into(),
                 input_id: "top".into(),
                 preparation: Preparation::AnnealedOligos {
@@ -92,8 +94,15 @@ fn all_three_recipe_requests_reject_downgraded_preparation_and_preview_rows_requ
     let (inputs, target, recipe) = fixture();
     let request = Request {
         id: 1,
-        revision: ligation_recipe::preview_revision(&inputs, &target, &recipe).unwrap(),
+        revision: ligation_recipe::preview_revision(
+            &inputs,
+            &target,
+            &recipe,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        )
+        .unwrap(),
         job: AnalysisJob::PreviewLigationRecipe {
+            policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
             inputs: inputs.clone(),
             target: target.clone(),
             recipe: recipe.clone(),

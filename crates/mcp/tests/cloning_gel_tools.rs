@@ -179,28 +179,65 @@ async fn golden_gate_keeps_actual_strands_sources_completeness_and_separate_targ
     s.import(vec![a.clone(), b.clone(), target.clone(), wrong.clone()])
         .await;
     let options = GoldenGateOptions::default();
-    let response = s
+    let unknown = s
         .call(
             "simulate_golden_gate",
             json!({"documents":[reference(&a),reference(&b)],"options":options}),
         )
         .await;
+    assert_eq!(unknown["products_determined"], false);
+    assert_eq!(unknown["candidate_count"], 0);
+    assert_eq!(unknown["enumeration_complete"], false);
+    let unknown_artifact = s.artifact(&unknown).await;
+    assert_eq!(
+        unknown_artifact["golden_gate"]["source_cleavage"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert!(
+        unknown_artifact["golden_gate"]["fragments"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let generation = json!({"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"});
+    let inputs = json!([{"id":"A","document":reference(&a)},{"id":"B","document":reference(&b)}]);
+    let request = json!({"name":"Declared unmodified reaction","rows":[
+        {"role":"A","input_id":"A","generation":generation,"substrate":{"WholeSource":{"origin":null}}},
+        {"role":"B","input_id":"B","generation":generation,"substrate":{"WholeSource":{"origin":null}}}
+    ],"options":options});
+    let response = s.call("inspect_golden_gate_reaction",json!({"inputs":inputs,"target":reference(&target),"origin_workspaces":[],"request":request})).await;
+    assert_eq!(response["products_determined"], true);
     assert_eq!(response["candidate_count"], 2);
     assert_eq!(response["stable_physical_product_count"], 1);
     assert_eq!(response["enumeration_complete"], true);
     assert_eq!(response["exhaustive_mixture_search"], false);
-    let artifact = s.artifact(&response).await;
-    assert_eq!(artifact["documents"], json!([reference(&a), reference(&b)]));
+    let artifact_text = s
+        .text(&response["artifact_id"], "application/json", "utf-8")
+        .await;
     assert_eq!(
-        artifact["golden_gate"]["sources"][0]["revision"],
-        a.revision()
+        blake3::hash(artifact_text.as_bytes()).to_hex().as_str(),
+        response["artifact_id"].as_str().unwrap()
     );
-    let fragments = artifact["golden_gate"]["fragments"].as_array().unwrap();
+    let artifact: Value = serde_json::from_str(&artifact_text).unwrap();
+    assert_eq!(
+        artifact["report"]["verification"]["engine_version"],
+        collagene_core::verification::ENGINE_VERSION
+    );
+    assert_eq!(artifact["inputs"], inputs);
+    let pool = &artifact["report"]["pool"];
+    let declared_a: Molecule =
+        serde_json::from_value(artifact["report"]["verification"]["products"][0].clone()).unwrap();
+    assert_eq!(declared_a.sequence, a.sequence);
+    assert_eq!(pool["sources"][0]["revision"], declared_a.revision());
+    let fragments = pool["fragments"].as_array().unwrap();
     assert_eq!(fragments[1]["top_start"], 7);
     assert_eq!(fragments[1]["bottom_start"], 11);
     assert_eq!(fragments[1]["duplex"]["top"]["bases"], "AATGCCCC");
     assert_eq!(fragments[1]["duplex"]["bottom"]["bases"], "AAGCGGGG");
-    let candidates = artifact["golden_gate"]["candidates"].as_array().unwrap();
+    let candidates = pool["candidates"].as_array().unwrap();
     let selected = candidates
         .iter()
         .position(|c| c["duplex"]["top"]["bases"] == "AATGCCCCGCTTTTTT")
@@ -223,12 +260,9 @@ async fn golden_gate_keeps_actual_strands_sources_completeness_and_separate_targ
         max_states: 1,
         ..options.clone()
     };
-    let truncated = s
-        .call(
-            "simulate_golden_gate",
-            json!({"documents":[reference(&a),reference(&b)],"options":limited}),
-        )
-        .await;
+    let mut capped_request = request.clone();
+    capped_request["options"] = json!(limited);
+    let truncated = s.call("inspect_golden_gate_reaction",json!({"inputs":inputs,"target":reference(&target),"origin_workspaces":[],"request":capped_request})).await;
     assert_eq!(truncated["enumeration_complete"], false);
     assert!(
         !truncated["truncation_reasons"]
@@ -236,7 +270,7 @@ async fn golden_gate_keeps_actual_strands_sources_completeness_and_separate_targ
             .unwrap()
             .is_empty()
     );
-    let incomplete=s.call("propose_plan",json!({"name":"Capped Type IIS search is not a verified design","target":reference(&target),"inputs":[{"id":"A","document":reference(&a)},{"id":"B","document":reference(&b)}],"steps":[{"GoldenGate":{"templates":[{"Input":"A"},{"Input":"B"}],"options":limited,"candidate_index":0}}]})).await;
+    let incomplete=s.call("propose_plan",json!({"name":"Capped Type IIS search is not a verified design","target":reference(&target),"inputs":[{"id":"A","document":reference(&a)},{"id":"B","document":reference(&b)}],"steps":[{"DeclareSourceModifications":{"template":{"Input":"A"},"assumptions":generation}},{"DeclareSourceModifications":{"template":{"Input":"B"},"assumptions":generation}},{"GoldenGate":{"templates":[{"Step":0},{"Step":1}],"options":limited,"candidate_index":0}}]})).await;
     assert_eq!(
         s.call(
             "verify_plan",
@@ -246,8 +280,8 @@ async fn golden_gate_keeps_actual_strands_sources_completeness_and_separate_targ
         "Incomplete"
     );
     s.pdf(&incomplete, "Incomplete", &target).await;
-    let operation = json!({"GoldenGate":{"templates":[{"Input":"A"},{"Input":"B"}],"options":options,"candidate_index":selected}});
-    let proposal = |target: &Molecule| json!({"name":"Explicit Type IIS geometry","target":reference(target),"inputs":[{"id":"A","document":reference(&a)},{"id":"B","document":reference(&b)}],"steps":[operation]});
+    let operation = json!({"GoldenGate":{"templates":[{"Step":0},{"Step":1}],"options":options,"candidate_index":selected}});
+    let proposal = |target: &Molecule| json!({"name":"Explicit Type IIS geometry","target":reference(target),"inputs":[{"id":"A","document":reference(&a)},{"id":"B","document":reference(&b)}],"steps":[{"DeclareSourceModifications":{"template":{"Input":"A"},"assumptions":generation}},{"DeclareSourceModifications":{"template":{"Input":"B"},"assumptions":generation}},operation]});
     let plan = s.call("propose_plan", proposal(&target)).await;
     assert_eq!(
         s.call(

@@ -149,6 +149,7 @@ fn saved_run_recipe_preserves_exact_reconstruction_in_current_encoding() {
         name: "Explicit retained run source".into(),
         fragments: vec![ligation_recipe::Fragment {
             source: FragmentSpec {
+                generation: None,
                 role: "saved".into(),
                 input_id: "saved".into(),
                 preparation: Preparation::FromRun {
@@ -164,8 +165,15 @@ fn saved_run_recipe_preserves_exact_reconstruction_in_current_encoding() {
     };
     let r = Request {
         id: 1,
-        revision: ligation_recipe::preview_revision(&inputs, &target, &recipe).unwrap(),
+        revision: ligation_recipe::preview_revision(
+            &inputs,
+            &target,
+            &recipe,
+            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        )
+        .unwrap(),
         job: AnalysisJob::PreviewLigationRecipe {
+            policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
             inputs,
             target: target.clone(),
             recipe,

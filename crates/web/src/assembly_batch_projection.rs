@@ -92,7 +92,7 @@ fn typed_row(
                             if raw.treatment != crate::cloning_methods_model::Treatment::Keep {
                                 return Err("Whole-original reaction substrates cannot silently discard a terminal treatment; choose Keep terminal chemistry.".into());
                             }
-                            *raw = OverlapInput { document: raw.document, ..Default::default() };
+                            *raw = OverlapInput { document: raw.document, run_origin:raw.run_origin.clone(), source_generation:raw.source_generation.clone(), ..Default::default() };
                             PoolSubstrateKind::WholeSource
                         },
                         (true, 2) => {
@@ -124,7 +124,7 @@ fn typed_row(
                     }),
                 }
             } else {
-                Method::GoldenGate {
+                Method::OrderedTypeIis {
                     enzyme: state.golden_gate.enzyme,
                     allow_nicked: state.allow_nicked,
                 }
@@ -162,12 +162,16 @@ fn typed_row(
         library
             .bins
             .iter()
-            .map(|bin| PreparationOverride {
-                bin_id: bin.id.clone(),
-                preparation: None,
-                treatment: None,
+            .zip(&state.rows)
+            .map(|(bin, raw)| {
+                Ok(PreparationOverride {
+                    bin_id: bin.id.clone(),
+                    preparation: None,
+                    treatment: None,
+                    generation: raw.generation()?,
+                })
             })
-            .collect()
+            .collect::<Result<Vec<_>, String>>()?
     } else {
         let (_, prepared) =
             cloning_preparations::prepared_rows(&preparation_state, library.bins.len())?;
@@ -178,6 +182,7 @@ fn typed_row(
             .zip(&preparation_state.rows)
             .map(|((bin, fragment), raw)| PreparationOverride {
                 bin_id: bin.id.clone(),
+                generation: fragment.generation,
                 preparation: Some(fragment.preparation),
                 treatment: raw.treatment.operation(),
             })
@@ -383,6 +388,7 @@ pub fn project(draft: &Draft) -> Result<Projection, String> {
                         reverse: choice.slot.reverse,
                         preparation: None,
                         treatment: None,
+                        generation: None,
                     })
                 })
                 .collect(),
@@ -532,6 +538,64 @@ mod tests {
             panic!("row is not ready")
         };
         row
+    }
+
+    #[test]
+    fn resolved_generation_is_explicit_in_overrides_and_partial_text_stays_row_local() {
+        use crate::cloning_methods_model::SourceGenerationInput;
+        use collagene_core::methylation::MethylationState;
+        let mut original = ordinary();
+        for row in &mut original.methods.rows {
+            row.preparation = OverlapPreparation::WholeLinear;
+        }
+        original.methods.rows[0].source_generation = Some(SourceGenerationInput {
+            dam: "fully".into(),
+            dcm: "unmodified".into(),
+            cpg: "unknown".into(),
+        });
+        let library = alternatives::enable(&original, "genproj").unwrap();
+        let projection = project(&library).unwrap();
+        assert!(
+            projection
+                .request
+                .design
+                .as_ref()
+                .unwrap()
+                .bins
+                .iter()
+                .flat_map(|b| &b.choices)
+                .all(|c| c.generation.is_none())
+        );
+        let overrides = &ready(&projection.request, 0)
+            .overrides
+            .as_ref()
+            .unwrap()
+            .preparations;
+        assert!(overrides[0].generation.as_ref().unwrap().dam == MethylationState::FullyModified);
+        assert!(overrides[1].generation.is_none());
+        let mut cleared = library.clone();
+        cleared.methods.rows[0].source_generation = None;
+        let projection = project(&cleared).unwrap();
+        assert!(
+            ready(&projection.request, 0)
+                .overrides
+                .as_ref()
+                .unwrap()
+                .preparations[0]
+                .generation
+                .is_none()
+        );
+        let mut unfinished = library;
+        unfinished.methods.rows[0]
+            .source_generation
+            .as_mut()
+            .unwrap()
+            .dam = "partial".into();
+        unfinished.validate().unwrap();
+        let projection = project(&unfinished).unwrap();
+        assert!(
+            matches!(&projection.request.rows[0],RowRequest::DraftError{message,..} if message.contains("source-generation"))
+        );
     }
 
     #[test]

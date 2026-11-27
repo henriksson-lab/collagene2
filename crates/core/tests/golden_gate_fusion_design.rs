@@ -104,7 +104,13 @@ fn choose(inputs: &[PlanInput], request: &Request, shifts: &[i32]) -> fusion::Ma
     .unwrap()
 }
 fn physical(inputs: &[PlanInput], m: &fusion::Materialized) {
-    let report = ligation_recipe::preview(inputs, &m.original_intent.target, &m.recipe).unwrap();
+    let report = ligation_recipe::preview(
+        inputs,
+        &m.original_intent.target,
+        &m.recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap();
     assert_eq!(
         report.verification.status,
         Status::ConsistentUnderAssumptions,

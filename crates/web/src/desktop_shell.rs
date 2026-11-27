@@ -5,6 +5,7 @@ pub enum AuxiliaryAction {
     ImportUrl,
     Alignments,
     Oligos,
+    GoldenGateWorkflow,
 }
 #[derive(Clone, Copy)]
 enum Target {
@@ -18,6 +19,7 @@ impl Target {
             Self::Auxiliary(AuxiliaryAction::ImportUrl) => "import_url",
             Self::Auxiliary(AuxiliaryAction::Alignments) => "alignments",
             Self::Auxiliary(AuxiliaryAction::Oligos) => "oligos",
+            Self::Auxiliary(AuxiliaryAction::GoldenGateWorkflow) => "golden_gate_workflow",
         }
     }
 }
@@ -42,7 +44,7 @@ const TOOLS: &[Tool] = &[
     Tool {
         label: "Golden Gate",
         group: "Cloning",
-        target: Target::Panel("golden_gate"),
+        target: Target::Auxiliary(AuxiliaryAction::GoldenGateWorkflow),
     },
     Tool {
         label: "TOPO",

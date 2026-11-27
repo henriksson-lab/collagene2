@@ -91,6 +91,7 @@ fn catalog_preparation_in_existing_recipe_jobs_cannot_claim_old_headers() {
     let recipe = Recipe {
         name: "one cut overlap input".into(),
         fragments: vec![FragmentSpec {
+            generation: None,
             role: "backbone".into(),
             input_id: "source".into(),
             preparation: Preparation::CatalogDigest {

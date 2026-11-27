@@ -47,6 +47,7 @@ fn fixture() -> (Workspace, Request) {
                 id: "left-bin".into(),
                 label: "Left".into(),
                 choices: vec![Choice {
+                    generation: None,
                     id: "left-choice".into(),
                     label: "Left choice".into(),
                     source: binding(&w, 0),
@@ -61,6 +62,7 @@ fn fixture() -> (Workspace, Request) {
                 id: "right-bin".into(),
                 label: "Right".into(),
                 choices: vec![Choice {
+                    generation: None,
                     id: "right-choice".into(),
                     label: "Right choice".into(),
                     source: binding(&w, 1),
@@ -100,6 +102,7 @@ fn fixture() -> (Workspace, Request) {
     unfinished.name = "Unfinished per-row preparation".into();
     unfinished.overrides = Some(ConstructOverrides {
         preparations: vec![PreparationOverride {
+            generation: None,
             bin_id: "left-bin".into(),
             preparation: None,
             treatment: None,

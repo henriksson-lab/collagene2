@@ -38,6 +38,7 @@ fn recipe() -> assembly_recipe::Recipe {
         fragments: ["a", "b"]
             .into_iter()
             .map(|id| FragmentSpec {
+                generation: None,
                 role: id.into(),
                 input_id: id.into(),
                 preparation: Preparation::DeclaredDuplex {
@@ -279,6 +280,7 @@ async fn explicit_physical_recipe_and_attested_saved_product_support_actual_pcr_
         let recipe = assembly_recipe::Recipe {
             name: "Explicit saved physical material continuation".into(),
             fragments: vec![FragmentSpec {
+                generation: None,
                 role: "saved".into(),
                 input_id: "saved".into(),
                 preparation: Preparation::FromRun {

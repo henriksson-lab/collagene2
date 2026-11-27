@@ -31,6 +31,7 @@ fn fixture(enzyme: GoldenGateEnzyme) -> (Vec<PlanInput>, Request) {
     let closing = if k == 3 { "CAT" } else { "TCAT" };
     let retained = ligation_recipe::Fragment {
         source: FragmentSpec {
+            generation: None,
             role: "retained".into(),
             input_id: "b".into(),
             reverse: false,
@@ -95,9 +96,14 @@ fn fixture(enzyme: GoldenGateEnzyme) -> (Vec<PlanInput>, Request) {
     (inputs, r)
 }
 fn fresh(inputs: &[PlanInput], report: &Report) -> verification::VerificationReport {
-    let plan = ligation_recipe::compile(inputs, &report.intent.target, &report.recipe)
-        .unwrap()
-        .plan;
+    let plan = ligation_recipe::compile(
+        inputs,
+        &report.intent.target,
+        &report.recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap()
+    .plan;
     verification::verify(&plan, &report.intent.target)
 }
 #[test]
@@ -257,9 +263,14 @@ fn retained_repairs_and_names_stay_unchanged_while_fresh_verification_can_reject
         Topology::Circular,
     )
     .unwrap();
-    let plan = ligation_recipe::compile(&inputs, &wrong, &p.recipe)
-        .unwrap()
-        .plan;
+    let plan = ligation_recipe::compile(
+        &inputs,
+        &wrong,
+        &p.recipe,
+        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+    )
+    .unwrap()
+    .plan;
     assert_ne!(
         verification::verify(&plan, &wrong).status,
         Status::ConsistentUnderAssumptions

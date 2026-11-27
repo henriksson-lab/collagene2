@@ -32,6 +32,7 @@ fn row(
 ) -> t::Fragment {
     t::Fragment {
         source: FragmentSpec {
+            generation: None,
             role: id.into(),
             input_id: id.into(),
             preparation,
@@ -662,6 +663,7 @@ mod preparation_and_receipt_tests {
     fn fragment(id: &str, base: TailingBase, forward: &str, reverse: &str) -> t::Fragment {
         t::Fragment {
             source: FragmentSpec {
+                generation: None,
                 role: format!("{id}-role"),
                 input_id: id.into(),
                 preparation: Preparation::ExactPcr {
@@ -844,6 +846,7 @@ mod preparation_and_receipt_tests {
             fragments: vec![
                 t::Fragment {
                     source: FragmentSpec {
+                        generation: None,
                         role: "vector".into(),
                         input_id: "vector".into(),
                         preparation: Preparation::CatalogDigest {
@@ -860,6 +863,7 @@ mod preparation_and_receipt_tests {
                 },
                 t::Fragment {
                     source: FragmentSpec {
+                        generation: None,
                         role: "insert".into(),
                         input_id: "insert".into(),
                         preparation: Preparation::PcrCatalogDigest {

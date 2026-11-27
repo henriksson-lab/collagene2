@@ -41,6 +41,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, assembly_recipe::Recipe) {
             fragments: ["a", "b"]
                 .into_iter()
                 .map(|id| FragmentSpec {
+                    generation: None,
                     role: id.into(),
                     input_id: id.into(),
                     preparation: Preparation::DeclaredDuplex {
@@ -101,7 +102,7 @@ fn worker88_job168_operation26_evidence5_and_portable_schemas_bind_annealing_wit
         "{:?}",
         preview.verification.findings
     );
-    assert!(preview.verification.engine_version.ends_with("/science-26"));
+    assert!(preview.verification.engine_version.ends_with("/science-27"));
     assert_eq!(
         preview
             .verification

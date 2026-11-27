@@ -31,7 +31,7 @@ fn strand(role: &str, length: usize) -> t::PreparedStrand {
 }
 #[test]
 fn derived_insert_template_crosses_current_binary_worker_and_preserves_explicit_vector_geometry() {
-    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 97);
+    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 98);
     let source = Molecule::dna("Original", "CACCATGACG", Topology::Linear).unwrap();
     let w = Workspace::from_documents("Target-free source", vec![source.clone()], 0).unwrap();
     let d = &w.documents[0];
@@ -166,6 +166,6 @@ fn derived_insert_template_crosses_current_binary_worker_and_preserves_explicit_
     };
     *template_role = "vt".into();
     assert!(protocol::encode_request(&wrong).is_err());
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 23);
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 25);
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 24);
+    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 26);
 }

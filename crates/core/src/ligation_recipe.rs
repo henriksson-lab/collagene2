@@ -77,7 +77,12 @@ pub fn source_preflight(
                 .checked_add(preparation::preparation_operation_count(
                     &fragment.source.preparation,
                 ))
-                .and_then(|n| n.checked_add(0 + usize::from(fragment.treatment.is_some())))
+                .and_then(|n| {
+                    n.checked_add(
+                        usize::from(fragment.source.generation.is_some())
+                            + usize::from(fragment.treatment.is_some()),
+                    )
+                })
                 .ok_or(Error::TooLarge)
         })?;
     if operations > 1000 {
@@ -184,19 +189,21 @@ pub fn preview_revision(
     inputs: &[PlanInput],
     target: &Molecule,
     recipe: &Recipe,
+    policy: preparation::CleavagePolicy,
 ) -> Result<String, Error> {
     preflight(inputs, target, recipe)?;
     preparation::bound_revisions(inputs, target)?;
-    preparation::hash(&(ENGINE_VERSION, "preview", inputs, target, recipe))
+    preparation::hash(&(ENGINE_VERSION, "preview", inputs, target, recipe, policy))
 }
 pub fn compile(
     inputs: &[PlanInput],
     target: &Molecule,
     recipe: &Recipe,
+    policy: preparation::CleavagePolicy,
 ) -> Result<Compiled, Error> {
     preflight(inputs, target, recipe)?;
     let prepared =
-        preparation::compile_preparations(inputs, target, &recipe.name, &sources(recipe)?)?;
+        preparation::compile_preparations(inputs, target, &recipe.name, &sources(recipe)?, policy)?;
     let mut steps = prepared.steps;
     let mut rows = Vec::with_capacity(prepared.rows.len());
     let mut fragments = Vec::with_capacity(prepared.rows.len());
@@ -272,19 +279,28 @@ fn junctions(physical: &[Option<DuplexSummary>], rows: usize, circular: bool) ->
         })
         .collect()
 }
-pub fn preview(inputs: &[PlanInput], target: &Molecule, recipe: &Recipe) -> Result<Preview, Error> {
-    Ok(preview_with_physical(inputs, target, recipe)?.0)
-}
-/// Same fresh verifier pass as public preview; private raw-orientation duplexes
-/// cannot be reconstructed from the serialized summaries or molecule metadata.
-pub(crate) fn preview_with_physical(
+pub fn preview(
     inputs: &[PlanInput],
     target: &Molecule,
     recipe: &Recipe,
-) -> Result<(Preview, Vec<Option<Duplex>>), Error> {
-    let context_revision = preview_revision(inputs, target, recipe)?;
-    let compiled = compile(inputs, target, recipe)?;
-    let (verification, mut trace) = verification::verify_with_physical(&compiled.plan, target);
+    policy: preparation::CleavagePolicy,
+) -> Result<Preview, Error> {
+    let mut budget = crate::modified_duplex::CleavageBudget::new(100_000_000)?;
+    Ok(preview_with_tracked(inputs, target, recipe, policy, &mut budget)?.0)
+}
+/// Same fresh verifier pass as public preview; private raw-orientation duplexes
+/// cannot be reconstructed from the serialized summaries or molecule metadata.
+pub(crate) fn preview_with_tracked(
+    inputs: &[PlanInput],
+    target: &Molecule,
+    recipe: &Recipe,
+    policy: preparation::CleavagePolicy,
+    budget: &mut crate::modified_duplex::CleavageBudget,
+) -> Result<(Preview, Vec<Option<crate::modified_duplex::TrackedDuplex>>), Error> {
+    let context_revision = preview_revision(inputs, target, recipe, policy)?;
+    let compiled = compile(inputs, target, recipe, policy)?;
+    let (verification, mut trace) =
+        verification::verify_with_tracked_budget(&compiled.plan, target, budget);
     let mut available = Vec::with_capacity(compiled.rows.len());
     for row in &compiled.rows {
         let m = match &row.prepared_source {
@@ -313,17 +329,22 @@ pub(crate) fn preview_with_physical(
     preparation::hash(&available)?;
     let preparation_complete = available.len() == compiled.rows.len();
     let mut physical = Vec::with_capacity(available.len());
-    let mut fresh: Vec<Option<Duplex>> = vec![None; compiled.rows.len()];
+    let mut fresh: Vec<Option<crate::modified_duplex::TrackedDuplex>> =
+        vec![None; compiled.rows.len()];
     for (index, (row, m)) in compiled.rows.iter().zip(&available).enumerate() {
         let raw = match &row.prepared_source {
             Source::Step(i) => trace.get_mut(*i).and_then(Option::take),
             // Existing original intact-reference assumption only. Markers may
             // restrict it; serialized end/graph summaries never restore state.
-            Source::Input(_) => Duplex::from_molecule(m).ok(),
+            Source::Input(_) => Duplex::from_molecule(m)
+                .and_then(|duplex| {
+                    crate::modified_duplex::TrackedDuplex::from_unknown_duplex(&duplex)
+                })
+                .ok(),
         };
         physical.push(
             raw.as_ref()
-                .map(|d| summary(d, row.preparation.reverse))
+                .map(|d| summary(&d.duplex, row.preparation.reverse))
                 .transpose()?,
         );
         fresh[index] = raw;
@@ -331,7 +352,7 @@ pub(crate) fn preview_with_physical(
     let product_physical = trace
         .get(compiled.ligation_step)
         .and_then(Option::as_ref)
-        .map(Duplex::summary)
+        .map(|d| d.duplex.summary())
         .transpose()?;
     let junctions = junctions(&physical, compiled.rows.len(), recipe.circular);
     let prepared = available.into_iter().cloned().collect();
@@ -458,6 +479,8 @@ impl Preview {
                             | Operation::DeclareSourceTermini { .. }
                             | Operation::Digest { .. }
                             | Operation::CatalogDigest { .. }
+                            | Operation::CheckedDigest { .. }
+                            | Operation::DeclareSourceModifications { .. }
                             | Operation::RepairEnds { .. }
                             | Operation::TreatEnds { .. }
                     )

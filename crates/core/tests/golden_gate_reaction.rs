@@ -37,11 +37,21 @@ fn fixture() -> (Vec<PlanInput>, Molecule, reaction::Request) {
         name: "all material entering the reaction".into(),
         rows: vec![
             reaction::Row {
+                generation: Some(collagene_core::modified_duplex::GenerationAssumptions {
+                    dam: collagene_core::methylation::MethylationState::Unmodified,
+                    dcm: collagene_core::methylation::MethylationState::Unmodified,
+                    cpg: collagene_core::methylation::MethylationState::Unmodified,
+                }),
                 role: "whole vector".into(),
                 input_id: "vector".into(),
-                substrate: reaction::Substrate::WholeSource,
+                substrate: reaction::Substrate::WholeSource { origin: None },
             },
             reaction::Row {
+                generation: Some(collagene_core::modified_duplex::GenerationAssumptions {
+                    dam: collagene_core::methylation::MethylationState::Unmodified,
+                    dcm: collagene_core::methylation::MethylationState::Unmodified,
+                    cpg: collagene_core::methylation::MethylationState::Unmodified,
+                }),
                 role: "complete amplicon".into(),
                 input_id: "insert".into(),
                 substrate: reaction::Substrate::Prepared {
@@ -54,9 +64,14 @@ fn fixture() -> (Vec<PlanInput>, Molecule, reaction::Request) {
                 },
             },
             reaction::Row {
+                generation: Some(collagene_core::modified_duplex::GenerationAssumptions {
+                    dam: collagene_core::methylation::MethylationState::Unmodified,
+                    dcm: collagene_core::methylation::MethylationState::Unmodified,
+                    cpg: collagene_core::methylation::MethylationState::Unmodified,
+                }),
                 role: "uncut contaminant".into(),
                 input_id: "carry".into(),
-                substrate: reaction::Substrate::WholeSource,
+                substrate: reaction::Substrate::WholeSource { origin: None },
             },
         ],
         options: GoldenGateOptions {
@@ -76,8 +91,12 @@ fn whole_circle_and_whole_amplicon_include_every_digest_piece_and_uncut_carryove
     assert_eq!(pool.fragments.len(), 6);
     assert_eq!(pool.carryover_sources, vec![2]);
     assert_eq!(pool.sources.len(), 3);
-    assert_eq!(report.probe_plan.steps.len(), 2);
-    assert!(matches!(report.probe_plan.steps[0], Operation::Pcr { .. }));
+    assert_eq!(report.probe_plan.steps.len(), 5);
+    assert!(matches!(
+        report.probe_plan.steps[0],
+        Operation::DeclareSourceModifications { .. }
+    ));
+    assert!(matches!(report.probe_plan.steps[1], Operation::Pcr { .. }));
     assert!(
         pool.candidates.iter().any(|c| !c.restriction_site_free),
         "discarded vector material must remain available for recutting backgrounds"
@@ -96,8 +115,8 @@ fn whole_circle_and_whole_amplicon_include_every_digest_piece_and_uncut_carryove
     };
     let selected = reaction::select(&report, &s).unwrap();
     assert_eq!(
-        serde_json::to_value(&selected.plan.steps[..1]).unwrap(),
-        serde_json::to_value(&report.probe_plan.steps[..1]).unwrap()
+        serde_json::to_value(&selected.plan.steps[..4]).unwrap(),
+        serde_json::to_value(&report.probe_plan.steps[..4]).unwrap()
     );
     assert_eq!(
         verification::verify(&selected.plan, &target).status,
@@ -137,7 +156,11 @@ fn empty_capped_or_failed_probe_keeps_its_real_enumeration_without_selecting_a_w
     assert!(!pool.enumeration_complete);
     assert!(pool.candidates.is_empty());
     assert!(!pool.truncation_reasons.is_empty());
-    assert_eq!(capped.verification.products.len(), 1);
+    assert_eq!(
+        capped.verification.products.len(),
+        4,
+        "three declared-generation products and PCR remain; no capped candidate was fabricated"
+    );
     let mut missing = request.clone();
     missing.options.max_states = 50_000;
     if let reaction::Substrate::Prepared {
@@ -268,8 +291,8 @@ fn key_bound_native_operation_reconstructs_the_selected_path_without_target_sele
         Some(Operation::SelectedGoldenGate { .. })
     ));
     assert_eq!(
-        serde_json::to_value(&plan.steps[..1]).unwrap(),
-        serde_json::to_value(&discovery.probe_plan.steps[..1]).unwrap()
+        serde_json::to_value(&plan.steps[..4]).unwrap(),
+        serde_json::to_value(&discovery.probe_plan.steps[..4]).unwrap()
     );
     let fresh = verification::verify(&plan, &target);
     assert_eq!(fresh.status, Status::ConsistentUnderAssumptions);
@@ -307,8 +330,8 @@ fn key_bound_native_operation_reconstructs_the_selected_path_without_target_sele
         assert_eq!(rejected.status, Status::Invalid);
         assert_eq!(
             rejected.products.len(),
-            1,
-            "only PCR preparation survives a rejected final candidate"
+            4,
+            "only three declared-generation products and PCR survive a rejected final candidate"
         );
         assert!(
             rejected

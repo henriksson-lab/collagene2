@@ -10,6 +10,26 @@ fn donor(left: &str, payload: &str, right: &str) -> Molecule {
     )
     .unwrap()
 }
+fn generated_unmodified(
+    inputs: &[Molecule],
+    options: &GoldenGateOptions,
+) -> Result<GoldenGateReport, Error> {
+    use collagene_core::{
+        methylation::MethylationState,
+        modified_duplex::{CleavageBudget, GenerationAssumptions, TrackedDuplex},
+    };
+    let assumptions = GenerationAssumptions {
+        dam: MethylationState::Unmodified,
+        dcm: MethylationState::Unmodified,
+        cpg: MethylationState::Unmodified,
+    };
+    let actual = inputs
+        .iter()
+        .map(|m| TrackedDuplex::from_input(m, &assumptions))
+        .collect::<Result<Vec<_>, Error>>()?;
+    let mut budget = CleavageBudget::new(100_000_000)?;
+    Ok(simulate_tracked(inputs, &actual, options, None, &mut budget)?.report)
+}
 fn options() -> GoldenGateOptions {
     GoldenGateOptions {
         max_fragments: 32,
@@ -39,7 +59,7 @@ fn canonical(s: &str) -> String {
 #[test]
 fn hand_derived_nonpalindromic_overhangs_reconstruct_unique_physical_circle() {
     let inputs = [donor("AATG", "CCCC", "GCTT"), donor("GCTT", "TTTT", "AATG")];
-    let report = simulate(&inputs, &options()).unwrap();
+    let report = generated_unmodified(&inputs, &options()).unwrap();
     assert!(report.enumeration_complete);
     assert!(!report.exhaustive_mixture_search);
     assert_eq!(report.fragments.len(), 6);
@@ -113,7 +133,7 @@ fn reversing_and_rotating_sources_preserve_exact_assembly_geometry() {
         Topology::Linear,
     )
     .unwrap();
-    let r = simulate(&[reversed, right.clone()], &options()).unwrap();
+    let r = generated_unmodified(&[reversed, right.clone()], &options()).unwrap();
     assert_eq!(stable_sequences(&r), expected);
     assert!(r.candidates.iter().any(|c|c.restriction_site_free&&c.path.iter().any(|p|p.fragment==1&&p.reverse)));
     let mut right_circle = right;
@@ -127,7 +147,7 @@ fn reversing_and_rotating_sources_preserve_exact_assembly_geometry() {
             Topology::Circular,
         )
         .unwrap();
-        let report = simulate(&[rotated, right_circle.clone()], &options()).unwrap();
+        let report = generated_unmodified(&[rotated, right_circle.clone()], &options()).unwrap();
         assert!(
             report.enumeration_complete,
             "origin {origin}: {:?}",
@@ -145,7 +165,7 @@ fn newly_created_recognition_crossing_junction_is_not_a_stable_gate_product() {
         donor("AATG", "CCCCG", "GTCT"),
         donor("GTCT", "CAAAA", "AATG"),
     ];
-    let report = simulate(&inputs, &options()).unwrap();
+    let report = generated_unmodified(&inputs, &options()).unwrap();
     assert!(report.enumeration_complete);
     assert_eq!(report.candidates.len(), 2);
     assert_eq!(report.stable_physical_product_count, 0);
@@ -177,7 +197,7 @@ fn newly_created_recognition_crossing_junction_is_not_a_stable_gate_product() {
 
 #[test]
 fn palindromic_overhangs_expose_self_ligation_and_distinct_histories() {
-    let one = simulate(&[donor("AATT", "CCCC", "AATT")], &options()).unwrap();
+    let one = generated_unmodified(&[donor("AATT", "CCCC", "AATT")], &options()).unwrap();
     assert_eq!(one.candidates.len(), 2);
     assert!(one.candidates.iter().all(|c| c.path.len() == 1));
     assert_eq!(one.stable_physical_product_count, 1);
@@ -186,7 +206,7 @@ fn palindromic_overhangs_expose_self_ligation_and_distinct_histories() {
         donor("AATT", "CCCC", "AATT"),
         donor("AATT", "GGGG", "AATT"),
     ];
-    let report = simulate(&inputs, &options()).unwrap();
+    let report = generated_unmodified(&inputs, &options()).unwrap();
     assert!(report.enumeration_complete);
     // Every nonempty subset, every ordering, both orientations. Rotations identify cycles only.
     // n=1: 3*2, n=2: 3*4, n=3: 2*8 = 34 directed source histories.
@@ -235,7 +255,7 @@ fn palindromic_overhangs_expose_self_ligation_and_distinct_histories() {
     all_paths(&mut vec![], &mut vec![], &mut expected);
     assert_eq!(actual, expected);
     // Same source-sequence bytes can have distinct original-source paths; these are not erased.
-    let duplicate = simulate(
+    let duplicate = generated_unmodified(
         &[donor("AATT", "CCCC", "AATT"), donor("AATT", "CCCC", "AATT")],
         &options(),
     )
@@ -257,7 +277,7 @@ fn work_depth_and_output_caps_never_claim_complete_absence_of_alternatives() {
         donor("AATT", "CCCC", "AATT"),
         donor("AATT", "GGGG", "AATT"),
     ];
-    let complete = simulate(&inputs, &options()).unwrap();
+    let complete = generated_unmodified(&inputs, &options()).unwrap();
     assert!(complete.enumeration_complete);
     for limited in [
         GoldenGateOptions {
@@ -273,12 +293,12 @@ fn work_depth_and_output_caps_never_claim_complete_absence_of_alternatives() {
             ..options()
         },
     ] {
-        let r = simulate(&inputs, &limited).unwrap();
+        let r = generated_unmodified(&inputs, &limited).unwrap();
         assert!(!r.enumeration_complete);
         assert!(!r.truncation_reasons.is_empty());
         assert!(!r.exhaustive_mixture_search);
     }
-    let fixed = simulate(
+    let fixed = generated_unmodified(
         &inputs,
         &GoldenGateOptions {
             both_orientations: false,
@@ -299,7 +319,7 @@ fn work_depth_and_output_caps_never_claim_complete_absence_of_alternatives() {
 #[test]
 fn wrong_overhangs_uncut_carryover_and_unknown_physical_states_are_explicit() {
     let inputs = [donor("AATG", "CCCC", "GCTT"), donor("CCAA", "TTTT", "AATG")];
-    let report = simulate(&inputs, &options()).unwrap();
+    let report = generated_unmodified(&inputs, &options()).unwrap();
     assert!(report.enumeration_complete);
     assert!(report.candidates.is_empty());
     let intact = Molecule::dna(
@@ -308,7 +328,7 @@ fn wrong_overhangs_uncut_carryover_and_unknown_physical_states_are_explicit() {
         Topology::Circular,
     )
     .unwrap();
-    let report = simulate(std::slice::from_ref(&intact), &options()).unwrap();
+    let report = generated_unmodified(std::slice::from_ref(&intact), &options()).unwrap();
     assert_eq!(report.carryover_sources, [0]);
     assert!(report.candidates.is_empty());
     assert!(report.enumeration_complete);
@@ -317,17 +337,17 @@ fn wrong_overhangs_uncut_carryover_and_unknown_physical_states_are_explicit() {
         .metadata
         .insert("duplex_model".into(), "untrusted assertion".into());
     assert!(matches!(
-        simulate(&[physical], &options()),
+        generated_unmodified(&[physical], &options()),
         Err(Error::Unsupported(_))
     ));
     let unknown = Molecule::dna("ambiguous", "GGTCTCNNNNNNNNGAGACC", Topology::Linear).unwrap();
     assert!(matches!(
-        simulate(&[unknown], &options()),
+        generated_unmodified(&[unknown], &options()),
         Err(Error::Unsupported(_))
     ));
-    assert!(simulate(&[], &options()).is_err());
+    assert!(generated_unmodified(&[], &options()).is_err());
     assert!(
-        simulate(
+        generated_unmodified(
             &inputs,
             &GoldenGateOptions {
                 max_fragments: 0,
@@ -356,7 +376,10 @@ fn factual_enzyme_profiles_and_linear_edge_recognition_are_distinct_from_cleavab
         &Molecule::dna("terminal motif", "GGTCTC", Topology::Linear).unwrap(),
     )
     .unwrap();
-    let sites = assess_product(&linear, GoldenGateEnzyme::BsaI).unwrap();
+    let actual =
+        collagene_core::modified_duplex::TrackedDuplex::annealed_unmodified(&linear).unwrap();
+    let mut budget = collagene_core::modified_duplex::CleavageBudget::new(100_000_000).unwrap();
+    let (sites, _) = assess_product(&actual, GoldenGateEnzyme::BsaI, &mut budget).unwrap();
     assert_eq!(sites.len(), 1);
     assert!(sites[0].fully_double_stranded);
     assert!(!sites[0].cleavable_under_model);
@@ -368,7 +391,7 @@ fn graph_reconstructed_pcr_substrates_are_distinct_from_untrusted_imported_chemi
     let originals = [donor("AATG", "CCCC", "GCTT"), donor("GCTT", "TTTT", "AATG")];
     let physical = originals
         .iter()
-        .map(|m| Duplex::exact_pcr(&m.sequence).unwrap())
+        .map(|m| collagene_core::modified_duplex::TrackedDuplex::exact_pcr(&m.sequence).unwrap())
         .collect::<Vec<_>>();
     let snapshots = physical
         .iter()
@@ -376,15 +399,18 @@ fn graph_reconstructed_pcr_substrates_are_distinct_from_untrusted_imported_chemi
         .map(|(i, d)| d.molecule(format!("PCR {i}")).unwrap())
         .collect::<Vec<_>>();
     assert!(simulate(&snapshots, &options()).is_err());
-    let report = simulate_reconstructed(&snapshots, &physical, &options()).unwrap();
+    let mut budget = collagene_core::modified_duplex::CleavageBudget::new(100_000_000).unwrap();
+    let report = simulate_tracked(&snapshots, &physical, &options(), None, &mut budget)
+        .unwrap()
+        .report;
     assert_eq!(
         stable_sequences(&report),
         BTreeSet::from([canonical("AATGCCCCGCTTTTTT")])
     );
     let mut wrong = physical.clone();
     wrong.swap(0, 1);
-    assert!(simulate_reconstructed(&snapshots, &wrong, &options()).is_err());
-    assert!(simulate_reconstructed(&snapshots, &physical[..1], &options()).is_err());
+    assert!(simulate_tracked(&snapshots, &wrong, &options(), None, &mut budget).is_err());
+    assert!(simulate_tracked(&snapshots, &physical[..1], &options(), None, &mut budget).is_err());
 }
 
 #[test]
@@ -428,7 +454,7 @@ fn each_supported_type_iis_profile_reconstructs_its_hand_specified_overhang_geom
             .unwrap()
         };
         let inputs = [make(left, "CCCC", right), make(right, "TTTT", left)];
-        let report = simulate(
+        let report = generated_unmodified(
             &inputs,
             &GoldenGateOptions {
                 enzyme,
@@ -460,7 +486,7 @@ fn linear_time_sequence_keys_match_independent_full_rotation_equivalence_classes
         donor("AATT", "AAAA", "AATT"),
         donor("AATT", "GGGG", "AATT"),
     ];
-    let report = simulate(&inputs, &options()).unwrap();
+    let report = generated_unmodified(&inputs, &options()).unwrap();
     assert!(report.enumeration_complete);
     assert_eq!(report.candidates.len(), 192);
     let (mut by_sequence, mut by_key) = (
@@ -511,7 +537,7 @@ fn thirty_two_linear_donors_are_not_accidentally_limited_to_sixty_four_digest_pi
     let inputs = (0..32)
         .map(|i| donor(&tags[i], "AAAA", &tags[(i + 1) % 32]))
         .collect::<Vec<_>>();
-    let report = simulate(&inputs, &options()).unwrap();
+    let report = generated_unmodified(&inputs, &options()).unwrap();
     assert_eq!(report.fragments.len(), 96);
     assert!(
         report.enumeration_complete,
@@ -545,12 +571,12 @@ fn full_u128_pool_boundary_is_addressable_and_next_fragment_rejects_before_shift
         max_fragments: 1,
         ..options()
     };
-    let report = simulate(&[make(128)], &opts).unwrap();
+    let report = generated_unmodified(&[make(128)], &opts).unwrap();
     assert_eq!(report.fragments.len(), 128);
     assert_eq!(report.candidates.len(), 128);
     assert!(report.candidates.iter().any(|c| c.path[0].fragment == 127));
     assert!(matches!(
-        simulate(&[make(129)], &opts),
+        generated_unmodified(&[make(129)], &opts),
         Err(Error::Unsupported(_))
     ));
 }

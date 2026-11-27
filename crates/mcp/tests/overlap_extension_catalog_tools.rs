@@ -58,6 +58,7 @@ fn recipe(request: Extension) -> ligation_recipe::Recipe {
         name: "Physical OE, selected EcoRI fragment and explicit fill".into(),
         fragments: vec![ligation_recipe::Fragment {
             source: FragmentSpec {
+                generation: None,
                 role: "insert".into(),
                 input_id: "source".into(),
                 preparation: Preparation::OverlapExtensionPcrCatalogDigest {

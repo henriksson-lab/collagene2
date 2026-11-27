@@ -36,10 +36,10 @@ PTM patterns are sequence liabilities, not measured chemical state. The source d
 dipeptide definitions in Lu et al.; the exact profile and limitations are documented
 in [protein liabilities](PROTEIN_LIABILITIES.md). Worker, Biology and native MCP integration are implemented. Conditional human
 V/J analysis now derives IMGT/Kabat1991/Chothia1997 tracks with independently
-selected IMGT/Kabat1991 regions on proteins and exact imported alignment rows.
+selected IMGT/Kabat1991/canonical-chart Chothia regions on proteins and exact imported alignment rows.
 Unsupported rule profiles, ambiguous boundaries and incomplete regions remain
 explicit. Natural residue-level validation, broader chain/species calibration,
-Chothia/North region definitions and full application acceptance remain open.
+North region definitions and full application acceptance remain open.
 Existing external-tool, MIT-implementation and provenance requirements remain unchanged.
 
 

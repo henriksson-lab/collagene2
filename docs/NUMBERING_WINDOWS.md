@@ -30,7 +30,7 @@ published boundary labels. These windows must not be installed as CDR annotation
 | Kabat 1991 / lambda | 6–9 | 3 | 9–15 |
 | Chothia 1997 / heavy | 8–10 | 6–10 | 11, 13, 19, 21 |
 | Chothia 1997 / kappa | 5, 6, 7, 10, 11, 12 | 3 | 9 |
-| Chothia 1997 / lambda | 7–9 | 3 | 9, 11 |
+| Chothia 1997 / lambda | 6–9 | 3 | 9, 11 |
 
 This finite coverage follows the explicitly inspected correspondence examples,
 including chart rows added for completeness. It is not a biological length limit
@@ -53,6 +53,10 @@ The 1997 lambda junction convention uses the later insertion placement, distinct
 from the earlier Chothia illustration. The kappa first-window example of length
 11 and the lambda example of length 7 require their literal distinct patterns;
 a generic sequential insertion counter would change those published labels.
+The [primary first-loop chart](https://www.imgt.org/IMGTScientificChart/Numbering/CDR1-IMGTgaps.html)
+additionally corrects the 1997 Hil lambda example: its IMGT loop has six residues
+and its interior labels are 24,25,26,27,30,30A,30B,31,32,33,34. That literal
+profile is included without inventing unsupported neighboring lengths.
 
 Original references are Kabat et al., *Sequences of Proteins of Immunological
 Interest*, NIH 91-3242 (1991); Chothia and Lesk, *J. Mol. Biol.* 196:901–917 (1987);
@@ -79,8 +83,9 @@ region inference or automatic selection of a convention occurs.
 
 Five native fixture groups and optional-schema WASM checks pass. Literal published
 examples cover distinct insertion positions, short-loop gaps and locus/revision
-exceptions. A source-bound sweep exercises all 79 supported configurations for
+exceptions. A source-bound sweep exercises all 80 supported configurations for
 length, label uniqueness, anchor exclusion, source ownership and reconstruction.
-That sweep does not independently certify every biological assignment. Full-domain
-assembly, region-definition rules, worker/UI/MCP selection and broader independent
-residue-level validation remain required.
+That sweep does not independently certify every biological assignment. The
+[domain-track assembly](ANTIBODY_NUMBERING.md) supplies framework/window integration,
+independent IMGT/Kabat/canonical-chart Chothia definitions and worker/UI/MCP
+selection. Broader independent residue-level validation remains required.

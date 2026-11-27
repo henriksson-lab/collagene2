@@ -6092,13 +6092,13 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
         }).await
     }
     #[tool(
-        description = "Describe the current conditional human antibody V/J reference analysis, IMGT numbering/region rules, dataset provenance and explicit resource limits. Includes conditional Kabat1991/Chothia1997 published profiles and separate IMGT/Kabat region definitions; unsupported mappings remain unresolved. Not calibrated species/domain classification."
+        description = "Describe the current conditional human antibody V/J reference analysis, IMGT numbering/region rules, dataset provenance and explicit resource limits. Includes conditional Kabat1991/Chothia1997 published profiles and separate IMGT/Kabat/canonical-chart Chothia region definitions; unsupported mappings remain unresolved. Not calibrated species/domain classification."
     )]
     async fn list_antibody_profiles(&self) -> Result<CallToolResult, ErrorData> {
         use collagene_core::antibody_numbering as n;
         let corpus = n::references::human_references().map_err(bad)?;
         output(
-            json!({"engine":n::domain_tracks::TRACK_ENGINE,"rule_revision":n::domain_tracks::catalog_revision(),"corpus_revision":corpus.revision().map_err(bad)?,"sources":corpus.sources(),"v_references":corpus.v_entries().len(),"j_references":corpus.j_entries().len(),"numbering_schemes":["Imgt","Kabat1991","Chothia1997"],"region_definitions":["Imgt","Kabat1991"],"max_source_residues":n::MAX_SOURCE_RESIDUES,"max_candidates":n::domain_candidates::MAX_CANDIDATES,"max_endpoints_per_locus":n::profile::MAX_ENDPOINTS,"max_cells":n::profile::MAX_CELLS,"max_trace_states":n::profile::MAX_TRACE_STATES,"max_scan_windows":n::domain_candidates::MAX_SCAN_WINDOWS,"authority":"Conditional human-reference/rule evidence only; unresolved and alternative candidates retained. No calibrated classification, biological numbering certification or cloning/material authority."}),
+            json!({"engine":n::domain_tracks::TRACK_ENGINE,"rule_revision":n::domain_tracks::catalog_revision(),"corpus_revision":corpus.revision().map_err(bad)?,"sources":corpus.sources(),"v_references":corpus.v_entries().len(),"j_references":corpus.j_entries().len(),"numbering_schemes":["Imgt","Kabat1991","Chothia1997"],"region_definitions":["Imgt","Kabat1991","ChothiaCanonical"],"max_source_residues":n::MAX_SOURCE_RESIDUES,"max_candidates":n::domain_candidates::MAX_CANDIDATES,"max_endpoints_per_locus":n::profile::MAX_ENDPOINTS,"max_cells":n::profile::MAX_CELLS,"max_trace_states":n::profile::MAX_TRACE_STATES,"max_scan_windows":n::domain_candidates::MAX_SCAN_WINDOWS,"authority":"Conditional human-reference/rule evidence only; unresolved and alternative candidates retained. No calibrated classification, biological numbering certification or cloning/material authority."}),
         )
     }
     #[tool(

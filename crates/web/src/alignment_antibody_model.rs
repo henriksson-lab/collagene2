@@ -146,6 +146,10 @@ mod tests {
         selection.numbering_scheme =
             collagene_core::antibody_numbering::domain_tracks::NumberingScheme::Kabat1991;
         assert!(c.guard(7, &source, &o, &l, &selection).is_err());
+        let mut definition = test_selection();
+        definition.region_definition =
+            collagene_core::antibody_numbering::domain_tracks::RegionDefinition::ChothiaCanonical;
+        assert!(c.guard(7, &source, &o, &l, &definition).is_err());
         c.guard(7, &source, &o, &l, &test_selection()).unwrap();
         assert!(c.guard(7, &other, &o, &l, &test_selection()).is_err());
         assert!(c.guard(8, &source, &o, &l, &test_selection()).is_err());

@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 120;
+pub const WORKER_SCHEMA_VERSION: u16 = 121;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 31;
 
 // Current selectors whose accepted payloads can contain complete workspace archives.

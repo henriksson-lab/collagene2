@@ -234,16 +234,17 @@ zero retained candidates requests counts only. Scoring weights and work limits a
 documented in the settings and full downloaded report.
 
 Choose the numbering scheme (IMGT, Kabat 1991 or Chothia 1997 profiles) and the
-region definition (IMGT or Kabat 1991) independently before analyzing. Choose a
-retained candidate to inspect definition-specific CDR sequences and a paged
-residue table. Click a source coordinate to select that exact residue in the
-sequence. Unresolved residues stay unassigned, unsupported/missing loop boundaries
+region definition (IMGT, Kabat 1991 or Chothia canonical charts) independently
+before analyzing. Choose a retained candidate to inspect definition-specific CDR sequences and a paged
+residue table. The Chothia canonical profile uses its chart-defined kappa/lambda
+boundaries and distinguishes plain52 from its insertions in heavy CDR2.
+Click a source coordinate to select that exact residue in the sequence. Unresolved residues stay unassigned, unsupported/missing loop boundaries
 remain explicit, and an unresolved N terminus receives no invented start. Source,
 workspace or settings changes discard prior results; Cancel stops the worker.
 Download the complete evidence report for provenance and alternative candidates.
 These are conditional human-reference/rule assignments, not calibrated domain/
 species classification or independently certified numbering. Unsupported published
-profiles remain unresolved; Chothia region definitions remain under development. [Scientific contract](ANTIBODY_NUMBERING.md).
+profiles remain unresolved; North region definitions remain under development. [Scientific contract](ANTIBODY_NUMBERING.md).
 
 
 **Show selected candidate in sequence** colors conditional CDR1/2/3 regions in the

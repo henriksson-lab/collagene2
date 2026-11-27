@@ -3,16 +3,19 @@ use collagene_lab_library::collaboration::{ActorId, Author, Role};
 use collagene_library_protocol as wire;
 use collagene_server::{AccessKey, MemberCredential, MemberRegistry};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 struct Temp(PathBuf);
 impl Temp {
     fn new() -> Self {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
         let p = std::env::temp_dir().join(format!(
-            "collagene-member-fixture-{}-{}",
+            "collagene-member-fixture-{}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         let mut b = std::fs::DirBuilder::new();
         #[cfg(unix)]

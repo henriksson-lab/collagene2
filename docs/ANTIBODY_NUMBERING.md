@@ -5,14 +5,14 @@ module for explicit position labels, bounded profile alignment and source-bound
 conditional antibody numbering. Current human V/J reference analysis produces
 conditional IMGT, Kabat1991 and Chothia1997 tracks in workers, the Biology
 inspector, protein/alignment viewers and native MCP, with separately selected
-IMGT or Kabat1991 regions. Unresolved paths/positions remain explicit. This is not a
+IMGT, Kabat1991 or canonical-chart Chothia regions. Unresolved paths/positions remain explicit. This is not a
 calibrated universal antibody/domain classifier or independently certified
 biological numbering system.
 
 Native [published Kabat/Chothia window rules](NUMBERING_WINDOWS.md) now supply
 source-bound, explicitly versioned calculations for selected published profiles.
 Invariant reference frameworks and those window rules now assemble conditional
-full-domain tracks. Chothia region definitions, broader reference/species coverage
+full-domain tracks. North region definitions, broader reference/species coverage
 and independent natural residue-level validation remain part of F34. The sections
 below describe the component contracts and the validation evidence for each stage.
 
@@ -456,8 +456,8 @@ not establish independent residue-level numbering accuracy across the panel.
 track for every retained candidate. The report carries that exact evidence,
 source revision, published-rule revision and analysis context. Numbering scheme
 and region definition are separate required typed choices. Numbering choices are
-`Imgt`, `Kabat1991` and `Chothia1997`; region definitions are `Imgt` and
-`Kabat1991`. Any combination is explicit. Unsupported enum values are rejected.
+`Imgt`, `Kabat1991` and `Chothia1997`; region definitions are `Imgt`,
+`Kabat1991` and `ChothiaCanonical`. Any combination is explicit. Unsupported enum values are rejected.
 These choices bind the request context without changing the underlying scientific
 candidate IDs, scores or retained alternatives.
 
@@ -485,7 +485,7 @@ Tracks are conditional reference/rule assignments, not a calibrated classifier o
 independent biological numbering certification. Candidate truncation and unresolved
 loop diagnostics remain in the same report. Source/options/report reconstruction,
 source bounds, cancellation and existing candidate caps apply. Broader independent
-numbering validation and Chothia region definitions remain required.
+numbering validation and North region definitions remain required.
 
 
 ## Alternate frameworks and independent region definitions
@@ -520,16 +520,18 @@ by concatenating partially assigned residues. Kabat completeness requires verifi
 window context, both definition endpoints and uninterrupted membership throughout
 the interval. Changing only the region definition can change physical CDR sequences
 and colors while preserving every numbering assignment and scientific candidate.
-Chothia numbering does not imply a Chothia CDR definition; that definition is not
-yet exposed. Current finite window coverage and human-reference scope remain explicit.
+Chothia numbering does not select a CDR definition implicitly. The independently
+selected `ChothiaCanonical` definition below uses its own verified Chothia map.
+Current finite window coverage and human-reference scope remain explicit.
 
-## Remaining definition profiles and their primary evidence
+## Canonical-chart Chothia regions and remaining North profile
 
-The remaining Chothia choice must state which published delimitations it uses.
+`ChothiaCanonical` explicitly selects the canonical-loop brackets in the primary
+comparison charts, using the later Chothia1997 numbering profile.
 The [primary CDR1 correspondence chart](https://www.imgt.org/IMGTScientificChart/Numbering/CDR1-IMGTgaps.html)
 brackets heavy and kappa canonical loops at Chothia26–32, but the 1997 lambda
 examples start at25. Its earlier lambda examples start at26. The corrected Hil
-example also supplies a six-residue IMGT first-loop profile that is not yet in
+example also supplies the six-residue IMGT first-loop profile now included in
 the current Chothia lambda window catalog. These are distinct rule facts, not
 interchangeable labels for a single generic numeric range.
 
@@ -538,22 +540,32 @@ places the canonical heavy loop after plain52 through55: existing 52-letter
 insertions are inside the loop while plain52 is outside. Kappa/lambda loops span
 50–52 in that chart. The [CDR3 chart](https://www.imgt.org/IMGTScientificChart/Numbering/CDR3-IMGTgaps.html)
 brackets the illustrated canonical heavy loop at96–101 and light loops at91–96.
-An eventual canonical-chart profile needs exact boundary predicates, locus/version
-identity, source-bound complete/unresolved intervals and fixtures for the excluded
-plain52 versus included52A case. A loosely named Chothia option or a generic
-inclusive integer-range implementation would obscure these distinctions.
+The implementation uses exact boundary predicates, explicit locus/profile identity
+and source-bound complete/unresolved intervals. For heavy CDR2, completeness
+requires plain52 immediately before the first selected CDR residue and an
+established55 endpoint, together with a supported window and no interior holes.
+This preserves included52A and excluded plain52 even when another numbering
+scheme is displayed. Other canonical loops require both established definition
+endpoints and the corresponding supported window. Region lookup alone is not
+proof of numbering or insertion validity. The intervening rows use the selected
+framework definition, including heavy102/light97 after canonical CDR3.
+
+Literal region-boundary fixtures distinguish all three loci, including the lambda
+25 start, and full-domain fixtures check complete CDR source sequences under each
+independent numbering choice. Unsupported Chothia windows can leave known IMGT
+labels with unresolved canonical membership; the remaining loops stay available.
 
 [North et al. (2011)](https://pmc.ncbi.nlm.nih.gov/articles/PMC3065967/) explicitly
 chooses structural loop boundaries separately from numbering. Its descriptions
 and Figure11 also distinguish the authors' reading of the original Chothia
 examples from common later conventions. Exact Figure1/Figure11 boundary evidence
 must be inspected before adding the North profile; secondary software tables do
-not supply the implementation authority. Neither remaining profile is currently
-exposed in workers, UI or MCP.
+not supply the implementation authority. North is not currently exposed in
+workers, UI or MCP. The canonical-chart profile is exposed in all three.
 
 ## Worker, Biology inspector and MCP
 
-The current track engine is `antibody-domain-tracks-3`. Its request context binds
+The current track engine is `antibody-domain-tracks-4`. Its request context binds
 source, corpus, explicit numbering/region selection, scoring/loop/FR4 options,
 work/retention limits and current engines
 and rules without running alignment. `validate_binding` checks current context and
@@ -564,7 +576,7 @@ scores or authenticate source letters. Imported or independently supplied report
 still require `validate_for` against an independently resolved actual source.
 There is no decoder for the superseded internal track context.
 
-Worker schema 120 carries job 195/result 185 with required selection and ordinary
+Worker schema 121 carries job 195/result 185 with required selection and ordinary
 message bounds. The Biology
 inspector runs analysis in a cancellable worker, offers explicit analysis settings,
 retained-candidate selection, loop diagnostics, paged residue rows, exact source
@@ -626,8 +638,8 @@ and native request/source context without running DP; `validate_for` additionall
 reconstructs the native scientific analysis. UI replies use actual-source map
 validation, and independently supplied scientific evidence needs full reconstruction.
 
-Worker 120 carries job 196/result 186 with required selection under unchanged
-ordinary message limits. The alignment report engine is `alignment-antibody-2`. The
+Worker 121 carries job 196/result 186 with required selection under unchanged
+ordinary message limits. The alignment report engine is `alignment-antibody-3`. The
 protein alignment inspector supplies explicit settings, cancellable row analysis,
 retained-candidate selection, CDR colors, unresolved underlines, exact focused-cell
 numbering/evidence readouts and full report download. Changing rows, alignment,
@@ -640,5 +652,5 @@ stable row ID, requires explicit options/limits/selection and provides at most 2
 candidate summaries plus a full report artifact. It installs no document or other
 scientific state. Neither UI nor MCP modifies imported rows, annotations or source
 bytes, guesses labels for gaps or treats imported column annotations as computed
-confidence. Chothia region definitions, broader independent biology validation
+confidence. North region definitions, broader independent biology validation
 and whole-product acceptance remain open.

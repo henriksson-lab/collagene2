@@ -174,3 +174,37 @@ fn scheme_and_definition_choices_bind_worker_requests_and_preserve_independent_r
     selection.region_definition = t::RegionDefinition::Kabat1991;
     assert!(protocol::process_request(&protocol::encode_request(&stale).unwrap()).is_err());
 }
+
+#[test]
+fn canonical_region_selection_survives_worker_transport_with_independent_imgt_labels() {
+    let (m, o, l) = inputs();
+    let mut c = selection();
+    c.region_definition = t::RegionDefinition::ChothiaCanonical;
+    let q = Request {
+        id: 43,
+        revision: t::request_revision(&m, &o, &l, &c).unwrap(),
+        job: AnalysisJob::AnalyzeAntibody {
+            molecule: m.clone(),
+            options: o.clone(),
+            limits: l.clone(),
+            selection: c.clone(),
+        },
+    };
+    let wire = protocol::encode_request(&q).unwrap();
+    let mut session = protocol::AnalysisSession::default();
+    let reply = protocol::decode_response(&session.process_request(&wire).unwrap()).unwrap();
+    let AnalysisResult::Antibody(r) = reply.result else {
+        panic!("antibody response")
+    };
+    assert_eq!(r.selection, c);
+    assert_eq!(
+        r.tracks[0].cdrs[0].status,
+        t::CdrStatus::Mapped { start: 25, end: 32 }
+    );
+    assert_eq!(r.tracks[0].unassigned_residues, 0);
+    assert_eq!(r.tracks[0].unassigned_regions, 8);
+    r.validate_for(&m, &o, &l, &c).unwrap();
+    let mut old = wire;
+    old[4..6].copy_from_slice(&120u16.to_le_bytes());
+    assert!(session.process_request(&old).is_err());
+}

@@ -141,12 +141,20 @@ fn kappa_and_lambda_chothia_patterns_are_not_a_shared_generic_insertion_counter(
         ),
         "24 25 26 27 28 29 30 32 33 34"
     );
+    let hil = layout(
+        &Convention::Chothia1997,
+        &Locus::Lambda,
+        &Window::CysToTrp,
+        11,
+    )
+    .unwrap();
+    assert_eq!(text(&hil), "24 25 26 27 30 30A 30B 31 32 33 34");
     assert!(
         layout(
             &Convention::Chothia1997,
             &Locus::Lambda,
             &Window::CysToTrp,
-            11
+            10
         )
         .is_err()
     );
@@ -226,7 +234,7 @@ fn supported_profile_sweep_has_exact_lengths_unique_labels_and_bound_source_orde
             }
         }
     }
-    assert_eq!(supported, 79);
+    assert_eq!(supported, 80);
 }
 #[test]
 fn source_binding_anchors_stops_provenance_and_supplied_context_are_reconstructed() {

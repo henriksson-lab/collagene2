@@ -8,9 +8,11 @@ data! {pub enum WindowIssue {
 }}
 data! {pub struct Issue {pub numbering_scheme:NumberingScheme,pub window:w::Window,pub issue:WindowIssue}}
 pub fn catalog_revision() -> String {
-    hash(b"antibody-alternate-track-rules-1\0", &(
+    hash(b"antibody-alternate-track-rules-2\0", &(
         w::catalog_revision(),
         "https://www.imgt.org/PDF/DCI/27_55-77_2003.pdf; Table2 framework correspondences",
+        ["https://www.imgt.org/IMGTScientificChart/Numbering/CDR1-IMGTgaps.html", "https://www.imgt.org/IMGTScientificChart/Numbering/CDR2-IMGTgaps.html", "https://www.imgt.org/IMGTScientificChart/Numbering/CDR3-IMGTgaps.html"],
+        "ChothiaCanonical H1 26..32 L1 kappa26..32 lambda25..32; H2 after plain52 through55 includes52letters; L2 50..52; H3 96..101 L3 91..96; only established Chothia1997 labels; complete intervals require corresponding supported window and exact endpoints",
         "heavy I1..9=K1..9 I11..26=K10..25 I41..55=K36..50 I66..72=K58..64 I74..91=K65..82 I92..94=K82ABC I95..104=K83..92; light I1..26=K1..26 I39..55=K33..49 I66..72=K53..59 I74..80=K60..66 I83..104=K67..88; J heavy103+offset light98+offset; invariant references only; CysTrp requires adjacent23/24/25/26 and39/40/41; no invented framework insertions; IMGT and Kabat definitions via independent source labels",
     ),65536).expect("fixed alternate track rules")
 }
@@ -233,77 +235,115 @@ fn converted(
     }
     Ok((rows, issues))
 }
-fn kabat_cdrs(rows: &[Residue], issues: &[Issue], locus: &Locus) -> Result<Vec<CdrRegion>> {
+fn defined_region(
+    definition: &RegionDefinition,
+    locus: &Locus,
+    label: &Position,
+) -> Result<Region> {
+    match definition {
+        RegionDefinition::Kabat1991 => kabat_region(locus, label),
+        RegionDefinition::ChothiaCanonical => chothia_canonical_region(locus, label),
+        RegionDefinition::Imgt => Err(Error::Invalid(
+            "alternate definition requires its own labels",
+        )),
+    }
+}
+fn defined_cdrs(
+    rows: &[Residue],
+    issues: &[Issue],
+    locus: &Locus,
+    definition: &RegionDefinition,
+) -> Result<Vec<CdrRegion>> {
     let heavy = *locus == Locus::Heavy;
+    // The first endpoint is excluded only for canonical heavy CDR2. Plain52
+    // is framework; any 52-letter insertions immediately after it are CDR.
+    let bounds = match definition {
+        RegionDefinition::Kabat1991 => [
+            (
+                if heavy { 31 } else { 24 },
+                if heavy { 35 } else { 34 },
+                false,
+            ),
+            (50, if heavy { 65 } else { 56 }, false),
+            (
+                if heavy { 95 } else { 89 },
+                if heavy { 102 } else { 97 },
+                false,
+            ),
+        ],
+        RegionDefinition::ChothiaCanonical => [
+            (if *locus == Locus::Lambda { 25 } else { 26 }, 32, false),
+            (
+                if heavy { 52 } else { 50 },
+                if heavy { 55 } else { 52 },
+                heavy,
+            ),
+            (
+                if heavy { 96 } else { 91 },
+                if heavy { 101 } else { 96 },
+                false,
+            ),
+        ],
+        RegionDefinition::Imgt => return Err(Error::Invalid("alternate CDR definition")),
+    };
     [
-        (
-            Region::Cdr1,
-            w::Window::CysToTrp,
-            if heavy { 31 } else { 24 },
-            if heavy { 35 } else { 34 },
-        ),
-        (
-            Region::Cdr2,
-            w::Window::MiddleLoop,
-            50,
-            if heavy { 65 } else { 56 },
-        ),
-        (
-            Region::Cdr3,
-            w::Window::CysToJ,
-            if heavy { 95 } else { 89 },
-            if heavy { 102 } else { 97 },
-        ),
+        (Region::Cdr1, w::Window::CysToTrp),
+        (Region::Cdr2, w::Window::MiddleLoop),
+        (Region::Cdr3, w::Window::CysToJ),
     ]
     .into_iter()
-    .map(|(kind, window, first, last)| {
-        let mut members = vec![];
-        for (i, r) in rows.iter().enumerate() {
-            if r.assignment
-                .as_ref()
-                .map(|a| kabat_region(locus, &a.position))
-                .transpose()?
-                .as_ref()
-                == Some(&kind)
-            {
-                members.push(i);
-            }
-        }
-        let endpoints = [first, last].iter().all(|n| {
-            rows.iter().any(|r| {
-                r.assignment
-                    .as_ref()
-                    .is_some_and(|a| a.position == position(*n))
+    .zip(bounds)
+    .map(|((kind, window), (first, last, exclude_first))| {
+        let members = rows
+            .iter()
+            .enumerate()
+            .filter_map(|(i, r)| {
+                r.assignment.as_ref().map(|a| {
+                    defined_region(definition, locus, &a.position).map(|region| (i, region))
+                })
             })
-        });
-        let mut complete = endpoints && !issues.iter().any(|i| i.window == window);
-        if let Some((&a, &b)) = members.first().zip(members.last()) {
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .filter_map(|(i, region)| (region == kind).then_some(i))
+            .collect::<Vec<_>>();
+        let endpoint = |number| {
+            rows.iter()
+                .find(|r| {
+                    r.assignment
+                        .as_ref()
+                        .is_some_and(|a| a.position == position(number))
+                })
+                .map(|r| r.source_index)
+        };
+        let complete_endpoints = endpoint(first).zip(endpoint(last));
+        let mut complete =
+            complete_endpoints.is_some() && !issues.iter().any(|i| i.window == window);
+        let status = if let Some((&a, &b)) = members.first().zip(members.last()) {
+            if exclude_first {
+                complete &= endpoint(first).is_some_and(|left| left + 1 == rows[a].source_index);
+            }
+            // Interior holes must not turn a partial assignment into a CDR sequence.
             for row in &rows[a..=b] {
                 complete &= row
                     .assignment
                     .as_ref()
-                    .map(|a| kabat_region(locus, &a.position))
+                    .map(|a| defined_region(definition, locus, &a.position))
                     .transpose()?
                     .as_ref()
                     == Some(&kind);
             }
-            Ok(CdrRegion {
-                kind,
-                status: if complete {
-                    CdrStatus::Mapped {
-                        start: rows[a].source_index,
-                        end: rows[b].source_index + 1,
-                    }
-                } else {
-                    CdrStatus::Unresolved
-                },
-            })
+            if complete {
+                CdrStatus::Mapped {
+                    start: rows[a].source_index,
+                    end: rows[b].source_index + 1,
+                }
+            } else {
+                CdrStatus::Unresolved
+            }
         } else {
-            Ok(CdrRegion {
-                kind,
-                status: CdrStatus::Unresolved,
-            })
-        }
+            CdrStatus::Unresolved
+        };
+        Ok(CdrRegion { kind, status })
     })
     .collect()
 }
@@ -355,7 +395,9 @@ pub(crate) fn assemble(
     } else {
         None
     };
-    let chothia = if selection.numbering_scheme == NumberingScheme::Chothia1997 {
+    let chothia = if selection.numbering_scheme == NumberingScheme::Chothia1997
+        || selection.region_definition == RegionDefinition::ChothiaCanonical
+    {
         Some(converted(
             raw,
             candidate,
@@ -381,13 +423,22 @@ pub(crate) fn assemble(
                 .as_ref()
                 .map(|a| kabat_region(&candidate.locus, &a.position))
                 .transpose()?,
+            RegionDefinition::ChothiaCanonical => chothia.as_ref().ok_or(Error::Binding)?.0[i]
+                .assignment
+                .as_ref()
+                .map(|a| chothia_canonical_region(&candidate.locus, &a.position))
+                .transpose()?,
         };
     }
     let cdrs = match selection.region_definition {
         RegionDefinition::Imgt => imgt_cdrs(candidate),
         RegionDefinition::Kabat1991 => {
             let (rows, issues) = kabat.as_ref().ok_or(Error::Binding)?;
-            kabat_cdrs(rows, issues, &candidate.locus)?
+            defined_cdrs(rows, issues, &candidate.locus, &selection.region_definition)?
+        }
+        RegionDefinition::ChothiaCanonical => {
+            let (rows, issues) = chothia.as_ref().ok_or(Error::Binding)?;
+            defined_cdrs(rows, issues, &candidate.locus, &selection.region_definition)?
         }
     };
     let mut issues = vec![];

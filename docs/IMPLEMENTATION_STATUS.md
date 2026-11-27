@@ -4,23 +4,25 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-Current source uses worker schema 120, candidate schema 31, draft schema 19
+Current source uses worker schema 121, candidate schema 31, draft schema 19
 and 200 native MCP tools. RNA chemistry/declaration review, protein liability
 screening and imported structure viewing are integrated. Antibody analysis now
 connects conditional human-reference IMGT/Kabat1991/Chothia1997 numbering and
-independently selected IMGT/Kabat1991 regions through workers, protein/alignment
-inspectors and viewers, and MCP. Unsupported mappings remain explicit. Natural
-residue-level validation, broader reference/species coverage and Chothia region
+independently selected IMGT/Kabat1991/canonical-chart Chothia regions through
+workers, protein/alignment inspectors and viewers, and MCP. Unsupported mappings remain explicit. Natural
+residue-level validation, broader reference/species coverage and North region
 definitions remain unfinished. This does not establish whole-application,
 installed-platform or visual acceptance.
 
-Public port 8082 was last refreshed from successful CI frontend `dd7f03a`
-(worker schema 118), including the antibody inspector. Protein viewer overlays,
-alignment-row analysis and the current scheme/definition controls are newer source
-changes awaiting a frontend artifact refresh. Publication checked the artifact
-digest, confined static assets/integrity references and listening socket; no
-browser or application HTTP checks were run. The checkpoints below retain the
-validation evidence for each increment, rather than describing the current preview.
+Public port 8082 now serves successful CI frontend `26a4ee5` (worker schema 120),
+including protein/alignment antibody overlays and separate IMGT/Kabat region
+selection with all three numbering choices. The current canonical-chart region
+option is newer source work and awaits its own frontend artifact. Publication
+checked the pinned artifact digest, 14 confined static assets/integrity references,
+WASM headers and exact listening-process ownership; no browser or application
+HTTP checks were run. The static server has no application filesystem API. The
+checkpoints below retain evidence for each increment rather than describing the
+current preview.
 
 ## Earlier implementation checkpoints
 
@@ -2420,3 +2422,79 @@ misses. These are chain-identity checks, not residue-numbering truth.
 The final integrated web/worker optional-schema WASM check, assessment-example
 build, repository formatting check and local documentation-link checks pass.
 No browser, screenshot or application HTTP checks were run.
+
+
+### Canonical-chart Chothia CDR definitions
+
+The native track assembly now supports `ChothiaCanonical` independently of the
+three numbering schemes. Its primary-chart profile retains heavy/kappa CDR1
+26–32, later lambda CDR1 25–32, heavy CDR2 after plain52 through55 (including
+52-letter insertions), light CDR2 50–52, heavy CDR3 96–101 and light CDR3 91–96.
+Framework membership follows those chosen boundaries, including heavy102/light97
+after canonical CDR3. Complete intervals require established definition endpoints,
+the corresponding supported Chothia window and uninterrupted source membership.
+Partial intervals stay unresolved; unchanged number labels never dictate a region
+by a numeric test in a different scheme.
+
+The corrected Hil lambda six-residue first-loop profile is added literally to the
+published window catalog, retaining its nonsequential 24,25,26,27,30,30A,30B,31,32,
+33,34 interior. The current catalog has 80 supported configurations. Native lookup,
+source-bound assembly, required worker selection, both inspectors, source/row
+captures, display labels and MCP discovery/analysis share one current definition.
+Track engine 4, alignment engine 3 and worker schema 121 reject superseded internal formats;
+no compatibility reader is added. [Primary sources and profile](ANTIBODY_NUMBERING.md#canonical-chart-chothia-regions-and-remaining-north-profile).
+
+North definitions still require their exact primary figure boundaries, and broader
+independent natural residue-level validation, reference/species calibration and
+whole-product graphical/platform/interoperability acceptance remain open. The
+canonical-chart definition is explicitly named rather than silently substituting
+one of the differing conventions called Chothia.
+
+
+### Public preview refresh
+
+Port 8082 now serves successful CI frontend `26a4ee5` / worker schema 120 (run 46083066662,
+frontend job 140786282238, artifact 15238057146). The artifact archive SHA-256 is
+`3f7753fceb0931f3eac12dfd08d37dd8a58377944139d27ddcdc24917ea29b13`;
+14 confined static assets total 147,943,388 bytes. Integrity references, WASM
+headers and the exact replacement static server/socket were verified without
+browser/application HTTP checks. The preview now includes protein/alignment
+overlays and independent numbering/IMGT-or-Kabat region controls. The canonical
+chart profile remains newer source awaiting its own frontend artifact. Private
+services were untouched; the public server exposes no application filesystem API.
+
+The canonical batch passes 45 distinct focused native cases: 21 numbering/window
+fixtures, 17 core transport cases, one MCP SDK group and six web model/overlay
+cases. This includes the 80-profile source-bound sweep, literal canonical heavy
+CDR sequences under all three numbering choices, complete kappa/lambda source
+intervals, unsupported-window retention, stale definition captures and current
+binary/session/MCP exchange. After making the lambda boundary match arms explicitly
+disjoint, the nine affected alternate-track cases pass again. The assessment
+example test harness compiles; its chain-identity panel was not rerun because the
+candidate detector/scoring code is unchanged. No natural residue-level accuracy
+or browser/platform acceptance is inferred from these fixtures.
+
+Final integrated web/worker optional-schema WASM, repository formatting and local
+documentation-link checks pass. No browser, screenshot or application HTTP checks
+were run. The newly added range matcher has no overlapping-endpoint warning.
+
+
+### Linux CI fixture isolation
+
+Exact-source Check run 46080294296 for 51e1e25 passed web/WASM and the Windows/macOS
+scientific suites. Linux reached the server member-registry fixtures, where two
+parallel tests collided on a timestamp-only temporary directory (`AlreadyExists`
+before any registry assertion). The fixture now includes a process-local atomic
+counter, matching the other server fixture's ownership scheme. Owner-only modes,
+symlink/static-root refusal, identity/key uniqueness, revocation and role checks
+are unchanged. This repairs fixture isolation rather than weakening acceptance
+criteria or changing production authorization.
+
+For the public `26a4ee5` source, all three Desktop build/embedded-MCP smoke jobs
+now pass on Windows, macOS and Linux (run 46083066662). This is native build and
+headless MCP evidence, not installation/offline GUI acceptance.
+
+The focused server member-registry harness now builds and all three cases pass
+with ordinary parallel execution. Combined with the canonical-definition batch,
+48 distinct focused native cases pass; the affected nine-case boundary recheck
+also passes. Production registry code and its refusal assertions are unchanged.

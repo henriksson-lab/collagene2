@@ -57,6 +57,13 @@ async fn antibody_tools_keep_explicit_limits_exact_sources_full_artifacts_and_re
     let discovery = call(&c, "list_antibody_profiles", json!({})).await;
     assert_eq!(discovery["v_references"], 354);
     assert_eq!(discovery["j_references"], 23);
+    assert!(
+        discovery["region_definitions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d == "ChothiaCanonical")
+    );
     let seq = "EVQLLESGGGLVQPGGSLRLSCAASGFTFSSYAMSWVRQAPGKGLEWVSAISGSGGSTYYADSVKGRFTISRDNSKNTLYLQMNSLRAEDTAVYYCARDYGMDVWGQGTLVTVSS";
     let imported = call(
         &c,
@@ -181,6 +188,20 @@ async fn antibody_tools_keep_explicit_limits_exact_sources_full_artifacts_and_re
         json!({"document":doc,"options":options,"limits":limits}),
     )
     .await;
+    let mut canonical = selection.clone();
+    canonical.region_definition = t::RegionDefinition::ChothiaCanonical;
+    let canonical_result = call(
+        &c,
+        "analyze_antibody",
+        json!({"document":doc,"options":options,"limits":limits,"selection":canonical}),
+    )
+    .await;
+    assert_eq!(
+        canonical_result["selection"]["region_definition"],
+        "ChothiaCanonical"
+    );
+    assert_eq!(canonical_result["candidates"][0]["unassigned_residues"], 0);
+    assert_eq!(canonical_result["candidates"][0]["unassigned_regions"], 8);
     // Analyze alignment evidence directly; do not forge an extracted document ref.
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     let input = format!(">row-a\n--{seq}--\n>row-b\n--{seq}--\n");
@@ -191,7 +212,7 @@ async fn antibody_tools_keep_explicit_limits_exact_sources_full_artifacts_and_re
     let ar = call(
         &c,
         "analyze_alignment_antibody",
-        json!({"alignment":imported["alignment"],"row_id":row,"options":options,"limits":limits,"selection":selection}),
+        json!({"alignment":imported["alignment"],"row_id":row,"options":options,"limits":limits,"selection":canonical}),
     )
     .await;
     assert_eq!(ar["retained_candidates"], 1);
@@ -220,15 +241,15 @@ async fn antibody_tools_keep_explicit_limits_exact_sources_full_artifacts_and_re
         .unwrap();
     assert!(full.at_column(0, 0).is_none());
     assert_eq!(full.at_column(0, 2).unwrap().source_index, 0);
-    let other=call(&c,"analyze_alignment_antibody",json!({"alignment":imported["alignment"],"row_id":imported["rows"][1]["id"],"options":options,"limits":limits,"selection":selection})).await;
+    let other=call(&c,"analyze_alignment_antibody",json!({"alignment":imported["alignment"],"row_id":imported["rows"][1]["id"],"options":options,"limits":limits,"selection":canonical})).await;
     assert_ne!(ar["context_revision"], other["context_revision"]);
-    reject(&c,"analyze_alignment_antibody",json!({"alignment":imported["alignment"],"row_id":"unknown","options":options,"limits":limits,"selection":selection})).await;
+    reject(&c,"analyze_alignment_antibody",json!({"alignment":imported["alignment"],"row_id":"unknown","options":options,"limits":limits,"selection":canonical})).await;
     let mut stale = imported["alignment"].clone();
     stale["revision"] = json!("f".repeat(64));
     reject(
         &c,
         "analyze_alignment_antibody",
-        json!({"alignment":stale,"row_id":row,"options":options,"limits":limits,"selection":selection}),
+        json!({"alignment":stale,"row_id":row,"options":options,"limits":limits,"selection":canonical}),
     )
     .await;
     assert_eq!(call(&c,"read_alignment",json!({"alignment":imported["alignment"],"row_start":0,"max_rows":2,"column_start":0,"max_columns":200})).await,alignment_before);

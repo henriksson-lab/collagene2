@@ -31,8 +31,8 @@ pub fn reference(locus: &Locus) -> &'static str {
 }
 pub fn catalog_revision() -> String {
     hash(b"antibody-numbering-window-rules-1\0", &(
-        WINDOW_ENGINE,[reference(&Locus::Heavy),reference(&Locus::Kappa),reference(&Locus::Lambda)],
-        "2008 correspondence charts; Kabat1991 and Chothia1997 only; uppercase letter labels; CysToTrp has IMGT loop length plus five supplied flank residues; heavy CDR1 Kabat8..12 Chothia8..10; kappa Kabat5..12 Chothia5,6,7,10,11,12; lambda Kabat6..9 Chothia7,8,9; MiddleLoop heavy6..10 light3; CysToJ Kabat heavy9..21 kappa7..15 lambda9..15; Chothia heavy11,13,19,21 kappa9 lambda9,11; exact lambda7 and kappa11 Chothia patterns; no unsupported extrapolation or CDR definitions",
+        WINDOW_ENGINE,[reference(&Locus::Heavy),reference(&Locus::Kappa),reference(&Locus::Lambda),"https://www.imgt.org/IMGTScientificChart/Numbering/CDR1-IMGTgaps.html"],
+        "2008 correspondence charts and CDR1-IMGTgaps corrected Hil1997; Kabat1991 and Chothia1997 only; uppercase letter labels; CysToTrp has IMGT loop length plus five supplied flank residues; heavy CDR1 Kabat8..12 Chothia8..10; kappa Kabat5..12 Chothia5,6,7,10,11,12; lambda Kabat6..9 Chothia6,7,8,9; MiddleLoop heavy6..10 light3; CysToJ Kabat heavy9..21 kappa7..15 lambda9..15; Chothia heavy11,13,19,21 kappa9 lambda9,11; exact lambda6,7 and kappa11 Chothia patterns; no unsupported extrapolation or CDR definitions",
     ),65536).expect("fixed published window catalog")
 }
 fn sequence(first: u16, last: u16) -> Vec<Position> {
@@ -114,10 +114,10 @@ pub fn layout(
                     p.extend(sequence(31, 34));
                     p
                 }
-                (Convention::Chothia1997, Locus::Lambda, 7) => {
+                (Convention::Chothia1997, Locus::Lambda, 6 | 7) => {
                     let mut p = sequence(24, 27);
                     p.push(position(30));
-                    p.extend(insert(30, "ABC"));
+                    p.extend(insert(30, alphabet(n - 4)));
                     p.extend(sequence(31, 34));
                     p
                 }

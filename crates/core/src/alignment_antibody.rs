@@ -6,7 +6,7 @@ use crate::{
     antibody_numbering::{self as n, domain_candidates as d, domain_tracks as t},
 };
 use serde::{Deserialize, Serialize};
-pub const ENGINE: &str = "alignment-antibody-2";
+pub const ENGINE: &str = "alignment-antibody-3";
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]

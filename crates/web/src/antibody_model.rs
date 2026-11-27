@@ -134,6 +134,9 @@ mod tests {
         let mut selection = test_selection();
         selection.numbering_scheme = domain_tracks::NumberingScheme::Kabat1991;
         assert!(c.guard(3, &a, &o, &l, &selection).is_err());
+        let mut definition = test_selection();
+        definition.region_definition = domain_tracks::RegionDefinition::ChothiaCanonical;
+        assert!(c.guard(3, &a, &o, &l, &definition).is_err());
         c.guard(3, &a, &o, &l, &test_selection()).unwrap();
         assert!(c.guard(3, &b, &o, &l, &test_selection()).is_err());
         assert!(c.guard(4, &a, &o, &l, &test_selection()).is_err());

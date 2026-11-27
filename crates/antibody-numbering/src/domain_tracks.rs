@@ -4,10 +4,10 @@ use super::*;
 use crate::{domain_candidates as d, v_mapping};
 use std::collections::BTreeSet;
 
-pub const TRACK_ENGINE: &str = "antibody-domain-tracks-3";
+pub const TRACK_ENGINE: &str = "antibody-domain-tracks-4";
 const CHART: &str = "https://www.imgt.org/IMGTScientificChart/Numbering/IMGTIGVLsuperfamily.html";
 data! {pub enum NumberingScheme {Imgt,Kabat1991,Chothia1997}}
-data! {pub enum RegionDefinition {Imgt,Kabat1991}}
+data! {pub enum RegionDefinition {Imgt,Kabat1991,ChothiaCanonical}}
 data! {pub struct Selection {pub numbering_scheme:NumberingScheme,pub region_definition:RegionDefinition}}
 data! {pub enum Region {Fr1,Cdr1,Fr2,Cdr2,Fr3,Cdr3,Fr4}}
 data! {pub enum AssignmentEvidence {InvariantVReference,ConditionalLoopRule,JFr4Reference,PublishedFrameworkCorrespondence,PublishedWindowRule}}
@@ -33,7 +33,7 @@ data! {pub struct Report {
     pub evidence:d::Report,pub selection:Selection,pub tracks:Vec<Track>,
 }}
 pub fn catalog_revision() -> String {
-    hash(b"antibody-domain-track-rules-3\0", &(TRACK_ENGINE, CHART,crate::alternate_tracks::catalog_revision(),
+    hash(b"antibody-domain-track-rules-4\0", &(TRACK_ENGINE, CHART,crate::alternate_tracks::catalog_revision(),
         "IMGT regions FR1 1..26 CDR1 27..38 FR2 39..55 CDR2 56..65 FR3 66..104 CDR3 105..117 FR4 118..128; decimal insertions at111/112 only; invariant reference framework assignments; conditional loop rules; complete J FR4; unresolved rows retained; no representative start or inferred insertion labels"),65536).expect("fixed track rules")
 }
 /// Current IMGT region boundaries, applied to established IMGT labels only.
@@ -100,6 +100,41 @@ pub fn kabat_region(locus: &v_mapping::Locus, label: &Position) -> Result<Region
         .position(|&(a, b)| label.number >= a && label.number <= b)
         .map(|i| regions[i].clone())
         .ok_or(Error::Invalid("unsupported Kabat track position"))
+}
+/// Canonical-loop delimitations in the primary IMGT comparison charts, using
+/// their later Chothia light-chain numbering. This is a specific definition,
+/// not a synonym for every later convention called "Chothia".
+pub fn chothia_canonical_region(locus: &v_mapping::Locus, label: &Position) -> Result<Region> {
+    label.validate_syntax()?;
+    if matches!(label.insertion, Insertion::Decimal(_)) {
+        return Err(Error::Invalid("decimal Chothia insertion"));
+    }
+    let n = label.number;
+    if *locus == v_mapping::Locus::Heavy {
+        return Ok(match n {
+            1..=25 => Region::Fr1,
+            26..=32 => Region::Cdr1,
+            33..=51 => Region::Fr2,
+            52 if label.insertion == Insertion::None => Region::Fr2,
+            52..=55 => Region::Cdr2,
+            56..=95 => Region::Fr3,
+            96..=101 => Region::Cdr3,
+            102..=113 => Region::Fr4,
+            _ => return Err(Error::Invalid("unsupported Chothia track position")),
+        });
+    }
+    Ok(match n {
+        1..=24 => Region::Fr1,
+        25 if *locus == v_mapping::Locus::Lambda => Region::Cdr1,
+        25 => Region::Fr1,
+        26..=32 => Region::Cdr1,
+        33..=49 => Region::Fr2,
+        50..=52 => Region::Cdr2,
+        53..=90 => Region::Fr3,
+        91..=96 => Region::Cdr3,
+        97..=107 => Region::Fr4,
+        _ => return Err(Error::Invalid("unsupported Chothia track position")),
+    })
 }
 fn is_framework(label: &Position) -> bool {
     label.insertion == Insertion::None && matches!(label.number,1..=26|39..=55|66..=104)
@@ -243,7 +278,7 @@ fn context_revision(
     selection: &Selection,
 ) -> Result<String> {
     hash(
-        b"antibody-domain-track-context-3\0",
+        b"antibody-domain-track-context-4\0",
         &(
             TRACK_ENGINE,
             catalog_revision(),

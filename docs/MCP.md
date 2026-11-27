@@ -48,7 +48,7 @@ retain the complete options/report. No source or material is installed.
 Antibody analysis uses `list_antibody_profiles` and `analyze_antibody`. Supply an
 immutable protein document, explicit native scoring/loop/substitution options and
 work/retention limits and required `selection`: `numbering_scheme` is `Imgt`,
-`Kabat1991` or `Chothia1997`, and `region_definition` is `Imgt` or `Kabat1991`.
+`Kabat1991` or `Chothia1997`, and `region_definition` is `Imgt`, `Kabat1991` or `ChothiaCanonical`.
 The current human V/J reference model produces conditional tracks with numbering
 and region membership stored independently. Framework
 labels require invariant all-optimal correspondences; unresolved CDRs/residues and

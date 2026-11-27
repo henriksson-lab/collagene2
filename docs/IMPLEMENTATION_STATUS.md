@@ -2244,3 +2244,21 @@ input configurations and bounded-work refusal. Focused optional-schema WASM chec
 pass, and the external chain assessment remains unchanged. Full query loop/region
 assembly, alternate numbering schemes, broader biology validation and application/
 whole-product acceptance remain open. [Contract](ANTIBODY_NUMBERING.md).
+
+
+### Conditional query CDR1/2 regions
+
+Candidate engine 4 reconstructs CDR1/2 from invariant framework boundaries26/39
+and55/66 and retains source indices/residues and central-gap labels. Missing
+boundaries and unsupported lengths are typed unresolved outcomes, separate from
+an explicitly empty CDR2. The provided-boundary API and candidate reports check
+source/provenance, coordinates, stops, lengths and reconstruction. CDR3/FR4 remain
+available when an earlier loop is unresolved; no representative V boundary is used.
+
+All 14 selected native cases and focused optional-schema WASM checks pass. The
+external panel's candidate outcomes remain unchanged. At one/three FR4 substitutions,
+23 of 24 CDR1/2 outcomes on matching antibody candidates reconstruct; 1HZH entity2
+CDR1 lacks invariant boundary39 and remains unresolved. This is conditional
+reference-based numbering, not full framework/alternative-scheme validation.
+Broader biological validation and worker/MCP/application/delivery tracks remain open.
+[Contract](ANTIBODY_NUMBERING.md).

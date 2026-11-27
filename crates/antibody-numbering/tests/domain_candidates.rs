@@ -344,3 +344,84 @@ fn observed_antibody_with_tied_v_positions_keeps_conditional_cdr3_and_explicit_a
     );
     r.validate_for(&m, &options(), &limits()).unwrap();
 }
+
+#[test]
+fn invariant_query_boundaries_reconstruct_all_three_conditional_cdrs() {
+    let m = source(&sequence());
+    let r = find_candidates(&m, &options(), &limits(), &mut || false).unwrap();
+    let c = r
+        .candidates
+        .iter()
+        .find(|c| c.locus == Locus::Heavy)
+        .unwrap();
+    for (assignment, start, end, letters, positions) in [
+        (
+            &c.cdr1,
+            25,
+            33,
+            "GFTFSSYA",
+            vec![27, 28, 29, 30, 35, 36, 37, 38],
+        ),
+        (
+            &c.cdr2,
+            50,
+            58,
+            "ISGSGGST",
+            vec![56, 57, 58, 59, 62, 63, 64, 65],
+        ),
+    ] {
+        let LoopAssignment::Numbered(n) = assignment else {
+            panic!("expected invariant literal reference-loop boundaries: {assignment:?}")
+        };
+        assert_eq!((n.start, n.end), (start, end));
+        assert_eq!(
+            n.residues.iter().map(|r| r.residue).collect::<String>(),
+            letters
+        );
+        assert_eq!(
+            n.residues
+                .iter()
+                .map(|r| r.position.number)
+                .collect::<Vec<_>>(),
+            positions
+        );
+        assert_eq!(n.source_revision, r.source_revision);
+        n.validate_for(&m, &n.kind, &n.anchors).unwrap();
+    }
+    let mut forged = r.clone();
+    let LoopAssignment::Numbered(n) = &mut forged.candidates[0].cdr1 else {
+        panic!()
+    };
+    n.residues[0].source_index += 1;
+    assert_eq!(
+        forged.validate_for(&m, &options(), &limits()),
+        Err(Error::Binding)
+    );
+}
+#[test]
+fn unsupported_or_unresolved_earlier_loop_does_not_erase_a_reconstructed_cdr3() {
+    let split = 27;
+    let inserted = "O".repeat(20);
+    let m = source(&format!(
+        "{}{}{}{LOOP}{J}",
+        &V[..split],
+        inserted,
+        &V[split..]
+    ));
+    let r = find_candidates(&m, &options(), &limits(), &mut || false).unwrap();
+    let c = r
+        .candidates
+        .iter()
+        .find(|c| c.locus == Locus::Heavy && c.cdr3.start == V.len() + 20)
+        .unwrap();
+    assert!(matches!(c.cdr1, LoopAssignment::Unresolved { .. }));
+    assert_eq!(
+        c.cdr3
+            .residues
+            .iter()
+            .map(|r| r.residue)
+            .collect::<String>(),
+        LOOP
+    );
+    r.validate_for(&m, &options(), &limits()).unwrap();
+}

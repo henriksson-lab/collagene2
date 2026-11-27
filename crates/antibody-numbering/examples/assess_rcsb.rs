@@ -137,7 +137,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let locus=report.v_evidence.mappings.iter().find(|m|m.locus==c.locus).unwrap();
                 let path=locus.alignment.endpoints.iter().find(|e|e.end==c.v_endpoint).unwrap();
                 json!({"locus":c.locus,"representative_v_start":c.representative_v_start,"v_projection_issue":c.v_projection_issue,"source_end":c.source_end,"v_end":c.v_endpoint,"v_score":path.upper.score,
-                    "cdr3_start":c.cdr3.start,"cdr3_end":c.cdr3.end,"cdr3_sequence":&case.sequence[c.cdr3.start..c.cdr3.end],
+                    "cdr1":c.cdr1,"cdr2":c.cdr2,"cdr3_start":c.cdr3.start,"cdr3_end":c.cdr3.end,"cdr3_sequence":&case.sequence[c.cdr3.start..c.cdr3.end],
                     "fr4_sequence":c.fr4.iter().map(|r|r.residue).collect::<String>(),"j_matches":c.j_matches})
             }).collect::<Vec<Value>>();
             let loci=report.v_evidence.mappings.iter().map(|m|json!({"locus":m.locus,"reachable":m.alignment.reachable_endpoints,"qualified":m.alignment.qualified_endpoints,

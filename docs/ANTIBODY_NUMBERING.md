@@ -301,7 +301,7 @@ The algorithm does not enumerate suboptimal V paths or infer omitted endpoints.
 At most 64 candidate payloads and two million complete-FR4 scan windows are
 allowed; callers can choose smaller limits. Exceeding work bounds or cancellation
 returns an error, never a partial successful report. Native engine
-`antibody-vj-candidates-3` binds the exact source, current V/reference/endpoint and
+`antibody-vj-candidates-4` binds the exact source, current V/reference/endpoint and
 CDR3-rule engines, options and limits. Report reconstruction checks all candidates,
 coordinates, loop labels, FR4 residues, J alternatives, counts and truncation flags.
 
@@ -356,7 +356,8 @@ Observed with candidate engine 2 / V-mapping engine 4 on this fixed panel:
 
 The exact-tail profile misses both 1HZH chains; their observed FR4 sequences differ
 from the reference tails. No V or pair retention cap is reached in these runs.
-All 24 selected native cases and focused optional-schema WASM checks pass,
+The current query-loop batch passes all 14 selected native cases and focused
+optional-schema WASM checks,
 including source-bound invariant-anchor and observed-sequence regressions. These
 results do not validate lambda detection, nonhuman coverage, arbitrary mutation
 loads or residue-level numbering. The panel is small, deliberately selected and
@@ -379,7 +380,7 @@ all retained endpoints and, in V mapping, across all three loci. At most two mil
 states may be visited. Budget exhaustion or cancellation returns an error; a
 counts-only request needs no invariant trace work. The report retains exact work
 counts and binds the budget into its context. Current endpoint/V/candidate engines
-are 2/4/3; callers and fixtures use the new representation directly.
+are 2/4/4; callers and fixtures use the new representation directly.
 
 An independent complete-path oracle now checks both endpoint scores and match
 intersections for 1,700 small input/profile configurations, including zero-cost
@@ -398,7 +399,43 @@ positions for other analyses. [IMGT V-domain chart](https://www.imgt.org/IMGTSci
 
 Native literal chart fixtures cover all supported lengths; both loop placements
 also agree with all 354 provider-labeled V references. The rule engine is
-`imgt-cdr12-central-gaps-1`, with an explicit provenance revision. Applying these
-allocators to query loops still requires independently established boundaries
-(e.g. invariant framework anchors 26/39 and 55/66). Full query numbering, region
-assignment, alternative schemes and application tracks remain unfinished.
+`imgt-cdr12-central-gaps-1`, with an explicit provenance revision. Query reconstruction below applies these allocators only when the corresponding
+framework anchors are independently established. Full framework numbering,
+alternative schemes, broader biology validation and application tracks remain
+unfinished.
+
+
+## Source-bound query CDR1/2 reconstruction
+
+`imgt_loops::number_anchored_loop` validates an explicit immutable protein source,
+provided framework boundary indices and provenance, then reconstructs a conditional
+CDR1 or CDR2 report. Anchor residues are excluded. These boundary positions do not
+have fixed amino-acid identities, so coordinate validation does not independently
+prove their biological interpretation. Stops at either boundary or inside the
+loop refuse; unsupported lengths refuse. A zero-length CDR2 has an explicit empty
+residue list and equal start/end, distinct from an unresolved loop. Source, kind,
+anchors and published-rule revision bind report reconstruction.
+
+Candidate engine 4 now carries CDR1 and CDR2 outcomes alongside CDR3/FR4. It uses
+only reference positions 26/39 or 55/66 present in every optimal V path. Complete
+boundary evidence yields source-bound loop labels in the published central-gap
+layout; missing invariant boundaries or unsupported lengths yield typed unresolved
+outcomes. The existing CDR3 candidate and its other evidence remain available.
+No representative-path boundary is silently substituted. Shared internal
+allocation reuses the already validated source revision instead of hashing the
+whole molecule again for each candidate loop.
+
+The assessment example includes both loop outcomes for every candidate. Native
+fixtures check literal query coordinates/residues/labels, empty CDR2, boundary and
+stop refusal, provenance/source binding, report tampering and an engineered long
+loop whose unresolved status does not erase CDR3. Full framework numbering,
+Kabat/Chothia and other accepted definitions, broader validation and application
+tracks remain required.
+
+
+On the fixed external panel with one or three allowed FR4 substitutions, the
+12 matching-chain candidates contain 23 reconstructed CDR1/2 outcomes and one
+unresolved outcome: 1HZH entity2 CDR1 lacks an invariant position39 boundary.
+That case retains its conditional CDR3 and explicit diagnostic. Candidate presence
+and negative-control results remain unchanged. These conditional loop results do
+not establish independent residue-level numbering accuracy across the panel.

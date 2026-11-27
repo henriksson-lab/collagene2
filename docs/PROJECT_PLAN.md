@@ -4495,3 +4495,22 @@ cases and focused optional-schema WASM checks pass; the fixed external chain pan
 retains its prior outcomes. Using invariant query boundaries for full loop/region
 assignment, other schemes/species and application integration remain required.
 [Contract](ANTIBODY_NUMBERING.md).
+
+
+### F34 conditional query CDR1/2 assembly
+
+Candidate engine 4 now carries explicit CDR1/2 outcomes reconstructed from invariant
+framework anchors 26/39 and 55/66. Reports retain actual source residues/indices and
+published central-gap labels; unavailable boundaries and unsupported lengths remain
+typed unresolved outcomes without discarding CDR3/FR4. The public provided-boundary
+API validates source/provenance, coordinates, stops and loop lengths, including an
+explicit empty CDR2. Candidate contexts bind the rule engine/revision directly.
+
+Native fixtures cover literal source loops, exact positions, empty/unsupported
+cases, source changes, tampering and a long-loop candidate retaining its valid
+conditional CDR3. All 14 selected native cases and focused optional-schema WASM
+checks pass. The external assessment retains its candidate outcomes: 23 of the 24
+CDR1/2 outcomes on matched antibody chains reconstruct; one lacks invariant
+boundary39 and remains explicitly unresolved. Full framework numbering, alternate schemes/definitions, broader biology
+validation and worker/MCP/application tracks remain required.
+[Contract](ANTIBODY_NUMBERING.md).

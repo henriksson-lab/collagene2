@@ -1,9 +1,9 @@
-//! Conditional V/J pairing and IMGT CDR3 reconstruction. This composes existing
+//! Conditional V/J pairing and IMGT CDR1/2/3 reconstruction. This composes existing
 //! verified reference calculations; it is not a calibrated domain classifier.
 use super::*;
-use crate::{references, v_mapping};
+use crate::{imgt_loops, references, v_mapping};
 use std::collections::BTreeMap;
-pub const CANDIDATE_ENGINE: &str = "antibody-vj-candidates-3";
+pub const CANDIDATE_ENGINE: &str = "antibody-vj-candidates-4";
 pub const MAX_CANDIDATES: usize = 64;
 pub const MAX_SCAN_WINDOWS: usize = 2_000_000;
 data! {pub struct Options {
@@ -20,12 +20,18 @@ data! {pub struct Mismatch {pub source_index:usize,pub observed:char,pub referen
 data! {pub struct JMatch {
     pub reference_protein:String,pub allele_refs:Vec<String>,pub mismatches:Vec<Mismatch>,
 }}
+data! {pub enum LoopIssue {
+    MissingInvariantBoundaries{positions:Vec<u16>},UnsupportedLength{residues:usize},
+}}
+data! {pub enum LoopAssignment {
+    Numbered(imgt_loops::ConditionalLoop),Unresolved{kind:imgt_loops::Kind,issue:LoopIssue},
+}}
 data! {pub struct Candidate {
     pub id:String,pub locus:v_mapping::Locus,pub v_endpoint:usize,
     pub representative_v_start:usize,pub source_end:usize,
     /// Internal V positions can remain ambiguous even with a fixed C104 anchor.
     pub v_projection_issue:Option<v_mapping::ProjectionIssue>,
-    pub cdr3:ConditionalCdr3,pub fr4:Vec<NumberedResidue>,pub j_matches:Vec<JMatch>,
+    pub cdr1:LoopAssignment,pub cdr2:LoopAssignment,pub cdr3:ConditionalCdr3,pub fr4:Vec<NumberedResidue>,pub j_matches:Vec<JMatch>,
 }}
 data! {pub struct VEndpoint {pub locus:v_mapping::Locus,pub end:usize}}
 data! {pub struct BlockedV {
@@ -64,6 +70,68 @@ fn source_index(locus: &v_mapping::Locus) -> usize {
         v_mapping::Locus::Lambda => 2,
     }
 }
+fn assign_loop(
+    source: &Molecule,
+    kind: &imgt_loops::Kind,
+    invariants: &[v_mapping::Correspondence],
+    revision: &str,
+    v_context: &str,
+) -> Result<LoopAssignment> {
+    let (left, right) = match kind {
+        imgt_loops::Kind::Cdr1 => (26, 39),
+        imgt_loops::Kind::Cdr2 => (55, 66),
+    };
+    let boundaries = [left, right].map(|number| {
+        invariants
+            .iter()
+            .find(|p| p.reference_position == position(number))
+    });
+    let missing = boundaries
+        .iter()
+        .zip([left, right])
+        .filter_map(|(b, n)| b.is_none().then_some(n))
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Ok(LoopAssignment::Unresolved {
+            kind: kind.clone(),
+            issue: LoopIssue::MissingInvariantBoundaries { positions: missing },
+        });
+    }
+    let [left, right] = boundaries.map(Option::unwrap);
+    let start = left.source_index.checked_add(1).ok_or(Error::Binding)?;
+    let length = right
+        .source_index
+        .checked_sub(start)
+        .ok_or(Error::Binding)?;
+    if imgt_loops::positions(kind.clone(), length).is_err() {
+        return Ok(LoopAssignment::Unresolved {
+            kind: kind.clone(),
+            issue: LoopIssue::UnsupportedLength { residues: length },
+        });
+    }
+    let anchors = imgt_loops::Anchors {
+        source_revision: revision.into(),
+        left_index: left.source_index,
+        right_index: right.source_index,
+        provenance: format!(
+            "{}; all-optimal invariant V boundaries; context {}",
+            CANDIDATE_ENGINE, v_context
+        ),
+    };
+    Ok(LoopAssignment::Numbered(imgt_loops::number_validated_loop(
+        source, kind, &anchors, revision,
+    )?))
+}
+fn bounded_loop(value: &LoopAssignment) -> bool {
+    match value {
+        LoopAssignment::Numbered(n) => n.residues.len() <= 12,
+        LoopAssignment::Unresolved {
+            issue: LoopIssue::MissingInvariantBoundaries { positions },
+            ..
+        } => positions.len() <= 2,
+        LoopAssignment::Unresolved { .. } => true,
+    }
+}
 /// Exhaustive complete-FR4 substitution windows inside the declared loop range
 /// for retained, invariant-anchor best-per-end V results. Suboptimal V paths and
 /// omitted V endpoints are not silently treated as searched or absent domains.
@@ -83,18 +151,20 @@ pub fn find_candidates(
         return Err(Error::Binding);
     }
     let context_revision = hash(
-        b"antibody-vj-candidate-context-3\0",
+        b"antibody-vj-candidate-context-4\0",
         &(
             CANDIDATE_ENGINE,
             v_mapping::MAPPING_ENGINE,
             profile::ENDPOINT_ENGINE,
             ENGINE,
             catalog_revision(),
+            imgt_loops::LOOP_ENGINE,
+            imgt_loops::catalog_revision(),
             references::REFERENCE_ENGINE,
             &v_evidence.context_revision,
             options,
             limits,
-            "retained invariant terminal C104 anchors; internal V ambiguity retained; all complete J FR4 windows; literal locus anchor and G119/G121; bounded substitutions; no indels; source-order retention; no biological classification",
+            "CDR1/2 from invariant26/39 and55/66; unsupported loops stay unresolved; retained invariant terminal C104 anchors; internal V ambiguity retained; all complete J FR4 windows; literal locus anchor and G119/G121; bounded substitutions; no indels; source-order retention; no biological classification",
         ),
         65536,
     )?;
@@ -225,6 +295,20 @@ pub fn find_candidates(
                         v_evidence.corpus_revision
                     ),
                 };
+                let cdr1 = assign_loop(
+                    source,
+                    &imgt_loops::Kind::Cdr1,
+                    invariants,
+                    &v_evidence.source_revision,
+                    &v_evidence.context_revision,
+                )?;
+                let cdr2 = assign_loop(
+                    source,
+                    &imgt_loops::Kind::Cdr2,
+                    invariants,
+                    &v_evidence.source_revision,
+                    &v_evidence.context_revision,
+                )?;
                 let cdr3 =
                     number_validated_imgt_cdr3(source, &anchors, &v_evidence.source_revision)?;
                 let fr4 = bytes[j_start..end]
@@ -237,7 +321,7 @@ pub fn find_candidates(
                     })
                     .collect();
                 let id = hash(
-                    b"antibody-vj-candidate-id-3\0",
+                    b"antibody-vj-candidate-id-4\0",
                     &(
                         &context_revision,
                         &mapping.locus,
@@ -254,6 +338,8 @@ pub fn find_candidates(
                     representative_v_start: endpoint.upper.start,
                     v_projection_issue: projected.projection_issue.clone(),
                     source_end: end,
+                    cdr1,
+                    cdr2,
                     cdr3,
                     fr4,
                     j_matches,
@@ -298,7 +384,9 @@ impl Report {
         if self.engine != CANDIDATE_ENGINE
             || self.candidates.len() > MAX_CANDIDATES
             || self.candidates.iter().any(|c| {
-                c.fr4.len() > 11
+                !bounded_loop(&c.cdr1)
+                    || !bounded_loop(&c.cdr2)
+                    || c.fr4.len() > 11
                     || c.cdr3.residues.len() > MAX_CDR3_RESIDUES
                     || c.j_matches.len() > 23
             })

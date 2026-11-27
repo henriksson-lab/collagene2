@@ -3,8 +3,8 @@
 `collagene-antibody-numbering` is a new independent MIT Rust/WASM module for exact
 position labels, the published IMGT CDR3 allocation rule and an embedded profile-
 alignment kernel. These are numbering components, not automatic antibody or
-variable-domain detection. No worker, UI,
-MCP integration, full-domain numbering, Kabat/Chothia assignment or automatic
+variable-domain detection. No worker, UI, MCP integration, full-domain numbering,
+Kabat/Chothia assignment or automatic
 CDR/framework derivation is implemented yet. Those remain part of F34.
 
 ## Labels and conditional CDR3 allocation

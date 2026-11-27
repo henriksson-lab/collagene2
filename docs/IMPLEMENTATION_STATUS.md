@@ -4,6 +4,26 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
+Source checkpoint `0e95cb5` uses worker schema 117, candidate schema 31, draft
+schema 19 and 197 native
+MCP tools. RNA chemistry/declaration review, protein liability screening and
+imported structure viewing are integrated. Antibody numbering currently has
+standalone exact-label, conditional IMGT CDR3 and profile-alignment components;
+automatic detection, full numbering schemes, derived regions and application
+integration remain unfinished. The latest kernel batch passes 16 selected native
+cases and focused optional-schema WASM checks. This does not establish whole-
+application, installed-platform or visual acceptance.
+
+Public port 8082 was last refreshed from the successful `d2904e5` CI frontend
+(worker schema 116), including RNA declaration controls. It does not include the newer
+protein-liability UI or standalone antibody components. Publication checked the
+artifact digest, 14 static assets, integrity references, WASM headers and listening
+socket; no browser or application HTTP checks were run. See the chronological
+checkpoints below for validation of each increment; older source/preview/version
+claims describe their own checkpoint rather than the current deployment.
+
+## Earlier implementation checkpoints
+
 Published6af40c7 uses worker109, candidate30, native plan28, science31, draft18 and
 189 MCP tools. There is one current internal representation; unsupported internal
 schemas are rejected without compatibility readers. Native TOPO graph records
@@ -128,9 +148,10 @@ model. Intact circular Run/Derived templates are supported; nicked/unsupported
 circular contours remain diagnostic. Inherited incomplete origins retain their
 findings. [Native workflow](INVERSE_PCR_MATERIAL.md).
 
-The checkpoint evidence below records earlier implementation stages. Current
-schema and public-preview claims are the ones above; historical claims of missing
-features do not reopen capabilities implemented in later checkpoints.
+The checkpoint evidence records implementation stages in chronological order.
+The summary at the start of this document identifies the current source and last
+preview deployment. A checkpoint's missing features may be implemented by a later
+checkpoint; its passing checks cover only the stated scope.
 
 Parallel format work now adds selected XDNA v0 reference export, SCF regeneration
 from retained real trace signals, and direct MCP annotated text exports. These

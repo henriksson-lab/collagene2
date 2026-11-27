@@ -182,14 +182,6 @@ pub fn compile_request(
         collagene_core::topo_preparation::compile(&request).map_err(|error| error.to_string())?;
     Ok((roles, compiled))
 }
-/// Compatibility TA-only entry point; old request IDs and bytes remain literal.
-pub fn ta_request(draft: &Draft) -> Result<(Vec<(String, String)>, topo::Request), String> {
-    if draft.mode != collagene_core::topo_preparation::PreparationMode::Ta {
-        return Err("The TA-only adapter does not reinterpret a directional declaration.".into());
-    }
-    let (roles, compiled) = compile_request(draft)?;
-    Ok((roles, compiled.request))
-}
 
 /// Propose a literal five-prime tail edit; caller must separately guard the
 /// exact original source events and explicitly apply this returned draft.
@@ -226,7 +218,8 @@ mod tests {
             activation_confirmed: true,
             add_a_tail: true,
         };
-        let (roles, request) = ta_request(&draft).unwrap();
+        let (roles, compiled) = compile_request(&draft).unwrap();
+        let request = compiled.request;
         assert_eq!(roles[0], ("vector_top".into(), "vt".into()));
         assert!(request.transfers.is_empty());
         let topo::MaterialRecipe::ExactPcr {
@@ -244,10 +237,10 @@ mod tests {
         assert_eq!(*tail, Some(TailingBase::A));
         let mut missing = draft.clone();
         missing.activation_confirmed = false;
-        assert!(ta_request(&missing).is_err());
+        assert!(compile_request(&missing).is_err());
         missing = draft;
         missing.forward_annealing = 7;
-        assert!(ta_request(&missing).is_err());
+        assert!(compile_request(&missing).is_err());
     }
 
     fn directional() -> Draft {
@@ -294,7 +287,6 @@ mod tests {
         assert!(tail.is_none());
         assert_eq!(forward.ordered_sequence(), "CATGA");
         assert!(forward.tail.is_empty());
-        assert!(ta_request(&draft).is_err());
         assert_eq!(draft, original);
         let mut invalid = draft.clone();
         invalid.add_a_tail = true;
@@ -331,7 +323,7 @@ mod tests {
 /// capsule replay endpoint. Original report identities remain unchanged.
 pub(crate) fn task_revision(
     inputs: &[topo::Input],
-    origin: Option<&collagene_core::run_material::Capsule>,
+    origin: Option<&collagene_core::run_material::MaterialOrigin>,
     task: &collagene_core::topo_run_preparation::Task,
 ) -> Result<String, collagene_core::Error> {
     use collagene_core::{
@@ -364,7 +356,7 @@ pub(crate) fn task_revision(
 }
 pub(crate) fn batch_revision(
     inputs: &[topo::Input],
-    origin: Option<&collagene_core::run_material::Capsule>,
+    origin: Option<&collagene_core::run_material::MaterialOrigin>,
     request: &topo::Request,
 ) -> Result<String, collagene_core::Error> {
     match origin {
@@ -389,7 +381,7 @@ pub(crate) async fn execute(
     worker: std::rc::Rc<crate::worker::CachedWorker>,
     id: u32,
     inputs: Vec<topo::Input>,
-    origin: Option<collagene_core::run_material::Capsule>,
+    origin: Option<collagene_core::run_material::MaterialOrigin>,
     task: collagene_core::topo_run_preparation::Task,
 ) -> Result<
     (
@@ -493,5 +485,151 @@ pub(crate) async fn execute(
         }
         (_, Some(_)) => Err("Unexpected saved-template inspection response.".into()),
         (value, None) => Ok((value, None)),
+    }
+}
+
+#[cfg(test)]
+mod generic_material_tests {
+    use super::*;
+    use collagene_core::{
+        Molecule, Topology, material_derivation as derivation,
+        run_lineage::EventBinding,
+        run_material::{self, MaterialOrigin, MaterialSelection},
+        verification::{self, Source, TopoSource},
+        workspace::Workspace,
+    };
+    #[test]
+    fn native_derived_insert_template_keeps_exact_origin_and_original_vector_declarations() {
+        let parent =
+            Molecule::dna("Original insert parent", "CACCATGACG", Topology::Linear).unwrap();
+        let workspace =
+            Workspace::from_documents("Retained insert", vec![parent.clone()], 0).unwrap();
+        let doc = &workspace.documents[0];
+        let event = EventBinding {
+            document_id: doc.id.clone(),
+            event_id: doc.head_event.clone().unwrap(),
+            revision: doc.head.clone(),
+        };
+        let forward = Primer::new("F", "CACCA", "").unwrap();
+        let reverse = Primer::new("R", "CGTCA", "").unwrap();
+        let preview = verification::simulate_pcr_documents(&parent, &forward, &reverse)
+            .unwrap()
+            .remove(0);
+        let installed = derivation::prepare_install(
+            &workspace,
+            &derivation::Request {
+                source: event,
+                origin: derivation::SourceOrigin::OriginalReference,
+                derivation: derivation::Derivation::ExactPcr {
+                    forward,
+                    reverse,
+                    selection: derivation::PcrSelection {
+                        selected_index: 0,
+                        expected_preview_revision: preview.molecule.revision(),
+                        geometry: preview.geometry,
+                    },
+                },
+                name: "Saved insert PCR".into(),
+                save_primers: false,
+            },
+        )
+        .unwrap();
+        let product = installed.receipt.product.clone();
+        let selected = MaterialSelection::Derived(product.clone());
+        let origin =
+            run_material::inspect_material(&installed.workspace, &product, &Some(selected.clone()))
+                .unwrap()
+                .selected
+                .unwrap();
+        assert!(matches!(&origin, MaterialOrigin::Derived(_)));
+        assert_eq!(origin.selection(), selected);
+        let template = installed.workspace.revisions[&product.revision].clone();
+        assert_eq!(template.sequence.as_str(), "CACCATGACG");
+        let original_workspace = serde_json::to_vec(&installed.workspace).unwrap();
+        let draft = Draft {
+            mode: collagene_core::topo_preparation::PreparationMode::DirectionalCacc,
+            vector_top: "vector-top-doc".into(),
+            vector_bottom: "vector-bottom-doc".into(),
+            insert_template: product.document_id.clone(),
+            vector_top_length: 14,
+            vector_bottom_length: 18,
+            forward_sequence: "CACCA".into(),
+            forward_annealing: 5,
+            reverse_sequence: "CGTCA".into(),
+            reverse_annealing: 5,
+            preparation_assumption:
+                "Original explicit vector activation; no saved-vector substitution".into(),
+            activation_confirmed: true,
+            add_a_tail: false,
+        };
+        let (_, compiled) = compile_request(&draft).unwrap();
+        let top = Molecule::dna("Original vector top", "AAGGGGCATCCCTT", Topology::Linear).unwrap();
+        let bottom = Molecule::dna(
+            "Original vector bottom",
+            "GGTGAAGGGATGCCCCTT",
+            Topology::Linear,
+        )
+        .unwrap();
+        let roles = ["vector_top", "vector_bottom", "insert_template"].map(|role| TopoSource {
+            role: role.into(),
+            source: Source::Input(role.into()),
+        });
+        let inputs = collagene_core::topo_run_preparation::source_inputs(
+            &roles,
+            &[&top, &bottom, &template],
+            &compiled.request,
+            "insert_template",
+            Some(&origin),
+        )
+        .unwrap();
+        assert_eq!(inputs[0].molecule, top);
+        assert_eq!(inputs[1].molecule, bottom);
+        assert_eq!(inputs[2].molecule, template);
+        let task = collagene_core::topo_run_preparation::Task::Orientations {
+            request: compiled.request.clone(),
+            vector: compiled.vector_strands,
+            insert: compiled.insert_strands,
+            directional: compiled.directional,
+        };
+        assert_eq!(
+            task_revision(&inputs, Some(&origin), &task).unwrap(),
+            collagene_core::topo_run_preparation::documentary_revision(
+                &inputs,
+                "insert_template",
+                &origin,
+                &task
+            )
+            .unwrap()
+        );
+        let wrong = Molecule::dna(
+            "Equal DNA, different native revision",
+            "CACCATGACG",
+            Topology::Linear,
+        )
+        .unwrap();
+        assert!(
+            collagene_core::topo_run_preparation::source_inputs(
+                &roles,
+                &[&top, &bottom, &wrong],
+                &compiled.request,
+                "insert_template",
+                Some(&origin)
+            )
+            .is_err()
+        );
+        let mut wrong_event = product;
+        wrong_event.event_id = format!("event-{}", "f".repeat(64));
+        assert!(
+            run_material::inspect_material(
+                &installed.workspace,
+                &wrong_event,
+                &Some(MaterialSelection::Derived(wrong_event.clone()))
+            )
+            .is_err()
+        );
+        assert_eq!(
+            serde_json::to_vec(&installed.workspace).unwrap(),
+            original_workspace
+        );
     }
 }

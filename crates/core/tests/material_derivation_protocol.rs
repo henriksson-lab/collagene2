@@ -96,7 +96,7 @@ fn installed() -> (Workspace, EventBinding) {
 }
 #[test]
 fn current_install_and_digest_jobs_bind_actual_material() {
-    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 96);
+    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 97);
     let (w, product) = installed();
     let source = w.revisions[&product.revision].clone();
     let origin = native::SourceOrigin::Saved(MaterialOrigin::Derived(

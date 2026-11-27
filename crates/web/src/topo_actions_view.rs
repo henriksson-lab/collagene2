@@ -28,7 +28,7 @@ pub struct OpenActions {
 }
 pub struct Capture {
     pub inputs: Vec<topo::Input>,
-    pub template_origin: Option<collagene_core::run_material::Capsule>,
+    pub template_origin: Option<collagene_core::run_material::MaterialOrigin>,
     pub request: topo::Request,
     pub physical: physical::Report,
 }
@@ -162,7 +162,7 @@ fn Rows(label: &'static str, total: usize, row: Callback<usize, String>) -> impl
     view! {<details><summary>{format!("{label} ({total})")}</summary>
         <p>{move||format!("Page {} of {}",page.get()+1,total.div_ceil(40).max(1))}</p>
         <button class="text-tool" disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous"</button>
-        <button class="text-tool" disabled=move||(page.get()+1)*40>=total on:click=move|_|page.update(|p|*p+=1)>"Next"</button>
+        <button class="text-tool" disabled={move||(page.get()+1)*40>=total} on:click=move|_|page.update(|p|*p+=1)>"Next"</button>
         {move||(page.get()*40..((page.get()+1)*40).min(total)).map(|i|view!{<p>{row.run(i)}</p>}).collect_view()}
     </details>}
 }
@@ -646,34 +646,86 @@ pub fn TopoActionsView(
             }
         }
     });
+    let export_alive = alive.clone();
     let export = Callback::new(move |()| {
+        #[derive(serde::Serialize)]
+        struct Evidence<'a, T: serde::Serialize> {
+            interpretation: &'static str,
+            sources: &'a [(String, collagene_core::run_lineage::EventBinding)],
+            target: &'a collagene_core::run_lineage::EventBinding,
+            epoch: u64,
+            inspection_revision: &'a str,
+            inspection_generation: u32,
+            orientation: usize,
+            material_origin: &'a crate::topo_view::OriginEvidence,
+            report: &'a T,
+        }
         let mut output = Json(vec![]);
-        let (result, source_frame, expected_revision, projected) =
+        let captured_origin_review = origin_review.get_untracked();
+        let prepared = (|| -> Result<_, String> {
             if let Some(p) = current_projection() {
-                if let Err(e) = capture.run(p.inspection.frame.clone()) {
-                    status.set(e);
-                    return;
-                }
-                (
-                    serde_json::to_writer(&mut output, p.report.as_ref()),
-                    p.inspection.frame.clone(),
+                let key = &p.inspection.frame;
+                let fresh = capture.run(key.clone())?;
+                let origin = crate::topo_view::origin_evidence(
+                    fresh.template_origin.as_ref().map(|o| o.selection()),
+                    captured_origin_review.as_ref(),
+                )?;
+                let evidence = Evidence {
+                    interpretation: "Source-bound ordered physical actions. Saved origin limitations remain inherited; no isolation, host repair or target acceptance is inferred.",
+                    sources: &key.sources,
+                    target: &key.target,
+                    epoch: key.epoch,
+                    inspection_revision: &key.inspection_revision,
+                    inspection_generation: key.inspection_generation,
+                    orientation: key.orientation,
+                    material_origin: &origin,
+                    report: p.report.as_ref(),
+                };
+                let result = serde_json::to_writer(&mut output, &evidence);
+                Ok((
+                    result,
+                    key.clone(),
                     p.report.context_revision.clone(),
                     true,
-                )
+                    origin,
+                ))
             } else if let Some(i) = current_inspection() {
-                if let Err(e) = capture.run(i.frame.clone()) {
-                    status.set(e);
-                    return;
-                }
-                (
-                    serde_json::to_writer(&mut output, i.report.as_ref()),
-                    i.frame.clone(),
+                let key = &i.frame;
+                let fresh = capture.run(key.clone())?;
+                let origin = crate::topo_view::origin_evidence(
+                    fresh.template_origin.as_ref().map(|o| o.selection()),
+                    captured_origin_review.as_ref(),
+                )?;
+                let evidence = Evidence {
+                    interpretation: "Source-bound ordered physical actions. Saved origin limitations remain inherited; no isolation, host repair or target acceptance is inferred.",
+                    sources: &key.sources,
+                    target: &key.target,
+                    epoch: key.epoch,
+                    inspection_revision: &key.inspection_revision,
+                    inspection_generation: key.inspection_generation,
+                    orientation: key.orientation,
+                    material_origin: &origin,
+                    report: i.report.as_ref(),
+                };
+                let result = serde_json::to_writer(&mut output, &evidence);
+                Ok((
+                    result,
+                    key.clone(),
                     i.report.context_revision.clone(),
                     false,
-                )
+                    origin,
+                ))
             } else {
+                Err("Inspect the current ordered actions before export.".into())
+            }
+        })();
+        let (result, source_frame, expected_revision, projected, saved_origin) = match prepared {
+            Ok(v) => v,
+            Err(error) => {
+                status.set(error);
                 return;
-            };
+            }
+        };
         let result = result.map_err(|e| e.to_string()).and_then(|()| {
             crate::app::prepare_download(
                 "topo-ordered-actions-evidence.json",
@@ -683,8 +735,9 @@ pub fn TopoActionsView(
         });
         match result {
             Ok(artifact) => {
+                let alive = export_alive.clone();
                 let check = move || {
-                    if status.try_get_untracked().is_none() {
+                    if !alive.load(Ordering::Relaxed) || status.try_get_untracked().is_none() {
                         return Err("Export review closed.".into());
                     }
                     let revision = if projected {
@@ -695,7 +748,17 @@ pub fn TopoActionsView(
                     if revision.as_deref() != Some(expected_revision.as_str()) {
                         return Err("Ordered-action evidence changed.".into());
                     }
-                    capture.run(source_frame.clone()).map(|_| ())
+                    let fresh = capture.run(source_frame.clone())?;
+                    if crate::topo_view::origin_evidence(
+                        fresh.template_origin.as_ref().map(|o| o.selection()),
+                        origin_review.get_untracked().as_ref(),
+                    )? != saved_origin
+                    {
+                        return Err(
+                            "The saved material origin or inherited limitations changed.".into(),
+                        );
+                    }
+                    Ok(())
                 };
                 let completion = check.clone();
                 artifact.complete_guarded(check, move |result| {

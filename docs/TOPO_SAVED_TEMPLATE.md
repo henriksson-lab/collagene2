@@ -1,6 +1,6 @@
 # Saved native templates in TOPO preparation
 
-The TA/directional TOPO preparation panel can explicitly choose the retained run
+The TA/directional TOPO preparation panel can explicitly choose the retained native Run or Derived
 origin of its insert PCR template. This connects a named native cloning product
 to new exact-PCR synthesis, declared vector activation, actual transfer geometry,
 ordered processing, final target verification and named reusable product output.
@@ -8,12 +8,10 @@ The original source documents and independently declared target remain unchanged
 
 ## Material boundary
 
-`topo_run_preparation` accepts an exact source role, selected native Capsule and
+`topo_run_preparation` accepts an exact source role, selected `MaterialOrigin` (Run or Derived) and
 original TOPO declarations. Borrowed model/count guards precede source copying.
 Documentary preflight and response checks establish request identity only; they
-never supply chemical authority. Each actual inspection replays the capsule's
-complete originating candidate against its own original target and requires the
-selected event/revision and actual private material to agree. The tracked template
+never supply chemical authority. Each actual inspection uses the shared origin replay. Run origins reconstruct their closed candidate against its retained independent target; Derived origins reconstruct their target-free native recipe and nested source ancestry. Both require the selected event/revision and actual private material to agree. Original source assumptions and bounded findings, including incomplete/truncation evidence, remain visible. The tracked template
 must have complete aligned strands without nicks. Staggered, nicked, reference-only
 or unreconstructable templates are withheld rather than repaired or materialized.
 
@@ -35,7 +33,7 @@ attest it again against the current native workspace before candidate creation.
 
 The selected ordered-processing candidate is compiled as:
 
-1. `ReconstructRunProduct` from the exact saved input and retained origin.
+1. `ReconstructRunProduct` for Run, or `ReconstructMaterial` for Derived, from the exact saved input and retained origin.
 2. `TopoActions`, with only the PCR-template role wired to that fresh step.
 
 Ordinary Verify reconstructs both steps afresh against the unchanged independent
@@ -52,22 +50,34 @@ the saved origin with a plain sequence input.
 
 ## Binary and validation contract
 
-Worker89 appends request169 `InspectTopoRun` and result159 `TopoRunInspection`.
-The response wrapper binds the whole task, literal source revisions, selected role
-and complete capsule. Its inner scientific report retains its existing context;
-there is no rewritten receipt or restored imported authority. Receivers with the
-request call `Inspection::validate_for`, which recomputes both outer and inner
-bindings without replaying scientific algorithms. Older worker88 frames reject the
-new request/result. Candidate20, native plan18 and science23 remain unchanged,
-since the candidate uses existing operations and scientific semantics.
+The existing `InspectTopoRun` request and `TopoRunInspection` response carry the
+same task/inspection structures, with the origin directly typed as `MaterialOrigin`.
+There is no alternate run-only adapter or implicit origin conversion. The response
+wrapper binds the whole task, literal source revisions, selected role and complete
+origin. Its inner scientific report retains its original context. Receivers with
+the request use `Inspection::validate_for` to recompute outer and inner documentary
+bindings without replaying scientific algorithms. Native workspace attestation of
+the exact selected event remains a separate receiving-boundary requirement;
+matching sequence letters alone cannot attest a different event.
 
-Four literal fixture groups cover saved ten-base PCR material producing the
-independently specified 24-base directional TOPO circle, explicit processing and
-finalize/archive/reuse; changed source/origin/role, Prepared misuse, staggered
-material and wrong target; worker-version and outer/inner binding checks; and
-orientation/projection/target/action inspection. Tests and compiler checks are
-run by the coordinated parent batch; no browser or application HTTP checks are
-part of this source change.
+Literal tests retain the saved Run route and additionally install actual target-free
+PCR material from a saved Run, restart from the native archive, use the resulting
+Derived template for TOPO preparation/check, verify against the independently
+specified24-base target, finalize and replay the new TOPO run. Equal-reference
+event aliases, tampered Derived pins, substituted source revisions and wrong
+independent targets are refused. Native nicked and staggered templates remain
+unsupported and are never automatically repaired.
+
+## MCP source selection
+
+`inspect_saved_topo` receives a small `MaterialSelection` and a pinned immutable
+`origin_workspace`. It resolves the retained Run or Derived event inside that
+workspace, freshly reconstructs the origin, and checks that the declared insert
+template is the exact source snapshot. Closed capsule bytes are not arguments.
+Orientations, Project, InspectActions, ProcessActions and Check use the same
+source resolution. Check retains its separately supplied target document. Replies
+and full evidence expose inherited incompleteness and source findings; inspection
+creates no document, candidate or laboratory stock. The tool count is unchanged.
 
 ## Explicit primer-order extraction
 
@@ -101,3 +111,12 @@ the18-base product is sealed and reusable, while terminal-alternative search is
 incomplete. New TOPO PCR produces the24-base reference but final verification
 remains Incomplete and output requires the existing explicit conditional-save
 policy. The saved primer collection still contains only the new PCR oligos.
+
+## Prepared-vector boundary remains explicit
+
+This change generalizes the insert PCR template origin only. It does not make a
+saved ordinary duplex an activated TOPO vector: Prepared vector intervals still
+refer to original reference sources under explicitly declared activation chemistry.
+A saved template cannot supply those Prepared intervals. No physical phosphotyrosyl
+adduct, supplier activity or host rescue is inferred from a saved sequence or
+ordinary duplex terminus.

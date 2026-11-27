@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 96;
+pub const WORKER_SCHEMA_VERSION: u16 = 97;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 25;
 
 // Current selectors whose accepted payloads can contain complete workspace archives.
@@ -957,7 +957,7 @@ pub enum AnalysisJob {
     InspectTopoRun {
         inputs: Vec<crate::topo::Input>,
         template_role: String,
-        origin: crate::run_material::Capsule,
+        origin: crate::run_material::MaterialOrigin,
         task: crate::topo_run_preparation::Task,
     },
     InspectMaterialOrigin {

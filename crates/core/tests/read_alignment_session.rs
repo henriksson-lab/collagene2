@@ -255,7 +255,7 @@ fn failed_imports_and_decoded_summaries_cannot_replace_or_recreate_private_sourc
 }
 
 #[test]
-fn appended_job_tags_require_worker24_before_decoding_large_bodies_and_old_indices_remain_stable() {
+fn current_job_tags_and_unsupported_header_admission_remain_explicit() {
     for tag in 77u32..=81 {
         let payload = postcard::to_allocvec(&(17u32, "context", tag)).unwrap();
         let mut bytes = b"CGQ\0".to_vec();
@@ -267,7 +267,7 @@ fn appended_job_tags_require_worker24_before_decoding_large_bodies_and_old_indic
             protocol::process_request(&bytes),
             AnalysisSession::default().process_request(&bytes),
         ] {
-            assert!(result.unwrap_err().to_string().contains("schema 24"));
+            assert!(matches!(result, Err(collagene_core::Error::Unsupported(_))));
         }
     }
     let source = blake3::hash(SAM.as_bytes()).to_hex().to_string();

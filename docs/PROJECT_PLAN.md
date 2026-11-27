@@ -3246,14 +3246,43 @@ new import root. This is a current-format invariant, without development-format
 migration or a compatibility decoder.
 
 
-The next connected cloning step is generic saved-material TOPO insert-template
-reuse. Replace the existing run-only `topo_run_preparation` source with the
-current `MaterialOrigin` and small `MaterialSelection` handles in web/MCP. Replay
-Run or Derived ancestry into the existing private tracked-template PCR kernel;
-compile the corresponding existing reconstruction operation before the unchanged
-TOPO preparation. Update the existing worker job and its consumers together,
-without an alias or second route. This requires the next worker schema, but no
-new plan operation or persisted TOPO draft shape. Keep independent target checks,
-intact paired-template restrictions and literal ordered primers. Actual prepared
-TOPO-vector strand chemistry and activation reuse remain separate work; accepting
-a Derived insert template does not implement those capabilities.
+### Generic saved-material TOPO insert templates — 27 November 2026
+
+TOPO insert-template preparation now uses the current Run/Derived material
+representation across native preparation, existing worker
+job169/result159, web capture and MCP. MCP accepts a small exact-event material
+selection, resolves it in the pinned native workspace and freshly reconstructs
+its origin. Current worker97 carries the changed DTO; candidate25, plan23 and
+science26 remain unchanged because existing reconstruction operations and physics
+are reused. The test-only TA compatibility wrapper is deleted; its callers use
+the current compiler directly. Prepared-vector activation/material reuse remains
+open, as do unsupported staggered/nicked insert-template geometries. Focused
+native verification passes354 distinct cases across core, binary, MCP
+and UI-model fixtures, including five corrected current-wire regression cases.
+All affected native test callers compile; web/worker WASM checking passes.
+Exported TOPO JSON retains inherited origin findings and late native-file
+admission rechecks exact source, target and selected evidence. Browser and
+application HTTP acceptance remain deferred.
+
+
+The next Golden Gate scientific integration must use actual positional modification
+state for both initial cleavage and reconstructed-product recutting. Existing
+fragment mapping already propagates modifications; broad source-generation flags
+are not a substitute for checked cleavage. Unknown or impaired cuts must withhold
+an undetermined fragment pool, while known blocked sites survive as intact
+material. Original-source generation declarations belong before every preparative
+cut. Saved origins retain inherited positions; new PCR strands use the established
+standard-unmodified synthesis model. Keep explicit source/candidate checked-site
+and profile evidence, one aggregate work budget and the independent target.
+Current positional profiles do not justify an invented blocked BsaI/BsmBI example
+or substituting HF/vendor formulations. Unsupported positional contexts remain
+unresolved until primary-source evidence supports a rule.
+
+CI now requests all selected native test targets before reporting failure, so a
+single run reveals the complete failing-target list. Failure criteria are
+unchanged. The preview's static snapshot/symlink cases remain enabled; its HTTP
+case remains deferred under the repository rule until in-scope code is complete.
+Five stale internal-wire tests are corrected without restoring older decoders:
+current success/size checks use current headers, while unsupported headers retain
+typed rejection. Their five focused runtime checks pass; current scientific assertions remain
+intact. Two static preview boundary cases also pass without HTTP requests.

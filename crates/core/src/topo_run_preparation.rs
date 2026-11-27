@@ -2,7 +2,7 @@
 //! Documentary bounds/bindings never reconstruct or return physical authority.
 use crate::{
     Error, Molecule,
-    run_material::Capsule,
+    run_material::MaterialOrigin,
     topo, topo_actions, topo_worker,
     verification::{DesignPlan, Operation, PlanInput, Source, TopoSource},
 };
@@ -38,7 +38,7 @@ pub fn source_inputs(
     molecules: &[&Molecule],
     request: &topo::Request,
     template_role: &str,
-    origin: Option<&Capsule>,
+    origin: Option<&MaterialOrigin>,
 ) -> Result<Vec<topo::Input>, Error> {
     if sources.is_empty() || sources.len() > 32 || sources.len() != molecules.len() {
         return Err(Error::TooLarge);
@@ -63,7 +63,7 @@ pub fn source_inputs(
             .iter()
             .position(|s| s.role == template_role)
             .ok_or_else(|| bad("missing selected template role"))?;
-        if molecules[index].revision() != origin.selection.event.revision {
+        if molecules[index].revision() != origin.event().revision {
             return Err(bad("selected saved event/revision changed"));
         }
     }
@@ -85,7 +85,7 @@ pub fn source_inputs(
 pub fn preflight(
     inputs: &[topo::Input],
     template_role: &str,
-    origin: &Capsule,
+    origin: &MaterialOrigin,
     task: &Task,
 ) -> Result<(), Error> {
     topo::declared_template_preflight(inputs, task.preparation(), template_role)?;
@@ -94,7 +94,7 @@ pub fn preflight(
         .iter()
         .find(|i| i.role == template_role)
         .ok_or_else(|| bad("missing selected template"))?;
-    if source.molecule.revision() != origin.selection.event.revision {
+    if source.molecule.revision() != origin.event().revision {
         return Err(bad("selected saved template revision changed"));
     }
     if let Task::Check { target, .. } = task {
@@ -110,7 +110,7 @@ fn hash(v: &impl Serialize) -> Result<String, Error> {
 pub fn revision(
     inputs: &[topo::Input],
     role: &str,
-    origin: &Capsule,
+    origin: &MaterialOrigin,
     task: &Task,
 ) -> Result<String, Error> {
     preflight(inputs, role, origin, task)?;
@@ -121,7 +121,7 @@ pub fn revision(
 pub fn documentary_revision(
     inputs: &[topo::Input],
     role: &str,
-    origin: &Capsule,
+    origin: &MaterialOrigin,
     task: &Task,
 ) -> Result<String, Error> {
     preflight(inputs, role, origin, task)?;
@@ -201,7 +201,7 @@ pub fn documentary_revision(
 pub fn inspect(
     inputs: &[topo::Input],
     role: &str,
-    origin: &Capsule,
+    origin: &MaterialOrigin,
     task: &Task,
 ) -> Result<Inspection, Error> {
     preflight(inputs, role, origin, task)?;
@@ -210,9 +210,9 @@ pub fn inspect(
         .find(|i| i.role == role)
         .ok_or_else(|| bad("missing selected template"))?
         .molecule;
-    let fresh = crate::run_material_capsule::replay(origin, source)?;
+    let fresh = origin.replay(source)?;
     let reply =
-        topo::inspect_reconstructed_task(inputs, &[(role.to_string(), &fresh.tracked)], task)?;
+        topo::inspect_reconstructed_task(inputs, &[(role.to_string(), fresh.tracked())], task)?;
     reply.validate_binding(
         inputs,
         role,
@@ -220,20 +220,12 @@ pub fn inspect(
         task,
         &revision(inputs, role, origin, task)?,
     )?;
-    let findings = fresh.evidence.decode_report()?.findings;
-    let origin_findings_total = findings.len();
-    let origin_findings_truncated =
-        findings.len() > 128 || findings.iter().take(128).any(|s| s.chars().count() > 2048);
     Ok(Inspection {
         context_revision: revision(inputs, role, origin, task)?,
-        origin_incomplete: fresh.incomplete,
-        origin_findings_total,
-        origin_findings_truncated,
-        origin_findings: findings
-            .into_iter()
-            .take(128)
-            .map(|s| s.chars().take(2048).collect())
-            .collect(),
+        origin_incomplete: fresh.incomplete(),
+        origin_findings_total: fresh.findings_total(),
+        origin_findings_truncated: fresh.findings_truncated(),
+        origin_findings: fresh.findings().to_vec(),
         reply,
     })
 }
@@ -242,7 +234,7 @@ impl Reply {
         &self,
         inputs: &[topo::Input],
         role: &str,
-        origin: &Capsule,
+        origin: &MaterialOrigin,
         task: &Task,
         expected: &str,
     ) -> Result<(), Error> {
@@ -272,7 +264,7 @@ pub fn compile(
     inputs: &[topo::Input],
     target: &Molecule,
     role: &str,
-    origin: &Capsule,
+    origin: &MaterialOrigin,
     request: &topo_actions::Request,
 ) -> Result<DesignPlan, Error> {
     preflight(
@@ -296,9 +288,15 @@ pub fn compile(
             })
             .collect(),
         steps: vec![
-            Operation::ReconstructRunProduct {
-                template: Source::Input(role.into()),
-                origin: origin.clone(),
+            match origin {
+                MaterialOrigin::Run(origin) => Operation::ReconstructRunProduct {
+                    template: Source::Input(role.into()),
+                    origin: origin.clone(),
+                },
+                MaterialOrigin::Derived(origin) => Operation::ReconstructMaterial {
+                    template: Source::Input(role.into()),
+                    origin: origin.clone(),
+                },
             },
             Operation::TopoActions {
                 sources: inputs
@@ -358,7 +356,7 @@ impl Inspection {
         &self,
         inputs: &[topo::Input],
         role: &str,
-        origin: &Capsule,
+        origin: &MaterialOrigin,
         task: &Task,
         expected: &str,
     ) -> Result<(), Error> {
@@ -371,7 +369,7 @@ impl Inspection {
 pub fn preparation_revision(
     inputs: &[topo::Input],
     role: &str,
-    origin: &Capsule,
+    origin: &MaterialOrigin,
     request: &topo::Request,
 ) -> Result<String, Error> {
     preflight(

@@ -146,7 +146,7 @@ fn stale_pins_and_unpinned_operation_cannot_relabel_catalog_digest() {
 fn pinned_gels_keep_the_ordinary_binary_message_budget() {
     let maximum = collagene_core::formats::MAX_IMPORT_BYTES;
     let mut wire = vec![0; 42 + maximum + 1];
-    wire[4..6].copy_from_slice(&55u16.to_le_bytes());
+    wire[4..6].copy_from_slice(&protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
     wire[6..10].copy_from_slice(&((maximum + 1) as u32).to_le_bytes());
     for (magic, selector, response) in [(b"CGQ\0", 124u32, false), (b"CGR\0", 116u32, true)] {
         wire[..4].copy_from_slice(magic);

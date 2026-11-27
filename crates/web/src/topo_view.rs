@@ -37,17 +37,17 @@ pub struct CaptureRequest {
     pub sources: Vec<(String, EventBinding)>,
     pub target: EventBinding,
     pub request: topo::Request,
-    pub template_origin: Option<collagene_core::run_material::Selection>,
+    pub template_origin: Option<collagene_core::run_material::MaterialSelection>,
 }
 pub struct Captured {
     pub inputs: Vec<topo::Input>,
     pub target: Molecule,
-    pub template_origin: Option<collagene_core::run_material::Capsule>,
+    pub template_origin: Option<collagene_core::run_material::MaterialOrigin>,
 }
 #[derive(Clone, PartialEq, Eq)]
 struct Context {
     draft: Draft,
-    template_origin: Option<collagene_core::run_material::Selection>,
+    template_origin: Option<collagene_core::run_material::MaterialSelection>,
     sources: Vec<(String, EventBinding)>,
     target: SourceInfo,
     epoch: u64,
@@ -98,6 +98,36 @@ struct Projected {
 struct Checked {
     projected: Arc<Projected>,
     report: Arc<topo::AnnotatedAssessment>,
+}
+/// Documentary origin caveats accompany every exported inner TOPO report.
+#[derive(Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct OriginEvidence {
+    selection: Option<collagene_core::run_material::MaterialSelection>,
+    review: Option<OriginReviewEvidence>,
+}
+#[derive(Clone, PartialEq, Eq, Serialize)]
+struct OriginReviewEvidence {
+    incomplete: bool,
+    findings: Vec<String>,
+    findings_total: usize,
+    findings_truncated: bool,
+}
+pub(crate) fn origin_evidence(
+    selection: Option<collagene_core::run_material::MaterialSelection>,
+    review: Option<&topo_preparation::OriginReview>,
+) -> Result<OriginEvidence, String> {
+    if selection.is_some() != review.is_some() {
+        return Err("Reinspect the saved material before exporting its origin limitations.".into());
+    }
+    Ok(OriginEvidence {
+        selection,
+        review: review.map(|review| OriginReviewEvidence {
+            incomplete: review.incomplete,
+            findings: review.findings.clone(),
+            findings_total: review.total,
+            findings_truncated: review.truncated,
+        }),
+    })
 }
 struct BoundedJson(Vec<u8>);
 impl Write for BoundedJson {
@@ -258,7 +288,9 @@ pub fn TopoPanel(
     let selected_origin = Memo::new(move |_| template_origin.get());
     let on_origin = Callback::new(move |pin: Option<crate::run_origin_model::PinnedOrigin>| {
         if let Some(pin) = &pin {
-            pin.as_run()?;
+            pin.as_ref()
+                .validate_for_workspace(&get_workspace.run(())?, pin.event())
+                .map_err(|e| e.to_string())?;
             if template_source
                 .get_untracked()
                 .is_none_or(|s| s.binding != *pin.event())
@@ -313,7 +345,6 @@ pub fn TopoPanel(
             return Err("The independent target exceeds the100,000-base check limit.".into());
         }
         if let Some(pin) = template_origin.get() {
-            pin.as_run()?;
             if bindings
                 .iter()
                 .find(|(r, _)| r == "insert_template")
@@ -324,10 +355,7 @@ pub fn TopoPanel(
         }
         Ok(Context {
             draft: d,
-            template_origin: template_origin
-                .get()
-                .map(|p| p.as_run().map(|r| r.selection.clone()))
-                .transpose()?,
+            template_origin: template_origin.get().map(|p| p.selection()),
             sources: bindings,
             target,
             epoch: epoch.get(),
@@ -1073,16 +1101,29 @@ pub fn TopoPanel(
         }
         on_candidate.run((candidate, preferred));
     });
+    let export_alive = alive.clone();
     let export = Callback::new(move |()| {
         let Some(b) = current_bound() else {
             return;
         };
         let p = current_projection();
         let c = current_check();
+        let expected_choice = choice.get_untracked();
+        let saved_origin = match origin_evidence(
+            b.context.template_origin.clone(),
+            origin_review.get_untracked().as_ref(),
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                status.set(e);
+                return;
+            }
+        };
         #[derive(Serialize)]
         struct Evidence<'a> {
             interpretation: &'static str,
             sources: &'a [(String, EventBinding)],
+            material_origin: &'a OriginEvidence,
             target: &'a EventBinding,
             request: &'a topo::Request,
             orientations: &'a topo::OrientationInspection,
@@ -1093,6 +1134,7 @@ pub fn TopoPanel(
         let evidence = Evidence {
             interpretation: "Saved source-bound declared-graph evidence. Reconstruct with original source events before reuse; no kit efficacy, physical-target authority, host repair or imported-chemistry restoration.",
             sources: &b.context.sources,
+            material_origin: &saved_origin,
             target: &b.context.target.binding,
             request: &b.request,
             orientations: &b.report,
@@ -1100,14 +1142,64 @@ pub fn TopoPanel(
             projection: p.as_ref().map(|p| p.product.as_ref()),
             assessment: c.as_ref().map(|c| c.report.as_ref()),
         };
-        crate::app::complete_download(json_download(&evidence), move |result| {
-            if status.try_get_untracked().is_none() {
-                return;
+        match json_download(&evidence) {
+            Ok(artifact) => {
+                let alive = export_alive.clone();
+                let check = move || -> Result<(), String> {
+                    if !alive.load(Ordering::Relaxed) || status.try_get_untracked().is_none() {
+                        return Err("TOPO export review closed.".into());
+                    }
+                    if !current_bound().is_some_and(|current| Arc::ptr_eq(&current, &b))
+                        || choice.get_untracked() != expected_choice
+                    {
+                        return Err(
+                            "The TOPO sources, material origin, target or selected policy changed."
+                                .into(),
+                        );
+                    }
+                    let same_projection = match (current_projection(), &p) {
+                        (None, None) => true,
+                        (Some(current), Some(expected)) => Arc::ptr_eq(&current, expected),
+                        _ => false,
+                    };
+                    let same_check = match (current_check(), &c) {
+                        (None, None) => true,
+                        (Some(current), Some(expected)) => Arc::ptr_eq(&current, expected),
+                        _ => false,
+                    };
+                    if !same_projection
+                        || !same_check
+                        || origin_evidence(
+                            b.context.template_origin.clone(),
+                            origin_review.get_untracked().as_ref(),
+                        )? != saved_origin
+                    {
+                        return Err(
+                            "The selected TOPO evidence or inherited limitations changed.".into(),
+                        );
+                    }
+                    capture
+                        .run(CaptureRequest {
+                            sources: b.context.sources.clone(),
+                            target: b.context.target.binding.clone(),
+                            template_origin: b.context.template_origin.clone(),
+                            request: b.request.clone(),
+                        })
+                        .map(|_| ())
+                };
+                let completion = check.clone();
+                artifact.complete_guarded(check, move |result| {
+                    if completion().is_err() {
+                        return;
+                    }
+                    status.set(match result {
+                        Ok(()) => "TOPO evidence saved.".into(),
+                        Err(error) => error,
+                    });
+                });
             }
-            if let Err(error) = result {
-                status.set(error);
-            }
-        });
+            Err(error) => status.set(error),
+        }
     });
     let propose_cacc = move |_| {
         if locked.get_untracked() || busy.get_untracked() {
@@ -1169,7 +1261,7 @@ pub fn TopoPanel(
             <SourcePicker label="TOPO insert PCR template" role="insert_template" draft=draft sources=sources locked=locked/>
             {move||origin_review.get().filter(|r|r.incomplete).map(|r|view!{<aside class="helper"><p>"The saved source's originating check is incomplete. This inspection reconstructs actual material under those retained assumptions; it does not close origin search limits or establish a uniquely isolated experimental product. Final plan verification remains incomplete."</p><details><summary>"Retained origin findings"</summary><p>{format!("Showing {} of {} findings{}. The retained origin recipe remains available for full replay.",r.findings.len(),r.total,if r.truncated{"; displayed findings are truncated"}else{""})}</p><ul>{r.findings.into_iter().map(|s|view!{<li>{s}</li>}).collect_view()}</ul></details></aside>})}
             <crate::run_origin_view::SourceOriginPicker source=template_source epoch get_workspace selected=selected_origin on_select=on_origin/>
-            <Show when=move||template_origin.get().is_some()><p class="helper">"The exact saved run is reconstructed before each new insert PCR. Vector activation remains an explicit original-source declaration. Use ordered processing below to review and open a reusable product candidate; no host repair or nick sealing is inferred."</p></Show>
+            <Show when=move||template_origin.get().is_some()><p class="helper">"The exact saved Run or Derived material is reconstructed before each new insert PCR. Vector activation remains an explicit original-source declaration. Unsupported staggered or nicked templates are reported without inserting repair steps. Use ordered processing below to review and open a reusable product candidate; no host repair or nick sealing is inferred."</p></Show>
             <label>"Forward ordered oligo 5′→3′"<input aria-label="TOPO forward ordered primer" maxlength="1024" disabled=move||locked.get() prop:value=move||draft.with(|d|d.forward_sequence.clone()) on:input=move|e|draft.update(|d|d.forward_sequence=event_target_value(&e))/></label>
             <label>"Forward 3′ annealing length"<input type="number" min="1" max="1024" aria-label="TOPO forward annealing length" disabled=move||locked.get() prop:value=move||draft.with(|d|if d.forward_annealing==0{String::new()}else{d.forward_annealing.to_string()}) on:input=move|e|draft.update(|d|d.forward_annealing=event_target_value(&e).parse().unwrap_or(0))/></label>
             <label>"Reverse ordered oligo 5′→3′"<input aria-label="TOPO reverse ordered primer" maxlength="1024" disabled=move||locked.get() prop:value=move||draft.with(|d|d.reverse_sequence.clone()) on:input=move|e|draft.update(|d|d.reverse_sequence=event_target_value(&e))/></label>

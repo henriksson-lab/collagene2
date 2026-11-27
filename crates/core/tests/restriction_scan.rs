@@ -153,7 +153,7 @@ fn comparison_bound_preserves_observed_site_without_claiming_complete_counts() {
 }
 
 #[test]
-fn append_only_worker_scan_tag_and_version_guard_preserve_old_wire_indices() {
+fn current_worker_scan_preserves_scientific_evidence_and_rejects_unsupported_headers() {
     let molecule = dna("TTTGAATTCAAA", Topology::Linear);
     let enzymes = vec![enzyme("EcoRI")];
     let options = InspectionOptions::default();
@@ -178,21 +178,21 @@ fn append_only_worker_scan_tag_and_version_guard_preserve_old_wire_indices() {
     assert_eq!((id, binding, tag), (7, revision.as_str(), 76));
     let mut old_request = encoded.clone();
     old_request[4..6].copy_from_slice(&22u16.to_le_bytes());
-    assert!(
-        protocol::process_request(&old_request)
-            .unwrap_err()
-            .to_string()
-            .contains("schema 23")
-    );
-    let mut response = protocol::process_request(&encoded).unwrap();
+    assert!(matches!(
+        protocol::process_request(&old_request),
+        Err(collagene_core::Error::Unsupported(_))
+    ));
+    let response = protocol::process_request(&encoded).unwrap();
     let decoded = protocol::decode_response(&response).unwrap();
     assert_eq!(decoded.revision, revision);
     let AnalysisResult::RestrictionInspection(report) = decoded.result else {
         panic!("expected scan evidence")
     };
     scan_only(&report);
-    // This is the existing result variant, whose minimum envelope remains 20.
-    response[4..6].copy_from_slice(&20u16.to_le_bytes());
+    assert_eq!(
+        &response[4..6],
+        &protocol::WORKER_SCHEMA_VERSION.to_le_bytes()
+    );
     assert!(protocol::decode_response(&response).is_ok());
     let old = Request {
         id: 7,

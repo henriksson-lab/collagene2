@@ -195,7 +195,7 @@ impl SavedTopoTask {
 pub struct SavedTopoInspectionQuery {
     pub inputs: Vec<BoundInput>,
     pub template_role: String,
-    pub origin: collagene_core::run_material::Capsule,
+    pub origin: collagene_core::run_material::MaterialSelection,
     pub origin_workspace: WorkspaceRef,
     pub task: SavedTopoTask,
 }
@@ -2515,7 +2515,7 @@ impl CollageneServer {
         event: &collagene_core::run_lineage::EventBinding,
         origin: &MaterialDerivationOrigin,
     ) -> Result<collagene_core::material_derivation::SourceOrigin, ErrorData> {
-        use collagene_core::{material_derivation::SourceOrigin, run_material};
+        use collagene_core::material_derivation::SourceOrigin;
         match origin {
             MaterialDerivationOrigin::OriginalReference => {
                 SourceOrigin::OriginalReference
@@ -2523,30 +2523,39 @@ impl CollageneServer {
                     .map_err(bad)?;
                 Ok(SourceOrigin::OriginalReference)
             }
-            MaterialDerivationOrigin::Saved(selection) => {
-                selection.validate().map_err(bad)?;
-                if selection.event() != event {
-                    return Err(bad(
-                        "Selected material handle names a different exact source event.",
-                    ));
-                }
-                let requested = Some(selection.clone());
-                let expected =
-                    run_material::material_inspection_revision(workspace, event, &requested)
-                        .map_err(bad)?;
-                let inspection =
-                    run_material::inspect_material(workspace, event, &requested).map_err(bad)?;
-                inspection.validate_binding(&expected).map_err(bad)?;
-                let selected=inspection.selected.ok_or_else(||bad("Selected retained material cannot currently be reconstructed; inspect its origin findings."))?;
-                if selected.selection() != *selection {
-                    return Err(bad("Fresh origin differs from explicit selected handle."));
-                }
-                selected
-                    .validate_for_workspace(workspace, event)
-                    .map_err(bad)?;
-                Ok(SourceOrigin::Saved(selected))
-            }
+            MaterialDerivationOrigin::Saved(selection) => self
+                .resolve_material_origin(workspace, event, selection)
+                .map(SourceOrigin::Saved),
         }
+    }
+    fn resolve_material_origin(
+        &self,
+        workspace: &workspace::Workspace,
+        event: &collagene_core::run_lineage::EventBinding,
+        selection: &collagene_core::run_material::MaterialSelection,
+    ) -> Result<collagene_core::run_material::MaterialOrigin, ErrorData> {
+        use collagene_core::run_material;
+
+        selection.validate().map_err(bad)?;
+        if selection.event() != event {
+            return Err(bad(
+                "Selected material handle names a different exact source event.",
+            ));
+        }
+        let requested = Some(selection.clone());
+        let expected = run_material::material_inspection_revision(workspace, event, &requested)
+            .map_err(bad)?;
+        let inspection =
+            run_material::inspect_material(workspace, event, &requested).map_err(bad)?;
+        inspection.validate_binding(&expected).map_err(bad)?;
+        let selected=inspection.selected.ok_or_else(||bad("Selected retained material cannot currently be reconstructed; inspect its origin findings."))?;
+        if selected.selection() != *selection {
+            return Err(bad("Fresh origin differs from explicit selected handle."));
+        }
+        selected
+            .validate_for_workspace(workspace, event)
+            .map_err(bad)?;
+        Ok(selected)
     }
     fn material_derivation_source(
         &self,
@@ -6654,7 +6663,7 @@ impl CollageneServer {
         self.published_fusion_rank(args).await
     }
     #[tool(
-        description = "Freshly inspect TOPO insert PCR from one deliberately selected saved native material origin. Requires immutable source references, an explicit template role, complete originating capsule and its exact retained native workspace. Replays the origin before actual new PCR; graph metadata or matching DNA cannot substitute for material authority. Select an explicit orientations, projection, independent-target Check, actions inspection or processed-actions task. Check resolves an exact immutable session target reference, never replaces it with a projected product. Returns bounded full typed evidence without saving any candidate or document; kit activation, transfers, processing and acceptance remain explicit assumptions."
+        description = "Freshly inspect TOPO insert PCR from one deliberately selected saved native material origin. Requires immutable source references, an explicit template role, a small explicit Run/Derived material selection and its exact retained native workspace. Replays the origin before actual new PCR; graph metadata or matching DNA cannot substitute for material authority. Select an explicit orientations, projection, independent-target Check, actions inspection or processed-actions task. Check resolves an exact immutable session target reference, never replaces it with a projected product. Returns bounded full typed evidence without saving any candidate or document; kit activation, transfers, processing and acceptance remain explicit assumptions."
     )]
     async fn inspect_saved_topo(
         &self,
@@ -6669,11 +6678,15 @@ impl CollageneServer {
                 "Saved TOPO inspection requires 1–32 bounded original roles and an explicit template role",
             ));
         }
-        args.origin.validate_documentary().map_err(bad)?;
+        args.origin.validate().map_err(bad)?;
         // Bound literal option trees before cloning them into the native task.
         bounded_json_limit(&args.task, 2 * 1024 * 1024)?;
         let server = self.clone();
         self.compute(move||{
+            let origin_workspace=server.restore_workspace(&args.origin_workspace)?;
+            let origin=server.resolve_material_origin(&origin_workspace,args.origin.event(),&args.origin)?;
+            // The resolver above attests exact document/event/revision ownership.
+            let saved_template=origin_workspace.revisions.get(&origin.event().revision).ok_or_else(||bad("Attested TOPO template revision is absent."))?;
             let (inputs,target)={
                 let store=server.store.lock().unwrap();
                 let mut ids=BTreeSet::new();
@@ -6689,16 +6702,18 @@ impl CollageneServer {
                     collagene_core::topo_worker::target_preflight(molecule).map_err(bad)?;
                     Some(molecule.clone())
                 }else{None};
-                let inputs=collagene_core::topo_run_preparation::source_inputs(&sources,&refs,args.task.preparation(),&args.template_role,Some(&args.origin)).map_err(bad)?;
+                let inputs=collagene_core::topo_run_preparation::source_inputs(&sources,&refs,args.task.preparation(),&args.template_role,Some(&origin)).map_err(bad)?;
                 (inputs,target)
             };
             let template=inputs.iter().find(|input| input.role==args.template_role).ok_or_else(||bad("Selected saved template role is unavailable"))?;
-            server.attest_run_source(&args.origin_workspace,&args.origin,&template.molecule)?;
+            if &template.molecule!=saved_template {
+                return Err(bad("Selected saved TOPO origin differs from its exact retained template snapshot."));
+            }
             let task=args.task.native(target)?;
-            collagene_core::topo_run_preparation::preflight(&inputs,&args.template_role,&args.origin,&task).map_err(bad)?;
-            let context=collagene_core::topo_run_preparation::revision(&inputs,&args.template_role,&args.origin,&task).map_err(bad)?;
-            let report=collagene_core::topo_run_preparation::inspect(&inputs,&args.template_role,&args.origin,&task).map_err(bad)?;
-            report.validate_for(&inputs,&args.template_role,&args.origin,&task,&context).map_err(bad)?;
+            collagene_core::topo_run_preparation::preflight(&inputs,&args.template_role,&origin,&task).map_err(bad)?;
+            let context=collagene_core::topo_run_preparation::revision(&inputs,&args.template_role,&origin,&task).map_err(bad)?;
+            let report=collagene_core::topo_run_preparation::inspect(&inputs,&args.template_role,&origin,&task).map_err(bad)?;
+            report.validate_for(&inputs,&args.template_role,&origin,&task,&context).map_err(bad)?;
             use collagene_core::topo_run_preparation::Reply;
             let summary=match &report.reply {
                 Reply::Orientations(_)=>json!({"kind":"Orientations"}),
@@ -6708,12 +6723,12 @@ impl CollageneServer {
                 Reply::ActionsProcessed(_)=>json!({"kind":"ActionsProcessed"}),
             };
             #[derive(Serialize)]
-            struct Evidence<'a>{inputs:&'a[BoundInput],template_role:&'a str,origin:&'a collagene_core::run_material::Capsule,origin_workspace:&'a WorkspaceRef,task:&'a SavedTopoTask,inspection:&'a collagene_core::topo_run_preparation::Inspection}
+            struct Evidence<'a>{inputs:&'a[BoundInput],template_role:&'a str,origin:&'a collagene_core::run_material::MaterialSelection,origin_workspace:&'a WorkspaceRef,task:&'a SavedTopoTask,inspection:&'a collagene_core::topo_run_preparation::Inspection}
             let evidence=Evidence{inputs:&args.inputs,template_role:&args.template_role,origin:&args.origin,origin_workspace:&args.origin_workspace,task:&args.task,inspection:&report};
             let artifact=server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","saved-template-topo-inspection.json")?;
             output(json!({"state":"saved-template-inspection","verified":false,"candidate_saved":false,"document_saved":false,
                 "context_revision":context,"engine_version":collagene_core::topo_run_preparation::ENGINE_VERSION,"template_role":args.template_role,
-                "origin_revision":args.origin.selection.event.revision,"origin_event":args.origin.selection.event,
+                "origin_revision":origin.event().revision,"origin_event":origin.event(),"origin_selection":args.origin,
                 "origin_incomplete":report.origin_incomplete,"origin_findings":report.origin_findings,
                 "origin_findings_total":report.origin_findings_total,"origin_findings_truncated":report.origin_findings_truncated,"summary":summary,"artifact_id":artifact,
                 "authority":"Exact retained native origin attestation and fresh origin/PCR/TOPO replay under explicit declarations. Origin incompleteness and bounded original findings remain explicit; a local graph or target comparison cannot clear them. Only Check reports comparison with the independently selected immutable session target; no summary grants global verification, reusable material, isolation, kit success or mixture uniqueness. No candidate or projected document was saved; serialized metadata cannot restore private physical state."}))

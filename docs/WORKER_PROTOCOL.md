@@ -1,7 +1,7 @@
 # Binary worker protocol
 
 The web worker and native adapters share Rust DTOs in `core::protocol` and the
-same deterministic scientific engines. Current schemas are worker **96**,
+same deterministic scientific engines. Current schemas are worker **97**,
 candidate **25** and native workspace plan **23**; the verifier is **science-26**.
 Only current internal encodings are accepted. Superseded development formats have
 no fallback decoder, migration or capability ladder.
@@ -422,3 +422,7 @@ Mismatch-PCR and repair previews (jobs180/181, results170/171) use the explicit
 128 MiB compound lane because their source origins may close native ancestry.
 They bind exact source/origin and operation settings; native replay establishes
 material at installation. Map SVG (job179/result169) retains the ordinary limit.
+
+TOPO insert-template inspection (job169/result159) resolves generic Run or Derived
+origins using their exact retained events. Both use the existing compound lane;
+prepared vector declarations remain separate from saved insert-template chemistry.

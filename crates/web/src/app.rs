@@ -6505,9 +6505,12 @@ pub fn App() -> impl IntoView {
                                                     if capture.sources.is_empty()||capture.sources.len()>32{return Err("Choose 1–32 explicit source roles.".into());}
                                                     let template_origin=capture.template_origin.as_ref().map(|selection|{
                                                         let (_,binding)=capture.sources.iter().find(|(role,_)|role=="insert_template").ok_or("The selected PCR template role is unavailable.")?;
-                                                        if selection.event!=*binding{return Err("The saved template origin belongs to another source event.".to_string());}
+                                                        if selection.event()!=binding{return Err("The saved template origin belongs to another source event.".to_string());}
                                                         let frame=library_snapshot.run(())?;
-                                                        collagene_core::run_material::capsule(&frame,selection).map_err(|error|error.to_string())
+                                                        let inspection=collagene_core::run_material::inspect_material(&frame,binding,&Some(selection.clone())).map_err(|error|error.to_string())?;
+                                                        let origin=inspection.selected.ok_or("The exact saved material origin is unavailable.")?;
+                                                        origin.validate_for_workspace(&frame,binding).map_err(|error|error.to_string())?;
+                                                        Ok::<_,String>(origin)
                                                     }).transpose()?;
                                                     documents.with_untracked(|docs|{
                                                         let resolve=|binding:&collagene_core::run_lineage::EventBinding|docs.iter().find(|d|current_event_binding(d)==*binding).ok_or_else(||"A selected source event changed. Inspect again.".to_string());

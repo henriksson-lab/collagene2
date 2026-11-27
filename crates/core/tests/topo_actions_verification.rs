@@ -437,7 +437,7 @@ fn op20_candidate14_and_worker66_gates_preserve_original_source_context() {
     assert!(matches!(&sources[0].source,Source::Input(id) if id=="original-0"));
 }
 #[test]
-fn original_operation19_still_cannot_cut_directional_flap_and_legitimate_old_request_decodes() {
+fn nick_only_operation_cannot_cut_directional_flap_in_current_encoding() {
     let (inputs, r) = fixture(false);
     let sealing = p::nick_sealing::Request {
         ligase_assumption: "Only the old original exposed nick is selected; no flap action".into(),
@@ -494,11 +494,13 @@ fn original_operation19_still_cannot_cut_directional_flap_and_legitimate_old_req
     assert_eq!(report.processed_step_reports.len(), 1);
     assert!(report.physical_processing_reports.is_empty());
     assert!(report.products.is_empty());
-    let mut candidate =
-        transfer::save_candidate(&transfer::Candidate::new(old_plan.clone())).unwrap();
-    candidate[4..6].copy_from_slice(&13u16.to_le_bytes());
+    let candidate = transfer::save_candidate(&transfer::Candidate::new(old_plan.clone())).unwrap();
+    assert_eq!(
+        &candidate[4..6],
+        &protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
+    );
     transfer::load_candidate(&candidate).unwrap();
-    let mut encoded = protocol::encode_request(&protocol::Request {
+    let encoded = protocol::encode_request(&protocol::Request {
         id: 1919,
         revision: target.revision(),
         job: protocol::AnalysisJob::Verify {
@@ -507,12 +509,15 @@ fn original_operation19_still_cannot_cut_directional_flap_and_legitimate_old_req
         },
     })
     .unwrap();
-    encoded[4..6].copy_from_slice(&65u16.to_le_bytes());
+    assert_eq!(
+        &encoded[4..6],
+        &protocol::WORKER_SCHEMA_VERSION.to_le_bytes()
+    );
     let response = protocol::process_request(&encoded).unwrap();
     let protocol::AnalysisResult::Verification(report) =
         protocol::decode_response(&response).unwrap().result
     else {
-        panic!("legacy request result")
+        panic!("current nick-only processing result")
     };
     assert_eq!(report.status, Status::Incomplete);
     assert_eq!(report.processed_step_reports.len(), 1);

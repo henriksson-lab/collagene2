@@ -5,6 +5,7 @@ use collagene_core::{
     Molecule, Topology,
     analysis::Primer,
     cloning_outputs::{self, Commit},
+    material_derivation as native,
     run_lineage::{EventBinding, InputEventBinding},
     run_material,
     verification::{DesignPlan, Operation, PlanInput, Source},
@@ -153,160 +154,220 @@ async fn actual_saved_template_inspection_attests_origin_and_preserves_independe
             .any(|tool| tool.name == "inspect_saved_topo")
     );
     let commit = saved();
-    let selection = run_material::Selection {
+    let run_selection = run_material::Selection {
         run_id: commit.receipt.run.run_id.clone(),
         step_index: 0,
         event: commit.receipt.construct.clone(),
     };
-    let imported=call(&client,"import_workspace_archive",json!({"data_base64":STANDARD.encode(workspace::save_workspace(&commit.workspace).unwrap())})).await;
-    let workspace =
-        json!({"id":imported["workspace"]["id"],"revision":imported["workspace"]["revision"]});
-    let prepared = call(
-        &client,
-        "prepare_run_material",
-        json!({"workspace":workspace,"selection":selection}),
-    )
-    .await;
-    let inspection: run_material::Inspection =
-        serde_json::from_value(artifact(&client, &prepared["artifact_id"]).await).unwrap();
-    let origin = inspection.selected.unwrap();
-    let vt = import(&client, "Declared vector top", "AAGGGGCATCCCTT").await;
-    let vb = import(&client, "Declared vector bottom", "GGTGAAGGGATGCCCCTT").await;
-    let template = json!({"id":selection.event.revision,"revision":selection.event.revision});
-    let declaration = prep::PreparationRequest {
-        mode: prep::PreparationMode::DirectionalCacc,
-        vector: prep::PreparedVectorDeclaration {
-            declaration_id: "Explicit vector geometry".into(),
-            assumption: "Synthetic activation hypothesis, not an observed stock or kit claim"
-                .into(),
-            strands: vec![declared_strand("vt", 14), declared_strand("vb", 18)],
-            pairing: vec![t::physical::PairSpan {
-                strand_a: 0,
-                start_a: 0,
-                strand_b: 1,
-                start_b: 4,
-                length: 14,
-            }],
+    let run_origin = run_material::capsule(&commit.workspace, &run_selection).unwrap();
+    let source = &commit.workspace.revisions[&run_selection.event.revision];
+    let origin = native::SourceOrigin::Saved(run_material::MaterialOrigin::Run(run_origin));
+    let forward = Primer::new("New derived F", "CACCA", "").unwrap();
+    let reverse = Primer::new("New derived R", "CGTCA", "").unwrap();
+    let preview = native::preview_pcr(source, &origin, &forward, &reverse)
+        .unwrap()
+        .remove(0);
+    let derived = native::prepare_install(
+        &commit.workspace,
+        &native::Request {
+            source: run_selection.event.clone(),
+            origin,
+            derivation: native::Derivation::ExactPcr {
+                forward,
+                reverse,
+                selection: native::PcrSelection {
+                    selected_index: 0,
+                    expected_preview_revision: preview.molecule.revision(),
+                    geometry: preview.geometry,
+                },
+            },
+            name: "Reusable target-free PCR for TOPO".into(),
+            save_primers: true,
         },
-        insert: prep::ExactPcrDeclaration {
-            material_id: "New PCR from saved template".into(),
-            template_role: "template".into(),
-            forward: Primer::new("F", "CACCA", "").unwrap(),
-            reverse: Primer::new("R", "CGTCA", "").unwrap(),
-            tail: None,
-        },
-        engine_limits: Default::default(),
-        projection_options: Default::default(),
-    };
-    let compiled = prep::compile(&declaration).unwrap();
-    let mut args = json!({"inputs":[{"id":"vt","document":vt},{"id":"vb","document":vb},{"id":"template","document":template}],"template_role":"template","origin":origin,"origin_workspace":workspace,
-        "task":{"Orientations":{"request":compiled.request,"vector":compiled.vector_strands,"insert":compiled.insert_strands,"directional":compiled.directional}}});
-    let before = call(&client, "list_documents", json!({})).await["total"].clone();
-    let reply = call(&client, "inspect_saved_topo", args.clone()).await;
-    assert_eq!(reply["candidate_saved"], false);
-    assert_eq!(reply["document_saved"], false);
-    assert_eq!(reply["verified"], false);
-    let full = artifact(&client, &reply["artifact_id"]).await;
-    let inspected: saved::Inspection = serde_json::from_value(full["inspection"].clone()).unwrap();
-    inspected
-        .validate_binding(reply["context_revision"].as_str().unwrap())
-        .unwrap();
-    assert_eq!(
-        reply["origin_findings_total"],
-        json!(inspected.origin_findings_total)
-    );
-    assert_eq!(
-        reply["origin_findings_truncated"],
-        json!(inspected.origin_findings_truncated)
-    );
-    assert!(!inspected.origin_incomplete);
-    assert_eq!(reply["origin_incomplete"], false);
-    assert_eq!(
-        reply["origin_findings"],
-        serde_json::to_value(&inspected.origin_findings).unwrap()
-    );
-    let saved::Reply::Orientations(oriented) = inspected.reply else {
-        panic!("Expected actual saved-template orientations");
-    };
-    assert_eq!(oriented.reference.candidates.len(), 2);
-    assert!(!oriented.reference.biochemical_mixture_exhaustive);
-    assert_eq!(
-        call(&client, "list_documents", json!({})).await["total"],
-        before
-    );
-    // A retained archive with the same input letters but no selected product/run
-    // cannot attest this origin, even though the capsule remains fully valid.
-    let wrong = Workspace::from_documents(
-        "Unrelated source-only archive",
-        vec![commit.workspace.revisions[&selection.event.revision].clone()],
-        0,
     )
     .unwrap();
-    let wrong = call(
-        &client,
-        "import_workspace_archive",
-        json!({"data_base64":STANDARD.encode(workspace::save_workspace(&wrong).unwrap())}),
-    )
-    .await;
-    let mut bad = args.clone();
-    bad["origin_workspace"] =
-        json!({"id":wrong["workspace"]["id"],"revision":wrong["workspace"]["revision"]});
-    reject(&client, bad).await;
-    let mut bad = args.clone();
-    bad["inputs"][2]["document"]["revision"] = json!("0".repeat(64));
-    reject(&client, bad).await;
-    let mut bad = args.clone();
-    bad["template_role"] = json!("vt");
-    reject(&client, bad).await;
-    let mut bad = args.clone();
-    bad.as_object_mut().unwrap().remove("origin_workspace");
-    reject(&client, bad).await;
-    // The selected component is an actual declared graph component, never a
-    // component chosen because its sequence fits this deliberately wrong target.
-    let target = import(
-        &client,
-        "Independent deliberately different requirement",
-        "TTTTCCCCAAAAGGGG",
-    )
-    .await;
-    let batch = blake3::hash(
-        &serde_json::to_vec(&(
-            t::ENGINE_VERSION,
-            t::physical::ENGINE,
-            t::physical::PRIMARY_MODEL,
-            t::physical::projection::ENGINE,
-            &oriented.sources,
-            &compiled.request,
-        ))
-        .unwrap(),
-    )
-    .to_hex()
-    .to_string();
-    args["task"] = json!({"Check":{"request":compiled.request,"selection":{"batch_revision":batch,"component":0,"reference_seed":{"strand":0,"index":0}},"target":target,"policy":t::AcceptancePolicy::default()}});
-    let checked = call(&client, "inspect_saved_topo", args.clone()).await;
-    assert_eq!(checked["summary"]["kind"], "Checked");
-    assert_eq!(checked["summary"]["target_revision"], target["revision"]);
-    assert_ne!(
-        checked["summary"]["outcome"],
-        json!("AcceptedUnderDeclaredGraph")
-    );
-    let checked_full = artifact(&client, &checked["artifact_id"]).await;
-    assert_eq!(checked_full["task"]["Check"]["target"], target);
-    let saved::Reply::Checked(assessment) =
-        serde_json::from_value::<saved::Inspection>(checked_full["inspection"].clone())
+    let cases = [
+        (
+            commit.workspace,
+            run_material::MaterialSelection::Run(run_selection),
+        ),
+        (
+            derived.workspace,
+            run_material::MaterialSelection::Derived(derived.receipt.product),
+        ),
+    ];
+    for (frame, selection) in cases {
+        let pin = selection.event().clone();
+        let original_bytes = workspace::save_workspace(&frame).unwrap();
+        let imported = call(
+            &client,
+            "import_workspace_archive",
+            json!({"data_base64":STANDARD.encode(&original_bytes)}),
+        )
+        .await;
+        let workspace =
+            json!({"id":imported["workspace"]["id"],"revision":imported["workspace"]["revision"]});
+        let vt = import(&client, "Declared vector top", "AAGGGGCATCCCTT").await;
+        let vb = import(&client, "Declared vector bottom", "GGTGAAGGGATGCCCCTT").await;
+        let template = json!({"id":pin.revision,"revision":pin.revision});
+        let declaration = prep::PreparationRequest {
+            mode: prep::PreparationMode::DirectionalCacc,
+            vector: prep::PreparedVectorDeclaration {
+                declaration_id: "Explicit vector geometry".into(),
+                assumption: "Synthetic activation hypothesis, not an observed stock or kit claim"
+                    .into(),
+                strands: vec![declared_strand("vt", 14), declared_strand("vb", 18)],
+                pairing: vec![t::physical::PairSpan {
+                    strand_a: 0,
+                    start_a: 0,
+                    strand_b: 1,
+                    start_b: 4,
+                    length: 14,
+                }],
+            },
+            insert: prep::ExactPcrDeclaration {
+                material_id: "New PCR from saved template".into(),
+                template_role: "template".into(),
+                forward: Primer::new("F", "CACCA", "").unwrap(),
+                reverse: Primer::new("R", "CGTCA", "").unwrap(),
+                tail: None,
+            },
+            engine_limits: Default::default(),
+            projection_options: Default::default(),
+        };
+        let compiled = prep::compile(&declaration).unwrap();
+        let mut args = json!({"inputs":[{"id":"vt","document":vt},{"id":"vb","document":vb},{"id":"template","document":template}],"template_role":"template","origin":selection,"origin_workspace":workspace,
+        "task":{"Orientations":{"request":compiled.request,"vector":compiled.vector_strands,"insert":compiled.insert_strands,"directional":compiled.directional}}});
+        let before = call(&client, "list_documents", json!({})).await["total"].clone();
+        let schema = client
+            .list_tools(Default::default())
+            .await
             .unwrap()
-            .reply
-    else {
-        panic!("Expected independent target assessment");
-    };
-    assert_eq!(
-        assessment.target_revision,
-        target["revision"].as_str().unwrap()
-    );
-    args["task"]["Check"]["target"]["revision"] = json!("0".repeat(64));
-    reject(&client, args.clone()).await;
-    args["task"]["Check"]["target"] = json!({"name":"Injected target","sequence":"TTTT"});
-    reject(&client, args).await;
+            .tools
+            .into_iter()
+            .find(|tool| tool.name == "inspect_saved_topo")
+            .unwrap();
+        assert!(
+            !serde_json::to_string(&schema.input_schema)
+                .unwrap()
+                .contains("record_bytes")
+        );
+        let reply = call(&client, "inspect_saved_topo", args.clone()).await;
+        assert_eq!(reply["candidate_saved"], false);
+        assert_eq!(reply["document_saved"], false);
+        assert_eq!(reply["verified"], false);
+        assert_eq!(reply["origin_event"], json!(pin));
+        let full = artifact(&client, &reply["artifact_id"]).await;
+        assert_eq!(full["origin"], json!(selection));
+        let inspected: saved::Inspection =
+            serde_json::from_value(full["inspection"].clone()).unwrap();
+        inspected
+            .validate_binding(reply["context_revision"].as_str().unwrap())
+            .unwrap();
+        assert_eq!(
+            reply["origin_findings_total"],
+            json!(inspected.origin_findings_total)
+        );
+        assert_eq!(
+            reply["origin_findings_truncated"],
+            json!(inspected.origin_findings_truncated)
+        );
+        assert!(!inspected.origin_incomplete);
+        assert_eq!(reply["origin_incomplete"], false);
+        assert_eq!(
+            reply["origin_findings"],
+            serde_json::to_value(&inspected.origin_findings).unwrap()
+        );
+        let saved::Reply::Orientations(oriented) = inspected.reply else {
+            panic!("Expected actual saved-template orientations");
+        };
+        assert_eq!(oriented.reference.candidates.len(), 2);
+        assert!(!oriented.reference.biochemical_mixture_exhaustive);
+        assert_eq!(
+            call(&client, "list_documents", json!({})).await["total"],
+            before
+        );
+        // A retained archive with the same input letters but no selected product/run
+        // cannot attest this explicitly selected native event.
+        let wrong = Workspace::from_documents(
+            "Unrelated source-only archive",
+            vec![frame.revisions[&pin.revision].clone()],
+            0,
+        )
+        .unwrap();
+        let wrong = call(
+            &client,
+            "import_workspace_archive",
+            json!({"data_base64":STANDARD.encode(workspace::save_workspace(&wrong).unwrap())}),
+        )
+        .await;
+        let mut bad = args.clone();
+        bad["origin_workspace"] =
+            json!({"id":wrong["workspace"]["id"],"revision":wrong["workspace"]["revision"]});
+        reject(&client, bad).await;
+        let closed = run_material::inspect_material(&frame, &pin, &Some(selection.clone()))
+            .unwrap()
+            .selected
+            .unwrap();
+        let mut bad = args.clone();
+        bad["origin"] = serde_json::to_value(closed).unwrap();
+        reject(&client, bad).await;
+        let mut bad = args.clone();
+        bad["inputs"][2]["document"]["revision"] = json!("0".repeat(64));
+        reject(&client, bad).await;
+        let mut bad = args.clone();
+        bad["template_role"] = json!("vt");
+        reject(&client, bad).await;
+        let mut bad = args.clone();
+        bad.as_object_mut().unwrap().remove("origin_workspace");
+        reject(&client, bad).await;
+        // The selected component is an actual declared graph component, never a
+        // component chosen because its sequence fits this deliberately wrong target.
+        let target = import(
+            &client,
+            "Independent deliberately different requirement",
+            "TTTTCCCCAAAAGGGG",
+        )
+        .await;
+        let batch = blake3::hash(
+            &serde_json::to_vec(&(
+                t::ENGINE_VERSION,
+                t::physical::ENGINE,
+                t::physical::PRIMARY_MODEL,
+                t::physical::projection::ENGINE,
+                &oriented.sources,
+                &compiled.request,
+            ))
+            .unwrap(),
+        )
+        .to_hex()
+        .to_string();
+        args["task"] = json!({"Check":{"request":compiled.request,"selection":{"batch_revision":batch,"component":0,"reference_seed":{"strand":0,"index":0}},"target":target,"policy":t::AcceptancePolicy::default()}});
+        let checked = call(&client, "inspect_saved_topo", args.clone()).await;
+        assert_eq!(checked["summary"]["kind"], "Checked");
+        assert_eq!(checked["summary"]["target_revision"], target["revision"]);
+        assert_ne!(
+            checked["summary"]["outcome"],
+            json!("AcceptedUnderDeclaredGraph")
+        );
+        let checked_full = artifact(&client, &checked["artifact_id"]).await;
+        assert_eq!(checked_full["task"]["Check"]["target"], target);
+        let saved::Reply::Checked(assessment) =
+            serde_json::from_value::<saved::Inspection>(checked_full["inspection"].clone())
+                .unwrap()
+                .reply
+        else {
+            panic!("Expected independent target assessment");
+        };
+        assert_eq!(
+            assessment.target_revision,
+            target["revision"].as_str().unwrap()
+        );
+        args["task"]["Check"]["target"]["revision"] = json!("0".repeat(64));
+        reject(&client, args.clone()).await;
+        args["task"]["Check"]["target"] = json!({"name":"Injected target","sequence":"TTTT"});
+        reject(&client, args).await;
+    }
     client.cancel().await.unwrap();
     server.await.unwrap();
 }

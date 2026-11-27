@@ -170,11 +170,9 @@ fn both_declared_orientation_graphs_and_new_schema_guards_remain_explicit() {
         bytes.extend((payload.len() as u32).to_le_bytes());
         bytes.extend(blake3::hash(&payload).as_bytes());
         bytes.extend(payload);
-        assert!(
-            protocol::process_request(&bytes)
-                .unwrap_err()
-                .to_string()
-                .contains("schema 26")
-        );
+        assert!(matches!(
+            protocol::process_request(&bytes),
+            Err(collagene_core::Error::Unsupported(_))
+        ));
     }
 }

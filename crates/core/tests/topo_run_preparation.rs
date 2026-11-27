@@ -6,7 +6,7 @@ use collagene_core::{
     modified_duplex::GenerationAssumptions,
     protocol,
     run_lineage::{self, EventBinding, InputEventBinding},
-    topo, topo_actions as actions, transfer,
+    topo, topo_actions as actions,
     verification::{self as v, DesignPlan, Operation, PlanInput, Source, Status, TopoSource},
     workspace::{self, Workspace},
 };
@@ -207,7 +207,7 @@ fn saved(
     Workspace,
     Vec<topo::Input>,
     Molecule,
-    run_material::Capsule,
+    run_material::MaterialOrigin,
     actions::Request,
 ) {
     let (old, target, mut inputs) = fixture();
@@ -275,7 +275,9 @@ fn saved(
         step_index: if staggered { 1 } else { 0 },
         event: committed.receipt.construct.clone(),
     };
-    let capsule = run_material::capsule(&committed.workspace, &selection).unwrap();
+    let capsule = run_material::MaterialOrigin::Run(
+        run_material::capsule(&committed.workspace, &selection).unwrap(),
+    );
     inputs[2].molecule = committed.workspace.revisions[&selection.event.revision].clone();
     if !staggered {
         let task = adapter::Task::InspectActions {
@@ -329,7 +331,7 @@ fn saved_template_new_pcr_processed_product_finalization_archive_and_second_reus
         },
         InputEventBinding {
             input_id: "template".into(),
-            event: origin.selection.event.clone(),
+            event: origin.event().clone(),
         },
     ];
     let finalrun = cloning_outputs::finalize(
@@ -367,7 +369,10 @@ fn saved_template_new_pcr_processed_product_finalization_archive_and_second_reus
 fn exact_capsule_and_role_pins_vector_prepared_rules_and_staggered_material_reject() {
     let (_, inputs, target, origin, request) = saved(false);
     let mut wrong = origin.clone();
-    wrong.selection.event.event_id = "ev-unrelated".into();
+    let run_material::MaterialOrigin::Run(run) = &mut wrong else {
+        panic!("run origin")
+    };
+    run.selection.event.event_id = "ev-unrelated".into();
     assert!(adapter::compile(&inputs, &target, "template", &wrong, &request).is_err());
     assert!(adapter::compile(&inputs, &target, "vt", &origin, &request).is_err());
     let mut mixed = request.clone();
@@ -408,7 +413,7 @@ fn wire<T: serde::Serialize>(magic: &[u8; 4], version: u16, payload: &T) -> Vec<
     b
 }
 #[test]
-fn worker89_wrapper_and_unchanged_inner_bindings_reject_old_worker_and_changed_declarations() {
+fn saved_template_wrapper_pins_inner_bindings_and_changed_declarations() {
     let (_, inputs, _, origin, request) = saved(false);
     let task = adapter::Task::InspectActions {
         request: actions::ActionsRequest {
@@ -467,7 +472,10 @@ fn worker89_wrapper_and_unchanged_inner_bindings_reject_old_worker_and_changed_d
             .is_err()
     );
     let mut cap = origin.clone();
-    cap.selection.run_id.push('x');
+    let run_material::MaterialOrigin::Run(run) = &mut cap else {
+        panic!("run origin")
+    };
+    run.selection.run_id.push('x');
     assert!(
         inspection
             .validate_for(&inputs, "template", &cap, &task, &revision)
@@ -808,7 +816,8 @@ fn actual_reusable_but_search_incomplete_origin_stays_conditional_through_new_to
         },
     )
     .unwrap();
-    inputs[2].molecule = prior.workspace.revisions[&origin.selection.event.revision].clone();
+    let origin = run_material::MaterialOrigin::Run(origin);
+    inputs[2].molecule = prior.workspace.revisions[&origin.event().revision].clone();
     let (old, _, _) = fixture();
     let Operation::TopoActions { mut request, .. } = old.steps[1].clone() else {
         panic!("actions")
@@ -822,7 +831,10 @@ fn actual_reusable_but_search_incomplete_origin_stays_conditional_through_new_to
     let inspected = adapter::inspect(&inputs, "template", &origin, &task).unwrap();
     assert!(inspected.origin_incomplete);
     assert!(!inspected.origin_findings.is_empty());
-    assert_eq!(inspected.origin_findings_total, report.findings.len());
+    let replayed = origin.replay(&inputs[2].molecule).unwrap();
+    assert_eq!(inspected.origin_findings_total, replayed.findings_total());
+    assert_eq!(inspected.origin_findings, replayed.findings());
+    assert!(inspected.origin_findings_total >= report.findings.len());
     assert!(!inspected.origin_findings_truncated);
     let adapter::Reply::ActionsInspected(actual) = inspected.reply else {
         panic!("actions")
@@ -843,7 +855,7 @@ fn actual_reusable_but_search_incomplete_origin_stays_conditional_through_new_to
         },
         InputEventBinding {
             input_id: "template".into(),
-            event: origin.selection.event.clone(),
+            event: origin.event().clone(),
         },
     ];
     let mut options = cloning_outputs::Options {
@@ -872,4 +884,305 @@ fn actual_reusable_but_search_incomplete_origin_stays_conditional_through_new_to
     )
     .unwrap();
     assert!(saved.receipt.primer_attachment.is_some());
+}
+
+#[test]
+fn derived_pcr_restart_topo_check_and_record_preserve_exact_native_origin_and_independent_target() {
+    use collagene_core::material_derivation as d;
+    let (w, mut inputs, target, run_origin, mut request) = saved(false);
+    let source = run_origin.event().clone();
+    let forward = Primer::new("Derived template F", "CACCA", "").unwrap();
+    let reverse = Primer::new("Derived template R", "CGTCA", "").unwrap();
+    let declaration = d::SourceOrigin::Saved(run_origin);
+    let previews = d::preview_pcr(&inputs[2].molecule, &declaration, &forward, &reverse).unwrap();
+    assert_eq!(previews.len(), 1);
+    assert_eq!(previews[0].molecule.sequence.as_str(), "CACCATGACG");
+    let installed = d::prepare_install(
+        &w,
+        &d::Request {
+            source,
+            origin: declaration,
+            derivation: d::Derivation::ExactPcr {
+                forward,
+                reverse,
+                selection: d::PcrSelection {
+                    selected_index: 0,
+                    expected_preview_revision: previews[0].molecule.revision(),
+                    geometry: previews[0].geometry.clone(),
+                },
+            },
+            name: "Saved target-free insert template PCR".into(),
+            save_primers: true,
+        },
+    )
+    .unwrap();
+    let w = workspace::load_workspace(&workspace::save_workspace(&installed.workspace).unwrap())
+        .unwrap();
+    let product = installed.receipt.product;
+    let origin = run_material::MaterialOrigin::Derived(d::capsule(&w, &product).unwrap());
+    origin.validate_for_workspace(&w, &product).unwrap();
+    inputs[2].molecule = w.revisions[&product.revision].clone();
+    assert_eq!(
+        origin
+            .replay(&inputs[2].molecule)
+            .unwrap()
+            .tracked()
+            .duplex
+            .top
+            .as_str(),
+        "CACCATGACG"
+    );
+    assert!(topo::source_preflight(&inputs, &request.preparation).is_err());
+
+    let task = adapter::Task::InspectActions {
+        request: actions::ActionsRequest {
+            preparation: request.preparation.clone(),
+            processing: request.processing.clone(),
+        },
+    };
+    let inspection = adapter::inspect(&inputs, "template", &origin, &task).unwrap();
+    inspection
+        .validate_for(
+            &inputs,
+            "template",
+            &origin,
+            &task,
+            &adapter::revision(&inputs, "template", &origin, &task).unwrap(),
+        )
+        .unwrap();
+    let adapter::Reply::ActionsInspected(actual) = inspection.reply else {
+        panic!("actions")
+    };
+    request.selection.processing_context_revision = actual.processing.context_revision;
+    let selection = topo::Selection {
+        batch_revision: adapter::preparation_revision(
+            &inputs,
+            "template",
+            &origin,
+            &request.preparation,
+        )
+        .unwrap(),
+        component: 0,
+        reference_seed: call(0, 0),
+    };
+    let check = adapter::Task::Check {
+        request: request.preparation.clone(),
+        selection,
+        target: target.clone(),
+        policy: topo::AcceptancePolicy::default(),
+    };
+    let checked = adapter::inspect(&inputs, "template", &origin, &check).unwrap();
+    let adapter::Reply::Checked(assessment) = checked.reply else {
+        panic!("target check")
+    };
+    assert_eq!(assessment.target_revision, target.revision());
+    let plan = adapter::compile(&inputs, &target, "template", &origin, &request).unwrap();
+    assert!(
+        matches!(&plan.steps[0], Operation::ReconstructMaterial { origin: bound, .. } if bound.product == product)
+    );
+    let result = v::verify(&plan, &target);
+    assert_eq!(
+        result.status,
+        Status::ConsistentUnderAssumptions,
+        "{:?}",
+        result.findings
+    );
+    assert_eq!(result.products.last().unwrap().sequence.as_str(), TARGET);
+    let finalrun = cloning_outputs::finalize(
+        &w,
+        &plan,
+        event(&w, 4),
+        vec![
+            InputEventBinding {
+                input_id: "vt".into(),
+                event: event(&w, 2),
+            },
+            InputEventBinding {
+                input_id: "vb".into(),
+                event: event(&w, 3),
+            },
+            InputEventBinding {
+                input_id: "template".into(),
+                event: product.clone(),
+            },
+        ],
+        &cloning_outputs::Options {
+            name: "Derived-PCR TOPO circle".into(),
+            show_prepared: true,
+            save_primers: true,
+            allow_incomplete: false,
+        },
+    )
+    .unwrap();
+    let reopened =
+        workspace::load_workspace(&workspace::save_workspace(&finalrun.workspace).unwrap())
+            .unwrap();
+    let reusable = run_material::reconstruct(
+        &reopened,
+        &run_material::Selection {
+            run_id: finalrun.receipt.run.run_id,
+            step_index: 1,
+            event: finalrun.receipt.construct,
+        },
+    )
+    .unwrap();
+    assert_eq!(reusable.reference().sequence.as_str(), TARGET);
+
+    // Same reference letters are not an attestation of another native event.
+    let mut alias_workspace = w.clone();
+    let alias = collagene_core::history::DocumentHistory::new(
+        "equal-dna-alias",
+        inputs[2].molecule.clone(),
+    )
+    .unwrap();
+    let alias_id = alias.id.clone();
+    alias.contribute(&mut alias_workspace).unwrap();
+    let alias_doc = alias_workspace
+        .documents
+        .iter()
+        .find(|d| d.id == alias_id)
+        .unwrap();
+    let alias_event = EventBinding {
+        document_id: alias_doc.id.clone(),
+        event_id: alias_doc.head_event.clone().unwrap(),
+        revision: alias_doc.head.clone(),
+    };
+    assert!(
+        origin
+            .validate_for_workspace(&alias_workspace, &alias_event)
+            .is_err()
+    );
+    let mut wrong = origin.clone();
+    let run_material::MaterialOrigin::Derived(capsule) = &mut wrong else {
+        panic!("derived")
+    };
+    capsule.product.event_id = alias_event.event_id;
+    assert!(adapter::inspect(&inputs, "template", &wrong, &task).is_err());
+    let mut wrong_source = inputs.clone();
+    wrong_source[2].molecule.name.push_str(" changed");
+    assert!(adapter::inspect(&wrong_source, "template", &origin, &task).is_err());
+    let wrong_target = Molecule::dna(
+        "Different independent target",
+        "AAGGGGCATCCCTTCACCATGACC",
+        Topology::Circular,
+    )
+    .unwrap();
+    let wrong_plan =
+        adapter::compile(&inputs, &wrong_target, "template", &origin, &request).unwrap();
+    assert_eq!(
+        v::verify(&wrong_plan, &wrong_target).status,
+        Status::Invalid
+    );
+}
+
+#[test]
+fn actual_nicked_saved_template_is_not_implicitly_repaired_for_topo_insert_pcr() {
+    use collagene_core::{chemistry::EndTreatment, verification::OrientedSource};
+    let (base, _, mut inputs) = fixture();
+    let Operation::TopoActions { request, .. } = base.steps[1].clone() else {
+        panic!("actions")
+    };
+    let a = Molecule::dna("A", "AGTCCG", Topology::Linear).unwrap();
+    let b = Molecule::dna("B", "GACTGA", Topology::Linear).unwrap();
+    let target = Molecule::dna("Independent nicked12", "AGTCCGGACTGA", Topology::Linear).unwrap();
+    let w = Workspace::from_documents(
+        "Actual nicked template",
+        vec![a.clone(), b.clone(), target.clone()],
+        2,
+    )
+    .unwrap();
+    let plan = DesignPlan {
+        name: "One actual strand ligated, one nick retained".into(),
+        target_revision: target.revision(),
+        inputs: vec![
+            PlanInput {
+                id: "a".into(),
+                revision: a.revision(),
+                molecule: a,
+            },
+            PlanInput {
+                id: "b".into(),
+                revision: b.revision(),
+                molecule: b,
+            },
+        ],
+        steps: vec![
+            Operation::Pcr {
+                template: Source::Input("a".into()),
+                forward: Primer::new("AF", "AGT", "").unwrap(),
+                reverse: Primer::new("AR", "CGG", "").unwrap(),
+            },
+            Operation::Pcr {
+                template: Source::Input("b".into()),
+                forward: Primer::new("BF", "GAC", "").unwrap(),
+                reverse: Primer::new("BR", "TCA", "").unwrap(),
+            },
+            Operation::TreatEnds {
+                template: Source::Step(1),
+                treatment: EndTreatment::Phosphorylate,
+            },
+            Operation::Ligate {
+                fragments: vec![
+                    OrientedSource {
+                        source: Source::Step(0),
+                        reverse: false,
+                    },
+                    OrientedSource {
+                        source: Source::Step(2),
+                        reverse: false,
+                    },
+                ],
+                circular: false,
+                allow_nicked: true,
+                options: Default::default(),
+            },
+        ],
+    };
+    let saved = run_lineage::record_run(
+        &w,
+        &plan,
+        event(&w, 2),
+        vec![
+            InputEventBinding {
+                input_id: "a".into(),
+                event: event(&w, 0),
+            },
+            InputEventBinding {
+                input_id: "b".into(),
+                event: event(&w, 1),
+            },
+        ],
+        true,
+    )
+    .unwrap();
+    let p = &saved.receipt.products[3];
+    let product = EventBinding {
+        document_id: p.document_id.clone(),
+        event_id: p.event_id.clone(),
+        revision: p.revision.clone(),
+    };
+    let origin = run_material::MaterialOrigin::Run(
+        run_material::capsule(
+            &saved.workspace,
+            &run_material::Selection {
+                run_id: saved.receipt.run_id,
+                step_index: 3,
+                event: product.clone(),
+            },
+        )
+        .unwrap(),
+    );
+    inputs[2].molecule = saved.workspace.revisions[&product.revision].clone();
+    let before = origin.replay(&inputs[2].molecule).unwrap();
+    assert_eq!(before.tracked().duplex.nicks.len(), 1);
+    let task = adapter::Task::InspectActions {
+        request: actions::ActionsRequest {
+            preparation: request.preparation,
+            processing: request.processing,
+        },
+    };
+    let error = adapter::inspect(&inputs, "template", &origin, &task).unwrap_err();
+    assert!(error.to_string().contains("nicked"), "{error}");
+    let after = origin.replay(&inputs[2].molecule).unwrap();
+    assert_eq!(after.tracked().duplex, before.tracked().duplex);
 }

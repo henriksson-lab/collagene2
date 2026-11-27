@@ -1,4 +1,4 @@
-//! Numbering primitives and a conditional published IMGT CDR3 rule.
+//! Antibody reference analysis, numbering primitives and conditional IMGT rules.
 //! Supplied anchors are not an automatic antibody/variable-domain detector.
 use collagene_model::{Alphabet, Molecule};
 use serde::{Deserialize, Serialize};
@@ -18,11 +18,12 @@ pub enum Error {
     Binding,
     #[error("invalid source model: {0}")]
     Source(String),
-    #[error("profile alignment cancelled")]
+    #[error("antibody analysis cancelled")]
     Cancelled,
 }
 pub type Result<T> = std::result::Result<T, Error>;
 macro_rules! data {($($t:tt)*)=>{#[derive(Clone,Debug,PartialEq,Eq,Serialize,Deserialize)] #[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))] #[serde(deny_unknown_fields)] $($t)*};}
+pub mod domain_candidates;
 pub mod profile;
 pub mod references;
 pub mod v_mapping;
@@ -199,6 +200,15 @@ pub fn source_revision(source: &Molecule) -> Result<String> {
 /// establish their biological identity or antibody/domain/species classification.
 pub fn number_anchored_imgt_cdr3(source: &Molecule, anchors: &Anchors) -> Result<ConditionalCdr3> {
     let revision = source_revision(source)?;
+    number_validated_imgt_cdr3(source, anchors, &revision)
+}
+// The caller has validated this immutable source and computed its exact revision.
+// Shared allocation avoids hashing the full source again for every retained pair.
+fn number_validated_imgt_cdr3(
+    source: &Molecule,
+    anchors: &Anchors,
+    revision: &str,
+) -> Result<ConditionalCdr3> {
     if revision != anchors.source_revision {
         return Err(Error::Binding);
     }
@@ -251,7 +261,7 @@ pub fn number_anchored_imgt_cdr3(source: &Molecule, anchors: &Anchors) -> Result
         engine: ENGINE.into(),
         catalog_revision,
         context_revision,
-        source_revision: revision,
+        source_revision: revision.into(),
         source_length: b.len(),
         anchors: anchors.clone(),
         start,

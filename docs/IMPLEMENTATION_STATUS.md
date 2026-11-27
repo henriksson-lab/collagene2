@@ -2187,3 +2187,21 @@ The old V-mapping representation is replaced directly with no compatibility laye
 This removes a prerequisite gap for multi-domain work; query J/FR4/CDR3 combination,
 biological calibration, remaining schemes/species, application integration and
 whole-product acceptance remain required. [Contract](ANTIBODY_NUMBERING.md).
+
+
+### Conditional V/J and CDR3 candidate reconstruction
+
+The native antibody module now connects retained unique V endpoints to complete
+same-locus J/FR4 windows, retaining alternative J sites and mismatch evidence.
+Identical protein tails preserve all allele IDs. Conditional CDR3 and query FR4
+labels retain absolute source indices; exact source/model/reference/rule/options
+bind every candidate. V- and pair-retention truncation are separate, counts-only
+requests retain scoped totals, and scan exhaustion/cancellation returns an error.
+Shared loop allocation reuses the already checked immutable source revision.
+
+All 10 selected native cases pass: six new pairing groups and four affected shared-
+rule groups. Focused optional-schema WASM checks and formatting pass. Fixtures use
+authored heavy/kappa/lambda reference joins, tandem constructs and competing sites;
+they are not independent naturally observed biological assignments. Full biological
+calibration, complete numbering/region schemes and worker/MCP/application tracks
+remain required. [Contract](ANTIBODY_NUMBERING.md).

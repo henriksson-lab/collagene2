@@ -4432,3 +4432,23 @@ the connected native model. All 12 selected native cases and focused optional-
 schema WASM checks pass. Query
 J/FR4/CDR3 combination, calibration, remaining schemes/species and application
 tracks remain required. [Contract](ANTIBODY_NUMBERING.md).
+
+
+### F34 conditional V/J pairing and CDR3 reconstruction
+
+Retained unique V-end projections now connect to complete downstream J/FR4 windows
+with declared loop lengths and bounded substitutions. Literal locus anchors and
+G119/G121, stop barriers and complete tails remain explicit. Identical-tail
+alleles share one sequence match with all IDs retained; different J sequences and
+source starts remain alternatives. Conditional CDR3 allocation and actual-query
+FR4 residues bind to the existing source/model/reference contexts.
+
+Pair counts are scoped to retained unique V endpoints. Blocked projections,
+no-J endpoints, V truncation and pair truncation remain distinct; no probability,
+preferred allele or full-domain biological classification is inferred. Work and
+retention caps are enforced with no successful partial report on cancellation or
+work exhaustion. Source/option/report reconstruction and authored heavy/light,
+tandem and competing-site fixtures cover this coherent native batch. All 10 selected
+native cases (six new pairing cases and four shared-rule cases), focused optional-
+schema WASM checks and formatting pass. Biological calibration, full numbering/CDR
+schemes and application tracks remain required. [Contract](ANTIBODY_NUMBERING.md).

@@ -1,8 +1,8 @@
 # Antibody numbering implementation
 
 `collagene-antibody-numbering` is a new independent MIT Rust/WASM module for exact
-position labels, the published IMGT CDR3 allocation rule and an embedded profile-
-alignment kernel. These are numbering components, not automatic antibody or
+position labels, published IMGT CDR3 allocation, profile alignment and conditional
+V/J candidate reconstruction. These are numbering components, not automatic antibody or
 variable-domain detection. No worker, UI, MCP integration, full-domain numbering,
 Kabat/Chothia assignment or automatic CDR/framework derivation is implemented yet. Those remain part of F34.
 
@@ -197,7 +197,7 @@ Native fixtures check independent literal reference counts and missing columns,
 real V-prefix source anchors, all-locus evidence, duplicate best matches,
 ambiguity, declared thresholds, budgets, cancellation and tampering. This does not
 replace independent biological calibration and full-domain scheme validation.
-Query J/FR4 and rearranged CDR3 assignment, accepted alternative schemes and nonhuman scope,
+Validated full-domain assignment, accepted alternative schemes and nonhuman scope,
 alternative-domain handling, region derivation and application tracks remain open.
 
 
@@ -228,8 +228,8 @@ fixtures check every J translation with the existing Rust engine, including the
 retained untranslated nucleotide, and refuse invalid raw coordinates, anchor
 phases, label extents and terminal metadata.
 
-These are J reference facts. Connecting them to query V paths, reconstructing
-rearranged CDR3s, handling alternative domains, full scheme validation/calibration
+These are J reference facts. The conditional pairing section below connects them
+to query V paths. Full scheme validation/calibration, alternative-domain handling
 and worker/MCP/application tracks remain required.
 
 
@@ -257,8 +257,9 @@ representation is replaced directly: one endpoint report per locus and explicitl
 end-bound projections. The caller supplies an aggregate grid-cell budget and a
 per-locus retention cap. Counts, truncation, thresholds and exact model/source
 context survive report validation. Unsupported mapping engines reject without
-an adapter or fallback. Biological calibration, query J/FR4/CDR3 reconstruction,
-accepted scheme/species coverage and worker/MCP/application tracks remain open.
+an adapter or fallback. Biological calibration, full-domain numbering and region
+derivation, accepted scheme/species coverage and worker/MCP/application tracks
+remain open.
 
 Native endpoint fixtures compare all 1,020 small input/profile pairs at every
 source end against independent complete path enumeration, including terminal
@@ -266,3 +267,46 @@ insertions and deletion paths. They also check concrete ambiguity bounds,
 thresholded and counts-only results, retention limits, reconstruction and
 cancellation. Tandem real-reference V-prefix fixtures retain both endpoints and
 exercise truncation without turning duplicate blocks into an unreported global tie.
+
+
+## Conditional V/J candidates and CDR3 reconstruction
+
+`domain_candidates::find_candidates` connects retained, uniquely projected V
+endpoints to downstream complete FR4 windows in the same human locus profile.
+Callers explicitly declare V scoring, CDR3 length limits and an FR4 substitution
+budget (0–3). No J indels or partial FR4 tails are accepted by this finite profile.
+The locus-specific W/F anchor and G119/G121 motif positions remain literal, even
+when substitutions elsewhere are permitted. Stop-containing loops/tails refuse.
+
+Identical FR4 protein references are grouped with every original allele ID.
+Different allowed reference tails at one source interval remain explicit J-match
+alternatives with source-indexed substitutions. Different downstream J starts
+remain separate candidate intervals; the algorithm does not select a closest J
+sequence or one preferred domain. Every retained candidate receives conditional
+IMGT CDR3 labels from the existing published-rule allocator and sequential FR4
+labels from the actual query residues. V correspondence gaps/unassigned residues
+remain in the linked V evidence; they do not acquire invented labels. Repeated
+hashing of the full immutable source is avoided during loop allocation.
+
+Search counts are explicitly scoped to the retained unique V endpoints. Same-end
+tied V paths and ambiguous sources are reported as blocked; V endpoints without a
+qualifying complete J window remain listed. The output independently reports V
+retention truncation and pair retention truncation. A zero pair-retention cap still
+counts all qualifying intervals in the retained-V scope. A zero V cap searches no
+V/J pairs and retains the V truncation flag, rather than claiming global absence.
+The algorithm does not enumerate suboptimal V paths or infer omitted endpoints.
+
+At most 64 candidate payloads and two million complete-FR4 scan windows are
+allowed; callers can choose smaller limits. Exceeding work bounds or cancellation
+returns an error, never a partial successful report. Native engine
+`antibody-vj-candidates-1` binds the exact source, current V/reference/endpoint and
+CDR3-rule engines, options and limits. Report reconstruction checks all candidates,
+coordinates, loop labels, FR4 residues, J alternatives, counts and truncation flags.
+
+Fixtures use authored joins of attributed CC0 reference prefixes/tails, not
+naturally observed biological rearrangements. They cover heavy/kappa/lambda
+profiles, tandem constructs, identical-tail allele groups, competing J sites,
+substitutions, scope/stop/partial-tail refusal, bounded/counts-only retention,
+source tampering and cancellation. They validate conditional reconstruction,
+not biological detector accuracy. Independent biological calibration, complete
+scheme/region assignment and application integration remain required.

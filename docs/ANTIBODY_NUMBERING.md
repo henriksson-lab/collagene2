@@ -523,6 +523,34 @@ and colors while preserving every numbering assignment and scientific candidate.
 Chothia numbering does not imply a Chothia CDR definition; that definition is not
 yet exposed. Current finite window coverage and human-reference scope remain explicit.
 
+## Remaining definition profiles and their primary evidence
+
+The remaining Chothia choice must state which published delimitations it uses.
+The [primary CDR1 correspondence chart](https://www.imgt.org/IMGTScientificChart/Numbering/CDR1-IMGTgaps.html)
+brackets heavy and kappa canonical loops at Chothia26–32, but the 1997 lambda
+examples start at25. Its earlier lambda examples start at26. The corrected Hil
+example also supplies a six-residue IMGT first-loop profile that is not yet in
+the current Chothia lambda window catalog. These are distinct rule facts, not
+interchangeable labels for a single generic numeric range.
+
+The [primary CDR2 chart](https://www.imgt.org/IMGTScientificChart/Numbering/CDR2-IMGTgaps.html)
+places the canonical heavy loop after plain52 through55: existing 52-letter
+insertions are inside the loop while plain52 is outside. Kappa/lambda loops span
+50–52 in that chart. The [CDR3 chart](https://www.imgt.org/IMGTScientificChart/Numbering/CDR3-IMGTgaps.html)
+brackets the illustrated canonical heavy loop at96–101 and light loops at91–96.
+An eventual canonical-chart profile needs exact boundary predicates, locus/version
+identity, source-bound complete/unresolved intervals and fixtures for the excluded
+plain52 versus included52A case. A loosely named Chothia option or a generic
+inclusive integer-range implementation would obscure these distinctions.
+
+[North et al. (2011)](https://pmc.ncbi.nlm.nih.gov/articles/PMC3065967/) explicitly
+chooses structural loop boundaries separately from numbering. Its descriptions
+and Figure11 also distinguish the authors' reading of the original Chothia
+examples from common later conventions. Exact Figure1/Figure11 boundary evidence
+must be inspected before adding the North profile; secondary software tables do
+not supply the implementation authority. Neither remaining profile is currently
+exposed in workers, UI or MCP.
+
 ## Worker, Biology inspector and MCP
 
 The current track engine is `antibody-domain-tracks-3`. Its request context binds

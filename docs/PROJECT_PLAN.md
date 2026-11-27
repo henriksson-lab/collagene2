@@ -4258,3 +4258,16 @@ All six focused native archive/sharing/form cases and the integrated WASM check
 pass for this coherent batch. Graphical/performance and installed-platform acceptance,
 antibody-specific work, unlinked structure publication policy and the full existing
 delivery gates remain in scope. Browser/application HTTP checks remain deferred.
+
+### Unlinked coordinate files in selected-plasmid views
+
+Closure engine `library-document-closure-3` explicitly omits current native
+PDB/mmCIF source attachments from selected public/private plasmid views. They have
+no sequence/event association and cannot block or expand the selected dependency
+scope. Whole-workspace archives preserve original bytes and the source workspace
+is unchanged. Unknown ownership contracts still fail explicitly; RNA declarations
+continue to follow only their exact source events. Native public/private/full-backup
+fixtures (four cases including RNA owner regressions) and the focused portable
+WASM check pass. This resolves the
+identified unlinked-structure publication gap without claiming a coordinate link
+or completing F34 and the existing whole-product acceptance gates.

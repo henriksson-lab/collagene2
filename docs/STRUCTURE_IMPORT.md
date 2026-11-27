@@ -189,3 +189,13 @@ binary roundtrips, exact source/options pins, stale versions, modified geometry,
 source-index filtering and workspace preservation. Camera fixtures cover screen
 coordinates, bounded movement and frontmost picking after rotation. These checks
 do not establish GUI, hardware-performance or vendor-corpus acceptance.
+
+## Selected-plasmid sharing
+
+Imported coordinates currently have no sequence/event association. Full workspace
+backups retain their original bytes. Publishing or locally reopening one selected
+plasmid omits these unlinked coordinate files, preserves the source workspace and
+reports omitted attachment counts. They no longer block an unrelated plasmid's
+publication. Unknown attachment schemas retain the existing explicit refusal;
+there is no automatic upload or guessed coordinate-to-sequence ownership.
+[Publication contract](LAB_LIBRARY_SHARING.md).

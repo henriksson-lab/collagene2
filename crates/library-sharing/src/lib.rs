@@ -14,7 +14,7 @@ use collagene_core::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-pub const ENGINE_VERSION: &str = "library-document-closure-2";
+pub const ENGINE_VERSION: &str = "library-document-closure-3";
 const MAX_REFERENCE_EDGES: usize = 1_000_000;
 
 #[derive(Debug, thiserror::Error)]
@@ -80,8 +80,11 @@ pub struct Projection {
 
 /// The supported run schema has self-contained plans. Standalone candidate
 /// proposals and workspace UI state are not required foreign keys of a plasmid.
-fn presentation(kind: &str) -> bool {
-    kind == collagene_core::assembly_library_history::ACTIVE_DRAFT_KIND
+fn workspace_only(kind: &str) -> bool {
+    // Coordinates currently have no sequence/event association. Retain them in
+    // whole-workspace backups, but never infer plasmid ownership from their bytes.
+    collagene_core::structure_view::source_format(kind).is_some()
+        || kind == collagene_core::assembly_library_history::ACTIVE_DRAFT_KIND
         || kind == collagene_core::domestication_preparation::REVIEW_EVIDENCE_KIND
         || kind == collagene_core::protocol_layout::KIND
         || kind == collagene_core::protocol_quantities::KIND
@@ -205,7 +208,7 @@ impl<'a> Graph<'a> {
             ) {
                 // Ownership is derived later from retained native revisions.
                 // An unrelated documentary original must not block publication.
-            } else if !presentation(&a.kind) {
+            } else if !workspace_only(&a.kind) {
                 // The attachment extension point has no generic foreign-key
                 // contract. Do not guess ownership by matching arbitrary text,
                 // silently discard unknown ancestry, or publish unrelated data.

@@ -144,3 +144,14 @@ The registered crate passes its focused publication and import fixtures in the
 unified native graph. The native server and browser integration consume these
 helpers; complete offline/multi-remote synchronization remains separate work.
 See the current verification checkpoint in [the plan](PROJECT_PLAN.md).
+
+## Unlinked structure coordinates
+
+Current closure engine `library-document-closure-3` recognizes the native
+`structure-source-pdb` and `structure-source-mmcif` attachment roles as unlinked
+workspace data. They neither block nor accompany selected-plasmid publication or
+selected native-local reopen. Their coordinates and metadata do not establish a
+sequence/event relationship, and no owner is guessed from names or raw content.
+Full workspace archives preserve the exact originals; selected views report their
+omission through the existing counts. Unknown attachment contracts still refuse
+publication. Event-bound RNA declarations retain their separate exact-owner rules.

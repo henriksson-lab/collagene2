@@ -1995,3 +1995,14 @@ archive/sharing/form run passes six distinct cases; the integrated WASM check al
 passes. No browser/application HTTP checks were run. Current
 GUI/platform/performance acceptance, unlinked coordinate publication policy,
 antibody-specific work and the full existing delivery gates remain outstanding.
+
+### Unlinked structure publication policy
+
+Selected public/private plasmid views now recognize current native PDB/mmCIF source
+roles as workspace-only data. They do not infer a sequence/event association,
+expand publication scope or block an unrelated plasmid. Full workspace archives
+preserve their exact original bytes. Closure engine 3 retains the separate exact-
+event ownership of RNA declarations; unknown attachment contracts still refuse.
+Four focused native cases and the portable sharing-crate WASM check pass. No
+browser/application HTTP checks were run. This resolves the identified unlinked-
+structure publication gap; antibody analysis and whole-product acceptance remain.

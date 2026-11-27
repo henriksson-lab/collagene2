@@ -14,4 +14,24 @@ Focused fixtures cover a real retained PCR with subsequently edited stock and in
 
 The run-details panel embeds a dedicated review section. Its explicit action sends `PrepareSavedRunReview` to a disposable worker, validates the receipt against the exact workspace, then sends the preserved plan and retained independent target to ordinary current `Verify`. Findings and reconstructed products remain read-only; retained ligation alternatives use the same current evidence viewer. Operation/product lists are paged. No candidate is installed or biological document moved.
 
-The section reuses `AssemblyOutputs` for current HTML/PDF and oligo exports. Its capture callback checks workspace epoch, full workspace fingerprint, exact run attachment, prepared receipt and current report identity before work and again at native file acceptance. Export completion follows the existing acknowledged native file path. Exports are allowed for diagnostic invalid/incomplete reviews with their actual current status; they do not promote them to accepted material. Closing or invalidating the panel terminates its cached worker; nested output workers have their own cleanup and guards. Generic editor handoff remains deferred rather than silently changing the active target.
+The section reuses `AssemblyOutputs` for current HTML/PDF and oligo exports. Its capture callback checks workspace epoch, full workspace fingerprint, exact run attachment, prepared receipt and current report identity before work and again at native file acceptance. Export completion follows the existing acknowledged native file path. Exports are allowed for diagnostic invalid/incomplete reviews with their actual current status; they do not promote them to accepted material. Closing or invalidating the panel terminates its cached worker; nested output workers have their own cleanup and guards. An explicit Edit retained plan action hands a separate candidate to the existing DAG editor. It revalidates the full native receipt and workspace epoch, retains exact source and target events, clears cached reports and leaves viewer heads unchanged. Edits require fresh verification and create a separate run when recorded. Editing preferences are session-only; after restart, prepare the saved run again.
+
+## Native editing acceptance
+
+The native editing fixture prepares a real saved PCR after both its stock and
+intended-target document heads have advanced. It keeps the review receipt
+immutable, edits a separate candidate through `plan_editing::inserted`, adds an
+explicit phosphorylation step, verifies against the retained original intended
+target, and generates current HTML/PDF. Recording the new run uses the receipt's
+original source and target events. The existing heads, history prefix, attachments
+and original run assessment remain unchanged. After native archive restart, the
+new run replays successfully and yields actual phosphorylated PCR material.
+
+At admission the caller rechecks the original receipt against the current native
+workspace. Equal-snapshot aliases cannot replace its exact source or target event.
+An unrelated workspace edit invalidates it, as does a changed run attachment byte
+pin even when the re-encoded record still has identical biological declarations
+and assessment. Generic `record_run` separately accepts explicitly declared new
+source bindings; the saved-review caller must retain these receipt checks rather
+than treating equal DNA as permission to replace a historical event. The web handoff uses the same immutable review and exact event bindings. It does
+not adopt a saved status or mutate the active working document.

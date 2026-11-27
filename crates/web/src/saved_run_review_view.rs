@@ -1,4 +1,4 @@
-//! Dedicated saved-plan review; no editor navigation, target substitution or installation.
+//! Exact saved-plan review and explicit retained-plan editing handoff.
 use crate::{
     saved_run_review_model::{self as model, Scope},
     worker,
@@ -47,6 +47,7 @@ pub fn SavedRunReviewPanel(
     snapshot: Callback<(), Result<Workspace, String>>,
     run_id: String,
     epoch: RwSignal<u64>,
+    on_edit_plan: Callback<Arc<PreparedReview>, Result<(), String>>,
 ) -> impl IntoView {
     let run_id = StoredValue::new(run_id);
     let opened_epoch = epoch.get_untracked();
@@ -228,6 +229,23 @@ pub fn SavedRunReviewPanel(
         model::validate_report(&p, &r)?;
         Ok((p.candidate.plan.clone(), p.target.clone()))
     });
+    let edit = move |_| {
+        let result = (|| -> Result<(), String> {
+            if epoch.get_untracked() != opened_epoch || pending.get_untracked() {
+                return Err("Workspace changed or review is still running.".into());
+            }
+            let p = prepared
+                .get_untracked()
+                .ok_or("Prepare the exact saved plan first.")?;
+            let expected = bound.get_value().ok_or("Review scope is unavailable.")?;
+            let (current, frame) = scope(snapshot, &expected.run_id, epoch.get_untracked())?;
+            model::editing_candidate(&expected, &current, &p, &frame)?;
+            on_edit_plan.run(p)
+        })();
+        if let Err(error) = result {
+            status.set(error);
+        }
+    };
     let identity = Memo::new(move |_| {
         prepared
             .get()
@@ -242,6 +260,7 @@ pub fn SavedRunReviewPanel(
     view! {<details class="saved-run-review"><summary>"Review saved plan and export instructions"</summary>
         <p class="helper">"Uses this run’s retained independent target and exact original source events, even if current documents have changed. No document is rewound or overwritten. Historical status is not adopted."</p>
         <button class="button secondary" disabled=move||pending.get()||epoch.get()!=opened_epoch on:click=review>"Prepare and verify saved plan"</button>
+        <button class="button secondary" disabled={move||pending.get()||prepared.get().is_none()||epoch.get()!=opened_epoch} on:click=edit>"Edit retained plan"</button>
         <Show when=move||pending.get()><button class="text-tool" on:click=cancel>"Cancel review"</button></Show>
         <p role="status">{move||status.get()}</p>
         {move||prepared.get().zip(report.get()).map(|(p,r)|{

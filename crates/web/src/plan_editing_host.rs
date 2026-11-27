@@ -46,9 +46,25 @@ pub fn ManualPlanEditor(
         }
         let initial = candidate.get_untracked();
         let expected_candidate = initial.as_ref().map(|c| c.plan_revision.clone());
-        let target = documents
-            .with_untracked(|docs| docs.get(active.get_untracked()).map(event))
-            .ok_or("Select the candidate's independent target.")?;
+        let pinned = if creating {
+            None
+        } else {
+            preferences
+                .get_untracked()
+                .filter(|p| initial.as_ref().is_some_and(|c| p.0 == c.plan_revision))
+        };
+        if pinned
+            .as_ref()
+            .is_some_and(|p| p.1 != epoch.get_untracked())
+        {
+            return Err("The candidate edit scope changed; prepare it again.".into());
+        }
+        let target = match &pinned {
+            Some(p) => p.2.clone(),
+            None => documents
+                .with_untracked(|docs| docs.get(active.get_untracked()).map(event))
+                .ok_or("Select the candidate's independent target.")?,
+        };
         let original = if creating {
             Candidate::new(DesignPlan {
                 name: "Manual cloning plan".into(),
@@ -61,17 +77,10 @@ pub fn ManualPlanEditor(
             value.validate().map_err(|e| e.to_string())?;
             value
         };
-        if !documents.with_untracked(|docs| {
-            docs.get(active.get_untracked())
-                .is_some_and(|doc| doc.molecule.sequence.alphabet() == Alphabet::Dna)
-        }) {
-            return Err("Choose an independent DNA target document.".into());
-        }
-        if target.revision != original.plan.target_revision {
-            return Err(
-                "Select this candidate's independent target document before editing.".into(),
-            );
-        }
+        documents.with_untracked(|docs| {
+            plan_editing_sources::resolve_target(docs, &target, &original.plan.target_revision)
+                .map(|_| ())
+        })?;
         let mut bindings = BTreeMap::new();
         if let Some((revision, version, preferred_target, preferred)) = preferences
             .get_untracked()
@@ -123,12 +132,16 @@ pub fn ManualPlanEditor(
         {
             return Err("The active candidate changed; reopen the editor.".into());
         }
-        if !documents.with_untracked(|docs| {
-            docs.get(active.get_untracked())
-                .is_some_and(|doc| event(doc) == frame.with_value(|f| f.target.clone()))
-        }) {
-            return Err("The independent target event changed; reopen the editor.".into());
-        }
+        documents.with_untracked(|docs| {
+            frame.with_value(|f| {
+                plan_editing_sources::resolve_target(
+                    docs,
+                    &f.target,
+                    &f.original.plan.target_revision,
+                )
+                .map(|_| ())
+            })
+        })?;
         Ok(())
     });
     let capture_input = Callback::new(
@@ -270,7 +283,8 @@ pub fn ManualPlanEditor(
         })
     });
     let original = frame.with_value(|f| f.original.clone());
-    view! {<p class="helper">"Choose an exact event for each unbound original input. Equal DNA in another document does not choose its ancestry."</p>
+    let target_label=frame.with_value(|f|format!("Independent target: document {} · event {} · revision {}. Viewer navigation does not replace this target.",f.target.document_id,f.target.event_id,f.target.revision));
+    view! {<p class="helper">{target_label}</p><p class="helper">"Choose an exact event for each unbound original input. Equal DNA in another document does not choose its ancestry."</p>
         <p class="helper" role="status">{move||catalog.with(|result|match result {Err(error)=>error.clone(),Ok(catalog) if catalog.omitted>0=>format!("{} additional historical source choices omitted. Activate the wanted event in its document history and reopen this editor to include it as a current source.",catalog.omitted),_=>String::new()})}</p>
         <PlanEditingView candidate=original epoch input_sources capture_input bound_input_ids on_apply=apply on_close/>}.into_any()
 }

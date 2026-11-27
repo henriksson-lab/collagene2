@@ -16,8 +16,9 @@ work remain separate from the independent intended target.
 
 Native verification covers490 distinct cases across core, MCP, UI models and
 sharing after21 corrected-case rechecks. All affected native test callers compile;
-formatting passes. The web/worker WASM check is being corrected for a checked-digest
-button-handler compile error. Browser and application HTTP acceptance remain
+formatting passes. The integrated web/worker WASM check passes, including Golden Gate and
+saved-run editing. The checked-digest handler and Leptos target property compile
+errors were corrected directly. Browser and application HTTP acceptance remain
 deferred until all in-scope code is complete.
 
 Port8082 serves the immutable CI frontend for `6c97320` (worker97). Its13 assets,
@@ -30,10 +31,13 @@ current source fixes their stale wire/option fixtures and coherent historical
 replay evidence, preserving the scientific and unsupported-version assertions.
 Installation, graphical/offline acceptance and new cross-platform CI remain open.
 
-Saved-run editing is the next integration: explicit handoff to the existing DAG
-editor must preserve original source and target events after their document heads
-advance, clear cached assessments and verify edits afresh. Prepared patches are
-under review; they are not yet part of this source checkpoint.
+Saved-run review now explicitly opens a separate candidate in the existing DAG
+editor, preserving original source and target events after document heads advance.
+It clears cached assessments and verifies edits afresh. Output/protocol/capture
+paths use the same retained independent target; recording creates a new run.
+Eighteen focused native cases pass, including saved-PCR editing, phosphorylation,
+HTML/PDF, archive restart and physical replay. Editing preferences are session-only;
+after restart prepare the saved run again. [Contract](RUN_REVIEW.md).
 
 The checkpoint evidence below records earlier implementation stages. Current
 schema and public-preview claims are the ones above.

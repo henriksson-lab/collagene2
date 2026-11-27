@@ -29,26 +29,10 @@ fn capture_binding(
     workspace: &Workspace,
     plan: &DesignPlan,
     inputs: Vec<InputEventBinding>,
+    target: EventBinding,
 ) -> Result<Binding, String> {
     let fingerprint = run_lineage::workspace_fingerprint(workspace).map_err(|e| e.to_string())?;
-    let document = workspace
-        .documents
-        .iter()
-        .find(|d| d.id == workspace.active_document)
-        .ok_or("Choose the independent intended-target document before creating outputs.")?;
-    if document.head != plan.target_revision {
-        return Err(
-            "The active target differs from this plan. Review the intended construct again.".into(),
-        );
-    }
-    let target = EventBinding {
-        document_id: document.id.clone(),
-        event_id: document
-            .head_event
-            .clone()
-            .ok_or("The target has no retained history event.")?,
-        revision: document.head.clone(),
-    };
+    crate::plan_editing_sources::workspace_target(workspace, &target, &plan.target_revision)?;
     let exists = |binding: &EventBinding| {
         workspace.history.iter().any(|event| {
             event.id == binding.event_id
@@ -76,6 +60,7 @@ fn capture_binding(
 #[component]
 pub fn AssemblyFinalizePanel(
     plan: DesignPlan,
+    target: EventBinding,
     preferred_bindings: Vec<InputEventBinding>,
     snapshot: Callback<(), Result<Workspace, String>>,
     recovery_snapshot: Callback<(), Result<Workspace, String>>,
@@ -92,17 +77,19 @@ pub fn AssemblyFinalizePanel(
     let output_target = frame
         .as_ref()
         .ok()
-        .and_then(|frame| frame.head(&frame.active_document).ok())
+        .and_then(|frame| {
+            crate::plan_editing_sources::workspace_target(frame, &target, &plan.target_revision)
+                .ok()
+        })
         .cloned();
-    let default_name = frame
+    let default_name = output_target
         .as_ref()
-        .ok()
-        .and_then(|workspace| workspace.head(&workspace.active_document).ok())
         .map(|m| m.name.clone())
         .filter(|name| !name.trim().is_empty() && name.len() <= 256)
         .unwrap_or_else(|| "Assembly".into());
     let name = RwSignal::new(default_name);
-    let initial = frame.and_then(|frame| capture_binding(&frame, &plan, preferred_bindings));
+    let initial =
+        frame.and_then(|frame| capture_binding(&frame, &plan, preferred_bindings, target));
     let status = RwSignal::new(initial.as_ref().err().cloned().unwrap_or_default());
     let binding = StoredValue::new(initial.ok());
     let plan = StoredValue::new(plan);
@@ -409,6 +396,7 @@ pub fn AssemblyFinalizePanel(
     let run = StoredValue::new_local(run);
     view! {<section class="assembly-finalize-panel">
         <h2>"Create assembly outputs"</h2>
+        <p class="helper">{move||binding.get_value().map(|b|format!("Independent target: document {} · event {} · revision {}",b.target.document_id,b.target.event_id,b.target.revision)).unwrap_or_default()}</p>
         <p>"Reconstruct the plan again and save the final construct with its exact source history. Every reconstructed preparation remains retained, even when hidden from Documents."</p>
         <label>"Construct name"<input aria-label="Assembly output name" maxlength="256" prop:value=move||name.get() disabled=move||busy.get()||completed.get() on:input=move|e|name.set(event_target_value(&e))/></label>
         <label><input type="checkbox" prop:checked=move||show_prepared.get() disabled=move||busy.get()||completed.get() on:change=move|e|show_prepared.set(event_target_checked(&e))/>"Show prepared fragments in Documents"</label>

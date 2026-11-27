@@ -56,6 +56,7 @@ fn binding(workspace: &Workspace, event_id: &str, revision: &str) -> Result<Even
 pub fn RunCapturePanel(
     plan: DesignPlan,
     #[prop(optional)] preferred_bindings: Vec<InputEventBinding>,
+    #[prop(optional_no_strip)] preferred_target: Option<EventBinding>,
     snapshot: Callback<(), Result<Workspace, String>>,
     validate: Callback<Workspace, Result<(), String>>,
     on_restore: Callback<Workspace>,
@@ -67,7 +68,23 @@ pub fn RunCapturePanel(
     message: RwSignal<String>,
 ) -> impl IntoView {
     let initial = snapshot.run(());
-    let status = RwSignal::new(initial.as_ref().err().cloned().unwrap_or_default());
+    let opened_epoch = epoch.get_untracked();
+    let target = initial.as_ref().map_err(Clone::clone).and_then(|frame| {
+        crate::plan_editing_sources::capture_target(
+            frame,
+            preferred_target.as_ref(),
+            &plan.target_revision,
+        )
+    });
+    let status = RwSignal::new(
+        initial
+            .as_ref()
+            .err()
+            .cloned()
+            .or_else(|| target.as_ref().err().cloned())
+            .unwrap_or_default(),
+    );
+    let target = StoredValue::new(target);
     let selected = RwSignal::new(BTreeMap::<String, String>::new());
     if let Ok(frame) = &initial {
         selected.update(|values| {
@@ -110,6 +127,10 @@ pub fn RunCapturePanel(
         if busy.get_untracked() {
             return;
         }
+        if epoch.get_untracked() != opened_epoch {
+            status.set("The workspace changed. Reopen the exact plan before recording.".into());
+            return;
+        }
         let Some(database) = db.get_value() else {
             status.set("Browser storage is unavailable; the run has not been recorded.".into());
             return;
@@ -119,20 +140,10 @@ pub fn RunCapturePanel(
         let result = (|| {
             let frame = snapshot.run(())?;
             let plan = plan.get_value();
-            let target = frame
-                .documents
-                .iter()
-                .find(|d| d.id == frame.active_document)
-                .ok_or("No independent active target document.")?;
-            if target.head != plan.target_revision {
-                return Err("The active target has changed. Reopen the candidate for its intended independent target before recording.".into());
-            }
-            let target_binding = binding(
+            let target_binding = target.get_value()?;
+            crate::plan_editing_sources::workspace_target(
                 &frame,
-                target
-                    .head_event
-                    .as_deref()
-                    .ok_or("Target has no exact history event.")?,
+                &target_binding,
                 &plan.target_revision,
             )?;
             let choices = selected.get_untracked();
@@ -230,10 +241,10 @@ pub fn RunCapturePanel(
     view! {
         <section class="run-capture-panel">
             <p>"Retain every reconstructed step as a document with its exact source events. Recording checks the plan again. It does not establish experimental provenance."</p>
-            <p class="helper">"The active target is an independent comparison and remains active. It is not automatically a causal parent. Identical-content documents require an explicit source choice."</p>
+            <p class="helper">"The pinned target is an independent comparison. Its exact retained event is used without changing the viewer or document heads. It is not automatically a causal parent. Identical-content documents require an explicit source choice."</p>
             {move||initial.get_value().map(|frame|{
                 let plan=plan.get_value();
-                let target=frame.documents.iter().find(|d|d.id==frame.active_document).map(|d|format!("Independent target: document {} · event {}",d.id,d.head_event.as_deref().unwrap_or("missing"))).unwrap_or_else(||"No active target".into());
+                let target=target.get_value().map(|b|format!("Independent target: document {} · event {} · revision {}",b.document_id,b.event_id,b.revision)).unwrap_or_else(|e|e);
                 view!{<p class="run-target-binding">{target}</p>
                     <div class="run-source-bindings">{plan.inputs.iter().skip(page.get()*25).take(25).map(|input|{
                         let id=input.id.clone();let change_id=id.clone();let text_id=id.clone();let selected_id=id.clone();let revision=input.revision.clone();
@@ -391,6 +402,7 @@ fn RunProvenanceStep(
 
 #[component]
 pub fn RunDetailsPanel(
+    on_edit_plan: Callback<Arc<collagene_core::run_review::PreparedReview>, Result<(), String>>,
     snapshot: Callback<(), Result<Workspace, String>>,
     run_id: String,
     epoch: RwSignal<u64>,
@@ -678,7 +690,7 @@ pub fn RunDetailsPanel(
             <p class="run-authority">"Recorded history · unverified on opening"</p>
             <p class="helper">"Saved status and engine describe a historical assessment. Fresh replay is session evidence only. Neither an imported record nor a replay proves which physical reagents were used."</p>
             <RunProvenanceOverview record epoch opened_epoch open_event/>
-            <crate::saved_run_review_view::SavedRunReviewPanel snapshot run_id=run_id.get_value() epoch/>
+            <crate::saved_run_review_view::SavedRunReviewPanel snapshot run_id=run_id.get_value() epoch on_edit_plan/>
             {move||match record.get_value(){
                 Err(error)=>view!{<p role="alert">{error}</p>}.into_any(),
                 Ok(record)=>{

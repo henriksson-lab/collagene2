@@ -155,6 +155,79 @@ pub fn resolve<'a>(
     Ok(molecule)
 }
 
+/// A target is an exact independently selected retained event, not the viewer head.
+pub fn resolve_target<'a>(
+    docs: &'a [DocumentHistory],
+    binding: &EventBinding,
+    expected_revision: &str,
+) -> Result<&'a Molecule, String> {
+    if binding.revision != expected_revision {
+        return Err("The pinned independent target revision differs from this plan.".into());
+    }
+    let molecule = resolve(docs, binding)?;
+    if molecule.sequence.alphabet() != Alphabet::Dna {
+        return Err("Choose an independent DNA target event.".into());
+    }
+    Ok(molecule)
+}
+/// Resolve the same exact event from a native immutable archive before recording outputs.
+pub fn workspace_target<'a>(
+    workspace: &'a collagene_core::workspace::Workspace,
+    binding: &EventBinding,
+    expected_revision: &str,
+) -> Result<&'a Molecule, String> {
+    if binding.revision != expected_revision
+        || !workspace
+            .documents
+            .iter()
+            .any(|d| d.id == binding.document_id)
+        || !workspace.history.iter().any(|e| {
+            e.id == binding.event_id
+                && e.document_id == binding.document_id
+                && e.revision == binding.revision
+        })
+    {
+        return Err(
+            "The exact independent target event is unavailable or belongs to another plan.".into(),
+        );
+    }
+    let molecule = workspace
+        .revisions
+        .get(&binding.revision)
+        .ok_or("The independent target revision is unavailable.")?;
+    if molecule.revision() != expected_revision || molecule.sequence.alphabet() != Alphabet::Dna {
+        return Err("The independent target snapshot differs from this plan.".into());
+    }
+    Ok(molecule)
+}
+/// Capture an explicit target once when an unbound plan is opened. Later calls resolve it.
+pub fn capture_target(
+    workspace: &collagene_core::workspace::Workspace,
+    preferred: Option<&EventBinding>,
+    expected_revision: &str,
+) -> Result<EventBinding, String> {
+    let selected = match preferred {
+        Some(binding) => binding.clone(),
+        None => {
+            let d = workspace
+                .documents
+                .iter()
+                .find(|d| d.id == workspace.active_document)
+                .ok_or("Choose an independent target document.")?;
+            EventBinding {
+                document_id: d.id.clone(),
+                event_id: d
+                    .head_event
+                    .clone()
+                    .ok_or("The target has no exact retained event.")?,
+                revision: d.head.clone(),
+            }
+        }
+    };
+    workspace_target(workspace, &selected, expected_revision)?;
+    Ok(selected)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,5 +338,56 @@ mod tests {
         assert!(catalog(&too_many, &required, 0).is_err());
         let duplicate = vec![docs[0].clone(), docs[0].clone()];
         assert!(resolve(&duplicate, &binding(&docs[0])).is_err());
+    }
+    #[test]
+    fn retained_target_and_source_do_not_follow_later_heads_or_equal_content_aliases() {
+        use collagene_core::workspace::Workspace;
+        let mut source = DocumentHistory::new("source", molecule("AGTCCGAT")).unwrap();
+        let source_event = binding(&source);
+        let mut target = DocumentHistory::new("target", molecule("AGTCCGAT")).unwrap();
+        let target_event = binding(&target);
+        source
+            .commit(molecule("TTTTAAAA"), "Later source edit")
+            .unwrap();
+        target
+            .commit(molecule("CCCCGGGG"), "Later target edit")
+            .unwrap();
+        let docs = vec![source, target];
+        let before = docs.iter().map(binding).collect::<Vec<_>>();
+        assert_eq!(
+            resolve(&docs, &source_event).unwrap().sequence.as_str(),
+            "AGTCCGAT"
+        );
+        assert_eq!(
+            resolve_target(&docs, &target_event, &target_event.revision)
+                .unwrap()
+                .sequence
+                .as_str(),
+            "AGTCCGAT"
+        );
+        let mut workspace =
+            Workspace::from_documents("Unrelated viewer", vec![molecule("AAAATTTT")], 0).unwrap();
+        for doc in &docs {
+            doc.contribute(&mut workspace).unwrap();
+        }
+        workspace.validate().unwrap();
+        assert_eq!(
+            capture_target(&workspace, Some(&target_event), &target_event.revision).unwrap(),
+            target_event
+        );
+        assert!(capture_target(&workspace, None, &target_event.revision).is_err());
+        assert_eq!(
+            workspace_target(&workspace, &target_event, &target_event.revision)
+                .unwrap()
+                .sequence
+                .as_str(),
+            "AGTCCGAT"
+        );
+        let mut wrong = target_event.clone();
+        wrong.document_id = source_event.document_id.clone();
+        assert!(resolve_target(&docs, &wrong, &target_event.revision).is_err());
+        assert!(workspace_target(&workspace, &wrong, &target_event.revision).is_err());
+        assert!(workspace_target(&workspace, &target_event, &"0".repeat(64)).is_err());
+        assert_eq!(docs.iter().map(binding).collect::<Vec<_>>(), before);
     }
 }

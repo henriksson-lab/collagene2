@@ -3156,7 +3156,7 @@ Remaining concrete cloning gaps include
 internal Type IIS domestication beyond circular inverse PCR; methylation-aware
 Golden Gate cleavage/recutting; internal edits across combinatorial library rows;
 generic saved-material mutagenesis/TOPO inputs and prepared TOPO vectors;
-actual-strand-aware reverse sticky-fragment intent; saved-run editing/rehydration; and typed plate/well assignments.
+actual-strand-aware reverse sticky-fragment intent; saved-run editing/rehydration integration (implemented below); and typed plate/well assignments.
 Per-row keep/add TA/GC preparation, read-only fresh saved-run review and direct
 saved-run protocol exports are implemented. Gateway products remain reference-only until actual
 strand crossover/composition is implemented. Map SVG controls are implemented. Wider format corpus checks, GUI
@@ -3319,6 +3319,31 @@ different data. A review found and corrected incompatible generic defaults for
 checked preparative site limits, and incomplete recut scans no longer claim that
 motifs were observed. Native verification covers490 distinct cases:469 initially
 passed and21 corrected cases passed their exact rechecks. All affected native test
-callers compile. Web/worker WASM validation is running; browser and application
-HTTP acceptance remain deferred. Remaining F13 work includes internal Type IIS
+callers compile. The integrated web/worker WASM check passes, including the
+saved-run editing integration below. Browser and application HTTP acceptance
+remain deferred. Remaining F13 work includes internal Type IIS
 domestication and library-row internal edits; this checkpoint does not complete F13.
+
+
+### Retained-run editing in the existing plan editor
+
+Saved-run review now offers an explicit Edit retained plan action. It validates
+the exact native workspace, run attachment and opening epoch before installing a
+separate candidate in the existing DAG editor. Original source and independent
+target events remain pinned even when document heads have advanced or another
+document is displayed. Cached reports and output acceptance are cleared; edits
+require fresh verification. Protocol export, product inspection, output finalization
+and run capture resolve the same retained target. They neither rewind heads nor
+substitute an equal-content event. Recording creates a separate run. Editing
+preferences are session-only; after restart, prepare the saved run again.
+
+Eighteen focused native cases pass, including real saved-PCR editing followed by
+explicit phosphorylation, HTML/PDF, new-run recording, archive restart and fresh
+physical replay. Cases retain old heads, history and assessments and reject
+event aliases and stale native receipts. The combined web/worker WASM compiler
+check and formatting pass. No browser or application HTTP checks were performed.
+
+Parallel F27 work is implementing documentary96/384-well protocol assignments
+bound to exact planned constructs or released product events. This is not
+inventory, physical-sample tracking, instrument automation or scheduling. Current
+source does not yet include the plate-layout patches.

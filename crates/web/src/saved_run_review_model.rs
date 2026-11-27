@@ -30,6 +30,21 @@ impl Scope {
         Ok(())
     }
 }
+/// Bind an editing handoff to the unchanged exact native review, not current heads.
+pub fn editing_candidate(
+    expected: &Scope,
+    current: &Scope,
+    prepared: &PreparedReview,
+    workspace: &collagene_core::workspace::Workspace,
+) -> Result<collagene_core::transfer::Candidate, String> {
+    expected.permit(current)?;
+    expected.validate_prepared(prepared)?;
+    prepared
+        .validate_for_workspace(workspace)
+        .map_err(|e| e.to_string())?;
+    Ok(prepared.candidate.clone())
+}
+
 pub fn validate_report(p: &PreparedReview, r: &VerificationReport) -> Result<(), String> {
     if r.engine_version != verification::ENGINE_VERSION
         || r.plan_revision != p.candidate.plan_revision
@@ -156,5 +171,26 @@ mod tests {
         scope.validate_prepared(&p).unwrap();
         scope.run_attachment_hash = "00".repeat(32);
         assert!(scope.validate_prepared(&p).is_err());
+    }
+    #[test]
+    fn editing_handoff_keeps_retained_events_and_rejects_changed_scope() {
+        let (workspace, prepared, _) = fixture();
+        let scope = bound(&workspace, &prepared, 12);
+        let candidate = editing_candidate(&scope, &scope, &prepared, &workspace).unwrap();
+        assert_eq!(candidate.plan_revision, prepared.candidate.plan_revision);
+        assert_eq!(
+            candidate.plan.target_revision,
+            prepared.target_event.revision
+        );
+        assert_eq!(
+            run_lineage::workspace_fingerprint(&workspace).unwrap(),
+            scope.workspace_fingerprint
+        );
+        let mut later = scope.clone();
+        later.epoch += 1;
+        assert!(editing_candidate(&scope, &later, &prepared, &workspace).is_err());
+        let mut forged = prepared.clone();
+        forged.inputs[0].event.event_id = "00".repeat(32);
+        assert!(editing_candidate(&scope, &scope, &forged, &workspace).is_err());
     }
 }

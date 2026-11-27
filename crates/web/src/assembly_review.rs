@@ -71,19 +71,7 @@ pub fn stage_existing(
         return Err("Pinned input count differs from the candidate output profile.".into());
     }
     let docs = DocumentHistory::restore_all(frame).map_err(|e| e.to_string())?;
-    let intended = docs
-        .iter()
-        .find(|doc| doc.id == frame.active_document)
-        .ok_or("No active independent target document is retained.")?;
-    if intended.id != target.document_id
-        || intended.head_event() != target.event_id
-        || intended.head_revision() != target.revision
-        || target.revision != candidate.plan.target_revision
-    {
-        return Err(
-            "The exact active intended-target event changed; review the plan again.".into(),
-        );
-    }
+    crate::plan_editing_sources::resolve_target(&docs, target, &candidate.plan.target_revision)?;
     for (input, pinned) in candidate.plan.inputs.iter().zip(sources) {
         if input.id != pinned.input_id {
             return Err("Ordered pinned input identities differ from the candidate.".into());
@@ -1214,7 +1202,7 @@ mod tests {
         );
     }
     #[test]
-    fn existing_target_outputs_reject_alias_substitution_and_same_dna_new_target_events() {
+    fn existing_target_outputs_reject_alias_substitution_and_keep_the_exact_retained_target() {
         let (mut frame, target, sources, candidate) = existing_fixture();
         let alias = DocumentHistory::new(
             "equal-source-alias",
@@ -1257,12 +1245,16 @@ mod tests {
             doc.contribute(&mut frame).unwrap();
         }
         let before = serde_json::to_value(&frame).unwrap();
-        assert!(stage_existing(&frame, &candidate, &target, &sources).is_err());
+        let retained = stage_existing(&frame, &candidate, &target, &sources).unwrap();
+        assert_eq!(retained.target, target);
         assert_eq!(serde_json::to_value(&frame).unwrap(), before);
         assert!(stage_existing(&frame, &candidate, &next, &sources).is_ok());
+        let mut foreign = target.clone();
+        foreign.document_id = sources[0].event.document_id.clone();
+        assert!(stage_existing(&frame, &candidate, &foreign, &sources).is_err());
     }
     #[test]
-    fn existing_target_outputs_require_ordered_unique_input_ids_and_the_active_target() {
+    fn existing_target_outputs_require_ordered_unique_input_ids_and_a_retained_target() {
         let (mut frame, target, mut sources, candidate) = existing_fixture();
         let mut plan = candidate.plan;
         let mut second = plan.inputs[0].clone();
@@ -1282,7 +1274,9 @@ mod tests {
         assert!(stage_existing(&frame, &candidate, &target, &incorrect).is_err());
         assert!(stage_existing(&frame, &candidate, &target, &sources[..1]).is_err());
         frame.active_document = sources[0].event.document_id.clone();
-        assert!(stage_existing(&frame, &candidate, &target, &sources).is_err());
+        let staged = stage_existing(&frame, &candidate, &target, &sources).unwrap();
+        assert_eq!(staged.target, target);
+        assert_eq!(staged.workspace.active_document, frame.active_document);
     }
     #[test]
     fn target_and_candidate_install_atomically_without_a_positive_check() {

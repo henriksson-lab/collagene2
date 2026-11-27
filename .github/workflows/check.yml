@@ -27,6 +27,7 @@ jobs:
       - run: python scripts/mcp_smoke.py
       # Application HTTP checks remain deferred under AGENTS.md.
       - run: python scripts/test_serve_preview.py PreviewBoundary.test_snapshot_stays_read_only_when_disk_changes PreviewBoundary.test_symlinks_are_rejected
+      - run: python scripts/test_stage_preview.py
   web:
     runs-on: ubuntu-latest
     steps:

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Stage a bounded compiled preview, keeping old versioned workers for open tabs.
+"""Stage one bounded current compiled preview.
 
 This copies only validated static snapshots. It grants no application filesystem
-capability, executes no asset and deliberately drops obsolete main bundles.
+capability, executes no asset.
 """
 import argparse
 import base64
@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 import re
 from urllib.parse import unquote, urlsplit
-from serve_preview import MAX_FILES, MAX_TOTAL_BYTES, snapshot
+from serve_preview import snapshot
 
 WORKER = re.compile(r"/workers/[0-9a-f]{64}/analysis-worker(?:_loader\.js|\.js|_bg\.wasm)\Z")
 
@@ -53,8 +53,11 @@ def validate_assets(assets):
     active = re.fullmatch(r"/workers/([0-9a-f]{64})/analysis-worker_loader\.js", index.workers[0])
     if active is None:
         raise ValueError("Active worker must have a versioned snapshot path.")
-    worker_hashes = {active.group(1)}
-    worker_hashes.update(path.split("/")[2] for path in assets if WORKER.fullmatch(path))
+    if any(path.startswith("/workers/") and not WORKER.fullmatch(path) for path in assets):
+        raise ValueError("Unexpected asset in the analysis-worker namespace.")
+    worker_hashes = {path.split("/")[2] for path in assets if WORKER.fullmatch(path)}
+    if worker_hashes != {active.group(1)}:
+        raise ValueError("A preview must contain only its current analysis worker.")
     for version in worker_hashes:
         for name in ("analysis-worker_loader.js", "analysis-worker.js", "analysis-worker_bg.wasm"):
             if f"/workers/{version}/{name}" not in assets:
@@ -88,27 +91,10 @@ def validate_assets(assets):
     }
 
 
-def stage(build, previous, output, verify_assets=False, previous_active_only=False):
-    assets = dict(snapshot(build))
-    for old_root in previous:
-        old_assets = snapshot(old_root)
-        old_active = None
-        if previous_active_only:
-            old_active = validate_assets(old_assets)["active_worker"]
-        for path, asset in old_assets.items():
-            if not WORKER.fullmatch(path):
-                continue
-            if path in assets and assets[path][0] != asset[0]:
-                raise ValueError("A versioned worker path has conflicting bytes.")
-            if old_active is not None and path.split("/")[2] != old_active:
-                continue
-            assets.setdefault(path, asset)
-        del old_assets
+def stage(build, output):
+    assets = snapshot(build)
+    validate_assets(assets)
     total = sum(len(asset[0]) for asset in assets.values())
-    if len(assets) > MAX_FILES or total > MAX_TOTAL_BYTES:
-        raise ValueError("Merged preview exceeds immutable server limits.")
-    if verify_assets:
-        validate_assets(assets)
     # A new destination prevents accidental overwrites of an existing release.
     output = Path(output)
     output.mkdir(parents=False, exist_ok=False)
@@ -123,21 +109,15 @@ def stage(build, previous, output, verify_assets=False, previous_active_only=Fal
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build", type=Path, required=True)
-    parser.add_argument("--previous", type=Path, action="append", default=[])
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--previous-active-only", action="store_true", help="Keep only each previous snapshot's active worker, rather than its full historical worker collection")
-    parser.add_argument("--verify-assets", action="store_true", help="Validate index references, integrity digests and complete versioned workers before staging")
-    parser.add_argument("--manifest", type=Path, help="Write static verification evidence to a new file (requires --verify-assets)")
+    parser.add_argument("--manifest", type=Path, help="Write static verification evidence to a new file")
     args = parser.parse_args()
-    if args.manifest and not args.verify_assets:
-        parser.error("--manifest requires --verify-assets")
     if args.manifest and args.manifest.exists():
         parser.error("Manifest destination already exists")
-    files, total = stage(args.build, args.previous, args.output, args.verify_assets, args.previous_active_only)
+    files, total = stage(args.build, args.output)
     if args.manifest:
         evidence = validate_assets(snapshot(args.output))
         evidence["root"] = str(args.output.resolve())
-        evidence["previous_active_only"] = args.previous_active_only
         with args.manifest.open("x") as target:
             json.dump(evidence, target, indent=2)
             target.write("\n")

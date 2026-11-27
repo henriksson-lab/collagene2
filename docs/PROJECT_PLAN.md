@@ -3286,3 +3286,12 @@ Five stale internal-wire tests are corrected without restoring older decoders:
 current success/size checks use current headers, while unsupported headers retain
 typed rejection. Their five focused runtime checks pass; current scientific assertions remain
 intact. Two static preview boundary cases also pass without HTTP requests.
+
+
+Preview staging now requires one current worker bundle and always validates its
+static references and integrity before writing a new immutable snapshot. Older
+worker-retention flags, merge logic and compatibility-only tests are removed.
+Three offline staging tests pass, including rejection of a second worker version;
+CI runs them with the two static preview-boundary cases. Application HTTP and
+browser checks remain deferred. Port8082 is refreshed from the CI frontend for
+62474ba; the newer TOPO frontend awaits its CI artifact.

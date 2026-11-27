@@ -2,11 +2,9 @@
 
 A molecular cloning workspace in Rust, WebAssembly and Leptos, with WebGL2 maps and deterministic design verification. [MIT licensed](LICENSE). In active development.
 
-![Sequence editor and circular plasmid map](docs/images/collagene-workspace.png)
-
 ![Vector assembly with selected backbone and insert](docs/images/collagene-assembly.png)
 
-*Development screenshots, 27 November 2026. Assembly example uses synthetic sequences.*
+*Development screenshot, 27 November 2026. Assembly example uses synthetic sequences.*
 
 ## Install and start
 

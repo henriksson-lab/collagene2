@@ -50,6 +50,15 @@ pub fn ComparePanel(
     source_info: Callback<usize, Option<SourceInfo>>,
     resolve: Callback<EventBinding, Result<Molecule, String>>,
     epoch: RwSignal<u64>,
+    prepare_similarity: Callback<
+        (
+            EventBinding,
+            Vec<usize>,
+            collagene_core::sequence_similarity::Options,
+        ),
+        Result<crate::sequence_similarity_model::Prepared, String>,
+    >,
+    guard_similarity: Callback<crate::sequence_similarity_model::Capture, Result<(), String>>,
     saved: Memo<Vec<Summary>>,
     on_save: Callback<Record, Result<(), String>>,
     on_reopen: Callback<String, Result<Record, String>>,
@@ -411,6 +420,7 @@ pub fn ComparePanel(
     view!{
         <style>".compare-panel .compare-scores{display:grid;grid-template-columns:1fr 1fr;gap:8px}.compare-panel pre{font:11px/1.6 monospace;white-space:pre;overflow:auto;max-height:420px}.compare-panel .compare-result{font-size:13px;line-height:1.6;overflow-wrap:anywhere}.compare-panel .compare-difference{padding:8px 0;border-bottom:1px solid #edf1ed}.compare-panel .compare-difference code{display:block;white-space:pre-wrap;overflow-wrap:anywhere}.compare-panel .compare-warning{color:#796a3e}.compare-panel details{margin:10px 0}"</style>
         <div class="inspector-content compare-panel">
+            <crate::sequence_similarity_view::SimilaritySearchPanel active_source=active_source subjects=query_options source_info=source_info epoch=epoch prepare=prepare_similarity guard=guard_similarity on_navigate=on_navigate/>
             <h2>"Pairwise comparison"</h2>
             <p class="helper">{move||reference.with(|r|format!("Pinned reference: {}. Source navigation keeps this reference fixed.",r.molecule.name))}</p>
             <button class="button secondary full" on:click=pin_active>"Use active document as reference"</button>

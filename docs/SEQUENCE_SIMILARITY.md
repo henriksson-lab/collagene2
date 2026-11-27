@@ -1,8 +1,9 @@
 # Sequence similarity across selected documents
 
-The native `sequence_similarity` module supplies the scientific core for F33
-collection similarity search. Worker, web and MCP integration remain required;
-this is not yet an application control.
+The native `sequence_similarity` module, binary worker, Compare panel and
+`search_sequence_library` MCP tool share one bounded collection-search profile.
+The scientific engine is `sequence-similarity-2`; the current worker schema is
+114 (job191, result181). Previous worker versions are rejected directly.
 
 Each query/subject has a bounded stable source key and its full typed molecule.
 The report context binds those keys, exact molecule revisions, source order,
@@ -66,12 +67,34 @@ source identity, RNA, incompatible alphabets, cancellation and resource limits.
 These fixtures establish the bounded core profile, not end-to-end application
 or whole-genome search acceptance.
 
-## Required application integration
+## Application workflow
 
-The worker boundary must bind the current report version/context and bounded
-subject/result shape; it must not accept a producer's completeness claim as a
-cloning verification result. Web controls must capture exact query/subject event
-bindings plus the workspace epoch, so equal-content source changes still cancel
-stale results. Source navigation uses the retained original spans and never edits
-sequence origins. MCP must resolve immutable document references and return
-bounded analysis evidence, with no candidate/material installation implied.
+Open **Compare → Search similar sequences in this workspace**. The active
+DNA/RNA document is initially pinned as the query. **Use active document as query**
+changes it explicitly; navigating a match does not retarget the pinned query.
+Choose the document scope, review **Scoring and search limits**, then search.
+Matching documents are selected by default, excluding the query itself; selecting
+the query explicitly is valid. Missing documents and more than128 selections
+require scope review rather than silent truncation.
+
+Results show score, paired-query coverage, strand and circular seams. Click a
+match to navigate its exact source event and original coordinates. Results page
+20 rows at a time. **Search evidence and limits** retains unsearched/incomplete
+rows; **Download search evidence** includes report and exact event captures.
+Changing sources, event identities, options, scope or workspace epoch invalidates
+results and terminates pending work. Cancel/close also terminate the isolated
+worker. Biological documents and origins are never edited by navigation.
+
+The borrowed native preflight runs before selected molecules are cloned. Worker
+responses check the current engine, source/options context, bounded dimensions,
+statistics, ranking and completeness consistency. Web captures additionally bind
+every selected event, alphabet, topology and length; equal-content events cannot
+retarget a reply. Completeness is evidence about this declared search profile,
+never molecular verification authority.
+
+MCP resolves immutable `DocumentRef` query/subject handles through its session
+store and applies the same borrowed preflight before cloning. The tool returns
+bounded summaries plus a complete JSON artifact, with explicit incomplete rows.
+Stale handles fail before analysis. No document, candidate, material or cloning
+run is installed. This profile searches explicitly loaded workspace/session
+subjects; a server-wide or genomic indexed similarity service is not claimed.

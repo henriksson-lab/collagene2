@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-pub const ENGINE_VERSION: &str = "sequence-similarity-1";
+pub const ENGINE_VERSION: &str = "sequence-similarity-2";
 pub const MAX_SUBJECTS: usize = 128;
 pub const MAX_SOURCE_BASES: usize = 8 * 1024 * 1024;
 pub const MAX_WORK: usize = 128_000_000;
@@ -108,6 +108,8 @@ pub struct SubjectReport {
     pub key: String,
     pub revision: String,
     pub length: usize,
+    pub alphabet: Alphabet,
+    pub topology: Topology,
     pub best: Option<Hit>,
     pub best_score_proven: bool,
     pub score_upper_bound_reached: bool,
@@ -123,6 +125,8 @@ pub struct Report {
     pub context_revision: String,
     pub query_key: String,
     pub query_revision: String,
+    pub query_length: usize,
+    pub query_alphabet: Alphabet,
     pub options: Options,
     pub subjects: Vec<SubjectReport>,
     pub hits: Vec<Hit>,
@@ -139,21 +143,39 @@ fn valid_key(s: &str) -> bool {
 }
 /// Bounds before source validation, hashing, rotating or allocating matrices.
 pub fn preflight(query: &Source, subjects: &[Source], options: &Options) -> Result<(), Error> {
+    if subjects.len() > MAX_SUBJECTS {
+        return Err(Error::TooLarge);
+    }
+    preflight_borrowed(
+        (&query.key, &query.molecule),
+        &subjects
+            .iter()
+            .map(|s| (s.key.as_str(), &s.molecule))
+            .collect::<Vec<_>>(),
+        options,
+    )
+}
+/// Native/UI callers check borrowed models before cloning a requested collection.
+pub fn preflight_borrowed(
+    query: (&str, &Molecule),
+    subjects: &[(&str, &Molecule)],
+    options: &Options,
+) -> Result<(), Error> {
     options.validate()?;
-    if subjects.is_empty() || subjects.len() > MAX_SUBJECTS || !valid_key(&query.key) {
+    if subjects.is_empty() || subjects.len() > MAX_SUBJECTS || !valid_key(query.0) {
         return Err(bad("invalid query key or subject count"));
     }
     let mut budget = crate::model::bounds::ModelBudget::default();
-    budget.molecule(&query.molecule)?;
-    let mut bases = query.molecule.sequence.len();
+    budget.molecule(query.1)?;
+    let mut bases = query.1.sequence.len();
     let mut keys = BTreeSet::new();
-    for subject in subjects {
-        if !valid_key(&subject.key) || !keys.insert(subject.key.as_str()) {
+    for &(key, molecule) in subjects {
+        if !valid_key(key) || !keys.insert(key) {
             return Err(bad("subject keys must be bounded and unique"));
         }
-        budget.molecule(&subject.molecule)?;
+        budget.molecule(molecule)?;
         bases = bases
-            .checked_add(subject.molecule.sequence.len())
+            .checked_add(molecule.sequence.len())
             .ok_or(Error::TooLarge)?;
     }
     if bases > MAX_SOURCE_BASES {
@@ -161,6 +183,7 @@ pub fn preflight(query: &Source, subjects: &[Source], options: &Options) -> Resu
     }
     Ok(())
 }
+
 pub fn context_revision(
     query: &Source,
     subjects: &[Source],
@@ -175,16 +198,20 @@ pub fn context_revision(
     for s in subjects {
         s.molecule.validate()?;
     }
-    crate::assembly_recipe::hash(&(
-        ENGINE_VERSION,
-        &query.key,
-        query.molecule.revision(),
-        subjects
+    let query_revision = query.molecule.revision();
+    let revisions = subjects
+        .iter()
+        .map(|s| s.molecule.revision())
+        .collect::<Vec<_>>();
+    bind_revisions(
+        (&query.key, &query_revision),
+        &subjects
             .iter()
-            .map(|s| (&s.key, s.molecule.revision()))
+            .zip(&revisions)
+            .map(|(s, r)| (s.key.as_str(), r.as_str()))
             .collect::<Vec<_>>(),
         options,
-    ))
+    )
 }
 fn spans(start: usize, length: usize, n: usize) -> Vec<Span> {
     if length == 0 {
@@ -339,6 +366,8 @@ pub fn search(
             key: subject.key.clone(),
             revision: subject.molecule.revision(),
             length: n,
+            alphabet: subject.molecule.sequence.alphabet(),
+            topology: subject.molecule.topology,
             best: None,
             best_score_proven: false,
             score_upper_bound_reached: false,
@@ -486,6 +515,201 @@ pub fn search(
         rows.push(row);
     }
     let complete = rows.iter().all(|r| r.best_score_proven);
+    let (hits, hits_truncated) = ranked_hits(&rows, options);
+    let warnings=vec!["One best-scoring local match per subject. Repeated/tied occurrences are not enumerated; scores are declared-model affine scores, not BLAST E-values or experimental identity.".into(),"The query is its stored linear sequence (and optional reverse complement). Subject circular origins are bounded; untested origins or resource/cancellation limits keep best-score completeness false unless the mathematical score upper bound was reached.".into(),"Canonical full-query exact matches attain the maximum possible score and use bounded substring scans instead of a DP matrix. Ambiguous bases never receive invented certain matches.".into()];
+    let report = Report {
+        engine_version: ENGINE_VERSION.into(),
+        context_revision,
+        query_key: query.key.clone(),
+        query_revision: query.molecule.revision(),
+        query_length: m,
+        query_alphabet: q.alphabet(),
+        options: options.clone(),
+        subjects: rows,
+        hits,
+        complete,
+        hits_truncated,
+        work_used: work.used,
+        warnings,
+    };
+    report.validate_binding(&report.context_revision)?;
+    Ok(report)
+}
+
+fn digest(s: &str) -> bool {
+    s.len() == 64
+        && s.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+impl Report {
+    /// Context/shape validation, not a new scientific verdict. Imported summaries
+    /// cannot authorize material, sample identity or a cloning plan.
+    pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
+        self.options.validate()?;
+        if self.engine_version != ENGINE_VERSION
+            || !digest(expected)
+            || self.context_revision != expected
+            || !digest(&self.query_revision)
+            || !valid_key(&self.query_key)
+            || self.query_length == 0
+            || self.query_length > MAX_SOURCE_BASES
+            || self.query_alphabet == Alphabet::Protein
+            || self.subjects.is_empty()
+            || self.subjects.len() > MAX_SUBJECTS
+            || self.hits.len() > self.options.max_hits
+            || self.work_used > self.options.max_work
+            || self.warnings.len() > 16
+            || self.warnings.iter().any(|w| w.len() > 4096)
+        {
+            return Err(bad("invalid bounded report or engine/context"));
+        }
+        let upper = (self.query_length as u64)
+            .checked_mul(self.options.scoring.match_score as u64)
+            .filter(|n| *n <= 500_000_000)
+            .ok_or_else(|| bad("report score bound"))? as i32;
+        let mut keys = BTreeSet::new();
+        let mut bases = self.query_length;
+        for row in &self.subjects {
+            bases = bases
+                .checked_add(row.length)
+                .filter(|n| *n <= MAX_SOURCE_BASES)
+                .ok_or(Error::TooLarge)?;
+            if !valid_key(&row.key)
+                || !keys.insert(row.key.as_str())
+                || !digest(&row.revision)
+                || row.evaluated_origins.len() > self.options.max_origins
+                || row.alignments_evaluated > 2 * self.options.max_origins
+                || row.limits.len() > 8
+                || row
+                    .limits
+                    .iter()
+                    .any(|l| matches!(l,Limit::AlignmentUnavailable(s) if s.len()>4096))
+                || row.evaluated_origins.iter().any(|o| *o >= row.length)
+                || row.evaluated_origins.windows(2).any(|w| w[0] >= w[1])
+                || (row.score_upper_bound_reached
+                    && (!row.best_score_proven
+                        || row.best.as_ref().is_none_or(|h| h.score != upper)))
+                || (row.best_score_proven
+                    && !row.score_upper_bound_reached
+                    && !row.limits.is_empty())
+            {
+                return Err(bad("invalid subject report"));
+            }
+            if row.alphabet != self.query_alphabet
+                && (row.best.is_some() || row.best_score_proven || row.alignments_evaluated > 0)
+            {
+                return Err(bad("incompatible subject has search evidence"));
+            }
+            if row.best_score_proven && !row.score_upper_bound_reached {
+                let required = if row.length == 0 {
+                    0
+                } else if row.topology == Topology::Circular {
+                    row.length
+                } else {
+                    1
+                };
+                let orientations = if self.options.both_query_strands {
+                    2
+                } else {
+                    1
+                };
+                if row.evaluated_origins.len() != required
+                    || row.alignments_evaluated != required * orientations
+                {
+                    return Err(bad("unsearched origins/strands claimed complete"));
+                }
+            }
+            if let Some(hit) = &row.best {
+                self.validate_hit(row, hit, upper)?;
+            }
+        }
+        if bind_revisions(
+            (&self.query_key, &self.query_revision),
+            &self
+                .subjects
+                .iter()
+                .map(|s| (s.key.as_str(), s.revision.as_str()))
+                .collect::<Vec<_>>(),
+            &self.options,
+        )? != self.context_revision
+        {
+            return Err(bad("report source/options binding changed"));
+        }
+        let (hits, truncated) = ranked_hits(&self.subjects, &self.options);
+        if self.hits != hits
+            || self.hits_truncated != truncated
+            || self.complete != self.subjects.iter().all(|r| r.best_score_proven)
+        {
+            return Err(bad("report ranking/completeness changed"));
+        }
+        Ok(())
+    }
+    fn validate_hit(&self, row: &SubjectReport, h: &Hit, upper: i32) -> Result<(), Error> {
+        if h.subject_key != row.key
+            || h.subject_revision != row.revision
+            || h.score < 1
+            || h.score > upper
+            || row.length == 0
+            || h.reference_origin >= row.length
+            || h.query_span.start >= h.query_span.end
+            || h.query_span.end > self.query_length
+            || h.reference_spans.is_empty()
+            || h.reference_spans.len() > 2
+            || h.reference_spans
+                .iter()
+                .any(|s| s.start >= s.end || s.end > row.length)
+            || (h.reference_spans.len() == 2
+                && (h.reference_spans[0].end != row.length
+                    || h.reference_spans[1].start != 0
+                    || h.reference_spans[0].start < h.reference_spans[1].end))
+            || (!self.options.both_query_strands && h.query_reversed)
+        {
+            return Err(bad("invalid original-source hit coordinates"));
+        }
+        let s = &h.statistics;
+        let counts = [
+            s.columns,
+            s.paired_bases,
+            s.certain_matches,
+            s.ambiguous_compatible,
+            s.mismatches,
+            s.inserted_query_bases,
+            s.deleted_reference_bases,
+            s.reference_span_bases,
+            s.query_span_bases,
+        ];
+        if counts.iter().any(|n| *n > 2 * MAX_SOURCE_BASES) {
+            return Err(Error::TooLarge);
+        }
+        let reference_span = h
+            .reference_spans
+            .iter()
+            .map(|s| s.end - s.start)
+            .sum::<usize>();
+        if s.paired_bases == 0
+            || s.paired_bases != s.certain_matches + s.ambiguous_compatible + s.mismatches
+            || s.columns != s.paired_bases + s.inserted_query_bases + s.deleted_reference_bases
+            || s.reference_span_bases != reference_span
+            || reference_span != s.paired_bases + s.deleted_reference_bases
+            || s.query_span_bases != h.query_span.end - h.query_span.start
+            || s.query_span_bases != s.paired_bases + s.inserted_query_bases
+            || s.reference_coverage != s.paired_bases as f64 / row.length as f64
+            || s.query_coverage != s.paired_bases as f64 / self.query_length as f64
+            || s.certain_identity != Some(s.certain_matches as f64 / s.paired_bases as f64)
+            || s.compatible_identity
+                != Some((s.certain_matches + s.ambiguous_compatible) as f64 / s.paired_bases as f64)
+            || (h.method == Method::ExactCanonicalSubstring
+                && (h.score != upper
+                    || s.certain_matches != self.query_length
+                    || s.columns != self.query_length))
+        {
+            return Err(bad("hit statistics changed"));
+        }
+        Ok(())
+    }
+}
+
+fn ranked_hits(rows: &[SubjectReport], options: &Options) -> (Vec<Hit>, bool) {
     let mut hits = rows
         .iter()
         .filter_map(|r| r.best.clone())
@@ -502,20 +726,15 @@ pub fn search(
             .then_with(|| b.statistics.paired_bases.cmp(&a.statistics.paired_bases))
             .then_with(|| a.subject_key.cmp(&b.subject_key))
     });
-    let hits_truncated = hits.len() > options.max_hits;
+    let truncated = hits.len() > options.max_hits;
     hits.truncate(options.max_hits);
-    let warnings=vec!["One best-scoring local match per subject. Repeated/tied occurrences are not enumerated; scores are declared-model affine scores, not BLAST E-values or experimental identity.".into(),"The query is its stored linear sequence (and optional reverse complement). Subject circular origins are bounded; untested origins or resource/cancellation limits keep best-score completeness false unless the mathematical score upper bound was reached.".into(),"Canonical full-query exact matches attain the maximum possible score and use bounded substring scans instead of a DP matrix. Ambiguous bases never receive invented certain matches.".into()];
-    Ok(Report {
-        engine_version: ENGINE_VERSION.into(),
-        context_revision,
-        query_key: query.key.clone(),
-        query_revision: query.molecule.revision(),
-        options: options.clone(),
-        subjects: rows,
-        hits,
-        complete,
-        hits_truncated,
-        work_used: work.used,
-        warnings,
-    })
+    (hits, truncated)
+}
+
+fn bind_revisions(
+    query: (&str, &str),
+    subjects: &[(&str, &str)],
+    options: &Options,
+) -> Result<String, Error> {
+    crate::assembly_recipe::hash(&(ENGINE_VERSION, query.0, query.1, subjects, options))
 }

@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 113;
+pub const WORKER_SCHEMA_VERSION: u16 = 114;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 31;
 
 // Current selectors whose accepted payloads can contain complete workspace archives.
@@ -15,7 +15,7 @@ const WORKSPACE_REQUEST_SELECTORS: &[u32] = &[
     19, 20, 42, 43, 69, 72, 82, 83, 84, 85, 96, 100, 103, 104, 105, 106, 107, 126, 128, 129, 132,
     133, 140, 145, 146, 150, 153, 154, 156, 157, 158, 159, 160, 161, 163, 164, 165, 166, 167, 168,
     169, 170, 171, 172, 173, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188,
-    189, 190,
+    189, 190, 191,
 ];
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -1085,6 +1085,11 @@ pub enum AnalysisJob {
         bottom: crate::run_lineage::EventBinding,
         options: crate::chemistry::AnnealOptions,
     },
+    FindSimilarSequences {
+        query: crate::sequence_similarity::Source,
+        subjects: Vec<crate::sequence_similarity::Source>,
+        options: crate::sequence_similarity::Options,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1278,6 +1283,7 @@ pub enum AnalysisResult {
     MaterialOverlapExtensionPreview(crate::material_derivation::OverlapExtensionPreview),
     MaterialTerminalProcessingPreview(crate::material_derivation::TerminalProcessingPreview),
     MaterialAnnealedOligosPreview(crate::material_derivation::AnnealedOligosPreview),
+    SequenceSimilarity(crate::sequence_similarity::Report),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1456,6 +1462,13 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             crate::material_derivation::annealed_oligos_preview_revision(
                 workspace, top, bottom, options,
             )?;
+        }
+        AnalysisJob::FindSimilarSequences {
+            query,
+            subjects,
+            options,
+        } => {
+            crate::sequence_similarity::preflight(query, subjects, options)?;
         }
         AnalysisJob::InstallMaterialDerivation { workspace, request } => {
             crate::material_derivation::preflight(workspace, request)?;
@@ -1840,6 +1853,7 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::InspectMaterialOverlapExtension { .. }
             | AnalysisJob::InspectMaterialTerminalProcessing { .. }
             | AnalysisJob::InspectMaterialAnnealedOligos { .. }
+            | AnalysisJob::FindSimilarSequences { .. }
             | AnalysisJob::InspectMaterialDigest { .. }
             | AnalysisJob::PrepareSavedRunReview { .. }
             | AnalysisJob::PreviewProtocolLayout { .. }
@@ -1921,6 +1935,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             report.validate_binding(&response.revision)?;
         }
         AnalysisResult::MaterialAnnealedOligosPreview(report) => {
+            report.validate_binding(&response.revision)?;
+        }
+        AnalysisResult::SequenceSimilarity(report) => {
             report.validate_binding(&response.revision)?;
         }
         AnalysisResult::MaterialDerivationInstalled(report) => {
@@ -2898,6 +2915,19 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             {
                 return Err(Error::Format(
                     "Annealed-material source events/options changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::FindSimilarSequences {
+            query,
+            subjects,
+            options,
+        } => {
+            if crate::sequence_similarity::context_revision(query, subjects, options)? != r.revision
+            {
+                return Err(Error::Format(
+                    "Sequence similarity sources/options changed".into(),
                 ));
             }
             None
@@ -4370,6 +4400,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             crate::material_derivation::preview_annealed_oligos(&workspace, &top, &bottom, &options)
                 .map(AnalysisResult::MaterialAnnealedOligosPreview)
         }
+        AnalysisJob::FindSimilarSequences {
+            query,
+            subjects,
+            options,
+        } => crate::sequence_similarity::search(&query, &subjects, &options, &mut || false)
+            .map(AnalysisResult::SequenceSimilarity),
         AnalysisJob::InstallMaterialDerivation { workspace, request } => {
             crate::material_derivation::install(&workspace, &request)
                 .map(AnalysisResult::MaterialDerivationInstalled)

@@ -541,3 +541,10 @@
 .assembly-saved-design-list>li:last-child { border-bottom:0; }
 .assembly-saved-design-list .method-row-actions { margin-top:3px; gap:10px; }
 .assembly-saved-designs input { max-width:100%; }
+.similarity-search { margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid #d7e0eb; }
+.similarity-scope { max-height:190px; overflow:auto; }
+.similarity-scope label { display:flex; align-items:center; gap:6px; }
+.similarity-scope input[type=checkbox] { width:auto; }
+.similarity-hits { padding-left:20px; }
+.similarity-hits li { margin:6px 0; }
+.similarity-hits small { display:block; }

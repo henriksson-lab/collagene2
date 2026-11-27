@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 189;
+pub const CURRENT_TOOL_COUNT: usize = 190;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -1308,6 +1308,15 @@ pub struct CompareQuery {
     pub query: DocumentRef,
     pub options: alignment::ComparisonOptions,
 }
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SimilarityQuery {
+    pub query: DocumentRef,
+    pub subjects: Vec<DocumentRef>,
+    #[serde(default)]
+    pub options: collagene_core::sequence_similarity::Options,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BoundInput {
@@ -5971,6 +5980,28 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             let report=translation::find_orfs(&molecule,&args.options).map_err(bad)?;
             let artifact=server.analysis_artifact(&json!({"document":args.document,"engine_version":verification::ENGINE_VERSION,"orfs":report}))?;
             output(json!({"document":args.document,"options":report.options,"count":report.orfs.len(),"truncated_search":report.truncated,"display_truncated":report.orfs.len()>100,"orfs":report.orfs.iter().take(100).map(|o|json!({"location":o.location,"reverse":o.reverse,"frame":o.frame,"amino_acids":o.protein.len(),"protein_preview":o.protein.chars().take(80).collect::<String>(),"crosses_origin":o.crosses_origin,"partial_5prime":o.partial_5prime,"partial_3prime":o.partial_3prime,"termination":o.termination})).collect::<Vec<_>>(),"warnings":report.warnings,"artifact_id":artifact}))
+        }).await
+    }
+    #[tool(
+        description = "Search an explicit bounded collection of immutable DNA/RNA document references using native affine local similarity. Returns one best observed score per subject, original reverse/circular coordinates, ambiguity and explicit score completeness. Exact canonical matches prove a score upper bound; capped origins/work remain incomplete. This is not BLAST statistics, sample identity, cloning verification or a material/candidate install. Full source-bound evidence is retained as a JSON artifact."
+    )]
+    async fn search_sequence_library(
+        &self,
+        Parameters(args): Parameters<SimilarityQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move||{
+            use collagene_core::sequence_similarity as native;
+            if args.subjects.is_empty()||args.subjects.len()>native::MAX_SUBJECTS{return Err(bad("Choose 1–128 immutable subject references."));}
+            let (query,subjects)={
+                let store=server.store.lock().unwrap();let query=store.document(&args.query)?;
+                let sources=args.subjects.iter().map(|r|store.document(r).map(|m|(r.id.as_str(),m))).collect::<Result<Vec<_>,_>>()?;
+                native::preflight_borrowed((&args.query.id,query),&sources,&args.options).map_err(bad)?;
+                (native::Source{key:args.query.id.clone(),molecule:query.clone()},sources.into_iter().map(|(id,m)|native::Source{key:id.into(),molecule:m.clone()}).collect::<Vec<_>>())
+            };
+            let report=native::search(&query,&subjects,&args.options,&mut||false).map_err(bad)?;
+            let artifact=server.analysis_artifact(&json!({"query":args.query,"subjects":args.subjects,"report":report}))?;
+            output(json!({"engine_version":report.engine_version,"context_revision":report.context_revision,"query":args.query,"complete":report.complete,"hits_truncated":report.hits_truncated,"work_used":report.work_used,"hits":report.hits,"subjects":report.subjects.iter().map(|s|json!({"key":s.key,"revision":s.revision,"best_score_proven":s.best_score_proven,"alignments_evaluated":s.alignments_evaluated,"limits":s.limits})).collect::<Vec<_>>(),"warnings":report.warnings,"artifact_id":artifact}))
         }).await
     }
     #[tool(

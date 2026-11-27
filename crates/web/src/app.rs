@@ -1,4 +1,5 @@
 use crate::{renderer::MapRenderer, storage, worker};
+use collagene_core::run_lineage::EventBinding;
 fn dismiss_viewer_menus(event: web_sys::MouseEvent) {
     let Some(target) = event
         .target()
@@ -5854,6 +5855,73 @@ pub fn App() -> impl IntoView {
                 .map_err(|e| e.to_string())
         },
     );
+    let prepare_similarity = Callback::new(
+        move |(query, indices, options): (
+            EventBinding,
+            Vec<usize>,
+            collagene_core::sequence_similarity::Options,
+        )|
+              -> Result<crate::sequence_similarity_model::Prepared, String> {
+            if workspace_restoring.get_untracked()
+                || indices.len() > collagene_core::sequence_similarity::MAX_SUBJECTS
+            {
+                return Err("Choose 1–128 documents in a ready workspace.".into());
+            }
+            documents.with_untracked(|docs| {
+                let query_document = docs
+                    .iter()
+                    .find(|d| d.id == query.document_id)
+                    .ok_or("Pinned query document is unavailable.")?;
+                let molecule = query_document
+                    .revision_molecule_ref(&query.event_id)
+                    .map_err(|e| e.to_string())?;
+                let subjects = indices
+                    .into_iter()
+                    .map(|index| {
+                        docs.get(index)
+                            .map(|d| (index, current_event_binding(d), &d.molecule))
+                            .ok_or_else(|| "A selected document is unavailable.".to_owned())
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                crate::sequence_similarity_model::prepare(
+                    workspace_epoch.get_untracked(),
+                    query,
+                    molecule,
+                    &subjects,
+                    options,
+                )
+            })
+        },
+    );
+    let guard_similarity = Callback::new(
+        move |capture: crate::sequence_similarity_model::Capture| -> Result<(), String> {
+            if workspace_restoring.get() {
+                return Err("The workspace is being restored.".into());
+            }
+            documents.with(|docs| {
+                let d = docs
+                    .iter()
+                    .find(|d| d.id == capture.query.document_id)
+                    .ok_or("The pinned query is unavailable.")?;
+                let m = d
+                    .revision_molecule_ref(&capture.query.event_id)
+                    .map_err(|e| e.to_string())?;
+                if m.revision() != capture.query.revision {
+                    return Err("The pinned query changed.".into());
+                }
+                let current = capture
+                    .subjects
+                    .iter()
+                    .map(|p| {
+                        docs.get(p.index)
+                            .map(|d| (p.index, current_event_binding(d)))
+                            .ok_or_else(|| "A search subject is unavailable.".to_owned())
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                capture.validate_current(workspace_epoch.get(), &capture.query, &current)
+            })
+        },
+    );
     let navigate_comparison = Callback::new(
         move |request: crate::compare::Navigation| -> Result<(), String> {
             if workspace_restoring.get_untracked()
@@ -6807,7 +6875,7 @@ pub fn App() -> impl IntoView {
                                                     if let Some(window)=web_sys::window(){let _=window.request_animation_frame(frame.unchecked_ref());}
                                                 }
                                                 if query{panel.set("features");}
-                                            })/></Show><Show when=move||panel.get()=="compare"><crate::compare::ComparePanel molecule=molecule query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone()))) active_source=Memo::new(move|_|documents.with(|docs|recombination_source_info(&docs[active.get()]))) source_info=Callback::new(move|index:usize|documents.with(|docs|docs.get(index).map(recombination_source_info))) resolve=resolve_retained_source epoch=workspace_epoch saved=saved_comparisons on_save=save_comparison on_reopen=reopen_comparison on_navigate=navigate_comparison/></Show>
+                                            })/></Show><Show when=move||panel.get()=="compare"><crate::compare::ComparePanel molecule=molecule query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone()))) active_source=Memo::new(move|_|documents.with(|docs|recombination_source_info(&docs[active.get()]))) source_info=Callback::new(move|index:usize|documents.with(|docs|docs.get(index).map(recombination_source_info))) resolve=resolve_retained_source epoch=workspace_epoch prepare_similarity=prepare_similarity guard_similarity=guard_similarity saved=saved_comparisons on_save=save_comparison on_reopen=reopen_comparison on_navigate=navigate_comparison/></Show>
                                         </div></aside>
                                     </div>
                                     <Show when=move||assembly_visible.get()><section class="assembly-dock" aria-label="Assembly workspace"><div class="assembly-dock-bar"><span>"Assembly design"</span><button class="text-tool" on:click=move|_|assembly_visible.set(false)>"Hide assembly"</button></div>

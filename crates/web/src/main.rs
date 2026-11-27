@@ -440,3 +440,8 @@ mod library_discussion_view;
 
 #[cfg(target_arch = "wasm32")]
 mod library_discussion_client;
+
+#[cfg(any(target_arch = "wasm32", test))]
+mod sequence_similarity_model;
+#[cfg(target_arch = "wasm32")]
+mod sequence_similarity_view;

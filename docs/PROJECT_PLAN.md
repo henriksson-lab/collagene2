@@ -4087,7 +4087,33 @@ substring upper-bound proofs, both query strands, original/circular coordinates,
 explicit score completeness, source/options revisions and aggregate resource
 bounds. No existing scientific algorithm or internal plan representation was
 replaced. Protein similarity and cyclic-query seam enumeration are not inferred
-from this profile. Worker transport, source/event-bound UI and MCP discovery are
-required next; native core presence does not complete F33. F34 specialized biology
+from this profile. Worker transport, source/event-bound Compare controls and MCP discovery now use
+the same core. Source/body/event guards and current-format validation remain
+separate from cloning verification; no candidate or material is installed. F34 specialized biology
 and the existing platform/interoperability/graphical gates remain in the full
 scope. [Scientific contract](SEQUENCE_SIMILARITY.md).
+
+
+### F33 worker, workspace controls and MCP discovery
+
+Worker schema114 adds job191/result181 for bounded collection similarity. The
+current `sequence-similarity-2` report binds query/subject revisions, dimensions,
+alphabets, topologies, options and ranked results. Its validator recomputes the
+source/options context and checks coverage/statistic totals, coordinates, bounded
+collections and best-score completeness consistency. Earlier worker/report
+versions are explicitly refused; other native plan encodings stay current.
+
+Compare now contains one expandable source-discovery workflow, with an explicit
+pinned query, document-ID scope, configurable scores/limits, immediate worker
+cancellation, paged hits, exact-event navigation and guarded JSON evidence export.
+Borrowed aggregate preflight precedes source cloning. Source/event, scope, options
+or workspace changes invalidate results, including equal-content event changes.
+Navigation does not retarget the pinned query. No sequence/history edit occurs.
+
+MCP `search_sequence_library` resolves immutable document handles, returns bounded
+summaries plus a full artifact, and rejects stale references. The native inventory
+is190 tools. All13 native scientific, worker, SDK and pure web-model cases pass, as does the
+integrated WASM check. Only corrected SDK/model fixture groups were rechecked;
+graphical acceptance and exact-source cross-platform CI
+remain separate gates. The implemented scope is explicitly loaded workspace/SDK
+subjects, not a claimed server-wide or genomic index. [Workflow](SEQUENCE_SIMILARITY.md).

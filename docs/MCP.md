@@ -1048,3 +1048,14 @@ product revisions bind explicit selection. Installation replays both sources
 and keeps conditional alternatives, native end geometry and complete source
 closure across archive restart and sharing. No new MCP tool or filesystem
 authority is added.
+
+
+## Sequence collection discovery
+
+`search_sequence_library` takes an immutable `query` document reference, an explicit
+`subjects` array (1–128 immutable references) and optional complete native similarity
+`options`. The shared native engine returns original reverse/circular coordinates,
+scores, ambiguity and best-score completeness, plus a JSON artifact. It performs no
+source edits or candidate/material installation. Unsupported alphabets, resource
+bounds and unsearched origins remain visible; stale revisions are rejected.
+This brings the regular native tool inventory to190. [Scientific profile](SEQUENCE_SIMILARITY.md).

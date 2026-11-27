@@ -183,3 +183,10 @@ before posting; conflicts retain unacknowledged drafts and require refresh.
 Human review remains separate from deterministic scientific verification.
 [Discussion controls and scope](LAB_COLLABORATION.md) ·
 [Member registry setup](SERVER_LIBRARY.md).
+
+
+In **Compare**, expand **Search similar sequences in this workspace**, pin a DNA/RNA
+query and choose the document scope. Search is read-only and shows one best local
+match per subject, with incomplete origin/work searches disclosed. Click a hit to
+inspect its exact source coordinates; download the source-bound evidence if needed.
+[Search options, bounds and MCP](SEQUENCE_SIMILARITY.md).

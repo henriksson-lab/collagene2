@@ -1803,14 +1803,22 @@ exact-source cross-platform CI remains open. No running service/database or appl
 was used for this batch. [Controls and scope](LAB_COLLABORATION.md).
 
 
-### Collection sequence similarity core
+### Collection sequence similarity in the worker, GUI and MCP
 
-A pure Rust collection-search core now reuses native affine nucleotide alignment
-and proves optimal scores for exact full-query canonical substring hits. It keeps
-reverse/circular coordinates, uncertain bases, unsearched subjects, origin caps,
-work/cancellation and hit truncation explicit. Source keys/revisions/options bind
-the report. Eight focused fixtures pass, including an independent small-score oracle. The
-changed cell-limit and custom-scoring fixture groups were rechecked; the final
-core WASM compiler check also passes. No WASM runtime/browser check was performed. This is a core implementation:
-worker, web and MCP integration remain required before the feature is available.
-[Search profile](SEQUENCE_SIMILARITY.md) · [Remaining-delivery triage](DELIVERY_AUDIT.md).
+The shared affine collection-search profile now runs through worker114 (job191,
+result181), Compare's expandable workspace search and MCP's immutable-reference
+`search_sequence_library` tool. The current engine/report is
+`sequence-similarity-2`; native tool inventory is190. Results retain original
+reverse/circular coordinates, uncertain bases, unsearched subjects, origin/work
+bounds and hit truncation. Context/shape guards check source revisions, dimensions,
+score evidence, statistics, ranked rows and completeness consistency.
+
+Web controls pin a query explicitly, select documents by stable IDs, preflight
+borrowed models before cloning, cancel isolated workers on changes and navigate
+exact captured events. Equal-content event changes are refused. Guarded JSON
+export includes source captures; no document, candidate, material or run is
+installed. All13 focused scientific/worker/SDK/model cases and the integrated
+WASM check pass. Two fixture issues were corrected directly; passing scientific
+cases were not rerun. Current-source browser acceptance and cross-platform CI remain open.
+The implemented search covers explicitly loaded workspace/session subjects.
+[Profile and controls](SEQUENCE_SIMILARITY.md) · [Remaining delivery triage](DELIVERY_AUDIT.md).

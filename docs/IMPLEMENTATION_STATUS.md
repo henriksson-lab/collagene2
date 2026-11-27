@@ -2262,3 +2262,22 @@ CDR1 lacks invariant boundary39 and remains unresolved. This is conditional
 reference-based numbering, not full framework/alternative-scheme validation.
 Broader biological validation and worker/MCP/application/delivery tracks remain open.
 [Contract](ANTIBODY_NUMBERING.md).
+
+
+### Conditional source-coordinate numbering tracks
+
+The native antibody track report computes V/J evidence once and derives tracks
+with separate numbering-scheme/region-definition fields (currently IMGT/IMGT).
+All-optimal framework correspondences, conditional loop rules and matched FR4
+retain their distinct origins. Unresolved rows remain visible and counted; no
+representative-start fallback, loop storage-label substitution or framework
+insertion label is used. Reference position 1 is reported only when invariant,
+so truncated/ambiguous N termini do not acquire an invented domain boundary.
+
+All seven selected native cases and focused optional-schema WASM checks pass.
+The frozen external assessment reconstructs tracks without changing candidate
+results: at one/three FR4 substitutions, 12 antibody tracks retain eight unassigned
+rows; none of the 18 negative controls gains a candidate. This is conditional
+reference/rule reconstruction, not independent residue-level validation. Worker,
+MCP, protein/alignment display, alternate schemes/definitions and broader biology/
+whole-product acceptance remain open. [Contract](ANTIBODY_NUMBERING.md).

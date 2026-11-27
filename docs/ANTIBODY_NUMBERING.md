@@ -439,3 +439,37 @@ unresolved outcome: 1HZH entity2 CDR1 lacks an invariant position39 boundary.
 That case retains its conditional CDR3 and explicit diagnostic. Candidate presence
 and negative-control results remain unchanged. These conditional loop results do
 not establish independent residue-level numbering accuracy across the panel.
+
+## Conditional source-coordinate tracks
+
+`domain_tracks::analyze` computes V/J candidate evidence once and derives one
+track for every retained candidate. The report carries that exact evidence,
+source revision, published-rule revision and analysis context. Numbering scheme
+and region definition are separate typed choices; currently only IMGT/IMGT is
+implemented. Unsupported choices are rejected rather than converted by offsets.
+
+Framework assignments come only from reference correspondences shared by every
+optimal V path. CDR1/2 storage labels are excluded: reconstructed loop rules supply
+their display labels, and an unresolved loop receives no replacement labels.
+Conditional CDR3 and matched J/FR4 complete the supported assignments. Each
+assignment retains its framework-reference, conditional-loop or J-reference
+origin. Regions use the published boundaries FR1 1–26, CDR1 27–38, FR2 39–55,
+CDR2 56–65, FR3 66–104, CDR3 105–117 and FR4 118–128.
+[IMGT V-domain chart](https://www.imgt.org/IMGTScientificChart/Numbering/IMGTIGVLsuperfamily.html).
+
+Every source residue from the earliest supported framework correspondence
+through the candidate FR4 end has an absolute source-coordinate row. Unassigned
+rows remain explicit and counted. `invariant_position_one` is present only when
+reference position 1 has an invariant match; its absence leaves the N-terminal
+boundary unresolved. Earlier source residues are not asserted to lie outside the
+domain, and the representative alignment start is never used as a substitute.
+Empty CDR2 remains explicit in the attached candidate evidence. Decimal CDR3
+labels remain exact and in source order, including decreasing 112 insertion
+suffixes; there is no floating-point sorting or invented framework insertion.
+
+Tracks are conditional reference/rule assignments, not a calibrated classifier or
+independent biological numbering certification. Candidate truncation and unresolved
+loop diagnostics remain in the same report. Source/options/report reconstruction,
+source bounds, cancellation and existing candidate caps apply. Application worker,
+protein/alignment display, alternate schemes/definitions and broader independent
+numbering validation remain required.

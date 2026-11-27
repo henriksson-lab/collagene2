@@ -1,5 +1,7 @@
 //! Development-only independent chain-identity assessment; no network/runtime tools.
-use collagene_antibody_numbering::{domain_candidates as d, profile, references, v_mapping as v};
+use collagene_antibody_numbering::{
+    domain_candidates as d, domain_tracks, profile, references, v_mapping as v,
+};
 use collagene_model::{Alphabet, Molecule, Sequence, Topology};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -115,7 +117,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 metadata: Default::default(),
                 original_genbank: None,
             };
-            let report = d::find_candidates(&molecule, &options, &limits, &mut || false)?;
+            let track_report = domain_tracks::analyze(&molecule, &options, &limits, &mut || false)?;
+            let report = &track_report.evidence;
             let positive = !matches!(case.truth, Truth::Other);
             let matched_class = report.candidates.iter().any(|c| match case.truth {
                 Truth::IgHeavy => c.locus == v::Locus::Heavy,
@@ -138,7 +141,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let path=locus.alignment.endpoints.iter().find(|e|e.end==c.v_endpoint).unwrap();
                 json!({"locus":c.locus,"representative_v_start":c.representative_v_start,"v_projection_issue":c.v_projection_issue,"source_end":c.source_end,"v_end":c.v_endpoint,"v_score":path.upper.score,
                     "cdr1":c.cdr1,"cdr2":c.cdr2,"cdr3_start":c.cdr3.start,"cdr3_end":c.cdr3.end,"cdr3_sequence":&case.sequence[c.cdr3.start..c.cdr3.end],
-                    "fr4_sequence":c.fr4.iter().map(|r|r.residue).collect::<String>(),"j_matches":c.j_matches})
+                    "fr4_sequence":c.fr4.iter().map(|r|r.residue).collect::<String>(),"j_matches":c.j_matches,
+                    "track":track_report.tracks.iter().find(|t|t.candidate_id==c.id)})
             }).collect::<Vec<Value>>();
             let loci=report.v_evidence.mappings.iter().map(|m|json!({"locus":m.locus,"reachable":m.alignment.reachable_endpoints,"qualified":m.alignment.qualified_endpoints,
                 "retained":m.alignment.endpoints.len(),"best_retained_score":m.alignment.endpoints.iter().map(|e|e.upper.score).max(),
@@ -150,7 +154,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         presets.push(json!({"options":options,"limits":limits,"positive_chains":positive_count,"negative_chains":negative_count,"missed_positive_chains":missed_positives,"negative_chains_with_candidates":negative_calls,"rows":rows}));
     }
     let output = json!({"panel_version":panel.version,"panel_revision":blake3::hash(DATA.as_bytes()).to_hex().to_string(),"license":panel.license,"license_url":panel.license_url,"retrieved":panel.retrieved,
-        "truth_scope":panel.truth_scope,"excluded_cases":panel.excluded.len(),"engines":{"candidates":d::CANDIDATE_ENGINE,"v_mapping":v::MAPPING_ENGINE,"endpoint":profile::ENDPOINT_ENGINE,"references":references::REFERENCE_ENGINE},
+        "truth_scope":panel.truth_scope,"excluded_cases":panel.excluded.len(),"engines":{"tracks":domain_tracks::TRACK_ENGINE,"candidates":d::CANDIDATE_ENGINE,"v_mapping":v::MAPPING_ENGINE,"endpoint":profile::ENDPOINT_ENGINE,"references":references::REFERENCE_ENGINE},
         "presets":presets});
     serde_json::to_writer_pretty(std::io::stdout().lock(), &output)?;
     Ok(())

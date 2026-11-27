@@ -24,6 +24,7 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 macro_rules! data {($($t:tt)*)=>{#[derive(Clone,Debug,PartialEq,Eq,Serialize,Deserialize)] #[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))] #[serde(deny_unknown_fields)] $($t)*};}
 pub mod domain_candidates;
+pub mod domain_tracks;
 pub mod imgt_loops;
 pub mod profile;
 pub mod references;

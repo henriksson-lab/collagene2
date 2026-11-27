@@ -4514,3 +4514,27 @@ CDR1/2 outcomes on matched antibody chains reconstruct; one lacks invariant
 boundary39 and remains explicitly unresolved. Full framework numbering, alternate schemes/definitions, broader biology
 validation and worker/MCP/application tracks remain required.
 [Contract](ANTIBODY_NUMBERING.md).
+
+### F34 conditional source-coordinate numbering tracks
+
+The native track report derives all retained candidate tracks from one immutable
+V/J evidence computation. Numbering scheme and region definition are separate
+typed fields, currently IMGT/IMGT. Framework labels require all-optimal invariant
+reference matches; loop rules supply CDR display labels; J matches supply FR4.
+Unresolved residues remain explicit source-coordinate rows. The report does not
+substitute a representative start or reference storage labels for unresolved CDRs,
+nor infer labels for framework insertions. N-terminal position 1 is reported only
+when its source match is invariant; earlier residues are not declared outside the
+domain. Candidate cap/truncation and loop diagnostics remain attached.
+
+Seven native fixture groups pass: literal region boundaries and insertion syntax,
+source/provenance assignments, observed tied-path ambiguity, unsupported loops,
+tandem absolute coordinates/long CDR3 labels, unresolved truncated N termini,
+track-construction cancellation and report/cap binding.
+Focused optional-schema WASM checks pass. The external assessment now exercises
+track reconstruction with the same frozen input/options. Candidate outcomes remain
+unchanged; at one/three FR4 substitutions, the 12 antibody tracks contain eight
+explicitly unassigned rows. This does not establish independent residue-level
+numbering accuracy. Alternate schemes and
+definitions, broader independent residue-level validation, worker/MCP/application
+integration and whole-product acceptance remain open. [Contract](ANTIBODY_NUMBERING.md).

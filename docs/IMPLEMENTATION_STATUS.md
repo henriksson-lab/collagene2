@@ -4,25 +4,23 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-Current source builds on checkpoint `0e95cb5` and uses worker schema 117, candidate
-schema 31, draft
-schema 19 and 197 native
-MCP tools. RNA chemistry/declaration review, protein liability screening and
-imported structure viewing are integrated. Antibody numbering currently has
-standalone exact-label, conditional IMGT CDR3, profile-alignment and reference-
-correspondence components;
-automatic detection, full numbering schemes, derived regions and application
-integration remain unfinished. The latest kernel batch passes 16 selected native
-cases and focused optional-schema WASM checks. This does not establish whole-
-application, installed-platform or visual acceptance.
+Current source uses worker schema 120, candidate schema 31, draft schema 19
+and 200 native MCP tools. RNA chemistry/declaration review, protein liability
+screening and imported structure viewing are integrated. Antibody analysis now
+connects conditional human-reference IMGT/Kabat1991/Chothia1997 numbering and
+independently selected IMGT/Kabat1991 regions through workers, protein/alignment
+inspectors and viewers, and MCP. Unsupported mappings remain explicit. Natural
+residue-level validation, broader reference/species coverage and Chothia region
+definitions remain unfinished. This does not establish whole-application,
+installed-platform or visual acceptance.
 
-Public port 8082 was last refreshed from the successful `d2904e5` CI frontend
-(worker schema 116), including RNA declaration controls. It does not include the newer
-protein-liability UI or standalone antibody components. Publication checked the
-artifact digest, 14 static assets, integrity references, WASM headers and listening
-socket; no browser or application HTTP checks were run. See the chronological
-checkpoints below for validation of each increment; older source/preview/version
-claims describe their own checkpoint rather than the current deployment.
+Public port 8082 was last refreshed from successful CI frontend `dd7f03a`
+(worker schema 118), including the antibody inspector. Protein viewer overlays,
+alignment-row analysis and the current scheme/definition controls are newer source
+changes awaiting a frontend artifact refresh. Publication checked the artifact
+digest, confined static assets/integrity references and listening socket; no
+browser or application HTTP checks were run. The checkpoints below retain the
+validation evidence for each increment, rather than describing the current preview.
 
 ## Earlier implementation checkpoints
 
@@ -2382,3 +2380,43 @@ Framework/window assembly, independent region-definition selection, application
 worker/MCP/UI integration and broader biology/whole-product acceptance remain open.
 The top-level scientific contract is updated to reflect current delivered IMGT
 worker/viewer/MCP support. [Rules and sources](NUMBERING_WINDOWS.md).
+
+
+### Independent numbering and region choices
+
+Conditional domain-track assembly now combines invariant framework correspondences
+with the published Kabat1991/Chothia1997 window rules. IMGT, Kabat1991 or
+Chothia1997 numbering is chosen independently of IMGT/Kabat1991 region definitions.
+Rows retain optional numeric assignments and optional region membership separately;
+unsupported profiles preserve typed diagnostics and the remaining verified labels.
+Three definition-specific CDR outcomes retain complete absolute source intervals
+or explicit unresolved status, including empty IMGT CDR2. Partial membership is
+never concatenated into a purported complete CDR sequence. Scientific candidate
+identity/scores remain independent of these presentation choices.
+
+Track engine3, alignment engine2 and worker120 carry one current representation.
+Required selection is wired through native analysis/reconstruction, both worker
+jobs, protein and alignment inspectors/overlays, and both MCP tools (200 total).
+Changing selection invalidates captures/replies just like changed source/settings;
+region colors and CDR summaries use the chosen definition. No source, annotation,
+history or material mutation occurs. There are no superseded-format readers.
+
+All 36 selected native cases pass: alternate/native tracks13, core transport16,
+MCP SDK1 and web guards/overlays6. Fixtures include literal heavy framework
+insertions, kappa/lambda references, all six choice combinations, physically
+different CDRs under different definitions, unresolved windows and rewritten-report
+refusals. Chothia/North definitions, broader independent natural residue-level
+validation and whole-product graphical/platform/interoperability acceptance remain
+open. [Contract and limits](ANTIBODY_NUMBERING.md).
+
+The frozen external chain panel was rerun with unchanged options. All candidate
+scores, loci, source coordinates, loop evidence, retained alternatives and
+presence/absence outcomes match the preceding IMGT track assessment exactly;
+only the track representation changes. At FR4 substitution allowance1 or3,
+12/12 deposited Ig chains have matching-chain candidates and none of18 controls
+have candidates. Exact FR4 matching retains the two previously documented 1HZH
+misses. These are chain-identity checks, not residue-numbering truth.
+
+The final integrated web/worker optional-schema WASM check, assessment-example
+build, repository formatting check and local documentation-link checks pass.
+No browser, screenshot or application HTTP checks were run.

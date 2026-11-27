@@ -117,7 +117,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 metadata: Default::default(),
                 original_genbank: None,
             };
-            let track_report = domain_tracks::analyze(&molecule, &options, &limits, &mut || false)?;
+            let track_report =
+                domain_tracks::analyze(&molecule, &options, &limits, &selection(), &mut || false)?;
             let report = &track_report.evidence;
             let positive = !matches!(case.truth, Truth::Other);
             let matched_class = report.candidates.iter().any(|c| match case.truth {
@@ -158,4 +159,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "presets":presets});
     serde_json::to_writer_pretty(std::io::stdout().lock(), &output)?;
     Ok(())
+}
+
+fn selection() -> collagene_antibody_numbering::domain_tracks::Selection {
+    collagene_antibody_numbering::domain_tracks::Selection {
+        numbering_scheme: collagene_antibody_numbering::domain_tracks::NumberingScheme::Imgt,
+        region_definition: collagene_antibody_numbering::domain_tracks::RegionDefinition::Imgt,
+    }
 }

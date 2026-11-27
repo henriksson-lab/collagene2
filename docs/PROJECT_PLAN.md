@@ -4633,3 +4633,43 @@ and broader independent biological validation remain required. The existing IMGT
 application analysis remains the current application mode. The antibody contract
 introduction now reflects the already delivered worker/viewer/MCP integration.
 [Rule profiles, primary sources and limits](NUMBERING_WINDOWS.md).
+
+
+### Independent numbering and region choices
+
+Conditional domain-track assembly now combines invariant framework correspondences
+with the published Kabat1991/Chothia1997 window rules. IMGT, Kabat1991 or
+Chothia1997 numbering is chosen independently of IMGT/Kabat1991 region definitions.
+Rows retain optional numeric assignments and optional region membership separately;
+unsupported profiles preserve typed diagnostics and the remaining verified labels.
+Three definition-specific CDR outcomes retain complete absolute source intervals
+or explicit unresolved status, including empty IMGT CDR2. Partial membership is
+never concatenated into a purported complete CDR sequence. Scientific candidate
+identity/scores remain independent of these presentation choices.
+
+Track engine3, alignment engine2 and worker120 carry one current representation.
+Required selection is wired through native analysis/reconstruction, both worker
+jobs, protein and alignment inspectors/overlays, and both MCP tools (200 total).
+Changing selection invalidates captures/replies just like changed source/settings;
+region colors and CDR summaries use the chosen definition. No source, annotation,
+history or material mutation occurs. There are no superseded-format readers.
+
+All 36 selected native cases pass: alternate/native tracks13, core transport16,
+MCP SDK1 and web guards/overlays6. Fixtures include literal heavy framework
+insertions, kappa/lambda references, all six choice combinations, physically
+different CDRs under different definitions, unresolved windows and rewritten-report
+refusals. Chothia/North definitions, broader independent natural residue-level
+validation and whole-product graphical/platform/interoperability acceptance remain
+open. [Contract and limits](ANTIBODY_NUMBERING.md).
+
+The frozen external chain panel was rerun with unchanged options. All candidate
+scores, loci, source coordinates, loop evidence, retained alternatives and
+presence/absence outcomes match the preceding IMGT track assessment exactly;
+only the track representation changes. At FR4 substitution allowance1 or3,
+12/12 deposited Ig chains have matching-chain candidates and none of18 controls
+have candidates. Exact FR4 matching retains the two previously documented 1HZH
+misses. These are chain-identity checks, not residue-numbering truth.
+
+The final integrated web/worker optional-schema WASM check, assessment-example
+build, repository formatting check and local documentation-link checks pass.
+No browser, screenshot or application HTTP checks were run.

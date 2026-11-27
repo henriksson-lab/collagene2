@@ -9,14 +9,11 @@ pub fn row(ctx: &Ctx, overlay: &Overlay, start: usize, end: usize, x: f64, y: f6
             continue;
         };
         let left = x + (index - start) as f64 * cell;
-        if let Some(color) = residue
-            .assignment
-            .as_ref()
-            .and_then(|a| antibody_overlay::color(&a.region))
-        {
+        if let Some(color) = residue.region.as_ref().and_then(antibody_overlay::color) {
             ctx.set_fill_style_str(color);
             ctx.fill_rect(left, y - 13., cell, 17.);
-        } else if residue.assignment.is_none() {
+        }
+        if residue.assignment.is_none() || residue.region.is_none() {
             ctx.set_fill_style_str("#808080");
             ctx.fill_rect(left, y + 3., cell - 1., 2.);
         }

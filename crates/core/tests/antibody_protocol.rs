@@ -32,7 +32,7 @@ fn inputs() -> (Molecule, d::Options, d::Limits) {
 #[test]
 fn worker_sessions_use_one_current_source_options_bound_binary_analysis() {
     let (m, o, l) = inputs();
-    let revision = t::request_revision(&m, &o, &l).unwrap();
+    let revision = t::request_revision(&m, &o, &l, &selection()).unwrap();
     let q = Request {
         id: 37,
         revision: revision.clone(),
@@ -40,6 +40,7 @@ fn worker_sessions_use_one_current_source_options_bound_binary_analysis() {
             molecule: m.clone(),
             options: o.clone(),
             limits: l.clone(),
+            selection: selection(),
         },
     };
     let wire = protocol::encode_request(&q).unwrap();
@@ -60,7 +61,7 @@ fn worker_sessions_use_one_current_source_options_bound_binary_analysis() {
         };
         assert_eq!(r.tracks.len(), 1);
         r.validate_binding(&revision).unwrap();
-        r.validate_for(&m, &o, &l).unwrap();
+        r.validate_for(&m, &o, &l, &selection()).unwrap();
     }
     let mut old = wire.clone();
     old[4..6].copy_from_slice(&117u16.to_le_bytes());
@@ -71,12 +72,15 @@ fn worker_sessions_use_one_current_source_options_bound_binary_analysis() {
     assert!(protocol::process_request(&protocol::encode_request(&stale).unwrap()).is_err());
     let mut cap = l;
     cap.max_candidates = 0;
-    assert_ne!(revision, t::request_revision(&m, &o, &cap).unwrap());
+    assert_ne!(
+        revision,
+        t::request_revision(&m, &o, &cap, &selection()).unwrap()
+    );
 }
 #[test]
 fn rewritten_packet_checksums_cannot_hide_inconsistent_tracks_or_context() {
     let (m, o, l) = inputs();
-    let r = t::analyze(&m, &o, &l, &mut || false).unwrap();
+    let r = t::analyze(&m, &o, &l, &selection(), &mut || false).unwrap();
     let refuse = |value: t::Report| {
         let body = postcard::to_allocvec(&Response {
             id: 37,
@@ -127,4 +131,46 @@ fn rewritten_packet_checksums_cannot_hide_inconsistent_tracks_or_context() {
     let mut bad = r.clone();
     bad.engine = "antibody-domain-tracks-1".into();
     refuse(bad);
+}
+
+fn selection() -> collagene_core::antibody_numbering::domain_tracks::Selection {
+    collagene_core::antibody_numbering::domain_tracks::Selection {
+        numbering_scheme: collagene_core::antibody_numbering::domain_tracks::NumberingScheme::Imgt,
+        region_definition:
+            collagene_core::antibody_numbering::domain_tracks::RegionDefinition::Imgt,
+    }
+}
+
+#[test]
+fn scheme_and_definition_choices_bind_worker_requests_and_preserve_independent_regions() {
+    let (m, o, l) = inputs();
+    let mut c = selection();
+    c.numbering_scheme = t::NumberingScheme::Kabat1991;
+    let q = Request {
+        id: 42,
+        revision: t::request_revision(&m, &o, &l, &c).unwrap(),
+        job: AnalysisJob::AnalyzeAntibody {
+            molecule: m.clone(),
+            options: o.clone(),
+            limits: l.clone(),
+            selection: c.clone(),
+        },
+    };
+    let reply = protocol::decode_response(
+        &protocol::process_request(&protocol::encode_request(&q).unwrap()).unwrap(),
+    )
+    .unwrap();
+    let AnalysisResult::Antibody(r) = reply.result else {
+        panic!("numbered response")
+    };
+    assert_eq!(r.selection, c);
+    assert_eq!(r.tracks[0].unassigned_residues, 8);
+    assert_eq!(r.tracks[0].unassigned_regions, 0);
+    r.validate_for(&m, &o, &l, &c).unwrap();
+    let mut stale = q;
+    let AnalysisJob::AnalyzeAntibody { selection, .. } = &mut stale.job else {
+        unreachable!()
+    };
+    selection.region_definition = t::RegionDefinition::Kabat1991;
+    assert!(protocol::process_request(&protocol::encode_request(&stale).unwrap()).is_err());
 }

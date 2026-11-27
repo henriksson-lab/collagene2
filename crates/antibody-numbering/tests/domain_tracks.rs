@@ -55,27 +55,16 @@ fn region_definition_has_literal_boundaries_and_preserves_exact_insertion_labels
         (118..=128, Region::Fr4),
     ] {
         for n in range {
-            assert_eq!(
-                region_for(
-                    &NumberingScheme::Imgt,
-                    &RegionDefinition::Imgt,
-                    &label(&n.to_string())
-                )
-                .unwrap(),
-                region
-            );
+            assert_eq!(imgt_region(&label(&n.to_string())).unwrap(), region);
         }
     }
     for s in ["111.1", "111.10", "112.1", "112.10"] {
         let p = label(s);
-        assert_eq!(
-            region_for(&NumberingScheme::Imgt, &RegionDefinition::Imgt, &p).unwrap(),
-            Region::Cdr3
-        );
+        assert_eq!(imgt_region(&p).unwrap(), Region::Cdr3);
         assert_eq!(p.to_string(), s);
     }
     for s in ["129", "104.1", "111A", "112AA", "118.1"] {
-        assert!(region_for(&NumberingScheme::Imgt, &RegionDefinition::Imgt, &label(s)).is_err());
+        assert!(imgt_region(&label(s)).is_err());
     }
     assert!(serde_json::from_str::<NumberingScheme>("\"Kabat\"").is_err());
     assert!(serde_json::from_str::<RegionDefinition>("\"Chothia\"").is_err());
@@ -83,7 +72,7 @@ fn region_definition_has_literal_boundaries_and_preserves_exact_insertion_labels
 #[test]
 fn authored_track_preserves_source_and_distinguishes_framework_loop_and_j_evidence() {
     let m = source(&format!("{V}ARDYGMDV{J}"));
-    let r = analyze(&m, &options(), &limits(), &mut || false).unwrap();
+    let r = analyze(&m, &options(), &limits(), &selection(), &mut || false).unwrap();
     assert_eq!(r.tracks.len(), 1);
     let t = &r.tracks[0];
     assert_eq!(t.candidate_id, r.evidence.candidates[0].id);
@@ -147,16 +136,17 @@ fn authored_track_preserves_source_and_distinguishes_framework_loop_and_j_eviden
             row.assignment,
             Some(Assignment {
                 position: label(position),
-                region,
                 evidence
             })
         );
+        assert_eq!(row.region, Some(region));
     }
     assert_eq!(
         t.unassigned_residues,
         t.residues.iter().filter(|r| r.assignment.is_none()).count()
     );
-    r.validate_for(&m, &options(), &limits()).unwrap();
+    r.validate_for(&m, &options(), &limits(), &selection())
+        .unwrap();
 }
 #[test]
 fn tied_observed_paths_keep_unresolved_rows_without_a_representative_fallback() {
@@ -169,7 +159,7 @@ fn tied_observed_paths_keep_unresolved_rows_without_a_representative_fallback() 
         .find(|c| c["id"] == "1HZH:2")
         .unwrap();
     let m = source(case["sequence"].as_str().unwrap());
-    let r = analyze(&m, &options(), &limits(), &mut || false).unwrap();
+    let r = analyze(&m, &options(), &limits(), &selection(), &mut || false).unwrap();
     let t = r
         .tracks
         .iter()
@@ -198,8 +188,8 @@ fn tied_observed_paths_keep_unresolved_rows_without_a_representative_fallback() 
     for row in &t.residues {
         if let Some(a) = &row.assignment {
             assert_ne!(
-                a.region,
-                Region::Cdr1,
+                row.region,
+                Some(Region::Cdr1),
                 "unresolved loop must not inherit reference storage labels"
             );
             if a.evidence == AssignmentEvidence::InvariantVReference {
@@ -223,7 +213,7 @@ fn unsupported_loop_is_unlabeled_and_does_not_remove_the_remaining_track() {
         "O".repeat(20),
         &V[27..]
     ));
-    let r = analyze(&m, &options(), &limits(), &mut || false).unwrap();
+    let r = analyze(&m, &options(), &limits(), &selection(), &mut || false).unwrap();
     let c = r
         .evidence
         .candidates
@@ -233,25 +223,15 @@ fn unsupported_loop_is_unlabeled_and_does_not_remove_the_remaining_track() {
     assert!(matches!(c.cdr1, d::LoopAssignment::Unresolved { .. }));
     let t = r.tracks.iter().find(|t| t.candidate_id == c.id).unwrap();
     assert!(t.unassigned_residues >= 20);
-    assert!(
-        t.residues
-            .iter()
-            .filter_map(|r| r.assignment.as_ref())
-            .all(|a| a.region != Region::Cdr1)
-    );
-    assert!(
-        t.residues
-            .iter()
-            .filter_map(|r| r.assignment.as_ref())
-            .any(|a| a.region == Region::Cdr3)
-    );
+    assert!(t.residues.iter().all(|r| r.region != Some(Region::Cdr1)));
+    assert!(t.residues.iter().any(|r| r.region == Some(Region::Cdr3)));
 }
 #[test]
 fn tandem_tracks_keep_absolute_offsets_and_long_cdr3_labels_in_source_order() {
     let block = format!("{V}{}{J}", "A".repeat(40));
     let linker = "GGGGSGGGGS";
     let m = source(&format!("{block}{linker}{block}"));
-    let r = analyze(&m, &options(), &limits(), &mut || false).unwrap();
+    let r = analyze(&m, &options(), &limits(), &selection(), &mut || false).unwrap();
     for offset in [0, block.len() + linker.len()] {
         let t = r
             .tracks
@@ -262,11 +242,7 @@ fn tandem_tracks_keep_absolute_offsets_and_long_cdr3_labels_in_source_order() {
         let loop_rows = t
             .residues
             .iter()
-            .filter(|r| {
-                r.assignment
-                    .as_ref()
-                    .is_some_and(|a| a.region == Region::Cdr3)
-            })
+            .filter(|r| r.region == Some(Region::Cdr3))
             .collect::<Vec<_>>();
         assert_eq!(loop_rows.len(), 40);
         assert_eq!(loop_rows[0].source_index, offset + V.len());
@@ -287,7 +263,7 @@ fn tandem_tracks_keep_absolute_offsets_and_long_cdr3_labels_in_source_order() {
 #[test]
 fn truncated_n_terminus_stays_unresolved_and_track_construction_is_cancellable() {
     let m = source(&format!("{}ARDYGMDV{J}", &V[8..]));
-    let r = analyze(&m, &options(), &limits(), &mut || false).unwrap();
+    let r = analyze(&m, &options(), &limits(), &selection(), &mut || false).unwrap();
     let t = r
         .tracks
         .iter()
@@ -314,7 +290,7 @@ fn truncated_n_terminus_stays_unresolved_and_track_construction_is_cancellable()
     .unwrap();
     let mut track_calls = 0;
     assert_eq!(
-        analyze(&m, &options(), &limits(), &mut || {
+        analyze(&m, &options(), &limits(), &selection(), &mut || {
             track_calls += 1;
             track_calls > candidate_calls + 5
         }),
@@ -325,29 +301,46 @@ fn truncated_n_terminus_stays_unresolved_and_track_construction_is_cancellable()
 #[test]
 fn reports_bind_source_options_context_rows_and_resource_scope() {
     let m = source(&format!("{V}ARDYGMDV{J}"));
-    let r = analyze(&m, &options(), &limits(), &mut || false).unwrap();
+    let r = analyze(&m, &options(), &limits(), &selection(), &mut || false).unwrap();
     let mut forged = r.clone();
     forged.tracks[0].residues[0].assignment = None;
-    assert!(forged.validate_for(&m, &options(), &limits()).is_err());
+    assert!(
+        forged
+            .validate_for(&m, &options(), &limits(), &selection())
+            .is_err()
+    );
     let mut changed = m.clone();
     changed.name.push('x');
-    assert!(r.validate_for(&changed, &options(), &limits()).is_err());
+    assert!(
+        r.validate_for(&changed, &options(), &limits(), &selection())
+            .is_err()
+    );
     let mut altered = options();
     altered.max_fr4_mismatches = 0;
-    assert!(r.validate_for(&m, &altered, &limits()).is_err());
+    assert!(
+        r.validate_for(&m, &altered, &limits(), &selection())
+            .is_err()
+    );
     let mut forged = r.clone();
     forged.engine.push('x');
     assert_eq!(
-        forged.validate_for(&m, &options(), &limits()),
+        forged.validate_for(&m, &options(), &limits(), &selection()),
         Err(Error::Binding)
     );
     assert_eq!(
-        analyze(&m, &options(), &limits(), &mut || true),
+        analyze(&m, &options(), &limits(), &selection(), &mut || true),
         Err(Error::Cancelled)
     );
     let mut cap = limits();
     cap.max_candidates = 0;
-    let counts = analyze(&m, &options(), &cap, &mut || false).unwrap();
+    let counts = analyze(&m, &options(), &cap, &selection(), &mut || false).unwrap();
     assert!(counts.tracks.is_empty() && counts.evidence.pair_retention_truncated);
     assert!(counts.evidence.qualified_pairs_in_retained_v > 0);
+}
+
+fn selection() -> collagene_antibody_numbering::domain_tracks::Selection {
+    collagene_antibody_numbering::domain_tracks::Selection {
+        numbering_scheme: collagene_antibody_numbering::domain_tracks::NumberingScheme::Imgt,
+        region_definition: collagene_antibody_numbering::domain_tracks::RegionDefinition::Imgt,
+    }
 }

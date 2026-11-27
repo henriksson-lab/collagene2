@@ -11,6 +11,7 @@ pub struct Capture {
     pub source_length: usize,
     pub options: d::Options,
     pub limits: d::Limits,
+    pub selection: domain_tracks::Selection,
     pub context_revision: String,
 }
 pub fn preset(
@@ -51,9 +52,10 @@ impl Capture {
         m: &Molecule,
         options: d::Options,
         limits: d::Limits,
+        selection: domain_tracks::Selection,
     ) -> Result<Self, String> {
-        let context_revision =
-            domain_tracks::request_revision(m, &options, &limits).map_err(|e| e.to_string())?;
+        let context_revision = domain_tracks::request_revision(m, &options, &limits, &selection)
+            .map_err(|e| e.to_string())?;
         if n::source_revision(m).map_err(|e| e.to_string())? != source.revision {
             return Err("Protein source revision differs.".into());
         }
@@ -63,6 +65,7 @@ impl Capture {
             source_length: m.sequence.len(),
             options,
             limits,
+            selection,
             context_revision,
         })
     }
@@ -72,11 +75,13 @@ impl Capture {
         source: &EventBinding,
         options: &d::Options,
         limits: &d::Limits,
+        selection: &domain_tracks::Selection,
     ) -> Result<(), String> {
         if self.epoch != epoch
             || self.source != *source
             || self.options != *options
             || self.limits != *limits
+            || self.selection != *selection
         {
             return Err("Source, analysis settings or workspace changed; analyze again.".into());
         }
@@ -88,6 +93,7 @@ impl Capture {
         if r.source_revision != self.source.revision
             || r.evidence.options != self.options
             || r.evidence.limits != self.limits
+            || r.selection != self.selection
             || r.tracks.iter().any(|t| t.source_end > self.source_length)
         {
             return Err("Antibody reply belongs to another source or analysis scope.".into());
@@ -122,17 +128,32 @@ mod tests {
         let a = binding(0);
         let b = binding(1);
         assert_eq!(a.revision, b.revision);
-        let c = Capture::prepare(3, a.clone(), &m, o.clone(), l.clone()).unwrap();
-        let r = domain_tracks::analyze(&m, &o, &l, &mut || false).unwrap();
+        let c = Capture::prepare(3, a.clone(), &m, o.clone(), l.clone(), test_selection()).unwrap();
+        let r = domain_tracks::analyze(&m, &o, &l, &test_selection(), &mut || false).unwrap();
         c.validate_report(&r).unwrap();
-        c.guard(3, &a, &o, &l).unwrap();
-        assert!(c.guard(3, &b, &o, &l).is_err());
-        assert!(c.guard(4, &a, &o, &l).is_err());
+        let mut selection = test_selection();
+        selection.numbering_scheme = domain_tracks::NumberingScheme::Kabat1991;
+        assert!(c.guard(3, &a, &o, &l, &selection).is_err());
+        c.guard(3, &a, &o, &l, &test_selection()).unwrap();
+        assert!(c.guard(3, &b, &o, &l, &test_selection()).is_err());
+        assert!(c.guard(4, &a, &o, &l, &test_selection()).is_err());
         let mut changed = l;
         changed.max_candidates = 0;
-        assert!(c.guard(3, &a, &o, &changed).is_err());
+        assert!(c.guard(3, &a, &o, &changed, &test_selection()).is_err());
         let mut changed = o;
         changed.max_fr4_mismatches = 0;
-        assert!(c.guard(3, &a, &changed, &c.limits).is_err());
+        assert!(
+            c.guard(3, &a, &changed, &c.limits, &test_selection())
+                .is_err()
+        );
+    }
+}
+
+#[cfg(test)]
+fn test_selection() -> domain_tracks::Selection {
+    domain_tracks::Selection {
+        numbering_scheme: collagene_core::antibody_numbering::domain_tracks::NumberingScheme::Imgt,
+        region_definition:
+            collagene_core::antibody_numbering::domain_tracks::RegionDefinition::Imgt,
     }
 }

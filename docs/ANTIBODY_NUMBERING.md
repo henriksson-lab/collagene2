@@ -3,17 +3,18 @@
 `collagene-antibody-numbering` is an independently implemented MIT Rust/WASM
 module for explicit position labels, bounded profile alignment and source-bound
 conditional antibody numbering. Current human V/J reference analysis produces
-conditional IMGT tracks in workers, the Biology inspector, protein/alignment
-viewers and native MCP. Unresolved paths/positions remain explicit. This is not a
+conditional IMGT, Kabat1991 and Chothia1997 tracks in workers, the Biology
+inspector, protein/alignment viewers and native MCP, with separately selected
+IMGT or Kabat1991 regions. Unresolved paths/positions remain explicit. This is not a
 calibrated universal antibody/domain classifier or independently certified
 biological numbering system.
 
 Native [published Kabat/Chothia window rules](NUMBERING_WINDOWS.md) now supply
 source-bound, explicitly versioned calculations for selected published profiles.
-Full-domain Kabat/Chothia assembly, independent region definitions and application
-selection, broader reference/species coverage and independent residue-level
-validation remain part of F34. The sections below describe the component contracts
-and the validation evidence for each stage.
+Invariant reference frameworks and those window rules now assemble conditional
+full-domain tracks. Chothia region definitions, broader reference/species coverage
+and independent natural residue-level validation remain part of F34. The sections
+below describe the component contracts and the validation evidence for each stage.
 
 ## Labels and conditional CDR3 allocation
 
@@ -48,7 +49,7 @@ from independently supplied source and anchors. Current engine is
 `antibody-numbering-1`, with no older internal reader. The conditional source
 profile is capped at 2,000 residues and uses the shared model/text/location bounds.
 
-## Full-domain implementation still required
+## Full-domain scientific requirements
 
 Numbering, domain classification and CDR definitions are separate layers. An
 automatic detector must derive candidate variable-domain alignments against
@@ -437,9 +438,9 @@ whole molecule again for each candidate loop.
 The assessment example includes both loop outcomes for every candidate. Native
 fixtures check literal query coordinates/residues/labels, empty CDR2, boundary and
 stop refusal, provenance/source binding, report tampering and an engineered long
-loop whose unresolved status does not erase CDR3. Full framework numbering,
-Kabat/Chothia and other accepted definitions, broader validation and application
-tracks remain required.
+loop whose unresolved status does not erase CDR3. Framework and alternate-window
+assembly now supply the conditional tracks below. Broader independent biological validation and remaining accepted region
+definitions remain required.
 
 
 On the fixed external panel with one or three allowed FR4 substitutions, the
@@ -454,15 +455,19 @@ not establish independent residue-level numbering accuracy across the panel.
 `domain_tracks::analyze` computes V/J candidate evidence once and derives one
 track for every retained candidate. The report carries that exact evidence,
 source revision, published-rule revision and analysis context. Numbering scheme
-and region definition are separate typed choices; currently only IMGT/IMGT is
-implemented. Unsupported choices are rejected rather than converted by offsets.
+and region definition are separate required typed choices. Numbering choices are
+`Imgt`, `Kabat1991` and `Chothia1997`; region definitions are `Imgt` and
+`Kabat1991`. Any combination is explicit. Unsupported enum values are rejected.
+These choices bind the request context without changing the underlying scientific
+candidate IDs, scores or retained alternatives.
 
 Framework assignments come only from reference correspondences shared by every
 optimal V path. CDR1/2 storage labels are excluded: reconstructed loop rules supply
 their display labels, and an unresolved loop receives no replacement labels.
 Conditional CDR3 and matched J/FR4 complete the supported assignments. Each
 assignment retains its framework-reference, conditional-loop or J-reference
-origin. Regions use the published boundaries FR1 1–26, CDR1 27–38, FR2 39–55,
+origin. Under the IMGT definition, regions use the published boundaries
+FR1 1–26, CDR1 27–38, FR2 39–55,
 CDR2 56–65, FR3 66–104, CDR3 105–117 and FR4 118–128.
 [IMGT V-domain chart](https://www.imgt.org/IMGTScientificChart/Numbering/IMGTIGVLsuperfamily.html).
 
@@ -479,14 +484,50 @@ suffixes; there is no floating-point sorting or invented framework insertion.
 Tracks are conditional reference/rule assignments, not a calibrated classifier or
 independent biological numbering certification. Candidate truncation and unresolved
 loop diagnostics remain in the same report. Source/options/report reconstruction,
-source bounds, cancellation and existing candidate caps apply. Protein/alignment display beyond the inspector, alternate schemes/definitions and
-broader independent numbering validation remain required.
+source bounds, cancellation and existing candidate caps apply. Broader independent
+numbering validation and Chothia region definitions remain required.
 
+
+## Alternate frameworks and independent region definitions
+
+Kabat1991/Chothia1997 tracks use invariant framework correspondences from
+[Lefranc et al. (2003), Table 2](https://www.imgt.org/PDF/DCI/27_55-77_2003.pdf),
+combined with the separately verified [published windows](NUMBERING_WINDOWS.md).
+They do not convert conditional IMGT loop display labels by a numeric offset.
+The first window requires invariant adjacent 23/24/25/26 and 39/40/41 flanks,
+the middle window invariant 55/66, and the junction invariant Cys104 plus the
+candidate's verified J anchor. Actual source interiors determine window lengths.
+Missing invariant flanks, nonadjacent flanks, noncanonical anchors or unsupported
+published length profiles retain typed diagnostics. Other established assignments
+remain available. Exact labels stay unique and in source order, including heavy
+82A/B/C framework insertions. Current complete J tails end at heavy113/light107.
+
+A residue stores its optional numbering assignment and optional region separately.
+For an IMGT definition, membership comes from established IMGT evidence even when
+another numbering scheme cannot label that residue. Kabat membership requires a
+separately derived Kabat map, regardless of the displayed numbering scheme.
+Heavy Kabat CDRs are 31–35, 50–65 and 95–102; light CDRs are 24–34, 50–56 and
+89–97, including established insertion labels at their numbered positions.
+The corresponding framework ranges fill the intervening supported labels.
+Number syntax and region lookup alone do not establish that an insertion is valid.
+The [primary comparison charts](https://www.imgt.org/IMGTScientificChart/Numbering/CDR1-IMGTgaps.html)
+distinguish CDR boundaries from full numbering windows.
+
+Each track retains three definition-specific CDR outcomes. `Mapped {start,end}`
+uses absolute zero-based half-open source coordinates; equal endpoints preserve
+an explicitly empty IMGT CDR2. `Unresolved` never becomes a complete CDR sequence
+by concatenating partially assigned residues. Kabat completeness requires verified
+window context, both definition endpoints and uninterrupted membership throughout
+the interval. Changing only the region definition can change physical CDR sequences
+and colors while preserving every numbering assignment and scientific candidate.
+Chothia numbering does not imply a Chothia CDR definition; that definition is not
+yet exposed. Current finite window coverage and human-reference scope remain explicit.
 
 ## Worker, Biology inspector and MCP
 
-The current track engine is `antibody-domain-tracks-2`. Its request context binds
-source, corpus, scoring/loop/FR4 options, work/retention limits and current engines
+The current track engine is `antibody-domain-tracks-3`. Its request context binds
+source, corpus, explicit numbering/region selection, scoring/loop/FR4 options,
+work/retention limits and current engines
 and rules without running alignment. `validate_binding` checks current context and
 structural track/evidence consistency for trusted local worker replies: source
 coordinates, labels, regions, assignment origins, repeated overlapping source
@@ -495,20 +536,20 @@ scores or authenticate source letters. Imported or independently supplied report
 still require `validate_for` against an independently resolved actual source.
 There is no decoder for the superseded internal track context.
 
-Worker schema 118 adds job 195/result 185 with ordinary message bounds. The Biology
+Worker schema 120 carries job 195/result 185 with required selection and ordinary
+message bounds. The Biology
 inspector runs analysis in a cancellable worker, offers explicit analysis settings,
 retained-candidate selection, loop diagnostics, paged residue rows, exact source
 selection and full JSON download. Document ID, event, revision, workspace epoch
-and options/limits pin every request and navigation action. Equal-content foreign
+and options/limits/selection pin every request and navigation action. Equal-content foreign
 documents cannot retarget output. Source/settings changes invalidate old results.
 
 Native MCP offers `list_antibody_profiles` and `analyze_antibody` against immutable
-protein documents, explicit options and limits. At most 20 candidate summaries are
+protein documents, explicit options, limits and selection. At most 20 candidate summaries are
 returned inline; a full report artifact preserves all retained evidence. These
 read-only tools do not install documents or materials. The inspector and MCP expose
-the conditional human-reference scope directly. They do not complete alternate
-schemes, independent biological validation, alignment-row projection or full
-whole-product acceptance.
+the conditional human-reference scope directly. Independent biological validation
+and whole-product acceptance remain open.
 
 
 ## Protein sequence overlay
@@ -522,7 +563,8 @@ results; clearing the inspector checkbox hides the overlay. Closing the inspecto
 can leave an exact-source overlay visible for viewing.
 
 CDR1/2/3 use separate background colors behind the stored protein letters.
-Unassigned rows receive a grey underline; sparse number labels show `?` rather
+Rows with unresolved numbering or region membership receive a grey underline;
+sparse number labels show `?` for unresolved numbering rather
 than a guessed position. Number labels use the otherwise unused complement line,
 keep source order and fit without overlap. Decimal insertion labels remain exact;
 hovering any residue shows its full label, region and reference/rule origin.
@@ -533,8 +575,8 @@ place to inspect every assignment.
 
 Only visible source rows are painted. Scrolling does not hash molecules, rebuild
 reference models, rerun alignment or install annotations. This source-coordinate
-overlay does not yet project antibody evidence onto imported alignment rows,
-provide alternate schemes or establish independent residue-level validation.
+overlay shares the selected numbering and region definition with its inspector.
+Independent residue-level validation remains open.
 
 
 ## Exact imported alignment-row projection
@@ -556,7 +598,8 @@ and native request/source context without running DP; `validate_for` additionall
 reconstructs the native scientific analysis. UI replies use actual-source map
 validation, and independently supplied scientific evidence needs full reconstruction.
 
-Worker 119 adds job 196/result 186 under unchanged ordinary message limits. The
+Worker 120 carries job 196/result 186 with required selection under unchanged
+ordinary message limits. The alignment report engine is `alignment-antibody-2`. The
 protein alignment inspector supplies explicit settings, cancellable row analysis,
 retained-candidate selection, CDR colors, unresolved underlines, exact focused-cell
 numbering/evidence readouts and full report download. Changing rows, alignment,
@@ -565,9 +608,9 @@ not. Only visible cells are painted, with a bounded binary search into the retai
 map; no alignment/hash/reference analysis runs during scrolling.
 
 Native MCP `analyze_alignment_antibody` resolves immutable alignment evidence and
-stable row ID, requires explicit options/limits and provides at most 20 inline
+stable row ID, requires explicit options/limits/selection and provides at most 20 inline
 candidate summaries plus a full report artifact. It installs no document or other
 scientific state. Neither UI nor MCP modifies imported rows, annotations or source
 bytes, guesses labels for gaps or treats imported column annotations as computed
-confidence. Alternate numbering/region definitions, broader independent biology
-validation and whole-product acceptance remain open.
+confidence. Chothia region definitions, broader independent biology validation
+and whole-product acceptance remain open.

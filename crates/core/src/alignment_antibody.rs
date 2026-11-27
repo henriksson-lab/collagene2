@@ -6,7 +6,7 @@ use crate::{
     antibody_numbering::{self as n, domain_candidates as d, domain_tracks as t},
 };
 use serde::{Deserialize, Serialize};
-pub const ENGINE: &str = "alignment-antibody-1";
+pub const ENGINE: &str = "alignment-antibody-2";
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -97,12 +97,13 @@ pub fn request_revision(
     source: &Source,
     options: &d::Options,
     limits: &d::Limits,
+    selection: &t::Selection,
 ) -> Result<String, Error> {
     let (m, _) = resolve(doc, source)?;
     context(
         source,
         doc.column_count(),
-        &t::request_revision(&m, options, limits).map_err(bad)?,
+        &t::request_revision(&m, options, limits, selection).map_err(bad)?,
     )
 }
 pub fn analyze(
@@ -110,13 +111,14 @@ pub fn analyze(
     source: &Source,
     options: &d::Options,
     limits: &d::Limits,
+    selection: &t::Selection,
     cancel: &mut impl FnMut() -> bool,
 ) -> Result<Report, Error> {
     if cancel() {
         return Err(bad(n::Error::Cancelled));
     }
     let (m, residue_columns) = resolve(doc, source)?;
-    let analysis = t::analyze(&m, options, limits, cancel).map_err(bad)?;
+    let analysis = t::analyze(&m, options, limits, selection, cancel).map_err(bad)?;
     let column_count = doc.column_count();
     Ok(Report {
         engine: ENGINE.into(),
@@ -174,12 +176,13 @@ impl Report {
         pin: &Source,
         options: &d::Options,
         limits: &d::Limits,
+        selection: &t::Selection,
     ) -> Result<(), Error> {
         let (m, columns) = resolve(doc, pin)?;
         self.validate_binding(&context(
             pin,
             doc.column_count(),
-            &t::request_revision(&m, options, limits).map_err(bad)?,
+            &t::request_revision(&m, options, limits, selection).map_err(bad)?,
         )?)?;
         if self.source != *pin
             || self.column_count != doc.column_count()
@@ -198,10 +201,13 @@ impl Report {
         pin: &Source,
         options: &d::Options,
         limits: &d::Limits,
+        selection: &t::Selection,
     ) -> Result<(), Error> {
-        self.validate_source(doc, pin, options, limits)?;
+        self.validate_source(doc, pin, options, limits, selection)?;
         let (m, _) = resolve(doc, pin)?;
-        self.analysis.validate_for(&m, options, limits).map_err(bad)
+        self.analysis
+            .validate_for(&m, options, limits, selection)
+            .map_err(bad)
     }
     pub fn at_column(&self, candidate: usize, column: usize) -> Option<&t::Residue> {
         let index = self.residue_columns.binary_search(&column).ok()?;

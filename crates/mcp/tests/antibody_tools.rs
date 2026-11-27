@@ -66,6 +66,10 @@ async fn antibody_tools_keep_explicit_limits_exact_sources_full_artifacts_and_re
     .await;
     let doc = json!({"id":imported["documents"][0]["id"],"revision":imported["documents"][0]["revision"]});
     let before = call(&c, "list_documents", json!({})).await;
+    let selection = t::Selection {
+        numbering_scheme: t::NumberingScheme::Imgt,
+        region_definition: t::RegionDefinition::Imgt,
+    };
     let options = d::Options {
         v_scoring: n::v_mapping::Scoring {
             observed_reward: 5,
@@ -91,7 +95,7 @@ async fn antibody_tools_keep_explicit_limits_exact_sources_full_artifacts_and_re
     let r = call(
         &c,
         "analyze_antibody",
-        json!({"document":doc,"options":options,"limits":limits}),
+        json!({"document":doc,"options":options,"limits":limits,"selection":selection}),
     )
     .await;
     assert_eq!(r["retained_candidates"], 1);
@@ -128,7 +132,7 @@ async fn antibody_tools_keep_explicit_limits_exact_sources_full_artifacts_and_re
     let counts = call(
         &c,
         "analyze_antibody",
-        json!({"document":doc,"options":options,"limits":limits}),
+        json!({"document":doc,"options":options,"limits":limits,"selection":selection}),
     )
     .await;
     assert_eq!(counts["retained_candidates"], 0);
@@ -142,14 +146,14 @@ async fn antibody_tools_keep_explicit_limits_exact_sources_full_artifacts_and_re
     reject(
         &c,
         "analyze_antibody",
-        json!({"document":stale,"options":options,"limits":limits}),
+        json!({"document":stale,"options":options,"limits":limits,"selection":selection}),
     )
     .await;
     limits.max_candidates = 65;
     reject(
         &c,
         "analyze_antibody",
-        json!({"document":doc,"options":options,"limits":limits}),
+        json!({"document":doc,"options":options,"limits":limits,"selection":selection}),
     )
     .await;
     reject(
@@ -159,6 +163,24 @@ async fn antibody_tools_keep_explicit_limits_exact_sources_full_artifacts_and_re
     )
     .await;
     assert_eq!(call(&c, "list_documents", json!({})).await, before);
+    limits.max_candidates = 4;
+    let mut alternate = selection.clone();
+    alternate.numbering_scheme = t::NumberingScheme::Kabat1991;
+    let mixed = call(
+        &c,
+        "analyze_antibody",
+        json!({"document":doc,"options":options,"limits":limits,"selection":alternate}),
+    )
+    .await;
+    assert_eq!(mixed["selection"]["numbering_scheme"], "Kabat1991");
+    assert_eq!(mixed["candidates"][0]["unassigned_residues"], 8);
+    assert_eq!(mixed["candidates"][0]["unassigned_regions"], 0);
+    reject(
+        &c,
+        "analyze_antibody",
+        json!({"document":doc,"options":options,"limits":limits}),
+    )
+    .await;
     // Analyze alignment evidence directly; do not forge an extracted document ref.
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     let input = format!(">row-a\n--{seq}--\n>row-b\n--{seq}--\n");
@@ -169,7 +191,7 @@ async fn antibody_tools_keep_explicit_limits_exact_sources_full_artifacts_and_re
     let ar = call(
         &c,
         "analyze_alignment_antibody",
-        json!({"alignment":imported["alignment"],"row_id":row,"options":options,"limits":limits}),
+        json!({"alignment":imported["alignment"],"row_id":row,"options":options,"limits":limits,"selection":selection}),
     )
     .await;
     assert_eq!(ar["retained_candidates"], 1);
@@ -198,15 +220,15 @@ async fn antibody_tools_keep_explicit_limits_exact_sources_full_artifacts_and_re
         .unwrap();
     assert!(full.at_column(0, 0).is_none());
     assert_eq!(full.at_column(0, 2).unwrap().source_index, 0);
-    let other=call(&c,"analyze_alignment_antibody",json!({"alignment":imported["alignment"],"row_id":imported["rows"][1]["id"],"options":options,"limits":limits})).await;
+    let other=call(&c,"analyze_alignment_antibody",json!({"alignment":imported["alignment"],"row_id":imported["rows"][1]["id"],"options":options,"limits":limits,"selection":selection})).await;
     assert_ne!(ar["context_revision"], other["context_revision"]);
-    reject(&c,"analyze_alignment_antibody",json!({"alignment":imported["alignment"],"row_id":"unknown","options":options,"limits":limits})).await;
+    reject(&c,"analyze_alignment_antibody",json!({"alignment":imported["alignment"],"row_id":"unknown","options":options,"limits":limits,"selection":selection})).await;
     let mut stale = imported["alignment"].clone();
     stale["revision"] = json!("f".repeat(64));
     reject(
         &c,
         "analyze_alignment_antibody",
-        json!({"alignment":stale,"row_id":row,"options":options,"limits":limits}),
+        json!({"alignment":stale,"row_id":row,"options":options,"limits":limits,"selection":selection}),
     )
     .await;
     assert_eq!(call(&c,"read_alignment",json!({"alignment":imported["alignment"],"row_start":0,"max_rows":2,"column_start":0,"max_columns":200})).await,alignment_before);

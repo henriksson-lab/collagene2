@@ -3,6 +3,7 @@ use crate::{
     alignment_antibody_model::Capture, alignment_view::AlignmentRevision, antibody_model,
     worker::CachedWorker,
 };
+use collagene_core::antibody_numbering::domain_tracks as t;
 use collagene_core::{
     alignment_antibody as a,
     protocol::{AnalysisJob, AnalysisResult, Request},
@@ -23,6 +24,12 @@ pub fn AlignmentAntibodyPanel(
     candidate: RwSignal<usize>,
     on_report: Callback<Option<(u64, Arc<a::Report>)>>,
 ) -> impl IntoView {
+    let scheme = RwSignal::new(t::NumberingScheme::Imgt);
+    let definition = RwSignal::new(t::RegionDefinition::Imgt);
+    let choice = Memo::new(move |_| t::Selection {
+        numbering_scheme: scheme.get(),
+        region_definition: definition.get(),
+    });
     let minimum = RwSignal::new("300".to_string());
     let substitutions = RwSignal::new("1".to_string());
     let loop_max = RwSignal::new("60".to_string());
@@ -64,7 +71,7 @@ pub fn AlignmentAntibodyPanel(
     let worker = StoredValue::new_local(None::<Rc<CachedWorker>>);
     let alive = Arc::new(AtomicBool::new(true));
     Effect::new(move |_| {
-        let _ = (pin.get(), epoch.get(), settings.get());
+        let _ = (pin.get(), epoch.get(), settings.get(), choice.get());
         generation.update(|n| *n = n.wrapping_add(1));
         if let Some(w) = worker.get_value() {
             w.close();
@@ -99,7 +106,14 @@ pub fn AlignmentAntibodyPanel(
                     .get_untracked()
                     .ok_or("Open an alignment first.")?;
                 let (o, l) = settings.get_untracked()?;
-                let c = Capture::prepare(epoch.get_untracked(), snap.doc(), source, o, l)?;
+                let c = Capture::prepare(
+                    epoch.get_untracked(),
+                    snap.doc(),
+                    source,
+                    o,
+                    l,
+                    choice.get_untracked(),
+                )?;
                 Ok::<_, String>((snap, c))
             })();
             let (snap, c) = match prepared {
@@ -137,6 +151,7 @@ pub fn AlignmentAntibodyPanel(
                             source: c.source.clone(),
                             options: c.options.clone(),
                             limits: c.limits.clone(),
+                            selection: c.selection.clone(),
                         },
                     })
                     .await;
@@ -153,6 +168,7 @@ pub fn AlignmentAntibodyPanel(
                         &pin.get_untracked().ok_or("The focused row changed.")?,
                         &o,
                         &l,
+                        &choice.get_untracked(),
                     )?;
                     match result?.result {
                         AnalysisResult::AlignmentAntibody(r) => {
@@ -180,7 +196,10 @@ pub fn AlignmentAntibodyPanel(
         }
     };
     view! {<details class="alignment-rows"><summary>"Antibody analysis of focused row"</summary>
-        <p class="helper">"Human V/J references · conditional IMGT numbering/regions · up to 2,000 ungapped residues. Alignment gaps never receive labels. Focus another row to change source; moving between columns keeps the current row analysis."</p>
+        <p class="helper">"Human V/J references · conditional numbering and independently selected regions · up to 2,000 ungapped residues. Alignment gaps never receive labels. Focus another row to change source; moving between columns keeps the current row analysis."</p>
+        <label>"Numbering scheme"<select prop:value=move||format!("{:?}",scheme.get()) on:change=move|e|scheme.set(match event_target_value(&e).as_str(){"Kabat1991"=>t::NumberingScheme::Kabat1991,"Chothia1997"=>t::NumberingScheme::Chothia1997,_=>t::NumberingScheme::Imgt})><option value="Imgt">"IMGT"</option><option value="Kabat1991">"Kabat (1991 profiles)"</option><option value="Chothia1997">"Chothia (1997 profiles)"</option></select></label>
+        <label>"Region definition"<select prop:value=move||format!("{:?}",definition.get()) on:change=move|e|definition.set(if event_target_value(&e)=="Kabat1991"{t::RegionDefinition::Kabat1991}else{t::RegionDefinition::Imgt})><option value="Imgt">"IMGT"</option><option value="Kabat1991">"Kabat (1991)"</option></select></label>
+        <p class="helper">"Number labels and CDR definitions are independent. Unsupported windows remain unresolved; the full report retains diagnostics."</p>
         <details><summary>"Analysis settings"</summary><p class="helper">"Heuristic V weights 5/8/−6, affine gaps −12/−2; minimum CDR3 length 2."</p>
             <label>"Minimum V score"<input type="number" prop:value=move||minimum.get() on:input=move|e|minimum.set(event_target_value(&e))/></label>
             <label>"Allowed FR4 substitutions (0–3)"<input type="number" min="0" max="3" prop:value=move||substitutions.get() on:input=move|e|substitutions.set(event_target_value(&e))/></label>
@@ -192,8 +211,10 @@ pub fn AlignmentAntibodyPanel(
         <p class="helper" role="status">{move||status.get()}</p>
         <Show when=move||report.with(|r|r.is_some())>
             <label>"Conditional candidate"<select prop:value=move||candidate.get().to_string() on:change=move|e|candidate.set(event_target_value(&e).parse().unwrap_or(0))>{move||report.with(|r|r.as_ref().map(|(_,r)|r.analysis.tracks.iter().enumerate().map(|(i,t)|view!{<option value=i.to_string()>{format!("{} · {:?} · {} unassigned residues",i+1,t.locus,t.unassigned_residues)}</option>}).collect_view()))}</select></label>
-            <p class="helper">{move||report.with(|r|r.as_ref().map(|(_,r)|format!("{} pairs in retained V scope; V endpoints truncated: {}; pairs truncated: {}. CDR colors are conditional; grey underlines remain unresolved. Focus cells for exact IMGT labels and origins.",r.analysis.evidence.qualified_pairs_in_retained_v,r.analysis.evidence.v_retention_truncated,r.analysis.evidence.pair_retention_truncated)).unwrap_or_default())}</p>
-            <button class="button secondary" on:click=move|_|{let result=(||{let(c,r)=report.get_untracked().ok_or("Analyze the row first.")?;let(o,l)=settings.get_untracked()?;c.guard(epoch.get_untracked(),&pin.get_untracked().ok_or("The row changed.")?,&o,&l)?;serde_json::to_vec_pretty(r.as_ref()).map_err(|e|e.to_string())})();match result {Ok(bytes)=>crate::app::download_with_completion("alignment-antibody.json","application/json",&bytes,move|r|if status.try_get_untracked().is_some(){if let Err(e)=r{status.set(e);}}),Err(e)=>status.set(e)}}>"Download full row analysis"</button>
+            <p class="helper">{move||report.with(|r|r.as_ref().map(|(_,r)|format!("{} pairs in retained V scope; V endpoints truncated: {}; pairs truncated: {}. CDR colors are conditional; grey underlines remain unresolved. Focus cells for exact labels under the selected scheme and their origins.",r.analysis.evidence.qualified_pairs_in_retained_v,r.analysis.evidence.v_retention_truncated,r.analysis.evidence.pair_retention_truncated)).unwrap_or_default())}</p>
+            {move||report.with(|r|r.as_ref().map(|(_,r)|crate::antibody_overlay::cdr_summaries(&r.analysis,candidate.get()).into_iter().map(|s|view!{<p class="helper">{s}</p>}).collect_view()))}
+            <details><summary>"Mapping diagnostics"</summary>{move||report.with(|r|r.as_ref().map(|(_,r)|crate::antibody_overlay::diagnostics(&r.analysis,candidate.get()).into_iter().map(|s|view!{<p class="helper">{s}</p>}).collect_view()))}</details>
+            <button class="button secondary" on:click=move|_|{let result=(||{let(c,r)=report.get_untracked().ok_or("Analyze the row first.")?;let(o,l)=settings.get_untracked()?;c.guard(epoch.get_untracked(),&pin.get_untracked().ok_or("The row changed.")?,&o,&l, &choice.get_untracked())?;serde_json::to_vec_pretty(r.as_ref()).map_err(|e|e.to_string())})();match result {Ok(bytes)=>crate::app::download_with_completion("alignment-antibody.json","application/json",&bytes,move|r|if status.try_get_untracked().is_some(){if let Err(e)=r{status.set(e);}}),Err(e)=>status.set(e)}}>"Download full row analysis"</button>
         </Show>
     </details>}
 }

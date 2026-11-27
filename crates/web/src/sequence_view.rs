@@ -2105,8 +2105,8 @@ pub fn SequenceView(
         </Show>
         <Show when=move||antibody.get().is_some()>
             <p class="helper" aria-label="Conditional antibody overlay">
-                "Conditional IMGT · "<span style="background:rgba(52,134,184,0.22)">"CDR1"</span>" · "<span style="background:rgba(195,144,38,0.25)">"CDR2"</span>" · "<span style="background:rgba(140,97,175,0.22)">"CDR3"</span>
-                " · grey underline/? = unresolved. Number labels are sparse; hover any residue for its exact assignment. Biology controls the selected candidate. "
+                {move||antibody.get().map(|o|format!("Conditional {} / {} regions · ",crate::antibody_overlay::scheme_label(&o.track.numbering_scheme),crate::antibody_overlay::definition_label(&o.track.region_definition))).unwrap_or_default()}<span style="background:rgba(52,134,184,0.22)">"CDR1"</span>" · "<span style="background:rgba(195,144,38,0.25)">"CDR2"</span>" · "<span style="background:rgba(140,97,175,0.22)">"CDR3"</span>
+                " · grey underline/? = unresolved numbering or region. Number labels are sparse; hover any residue for its exact assignment. Biology controls the selected candidate. "
                 {move||antibody.get().and_then(|o|selection.get().filter(|(a,b)|b>a).map(|(a,_)|o.description(a))).unwrap_or_default()}
             </p>
         </Show>

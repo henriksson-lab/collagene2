@@ -639,13 +639,14 @@ fn AlignmentCanvas(
                     }) {
                         if let Some(residue) = r.at_column(candidate, col) {
                             if let Some(color) = residue
-                                .assignment
+                                .region
                                 .as_ref()
-                                .and_then(|a| crate::antibody_overlay::color(&a.region))
+                                .and_then(crate::antibody_overlay::color)
                             {
                                 ctx.set_fill_style_str(color);
                                 ctx.fill_rect(x, y, CELL, ROW);
-                            } else if residue.assignment.is_none() {
+                            }
+                            if residue.assignment.is_none() || residue.region.is_none() {
                                 ctx.set_fill_style_str("#808080");
                                 ctx.fill_rect(x, y + 22., CELL - 1., 2.);
                             }

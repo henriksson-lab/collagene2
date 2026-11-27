@@ -43,8 +43,8 @@ fn inputs() -> (AlignmentDocument, a::Source, d::Options, d::Limits) {
 #[test]
 fn literal_gap_projection_preserves_source_labels_and_equal_rows_never_retarget() {
     let (doc, pin, o, l) = inputs();
-    let r = a::analyze(&doc, &pin, &o, &l, &mut || false).unwrap();
-    r.validate_for(&doc, &pin, &o, &l).unwrap();
+    let r = a::analyze(&doc, &pin, &o, &l, &selection(), &mut || false).unwrap();
+    r.validate_for(&doc, &pin, &o, &l, &selection()).unwrap();
     assert_eq!(r.analysis.tracks.len(), 1);
     assert_eq!(r.at_column(0, 30).unwrap().source_index, 25);
     assert_eq!(
@@ -91,28 +91,41 @@ fn literal_gap_projection_preserves_source_labels_and_equal_rows_never_retarget(
     }
     let foreign = a::source(&doc, &doc.rows[1].id).unwrap();
     assert_ne!(
-        a::request_revision(&doc, &pin, &o, &l).unwrap(),
-        a::request_revision(&doc, &foreign, &o, &l).unwrap()
+        a::request_revision(&doc, &pin, &o, &l, &selection()).unwrap(),
+        a::request_revision(&doc, &foreign, &o, &l, &selection()).unwrap()
     );
-    assert!(r.validate_source(&doc, &foreign, &o, &l).is_err());
+    assert!(
+        r.validate_source(&doc, &foreign, &o, &l, &selection())
+            .is_err()
+    );
     let mut reordered = doc.clone();
     reordered.rows.swap(0, 1);
     reordered.validate().unwrap();
-    assert!(r.validate_source(&reordered, &pin, &o, &l).is_err());
+    assert!(
+        r.validate_source(&reordered, &pin, &o, &l, &selection())
+            .is_err()
+    );
     let mut changed = o.clone();
     changed.max_fr4_mismatches = 0;
-    assert!(r.validate_source(&doc, &pin, &changed, &l).is_err());
+    assert!(
+        r.validate_source(&doc, &pin, &changed, &l, &selection())
+            .is_err()
+    );
     let mut shifted = r.clone();
     for col in &mut shifted.residue_columns {
         *col += 1;
     }
     shifted.validate_binding(&r.context_revision).unwrap(); // Shape alone is not source authentication.
-    assert!(shifted.validate_source(&doc, &pin, &o, &l).is_err());
+    assert!(
+        shifted
+            .validate_source(&doc, &pin, &o, &l, &selection())
+            .is_err()
+    );
 }
 #[test]
 fn worker_session_and_current_binary_selectors_keep_native_row_evidence() {
     let (doc, pin, o, l) = inputs();
-    let revision = a::request_revision(&doc, &pin, &o, &l).unwrap();
+    let revision = a::request_revision(&doc, &pin, &o, &l, &selection()).unwrap();
     let q = Request {
         id: 37,
         revision: revision.clone(),
@@ -121,12 +134,13 @@ fn worker_session_and_current_binary_selectors_keep_native_row_evidence() {
             source: pin.clone(),
             options: o.clone(),
             limits: l.clone(),
+            selection: selection(),
         },
     };
     let bytes = protocol::encode_request(&q).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
     assert_eq!(tag, 196);
-    assert_eq!(&bytes[4..6], &119u16.to_le_bytes());
+    assert_eq!(&bytes[4..6], &protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
     let mut session = protocol::AnalysisSession::default();
     for reply in [
         protocol::process_request(&bytes).unwrap(),
@@ -138,7 +152,7 @@ fn worker_session_and_current_binary_selectors_keep_native_row_evidence() {
         let AnalysisResult::AlignmentAntibody(r) = decoded.result else {
             panic!("alignment antibody")
         };
-        r.validate_source(&doc, &pin, &o, &l).unwrap();
+        r.validate_source(&doc, &pin, &o, &l, &selection()).unwrap();
         assert_eq!(decoded.revision, revision);
     }
     let mut old = bytes;
@@ -152,7 +166,7 @@ fn worker_session_and_current_binary_selectors_keep_native_row_evidence() {
 #[test]
 fn malformed_projection_and_source_context_fail_even_with_rewritten_packet_checksums() {
     let (doc, pin, o, l) = inputs();
-    let r = a::analyze(&doc, &pin, &o, &l, &mut || false).unwrap();
+    let r = a::analyze(&doc, &pin, &o, &l, &selection(), &mut || false).unwrap();
     let refuse = |value: a::Report| {
         let body = postcard::to_allocvec(&Response {
             id: 1,
@@ -187,10 +201,10 @@ fn malformed_projection_and_source_context_fail_even_with_rewritten_packet_check
 fn alphabet_empty_row_source_size_cancellation_and_counts_only_scope_are_explicit() {
     let (doc, pin, o, mut l) = inputs();
     l.max_candidates = 0;
-    let r = a::analyze(&doc, &pin, &o, &l, &mut || false).unwrap();
+    let r = a::analyze(&doc, &pin, &o, &l, &selection(), &mut || false).unwrap();
     assert!(r.analysis.tracks.is_empty() && r.analysis.evidence.pair_retention_truncated);
-    r.validate_source(&doc, &pin, &o, &l).unwrap();
-    assert!(a::analyze(&doc, &pin, &o, &l, &mut || true).is_err());
+    r.validate_source(&doc, &pin, &o, &l, &selection()).unwrap();
+    assert!(a::analyze(&doc, &pin, &o, &l, &selection(), &mut || true).is_err());
     let dna = f::import_alignment(
         b">a\nACGT\n",
         AlignmentFormat::AlignedFasta,
@@ -216,4 +230,12 @@ fn alphabet_empty_row_source_size_cancellation_and_counts_only_scope_are_explici
     .unwrap();
     assert!(a::source(&big, &big.rows[0].id).is_err());
     assert!(a::source(&doc, "unknown").is_err());
+}
+
+fn selection() -> collagene_core::antibody_numbering::domain_tracks::Selection {
+    collagene_core::antibody_numbering::domain_tracks::Selection {
+        numbering_scheme: collagene_core::antibody_numbering::domain_tracks::NumberingScheme::Imgt,
+        region_definition:
+            collagene_core::antibody_numbering::domain_tracks::RegionDefinition::Imgt,
+    }
 }

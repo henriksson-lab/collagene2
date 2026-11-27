@@ -9,6 +9,7 @@ pub struct Capture {
     pub source: a::Source,
     pub options: d::Options,
     pub limits: d::Limits,
+    pub selection: collagene_core::antibody_numbering::domain_tracks::Selection,
     pub revision: String,
 }
 impl Capture {
@@ -18,14 +19,16 @@ impl Capture {
         source: a::Source,
         options: d::Options,
         limits: d::Limits,
+        selection: collagene_core::antibody_numbering::domain_tracks::Selection,
     ) -> Result<Self, String> {
-        let revision =
-            a::request_revision(doc, &source, &options, &limits).map_err(|e| e.to_string())?;
+        let revision = a::request_revision(doc, &source, &options, &limits, &selection)
+            .map_err(|e| e.to_string())?;
         Ok(Self {
             epoch,
             source,
             options,
             limits,
+            selection,
             revision,
         })
     }
@@ -35,11 +38,13 @@ impl Capture {
         source: &a::Source,
         options: &d::Options,
         limits: &d::Limits,
+        selection: &collagene_core::antibody_numbering::domain_tracks::Selection,
     ) -> Result<(), String> {
         if self.epoch != epoch
             || self.source != *source
             || self.options != *options
             || self.limits != *limits
+            || self.selection != *selection
         {
             return Err(
                 "Alignment, focused row, workspace or analysis settings changed; analyze again."
@@ -51,8 +56,14 @@ impl Capture {
     pub fn validate_report(&self, doc: &AlignmentDocument, r: &a::Report) -> Result<(), String> {
         r.validate_binding(&self.revision)
             .map_err(|e| e.to_string())?;
-        r.validate_source(doc, &self.source, &self.options, &self.limits)
-            .map_err(|e| e.to_string())
+        r.validate_source(
+            doc,
+            &self.source,
+            &self.options,
+            &self.limits,
+            &self.selection,
+        )
+        .map_err(|e| e.to_string())
     }
 }
 pub fn description(report: &a::Report, candidate: usize, column: usize) -> String {
@@ -61,7 +72,7 @@ pub fn description(report: &a::Report, candidate: usize, column: usize) -> Strin
     }
     let Ok(index) = report.residue_columns.binary_search(&column) else {
         return format!(
-            "Alignment column {} is a gap in the analyzed row; no residue or IMGT label.",
+            "Alignment column {} is a gap in the analyzed row; no residue or numbering label.",
             column + 1
         );
     };
@@ -72,21 +83,31 @@ pub fn description(report: &a::Report, candidate: usize, column: usize) -> Strin
             index + 1
         );
     };
+    let selection = &report.analysis.selection;
+    let region = row
+        .region
+        .as_ref()
+        .map(crate::antibody_overlay::region)
+        .unwrap_or("unresolved region");
     match &row.assignment {
         Some(a) => format!(
-            "Alignment column {} · row residue {} {} · conditional IMGT {} · {} · {}",
+            "Alignment column {} · row residue {} {} · conditional {} {} · {} {} · {}",
             column + 1,
             index + 1,
             row.residue,
+            crate::antibody_overlay::scheme_label(&selection.numbering_scheme),
             a.position,
-            crate::antibody_overlay::region(&a.region),
+            crate::antibody_overlay::definition_label(&selection.region_definition),
+            region,
             crate::antibody_overlay::origin(&a.evidence)
         ),
         None => format!(
-            "Alignment column {} · row residue {} {} · unresolved numbering/region",
+            "Alignment column {} · row residue {} {} · unresolved numbering · {} {}",
             column + 1,
             index + 1,
-            row.residue
+            row.residue,
+            crate::antibody_overlay::definition_label(&selection.region_definition),
+            region
         ),
     }
 }
@@ -110,17 +131,41 @@ mod tests {
         let source = a::source(&doc, &doc.rows[0].id).unwrap();
         let other = a::source(&doc, &doc.rows[1].id).unwrap();
         let (o, l) = crate::antibody_model::preset(300, 1, 60, 32);
-        let c = Capture::prepare(7, &doc, source.clone(), o.clone(), l.clone()).unwrap();
-        let r = a::analyze(&doc, &source, &o, &l, &mut || false).unwrap();
+        let c = Capture::prepare(
+            7,
+            &doc,
+            source.clone(),
+            o.clone(),
+            l.clone(),
+            test_selection(),
+        )
+        .unwrap();
+        let r = a::analyze(&doc, &source, &o, &l, &test_selection(), &mut || false).unwrap();
         c.validate_report(&doc, &r).unwrap();
-        c.guard(7, &source, &o, &l).unwrap();
-        assert!(c.guard(7, &other, &o, &l).is_err());
-        assert!(c.guard(8, &source, &o, &l).is_err());
+        let mut selection = test_selection();
+        selection.numbering_scheme =
+            collagene_core::antibody_numbering::domain_tracks::NumberingScheme::Kabat1991;
+        assert!(c.guard(7, &source, &o, &l, &selection).is_err());
+        c.guard(7, &source, &o, &l, &test_selection()).unwrap();
+        assert!(c.guard(7, &other, &o, &l, &test_selection()).is_err());
+        assert!(c.guard(8, &source, &o, &l, &test_selection()).is_err());
         let mut options = o;
         options.max_fr4_mismatches = 0;
-        assert!(c.guard(7, &source, &options, &l).is_err());
+        assert!(
+            c.guard(7, &source, &options, &l, &test_selection())
+                .is_err()
+        );
         assert!(description(&r, 0, 0).contains("gap"));
         assert!(description(&r, 0, 2).contains("IMGT 1"));
         assert!(description(&r, 0, doc.column_count()).contains("outside this report"));
+    }
+}
+
+#[cfg(test)]
+fn test_selection() -> collagene_core::antibody_numbering::domain_tracks::Selection {
+    collagene_core::antibody_numbering::domain_tracks::Selection {
+        numbering_scheme: collagene_core::antibody_numbering::domain_tracks::NumberingScheme::Imgt,
+        region_definition:
+            collagene_core::antibody_numbering::domain_tracks::RegionDefinition::Imgt,
     }
 }

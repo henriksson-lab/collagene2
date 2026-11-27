@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 119;
+pub const WORKER_SCHEMA_VERSION: u16 = 120;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 31;
 
 // Current selectors whose accepted payloads can contain complete workspace archives.
@@ -1107,12 +1107,14 @@ pub enum AnalysisJob {
         molecule: Molecule,
         options: crate::antibody_numbering::domain_candidates::Options,
         limits: crate::antibody_numbering::domain_candidates::Limits,
+        selection: crate::antibody_numbering::domain_tracks::Selection,
     },
     AnalyzeAlignmentAntibody {
         alignment: crate::alignment_formats::AlignmentDocument,
         source: crate::alignment_antibody::Source,
         options: crate::antibody_numbering::domain_candidates::Options,
         limits: crate::antibody_numbering::domain_candidates::Limits,
+        selection: crate::antibody_numbering::domain_tracks::Selection,
     },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1497,16 +1499,22 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             source,
             options,
             limits,
+            selection,
         } => {
-            crate::alignment_antibody::request_revision(alignment, source, options, limits)?;
+            crate::alignment_antibody::request_revision(
+                alignment, source, options, limits, selection,
+            )?;
         }
         AnalysisJob::AnalyzeAntibody {
             molecule,
             options,
             limits,
+            selection,
         } => {
-            crate::antibody_numbering::domain_tracks::request_revision(molecule, options, limits)
-                .map_err(|e| Error::Format(e.to_string()))?;
+            crate::antibody_numbering::domain_tracks::request_revision(
+                molecule, options, limits, selection,
+            )
+            .map_err(|e| Error::Format(e.to_string()))?;
         }
         AnalysisJob::ScreenProteinLiabilities { molecule, options } => {
             crate::protein_liabilities::request_revision(molecule, options)
@@ -2998,9 +3006,11 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             source,
             options,
             limits,
+            selection,
         } => {
-            if crate::alignment_antibody::request_revision(alignment, source, options, limits)?
-                != r.revision
+            if crate::alignment_antibody::request_revision(
+                alignment, source, options, limits, selection,
+            )? != r.revision
             {
                 return Err(Error::Format(
                     "Alignment antibody source/options changed".into(),
@@ -3012,9 +3022,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             molecule,
             options,
             limits,
+            selection,
         } => {
-            if crate::antibody_numbering::domain_tracks::request_revision(molecule, options, limits)
-                .map_err(|e| Error::Format(e.to_string()))?
+            if crate::antibody_numbering::domain_tracks::request_revision(
+                molecule, options, limits, selection,
+            )
+            .map_err(|e| Error::Format(e.to_string()))?
                 != r.revision
             {
                 return Err(Error::Format(
@@ -4542,20 +4555,26 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             source,
             options,
             limits,
-        } => {
-            crate::alignment_antibody::analyze(&alignment, &source, &options, &limits, &mut || {
-                false
-            })
-            .map(AnalysisResult::AlignmentAntibody)
-        }
+            selection,
+        } => crate::alignment_antibody::analyze(
+            &alignment,
+            &source,
+            &options,
+            &limits,
+            &selection,
+            &mut || false,
+        )
+        .map(AnalysisResult::AlignmentAntibody),
         AnalysisJob::AnalyzeAntibody {
             molecule,
             options,
             limits,
+            selection,
         } => crate::antibody_numbering::domain_tracks::analyze(
             &molecule,
             &options,
             &limits,
+            &selection,
             &mut || false,
         )
         .map(AnalysisResult::Antibody)

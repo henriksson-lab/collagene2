@@ -4,18 +4,21 @@ use super::*;
 use crate::{domain_candidates as d, v_mapping};
 use std::collections::BTreeSet;
 
-pub const TRACK_ENGINE: &str = "antibody-domain-tracks-2";
+pub const TRACK_ENGINE: &str = "antibody-domain-tracks-3";
 const CHART: &str = "https://www.imgt.org/IMGTScientificChart/Numbering/IMGTIGVLsuperfamily.html";
-data! {pub enum NumberingScheme {Imgt}}
-data! {pub enum RegionDefinition {Imgt}}
+data! {pub enum NumberingScheme {Imgt,Kabat1991,Chothia1997}}
+data! {pub enum RegionDefinition {Imgt,Kabat1991}}
+data! {pub struct Selection {pub numbering_scheme:NumberingScheme,pub region_definition:RegionDefinition}}
 data! {pub enum Region {Fr1,Cdr1,Fr2,Cdr2,Fr3,Cdr3,Fr4}}
-data! {pub enum AssignmentEvidence {InvariantVReference,ConditionalLoopRule,JFr4Reference}}
+data! {pub enum AssignmentEvidence {InvariantVReference,ConditionalLoopRule,JFr4Reference,PublishedFrameworkCorrespondence,PublishedWindowRule}}
 data! {pub struct Assignment {
-    pub position:Position,pub region:Region,pub evidence:AssignmentEvidence,
+    pub position:Position,pub evidence:AssignmentEvidence,
 }}
 data! {pub struct Residue {
-    pub source_index:usize,pub residue:char,pub assignment:Option<Assignment>,
+    pub source_index:usize,pub residue:char,pub assignment:Option<Assignment>,pub region:Option<Region>,
 }}
+data! {pub enum CdrStatus {Mapped{start:usize,end:usize},Unresolved}}
+data! {pub struct CdrRegion {pub kind:Region,pub status:CdrStatus}}
 data! {pub struct Track {
     pub candidate_id:String,pub locus:v_mapping::Locus,
     pub numbering_scheme:NumberingScheme,pub region_definition:RegionDefinition,
@@ -23,46 +26,80 @@ data! {pub struct Track {
     /// Absence does not imply that the preceding source is outside the domain.
     pub invariant_position_one:Option<usize>,
     pub first_supported_source_index:usize,pub source_end:usize,
-    pub unassigned_residues:usize,pub residues:Vec<Residue>,
+    pub unassigned_residues:usize,pub unassigned_regions:usize,pub issues:Vec<crate::alternate_tracks::Issue>,pub cdrs:Vec<CdrRegion>,pub residues:Vec<Residue>,
 }}
 data! {pub struct Report {
     pub engine:String,pub source_revision:String,pub rule_revision:String,pub context_revision:String,
-    pub evidence:d::Report,pub tracks:Vec<Track>,
+    pub evidence:d::Report,pub selection:Selection,pub tracks:Vec<Track>,
 }}
 pub fn catalog_revision() -> String {
-    hash(b"antibody-domain-track-rules-2\0", &(TRACK_ENGINE, CHART,
+    hash(b"antibody-domain-track-rules-3\0", &(TRACK_ENGINE, CHART,crate::alternate_tracks::catalog_revision(),
         "IMGT regions FR1 1..26 CDR1 27..38 FR2 39..55 CDR2 56..65 FR3 66..104 CDR3 105..117 FR4 118..128; decimal insertions at111/112 only; invariant reference framework assignments; conditional loop rules; complete J FR4; unresolved rows retained; no representative start or inferred insertion labels"),65536).expect("fixed track rules")
 }
-/// Definition selection is separate from numbering selection. No offset-based
-/// conversion or unsupported scheme/definition pair is implicitly accepted.
-pub fn region_for(
-    scheme: &NumberingScheme,
-    definition: &RegionDefinition,
-    label: &Position,
-) -> Result<Region> {
+/// Current IMGT region boundaries, applied to established IMGT labels only.
+pub fn imgt_region(label: &Position) -> Result<Region> {
     label.validate_syntax()?;
-    match (scheme, definition) {
-        (NumberingScheme::Imgt, RegionDefinition::Imgt) => {
-            if !matches!(label.insertion, Insertion::None)
-                && !matches!(
-                    (&label.insertion, label.number),
-                    (Insertion::Decimal(_), 111 | 112)
-                )
-            {
-                return Err(Error::Invalid("unsupported IMGT track insertion"));
-            }
-            Ok(match label.number {
-                1..=26 => Region::Fr1,
-                27..=38 => Region::Cdr1,
-                39..=55 => Region::Fr2,
-                56..=65 => Region::Cdr2,
-                66..=104 => Region::Fr3,
-                105..=117 => Region::Cdr3,
-                118..=128 => Region::Fr4,
-                _ => return Err(Error::Invalid("unsupported IMGT track position")),
-            })
-        }
+    if !matches!(label.insertion, Insertion::None)
+        && !matches!(
+            (&label.insertion, label.number),
+            (Insertion::Decimal(_), 111 | 112)
+        )
+    {
+        return Err(Error::Invalid("unsupported IMGT track insertion"));
     }
+    Ok(match label.number {
+        1..=26 => Region::Fr1,
+        27..=38 => Region::Cdr1,
+        39..=55 => Region::Fr2,
+        56..=65 => Region::Cdr2,
+        66..=104 => Region::Fr3,
+        105..=117 => Region::Cdr3,
+        118..=128 => Region::Fr4,
+        _ => return Err(Error::Invalid("unsupported IMGT track position")),
+    })
+}
+/// Kabat regions are derived through separately established Kabat labels, not
+/// numeric tests on a label expressed in another scheme.
+pub fn kabat_region(locus: &v_mapping::Locus, label: &Position) -> Result<Region> {
+    label.validate_syntax()?;
+    if matches!(label.insertion, Insertion::Decimal(_)) {
+        return Err(Error::Invalid("decimal Kabat insertion"));
+    }
+    let ranges = if *locus == v_mapping::Locus::Heavy {
+        [
+            (1, 30),
+            (31, 35),
+            (36, 49),
+            (50, 65),
+            (66, 94),
+            (95, 102),
+            (103, 113),
+        ]
+    } else {
+        [
+            (1, 23),
+            (24, 34),
+            (35, 49),
+            (50, 56),
+            (57, 88),
+            (89, 97),
+            (98, 107),
+        ]
+    };
+    let regions = [
+        Region::Fr1,
+        Region::Cdr1,
+        Region::Fr2,
+        Region::Cdr2,
+        Region::Fr3,
+        Region::Cdr3,
+        Region::Fr4,
+    ];
+    ranges
+        .iter()
+        .position(|&(a, b)| label.number >= a && label.number <= b)
+        .map(|i| regions[i].clone())
+        .ok_or(Error::Invalid("unsupported Kabat track position"))
 }
 fn is_framework(label: &Position) -> bool {
     label.insertion == Insertion::None && matches!(label.number,1..=26|39..=55|66..=104)
@@ -85,13 +122,9 @@ fn assign(
     {
         return Err(Error::Binding);
     }
+    row.region = Some(imgt_region(&residue.position)?);
     row.assignment = Some(Assignment {
         position: residue.position.clone(),
-        region: region_for(
-            &NumberingScheme::Imgt,
-            &RegionDefinition::Imgt,
-            &residue.position,
-        )?,
         evidence,
     });
     Ok(())
@@ -100,6 +133,7 @@ fn build_track(
     bytes: &[u8],
     report: &d::Report,
     candidate: &d::Candidate,
+    selection: &Selection,
     cancel: &mut impl FnMut() -> bool,
 ) -> Result<Track> {
     let invariants = report
@@ -131,6 +165,7 @@ fn build_track(
             source_index: start + i,
             residue: residue as char,
             assignment: None,
+            region: None,
         });
     }
     let mut labels = BTreeSet::new();
@@ -180,11 +215,13 @@ fn build_track(
             &mut labels,
         )?;
     }
+    let (rows, issues, cdrs) =
+        crate::alternate_tracks::assemble(&rows, candidate, selection, bytes, cancel)?;
     Ok(Track {
         candidate_id: candidate.id.clone(),
         locus: candidate.locus.clone(),
-        numbering_scheme: NumberingScheme::Imgt,
-        region_definition: RegionDefinition::Imgt,
+        numbering_scheme: selection.numbering_scheme.clone(),
+        region_definition: selection.region_definition.clone(),
         invariant_position_one: framework
             .iter()
             .find(|m| m.reference_position.number == 1)
@@ -192,6 +229,9 @@ fn build_track(
         first_supported_source_index: start,
         source_end: candidate.source_end,
         unassigned_residues: rows.iter().filter(|r| r.assignment.is_none()).count(),
+        unassigned_regions: rows.iter().filter(|r| r.region.is_none()).count(),
+        issues,
+        cdrs,
         residues: rows,
     })
 }
@@ -200,9 +240,10 @@ fn context_revision(
     corpus: &str,
     options: &d::Options,
     limits: &d::Limits,
+    selection: &Selection,
 ) -> Result<String> {
     hash(
-        b"antibody-domain-track-context-2\0",
+        b"antibody-domain-track-context-3\0",
         &(
             TRACK_ENGINE,
             catalog_revision(),
@@ -210,6 +251,7 @@ fn context_revision(
             corpus,
             options,
             limits,
+            selection,
             d::CANDIDATE_ENGINE,
             v_mapping::MAPPING_ENGINE,
             profile::PROFILE_ENGINE,
@@ -224,6 +266,7 @@ pub fn request_revision(
     source: &Molecule,
     options: &d::Options,
     limits: &d::Limits,
+    selection: &Selection,
 ) -> Result<String> {
     d::validate_inputs(options, limits)?;
     context_revision(
@@ -231,6 +274,7 @@ pub fn request_revision(
         &references::human_references()?.revision()?,
         options,
         limits,
+        selection,
     )
 }
 /// Compute the candidate evidence once, then derive all tracks from that exact
@@ -240,6 +284,7 @@ pub fn analyze(
     source: &Molecule,
     options: &d::Options,
     limits: &d::Limits,
+    selection: &Selection,
     cancel: &mut impl FnMut() -> bool,
 ) -> Result<Report> {
     let evidence = d::find_candidates(source, options, limits, cancel)?;
@@ -249,6 +294,7 @@ pub fn analyze(
         &evidence.v_evidence.corpus_revision,
         options,
         limits,
+        selection,
     )?;
     let mut tracks = Vec::with_capacity(evidence.candidates.len());
     for candidate in &evidence.candidates {
@@ -259,6 +305,7 @@ pub fn analyze(
             source.sequence.as_str().as_bytes(),
             &evidence,
             candidate,
+            selection,
             cancel,
         )?);
     }
@@ -271,6 +318,7 @@ pub fn analyze(
         rule_revision,
         context_revision,
         evidence,
+        selection: selection.clone(),
         tracks,
     })
 }
@@ -288,7 +336,13 @@ impl Report {
             || !e.source_revision.bytes().all(|b| b.is_ascii_hexdigit())
             || self.rule_revision != catalog_revision()
             || self.context_revision != expected
-            || context_revision(&e.source_revision, &corpus, &e.options, &e.limits)? != expected
+            || context_revision(
+                &e.source_revision,
+                &corpus,
+                &e.options,
+                &e.limits,
+                &self.selection,
+            )? != expected
             || e.engine != d::CANDIDATE_ENGINE
             || e.v_evidence.engine != v_mapping::MAPPING_ENGINE
             || e.v_evidence.source_revision != e.source_revision
@@ -321,7 +375,9 @@ impl Report {
         }
         let mut observed = std::collections::BTreeMap::new();
         for (candidate, track) in e.candidates.iter().zip(&self.tracks) {
-            if track.first_supported_source_index >= track.source_end
+            if track.cdrs.len() != 3
+                || track.issues.len() > 6
+                || track.first_supported_source_index >= track.source_end
                 || track.source_end > MAX_SOURCE_RESIDUES
                 || track.residues.len() != track.source_end - track.first_supported_source_index
                 || candidate.cdr3.residues.len() > MAX_SOURCE_RESIDUES
@@ -349,7 +405,7 @@ impl Report {
                 }
                 bytes[row.source_index] = row.residue as u8;
             }
-            if *track != build_track(&bytes, e, candidate, &mut || false)? {
+            if *track != build_track(&bytes, e, candidate, &self.selection, &mut || false)? {
                 return Err(Error::Binding);
             }
         }
@@ -360,14 +416,14 @@ impl Report {
         source: &Molecule,
         options: &d::Options,
         limits: &d::Limits,
+        selection: &Selection,
     ) -> Result<()> {
         if self.engine != TRACK_ENGINE
             || self.tracks.len() > d::MAX_CANDIDATES
-            || self
-                .tracks
-                .iter()
-                .any(|t| t.residues.len() > MAX_SOURCE_RESIDUES)
-            || *self != analyze(source, options, limits, &mut || false)?
+            || self.tracks.iter().any(|t| {
+                t.residues.len() > MAX_SOURCE_RESIDUES || t.cdrs.len() != 3 || t.issues.len() > 6
+            })
+            || *self != analyze(source, options, limits, selection, &mut || false)?
         {
             return Err(Error::Binding);
         }

@@ -233,19 +233,21 @@ substitution allowance, maximum CDR3 length and retained-candidate cap are expli
 zero retained candidates requests counts only. Scoring weights and work limits are
 documented in the settings and full downloaded report.
 
-Choose a retained candidate to inspect conditional CDR sequences and a paged IMGT
+Choose the numbering scheme (IMGT, Kabat 1991 or Chothia 1997 profiles) and the
+region definition (IMGT or Kabat 1991) independently before analyzing. Choose a
+retained candidate to inspect definition-specific CDR sequences and a paged
 residue table. Click a source coordinate to select that exact residue in the
 sequence. Unresolved residues stay unassigned, unsupported/missing loop boundaries
 remain explicit, and an unresolved N terminus receives no invented start. Source,
 workspace or settings changes discard prior results; Cancel stops the worker.
 Download the complete evidence report for provenance and alternative candidates.
 These are conditional human-reference/rule assignments, not calibrated domain/
-species classification or independently certified numbering. Kabat/Chothia and
-alternate definitions remain under development. [Scientific contract](ANTIBODY_NUMBERING.md).
+species classification or independently certified numbering. Unsupported published
+profiles remain unresolved; Chothia region definitions remain under development. [Scientific contract](ANTIBODY_NUMBERING.md).
 
 
 **Show selected candidate in sequence** colors conditional CDR1/2/3 regions in the
-protein viewer and adds sparse IMGT labels below the letters. Hover a residue for
+protein viewer and adds sparse labels under the selected numbering scheme below the letters. Hover a residue for
 its exact position and evidence; grey underlines and `?` mark unresolved rows.
 The viewer readout describes the first selected residue. Use the inspector table
 or downloaded report for all labels. Uncheck the control to hide the overlay; it
@@ -258,8 +260,10 @@ document/event or survive a changed source version. No annotations are installed
 Open a protein alignment and focus a row by clicking a cell or using the arrow
 keys. Expand **Antibody analysis of focused row**, review the heuristic settings
 and analyze. Choose a retained candidate to color its conditional CDRs on that
-row. Grey underlines mark unresolved residues. Focus a cell to read its exact
-IMGT position, region and reference/rule origin; gaps have no residue label.
+row. Numbering and region-definition controls match the protein inspector. Grey
+underlines mark unresolved numbering or region membership. Focus a cell to read its exact
+position under the selected numbering scheme, independently selected region and
+reference/rule origin; gaps have no residue label.
 Moving between columns keeps the row analysis. Changing rows, alignment, settings
 or workspace cancels/discards old output. Download the full row report for all
 numbering assignments, loop diagnostics, alternatives and provenance. Original

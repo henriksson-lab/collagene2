@@ -5824,6 +5824,7 @@ pub fn App() -> impl IntoView {
                     &current_event_binding(doc),
                     &p.capture.options,
                     &p.capture.limits,
+                    &p.capture.selection,
                 )
                 .ok()?;
             Some(p)
@@ -5841,6 +5842,7 @@ pub fn App() -> impl IntoView {
                         &current_event_binding(&docs[active.get_untracked()]),
                         &p.capture.options,
                         &p.capture.limits,
+                    &p.capture.selection,
                     )
                 })?;
             }
@@ -5866,7 +5868,7 @@ pub fn App() -> impl IntoView {
     let select_antibody_residue=Callback::new(move |(capture,start,end):(crate::antibody_model::Capture,usize,usize)| -> Result<(),String> {
         if workspace_restoring.get_untracked(){return Err("Wait for the workspace update to finish.".into());}
         documents.with_untracked(|docs| {let doc=&docs[active.get_untracked()];
-            capture.guard(workspace_epoch.get_untracked(),&current_event_binding(doc),&capture.options,&capture.limits)?;
+            capture.guard(workspace_epoch.get_untracked(),&current_event_binding(doc),&capture.options,&capture.limits,&capture.selection)?;
             if start>=end || end>doc.molecule.sequence.len(){return Err("Invalid source residue range.".into());}
             Ok::<_,String>(())
         })?;

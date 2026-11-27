@@ -2,8 +2,10 @@
 
 `antibody-numbering-windows-1` implements conditional source-order window rules
 for `Kabat1991` and `Chothia1997`. These are native scientific components, not
-complete domain numbering, classification, CDR definitions or a new application
-selection mode. No third-party code, trained models or numbering database is
+a standalone domain classifier or CDR definition. The current
+[domain-track assembly](ANTIBODY_NUMBERING.md#alternate-frameworks-and-independent-region-definitions)
+combines them with invariant reference frameworks and offers explicit application
+numbering choices, retaining unsupported mappings as unresolved. No third-party code, trained models or numbering database is
 bundled. The implementation encodes published numerical rule facts independently.
 
 ## Scope and sources

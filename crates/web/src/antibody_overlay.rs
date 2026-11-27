@@ -90,19 +90,29 @@ impl Overlay {
                 index + 1
             );
         };
+        let region = row
+            .region
+            .as_ref()
+            .map(crate::antibody_overlay::region)
+            .unwrap_or("unresolved region");
         match &row.assignment {
             Some(a) => format!(
-                "Source {} {} · conditional IMGT {} · {} · {}",
+                "Source {} {} · conditional {} {} · {} {} · {}",
                 index + 1,
                 row.residue,
+                scheme_label(&self.track.numbering_scheme),
                 a.position,
-                region(&a.region),
+                definition_label(&self.track.region_definition),
+                region,
                 origin(&a.evidence)
             ),
             None => format!(
-                "Source {} {} · unresolved antibody position; no numbering or region assigned",
+                "Source {} {} · unresolved {} position · {} {}",
                 index + 1,
-                row.residue
+                row.residue,
+                scheme_label(&self.track.numbering_scheme),
+                definition_label(&self.track.region_definition),
+                region
             ),
         }
     }
@@ -128,6 +138,10 @@ pub fn origin(e: &n::AssignmentEvidence) -> &'static str {
         n::AssignmentEvidence::InvariantVReference => "invariant V-reference correspondence",
         n::AssignmentEvidence::ConditionalLoopRule => "conditional loop rule",
         n::AssignmentEvidence::JFr4Reference => "matched J/FR4 reference",
+        n::AssignmentEvidence::PublishedFrameworkCorrespondence => {
+            "published invariant framework correspondence"
+        }
+        n::AssignmentEvidence::PublishedWindowRule => "published conditional window rule",
     }
 }
 pub fn color(r: &n::Region) -> Option<&'static str> {
@@ -168,11 +182,12 @@ mod tests {
             &m,
             o.clone(),
             l.clone(),
+            test_selection(),
         )
         .unwrap();
         (
             c,
-            domain_tracks::analyze(&m, &o, &l, &mut || false).unwrap(),
+            domain_tracks::analyze(&m, &o, &l, &test_selection(), &mut || false).unwrap(),
         )
     }
     #[test]
@@ -282,9 +297,9 @@ mod tests {
             assert!(
                 o.at(row.source_index)
                     .unwrap()
-                    .assignment
+                    .region
                     .as_ref()
-                    .and_then(|a| color(&a.region))
+                    .and_then(color)
                     .is_none()
             );
         }
@@ -314,5 +329,110 @@ mod tests {
                 .filter_map(|r| r.assignment.as_ref())
                 .all(|a| a.position.number != 1)
         );
+    }
+}
+
+pub fn scheme_label(s: &n::NumberingScheme) -> &'static str {
+    match s {
+        n::NumberingScheme::Imgt => "IMGT",
+        n::NumberingScheme::Kabat1991 => "Kabat (1991)",
+        n::NumberingScheme::Chothia1997 => "Chothia (1997 profiles)",
+    }
+}
+pub fn definition_label(d: &n::RegionDefinition) -> &'static str {
+    match d {
+        n::RegionDefinition::Imgt => "IMGT",
+        n::RegionDefinition::Kabat1991 => "Kabat (1991)",
+    }
+}
+pub fn issue_text(i: &collagene_core::antibody_numbering::alternate_tracks::Issue) -> String {
+    use collagene_core::antibody_numbering::{
+        alternate_tracks::WindowIssue as W, numbering_windows::Window,
+    };
+    let name = match i.window {
+        Window::CysToTrp => "first-loop window",
+        Window::MiddleLoop => "middle-loop window",
+        Window::CysToJ => "junction window",
+    };
+    let reason = match &i.issue {
+        W::MissingInvariantPositions { positions } => format!(
+            "missing invariant reference positions {}",
+            positions
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        W::NonContiguousFlanks => "framework flank spacing is unresolved".into(),
+        W::UnsupportedLength { residues } => {
+            format!("no supported published profile for {residues} interior residues")
+        }
+        W::NonCanonicalAnchors => "anchor residues differ from this profile".into(),
+    };
+    format!("{} {name}: {reason}", scheme_label(&i.numbering_scheme))
+}
+pub fn diagnostics(report: &n::Report, index: usize) -> Vec<String> {
+    use collagene_core::antibody_numbering::domain_candidates as d;
+    let mut out = report
+        .tracks
+        .get(index)
+        .map(|t| t.issues.iter().map(issue_text).collect::<Vec<_>>())
+        .unwrap_or_default();
+    if let Some(c) = report.evidence.candidates.get(index) {
+        for (name, o) in [("CDR1", &c.cdr1), ("CDR2", &c.cdr2)] {
+            if let d::LoopAssignment::Unresolved { issue, .. } = o {
+                let reason = match issue {
+                    d::LoopIssue::MissingInvariantBoundaries { positions } => format!(
+                        "missing invariant reference boundaries {}",
+                        positions
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                    d::LoopIssue::UnsupportedLength { residues } => {
+                        format!("unsupported length {residues}")
+                    }
+                };
+                out.push(format!("IMGT {name} source context: {reason}"));
+            }
+        }
+    }
+    out
+}
+pub fn cdr_summaries(report: &n::Report, index: usize) -> Vec<String> {
+    let Some(t) = report.tracks.get(index) else {
+        return vec![];
+    };
+    t.cdrs
+        .iter()
+        .map(|c| {
+            let value = match c.status {
+                n::CdrStatus::Unresolved => {
+                    "partial/unresolved; inspect mapped residues and diagnostics".into()
+                }
+                n::CdrStatus::Mapped { start, end } if start == end => "(empty)".into(),
+                n::CdrStatus::Mapped { start, end } => t
+                    .residues
+                    .iter()
+                    .filter(|r| r.source_index >= start && r.source_index < end)
+                    .map(|r| r.residue)
+                    .collect::<String>(),
+            };
+            format!(
+                "{} {}: {}",
+                definition_label(&t.region_definition),
+                region(&c.kind),
+                value
+            )
+        })
+        .collect()
+}
+
+#[cfg(test)]
+fn test_selection() -> n::Selection {
+    n::Selection {
+        numbering_scheme: n::NumberingScheme::Imgt,
+        region_definition: n::RegionDefinition::Imgt,
     }
 }

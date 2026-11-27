@@ -47,8 +47,10 @@ retain the complete options/report. No source or material is installed.
 
 Antibody analysis uses `list_antibody_profiles` and `analyze_antibody`. Supply an
 immutable protein document, explicit native scoring/loop/substitution options and
-work/retention limits. The current human V/J reference model produces conditional
-IMGT tracks with separate numbering-scheme and region-definition fields. Framework
+work/retention limits and required `selection`: `numbering_scheme` is `Imgt`,
+`Kabat1991` or `Chothia1997`, and `region_definition` is `Imgt` or `Kabat1991`.
+The current human V/J reference model produces conditional tracks with numbering
+and region membership stored independently. Framework
 labels require invariant all-optimal correspondences; unresolved CDRs/residues and
 candidate truncation remain visible. Preview at most 20 candidate summaries and
 read the complete source/options-bound report artifact for residue assignments and
@@ -59,7 +61,7 @@ thin WebMCP permissions. [Contract and limits](ANTIBODY_NUMBERING.md).
 
 `analyze_alignment_antibody` analyzes an exact immutable protein alignment row
 without extracting or installing a document. Supply the alignment reference,
-stable row ID and the same explicit native options/limits. The full artifact
+stable row ID and the same explicit native options/limits/selection. The full artifact
 retains a bounded ungapped-residue to alignment-column map and current native
 track report; gaps have no residue or numbering label. Source-free transport
 checks validate shape and context; source reconstruction authenticates the actual

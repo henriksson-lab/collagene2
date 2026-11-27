@@ -11,7 +11,7 @@ use std::{
     io::Write,
 };
 pub const ENGINE_VERSION: &str = "ligation-outcomes-1";
-pub const MAX_FRAGMENTS: usize = 32;
+pub const MAX_FRAGMENTS: usize = 1000;
 pub const MAX_ENUMERATION_FRAGMENTS: usize = 8;
 const MAX_SOURCE_BASES: usize = 2_000_000;
 const MAX_BYTES: usize = 32 * 1024 * 1024;
@@ -491,28 +491,20 @@ pub(crate) fn analyze_fresh(
     })
 }
 
-/// New workflow defaults retain bounded outcomes where supported. Large ordered
-/// ligations keep their established native path rather than becoming invalid.
+/// Every ligation retains its native intended product and explicit alternative-search status.
 pub fn operation(
     fragments: Vec<crate::verification::OrientedSource>,
     circular: bool,
     allow_nicked: bool,
 ) -> crate::verification::Operation {
-    if fragments.len() <= MAX_FRAGMENTS {
-        crate::verification::Operation::LigateWithOutcomes {
-            fragments,
-            circular,
-            allow_nicked,
-            options: Options::default(),
-        }
-    } else {
-        crate::verification::Operation::Ligate {
-            fragments,
-            circular,
-            allow_nicked,
-        }
+    crate::verification::Operation::Ligate {
+        fragments,
+        circular,
+        allow_nicked,
+        options: Options::default(),
     }
 }
+
 fn hex(s: &str) -> bool {
     s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
 }

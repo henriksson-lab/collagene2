@@ -96,7 +96,7 @@ fn installed() -> (Workspace, EventBinding) {
 }
 #[test]
 fn worker91_install177_reply167_and_digest178_reply168_bind_actual_material() {
-    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 92);
+    assert!(protocol::WORKER_SCHEMA_VERSION >= 91);
     let (w, product) = installed();
     let source = w.revisions[&product.revision].clone();
     let origin = native::SourceOrigin::Saved(MaterialOrigin::Derived(
@@ -157,10 +157,13 @@ fn operation28_evidence7_candidate22_and_plan20_are_explicit_and_replayable() {
         }],
     };
     assert_eq!(tag(&plan.steps[0]), 28);
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 23);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 21);
+    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 24);
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 22);
     let bytes = transfer::save_candidate(&transfer::Candidate::new(plan.clone())).unwrap();
-    assert_eq!(&bytes[4..6], &23u16.to_le_bytes());
+    assert_eq!(
+        &bytes[4..6],
+        &protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
+    );
     let mut old = bytes.clone();
     old[4..6].copy_from_slice(&21u16.to_le_bytes());
     assert_eq!(&old[6..], &bytes[6..]);

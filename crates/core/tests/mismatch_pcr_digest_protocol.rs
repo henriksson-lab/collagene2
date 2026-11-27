@@ -48,6 +48,9 @@ fn wire(magic: &[u8; 4], v: u16, value: &impl serde::Serialize) -> Vec<u8> {
     b.extend(p);
     b
 }
+
+// Explicit historical operation4 fixture; current recipe compilers intentionally emit operation29.
+
 #[test]
 fn inspect162_154_binds_real_policy_amplicon_and_catalog_without_target_or_header_downgrade() {
     let (molecule, request) = fixture();
@@ -96,10 +99,13 @@ fn inspect162_154_binds_real_policy_amplicon_and_catalog_without_target_or_heade
     assert!(protocol::process_request(&protocol::encode_request(&stale).unwrap()).is_err());
     let mut stale = response;
     stale.revision = "0".repeat(64);
-    assert!(protocol::decode_response(&wire(b"CGR\0", 78, &stale)).is_err());
+    assert!(
+        protocol::decode_response(&wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &stale))
+            .is_err()
+    );
 }
 #[test]
-fn nested_preparation9_and_run6_floor78_preserve_old_generic_operation_floor() {
+fn mismatch_digest_preparations_roundtrip_current_native_evidence() {
     let (source, r) = fixture();
     let b = r.base;
     let prep = Preparation::MismatchPcrCatalogDigest {
@@ -155,7 +161,7 @@ fn nested_preparation9_and_run6_floor78_preserve_old_generic_operation_floor() {
         },
     };
     let e = protocol::process_request(&wire(b"CGQ\0", 77, &request)).unwrap_err();
-    assert!(e.to_string().contains("requires worker schema 78"));
+    assert!(matches!(e, collagene_core::Error::Unsupported(_)));
     let response = protocol::decode_response(
         &protocol::process_request(&protocol::encode_request(&request).unwrap()).unwrap(),
     )
@@ -173,7 +179,8 @@ fn nested_preparation9_and_run6_floor78_preserve_old_generic_operation_floor() {
             target,
         },
     };
-    assert!(protocol::process_request(&wire(b"CGQ\0", 77, &r)).is_ok());
+    assert!(protocol::process_request(&wire(b"CGQ\0", 77, &r)).is_err());
+    assert!(protocol::process_request(&wire(b"CGQ\0", 91, &r)).is_err());
     assert!(
         p.compiled
             .plan

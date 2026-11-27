@@ -195,6 +195,7 @@ fn reconstructed_physical_pcr_feeds_exact_or_mutagenic_pcr_and_real_terminal_che
                     }],
                     circular: true,
                     allow_nicked: false,
+                    options: Default::default(),
                 },
             ],
         );

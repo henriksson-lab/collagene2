@@ -142,8 +142,12 @@ fn inspection_and_fresh_product_preserve_exact_evidence_and_bind_every_input() {
         result: R::RestrictionInspection(report),
     };
     assert!(
-        protocol::decode_response(&raw(b"CGR\0", 20, &postcard::to_allocvec(&forged).unwrap()))
-            .is_err()
+        protocol::decode_response(&raw(
+            b"CGR\0",
+            protocol::WORKER_SCHEMA_VERSION,
+            &postcard::to_allocvec(&forged).unwrap()
+        ))
+        .is_err()
     );
     let forged = Response {
         id: 901,
@@ -151,8 +155,12 @@ fn inspection_and_fresh_product_preserve_exact_evidence_and_bind_every_input() {
         result: R::DigestProduct(p),
     };
     assert!(
-        protocol::decode_response(&raw(b"CGR\0", 20, &postcard::to_allocvec(&forged).unwrap()))
-            .is_err()
+        protocol::decode_response(&raw(
+            b"CGR\0",
+            protocol::WORKER_SCHEMA_VERSION,
+            &postcard::to_allocvec(&forged).unwrap()
+        ))
+        .is_err()
     );
 }
 #[test]
@@ -234,12 +242,12 @@ fn appended_tags_require_twenty_before_body_decode_and_inspection_keeps_ordinary
                 } else {
                     protocol::decode_response(&bytes).unwrap_err()
                 };
-                assert!(e.to_string().contains("schema 20"), "{e}");
+                assert!(matches!(e, collagene_core::Error::Unsupported(_)), "{e}");
             }
             if matches!(tag, 67 | 68 | 60 | 61) {
                 let mut large = body;
                 large.resize(collagene_core::formats::MAX_IMPORT_BYTES + 1, 0);
-                let bytes = raw(magic, 20, &large);
+                let bytes = raw(magic, protocol::WORKER_SCHEMA_VERSION, &large);
                 let e = if magic == b"CGQ\0" {
                     protocol::process_request(&bytes).unwrap_err()
                 } else {
@@ -319,7 +327,11 @@ fn native_installation_reconstructs_product_and_preserves_exact_source_event() {
         result: R::DigestInstalled(installed),
     };
     assert!(
-        protocol::decode_response(&raw(b"CGR\0", 20, &postcard::to_allocvec(&forged).unwrap()))
-            .is_err()
+        protocol::decode_response(&raw(
+            b"CGR\0",
+            protocol::WORKER_SCHEMA_VERSION,
+            &postcard::to_allocvec(&forged).unwrap()
+        ))
+        .is_err()
     );
 }

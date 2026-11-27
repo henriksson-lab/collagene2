@@ -10,6 +10,8 @@ use collagene_core::{
 use serde::{Deserialize, Serialize};
 use std::{io::Write, sync::Arc};
 
+pub const CURRENT_VERSION: u32 = collagene_core::assembly_library_history::ACTIVE_DRAFT_VERSION;
+pub const ATTACHMENT_KIND: &str = collagene_core::assembly_library_history::ACTIVE_DRAFT_KIND;
 const MAX_BYTES: usize = 32 << 20;
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -48,13 +50,9 @@ pub struct Slot {
     pub start: usize,
     pub end: usize,
     pub reverse: bool,
-    #[serde(default)]
+    #[serde(deserialize_with = "required_option")]
     pub digest_geometry: Option<DigestGeometry>,
-    #[serde(
-        default,
-        with = "optional_snapshot",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(with = "optional_snapshot")]
     pub anneal_bottom: Option<Arc<CapturedSource>>,
 }
 impl Slot {
@@ -80,22 +78,19 @@ pub struct Draft {
     pub slots: Vec<Slot>,
     pub active_slot: usize,
     pub methods: MethodsState,
-    #[serde(default, deserialize_with = "deserialize_junction_edits")]
+    #[serde(deserialize_with = "deserialize_junction_edits")]
     pub junction_edits: Vec<assembly_junction_edit::Edit>,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_substitutions",
-        skip_serializing_if = "Vec::is_empty"
-    )]
+    #[serde(deserialize_with = "deserialize_substitutions")]
     pub substitutions: Vec<collagene_core::assembly_substitution_intent::Substitution>,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_internal_edits",
-        skip_serializing_if = "Vec::is_empty"
-    )]
+    #[serde(deserialize_with = "deserialize_internal_edits")]
     pub edits: Vec<collagene_core::assembly_edit_intent::Edit>,
-    #[serde(default)]
+    #[serde(deserialize_with = "required_option")]
     pub alternatives: Option<crate::assembly_alternatives::Library>,
+}
+fn required_option<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
+    deserializer: D,
+) -> Result<Option<T>, D::Error> {
+    Option::deserialize(deserializer)
 }
 fn deserialize_internal_edits<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
@@ -218,7 +213,7 @@ fn deserialize_slots<'de, D: serde::Deserializer<'de>>(
 impl Default for Draft {
     fn default() -> Self {
         let mut value = Self {
-            version: 3,
+            version: CURRENT_VERSION,
             name: "New assembly".into(),
             circular: true,
             slots: vec![Slot::empty("Backbone"), Slot::empty("Insert")],
@@ -363,13 +358,6 @@ pub(crate) fn validate_controls(
         if count != 2 {
             return Err("Ordinary TA/GC cloning requires exactly two source slots.".into());
         }
-        // Source preparation stays in rows. Legacy tail controls contribute only
-        // the explicitly chosen base/treatment, never another source selection.
-        for (index, tail) in [&methods.vector, &methods.insert].into_iter().enumerate() {
-            if tail.document != index || tail.reversed != methods.rows[index].reverse {
-                return Err("TA/GC tail controls differ from the pinned source slots.".into());
-            }
-        }
     }
     if methods.mode != Mode::Ligation
         && methods
@@ -432,22 +420,7 @@ pub(crate) fn validate_controls(
     {
         return Err("Type IIS primer settings exceed their field bounds".into());
     }
-    for row in [&methods.vector, &methods.insert] {
-        for text in [
-            &row.enzymes,
-            &row.fragment,
-            &row.forward_name,
-            &row.reverse_name,
-            &row.forward,
-            &row.reverse,
-            &row.forward_tail,
-            &row.reverse_tail,
-        ] {
-            if text.len() > 65536 {
-                return Err("Assembly option field exceeds64KiB".into());
-            }
-        }
-    }
+
     for text in [
         &methods.overlaps,
         &methods.comparisons,
@@ -592,8 +565,8 @@ impl Draft {
         if self.edits.is_empty() {
             return Ok(());
         }
-        if self.version < 7 || self.alternatives.is_some() || self.methods.source_roles.is_none() {
-            return Err("Internal contribution edits require version7, an ordinary construct and stable source roles.".into());
+        if self.alternatives.is_some() || self.methods.source_roles.is_none() {
+            return Err("Internal contribution edits require an ordinary construct and stable source roles.".into());
         }
         let roles = self.methods.role_ids(self.slots.len())?;
         let mut total = 0usize;
@@ -703,58 +676,7 @@ impl Draft {
         next.validate()?;
         Ok(next)
     }
-    fn uses_annealing_fields(&self) -> bool {
-        self.methods.annealing.is_some()
-            || self.alternatives.as_ref().is_some_and(|library| {
-                library
-                    .rows
-                    .iter()
-                    .any(|saved| saved.edits.methods.annealing.is_some())
-            })
-    }
-    fn uses_homology_fields(&self) -> bool {
-        self.methods.homology.is_some()
-            || self.alternatives.as_ref().is_some_and(|library| {
-                library
-                    .rows
-                    .iter()
-                    .any(|saved| saved.edits.methods.homology.is_some())
-            })
-    }
-    fn uses_overlap_extension_catalog_fields(&self) -> bool {
-        let uses = |row: &OverlapInput| {
-            row.preparation == OverlapPreparation::OverlapExtensionPcrCatalogDigest
-        };
-        self.methods.rows.iter().any(uses)
-            || self.alternatives.as_ref().is_some_and(|library| {
-                library
-                    .bins
-                    .iter()
-                    .flat_map(|bin| &bin.choices)
-                    .any(|choice| uses(&choice.row))
-                    || library
-                        .rows
-                        .iter()
-                        .any(|saved| saved.edits.methods.rows.iter().any(uses))
-            })
-    }
-    fn uses_overlap_extension_fields(&self) -> bool {
-        let uses = |row: &OverlapInput| {
-            row.is_overlap_extension_pcr() || row.overlap_extension_pcr.is_some()
-        };
-        self.methods.rows.iter().any(uses)
-            || self.alternatives.as_ref().is_some_and(|library| {
-                library
-                    .bins
-                    .iter()
-                    .flat_map(|bin| &bin.choices)
-                    .any(|choice| uses(&choice.row))
-                    || library
-                        .rows
-                        .iter()
-                        .any(|saved| saved.edits.methods.rows.iter().any(uses))
-            })
-    }
+
     fn uses_paired_fields(&self) -> bool {
         self.slots.iter().any(|slot| slot.anneal_bottom.is_some())
             || self.methods.rows.iter().any(|row| {
@@ -820,38 +742,13 @@ impl Draft {
     /// Structural/bounded source consistency only. Historical event IDs require
     /// the host workspace to attest them before installing any candidate.
     pub fn validate(&self) -> Result<(), String> {
-        if !matches!(
-            self.version,
-            1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13
-        ) || self.version == 1 && self.alternatives.is_some()
-        {
-            return Err(
-                "Unsupported assembly draft version or alternatives in a legacy draft.".into(),
-            );
-        }
-        if self.uses_annealing_fields() && self.version < 11 {
-            return Err("Explicit 3′ annealing settings require assembly draft version11.".into());
-        }
-        if self.uses_homology_fields() && self.version < 10 {
-            return Err(
-                "Editable strand reconstruction settings require assembly draft version10.".into(),
-            );
-        }
-        if self.uses_overlap_extension_catalog_fields() && self.version < 9 {
-            return Err("Overlap-extension PCR followed by pinned catalog digestion requires assembly draft version9.".into());
-        }
-        if self.uses_overlap_extension_fields() && self.version < 8 {
-            return Err("Overlap-extension PCR declarations and working settings require assembly draft version8.".into());
+        if self.version != CURRENT_VERSION {
+            return Err("Unsupported assembly draft version.".into());
         }
         if self.substitutions.len() > 256 {
             return Err("At most256 explicit substitutions are supported.".into());
         }
         if !self.substitutions.is_empty() {
-            if self.version < 6 {
-                return Err(
-                    "Literal internal substitutions require assembly draft version6.".into(),
-                );
-            }
             if self.alternatives.is_some() {
                 return Err(
                     "Internal substitutions are currently supported only in ordinary assemblies."
@@ -884,40 +781,9 @@ impl Draft {
             }
         }
         self.validate_internal_edits()?;
-        if self.version < 13
-            && self
-                .methods
-                .rows
-                .iter()
-                .filter_map(|row| row.run_origin.as_ref())
-                .any(|origin| {
-                    matches!(
-                        origin.as_ref(),
-                        collagene_core::run_material::MaterialOrigin::Derived(_)
-                    )
-                })
-        {
-            return Err("Target-free derived material requires assembly draft version13.".into());
-        }
+
         let has_origin = self.methods.rows.iter().any(|row| row.run_origin.is_some());
-        if self.version < 12
-            && self
-                .methods
-                .rows
-                .iter()
-                .filter_map(|row| row.run_origin.as_ref())
-                .any(|origin| {
-                    matches!(
-                        origin.as_ref(),
-                        collagene_core::run_material::MaterialOrigin::Digest(_)
-                    )
-                })
-        {
-            return Err("Saved digest material requires assembly draft version12.".into());
-        }
-        if has_origin && self.version < 5 {
-            return Err("Saved-run material requires assembly draft version 5.".into());
-        }
+
         if self.alternatives.as_ref().is_some_and(|library| {
             has_origin
                 || library
@@ -937,16 +803,11 @@ impl Draft {
                 "Saved-run material is currently supported only in ordinary assemblies.".into(),
             );
         }
-        if self.uses_paired_fields() && self.version < 4 {
-            return Err("Paired-oligo sources/settings require assembly draft version 4.".into());
-        }
+
         if self.alternatives.is_some() && self.uses_paired_fields() {
             return Err(
                 "Paired-oligo sources/settings are not supported in assembly libraries.".into(),
             );
-        }
-        if self.methods.mode == Mode::Tailing && self.version < 3 {
-            return Err("Ordinary TA/GC cloning requires assembly draft version 3.".into());
         }
         if self.alternatives.as_ref().is_some_and(|library| {
             self.methods.mode == Mode::Tailing
@@ -957,24 +818,7 @@ impl Draft {
         }) {
             return Err("TA/GC cloning is an ordinary two-source workflow; library preparations are not supported.".into());
         }
-        if self.version < 3
-            && (self
-                .methods
-                .golden_gate_pool
-                .as_ref()
-                .is_some_and(|pool| pool.candidate.is_some())
-                || self.alternatives.as_ref().is_some_and(|library| {
-                    library.rows.iter().any(|row| {
-                        row.edits
-                            .methods
-                            .golden_gate_pool
-                            .as_ref()
-                            .is_some_and(|pool| pool.candidate.is_some())
-                    })
-                }))
-        {
-            return Err("Pool candidate declarations require assembly draft version 3.".into());
-        }
+
         validate_controls(
             &self.name,
             self.circular,
@@ -1053,12 +897,7 @@ impl Draft {
                 String::new()
             };
         }
-        if self.methods.mode == Mode::Tailing && self.slots.len() == 2 {
-            self.methods.vector.document = 0;
-            self.methods.vector.reversed = self.slots[0].reverse;
-            self.methods.insert.document = 1;
-            self.methods.insert.reversed = self.slots[1].reverse;
-        }
+
         let mut next_bottom = self.slots.len();
         for index in 0..self.slots.len() {
             let context = self.anneal_context(index);
@@ -1080,61 +919,7 @@ impl Draft {
                 row.anneal_candidate = None;
             }
         }
-        if self.uses_paired_fields() {
-            self.version = self.version.max(4);
-        }
-        if self.methods.rows.iter().any(|row| row.run_origin.is_some()) {
-            self.version = self.version.max(
-                if self
-                    .methods
-                    .rows
-                    .iter()
-                    .filter_map(|row| row.run_origin.as_ref())
-                    .any(|origin| {
-                        matches!(
-                            origin.as_ref(),
-                            collagene_core::run_material::MaterialOrigin::Digest(_)
-                        )
-                    })
-                {
-                    12
-                } else {
-                    5
-                },
-            );
-        }
-        if self
-            .methods
-            .rows
-            .iter()
-            .filter_map(|row| row.run_origin.as_ref())
-            .any(|origin| {
-                matches!(
-                    origin.as_ref(),
-                    collagene_core::run_material::MaterialOrigin::Derived(_)
-                )
-            })
-        {
-            self.version = self.version.max(13);
-        }
-        if !self.substitutions.is_empty() {
-            self.version = self.version.max(6);
-        }
-        if !self.edits.is_empty() {
-            self.version = self.version.max(7);
-        }
-        if self.uses_overlap_extension_fields() {
-            self.version = self.version.max(8);
-        }
-        if self.uses_overlap_extension_catalog_fields() {
-            self.version = self.version.max(9);
-        }
-        if self.uses_homology_fields() {
-            self.version = self.version.max(10);
-        }
-        if self.uses_annealing_fields() {
-            self.version = self.version.max(11);
-        }
+        self.version = CURRENT_VERSION;
     }
 }
 
@@ -1145,40 +930,17 @@ pub fn encode(draft: &Draft) -> Result<Vec<u8>, String> {
 }
 /// Encode current editable state without promoting working fields into saved rows.
 pub fn encode_raw(draft: &Draft) -> Result<Vec<u8>, String> {
-    if !matches!(draft.version, 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13) {
-        return Err("Raw assembly persistence requires draft version3–13.".into());
-    }
     draft.validate()?;
     let mut writer = Bounded { bytes: Vec::new() };
     serde_json::to_writer(&mut writer, draft).map_err(|e| e.to_string())?;
     Ok(writer.bytes)
 }
 pub fn decode(bytes: &[u8]) -> Result<Draft, String> {
-    decode_expected(bytes, None)
-}
-pub fn decode_version(bytes: &[u8], expected: u32) -> Result<Draft, String> {
-    decode_expected(bytes, Some(expected))
-}
-fn decode_expected(bytes: &[u8], expected: Option<u32>) -> Result<Draft, String> {
     if bytes.len() > MAX_BYTES {
         return Err("Assembly draft exceeds32MiB".into());
     }
-    let mut draft: Draft = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
-    if expected.is_some_and(|version| version != draft.version) {
-        return Err("Assembly attachment kind disagrees with its draft version.".into());
-    }
-    for (slot, row) in draft.slots.iter().zip(&mut draft.methods.rows) {
-        if row.run_origin.as_ref().is_some_and(|origin| {
-            slot.captured.as_ref().is_none_or(|capture| {
-                *origin.event() != capture.source.binding
-                    || origin.event().revision != capture.molecule.revision()
-            })
-        }) {
-            row.run_origin = None;
-        }
-    }
+    let draft: Draft = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
     draft.validate()?;
-    draft.version = draft.version.max(3);
     Ok(draft)
 }
 
@@ -1313,8 +1075,13 @@ mod tailing_tests {
         draft.methods.rows[0].fragment = "2".into();
         draft.methods.rows[1].forward = "GG".into();
         draft.methods.rows[1].reverse_primer = "AA".into();
-        draft.methods.vector.base = TailingBase::C;
-        draft.methods.insert.base = TailingBase::G;
+        draft.methods.tailing_profile = collagene_core::tailing_recipe::Profile::Gc;
+        draft.methods.vector.action = collagene_core::tailing_recipe::Action::AddTail {
+            base: TailingBase::C,
+        };
+        draft.methods.insert.action = collagene_core::tailing_recipe::Action::AddTail {
+            base: TailingBase::G,
+        };
         draft.methods.insert.treatment = Treatment::Phosphorylate;
         draft.junction_edits.push(assembly_junction_edit::Edit {
             junction: 0,
@@ -1324,11 +1091,11 @@ mod tailing_tests {
         });
         draft.sync_rows();
         let bytes = encode_raw(&draft).unwrap();
-        let restored = decode_version(&bytes, 3).unwrap();
+        let restored = decode(&bytes).unwrap();
         assert!(restored == draft);
-        assert_eq!(restored.methods.vector.document, 0);
-        assert_eq!(restored.methods.insert.document, 1);
-        assert!(restored.methods.insert.reversed);
+        assert_eq!(restored.methods.rows[0].document, 0);
+        assert_eq!(restored.methods.rows[1].document, 1);
+        assert!(restored.methods.rows[1].reverse);
         assert_eq!(restored.junction_edits[0].inserted, "T");
         assert_eq!(restored.methods.rows[0].enzymes, "EcoRV");
     }
@@ -1345,7 +1112,7 @@ mod tailing_tests {
         }];
         draft.sync_rows();
         draft.validate().unwrap();
-        assert!(decode_version(&encode_raw(&draft).unwrap(), 3).unwrap() == draft);
+        assert!(decode(&encode_raw(&draft).unwrap()).unwrap() == draft);
         draft.junction_edits[0].remove_right = 1;
         assert!(draft.validate().is_err());
         draft.junction_edits[0].remove_right = 0;
@@ -1362,9 +1129,14 @@ mod tailing_tests {
         draft.methods.rows[0].preparation = OverlapPreparation::Digest;
         draft.methods.rows[0].enzymes = "EcoRV".into();
         draft.methods.rows[1].forward = "GG".into();
-        draft.methods.vector.base = TailingBase::C;
+        draft.methods.tailing_profile = collagene_core::tailing_recipe::Profile::Gc;
+        draft.methods.vector.action = collagene_core::tailing_recipe::Action::AddTail {
+            base: TailingBase::C,
+        };
         draft.methods.vector.treatment = Treatment::Dephosphorylate;
-        draft.methods.insert.base = TailingBase::G;
+        draft.methods.insert.action = collagene_core::tailing_recipe::Action::AddTail {
+            base: TailingBase::G,
+        };
         draft.methods.insert.treatment = Treatment::Phosphorylate;
         draft.sync_rows();
         let original = draft.clone();
@@ -1374,19 +1146,34 @@ mod tailing_tests {
         draft.validate().unwrap();
         assert!(draft.slots[0].captured == original.slots[1].captured);
         assert!(draft.slots[1].captured == original.slots[0].captured);
-        assert!(draft.methods.vector.base == TailingBase::G);
+        assert!(
+            draft.methods.vector.action
+                == (collagene_core::tailing_recipe::Action::AddTail {
+                    base: TailingBase::G
+                })
+        );
         assert!(draft.methods.vector.treatment == Treatment::Phosphorylate);
-        assert!(draft.methods.insert.base == TailingBase::C);
+        assert!(
+            draft.methods.insert.action
+                == (collagene_core::tailing_recipe::Action::AddTail {
+                    base: TailingBase::C
+                })
+        );
         assert!(draft.methods.insert.treatment == Treatment::Dephosphorylate);
         assert_eq!(draft.methods.rows[0].forward, "GG");
         assert_eq!(draft.methods.rows[1].enzymes, "EcoRV");
-        assert!(!draft.methods.vector.reversed && draft.methods.insert.reversed);
+        assert!(!draft.methods.rows[0].reverse && draft.methods.rows[1].reverse);
         assert!(
             draft.methods.source_roles.as_ref().unwrap()[0]
                 == original.methods.source_roles.as_ref().unwrap()[1]
         );
         draft.methods.swap_rows(0, 0);
-        assert!(draft.methods.vector.base == TailingBase::G);
+        assert!(
+            draft.methods.vector.action
+                == (collagene_core::tailing_recipe::Action::AddTail {
+                    base: TailingBase::G
+                })
+        );
         draft.slots.swap(1, 0);
         draft.methods.swap_rows(1, 0);
         draft.sync_rows();
@@ -1394,17 +1181,44 @@ mod tailing_tests {
     }
 
     #[test]
-    fn tailing_rejects_wrong_count_source_drift_legacy_versions_and_library_rows() {
+    fn kept_ends_and_added_tail_choices_follow_exact_sources_on_reorder() {
+        use collagene_core::tailing_recipe::{Action, Profile};
+        let mut draft = draft();
+        draft.methods.tailing_profile = Profile::Ta;
+        draft.methods.vector.action = Action::KeepExisting;
+        draft.methods.vector.treatment = Treatment::Dephosphorylate;
+        draft.methods.insert.action = Action::AddTail {
+            base: TailingBase::A,
+        };
+        draft.methods.insert.treatment = Treatment::Phosphorylate;
+        let before = draft.clone();
+        draft.slots.swap(0, 1);
+        draft.methods.swap_rows(0, 1);
+        draft.sync_rows();
+        assert!(draft.methods.vector.action == before.methods.insert.action);
+        assert!(draft.methods.insert.action == Action::KeepExisting);
+        assert!(draft.methods.vector.treatment == Treatment::Phosphorylate);
+        assert!(draft.methods.insert.treatment == Treatment::Dephosphorylate);
+        assert!(draft.methods.tailing_profile == Profile::Ta);
+        assert!(decode(&encode_raw(&draft).unwrap()).unwrap() == draft);
+        draft.slots.swap(0, 1);
+        draft.methods.swap_rows(0, 1);
+        draft.sync_rows();
+        assert!(draft == before);
+    }
+
+    #[test]
+    fn tailing_rejects_wrong_count_source_drift_unsupported_schema_and_library_rows() {
         let mut invalid = draft();
-        invalid.methods.insert.document = 0;
+        invalid.methods.rows[1].document = 0;
         assert!(invalid.validate().is_err());
         invalid.sync_rows();
-        invalid.methods.insert.reversed = true;
+        invalid.methods.rows[1].reverse = true;
         assert!(invalid.validate().is_err());
         invalid.sync_rows();
-        invalid.version = 2;
+        invalid.version = CURRENT_VERSION - 1;
         assert!(invalid.validate().is_err());
-        invalid.version = 3;
+        invalid.version = CURRENT_VERSION;
         invalid.slots.push(Slot::empty("Third source"));
         invalid.sync_rows();
         assert!(invalid.validate().is_err());
@@ -1413,7 +1227,6 @@ mod tailing_tests {
             crate::assembly_alternatives::enable(&Draft::default(), "ta-exclusion").unwrap();
         let saved = &mut library.alternatives.as_mut().unwrap().rows[0].edits.methods;
         saved.mode = Mode::Tailing;
-        saved.insert.document = 1;
         assert!(library.validate().unwrap_err().contains("library"));
     }
 
@@ -1470,8 +1283,13 @@ mod tailing_tests {
         let target =
             assembly_junction_edit::build_intent(&inputs, &base, &draft.junction_edits).unwrap();
         assert_eq!(target.target.sequence.as_str(), "AACCTGGTTA");
-        draft.methods.vector.base = TailingBase::C;
-        draft.methods.insert.base = TailingBase::G;
+        draft.methods.tailing_profile = collagene_core::tailing_recipe::Profile::Gc;
+        draft.methods.vector.action = collagene_core::tailing_recipe::Action::AddTail {
+            base: TailingBase::C,
+        };
+        draft.methods.insert.action = collagene_core::tailing_recipe::Action::AddTail {
+            base: TailingBase::G,
+        };
         draft.sync_rows();
         let unchanged =
             assembly_junction_edit::build_intent(&inputs, &base, &draft.junction_edits).unwrap();
@@ -1557,7 +1375,7 @@ mod paired_oligo_tests {
         ];
         draft.validate().unwrap();
         assert!(draft.methods == preparation);
-        assert!(decode_version(&encode_raw(&draft).unwrap(), 4).unwrap() == draft);
+        assert!(decode(&encode_raw(&draft).unwrap()).unwrap() == draft);
         draft.circular = false;
         draft.sync_rows();
         draft.validate().unwrap();
@@ -1639,7 +1457,7 @@ mod paired_oligo_tests {
             before.methods.rows[1].anneal_source_context
         );
         assert!(swapped.slots[1].digest_geometry.is_none() && swapped.junction_edits.is_empty());
-        assert!(decode_version(&encode_raw(&swapped).unwrap(), 4).unwrap() == swapped);
+        assert!(decode(&encode_raw(&swapped).unwrap()).unwrap() == swapped);
         let ids = swapped.methods.all_input_ids().unwrap();
         let sources = [
             swapped.slots[0].captured.as_ref().unwrap(),
@@ -1738,7 +1556,7 @@ mod paired_oligo_tests {
         assert_eq!(swapped.methods.source_roles, before.methods.source_roles);
         assert_eq!(swapped.methods.rows[1].anneal_candidate, None);
         assert!(swapped.slots[1].captured == before.slots[1].anneal_bottom);
-        assert!(decode_version(&encode_raw(&swapped).unwrap(), 4).unwrap() == swapped);
+        assert!(decode(&encode_raw(&swapped).unwrap()).unwrap() == swapped);
         assert!(draft == before);
         // The first circular contribution has the closing boundary as its
         // incoming neighbor; it must not erase the middle two declarations.
@@ -1818,9 +1636,9 @@ mod paired_oligo_tests {
     }
 
     #[test]
-    fn paired_draft_flattens_three_exact_originals_and_roundtrips_version_four() {
+    fn paired_draft_flattens_three_exact_originals_and_roundtrips_current_schema() {
         let draft = paired();
-        assert_eq!(draft.version, 4);
+        assert_eq!(draft.version, CURRENT_VERSION);
         let expected = format!("anneal-bottom-{}", blake3::hash(b"adaptor-top").to_hex());
         assert_eq!(draft.methods.bottom_input_id(1).unwrap(), expected);
         assert_eq!(
@@ -1837,49 +1655,17 @@ mod paired_oligo_tests {
             3,
             "Workspace restore must validate the bottom event as well as primary contributions"
         );
-        let restored = decode_version(&encode_raw(&draft).unwrap(), 4).unwrap();
+        let restored = decode(&encode_raw(&draft).unwrap()).unwrap();
         assert!(restored == draft);
         assert_eq!(restored.methods.rows[1].anneal_candidate, Some(0));
         let mut legacy = draft.clone();
-        legacy.version = 3;
+        legacy.version = CURRENT_VERSION - 1;
         assert!(legacy.validate().is_err());
         assert!(
             crate::assembly_alternatives::for_storage(&draft)
                 .unwrap()
                 .version
-                == 4
-        );
-        // New ordinary v3 payloads keep the prior strict Slot shape.
-        let ordinary = serde_json::to_value(Draft::default()).unwrap();
-        assert!(
-            ordinary["slots"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|slot| slot.get("anneal_bottom").is_none())
-        );
-        // Missing additive fields remain a legacy, unpaired editable declaration.
-        let mut legacy = ordinary;
-        for slot in legacy["slots"].as_array_mut().unwrap() {
-            slot.as_object_mut().unwrap().remove("anneal_bottom");
-        }
-        for row in legacy["methods"]["rows"].as_array_mut().unwrap() {
-            for name in [
-                "anneal_options",
-                "anneal_candidate",
-                "anneal_bottom_document",
-                "anneal_source_context",
-            ] {
-                row.as_object_mut().unwrap().remove(name);
-            }
-        }
-        let restored = decode(&serde_json::to_vec(&legacy).unwrap()).unwrap();
-        assert_eq!(restored.version, 3);
-        assert!(
-            restored
-                .slots
-                .iter()
-                .all(|slot| slot.anneal_bottom.is_none())
+                == CURRENT_VERSION
         );
     }
 
@@ -2048,8 +1834,7 @@ mod run_origin_tests {
     }
 
     #[test]
-    fn digest_origin_v12_roundtrip_retains_actual_preparation_and_refuses_legacy_or_run_only_routes()
-     {
+    fn digest_origin_roundtrip_retains_actual_preparation_and_refuses_run_only_routes() {
         let (original, mut workspace) = saved_pcr_workspace();
         let run = original.methods.rows[0]
             .run_origin
@@ -2106,11 +1891,11 @@ mod run_origin_tests {
         draft.methods.rows[0].forward = "ACGACCCC".into();
         draft.methods.rows[0].reverse_primer = "GGGGTCGT".into();
         draft.sync_rows();
-        assert_eq!(draft.version, 12);
+        assert_eq!(draft.version, CURRENT_VERSION);
         let bytes = encode_raw(&draft).unwrap();
-        let restored = decode_version(&bytes, 12).unwrap();
+        let restored = decode(&bytes).unwrap();
         assert!(restored == draft);
-        assert!(decode_version(&bytes, 11).is_err());
+
         let (_, rows) = crate::cloning_preparations::prepared_rows(&restored.methods, 1).unwrap();
         assert!(matches!(
             &rows[0].preparation,
@@ -2120,10 +1905,10 @@ mod run_origin_tests {
             }
         ));
         let mut downgraded = draft.clone();
-        downgraded.version = 11;
+        downgraded.version = CURRENT_VERSION - 1;
         assert!(downgraded.validate().is_err());
         let mut future = draft;
-        future.version = 14;
+        future.version = CURRENT_VERSION + 1;
         assert!(future.validate().is_err());
         assert_eq!(serde_json::to_vec(&installed.workspace).unwrap(), before);
     }
@@ -2186,18 +1971,18 @@ mod run_origin_tests {
             .unwrap(),
         );
         draft.sync_rows();
-        assert_eq!(draft.version, 13);
+        assert_eq!(draft.version, CURRENT_VERSION);
         let bytes = encode_raw(&draft).unwrap();
-        assert!(decode_version(&bytes, 13).unwrap() == draft);
-        assert!(decode_version(&bytes, 12).is_err());
+        assert!(decode(&bytes).unwrap() == draft);
+
         let (_, rows) = crate::cloning_preparations::prepared_rows(&draft.methods, 1).unwrap();
         assert!(matches!(
             &rows[0].preparation,
             collagene_core::assembly_recipe::Preparation::FromDerived { .. }
         ));
-        draft.version = 12;
+        draft.version = CURRENT_VERSION - 1;
         assert!(draft.validate().is_err());
-        draft.version = 14;
+        draft.version = CURRENT_VERSION + 1;
         assert!(draft.validate().is_err());
     }
 
@@ -2210,7 +1995,7 @@ mod run_origin_tests {
         row.reverse_primer = "GTTACCCC".into();
         row.mismatch_max_mismatches = "2".into();
         row.mismatch_three_prime_exact = "3".into();
-        let restored = decode_version(&encode_raw(&draft).unwrap(), 5).unwrap();
+        let restored = decode(&encode_raw(&draft).unwrap()).unwrap();
         let (_, rows) = crate::cloning_preparations::prepared_rows(&restored.methods, 1).unwrap();
         let collagene_core::assembly_recipe::Preparation::FromRun {
             origin,
@@ -2231,11 +2016,11 @@ mod run_origin_tests {
     #[test]
     fn exact_saved_source_survives_v5_roundtrip_and_compiles_explicit_reconstruction() {
         let mut draft = saved_pcr();
-        assert_eq!(draft.version, 5);
+        assert_eq!(draft.version, CURRENT_VERSION);
         let pin = draft.methods.rows[0].run_origin.clone();
         draft.sync_rows();
         assert!(draft.methods.rows[0].run_origin == pin);
-        let restored = decode_version(&encode_raw(&draft).unwrap(), 5).unwrap();
+        let restored = decode(&encode_raw(&draft).unwrap()).unwrap();
         assert!(restored == draft);
         let (_, rows) = crate::cloning_preparations::prepared_rows(&restored.methods, 1).unwrap();
         let collagene_core::assembly_recipe::Preparation::FromRun {
@@ -2254,14 +2039,14 @@ mod run_origin_tests {
             collagene_core::assembly_recipe::RunPreparation::WholeLinear
         ));
         let mut old = draft.clone();
-        old.version = 4;
+        old.version = CURRENT_VERSION - 1;
         assert!(old.validate().is_err());
         draft.methods.rows[0].preparation = OverlapPreparation::DeclaredDuplex;
         assert!(crate::cloning_preparations::prepared_rows(&draft.methods, 1).is_err());
     }
 
     #[test]
-    fn equal_reference_event_change_clears_only_material_authority_on_sync_and_restore() {
+    fn mismatched_persisted_origin_is_refused_while_explicit_source_edit_clears_it() {
         let mut draft = saved_pcr();
         draft.slots[0].start = 2;
         draft.slots[0].end = 14;
@@ -2272,8 +2057,7 @@ mod run_origin_tests {
             .source
             .binding
             .document_id = "unrelated-source".into();
-        let restored = decode(&serde_json::to_vec(&changed).unwrap()).unwrap();
-        assert!(restored.methods.rows[0].run_origin.is_none());
+        assert!(decode(&serde_json::to_vec(&changed).unwrap()).is_err());
         changed.sync_rows();
         assert!(changed.methods.rows[0].run_origin.is_none());
         assert_eq!((changed.slots[0].start, changed.slots[0].end), (2, 14));
@@ -2281,7 +2065,6 @@ mod run_origin_tests {
         assert_eq!(changed.name, draft.name);
         assert_eq!(changed.circular, draft.circular);
         assert!(changed.junction_edits == draft.junction_edits);
-        assert!(restored == changed);
     }
 }
 
@@ -2456,7 +2239,7 @@ mod mismatch_draft_tests {
         assert!(error.contains("allowed mismatches"));
     }
     #[test]
-    fn mismatch_policy_roundtrip_preserves_explicit_primers_and_legacy_defaults() {
+    fn mismatch_policy_roundtrip_preserves_explicit_primers_and_unfinished_values() {
         let mut draft = Draft::default();
         let row = &mut draft.methods.rows[0];
         row.preparation = OverlapPreparation::MismatchPcr;
@@ -2466,23 +2249,6 @@ mod mismatch_draft_tests {
         row.mismatch_three_prime_exact = "3".into();
         let restored = decode(&encode_raw(&draft).unwrap()).unwrap();
         assert!(restored == draft);
-        let mut old = serde_json::to_value(Draft::default()).unwrap();
-        for row in old["methods"]["rows"].as_array_mut().unwrap() {
-            row.as_object_mut()
-                .unwrap()
-                .remove("mismatch_max_mismatches");
-            row.as_object_mut()
-                .unwrap()
-                .remove("mismatch_three_prime_exact");
-        }
-        let restored = decode(&serde_json::to_vec(&old).unwrap()).unwrap();
-        assert_eq!(
-            restored.methods.rows[0].mismatch_max_mismatches,
-            collagene_core::mutagenesis::PcrOptions::default()
-                .binding
-                .max_mismatches
-                .to_string()
-        );
         draft.methods.rows[0].mismatch_three_prime_exact = "9".into();
         assert!(draft.validate().is_ok());
         assert!(draft.methods.rows[0].mismatch_options().is_err());
@@ -2498,7 +2264,7 @@ mod substitution_tests {
     use super::*;
     use collagene_core::assembly_substitution_intent::Substitution;
     #[test]
-    fn literal_substitutions_require_v6_stable_roles_and_survive_navigation_and_roundtrip() {
+    fn literal_substitutions_require_stable_roles_and_survive_navigation_and_roundtrip() {
         let mut draft = Draft::default();
         let roles = draft.methods.role_ids(draft.slots.len()).unwrap();
         draft.methods.source_roles = Some(roles.clone());
@@ -2509,13 +2275,13 @@ mod substitution_tests {
             replacement: "T".into(),
         }];
         draft.sync_rows();
-        assert_eq!(draft.version, 6);
+        assert_eq!(draft.version, CURRENT_VERSION);
         draft.active_slot = 1;
         draft.sync_rows();
-        assert!(decode_version(&encode_raw(&draft).unwrap(), 6).unwrap() == draft);
+        assert!(decode(&encode_raw(&draft).unwrap()).unwrap() == draft);
         assert!(crate::assembly_alternatives::enable(&draft, "patch-library").is_err());
         let mut old = draft.clone();
-        old.version = 5;
+        old.version = CURRENT_VERSION - 1;
         assert!(old.validate().is_err());
         old = draft.clone();
         old.methods.source_roles = None;
@@ -2532,15 +2298,7 @@ mod substitution_tests {
         assert!(draft.substitutions.is_empty());
     }
     #[test]
-    fn legacy_defaults_and_bounded_substitution_deserialization_preserve_documentary_shape() {
-        let old = serde_json::to_value(Draft::default()).unwrap();
-        assert!(old.get("substitutions").is_none());
-        assert!(
-            decode(&serde_json::to_vec(&old).unwrap())
-                .unwrap()
-                .substitutions
-                .is_empty()
-        );
+    fn bounded_substitution_deserialization_preserves_documentary_shape() {
         let mut draft = Draft::default();
         let roles = draft.methods.role_ids(2).unwrap();
         draft.methods.source_roles = Some(roles.clone());
@@ -2555,7 +2313,7 @@ mod substitution_tests {
         draft.substitutions.push(edit.clone());
         assert!(draft.validate().is_err());
         let mut oversized = serde_json::to_value(Draft::default()).unwrap();
-        oversized["version"] = 6.into();
+        oversized["version"] = CURRENT_VERSION.into();
         oversized["substitutions"] = serde_json::to_value(vec![edit; 257]).unwrap();
         assert!(decode(&serde_json::to_vec(&oversized).unwrap()).is_err());
     }
@@ -2611,25 +2369,13 @@ mod contribution_edit_tests {
         d
     }
     #[test]
-    fn persisted_general_edits_require_v7_stable_roles_and_bounded_literals() {
-        let original = serde_json::to_value(Draft::default()).unwrap();
-        assert!(original.get("edits").is_none());
-        for version in 1..=6 {
-            let mut old = original.clone();
-            old["version"] = version.into();
-            assert!(
-                decode(&serde_json::to_vec(&old).unwrap())
-                    .unwrap()
-                    .edits
-                    .is_empty()
-            );
-        }
+    fn persisted_general_edits_require_stable_roles_and_bounded_literals() {
         let d = edited();
-        assert_eq!(d.version, 7);
+        assert_eq!(d.version, CURRENT_VERSION);
         assert!(d.validate().is_ok());
-        assert!(decode_version(&encode_raw(&d).unwrap(), 7).unwrap() == d);
+        assert!(decode(&encode_raw(&d).unwrap()).unwrap() == d);
         let mut wrong = d.clone();
-        wrong.version = 6;
+        wrong.version = CURRENT_VERSION - 1;
         assert!(wrong.validate().is_err());
         wrong = d.clone();
         wrong.methods.source_roles = None;
@@ -2701,7 +2447,7 @@ mod extension_draft_tests {
     use crate::cloning_methods_model::OverlapExtensionPcrInput;
 
     #[test]
-    fn six_independent_unfinished_oligos_and_policy_roundtrip_only_as_version8() {
+    fn six_independent_unfinished_oligos_and_policy_roundtrip() {
         let mut draft = Draft::default();
         let mut raw = OverlapExtensionPcrInput::default();
         raw.left.forward.annealing = "ag tc unfinished".into();
@@ -2715,22 +2461,21 @@ mod extension_draft_tests {
         draft.methods.rows[1].preparation = OverlapPreparation::OverlapExtensionPcr;
         draft.methods.rows[1].overlap_extension_pcr = Some(raw);
         draft.sync_rows();
-        assert_eq!(draft.version, 8);
+        assert_eq!(draft.version, CURRENT_VERSION);
         let bytes = encode_raw(&draft).unwrap();
-        let restored = decode_version(&bytes, 8).unwrap();
+        let restored = decode(&bytes).unwrap();
         assert!(restored == draft);
         assert!(crate::cloning_preparations::prepared_rows(&restored.methods, 2).is_err());
-        assert!(decode_version(&bytes, 7).is_err());
+
         let mut old = restored.clone();
-        old.version = 7;
+        old.version = CURRENT_VERSION - 1;
         assert!(old.validate().is_err());
-        // Changing preparation keeps working fields; they still require the
-        // version which understands them, without conferring valid preparation.
+        // Changing preparation preserves the inactive editable fields.
         old.methods.rows[1].preparation = OverlapPreparation::WholeLinear;
         assert!(old.validate().is_err());
         old.sync_rows();
-        assert_eq!(old.version, 8);
-        assert!(decode_version(&encode_raw(&old).unwrap(), 8).unwrap() == old);
+        assert_eq!(old.version, CURRENT_VERSION);
+        assert!(decode(&encode_raw(&old).unwrap()).unwrap() == old);
         let mut oversized = old;
         oversized.methods.rows[1]
             .overlap_extension_pcr
@@ -2743,7 +2488,7 @@ mod extension_draft_tests {
     }
 
     #[test]
-    fn physical_homology_working_settings_require10_and_roundtrip_unfinished_inactive_values() {
+    fn physical_homology_settings_roundtrip_unfinished_inactive_values() {
         let mut draft = Draft::default();
         assert!(draft.methods.homology.is_none());
         let mut form = crate::cloning_methods_model::HomologyForm::default();
@@ -2753,75 +2498,76 @@ mod extension_draft_tests {
         form.outer_left = "partial".into();
         draft.methods.homology = Some(form);
         draft.sync_rows();
-        assert_eq!(draft.version, 10);
-        let restored = decode_version(&encode_raw(&draft).unwrap(), 10).unwrap();
+        assert_eq!(draft.version, CURRENT_VERSION);
+        let restored = decode(&encode_raw(&draft).unwrap()).unwrap();
         assert!(restored == draft);
         let mut downgraded = restored.clone();
-        downgraded.version = 9;
+        downgraded.version = CURRENT_VERSION - 1;
         assert!(downgraded.validate().is_err());
-        assert!(decode_version(&encode_raw(&draft).unwrap(), 9).is_err());
+
         draft.methods.homology.as_mut().unwrap().cuts = "x".repeat(1025);
         assert!(encode_raw(&draft).is_err());
     }
     #[test]
-    fn three_prime_working_settings_require11_without_reinterpreting_legacy_routes() {
+    fn three_prime_settings_preserve_independent_five_prime_settings() {
         let mut draft = Draft::default();
         assert!(draft.methods.annealing.is_none());
         draft.methods.homology = Some(crate::cloning_methods_model::HomologyForm::default());
         draft.sync_rows();
-        assert_eq!(draft.version, 10);
-        let legacy = decode_version(&encode_raw(&draft).unwrap(), 10).unwrap();
-        assert!(legacy.methods.annealing.is_none());
-        assert!(legacy.methods.homology.as_ref().unwrap().enabled);
+        assert_eq!(draft.version, CURRENT_VERSION);
+        let current = decode(&encode_raw(&draft).unwrap()).unwrap();
+        assert!(current.methods.annealing.is_none());
+        assert!(current.methods.homology.as_ref().unwrap().enabled);
         let mut form = crate::cloning_methods_model::AnnealingForm::default();
         form.enabled = false;
         form.cuts = "0:unfinished, 20:".into();
         form.max_candidates = "partial".into();
         draft.methods.annealing = Some(form);
         draft.sync_rows();
-        assert_eq!(draft.version, 11);
-        let restored = decode_version(&encode_raw(&draft).unwrap(), 11).unwrap();
+        assert_eq!(draft.version, CURRENT_VERSION);
+        let restored = decode(&encode_raw(&draft).unwrap()).unwrap();
         assert!(restored == draft);
         assert!(restored.methods.homology.as_ref().unwrap().enabled);
         assert!(!restored.methods.annealing.as_ref().unwrap().enabled);
         let mut downgraded = restored.clone();
-        downgraded.version = 10;
+        downgraded.version = CURRENT_VERSION - 1;
         assert!(downgraded.validate().is_err());
-        assert!(decode_version(&encode_raw(&draft).unwrap(), 10).is_err());
+
         draft.methods.annealing.as_mut().unwrap().cuts = "x".repeat(1025);
         assert!(encode_raw(&draft).is_err());
     }
     #[test]
-    fn extension_catalog_selector_and_unfinished_raw6_require_version9() {
+    fn extension_catalog_selector_preserves_unfinished_raw6() {
         let mut draft = Draft::default();
         draft.methods.rows[1].preparation = OverlapPreparation::OverlapExtensionPcrCatalogDigest;
         draft.sync_rows();
-        assert_eq!(draft.version, 9);
+        assert_eq!(draft.version, CURRENT_VERSION);
         assert!(draft.methods.rows[1].overlap_extension_pcr.is_none());
         let mut raw = OverlapExtensionPcrInput::default();
         raw.outer.forward.tail = "CCGAATTC".into();
         raw.right.forward.annealing = "unfinished".into();
         draft.methods.rows[1].overlap_extension_pcr = Some(raw);
         draft.sync_rows();
-        let restored = decode_version(&encode_raw(&draft).unwrap(), 9).unwrap();
+        let restored = decode(&encode_raw(&draft).unwrap()).unwrap();
         assert!(restored == draft);
-        assert!(decode_version(&encode_raw(&draft).unwrap(), 8).is_err());
+
         let mut downgraded = draft.clone();
-        downgraded.version = 8;
+        downgraded.version = CURRENT_VERSION - 1;
         assert!(downgraded.validate().is_err());
         downgraded.methods.rows[1].preparation = OverlapPreparation::OverlapExtensionPcr;
+        downgraded.version = CURRENT_VERSION;
         assert!(downgraded.validate().is_ok());
-        assert!(decode_version(&encode_raw(&downgraded).unwrap(), 8).unwrap() == downgraded);
+        assert!(decode(&encode_raw(&downgraded).unwrap()).unwrap() == downgraded);
     }
     #[test]
-    fn selected_empty_extension_preparation_requires8_without_storing_default_fields() {
+    fn selected_empty_extension_preparation_roundtrips_explicit_null() {
         let mut draft = Draft::default();
         draft.methods.rows[0].preparation = OverlapPreparation::OverlapExtensionPcr;
-        assert!(draft.validate().is_err());
+        assert!(draft.validate().is_ok());
         draft.sync_rows();
-        assert_eq!(draft.version, 8);
+        assert_eq!(draft.version, CURRENT_VERSION);
         assert!(draft.methods.rows[0].overlap_extension_pcr.is_none());
-        assert!(decode_version(&encode_raw(&draft).unwrap(), 8).unwrap() == draft);
+        assert!(decode(&encode_raw(&draft).unwrap()).unwrap() == draft);
     }
 }
 
@@ -2927,5 +2673,62 @@ pub(crate) fn edit_request(
             substitutions: draft.substitutions.clone(),
         },
         edits: draft.edits.clone(),
+    }
+}
+
+#[cfg(test)]
+mod current_codec_tests {
+    use super::*;
+    #[test]
+    fn current_schema_requires_all_fields_including_explicit_nulls_and_defaults() {
+        let draft = Draft::default();
+        let value = serde_json::to_value(&draft).unwrap();
+        assert!(decode(&serde_json::to_vec(&value).unwrap()).unwrap() == draft);
+        for pointer in [
+            "/junction_edits",
+            "/substitutions",
+            "/edits",
+            "/alternatives",
+            "/slots/0/captured",
+            "/slots/0/digest_geometry",
+            "/slots/0/anneal_bottom",
+            "/methods/tailing_profile",
+            "/methods/vector/action",
+            "/methods/golden_gate",
+            "/methods/golden_gate_pool",
+            "/methods/multisite",
+            "/methods/source_roles",
+            "/methods/homology",
+            "/methods/annealing",
+            "/methods/rows/0/run_origin",
+            "/methods/rows/0/overlap_extension_pcr",
+            "/methods/rows/0/catalog_selection",
+            "/methods/rows/0/mismatch_max_mismatches",
+            "/methods/rows/0/anneal_options",
+            "/methods/rows/0/anneal_candidate",
+            "/methods/rows/0/anneal_bottom_document",
+            "/methods/rows/0/anneal_source_context",
+        ] {
+            let mut missing = value.clone();
+            let (parent, field) = pointer.rsplit_once('/').unwrap();
+            missing
+                .pointer_mut(parent)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .remove(field);
+            assert!(
+                decode(&serde_json::to_vec(&missing).unwrap()).is_err(),
+                "Missing field accepted: {pointer}"
+            );
+        }
+        for version in [CURRENT_VERSION - 1, CURRENT_VERSION + 1] {
+            let mut unsupported = value.clone();
+            unsupported["version"] = version.into();
+            assert!(decode(&serde_json::to_vec(&unsupported).unwrap()).is_err());
+        }
+        let mut unknown = value;
+        unknown["methods"]["obsolete_control"] = true.into();
+        assert!(decode(&serde_json::to_vec(&unknown).unwrap()).is_err());
     }
 }

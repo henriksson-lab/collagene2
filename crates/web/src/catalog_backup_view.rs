@@ -371,7 +371,7 @@ pub fn CatalogBackupControls(
         busy.set(true);
         catalog_status.set(None);
         spawn_local(async move {
-            let response = crate::desktop_rpc::call(wire::Command::BootstrapRecovery).await;
+            let response = crate::desktop_rpc::call(wire::Command::Bootstrap).await;
             if busy.try_get_untracked().is_none() {
                 return;
             }
@@ -380,7 +380,7 @@ pub fn CatalogBackupControls(
                 return;
             }
             match response {
-                Ok(wire::Success::BootstrapRecovery(value)) => {
+                Ok(wire::Success::Bootstrap(value)) => {
                     let paused = matches!(&value.catalog, wire::CatalogStatus::Paused { .. });
                     match &value.catalog {
                         wire::CatalogStatus::Ready { activation: value } => {

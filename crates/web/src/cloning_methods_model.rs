@@ -5,7 +5,7 @@ use collagene_core::{
     chemistry::{AnnealOptions, EndRepairMethod, EndTreatment, FivePrime, Terminus, ThreePrime},
     overlap_profiles::{OverlapMethod, ProfileOptions},
     tailing::TailingBase,
-    verification::TailSubstrate,
+    tailing_recipe::{Action, Profile},
 };
 use serde::{Deserialize, Serialize};
 
@@ -33,71 +33,16 @@ impl Treatment {
     }
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TailInput {
-    pub document: usize,
-    pub pcr: bool,
-    pub enzymes: String,
-    pub fragment: String,
-    pub blunt: bool,
-    pub forward_name: String,
-    pub reverse_name: String,
-    pub forward: String,
-    pub reverse: String,
-    pub forward_tail: String,
-    pub reverse_tail: String,
-    pub base: TailingBase,
+    pub action: Action,
     pub treatment: Treatment,
-    pub reversed: bool,
 }
 impl TailInput {
-    pub(crate) fn new(pcr: bool, base: TailingBase) -> Self {
+    pub(crate) fn new(action: Action) -> Self {
         Self {
-            document: 0,
-            pcr,
-            enzymes: "EcoRV".into(),
-            fragment: "1".into(),
-            blunt: false,
-            forward_name: "Forward".into(),
-            reverse_name: "Reverse".into(),
-            forward: String::new(),
-            reverse: String::new(),
-            forward_tail: String::new(),
-            reverse_tail: String::new(),
-            base,
+            action,
             treatment: Treatment::Keep,
-            reversed: false,
-        }
-    }
-    pub(crate) fn recipe(&self) -> Result<TailSubstrate, String> {
-        if self.pcr {
-            Ok(TailSubstrate::ExactPcr {
-                forward: Primer::new(&self.forward_name, &self.forward, &self.forward_tail)
-                    .map_err(|e| e.to_string())?,
-                reverse: Primer::new(&self.reverse_name, &self.reverse, &self.reverse_tail)
-                    .map_err(|e| e.to_string())?,
-            })
-        } else {
-            let enzymes = self
-                .enzymes
-                .split(',')
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(str::to_owned)
-                .collect::<Vec<_>>();
-            if enzymes.is_empty() {
-                return Err("Choose explicit restriction enzymes".into());
-            }
-            let fragment_index = self
-                .fragment
-                .parse::<usize>()
-                .ok()
-                .and_then(|n| n.checked_sub(1))
-                .ok_or("Fragment numbers start at 1")?;
-            Ok(TailSubstrate::Digest {
-                enzymes,
-                fragment_index,
-                blunt_before: self.blunt,
-            })
         }
     }
 }
@@ -237,8 +182,9 @@ impl OverlapExtensionPcrInput {
     }
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OverlapInput {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "required_option")]
     pub run_origin: Option<crate::run_origin_model::PinnedOrigin>,
     pub document: usize,
     pub interval_start: String,
@@ -246,14 +192,15 @@ pub struct OverlapInput {
     pub reverse: bool,
     pub treatment: Treatment,
     pub preparation: OverlapPreparation,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "required_option")]
     pub overlap_extension_pcr: Option<OverlapExtensionPcrInput>,
-    #[serde(default)]
+    #[serde(deserialize_with = "required_option")]
     pub catalog_selection: Option<collagene_core::catalog_digest::CatalogSelection>,
     pub left_terminus: Terminus,
     pub right_terminus: Terminus,
     pub enzymes: String,
     pub fragment: String,
+    #[serde(deserialize_with = "required_option")]
     pub repair: Option<EndRepairMethod>,
     pub forward_name: String,
     pub reverse_name: String,
@@ -261,51 +208,21 @@ pub struct OverlapInput {
     pub reverse_primer: String,
     pub forward_tail: String,
     pub reverse_tail: String,
-    #[serde(
-        default = "default_mismatch_max",
-        skip_serializing_if = "is_default_mismatch_max"
-    )]
     pub mismatch_max_mismatches: String,
-    #[serde(
-        default = "default_mismatch_exact",
-        skip_serializing_if = "is_default_mismatch_exact"
-    )]
     pub mismatch_three_prime_exact: String,
-    #[serde(
-        default = "default_mismatch_hits",
-        skip_serializing_if = "is_default_mismatch_hits"
-    )]
     pub mismatch_max_hits: String,
-    #[serde(
-        default = "default_mismatch_work",
-        skip_serializing_if = "is_default_mismatch_work"
-    )]
     pub mismatch_max_work: String,
-    #[serde(
-        default = "default_mismatch_pairs",
-        skip_serializing_if = "is_default_mismatch_pairs"
-    )]
     pub mismatch_max_pairs: String,
-    #[serde(
-        default = "default_mismatch_products",
-        skip_serializing_if = "is_default_mismatch_products"
-    )]
     pub mismatch_max_products: String,
-    #[serde(
-        default = "default_mismatch_bases",
-        skip_serializing_if = "is_default_mismatch_bases"
-    )]
     pub mismatch_max_product_bases: String,
-    #[serde(default)]
     pub right_fusion: String,
-    #[serde(default, skip_serializing_if = "default_anneal_options")]
     pub anneal_options: AnnealOptions,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "required_option")]
     pub anneal_candidate: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "required_option")]
     pub anneal_bottom_document: Option<usize>,
     /// Documentary selection context only; physical authority requires replay.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "required_option")]
     pub anneal_source_context: Option<String>,
 }
 fn default_mismatch_max() -> String {
@@ -320,57 +237,39 @@ fn default_mismatch_exact() -> String {
         .min_three_prime_exact
         .to_string()
 }
-fn is_default_mismatch_max(value: &String) -> bool {
-    *value == default_mismatch_max()
-}
-fn is_default_mismatch_exact(value: &String) -> bool {
-    *value == default_mismatch_exact()
-}
+
 fn default_mismatch_hits() -> String {
     collagene_core::mutagenesis::PcrOptions::default()
         .binding
         .max_hits
         .to_string()
 }
-fn is_default_mismatch_hits(value: &String) -> bool {
-    *value == default_mismatch_hits()
-}
+
 fn default_mismatch_work() -> String {
     collagene_core::mutagenesis::PcrOptions::default()
         .binding
         .max_work
         .to_string()
 }
-fn is_default_mismatch_work(value: &String) -> bool {
-    *value == default_mismatch_work()
-}
+
 fn default_mismatch_pairs() -> String {
     collagene_core::mutagenesis::PcrOptions::default()
         .max_pair_checks
         .to_string()
 }
-fn is_default_mismatch_pairs(value: &String) -> bool {
-    *value == default_mismatch_pairs()
-}
+
 fn default_mismatch_products() -> String {
     collagene_core::mutagenesis::PcrOptions::default()
         .max_products
         .to_string()
 }
-fn is_default_mismatch_products(value: &String) -> bool {
-    *value == default_mismatch_products()
-}
+
 fn default_mismatch_bases() -> String {
     collagene_core::mutagenesis::PcrOptions::default()
         .max_product_bases
         .to_string()
 }
-fn is_default_mismatch_bases(value: &String) -> bool {
-    *value == default_mismatch_bases()
-}
-fn default_anneal_options(options: &AnnealOptions) -> bool {
-    *options == AnnealOptions::default()
-}
+
 impl Default for OverlapInput {
     fn default() -> Self {
         Self {
@@ -802,10 +701,12 @@ impl AnnealingForm {
     }
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MethodsState {
     pub mode: Mode,
     pub vector: TailInput,
     pub insert: TailInput,
+    pub tailing_profile: Profile,
     pub circular: bool,
     pub allow_nicked: bool,
     #[serde(deserialize_with = "deserialize_method_rows")]
@@ -815,22 +716,19 @@ pub struct MethodsState {
     pub scan_repeats: bool,
     pub comparisons: String,
     pub occurrences: String,
-    #[serde(default)]
     pub golden_gate: GoldenGateForm,
     /// Editable pool/reaction settings and explicit candidate intent only;
     /// inspections, plans and scientific authority remain transient.
-    /// Missing in older drafts: initialize using their preparation topology and row count.
-    #[serde(default)]
+    #[serde(deserialize_with = "required_option")]
     pub golden_gate_pool: Option<PoolForm>,
-    #[serde(default)]
+    #[serde(deserialize_with = "required_option")]
     pub multisite: Option<crate::multisite_form::Form>,
-    /// Stable source-choice and bin identities. Older ordinary drafts keep the
-    /// existing ordinal identity contract; explicit identities are never repinned.
-    #[serde(default, deserialize_with = "deserialize_source_roles")]
+    /// Stable source-choice and bin identities; explicit identities are never repinned.
+    #[serde(deserialize_with = "deserialize_source_roles")]
     pub source_roles: Option<Vec<Role>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "required_option")]
     pub homology: Option<HomologyForm>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "required_option")]
     pub annealing: Option<AnnealingForm>,
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -945,8 +843,13 @@ impl Default for MethodsState {
     fn default() -> Self {
         Self {
             mode: Mode::Overlap,
-            vector: TailInput::new(false, TailingBase::T),
-            insert: TailInput::new(true, TailingBase::A),
+            vector: TailInput::new(Action::AddTail {
+                base: TailingBase::T,
+            }),
+            insert: TailInput::new(Action::AddTail {
+                base: TailingBase::A,
+            }),
+            tailing_profile: Profile::Ta,
             circular: true,
             allow_nicked: false,
             rows: vec![OverlapInput::default(), OverlapInput::default()],
@@ -1006,9 +909,6 @@ impl MethodsState {
         Ok(ids)
     }
     pub(crate) fn source_indices(&self) -> Result<Vec<usize>, String> {
-        if self.mode == Mode::Tailing {
-            return Ok(vec![self.vector.document, self.insert.document]);
-        }
         self.all_input_ids()?;
         let mut indices = self.rows.iter().map(|row| row.document).collect::<Vec<_>>();
         for row in &self.rows {
@@ -1052,9 +952,9 @@ impl MethodsState {
         self.rows.swap(a, b);
         if self.mode == Mode::Tailing && a != b {
             // These are the only tail controls used by the source-slot recipe.
-            // Preparation/roles travel with rows; sync_rows rebinds the legacy
+            // Preparation/roles travel with rows; sync_rows rebinds the
             // document/reverse fields to the new slot positions afterwards.
-            std::mem::swap(&mut self.vector.base, &mut self.insert.base);
+            std::mem::swap(&mut self.vector.action, &mut self.insert.action);
             std::mem::swap(&mut self.vector.treatment, &mut self.insert.treatment);
         }
         if let Some(roles) = &mut self.source_roles {
@@ -1178,11 +1078,11 @@ pub(crate) fn declared_terminus(end: Terminus) -> String {
 mod mismatch_tests {
     use super::*;
     #[test]
-    fn legacy_row_json_defaults_and_mismatch_policy_bounds_are_explicit() {
+    fn current_row_json_retains_explicit_defaults_and_mismatch_policy_bounds() {
         let ordinary = OverlapInput::default();
         let json = serde_json::to_value(&ordinary).unwrap();
-        assert!(json.get("mismatch_max_mismatches").is_none());
-        assert!(json.get("mismatch_three_prime_exact").is_none());
+        assert!(json.get("mismatch_max_mismatches").is_some());
+        assert!(json.get("mismatch_three_prime_exact").is_some());
         let mut row: OverlapInput = serde_json::from_value(json).unwrap();
         row.forward = "ACGT".into();
         row.reverse_primer = "TGCA".into();
@@ -1234,10 +1134,10 @@ mod mismatch_tests {
 mod overlap_extension_tests {
     use super::*;
     #[test]
-    fn partial_six_oligo_input_roundtrips_without_changing_legacy_row_json() {
-        let legacy = serde_json::to_value(OverlapInput::default()).unwrap();
-        assert!(legacy.get("overlap_extension_pcr").is_none());
-        let mut row: OverlapInput = serde_json::from_value(legacy).unwrap();
+    fn partial_six_oligo_input_roundtrips_current_row_shape() {
+        let current = serde_json::to_value(OverlapInput::default()).unwrap();
+        assert!(current["overlap_extension_pcr"].is_null());
+        let mut row: OverlapInput = serde_json::from_value(current).unwrap();
         let mut raw = OverlapExtensionPcrInput::default();
         for (index, pair) in [&mut raw.left, &mut raw.right, &mut raw.outer]
             .into_iter()
@@ -1376,8 +1276,8 @@ mod homology_tests {
         form.all_accessible_ends = false;
         form.outer_left = "inactive".into();
         assert!(form.policy(vec![16, 16], true, 2).is_ok());
-        let legacy = serde_json::to_value(MethodsState::default()).unwrap();
-        assert!(legacy.get("homology").is_none());
+        let current = serde_json::to_value(MethodsState::default()).unwrap();
+        assert!(current["homology"].is_null());
     }
 }
 
@@ -1419,12 +1319,7 @@ mod annealing_tests {
         form.min_paired_bases = "17".into();
         assert!(form.policy(vec![16], false, 2).is_err());
         let mut state = MethodsState::default();
-        assert!(
-            serde_json::to_value(&state)
-                .unwrap()
-                .get("annealing")
-                .is_none()
-        );
+        assert!(serde_json::to_value(&state).unwrap()["annealing"].is_null());
         state.annealing = Some(AnnealingForm::default());
         assert!(state.validate_processing_selection().is_ok());
         state.homology = Some(HomologyForm::default());
@@ -1432,4 +1327,10 @@ mod annealing_tests {
         state.annealing.as_mut().unwrap().enabled = false;
         assert!(state.validate_processing_selection().is_ok());
     }
+}
+
+fn required_option<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
+    deserializer: D,
+) -> Result<Option<T>, D::Error> {
+    Option::deserialize(deserializer)
 }

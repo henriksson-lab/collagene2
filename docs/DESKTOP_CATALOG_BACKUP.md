@@ -239,11 +239,10 @@ requests automatically; publication remains explicit and receipt/CAS guarded.
 Additional authored fixtures cover preserved saved-PCR bytes and replay after
 activation, independent editor sentinels, exact retry/restart, active branch writes,
 repeated adoption and rollback, stale source/generation refusal, lost-intent refusal,
-exclusive desktop leases, read-only MCP coexistence/mutation refusal, and v3 versus
-legacy frame floors. The parent executes coordinated tests; this source worker ran
+exclusive desktop leases, read-only MCP coexistence/mutation refusal, and unsupported-version rejection. The parent executes coordinated tests; this source worker ran
 no compiler, GUI, browser, network or live-data checks.
 
-## Editor-only recovery startup and exact cancellation (DTQ/DTR4)
+## Editor-only recovery startup and exact cancellation (DTQ/DTR5)
 
 A failed catalog activation does **not** prevent opening the native working editor.
 The host opens its independent working store before attempting catalog startup and
@@ -254,15 +253,14 @@ preferences, export files and use operation controls. Library/sync factories ref
 without trusted catalog availability. No empty replacement catalog or fictitious
 lab context stands in for the missing connection.
 
-The old Bootstrap DTO/prefix remains unchanged. New `BootstrapRecovery` request and
-result require v4 and carry real working metadata/preferences, an optional genuine
-library context, and `CatalogStatus::Ready` or `Paused`. Paused always has no catalog
-context. Its bounded public diagnostic and optional activation record distinguish
-an exact known pending choice from a journal that could not be trusted. Cached
-recovery bootstrap reads refresh their observational status so an earlier pending
-or available reply cannot conceal later acceptance/cancellation. The small control
-fast path explicitly recognizes the new ordinary bootstrap without admitting
-unknown selectors or downgraded headers.
+The single `Bootstrap` request/result uses the current schema5 and carries real
+working metadata/preferences, an optional genuine library context, and
+`CatalogStatus::Ready` or `Paused`. Paused always has no catalog context. Its
+bounded public diagnostic and optional activation record distinguish an exact
+known pending choice from a journal that could not be trusted. Cached bootstrap
+reads refresh observational status so an earlier pending or available reply
+cannot conceal later acceptance/cancellation. The small control fast path
+recognizes bootstrap without admitting unknown selectors or unsupported headers.
 
 `CancelActivation` supplies the exact accepted operation ID, review revision and
 baseline activation generation. With a valid journal and that choice still pending,

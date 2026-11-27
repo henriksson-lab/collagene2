@@ -82,6 +82,7 @@ fn plan(
                     ],
                     circular: true,
                     allow_nicked,
+                    options: Default::default(),
                 },
             ],
         },
@@ -272,6 +273,7 @@ fn prior_trusted_linear_ligation_nicks_survive_tailing_with_unchanged_five_prime
                 ],
                 circular: false,
                 allow_nicked: true,
+                options: Default::default(),
             },
             Operation::Tail3Prime {
                 template: Source::Step(2),

@@ -210,6 +210,7 @@ fn actual_retained_nicks_cannot_become_a_saved_pcr_template() {
                 ],
                 circular: true,
                 allow_nicked: true,
+                options: Default::default(),
             },
         ],
     );

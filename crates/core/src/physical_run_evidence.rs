@@ -86,7 +86,7 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
                     | Operation::ReconstructRunProduct { .. }
                     | Operation::ReconstructDigestFragment { .. }
                     | Operation::ReconstructMaterial { .. }
-                    | Operation::LigateWithOutcomes { .. }
+                    | Operation::Ligate { .. }
                     | Operation::OverlapExtension { .. }
                     | Operation::HomologyAssembly { .. }
                     | Operation::ResectThreePrime { .. }
@@ -240,7 +240,7 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
                 continue;
             }
             (
-                Operation::LigateWithOutcomes {
+                Operation::Ligate {
                     fragments,
                     circular,
                     allow_nicked,
@@ -460,7 +460,7 @@ pub(crate) fn validate_workspace(w: &Workspace) -> Result<(), Error> {
                     | Operation::ReconstructRunProduct { .. }
                     | Operation::ReconstructDigestFragment { .. }
                     | Operation::ReconstructMaterial { .. }
-                    | Operation::LigateWithOutcomes { .. }
+                    | Operation::Ligate { .. }
                     | Operation::OverlapExtension { .. }
                     | Operation::HomologyAssembly { .. }
                     | Operation::ResectThreePrime { .. }

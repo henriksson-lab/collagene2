@@ -82,6 +82,9 @@ fn wire(magic: &[u8; 4], version: u16, value: &impl serde::Serialize) -> Vec<u8>
     b.extend(payload);
     b
 }
+
+// Explicit historical operation4 fixture; current recipe compilers intentionally emit operation29.
+
 #[test]
 fn all_three_recipe_requests_reject_downgraded_preparation_and_preview_rows_require71() {
     assert!(protocol::WORKER_SCHEMA_VERSION >= 71);
@@ -109,8 +112,8 @@ fn all_three_recipe_requests_reject_downgraded_preparation_and_preview_rows_requ
     assert_eq!(p.compiled.plan.inputs.len(), 3);
     assert_eq!(p.compiled.rows.len(), 2);
     assert!(protocol::decode_response(&wire(b"CGR\0", 70, &response)).is_err());
-    // The same compiled generic plan still consists of established operations;
-    // raising the recipe capability never raises candidate or Verify semantics.
+    // New compiler output requires outcomes capability; explicit historical
+    // generic operations retain their original worker70 contract.
     let verify = Request {
         id: 2,
         revision: target.revision(),
@@ -119,7 +122,8 @@ fn all_three_recipe_requests_reject_downgraded_preparation_and_preview_rows_requ
             target: target.clone(),
         },
     };
-    assert!(protocol::process_request(&wire(b"CGQ\0", 70, &verify)).is_ok());
+    assert!(protocol::process_request(&wire(b"CGQ\0", 70, &verify)).is_err());
+    assert!(protocol::process_request(&wire(b"CGQ\0", 91, &verify)).is_err());
     let overlap = assembly_recipe::Recipe {
         name: recipe.name.clone(),
         fragments: recipe.fragments.iter().map(|f| f.source.clone()).collect(),
@@ -138,13 +142,17 @@ fn all_three_recipe_requests_reject_downgraded_preparation_and_preview_rows_requ
     };
     assert!(protocol::process_request(&wire(b"CGQ\0", 70, &request)).is_err());
     let tail = tailing_recipe::Recipe {
+        profile: collagene_core::tailing_recipe::Profile::Ta,
+
         name: recipe.name,
         fragments: recipe
             .fragments
             .into_iter()
             .map(|f| tailing_recipe::Fragment {
                 source: f.source,
-                base: TailingBase::A,
+                action: collagene_core::tailing_recipe::Action::AddTail {
+                    base: TailingBase::A,
+                },
                 treatment: f.treatment,
             })
             .collect(),
@@ -168,68 +176,4 @@ fn all_three_recipe_requests_reject_downgraded_preparation_and_preview_rows_requ
         AnalysisResult::TailingRecipePreview(_)
     ));
     assert!(protocol::decode_response(&wire(b"CGR\0", 70, &response)).is_err());
-}
-#[test]
-fn ordinary_existing_recipe_and_generic_annealing_plan_keep_old70_compatibility() {
-    let (inputs, target, mut recipe) = fixture();
-    recipe.fragments[1].source.preparation = Preparation::WholeLinear;
-    let request = Request {
-        id: 10,
-        revision: ligation_recipe::preview_revision(&inputs, &target, &recipe).unwrap(),
-        job: AnalysisJob::PreviewLigationRecipe {
-            inputs,
-            target,
-            recipe,
-        },
-    };
-    assert!(protocol::process_request(&wire(b"CGQ\0", 70, &request)).is_ok());
-    let bytes = protocol::process_request(&protocol::encode_request(&request).unwrap()).unwrap();
-    let response: Response = protocol::decode_response(&bytes).unwrap();
-    // Ordinary requests retain their old capability floor. Fresh science20
-    // reports require worker73 even when they contain no new preparation.
-    assert!(protocol::decode_response(&wire(b"CGR\0", 70, &response)).is_err());
-}
-#[test]
-fn paired_editable_draft_attachment_cannot_claim_old70_workspace_transport() {
-    use collagene_core::workspace::{Workspace, WorkspaceAttachment};
-    let mut workspace = Workspace::from_documents(
-        "opaque editable draft",
-        vec![Molecule::dna("source", "ACGT", Topology::Linear).unwrap()],
-        0,
-    )
-    .unwrap();
-    let payload = br#"{"version":4}"#.to_vec();
-    workspace.attachments.insert(
-        blake3::hash(&payload).to_hex().to_string(),
-        WorkspaceAttachment {
-            kind: "assembly-draft-v4".into(),
-            name: "editable paired draft".into(),
-            media_type: "application/json".into(),
-            bytes: payload,
-        },
-    );
-    let request = Request {
-        id: 20,
-        revision: workspace
-            .head(&workspace.active_document)
-            .unwrap()
-            .revision(),
-        job: AnalysisJob::SaveWorkspace {
-            workspace: workspace.clone(),
-        },
-    };
-    assert!(protocol::process_request(&wire(b"CGQ\0", 70, &request)).is_err());
-    assert!(protocol::process_request(&protocol::encode_request(&request).unwrap()).is_ok());
-    // Previous editable attachment kinds remain transport-compatible. This is
-    // an opaque-history gate, never a claim to validate the web draft schema.
-    workspace.attachments.values_mut().next().unwrap().kind = "assembly-draft-v3".into();
-    let request = Request {
-        id: 21,
-        revision: workspace
-            .head(&workspace.active_document)
-            .unwrap()
-            .revision(),
-        job: AnalysisJob::SaveWorkspace { workspace },
-    };
-    assert!(protocol::process_request(&wire(b"CGQ\0", 70, &request)).is_ok());
 }

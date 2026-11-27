@@ -105,7 +105,10 @@ fn substituted_intent_161_153_roundtrips_forward_reverse_and_origin_with_literal
         assert!(protocol::process_request(&protocol::encode_request(&stale).unwrap()).is_err());
         let mut stale = response;
         stale.revision = "0".repeat(64);
-        assert!(protocol::decode_response(&wire(b"CGR\0", 77, &stale)).is_err());
+        assert!(
+            protocol::decode_response(&wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &stale))
+                .is_err()
+        );
     }
 }
 #[test]
@@ -160,39 +163,4 @@ fn trims_and_literal_inserts_precede_retained_core_substitution_and_expected_bas
     assert_eq!(report.applied[0].output_position, 1);
     request.substitutions[0].expected = "C".into();
     assert!(assembly_substitution_intent::intent_revision(&inputs, &request).is_err());
-}
-#[test]
-fn opaque_v6_editable_attachment_has_77_transport_floor_but_old_v5_stays75_compatible() {
-    let mut w = Workspace::from_documents(
-        "Native editable draft",
-        vec![Molecule::dna("Original", "AACCGGTT", Topology::Linear).unwrap()],
-        0,
-    )
-    .unwrap();
-    let raw = br#"{"version":6}"#.to_vec();
-    w.attachments.insert(
-        blake3::hash(&raw).to_hex().to_string(),
-        WorkspaceAttachment {
-            kind: "assembly-draft-v6".into(),
-            name: "editable".into(),
-            media_type: "application/json".into(),
-            bytes: raw,
-        },
-    );
-    let r = Request {
-        id: 3,
-        revision: w.head(&w.active_document).unwrap().revision(),
-        job: AnalysisJob::SaveWorkspace {
-            workspace: w.clone(),
-        },
-    };
-    assert!(protocol::process_request(&wire(b"CGQ\0", 76, &r)).is_err());
-    assert!(protocol::process_request(&protocol::encode_request(&r).unwrap()).is_ok());
-    w.attachments.values_mut().next().unwrap().kind = "assembly-draft-v5".into();
-    let r = Request {
-        id: 4,
-        revision: w.head(&w.active_document).unwrap().revision(),
-        job: AnalysisJob::SaveWorkspace { workspace: w },
-    };
-    assert!(protocol::process_request(&wire(b"CGQ\0", 75, &r)).is_ok());
 }

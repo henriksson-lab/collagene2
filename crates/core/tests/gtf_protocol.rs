@@ -88,51 +88,10 @@ fn gtf_import_apply_export_requires_thirty_without_changing_old_tags() {
         );
     }
     assert!(
-        protocol::decode_response(&response(AnalysisResult::AnnotationImport(imported), 30))
-            .is_ok()
+        protocol::decode_response(&response(
+            AnalysisResult::AnnotationImport(imported),
+            protocol::WORKER_SCHEMA_VERSION
+        ))
+        .is_ok()
     );
-}
-
-#[test]
-fn historical_gff_and_bed_keep_their_original_binary_selectors() {
-    assert_eq!(
-        postcard::to_allocvec(&AnnotationFormat::Gff3).unwrap(),
-        vec![0]
-    );
-    assert_eq!(
-        postcard::to_allocvec(&AnnotationFormat::Bed).unwrap(),
-        vec![1]
-    );
-    assert_eq!(
-        postcard::to_allocvec(&AnnotationFormat::Gtf).unwrap(),
-        vec![2]
-    );
-    for (format, text) in [
-        (
-            AnnotationFormat::Gff3,
-            "##gff-version 3\nchr_demo\tfixture\texon\t2\t5\t.\t-\t.\tID=e1\n",
-        ),
-        (AnnotationFormat::Bed, "chr_demo\t1\t5\texon\t0\t-\n"),
-    ] {
-        let bytes = historical(
-            request(AnalysisJob::ImportAnnotations {
-                molecule: source(),
-                text: text.into(),
-                format,
-                seqid: "chr_demo".into(),
-            }),
-            7,
-        );
-        let output = protocol::process_request(&bytes).unwrap();
-        let AnalysisResult::AnnotationImport(report) =
-            protocol::decode_response(&output).unwrap().result
-        else {
-            panic!("expected annotation report")
-        };
-        assert_eq!(report.format, format);
-        assert_eq!(
-            report.proposals[0].feature.location.spans(),
-            vec![(1, 5, true)]
-        );
-    }
 }

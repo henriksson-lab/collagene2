@@ -137,7 +137,7 @@ fn worker88_job168_operation26_evidence5_and_portable_schemas_bind_annealing_wit
         &current[4..6],
         &protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
     );
-    assert!(transfer::load_candidate(&wire(b"CGP\0", 20, &candidate)).is_ok());
+    assert!(transfer::load_candidate(&wire(b"CGP\0", 20, &candidate)).is_err());
     assert!(transfer::load_candidate(&wire(b"CGP\0", 19, &candidate)).is_err());
     let mut w = Workspace::from_documents(
         "Portable physical candidate",

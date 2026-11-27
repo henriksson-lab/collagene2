@@ -30,8 +30,7 @@ fn title(op: &Operation) -> &'static str {
         Operation::TreatEnds { .. } => "End treatment",
         Operation::RepairEnds { .. } => "End repair",
         Operation::Tail3Prime { .. } => "3′ tailing",
-        Operation::LigateWithOutcomes { .. } => "Ligation with bounded alternatives",
-        Operation::Ligate { .. } => "Ordered ligation",
+        Operation::Ligate { .. } => "Ligation with bounded alternatives",
         Operation::AnnealOligos { .. } => "Oligo annealing",
         Operation::HomologyAssembly { .. } => "Physical homology assembly",
         Operation::ResectThreePrime { .. } => "Explicit 3′ source resection",
@@ -115,7 +114,7 @@ fn new_operation(kind: &str, source: Source) -> Operation {
             template: source,
             base: TailingBase::A,
         },
-        "ligate" => Operation::LigateWithOutcomes {
+        "ligate" => Operation::Ligate {
             options: Default::default(),
             fragments: vec![OrientedSource {
                 source,
@@ -524,11 +523,6 @@ impl Fields {
                 circular,
                 allow_nicked,
                 ..
-            }
-            | Operation::LigateWithOutcomes {
-                circular,
-                allow_nicked,
-                ..
             } => {
                 f.circular = *circular;
                 f.nicked = *allow_nicked;
@@ -630,17 +624,14 @@ fn OperationEditor(
             .collect::<Vec<_>>(),
     );
     let reverse = RwSignal::new(match &edit.operation {
-        Operation::Ligate { fragments, .. } | Operation::LigateWithOutcomes { fragments, .. } => {
+        Operation::Ligate { fragments, .. } => {
             fragments.iter().map(|f| f.reverse).collect::<Vec<_>>()
         }
         _ => vec![],
     });
     let source_page = RwSignal::new(0usize);
     let status = RwSignal::new(String::new());
-    let is_ligation = matches!(
-        edit.operation,
-        Operation::Ligate { .. } | Operation::LigateWithOutcomes { .. }
-    );
+    let is_ligation = matches!(edit.operation, Operation::Ligate { .. });
     let params=match &edit.operation {
         Operation::Pcr{..}|Operation::PcrWithMismatches{..}=>view!{<div class="plan-edit-grid">
             {text_field(fields,"Forward primer name",|f|&f.forward_name,|f,v|f.forward_name=v)}{text_field(fields,"Forward annealing domain (5′→3′)",|f|&f.forward_domain,|f,v|f.forward_domain=v)}{text_field(fields,"Forward 5′ tail",|f|&f.forward_tail,|f,v|f.forward_tail=v)}
@@ -658,7 +649,7 @@ fn OperationEditor(
         Operation::TreatEnds{..}=>choice_field(fields,"End treatment",|f|&f.mode,|f,v|f.mode=v,vec![("phosphorylate","Phosphorylate 5′ ends"),("dephosphorylate","Dephosphorylate 5′ ends")]),
         Operation::RepairEnds{..}=>choice_field(fields,"End repair",|f|&f.mode,|f,v|f.mode=v,vec![("fill","Fill 5′ overhangs"),("remove","Remove 3′ overhangs"),("blunt","Blunt ends")]),
         Operation::Tail3Prime{..}=>choice_field(fields,"Added 3′ base",|f|&f.mode,|f,v|f.mode=v,vec![("A","A"),("C","C"),("G","G"),("T","T")]),
-        Operation::Ligate{..}|Operation::LigateWithOutcomes{..}=>view!{<div><label class="checkbox-label"><input type="checkbox" prop:checked=move||fields.with(|f|f.circular) on:change=move|e|fields.update(|f|f.circular=event_target_checked(&e))/>"Circular ligation"</label><label class="checkbox-label"><input type="checkbox" prop:checked=move||fields.with(|f|f.nicked) on:change=move|e|fields.update(|f|f.nicked=event_target_checked(&e))/>"Allow retained nicks"</label></div>}.into_any(),
+        Operation::Ligate{..}=>view!{<div><label class="checkbox-label"><input type="checkbox" prop:checked=move||fields.with(|f|f.circular) on:change=move|e|fields.update(|f|f.circular=event_target_checked(&e))/>"Circular ligation"</label><label class="checkbox-label"><input type="checkbox" prop:checked=move||fields.with(|f|f.nicked) on:change=move|e|fields.update(|f|f.nicked=event_target_checked(&e))/>"Allow retained nicks"</label></div>}.into_any(),
         Operation::AnnealOligos{..}=>view!{<div class="plan-edit-grid">
             {text_field(fields,"Minimum paired bases",|f|&f.min_pair,|f,v|f.min_pair=v)}{text_field(fields,"Annealing candidate index (zero based)",|f|&f.index,|f,v|f.index=v)}
             {choice_field(fields,"Top oligo 5′ chemistry",|f|&f.top_five,|f,v|f.top_five=v,vec![("unknown","Unknown"),("P","Phosphate"),("OH","Hydroxyl")])}
@@ -689,20 +680,14 @@ fn OperationEditor(
                         reverse: flags.get(i).copied().unwrap_or(false),
                     })
                     .collect();
-                return Ok(match &op {
-                    Operation::LigateWithOutcomes { options, .. } => {
-                        Operation::LigateWithOutcomes {
-                            fragments,
-                            circular: f.circular,
-                            allow_nicked: f.nicked,
-                            options: options.clone(),
-                        }
-                    }
-                    _ => Operation::Ligate {
-                        fragments,
-                        circular: f.circular,
-                        allow_nicked: f.nicked,
-                    },
+                let Operation::Ligate { options, .. } = &op else {
+                    return Err("Expected a ligation operation.".into());
+                };
+                return Ok(Operation::Ligate {
+                    fragments,
+                    circular: f.circular,
+                    allow_nicked: f.nicked,
+                    options: options.clone(),
                 });
             }
             let mut slots = verification::operation_sources_mut(&mut op);

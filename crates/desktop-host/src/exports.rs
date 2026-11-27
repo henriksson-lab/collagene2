@@ -331,12 +331,8 @@ impl DesktopExports {
                 response
                     .validate_for(&request)
                     .map_err(|_| HostError::Wire)?;
-                return wire::encode_response_for_request(
-                    &response,
-                    &request,
-                    u16::from_le_bytes([bytes[4], bytes[5]]),
-                )
-                .map_err(|_| HostError::Wire);
+                return wire::encode_response_for_request(&response, &request)
+                    .map_err(|_| HostError::Wire);
             }
 
             Ok(JobStart::Cached(reply)) => {
@@ -365,12 +361,8 @@ impl DesktopExports {
         response
             .validate_for(&request)
             .map_err(|_| HostError::Wire)?;
-        let reply = wire::encode_response_for_request(
-            &response,
-            &request,
-            u16::from_le_bytes([bytes[4], bytes[5]]),
-        )
-        .map_err(|_| HostError::Wire)?;
+        let reply =
+            wire::encode_response_for_request(&response, &request).map_err(|_| HostError::Wire)?;
         // Durable bytes and their immutable intent are the outcome authority.
         // A cache bookkeeping failure after commit must not turn success into a
         // claimed cancellation/failure; a retry revalidates the same owned file.

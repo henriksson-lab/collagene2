@@ -251,36 +251,3 @@ fn ordinary_32_mib_caps_apply_to_both_jobs_and_results() {
         Err(Error::TooLarge)
     ));
 }
-#[test]
-fn old_schema53_reference_transfer_layout_and_version_floor_are_retained() {
-    use collagene_core::reference_transfer::{self, Part, RequestCopy, Selection};
-    let input = RequestCopy {
-        source: fixture(false).source,
-        selection: Selection {
-            parts: vec![Part {
-                start: 0,
-                end: 6,
-                reverse: false,
-            }],
-            reverse: false,
-        },
-    };
-    let request = Request {
-        id: 53,
-        revision: reference_transfer::copy_revision(&input).unwrap(),
-        job: AnalysisJob::CopyReferenceFragment { request: input },
-    };
-    let mut wire = protocol::encode_request(&request).unwrap();
-    assert_eq!(tag(&wire), 120);
-    wire[4..6].copy_from_slice(&53u16.to_le_bytes());
-    let response = protocol::process_request(&wire).unwrap();
-    assert_eq!(tag(&response), 112);
-    let mut old_response = response.clone();
-    old_response[4..6].copy_from_slice(&53u16.to_le_bytes());
-    assert!(protocol::decode_response(&old_response).is_ok());
-    wire[4..6].copy_from_slice(&52u16.to_le_bytes());
-    assert!(matches!(
-        protocol::process_request(&wire),
-        Err(Error::Unsupported(_))
-    ));
-}

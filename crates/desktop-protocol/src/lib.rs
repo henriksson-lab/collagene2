@@ -4,7 +4,7 @@
 pub use collagene_library_protocol as library;
 use library::{Blob, Digest, LabContext, Text};
 use serde::{Deserialize, Serialize};
-pub const SCHEMA_VERSION: u16 = 4;
+pub const SCHEMA_VERSION: u16 = 5;
 mod catalog_backup;
 pub use catalog_backup::*;
 pub const HEADER_BYTES: usize = 42;
@@ -97,16 +97,14 @@ dto! {pub enum Command{
     OperationStatus{operation_id:OperationId},
     ExportFile{suggested_name:Text<256>,bytes:Blob<MAX_EXPORT_BYTES>},
     CatalogBackup(CatalogBackupCommand),
-    BootstrapRecovery,
 }}
 dto! {pub struct RequestEnvelope{pub request_id:u64,pub operation_id:OperationId,pub command:Command}}
 dto! {pub struct SlotMetadata{pub archive_hash:Digest,pub bytes:u64}}
 dto! {pub struct WorkingMetadata{pub version:Option<Digest>,pub current:Option<SlotMetadata>,pub previous:Option<SlotMetadata>}}
 dto! {pub struct Preferences{pub version:Option<Digest>,pub bytes:Blob<MAX_PREFERENCE_BYTES>}}
-dto! {pub struct Bootstrap{pub library_context:LabContext,pub working:WorkingMetadata,pub preferences:Preferences}}
 dto! {pub enum CatalogStatus {Ready{activation:CatalogActivationStatus},Paused{message:Text<1024>,activation:Option<CatalogActivationStatus>}}}
-dto! {pub struct BootstrapRecovery {pub library_context:Option<LabContext>,pub working:WorkingMetadata,pub preferences:Preferences,pub catalog:CatalogStatus}}
-impl BootstrapRecovery {
+dto! {pub struct Bootstrap {pub library_context:Option<LabContext>,pub working:WorkingMetadata,pub preferences:Preferences,pub catalog:CatalogStatus}}
+impl Bootstrap {
     pub fn validate(&self) -> Result<(), Error> {
         self.working.validate()?;
         self.preferences.validate()?;
@@ -149,7 +147,6 @@ dto! {pub enum Success{
     Preferences(Preferences),Cancelled{operation_id:OperationId,status:OperationState},Status{operation_id:OperationId,status:OperationState},
     Exported{name:Text<256>,hash:Digest,bytes:u64},
     CatalogBackup(CatalogBackupSuccess),
-    BootstrapRecovery(BootstrapRecovery),
 }}
 dto! {pub enum Conflict{Working(WorkingMetadata),Preferences(Preferences)}}
 dto! {pub enum Failure{Invalid{message:Text<1024>},Conflict{current:Conflict},Cancelled,Unavailable,Library(library::Failure)}}
@@ -269,17 +266,10 @@ impl Preferences {
         Ok(())
     }
 }
-impl Bootstrap {
-    pub fn validate(&self) -> Result<(), Error> {
-        library::validate_name(&self.library_context.name)?;
-        self.working.validate()?;
-        self.preferences.validate()
-    }
-}
+
 impl Success {
     pub fn validate(&self) -> Result<(), Error> {
         match self {
-            Self::BootstrapRecovery(s) => s.validate()?,
             Self::CatalogBackup(s) => s.validate()?,
 
             Self::Exported { name, bytes, .. } => {
@@ -374,7 +364,6 @@ impl ResponseEnvelope {
                     && *hash == Digest::of(bytes)
                     && *size == bytes.len() as u64
             }
-            (Command::BootstrapRecovery, Outcome::Success(Success::BootstrapRecovery(_))) => true,
             (Command::Bootstrap, Outcome::Success(Success::Bootstrap(_))) => true,
             (Command::Library(r), Outcome::Success(Success::Library(s))) => library_matches(r, s),
             (Command::WorkingMetadata, Outcome::Success(Success::WorkingMetadata(_))) => true,
@@ -679,7 +668,7 @@ fn payload<'a>(magic: &[u8; 4], bytes: &'a [u8], limit: usize) -> Result<&'a [u8
         return Err(Error::Malformed);
     }
     let version = u16::from_le_bytes([bytes[4], bytes[5]]);
-    if !(1..=SCHEMA_VERSION).contains(&version) {
+    if version != SCHEMA_VERSION {
         return Err(Error::Version(version));
     }
     let length =
@@ -713,30 +702,22 @@ fn decode<T: for<'de> Deserialize<'de>>(
 }
 pub fn encode_request(r: &RequestEnvelope) -> Result<Vec<u8>, Error> {
     r.validate()?;
-    let mut bytes = encode(REQUEST_MAGIC, r, MAX_REQUEST_BYTES)?;
-    bytes[4..6].copy_from_slice(&request_version(&r.command).to_le_bytes());
-    Ok(bytes)
+    encode(REQUEST_MAGIC, r, MAX_REQUEST_BYTES)
 }
 pub fn decode_request(bytes: &[u8]) -> Result<RequestEnvelope, Error> {
     let value: RequestEnvelope = decode(REQUEST_MAGIC, bytes, MAX_REQUEST_BYTES)?;
     value.validate()?;
-    if u16::from_le_bytes([bytes[4], bytes[5]]) < request_version(&value.command) {
-        return Err(Error::Version(1));
-    }
+
     Ok(value)
 }
 pub fn encode_response(r: &ResponseEnvelope) -> Result<Vec<u8>, Error> {
     r.validate()?;
-    let mut bytes = encode(RESPONSE_MAGIC, r, MAX_RESPONSE_BYTES)?;
-    bytes[4..6].copy_from_slice(&response_version(&r.outcome).to_le_bytes());
-    Ok(bytes)
+    encode(RESPONSE_MAGIC, r, MAX_RESPONSE_BYTES)
 }
 pub fn decode_response(bytes: &[u8]) -> Result<ResponseEnvelope, Error> {
     let value: ResponseEnvelope = decode(RESPONSE_MAGIC, bytes, MAX_RESPONSE_BYTES)?;
     value.validate()?;
-    if u16::from_le_bytes([bytes[4], bytes[5]]) < response_version(&value.outcome) {
-        return Err(Error::Version(1));
-    }
+
     Ok(value)
 }
 pub fn decode_response_for(
@@ -744,9 +725,7 @@ pub fn decode_response_for(
     request: &RequestEnvelope,
 ) -> Result<ResponseEnvelope, Error> {
     let value = decode_response(bytes)?;
-    if u16::from_le_bytes([bytes[4], bytes[5]]) < request_version(&request.command) {
-        return Err(Error::Version(1));
-    }
+
     value.validate_for(request)?;
     Ok(value)
 }
@@ -782,20 +761,8 @@ pub fn decode_control(bytes: &[u8]) -> Result<Option<ControlRequest>, Error> {
     if request_id == 0 || !operation_id(id) {
         return Err(Error::Invalid("control prefix"));
     }
-    if tag == 13 {
-        // Recovery bootstrap has no large fields. Fully check its small frame and
-        // new capability floor without treating an unknown selector as normal work.
-        if bytes.len() > MAX_CONTROL_BYTES {
-            return Err(Error::TooLarge);
-        }
-        let request = decode_request(bytes)?;
-        return if matches!(request.command, Command::BootstrapRecovery) {
-            Ok(None)
-        } else {
-            Err(Error::Malformed)
-        };
-    }
-    if tag < 9 || tag == 11 {
+
+    if tag < 9 || tag == 11 || tag == 12 {
         return Ok(None);
     }
     if tag > 10 {
@@ -817,82 +784,16 @@ pub fn decode_control(bytes: &[u8]) -> Result<Option<ControlRequest>, Error> {
     }))
 }
 
-fn request_version(c: &Command) -> u16 {
-    if matches!(
-        c,
-        Command::BootstrapRecovery
-            | Command::CatalogBackup(CatalogBackupCommand::CancelActivation { .. })
-    ) {
-        return 4;
-    }
-    if matches!(
-        c,
-        Command::CatalogBackup(
-            CatalogBackupCommand::ReviewOriginal
-                | CatalogBackupCommand::ListRecoveries { .. }
-                | CatalogBackupCommand::ReviewRecovery { .. }
-                | CatalogBackupCommand::AdoptRecovery { .. }
-                | CatalogBackupCommand::ActivationStatus
-        )
-    ) {
-        3
-    } else if matches!(c, Command::CatalogBackup(_)) {
-        2
-    } else {
-        1
-    }
-}
-fn response_version(o: &Outcome) -> u16 {
-    if matches!(
-        o,
-        Outcome::Success(
-            Success::BootstrapRecovery(_)
-                | Success::CatalogBackup(
-                    CatalogBackupSuccess::ActivationCancelled(_)
-                        | CatalogBackupSuccess::ActivationStatus(
-                            CatalogActivationStatus::Cancelled(_)
-                        )
-                )
-        )
-    ) {
-        return 4;
-    }
-    if matches!(
-        o,
-        Outcome::Success(Success::CatalogBackup(
-            CatalogBackupSuccess::RecoveriesListed(_)
-                | CatalogBackupSuccess::Reviewed(_)
-                | CatalogBackupSuccess::AdoptionPending(_)
-                | CatalogBackupSuccess::ActivationStatus(_)
-        ))
-    ) {
-        3
-    } else if matches!(o, Outcome::Success(Success::CatalogBackup(_))) {
-        2
-    } else {
-        1
-    }
-}
 pub fn encode_response_for_request(
     r: &ResponseEnvelope,
     q: &RequestEnvelope,
-    version: u16,
 ) -> Result<Vec<u8>, Error> {
     r.validate_for(q)?;
-    if !(1..=SCHEMA_VERSION).contains(&version)
-        || version < request_version(&q.command)
-        || version < response_version(&r.outcome)
-    {
-        return Err(Error::Version(version));
-    }
-    let mut bytes = encode_response(r)?;
-    bytes[4..6].copy_from_slice(&version.to_le_bytes());
-    Ok(bytes)
+    encode_response(r)
 }
 pub fn encode_response_for_frame(r: &ResponseEnvelope, request: &[u8]) -> Result<Vec<u8>, Error> {
     let q = decode_request(request)?;
-    let version = u16::from_le_bytes([request[4], request[5]]);
-    encode_response_for_request(r, &q, version)
+    encode_response_for_request(r, &q)
 }
 /// Admission hint only. The scoped service still decodes, hashes and validates.
 pub fn catalog_backup_request_hint(bytes: &[u8]) -> bool {

@@ -477,7 +477,7 @@ pub fn propose(current: &Draft, change: Change) -> Result<Proposal, String> {
         library.rows[position] = row;
     }
     install_active(&mut after)?;
-    after.version = 3;
+    after.version = crate::assembly_draft_model::CURRENT_VERSION;
     after.validate()?;
     let mut writer = Hash(blake3::Hasher::new());
     serde_json::to_writer(
@@ -608,7 +608,7 @@ pub fn propose_restore(
         return Err("A topology recovery must belong to the same exact source library.".into());
     }
     let mut after = recovered.clone();
-    after.version = 3;
+    after.version = crate::assembly_draft_model::CURRENT_VERSION;
     after
         .alternatives
         .as_mut()

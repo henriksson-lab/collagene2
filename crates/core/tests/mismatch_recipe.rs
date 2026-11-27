@@ -292,13 +292,17 @@ fn tailing_recipe_keeps_literal_mismatch_policy_and_checks_it_readonly() {
     )
     .unwrap();
     let recipe = tail::Recipe {
+        profile: collagene_core::tailing_recipe::Profile::Ta,
+
         name: "Mismatch preparation and explicit complementary tails".into(),
         circular: true,
         allow_nicked: false,
         fragments: vec![
             tail::Fragment {
                 source: fragment(ordinary()),
-                base: TailingBase::T,
+                action: collagene_core::tailing_recipe::Action::AddTail {
+                    base: TailingBase::T,
+                },
                 treatment: Some(EndTreatment::Phosphorylate),
             },
             tail::Fragment {
@@ -311,7 +315,9 @@ fn tailing_recipe_keeps_literal_mismatch_policy_and_checks_it_readonly() {
                         reverse: Primer::new("IR", "AAA", "").unwrap(),
                     },
                 },
-                base: TailingBase::A,
+                action: collagene_core::tailing_recipe::Action::AddTail {
+                    base: TailingBase::A,
+                },
                 treatment: Some(EndTreatment::Phosphorylate),
             },
         ],

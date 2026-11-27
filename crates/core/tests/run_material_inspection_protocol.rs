@@ -68,8 +68,11 @@ fn wire(magic: &[u8; 4], v: u16, value: &impl serde::Serialize) -> Vec<u8> {
     b.extend(p);
     b
 }
+
+// Explicit historical operation4 fixture; current recipe compilers intentionally emit operation29.
+
 #[test]
-fn discovery_and_explicit_capsule_roundtrip74_tags_and_exact_context_guards() {
+fn discovery_keeps74_tags_but_current_retained_workspace_requires92_and_exact_context() {
     assert!(protocol::WORKER_SCHEMA_VERSION >= 74);
     let commit = original();
     let binding = commit.receipt.construct.clone();
@@ -93,6 +96,10 @@ fn discovery_and_explicit_capsule_roundtrip74_tags_and_exact_context_guards() {
         let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
         assert_eq!(tag, 158);
         assert!(protocol::process_request(&wire(b"CGQ\0", 73, &r)).is_err());
+        // The whole retained workspace was produced now: its native run plan
+        // schema21/science26 is not a historical worker74 fixture.
+        assert!(protocol::process_request(&wire(b"CGQ\0", 74, &r)).is_err());
+        assert!(protocol::process_request(&wire(b"CGQ\0", 91, &r)).is_err());
         let reply = protocol::process_request(&bytes).unwrap();
         let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&reply[42..]).unwrap();
         assert_eq!(tag, 150);
@@ -110,11 +117,14 @@ fn discovery_and_explicit_capsule_roundtrip74_tags_and_exact_context_guards() {
         assert!(protocol::process_request(&protocol::encode_request(&stale).unwrap()).is_err());
         let mut stale = response;
         stale.revision = "0".repeat(64);
-        assert!(protocol::decode_response(&wire(b"CGR\0", 74, &stale)).is_err());
+        assert!(
+            protocol::decode_response(&wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &stale))
+                .is_err()
+        );
     }
 }
 #[test]
-fn from_run_recipe_and_v5_draft_require74_but_generic_reconstruction_stays73() {
+fn saved_run_recipe_preserves_exact_reconstruction_in_current_encoding() {
     let commit = original();
     let binding = commit.receipt.construct.clone();
     let selection = Selection {
@@ -178,25 +188,8 @@ fn from_run_recipe_and_v5_draft_require74_but_generic_reconstruction_stays73() {
             target,
         },
     };
-    assert!(protocol::process_request(&wire(b"CGQ\0", 73, &verify)).is_ok());
-    let mut w = commit.workspace;
-    let raw = br#"{"version":5}"#.to_vec();
-    w.attachments.insert(
-        blake3::hash(&raw).to_hex().to_string(),
-        WorkspaceAttachment {
-            kind: "assembly-draft-v5".into(),
-            name: "editable".into(),
-            media_type: "application/json".into(),
-            bytes: raw,
-        },
-    );
-    let r = Request {
-        id: 3,
-        revision: w.head(&w.active_document).unwrap().revision(),
-        job: AnalysisJob::SaveWorkspace { workspace: w },
-    };
-    assert!(protocol::process_request(&wire(b"CGQ\0", 73, &r)).is_err());
-    assert!(protocol::process_request(&protocol::encode_request(&r).unwrap()).is_ok());
+    assert!(protocol::process_request(&wire(b"CGQ\0", 73, &verify)).is_err());
+    assert!(protocol::process_request(&wire(b"CGQ\0", 91, &verify)).is_err());
 }
 #[test]
 fn saved_run_actual_pcr_digest_uses_origin_bound_job159_not_plain_reference_inspector() {
@@ -274,5 +267,8 @@ fn saved_run_actual_pcr_digest_uses_origin_bound_job159_not_plain_reference_insp
     assert!(protocol::process_request(&protocol::encode_request(&stale).unwrap()).is_err());
     let mut changed = response;
     changed.revision = "0".repeat(64);
-    assert!(protocol::decode_response(&wire(b"CGR\0", 74, &changed)).is_err());
+    assert!(
+        protocol::decode_response(&wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &changed))
+            .is_err()
+    );
 }

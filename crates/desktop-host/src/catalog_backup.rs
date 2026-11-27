@@ -1712,38 +1712,37 @@ mod tests {
         assert!(t.0.join("repository.sqlite").is_file());
     }
     #[test]
-    fn activation_protocol_v3_refuses_older_headers_but_keeps_ordinary_prefixes() {
+    fn current_catalog_frames_reject_every_noncurrent_header() {
         use collagene_desktop_protocol as w;
-        let request = w::RequestEnvelope {
+        let q = w::RequestEnvelope {
             request_id: 991,
             operation_id: op(320),
             command: w::Command::CatalogBackup(w::CatalogBackupCommand::ActivationStatus),
         };
-        let bytes = w::encode_request(&request).unwrap();
-        assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), 3);
-        let mut old = bytes;
-        old[4..6].copy_from_slice(&2u16.to_le_bytes());
-        assert!(w::decode_request(&old).is_err());
+        let request = w::encode_request(&q).unwrap();
+        assert_eq!(
+            u16::from_le_bytes([request[4], request[5]]),
+            w::SCHEMA_VERSION
+        );
         let reply = w::ResponseEnvelope {
-            request_id: request.request_id,
-            operation_id: request.operation_id.clone(),
+            request_id: q.request_id,
+            operation_id: q.operation_id.clone(),
             outcome: w::Outcome::Success(w::Success::CatalogBackup(
                 w::CatalogBackupSuccess::ActivationStatus(w::CatalogActivationStatus::None),
             )),
         };
-        let mut bytes = w::encode_response(&reply).unwrap();
-        bytes[4..6].copy_from_slice(&2u16.to_le_bytes());
-        assert!(w::decode_response(&bytes).is_err());
-        assert!(w::encode_response_for_request(&reply, &request, 2).is_err());
-        let q = w::RequestEnvelope {
-            request_id: 992,
-            operation_id: op(321),
-            command: w::Command::Bootstrap,
-        };
-        let mut old = w::encode_request(&q).unwrap();
-        old[4..6].copy_from_slice(&1u16.to_le_bytes());
-        assert!(w::decode_request(&old).is_ok());
+        let response = w::encode_response_for_request(&reply, &q).unwrap();
+        w::decode_response_for(&response, &q).unwrap();
+        for unsupported in [0, 1, w::SCHEMA_VERSION - 1, w::SCHEMA_VERSION + 1] {
+            let mut bytes = request.clone();
+            bytes[4..6].copy_from_slice(&unsupported.to_le_bytes());
+            assert!(w::decode_request(&bytes).is_err());
+            let mut bytes = response.clone();
+            bytes[4..6].copy_from_slice(&unsupported.to_le_bytes());
+            assert!(w::decode_response_for(&bytes, &q).is_err());
+        }
     }
+
     #[test]
     fn adopted_selection_never_falls_back_after_lost_intent_and_process_lease_is_exclusive() {
         let t = Temp::new();

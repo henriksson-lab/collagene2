@@ -175,14 +175,35 @@ fn tail_and_profile_responses_reject_stale_or_forged_evidence() {
         revision: m.revision(),
         result: AnalysisResult::TailPreview(preview),
     };
-    assert!(protocol::decode_response(&envelope(b"CGR\0", 11, &response)).is_ok());
+    assert!(
+        protocol::decode_response(&envelope(
+            b"CGR\0",
+            protocol::WORKER_SCHEMA_VERSION,
+            &response
+        ))
+        .is_ok()
+    );
     response.revision = "0".repeat(64);
-    assert!(protocol::decode_response(&envelope(b"CGR\0", 11, &response)).is_err());
+    assert!(
+        protocol::decode_response(&envelope(
+            b"CGR\0",
+            protocol::WORKER_SCHEMA_VERSION,
+            &response
+        ))
+        .is_err()
+    );
     if let AnalysisResult::TailPreview(ref mut p) = response.result {
         response.revision = m.revision();
         p.tailing.additions.clear();
     }
-    assert!(protocol::decode_response(&envelope(b"CGR\0", 11, &response)).is_err());
+    assert!(
+        protocol::decode_response(&envelope(
+            b"CGR\0",
+            protocol::WORKER_SCHEMA_VERSION,
+            &response
+        ))
+        .is_err()
+    );
 }
 #[test]
 fn pcr_recipe_unknown_fields_never_become_end_chemistry_declarations() {

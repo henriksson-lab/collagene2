@@ -139,7 +139,7 @@ fn request(w: Workspace, d: Design, row: SelectedConstruct) -> Request {
     }
 }
 #[test]
-fn method_in_design_or_ready_override_requires69_but_old_ligation_matrix_stays_readable() {
+fn multisite_design_and_explicit_override_use_current_batch_encoding() {
     assert!(protocol::CANDIDATE_SCHEMA_VERSION >= 16);
     assert!(workspace::PLAN_SCHEMA_VERSION >= 14);
     assert!(protocol::WORKER_SCHEMA_VERSION >= 69);
@@ -171,24 +171,9 @@ fn method_in_design_or_ready_override_requires69_but_old_ligation_matrix_stays_r
             protocol::decode_response(&bytes).unwrap().result,
             AnalysisResult::CombinatorialBatchStarted(_)
         ));
-        let mut ordinary = req;
-        let AnalysisJob::BeginCombinatorialBatch { workspace, matrix } = &mut ordinary.job else {
-            unreachable!()
-        };
-        matrix.design.as_mut().unwrap().method = Method::Ligation {
-            allow_nicked: false,
-        };
-        let batch::RowRequest::Ready(row) = &mut matrix.rows[0] else {
-            unreachable!()
-        };
-        row.overrides = None;
-        ordinary.revision = batch::begin_revision(workspace, matrix).unwrap();
-        let bytes = AnalysisSession::default()
-            .process_request(&wire(b"CGQ\0", 68, &ordinary))
-            .unwrap();
-        protocol::decode_response(&bytes).unwrap();
     }
 }
+
 #[test]
 fn job155_returns_bound_inspection147_before_component_choice_and_is_never_worker68() {
     let (w, d, row) = fixture();
@@ -235,7 +220,10 @@ fn job155_returns_bound_inspection147_before_component_choice_and_is_never_worke
         revision: "0".repeat(64),
         result: AnalysisResult::CombinatorialMultiSiteInspection(inspection),
     };
-    assert!(protocol::decode_response(&wire(b"CGR\0", 69, &stale)).is_err());
+    assert!(
+        protocol::decode_response(&wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &stale))
+            .is_err()
+    );
 }
 fn captured(method: bool) -> batch::Commit {
     let (w, mut d, row) = fixture();

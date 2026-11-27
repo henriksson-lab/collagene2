@@ -367,7 +367,7 @@ pub fn enable(draft: &Draft, id: &str) -> Result<Draft, String> {
     row.edits.methods.source_roles = Some(roles(&library, &row)?);
     library.rows.push(row);
     library.active_row = row_id;
-    next.version = 3;
+    next.version = crate::assembly_draft_model::CURRENT_VERSION;
     next.alternatives = Some(library);
     finish(next)
 }
@@ -400,7 +400,7 @@ pub fn set_active_pool_candidate(
         .ok_or("Inspect explicit pool settings before choosing a candidate.")?;
     pool.candidate = candidate;
     save_inner(&mut next)?;
-    next.version = 3;
+    next.version = crate::assembly_draft_model::CURRENT_VERSION;
     finish(next)
 }
 /// Persist raw working edits even while a source edit awaits explicit choice
@@ -410,7 +410,7 @@ pub fn for_storage(draft: &Draft) -> Result<Draft, String> {
     if require_active_choice_match(&next).is_ok() {
         save_inner(&mut next)?;
     }
-    next.version = next.version.max(3);
+    next.version = crate::assembly_draft_model::CURRENT_VERSION;
     finish(next)
 }
 pub fn capture_active_choice(draft: &Draft) -> Result<Draft, String> {
@@ -801,43 +801,6 @@ mod tests {
         bad.alternatives.as_mut().unwrap().rows.push(duplicate);
         assert!(bad.validate().is_err());
         assert!(first.alternatives.as_ref().unwrap().rows.len() == 1);
-    }
-
-    #[test]
-    fn version_one_is_migrated_explicitly_and_attachment_kind_version_cannot_lie() {
-        let current = ordinary();
-        let mut value = serde_json::to_value(&current).unwrap();
-        value["version"] = serde_json::json!(1);
-        value.as_object_mut().unwrap().remove("alternatives");
-        value["methods"]
-            .as_object_mut()
-            .unwrap()
-            .remove("source_roles");
-        let legacy = serde_json::to_vec(&value).unwrap();
-        let restored = assembly_draft_model::decode_version(&legacy, 1).unwrap();
-        assert_eq!(restored.version, 3);
-        assert!(restored.alternatives.is_none());
-        assert!(restored.methods.source_roles.is_none());
-        let written = assembly_draft_model::encode(&restored).unwrap();
-        assert!(assembly_draft_model::decode_version(&written, 3).is_ok());
-        assert!(assembly_draft_model::decode_version(&written, 1).is_err());
-        assert!(assembly_draft_model::decode_version(&written, 2).is_err());
-        let mut v2 = serde_json::to_value(&current).unwrap();
-        v2["version"] = serde_json::json!(2);
-        let legacy_v2 = serde_json::to_vec(&v2).unwrap();
-        let migrated = assembly_draft_model::decode_version(&legacy_v2, 2).unwrap();
-        assert_eq!(migrated.version, 3);
-        assert!(
-            migrated
-                .methods
-                .golden_gate_pool
-                .as_ref()
-                .is_none_or(|pool| pool.candidate.is_none())
-        );
-        let library = enable(&current, "new-format").unwrap();
-        let mut bad = serde_json::to_value(&library).unwrap();
-        bad["version"] = serde_json::json!(1);
-        assert!(assembly_draft_model::decode(&serde_json::to_vec(&bad).unwrap()).is_err());
     }
 
     #[test]

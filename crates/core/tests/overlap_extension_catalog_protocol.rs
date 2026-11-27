@@ -99,7 +99,7 @@ fn execute(request: &Request) -> protocol::Response {
     .unwrap()
 }
 #[test]
-fn compound_preparation11_requires84_but_compiled_operations_remain_candidate18_plan16_science22() {
+fn extension_digest_preparation_preserves_physical_steps_and_current_encoding() {
     assert_eq!(postcard::to_allocvec(&compound()).unwrap()[0], 11);
     let source = source();
     let before = source.revision();
@@ -159,40 +159,10 @@ fn compound_preparation11_requires84_but_compiled_operations_remain_candidate18_
         &protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
     );
     assert!(transfer::load_candidate(&encoded_candidate).is_ok());
-    // The newly compiled final operation includes outcome enumeration, so it
-    // requires the new candidate capability. The pre-existing ordered-only
-    // operations keep their independent historical candidate18 floor.
+    // Unsupported candidate envelopes cannot relabel this current plan.
     let mut old_header = encoded_candidate;
     old_header[4..6].copy_from_slice(&18u16.to_le_bytes());
     assert!(transfer::load_candidate(&old_header).is_err());
-    let mut historical_plan = candidate.plan.clone();
-    let Some(Operation::LigateWithOutcomes {
-        fragments,
-        circular,
-        allow_nicked,
-        ..
-    }) = historical_plan.steps.pop()
-    else {
-        panic!("new recipe must retain outcome-aware ligation")
-    };
-    historical_plan.steps.push(Operation::Ligate {
-        fragments,
-        circular,
-        allow_nicked,
-    });
-    let mut historical_candidate =
-        transfer::save_candidate(&Candidate::new(historical_plan.clone())).unwrap();
-    historical_candidate[4..6].copy_from_slice(&18u16.to_le_bytes());
-    assert!(transfer::load_candidate(&historical_candidate).is_ok());
-    let verify = Request {
-        id: 81,
-        revision: target.revision(),
-        job: AnalysisJob::Verify {
-            plan: historical_plan,
-            target,
-        },
-    };
-    assert!(protocol::process_request(&wire(b"CGQ\0", 81, &verify)).is_ok());
     assert_eq!(source.revision(), before);
 }
 fn binding(w: &Workspace, index: usize) -> EventBinding {
@@ -398,25 +368,4 @@ fn target_free165_157_inspection_scans_actual58bp_product_and_retains_incomplete
             .terminal_pairings
             .complete
     );
-}
-#[test]
-fn ordinary_draft9_payload_requires84_without_changing_old_draft8_floor() {
-    let mut w = Workspace::from_documents("Ordinary draft", vec![source()], 0).unwrap();
-    let bytes = b"{}".to_vec();
-    w.attachments.insert(
-        blake3::hash(&bytes).to_hex().to_string(),
-        WorkspaceAttachment {
-            kind: "assembly-draft-v9".into(),
-            name: "ordinary draft".into(),
-            media_type: "application/json".into(),
-            bytes,
-        },
-    );
-    let request = Request {
-        id: 84,
-        revision: w.head(&w.active_document).unwrap().revision(),
-        job: AnalysisJob::SaveWorkspace { workspace: w },
-    };
-    assert!(protocol::process_request(&wire(b"CGQ\0", 83, &request)).is_err());
-    assert!(protocol::process_request(&protocol::encode_request(&request).unwrap()).is_ok());
 }

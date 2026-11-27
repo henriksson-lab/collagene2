@@ -164,10 +164,7 @@ async fn site_bearing_proposals_preserve_originals_and_need_fresh_independent_li
             ..
         }
     ));
-    assert!(matches!(
-        &plan.steps[4],
-        Operation::LigateWithOutcomes { .. }
-    ));
+    assert!(matches!(&plan.steps[4], Operation::Ligate { .. }));
     assert_eq!(
         full["verification"]["products"].as_array().unwrap().len(),
         5

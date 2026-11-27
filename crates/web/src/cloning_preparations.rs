@@ -190,18 +190,19 @@ pub(crate) fn tailing_request(
     target: &Molecule,
 ) -> Result<(Vec<PlanInput>, collagene_core::tailing_recipe::Recipe), String> {
     use collagene_core::tailing_recipe::{Fragment, Recipe};
-    if inputs.len() != 2 {
-        return Err("TA/GC cloning requires exactly two ordered source fragments.".into());
+    if state.rows.len() != 2 {
+        return Err("TA/GC cloning requires exactly two ordered prepared fragments.".into());
     }
     let (ids, sources) = prepared_rows(state, inputs.len())?;
     let recipe = Recipe {
         name: format!("Declared tailing and ligation to {}", target.name),
+        profile: state.tailing_profile,
         fragments: sources
             .into_iter()
             .zip([&state.vector, &state.insert])
             .map(|(source, settings)| Fragment {
                 source,
-                base: settings.base,
+                action: settings.action,
                 treatment: settings.treatment.operation(),
             })
             .collect(),
@@ -252,11 +253,13 @@ mod tailing_tests {
         state.rows[0].preparation = OverlapPreparation::WholeLinear;
         state.rows[1].preparation = OverlapPreparation::WholeLinear;
         state.rows[1].reverse = true;
-        state.vector.base = TailingBase::T;
-        state.insert.base = TailingBase::A;
+        state.vector.action = collagene_core::tailing_recipe::Action::AddTail {
+            base: TailingBase::T,
+        };
+        state.insert.action = collagene_core::tailing_recipe::Action::AddTail {
+            base: TailingBase::A,
+        };
         state.insert.treatment = Treatment::Phosphorylate;
-        // Legacy digest text must not replace row preparations or captured IDs.
-        state.vector.enzymes = "Legacy setting is deliberately unusable".into();
         let originals = vec![
             Molecule::dna("backbone", "AACC", Topology::Linear).unwrap(),
             Molecule::dna("cargo", "GGTT", Topology::Linear).unwrap(),
@@ -273,7 +276,12 @@ mod tailing_tests {
             recipe.fragments[0].source.preparation,
             collagene_core::assembly_recipe::Preparation::WholeLinear
         ));
-        assert_eq!(recipe.fragments[0].base, TailingBase::T);
+        assert_eq!(
+            recipe.fragments[0].action,
+            collagene_core::tailing_recipe::Action::AddTail {
+                base: TailingBase::T
+            }
+        );
         assert_eq!(
             recipe.fragments[1].treatment,
             Some(EndTreatment::Phosphorylate)
@@ -295,8 +303,12 @@ mod tailing_tests {
                 state.rows[i].forward = forward.into();
                 state.rows[i].reverse_primer = reverse.into();
             }
-            state.vector.base = TailingBase::T;
-            state.insert.base = TailingBase::A;
+            state.vector.action = collagene_core::tailing_recipe::Action::AddTail {
+                base: TailingBase::T,
+            };
+            state.insert.action = collagene_core::tailing_recipe::Action::AddTail {
+                base: TailingBase::A,
+            };
             state.vector.treatment = Treatment::Phosphorylate;
             state.insert.treatment = Treatment::Phosphorylate;
             let originals = vec![
@@ -367,6 +379,154 @@ mod tailing_tests {
             assert_eq!(preview.junctions.len(), if circular { 2 } else { 1 });
             assert_eq!(intent.target.sequence.as_str(), "AAACCCTGGGTTTA");
         }
+    }
+    #[test]
+    fn kept_pre_tailed_vector_and_added_insert_use_one_recipe_without_double_tailing() {
+        use collagene_core::{
+            chemistry::Terminus,
+            tailing_recipe::{self, Action, Profile, ProfileStatus},
+            verification::{Operation, Status},
+        };
+        let mut state = MethodsState::default();
+        state.mode = Mode::Tailing;
+        state.tailing_profile = Profile::Ta;
+        state.vector.action = Action::KeepExisting;
+        state.insert.action = Action::AddTail {
+            base: TailingBase::A,
+        };
+        state.insert.treatment = Treatment::Phosphorylate;
+        state.rows[0].preparation = OverlapPreparation::AnnealedOligos;
+        state.rows[0].anneal_bottom_document = Some(2);
+        state.rows[0].anneal_options.min_paired_bases = 4;
+        state.rows[0].anneal_options.top_chemistry = Terminus::CLEAVED;
+        state.rows[0].anneal_options.bottom_chemistry = Terminus::CLEAVED;
+        state.rows[0].anneal_candidate = Some(0);
+        state.rows[1].document = 1;
+        state.rows[1].preparation = OverlapPreparation::ExactPcr;
+        state.rows[1].forward = "GGAC".into();
+        state.rows[1].reverse_primer = "GCAG".into();
+        // Independently literal oligos establish 3′ T ends around paired AACC.
+        // The insert starts as an 8nt blunt PCR duplex with disjoint 4nt
+        // annealing domains; it receives the sole addition.
+        let sources = vec![
+            Molecule::dna("T-vector top", "AACCT", Topology::Linear).unwrap(),
+            Molecule::dna("insert", "GGACCTGC", Topology::Linear).unwrap(),
+            Molecule::dna("T-vector bottom", "GGTTT", Topology::Linear).unwrap(),
+        ];
+        let before = serde_json::to_vec(&sources).unwrap();
+        let target =
+            Molecule::dna("Independent circle", "AACCTGGACCTGCA", Topology::Circular).unwrap();
+        let (inputs, recipe) = tailing_request(&state, sources.clone(), &target).unwrap();
+        assert_eq!(inputs.len(), 3, "paired-oligo source remains present");
+        assert_eq!(recipe.fragments[0].action, Action::KeepExisting);
+        let revision = tailing_recipe::preview_revision(&inputs, &target, &recipe).unwrap();
+        let preview = tailing_recipe::preview(&inputs, &target, &recipe).unwrap();
+        preview
+            .validate_for(&inputs, &target, &recipe, &revision)
+            .unwrap();
+        assert_eq!(
+            preview.verification.status,
+            Status::ConsistentUnderAssumptions,
+            "{:?}",
+            preview.verification.findings
+        );
+        assert_eq!(
+            preview.profile_status,
+            ProfileStatus::Matched,
+            "{:?}",
+            preview.profile_findings
+        );
+
+        assert_eq!(preview.compiled.rows[0].tail_step, None);
+        assert!(preview.compiled.rows[1].tail_step.is_some());
+        assert_eq!(
+            preview
+                .compiled
+                .plan
+                .steps
+                .iter()
+                .filter(|step| matches!(step, Operation::Tail3Prime { .. }))
+                .count(),
+            1
+        );
+        assert_eq!(
+            preview
+                .verification
+                .products
+                .last()
+                .unwrap()
+                .sequence
+                .as_str(),
+            "AACCTGGACCTGCA"
+        );
+        assert_eq!(serde_json::to_vec(&sources).unwrap(), before);
+        let mut changed = recipe.clone();
+        changed.fragments[0].action = Action::AddTail {
+            base: TailingBase::T,
+        };
+        assert!(
+            preview
+                .validate_for(&inputs, &target, &changed, &revision)
+                .is_err()
+        );
+    }
+    #[test]
+    fn keeping_blunt_ends_can_ligate_without_satisfying_ta_profile() {
+        use collagene_core::{
+            tailing_recipe::{self, Action, Profile, ProfileStatus},
+            verification::Status,
+        };
+        let mut state = MethodsState::default();
+        state.mode = Mode::Tailing;
+        state.tailing_profile = Profile::Ta;
+        state.vector.action = Action::KeepExisting;
+        state.insert.action = Action::KeepExisting;
+        state.vector.treatment = Treatment::Phosphorylate;
+        state.insert.treatment = Treatment::Phosphorylate;
+        state.rows[0].preparation = OverlapPreparation::ExactPcr;
+        state.rows[0].forward = "AAAC".into();
+        state.rows[0].reverse_primer = "GCAG".into();
+        state.rows[1].document = 1;
+        state.rows[1].preparation = OverlapPreparation::ExactPcr;
+        state.rows[1].forward = "GGGT".into();
+        state.rows[1].reverse_primer = "TCGT".into();
+        let inputs = vec![
+            Molecule::dna("backbone", "AAACCTGC", Topology::Linear).unwrap(),
+            Molecule::dna("cargo", "GGGTACGA", Topology::Linear).unwrap(),
+        ];
+        let target = Molecule::dna(
+            "Independent blunt circle",
+            "AAACCTGCGGGTACGA",
+            Topology::Circular,
+        )
+        .unwrap();
+        let (inputs, recipe) = tailing_request(&state, inputs, &target).unwrap();
+        let preview = tailing_recipe::preview(&inputs, &target, &recipe).unwrap();
+        assert!(
+            preview
+                .compiled
+                .rows
+                .iter()
+                .all(|row| row.tail_step.is_none())
+        );
+        assert_eq!(
+            preview.verification.status,
+            Status::ConsistentUnderAssumptions,
+            "{:?}",
+            preview.verification.findings
+        );
+        assert_eq!(preview.profile_status, ProfileStatus::Incompatible);
+
+        assert_eq!(
+            preview
+                .verification
+                .products
+                .last()
+                .unwrap()
+                .sequence
+                .as_str(),
+            "AAACCTGCGGGTACGA"
+        );
     }
     #[test]
     fn tailing_request_rejects_missing_or_extra_sources() {

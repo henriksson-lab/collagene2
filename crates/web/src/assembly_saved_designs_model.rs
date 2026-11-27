@@ -242,7 +242,7 @@ fn version(value: &Value) -> Result<u32, String> {
     value
         .get("version")
         .and_then(Value::as_u64)
-        .filter(|v| (1..=13).contains(v))
+        .filter(|v| *v == u64::from(assembly_draft_model::CURRENT_VERSION))
         .map(|v| v as u32)
         .ok_or_else(|| fail("unsupported editable-draft version."))
 }
@@ -436,20 +436,7 @@ pub(crate) fn save(
             "the name already exists or the64-design limit was reached.",
         ));
     }
-    let raw = if draft.version >= 3 {
-        assembly_draft_model::encode_raw(draft)?
-    } else {
-        let bytes = encode(draft, MAX_DRAFT)?;
-        let normalized = assembly_draft_model::decode(&bytes)?;
-        let mut expected = draft.clone();
-        expected.version = expected.version.max(3);
-        if normalized != expected {
-            return Err(fail(
-                "legacy draft normalization would discard editable settings.",
-            ));
-        }
-        assembly_draft_model::encode_raw(&normalized)?
-    };
+    let raw = assembly_draft_model::encode_raw(draft)?;
     let mut value: Value = serde_json::from_slice(&raw).map_err(|e| e.to_string())?;
     let resolver = Resolver::new(frame);
     snapshots(&mut value, |value| {
@@ -698,7 +685,7 @@ mod tests {
         frame.attachments.insert(
             blake3::hash(&bytes).to_hex().to_string(),
             WorkspaceAttachment {
-                kind: "assembly-draft-v3".into(),
+                kind: "assembly-draft-v14".into(),
                 name: "Active draft".into(),
                 media_type: "application/json".into(),
                 bytes,
@@ -725,17 +712,15 @@ mod tests {
         next
     }
     #[test]
-    fn ordinary_versions_and_latest_literal_declarations_roundtrip_without_source_copies() {
+    fn current_and_literal_declarations_roundtrip_without_source_copies() {
         let (frame, base) = fixture();
         let before = serde_json::to_value(&frame).unwrap();
-        for version in 1..=10 {
-            let mut draft = base.clone();
-            draft.version = version;
+        {
+            let draft = base.clone();
             draft.validate().unwrap();
-            let (saved, entry) = save(&frame, &format!("Version {version}"), &draft).unwrap();
+            let (saved, entry) = save(&frame, "Current draft", &draft).unwrap();
             assert_eq!(entry.source_count, 1);
             let restored = load(&saved, &entry.id).unwrap();
-            draft.version = version.max(3);
             assert!(restored == draft);
             let text =
                 String::from_utf8(saved.attachments[&entry.attachment_hash].bytes.clone()).unwrap();
@@ -864,13 +849,21 @@ mod tests {
             Some(crate::run_origin_model::PinnedOrigin::new(capsule).unwrap());
         draft.sync_rows();
         draft.validate().unwrap();
-        assert_eq!(draft.version, 5);
+        assert_eq!(draft.version, assembly_draft_model::CURRENT_VERSION);
         let before = serde_json::to_value(&committed.workspace).unwrap();
         let (saved, entry) = save(&committed.workspace, "Prepared source design", &draft).unwrap();
         let restored = load(&saved, &entry.id).unwrap();
         assert!(restored == draft);
         assert_eq!(
-            serde_json::to_value(restored.methods.rows[0].run_origin.as_ref().unwrap()).unwrap(),
+            serde_json::to_value(
+                restored.methods.rows[0]
+                    .run_origin
+                    .as_ref()
+                    .unwrap()
+                    .as_run()
+                    .unwrap()
+            )
+            .unwrap(),
             exact_capsule
         );
         let (_, rows) = crate::cloning_preparations::prepared_rows(&restored.methods, 1).unwrap();
@@ -1043,7 +1036,7 @@ mod tests {
         let active_hash = damaged
             .attachments
             .iter()
-            .find(|(_, asset)| asset.kind == "assembly-draft-v3")
+            .find(|(_, asset)| asset.kind == "assembly-draft-v14")
             .unwrap()
             .0;
         assert!(discard_malformed(&damaged, active_hash).is_err());
@@ -1100,7 +1093,7 @@ mod tests {
     }
 
     #[test]
-    fn saved_version10_keeps_inactive_unfinished_strand_policy_and_original_event_pins() {
+    fn saved_policy_keeps_inactive_unfinished_settings_and_original_event_pins() {
         let (frame, mut draft) = fixture();
         let sources = draft
             .slots
@@ -1115,7 +1108,7 @@ mod tests {
         draft.methods.homology = Some(form);
         draft.sync_rows();
         let (saved, entry) = save(&frame, "Physical homology settings", &draft).unwrap();
-        assert_eq!(entry.draft_version, 10);
+        assert_eq!(entry.draft_version, assembly_draft_model::CURRENT_VERSION);
         let restored = load(&saved, &entry.id).unwrap();
         assert!(restored == draft);
         assert!(
@@ -1133,7 +1126,7 @@ mod tests {
         assert!(saved.candidates.is_empty());
     }
     #[test]
-    fn saved_digest_chain_retains_unfinished_six_oligos_pins_and_source_events_as_version9() {
+    fn saved_digest_chain_retains_unfinished_six_oligos_pins_and_source_events() {
         let (frame, mut draft) = fixture();
         let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
         let id = catalog
@@ -1155,7 +1148,7 @@ mod tests {
         row.overlap_extension_pcr = Some(raw);
         draft.sync_rows();
         let (saved, entry) = save(&frame, "Edited insert then digest", &draft).unwrap();
-        assert_eq!(entry.draft_version, 9);
+        assert_eq!(entry.draft_version, assembly_draft_model::CURRENT_VERSION);
         let restored = load(&saved, &entry.id).unwrap();
         assert!(restored == draft);
         assert_eq!(
@@ -1170,7 +1163,7 @@ mod tests {
     }
 
     #[test]
-    fn saved_version8_retains_all_six_oligos_without_copying_or_replacing_source_events() {
+    fn saved_design_retains_six_oligos_without_copying_or_replacing_source_events() {
         let (frame, mut draft) = fixture();
         let original = draft.slots[0].captured.as_ref().unwrap().source.clone();
         let mut raw = crate::cloning_methods_model::OverlapExtensionPcrInput::default();
@@ -1186,7 +1179,7 @@ mod tests {
         draft.methods.rows[0].overlap_extension_pcr = Some(raw);
         draft.sync_rows();
         let (saved, entry) = save(&frame, "Edited insert preparation", &draft).unwrap();
-        assert_eq!(entry.draft_version, 8);
+        assert_eq!(entry.draft_version, assembly_draft_model::CURRENT_VERSION);
         let restored = load(&saved, &entry.id).unwrap();
         assert!(restored == draft);
         assert!(restored.slots[0].captured.as_ref().unwrap().source == original);

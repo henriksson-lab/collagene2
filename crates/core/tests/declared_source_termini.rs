@@ -54,6 +54,7 @@ fn plan(a: Terminus, b: Terminus, allow_nicked: bool) -> (DesignPlan, Molecule) 
                     ],
                     circular: false,
                     allow_nicked,
+                    options: Default::default(),
                 },
             ],
         },

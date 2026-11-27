@@ -188,7 +188,7 @@ fn worker86_job167_operation24_evidence3_and_portable_schemas_keep_explicit_poli
         &current[4..6],
         &protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
     );
-    assert!(transfer::load_candidate(&wire(b"CGP\0", 19, &candidate)).is_ok());
+    assert!(transfer::load_candidate(&wire(b"CGP\0", 19, &candidate)).is_err());
     assert!(transfer::load_candidate(&wire(b"CGP\0", 18, &candidate)).is_err());
     let mut w = Workspace::from_documents(
         "Portable physical candidate",

@@ -66,6 +66,7 @@ fn fixture() -> (DesignPlan, Molecule) {
             ],
             circular: true,
             allow_nicked: false,
+            options: Default::default(),
         },
     )
     .unwrap();

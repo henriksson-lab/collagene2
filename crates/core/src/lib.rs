@@ -191,8 +191,6 @@ pub mod topo_nick_sealing;
 
 pub mod topo_processed_product;
 
-mod protocol_legacy_v64;
-
 pub mod processed_run_evidence;
 
 pub mod topo_actions;
@@ -242,3 +240,6 @@ pub mod material_derivation;
 pub mod material_pcr;
 
 pub mod ligation_outcomes;
+
+pub mod run_review;
+pub mod svg_export;

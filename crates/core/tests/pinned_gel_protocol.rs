@@ -74,7 +74,7 @@ fn tag(bytes: &[u8]) -> u32 {
 }
 
 #[test]
-fn pinned_worker_replays_nonstarter_geometry_and_preserves_legacy_report_layout() {
+fn pinned_worker_replays_nonstarter_geometry_in_current_reports() {
     let req = request(true);
     let wire = protocol::encode_request(&req).unwrap();
     assert_eq!(tag(&wire), 124);
@@ -106,24 +106,17 @@ fn pinned_worker_replays_nonstarter_geometry_and_preserves_legacy_report_layout(
     assert!(lane.warnings.iter().any(|w| w.contains("methylation")));
 }
 #[test]
-fn old_prefixes_cannot_hide_pinned_requests_or_results_and_old_gels_still_decode() {
+fn pinned_gel_rejects_unsupported_request_and_result_versions() {
     let mut new_wire = protocol::encode_request(&request(true)).unwrap();
     let mut response = protocol::process_request(&new_wire).unwrap();
     new_wire[4..6].copy_from_slice(&54u16.to_le_bytes());
     response[4..6].copy_from_slice(&54u16.to_le_bytes());
     assert!(protocol::process_request(&new_wire).is_err());
     assert!(protocol::decode_response(&response).is_err());
-    let mut legacy = protocol::encode_request(&request(false)).unwrap();
-    legacy[4..6].copy_from_slice(&54u16.to_le_bytes());
-    let mut response = protocol::process_request(&legacy).unwrap();
-    response[4..6].copy_from_slice(&54u16.to_le_bytes());
-    assert!(matches!(
-        protocol::decode_response(&response).unwrap().result,
-        AnalysisResult::Gel(_)
-    ));
 }
+
 #[test]
-fn stale_pins_and_legacy_operation_cannot_relabel_a_catalog_digest() {
+fn stale_pins_and_unpinned_operation_cannot_relabel_catalog_digest() {
     let mut req = request(true);
     if let AnalysisJob::PredictPinnedGel { lanes, .. } = &mut req.job {
         let Preparation::CatalogDigest { recipe } = &mut lanes[0].preparation else {

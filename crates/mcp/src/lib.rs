@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 187;
+pub const CURRENT_TOOL_COUNT: usize = 189;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -1442,7 +1442,7 @@ pub struct TailingAssemblyProposal {
     pub inputs: Vec<BoundInput>,
     /// Independent desired reference, not a sequence inferred from a ligated product.
     pub target: DocumentRef,
-    /// Explicit original-source preparations, one base added to both 3′ ends, post-tail treatments and ligation policy.
+    /// Explicit TA/GC profile, original-source preparations, per-row keep/add-tail actions, terminal treatments and ligation policy.
     pub recipe: collagene_core::tailing_recipe::Recipe,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -2228,6 +2228,99 @@ impl CollageneServer {
         self.paired_text_artifacts(entries)
     }
     // A complete compatible report and its catalog wrapper publish atomically too.
+    // Publish the documentary receipt, binary candidate and unverified session
+    // plan atomically. Neither workspace heads nor historical status are adopted.
+    fn saved_review_artifacts(
+        &self,
+        review: collagene_core::run_review::PreparedReview,
+        reference: WorkspaceRef,
+    ) -> Result<CallToolResult, ErrorData> {
+        let text = bounded_json_limit(&review, collagene_core::run_review::MAX_REVIEW_BYTES)?;
+        let bytes = transfer::save_candidate(&review.candidate).map_err(bad)?;
+        let report_id = blake3::hash(text.as_bytes()).to_hex().to_string();
+        let candidate_id = blake3::hash(&bytes).to_hex().to_string();
+        let plan_revision = review.candidate.plan_revision.clone();
+        let plan_bytes =
+            bounded_json_limit(&(&review.candidate.plan, &review.target), MAX_STORE_BYTES)?.len();
+        let inputs = review.inputs.iter().take(100).collect::<Vec<_>>();
+        let assessment = &review.recorded_assessment;
+        let recorded_assessment = json!({"engine_version":assessment.engine_version,"status":assessment.status,"findings":assessment.findings.iter().take(20).map(|s|s.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),"finding_count":assessment.findings.len(),"findings_truncated":assessment.findings.len()>20||assessment.findings.iter().take(20).any(|s|s.chars().count()>1024),"assumptions":assessment.assumptions.iter().take(20).map(|s|s.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),"assumption_count":assessment.assumptions.len(),"assumptions_truncated":assessment.assumptions.len()>20||assessment.assumptions.iter().take(20).any(|s|s.chars().count()>1024),"exhaustive_alternative_search":assessment.exhaustive_alternative_search,"authority":"historical only"});
+        let result = output(
+            json!({"workspace":reference,"run_id":review.run_id,"context_revision":review.context_revision,"source_workspace_fingerprint":review.source_workspace_fingerprint,"run_attachment_hash":review.run_attachment_hash,"state":"candidate","verified":false,"plan_revision":plan_revision,"target_event":review.target_event,"target":{"id":review.target.revision(),"revision":review.target.revision()},"input_count":review.inputs.len(),"inputs":inputs,"inputs_truncated":review.inputs.len()>100,"recorded_assessment":recorded_assessment,"recorded_engine_matches":review.recorded_engine_matches,"current_verification_engine":review.current_verification_engine,"has_saved_material_origins":review.has_saved_material_origins,"warnings":review.warnings,"artifact_id":report_id,"candidate_artifact_id":candidate_id,"candidate_filename":"saved-run-review.cg2plan","candidate_encoding":"base64","authority":"Documentary preparation of exact retained run inputs and independent target. The session candidate is unverified; call verify_plan for fresh checks. No historical status/material authority was adopted and no workspace head or native catalog was changed."}),
+        )?;
+        let mut store = self.store.lock().unwrap();
+        let new_plan = !store.plans.contains_key(&plan_revision);
+        if let Some(existing) = store.plans.get(&plan_revision) {
+            if existing.target != review.target
+                || bounded_json(&existing.plan)? != bounded_json(&review.candidate.plan)?
+            {
+                return Err(bad(
+                    "saved plan revision already has different exact source/target data",
+                ));
+            }
+        }
+        let representations = [
+            (
+                &report_id,
+                false,
+                "application/json",
+                "saved-run-review.json",
+            ),
+            (
+                &candidate_id,
+                true,
+                "application/octet-stream",
+                "saved-run-review.cg2plan",
+            ),
+        ];
+        let mut added = 0usize;
+        let mut charge = if new_plan { plan_bytes } else { 0 };
+        for (id, binary, mime, filename) in representations {
+            if let Some(existing) = store.artifacts.get(id) {
+                if matches!(&existing.data, ArtifactData::Binary(_)) != binary
+                    || existing.mime_type != mime
+                    || existing.filename != filename
+                {
+                    return Err(bad("saved review artifact has another representation"));
+                }
+            } else {
+                added += 1;
+                charge = charge
+                    .checked_add(if binary { bytes.len() } else { text.len() })
+                    .ok_or_else(|| bad("session capacity"))?;
+            }
+        }
+        if (new_plan && store.plans.len() >= MAX_ITEMS)
+            || store.artifacts.len().saturating_add(added) > MAX_ITEMS
+        {
+            return Err(bad(
+                "session item limit; no saved-review artifacts or plan were published",
+            ));
+        }
+        store.reserve(charge)?;
+        store.artifacts.entry(report_id).or_insert(Artifact {
+            data: ArtifactData::Text(text),
+            mime_type: "application/json",
+            encoding: "utf-8",
+            filename: "saved-run-review.json",
+        });
+        store.artifacts.entry(candidate_id).or_insert(Artifact {
+            data: ArtifactData::Binary(bytes),
+            mime_type: "application/octet-stream",
+            encoding: "base64",
+            filename: "saved-run-review.cg2plan",
+        });
+        if new_plan {
+            store.plans.insert(
+                plan_revision,
+                StoredPlan {
+                    plan: review.candidate.plan,
+                    target: review.target,
+                },
+            );
+        }
+        Ok(result)
+    }
     fn paired_text_artifacts(
         &self,
         entries: [(String, &'static str, &'static str); 2],
@@ -4868,6 +4961,51 @@ impl CollageneServer {
         }).await
     }
     #[tool(
+        description = "Prepare one exact saved native run for current review using its immutable workspace/run ID. Resolves original input and independent-target events even when current heads changed. Atomically returns full documentary JSON plus a binary candidate artifact and unverified session plan usable with verify_plan. Does not replay/adopt historical status or material, replace current targets, alter workspace heads, or write a native database."
+    )]
+    async fn prepare_saved_run_review(
+        &self,
+        Parameters(args): Parameters<ReplayWorkspaceRun>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.run_id.is_empty() || args.run_id.len() > 128 {
+            return Err(bad("explicit bounded native run ID required"));
+        }
+        let server = self.clone();
+        self.compute(move || {
+            let workspace = server.restore_workspace(&args.workspace)?;
+            let expected = collagene_core::run_review::request_revision(&workspace, &args.run_id)
+                .map_err(bad)?;
+            let review =
+                collagene_core::run_review::prepare(&workspace, &args.run_id).map_err(bad)?;
+            review.validate_request_binding(&expected).map_err(bad)?;
+            server.saved_review_artifacts(review, args.workspace)
+        })
+        .await
+    }
+    #[tool(
+        description = "Export the canonical feature map of one explicit immutable session document revision as bounded native SVG. Returns exact source identity, renderer warnings and a complete image/svg+xml artifact. No arbitrary paths, external renderer or user-supplied SVG. This profile requests no restriction-enzyme overlay; map visibility is presentation only and never physical/material or verification authority."
+    )]
+    async fn export_map_svg(
+        &self,
+        Parameters(reference): Parameters<DocumentRef>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move||{
+            let source={let store=server.store.lock().unwrap();let source=store.document(&reference)?;collagene_core::model::bounds::model_preflight(&[source]).map_err(bad)?;source.clone()};
+            let rendered=collagene_core::svg_export::render(&collagene_core::svg_export::Request{source,source_revision:reference.revision.clone(),restriction_sites:None}).map_err(bad)?;
+            rendered.validate_binding(&reference.revision).map_err(bad)?;
+            let size=rendered.svg.len();let artifact=blake3::hash(rendered.svg.as_bytes()).to_hex().to_string();
+            let result=output(json!({"document":reference,"source_revision":rendered.source_revision,"artifact_id":artifact,"filename":"map.svg","encoding":"utf-8","mime_type":"image/svg+xml","bytes":size,"warnings":rendered.warnings,"warning_count":rendered.warnings.len(),"warnings_truncated":false,"restriction_overlay":"none_requested","scope":"Canonical features of this exact native revision; no restriction-site overlay requested.","authority":"Documentary display only. Map export does not verify a cloning design, prove physical material, alter a source or write a native catalog."}))?;
+            let mut store=server.store.lock().unwrap();
+            if let Some(existing)=store.artifacts.get(&artifact){
+                if !matches!(&existing.data,ArtifactData::Text(_))||existing.mime_type!="image/svg+xml"||existing.filename!="map.svg"{return Err(bad("map SVG artifact already has another representation"))}
+            }else{
+                if store.artifacts.len()>=MAX_ITEMS{return Err(bad("at most 128 artifacts; no map published"))}
+                store.reserve(size)?;store.artifacts.insert(artifact,Artifact{data:ArtifactData::Text(rendered.svg),mime_type:"image/svg+xml",encoding:"utf-8",filename:"map.svg"});
+            }Ok(result)
+        }).await
+    }
+    #[tool(
         description = "Replay a retained run from exact historical sources using the current embedded verifier. Returns bounded product previews and a complete JSON evidence artifact. Engine/status/product comparisons are explicit. Does not edit a workspace, trust a stored report or invoke external programs."
     )]
     async fn replay_workspace_run(
@@ -7224,7 +7362,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Compile explicit source-bound TA/GC cloning preparations, ideal single-base addition at both actual 3′ ends, optional post-tail terminal treatment and ordered ligation against an independently supplied target. Fresh deterministic PCR/digest/strand/end verification retains failed drafts and explicit nicks. Does not assume polymerase activity, factory-vector chemistry, host repair, proprietary kit behavior, mixture uniqueness or experimental success. Atomically retains an immutable candidate and full typed evidence; reuse verify_plan and HTML/PDF exports with plan_revision. Explicit MismatchPcr retains both ordered primers and its declared mismatch/3′-exact/search policy. OverlapExtensionPcr retains two actual PCR branches from the same source, selected physical overlap extension and separate outer-primer PCR; every ordered oligo and terminal-pair search policy is explicit. OverlapExtensionPcrCatalogDigest appends exact catalog-pinned cleavage of that actual outer-PCR product, explicit fragment index and optional repair; inspect_overlap_extension_digest exposes the same real product without requiring a target. FromRun preserves a deliberately selected saved origin before downstream preparation. Mutation intent and the target remain independently declared; no mutation is selected to fit a simulated product."
+        description = "Compile explicit source-bound TA/GC cloning against an independently supplied target. Each row retains actual prepared ends or explicitly adds one A/T/G/C nucleotide at both 3′ ends, with separate optional end treatment and intended ligation order/orientation. The selected TA/GC profile is assessed separately from generic ligation verification: blunt ligation success does not establish a matching TA profile. Saved origins are freshly reconstructed, retaining original primers, modifications and incomplete evidence. No implicit polymerase, kit, phosphate, host repair, probabilities or experimental isolation is assumed. Retains an immutable candidate and full evidence; verify_plan and HTML/PDF export use its plan_revision."
     )]
     async fn propose_tailing_assembly(
         &self,
@@ -7254,7 +7392,7 @@ impl CollageneServer {
             };
             let preview = collagene_core::tailing_recipe::preview(&inputs,&target,&args.recipe).map_err(bad)?;
             let expected = collagene_core::tailing_recipe::preview_revision(&inputs,&target,&args.recipe).map_err(bad)?;
-            preview.validate_binding(&expected).map_err(bad)?;
+            preview.validate_for(&inputs,&target,&args.recipe,&expected).map_err(bad)?;
             // Serialize bounded complete evidence before publishing either output.
             let text = bounded_json_limit(&preview,32*1024*1024)?;
             let artifact_id = blake3::hash(text.as_bytes()).to_hex().to_string();
@@ -7263,6 +7401,7 @@ impl CollageneServer {
             let plan_bytes = bounded_json(&preview.compiled.plan)?.len().checked_add(bounded_json(&target)?.len()).ok_or_else(||bad("candidate storage accounting overflow"))?;
             let result = json!({"plan_revision":revision,"state":"candidate","verified":false,
                 "target":args.target,"inputs":args.inputs,"context_revision":preview.context_revision,
+                "profile_status":preview.profile_status,"profile_findings":preview.profile_findings,
                 "preparation_complete":preview.preparation_complete,"ligation_step":preview.compiled.ligation_step,
                 "fragment_count":preview.compiled.rows.len(),"junction_count":preview.junctions.len(),
                 "product_physical":preview.product_physical.as_ref().map(|physical|json!({"top_length":physical.top_length,"bottom_length":physical.bottom_length,"topology":physical.topology,"nick_count":physical.nicks.len(),"covalently_closed_in_model":physical.covalently_closed_in_model})),
@@ -7273,7 +7412,7 @@ impl CollageneServer {
                     "assumptions_truncated":preview.verification.assumptions.len()>100,
                     "exhaustive_alternative_search":preview.verification.exhaustive_alternative_search},
                 "artifact_id":artifact_id,
-                "authority":"Fresh deterministic strand/end/junction reconstruction under explicit preparation and terminal-treatment assumptions. Saving remains a candidate; sequence agreement is not laboratory success or exhaustive mixture uniqueness. Full physical components, junctions and nick evidence are retained in the artifact."});
+                "authority":"Fresh deterministic strand/end/junction reconstruction under explicit preparation and terminal-treatment assumptions. Saving remains a candidate; profile matching does not replace ligation verification, and sequence agreement is not laboratory success or exhaustive mixture uniqueness. Full physical components, junctions and nick evidence are retained in the artifact."});
             let response = output(result)?;
             let mut store=server.store.lock().unwrap();
             let new_plan=!store.plans.contains_key(&revision);

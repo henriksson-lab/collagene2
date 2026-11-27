@@ -129,7 +129,7 @@ fn intended_and_alternative_stay_extractable_after_real_run_capture_reload_and_n
     assert!(evidence.report.alternatives[0].path[1].reverse);
     evidence.validate_documentary().unwrap();
     assert!(evidence.report.fasta().unwrap().contains(ALTERNATIVE));
-    // A legacy PCR job cannot hide operation29 inside its opaque saved-origin
+    // A PCR job without the current ligation capability cannot hide the operation inside its opaque saved-origin
     // candidate, even when the enclosing selector itself predates worker92.
     let selection = run_material::Selection {
         run_id: saved.receipt.run.run_id.clone(),
@@ -223,7 +223,7 @@ fn matching_alternative_never_rescues_wrong_intended_target_and_capped_search_do
         ALTERNATIVE
     );
     let (docs, mut plan) = fixture(INTENDED);
-    let Operation::LigateWithOutcomes { options, .. } = plan.steps.last_mut().unwrap() else {
+    let Operation::Ligate { options, .. } = plan.steps.last_mut().unwrap() else {
         panic!("new default")
     };
     options.max_products = 1;
@@ -265,8 +265,7 @@ fn matching_alternative_never_rescues_wrong_intended_target_and_capped_search_do
     );
 }
 #[test]
-fn large_new_recipe_keeps_supported_native_ordered_ligation_instead_of_failing_outcome_enumeration()
-{
+fn large_recipe_retains_intended_outcomes_and_native_history_without_enumeration() {
     use collagene_core::{
         assembly_recipe::{FragmentSpec, Preparation},
         ligation_recipe,
@@ -317,6 +316,49 @@ fn large_new_recipe_keeps_supported_native_ordered_ligation_instead_of_failing_o
         preview.verification.products.last().unwrap().sequence,
         target.sequence
     );
-    assert!(preview.verification.physical_processing_reports.is_empty());
+    assert_eq!(preview.verification.physical_processing_reports.len(), 1);
+    let PhysicalProcessingEvidence::LigationOutcomes(evidence) =
+        &preview.verification.physical_processing_reports[0].evidence
+    else {
+        panic!("every ligation retains outcomes");
+    };
+    assert_eq!(evidence.report.intended.sequence, target.sequence);
+    assert!(evidence.report.alternatives.is_empty());
+    assert!(
+        evidence
+            .report
+            .limits
+            .contains(&Limit::EnumerationFragments)
+    );
+    assert!(!evidence.report.enumeration_complete);
+    let workspace = Workspace::from_documents(
+        "Large intended ligation",
+        vec![inputs[0].molecule.clone(), target.clone()],
+        1,
+    )
+    .unwrap();
+    let captured = collagene_core::run_lineage::record_run(
+        &workspace,
+        &preview.compiled.plan,
+        event(&workspace, 1),
+        vec![InputEventBinding {
+            input_id: "stock".into(),
+            event: event(&workspace, 0),
+        }],
+        false,
+    )
+    .unwrap();
+    let reopened =
+        workspace::load_workspace(&workspace::save_workspace(&captured.workspace).unwrap())
+            .unwrap();
+    let stored = physical_run_evidence::load(&reopened, &captured.receipt.run_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.steps.len(), 1);
+    let PhysicalProcessingEvidence::LigationOutcomes(stored) = &stored.steps[0].evidence else {
+        panic!("missing persisted outcomes");
+    };
+    assert_eq!(stored.report.intended.sequence, target.sequence);
+    assert!(stored.report.limits.contains(&Limit::EnumerationFragments));
     preview.validate_binding(&preview.context_revision).unwrap();
 }

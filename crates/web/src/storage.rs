@@ -66,8 +66,8 @@ impl Transaction {
 }
 pub async fn open() -> Result<Database, String> {
     if desktop_rpc::is_desktop() {
-        match desktop_rpc::call(wire::Command::BootstrapRecovery).await? {
-            wire::Success::BootstrapRecovery(b) => Ok(Database::Native {
+        match desktop_rpc::call(wire::Command::Bootstrap).await? {
+            wire::Success::Bootstrap(b) => Ok(Database::Native {
                 state: Rc::new(Mutex::new(Native {
                     working: b.working.version,
                     preferences: b.preferences.version,

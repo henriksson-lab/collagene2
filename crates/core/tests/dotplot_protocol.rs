@@ -80,7 +80,10 @@ fn dotplot_native_worker_roundtrip_binds_both_sources_options_and_original_rever
         revision: "0".repeat(64),
         result: AnalysisResult::DotPlot(report),
     };
-    assert!(protocol::decode_response(&raw(b"CGR\0", 14, &mismatched)).is_err());
+    assert!(
+        protocol::decode_response(&raw(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &mismatched))
+            .is_err()
+    );
     let stale = Request {
         revision: "0".repeat(64),
         ..req
@@ -117,10 +120,13 @@ fn dotplot_tag_floors_apply_before_decoding_and_never_receive_the_workspace_mess
         } else {
             protocol::decode_response(&bytes).unwrap_err()
         };
-        assert!(err.to_string().contains("schema 14"), "{err}");
+        assert!(
+            matches!(err, collagene_core::Error::Unsupported(_)),
+            "{err}"
+        );
         let mut oversized = prefix;
         oversized.resize(32 * 1024 * 1024 + 1, 0);
-        let bytes = envelope(magic, 14, &oversized);
+        let bytes = envelope(magic, protocol::WORKER_SCHEMA_VERSION, &oversized);
         let err = if magic == b"CGQ\0" {
             protocol::process_request(&bytes).unwrap_err()
         } else {

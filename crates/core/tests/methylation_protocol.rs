@@ -64,7 +64,7 @@ fn worker_assessment_binds_source_states_profiles_and_options_without_new_produc
     assert!(
         protocol::decode_response(&raw(
             b"CGR\0",
-            16,
+            protocol::WORKER_SCHEMA_VERSION,
             &postcard::to_allocvec(&response).unwrap()
         ))
         .is_err()
@@ -81,11 +81,14 @@ fn methylation_tags_require_schema_sixteen_before_body_decode_and_keep_ordinary_
             } else {
                 protocol::decode_response(&bytes).unwrap_err()
             };
-            assert!(error.to_string().contains("schema 16"), "{error}");
+            assert!(
+                matches!(error, collagene_core::Error::Unsupported(_)),
+                "{error}"
+            );
         }
         let mut large = prefix;
         large.resize(collagene_core::formats::MAX_IMPORT_BYTES + 1, 0);
-        let bytes = raw(magic, 16, &large);
+        let bytes = raw(magic, protocol::WORKER_SCHEMA_VERSION, &large);
         let error = if magic == b"CGQ\0" {
             protocol::process_request(&bytes).unwrap_err()
         } else {

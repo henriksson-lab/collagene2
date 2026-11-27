@@ -201,7 +201,7 @@ fn explicit_gff_mapping_import_apply_export_preserves_reverse_coordinates_and_ra
     );
 }
 #[test]
-fn new_job_and_result_tags_require_seven_while_version_six_search_still_decodes() {
+fn annotation_jobs_keep_current_selectors_and_reject_unsupported_versions() {
     let molecule = linear_target();
     let library = library();
     let scan = feature_library::scan(&molecule, &library, &ScanOptions::default()).unwrap();
@@ -260,19 +260,8 @@ fn new_job_and_result_tags_require_seven_while_version_six_search_still_decodes(
         stale.revision = source().revision();
         assert!(protocol::process_request(&protocol::encode_request(&stale).unwrap()).is_err());
     }
-    let mut legacy = protocol::encode_request(&Request {
-        id: 12,
-        revision: molecule.revision(),
-        job: AnalysisJob::Search {
-            molecule: molecule.clone(),
-            query: "CGATAC".into(),
-        },
-    })
-    .unwrap();
-    legacy[4..6].copy_from_slice(&6u16.to_le_bytes());
-    let response = protocol::decode_response(&protocol::process_request(&legacy).unwrap()).unwrap();
-    assert!(matches!(response.result, AnalysisResult::Search(_)));
 }
+
 #[test]
 fn large_new_job_header_is_rejected_before_its_payload_is_deserialized() {
     // A deliberately incomplete new-job payload: preflight must reject its declared
@@ -280,7 +269,7 @@ fn large_new_job_header_is_rejected_before_its_payload_is_deserialized() {
     let mut payload = postcard::to_allocvec(&(9u32, "revision", 22u32)).unwrap();
     payload.resize(32 * 1024 * 1024 + 1, 0);
     let mut envelope = b"CGQ\0".to_vec();
-    envelope.extend(7u16.to_le_bytes());
+    envelope.extend(collagene_core::protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
     envelope.extend((payload.len() as u32).to_le_bytes());
     envelope.extend(blake3::hash(&payload).as_bytes());
     envelope.extend(payload);
@@ -314,7 +303,7 @@ fn annotated_worker_result_cannot_smuggle_invalid_feature_coordinates() {
     };
     let payload = postcard::to_allocvec(&response).unwrap();
     let mut envelope = b"CGR\0".to_vec();
-    envelope.extend(7u16.to_le_bytes());
+    envelope.extend(collagene_core::protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
     envelope.extend((payload.len() as u32).to_le_bytes());
     envelope.extend(blake3::hash(&payload).as_bytes());
     envelope.extend(payload);

@@ -70,6 +70,7 @@ fn ta_plan(base: TailingBase, insert: TailingBase, chemistry: Terminus) -> Desig
                 ],
                 circular: true,
                 allow_nicked: false,
+                options: Default::default(),
             },
         ],
     }
@@ -133,6 +134,7 @@ fn phosphorylation_and_orientation_are_explicit_in_ta_gc_candidates() {
             ],
             circular: true,
             allow_nicked: false,
+            options: Default::default(),
         },
     ]);
     assert_eq!(

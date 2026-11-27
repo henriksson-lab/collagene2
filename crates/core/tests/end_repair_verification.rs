@@ -35,6 +35,7 @@ fn one_source(sequence: &str, enzyme: &str, target: &str) -> (DesignPlan, Molecu
                     }],
                     circular: true,
                     allow_nicked: false,
+                    options: Default::default(),
                 },
             ],
         },
@@ -164,6 +165,7 @@ fn anneal_plan(options: AnnealOptions, phosphorylate: bool) -> (DesignPlan, Mole
         }],
         circular: true,
         allow_nicked: false,
+        options: Default::default(),
     });
     (
         DesignPlan {

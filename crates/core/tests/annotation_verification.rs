@@ -207,6 +207,7 @@ fn reversed_staggered_self_ligation_maps_top_overhang_after_closure() {
                 }],
                 circular: true,
                 allow_nicked: false,
+                options: Default::default(),
             },
         ],
         "GACTAGAGACCTTTGGGG",

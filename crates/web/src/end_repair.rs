@@ -264,6 +264,7 @@ pub fn EndRepairPanel(
                 }],
                 circular: true,
                 allow_nicked: false,
+                options: Default::default(),
             });
         }
         on_candidate.run(Candidate::new(DesignPlan {
@@ -315,6 +316,7 @@ pub fn EndRepairPanel(
                 }],
                 circular: true,
                 allow_nicked: false,
+                options: Default::default(),
             });
         }
         on_candidate.run(Candidate::new(DesignPlan {

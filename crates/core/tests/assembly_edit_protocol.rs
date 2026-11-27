@@ -111,13 +111,19 @@ fn contribution_edits_append_163_155_and_reject_old_or_stale_bindings() {
     assert!(protocol::process_request(&protocol::encode_request(&stale).unwrap()).is_err());
     let mut stale = response.clone();
     stale.revision = "0".repeat(64);
-    assert!(protocol::decode_response(&wire(b"CGR\0", 79, &stale)).is_err());
+    assert!(
+        protocol::decode_response(&wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &stale))
+            .is_err()
+    );
     let mut forged = response;
     let AnalysisResult::ContributionEditIntent(report) = &mut forged.result else {
         unreachable!()
     };
     report.target.sequence = collagene_core::Sequence::dna("AAAAAAAAA").unwrap();
-    assert!(protocol::decode_response(&wire(b"CGR\0", 79, &forged)).is_err());
+    assert!(
+        protocol::decode_response(&wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &forged))
+            .is_err()
+    );
 }
 #[test]
 fn wrong_original_literal_and_revision_are_rejected_before_worker_execution() {
@@ -133,45 +139,4 @@ fn wrong_original_literal_and_revision_are_rejected_before_worker_execution() {
         job: AnalysisJob::BuildContributionEditIntent { inputs, request },
     };
     assert!(protocol::process_request(&protocol::encode_request(&request).unwrap()).is_err());
-}
-#[test]
-fn editable_v7_draft_requires79_while_v6_retains77_compatibility() {
-    let mut workspace = Workspace::from_documents(
-        "Editable draft",
-        vec![Molecule::dna("Original", "AACCGGTT", Topology::Linear).unwrap()],
-        0,
-    )
-    .unwrap();
-    let raw = br#"{"version":7}"#.to_vec();
-    workspace.attachments.insert(
-        blake3::hash(&raw).to_hex().to_string(),
-        WorkspaceAttachment {
-            kind: "assembly-draft-v7".into(),
-            name: "editable".into(),
-            media_type: "application/json".into(),
-            bytes: raw,
-        },
-    );
-    let request = Request {
-        id: 9,
-        revision: workspace
-            .head(&workspace.active_document)
-            .unwrap()
-            .revision(),
-        job: AnalysisJob::SaveWorkspace {
-            workspace: workspace.clone(),
-        },
-    };
-    assert!(protocol::process_request(&wire(b"CGQ\0", 78, &request)).is_err());
-    assert!(protocol::process_request(&protocol::encode_request(&request).unwrap()).is_ok());
-    workspace.attachments.values_mut().next().unwrap().kind = "assembly-draft-v6".into();
-    let request = Request {
-        id: 10,
-        revision: workspace
-            .head(&workspace.active_document)
-            .unwrap()
-            .revision(),
-        job: AnalysisJob::SaveWorkspace { workspace },
-    };
-    assert!(protocol::process_request(&wire(b"CGQ\0", 77, &request)).is_ok());
 }

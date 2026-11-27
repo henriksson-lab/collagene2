@@ -300,8 +300,7 @@ fn operation_title(operation: &Operation) -> &'static str {
         Operation::RecombineReference { .. } => "Reference-only BP/LR exchange",
         Operation::TreatEnds { .. } => "Treat ends",
         Operation::RepairEnds { .. } => "Repair ends",
-        Operation::LigateWithOutcomes { .. } => "Ligation with bounded alternatives",
-        Operation::Ligate { .. } => "Ligate",
+        Operation::Ligate { .. } => "Ligation with bounded alternatives",
         Operation::Tail3Prime { .. } => "3′ tailing",
         Operation::AnnealOligos { .. } => "Anneal oligos",
         Operation::GoldenGate { .. } => "Golden Gate",
@@ -680,6 +679,7 @@ pub fn RunDetailsPanel(
             <p class="run-authority">"Recorded history · unverified on opening"</p>
             <p class="helper">"Saved status and engine describe a historical assessment. Fresh replay is session evidence only. Neither an imported record nor a replay proves which physical reagents were used."</p>
             <RunProvenanceOverview record epoch opened_epoch open_event/>
+            <crate::saved_run_review_view::SavedRunReviewPanel snapshot run_id=run_id.get_value() epoch/>
             {move||match record.get_value(){
                 Err(error)=>view!{<p role="alert">{error}</p>}.into_any(),
                 Ok(record)=>{

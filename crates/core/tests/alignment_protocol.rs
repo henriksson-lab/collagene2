@@ -22,7 +22,7 @@ fn roundtrip(revision: String, job: AnalysisJob) -> Response {
 fn encode_response(response: &Response) -> Result<Vec<u8>, collagene_core::Error> {
     let payload = postcard::to_allocvec(response).unwrap();
     let mut bytes = b"CGR\0".to_vec();
-    bytes.extend(10u16.to_le_bytes());
+    bytes.extend(collagene_core::protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
     bytes.extend((payload.len() as u32).to_le_bytes());
     bytes.extend(blake3::hash(&payload).as_bytes());
     bytes.extend(payload);

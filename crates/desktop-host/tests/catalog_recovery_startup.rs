@@ -63,9 +63,9 @@ fn good(o: w::Outcome) -> w::Success {
         x => panic!("unexpected failure {x:?}"),
     }
 }
-fn bootstrap(host: &mut DesktopHost, access: &WindowAccess, n: u64) -> w::BootstrapRecovery {
-    match good(host_call(host, access, n, w::Command::BootstrapRecovery)) {
-        w::Success::BootstrapRecovery(b) => b,
+fn bootstrap(host: &mut DesktopHost, access: &WindowAccess, n: u64) -> w::Bootstrap {
+    match good(host_call(host, access, n, w::Command::Bootstrap)) {
+        w::Success::Bootstrap(b) => b,
         x => panic!("bootstrap {x:?}"),
     }
 }
@@ -185,7 +185,7 @@ fn assert_editor(
     host: &mut DesktopHost,
     access: &WindowAccess,
     n: u64,
-) -> w::BootstrapRecovery {
+) -> w::Bootstrap {
     let boot = bootstrap(host, access, n);
     assert_eq!(boot.working, seed.meta);
     assert_eq!(boot.preferences, seed.prefs);
@@ -457,35 +457,36 @@ fn corrupt_activation_journal_does_not_block_editor_but_refuses_cancellation_and
     assert!(host.open_exports().is_ok());
 }
 #[test]
-fn recovery_bootstrap_and_exact_cancel_require_v4_while_old_bootstrap_remains_v1() {
-    for c in [
-        w::Command::BootstrapRecovery,
+fn bootstrap_and_exact_cancel_use_the_only_current_native_frame() {
+    for command in [
+        w::Command::Bootstrap,
         w::Command::CatalogBackup(w::CatalogBackupCommand::CancelActivation {
             accepted_operation: op(1),
             review_revision: b::Digest::of(b"review"),
             activation_generation: 0,
         }),
     ] {
-        let q = request(400, c);
-        let mut bytes = w::encode_request(&q).unwrap();
-        assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), 4);
-        bytes[4..6].copy_from_slice(&3u16.to_le_bytes());
-        assert!(w::decode_request(&bytes).is_err());
+        let q = request(400, command);
+        let bytes = w::encode_request(&q).unwrap();
+        assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), w::SCHEMA_VERSION);
+        w::decode_request(&bytes).unwrap();
+        for unsupported in [0, 1, w::SCHEMA_VERSION - 1, w::SCHEMA_VERSION + 1] {
+            let mut bad = bytes.clone();
+            bad[4..6].copy_from_slice(&unsupported.to_le_bytes());
+            assert!(w::decode_request(&bad).is_err());
+            assert!(w::decode_control(&bad).is_err());
+        }
     }
-    let bootstrap = request(402, w::Command::BootstrapRecovery);
-    let bytes = w::encode_request(&bootstrap).unwrap();
+    let q = request(402, w::Command::Bootstrap);
+    let bytes = w::encode_request(&q).unwrap();
     assert!(w::decode_control(&bytes).unwrap().is_none());
-    let mut old = bytes.clone();
-    old[4..6].copy_from_slice(&3u16.to_le_bytes());
-    assert!(w::decode_control(&old).is_err());
     let mut corrupt = bytes;
     let i = corrupt.len() - 1;
     corrupt[i] ^= 1;
-    assert!(w::decode_control(&corrupt).is_err());
-    let q = request(401, w::Command::Bootstrap);
-    let bytes = w::encode_request(&q).unwrap();
-    assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), 1);
-    assert!(w::decode_request(&bytes).is_ok());
+    assert!(
+        w::decode_request(&corrupt).is_err(),
+        "ordinary fast-path hint never grants checksum authority"
+    );
 }
 
 #[test]

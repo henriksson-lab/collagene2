@@ -202,6 +202,7 @@ fn ordinary_pcr_restart_redigest_and_assembly_replay_form_one_complete_native_wo
                 ],
                 circular: false,
                 allow_nicked: false,
+                options: Default::default(),
             },
         ],
     };

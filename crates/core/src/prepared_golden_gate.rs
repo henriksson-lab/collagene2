@@ -413,10 +413,7 @@ fn selected_plan(report: &Report, selection: &Selection) -> Result<DesignPlan, E
         ));
     }
     let mut plan = report.preview.compiled.plan.clone();
-    if !matches!(
-        plan.steps.pop(),
-        Some(Operation::Ligate { .. } | Operation::LigateWithOutcomes { .. })
-    ) {
+    if !matches!(plan.steps.pop(), Some(Operation::Ligate { .. })) {
         return Err(bad(
             "selection requires the old final ordered ligation operation",
         ));

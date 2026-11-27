@@ -111,7 +111,7 @@ fn fixture() -> Workspace {
 async fn ordinary_pcr_native_install_redigest_and_derived_discovery_preserve_immutable_sources() {
     let (c, server) = setup().await;
     let tools = c.list_tools(Default::default()).await.unwrap().tools;
-    assert_eq!(tools.len(), 187);
+    assert_eq!(tools.len(), collagene_mcp::CURRENT_TOOL_COUNT);
     assert!(tools.iter().any(|t| t.name == "material_derivation"));
     let schema = serde_json::to_string(
         &tools

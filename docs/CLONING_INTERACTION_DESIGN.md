@@ -64,7 +64,7 @@ PCR suggestions, saved-primer reuse, preparation and fresh verification use the
 existing methods panel against that frozen expected reference.
 
 Draft declarations and manual preparation settings are saved in the native
-workspace/autosave as an `assembly-draft-v1` attachment. Restoring the draft checks
+workspace/autosave as an `assembly-draft-v14` attachment. Restoring the draft checks
 its source-event snapshots but does not restore a positive check or frozen
 analysis. Reviewing a proposed preparation creates an intended-reference document
 with exact source parents and opens the existing plan review. Historical source

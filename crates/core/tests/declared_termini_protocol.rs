@@ -63,7 +63,7 @@ fn new_operation_requires_candidate_ten_and_worker_thirty_four_while_old_candida
         overlaps: vec![],
         circular: false,
     }];
-    assert!(transfer::load_candidate(&wire(b"CGP\0", 9, &Candidate::new(old))).is_ok());
+    assert!(transfer::load_candidate(&wire(b"CGP\0", 9, &Candidate::new(old))).is_err());
     let request = Request {
         id: 160,
         revision: target.revision(),

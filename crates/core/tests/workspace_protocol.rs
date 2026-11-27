@@ -245,7 +245,7 @@ fn large_workspace_roundtrip_has_its_own_cap_without_enlarging_document_or_scien
     ));
 }
 #[test]
-fn oversized_nonworkspace_and_old_large_headers_fail_before_payload_deserialization() {
+fn current_nonworkspace_and_absolute_payload_bounds_precede_deserialization() {
     // Independently constructed prefix: varint id=1, revision UTF8 length=1/'x', enum tag.
     // Remaining zeros are intentionally not a valid Search/Workspace payload.
     for (magic, tag) in [(b"CGQ\0", 0u8), (b"CGR\0", 2u8)] {
@@ -253,21 +253,25 @@ fn oversized_nonworkspace_and_old_large_headers_fail_before_payload_deserializat
         payload.resize(32 * 1024 * 1024 + 1, 0);
         assert!(matches!(
             if magic == b"CGQ\0" {
-                protocol::process_request(&envelope(6, magic, &payload)).map(|_| ())
+                protocol::process_request(&envelope(
+                    protocol::WORKER_SCHEMA_VERSION,
+                    magic,
+                    &payload,
+                ))
+                .map(|_| ())
             } else {
-                protocol::decode_response(&envelope(6, magic, &payload)).map(|_| ())
+                protocol::decode_response(&envelope(
+                    protocol::WORKER_SCHEMA_VERSION,
+                    magic,
+                    &payload,
+                ))
+                .map(|_| ())
             },
             Err(Error::TooLarge)
         ));
     }
-    let mut payload = vec![1, 1, b'x', 19];
-    payload.resize(32 * 1024 * 1024 + 1, 0);
-    assert!(matches!(
-        protocol::process_request(&envelope(5, b"CGQ\0", &payload)),
-        Err(Error::TooLarge)
-    ));
     let mut short = b"CGQ\0".to_vec();
-    short.extend(6u16.to_le_bytes());
+    short.extend(protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
     short.extend(((128 * 1024 * 1024) + 1u32).to_le_bytes());
     short.extend([0u8; 32]);
     assert!(matches!(

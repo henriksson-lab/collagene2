@@ -43,6 +43,7 @@ fn graph() -> Vec<Operation> {
             ],
             circular: true,
             allow_nicked: false,
+            options: Default::default(),
         },
         Operation::RepairEnds {
             template: step(3),
@@ -109,6 +110,7 @@ fn moving_independent_branch_preserves_literal_dag_edges_orientation_and_pcr_par
         fragments,
         circular,
         allow_nicked,
+        ..
     } = &moved[3]
     else {
         panic!()
@@ -359,6 +361,11 @@ fn shared_mutable_visitor_edits_actual_ordered_sources_without_touching_paramete
         ],
         circular: false,
         allow_nicked: true,
+        options: collagene_core::ligation_outcomes::Options {
+            max_products: 7,
+            max_path_checks: 9,
+            ..Default::default()
+        },
     };
     for source in operation_sources_mut(&mut operation) {
         if let Source::Input(id) = source {
@@ -369,6 +376,7 @@ fn shared_mutable_visitor_edits_actual_ordered_sources_without_touching_paramete
         fragments,
         circular,
         allow_nicked,
+        options,
     } = &operation
     else {
         panic!()
@@ -377,6 +385,8 @@ fn shared_mutable_visitor_edits_actual_ordered_sources_without_touching_paramete
     assert!(!fragments[1].reverse);
     assert!(!circular);
     assert!(*allow_nicked);
+    assert_eq!(options.max_products, 7);
+    assert_eq!(options.max_path_checks, 9);
     assert!(matches!(
         operation_sources(&operation).as_slice(),
         [Source::Step(2), Source::Step(4)]

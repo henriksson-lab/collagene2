@@ -520,6 +520,7 @@ pub fn compile_inverse_pcr(
                 }],
                 circular: true,
                 allow_nicked: false,
+                options: Default::default(),
             },
         ],
     };

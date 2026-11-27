@@ -110,7 +110,7 @@ fn request(inputs: Vec<PlanInput>, target: Molecule, recipe: Recipe) -> Request 
     }
 }
 #[test]
-fn worker82_preserves_actual_branched_preparation_and_existing_candidate18_operation_contract() {
+fn branched_extension_preparation_roundtrips_current_plan_and_independent_target() {
     let (inputs, target, recipe) = fixture();
     let sources_before = serde_json::to_value(&inputs).unwrap();
     assert_eq!(
@@ -120,7 +120,7 @@ fn worker82_preserves_actual_branched_preparation_and_existing_candidate18_opera
     let req = request(inputs.clone(), target.clone(), recipe);
     let error = protocol::process_request(&wire(b"CGQ\0", 81, &req)).unwrap_err();
     assert!(
-        error.to_string().contains("requires worker schema 82"),
+        matches!(error, collagene_core::Error::Unsupported(_)),
         "{error}"
     );
     let bytes = protocol::process_request(&protocol::encode_request(&req).unwrap()).unwrap();
@@ -170,12 +170,6 @@ fn worker82_preserves_actual_branched_preparation_and_existing_candidate18_opera
         &protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
     );
     assert!(transfer::load_candidate(&encoded_candidate).is_ok());
-    // These existing operations still retain their historical candidate18 floor.
-    let mut historical_candidate = encoded_candidate;
-    historical_candidate[4..6].copy_from_slice(&18u16.to_le_bytes());
-    assert!(transfer::load_candidate(&historical_candidate).is_ok());
-    // Compiled plans contain the already-versioned physical operation, not the
-    // new recipe selector, and therefore keep their worker81 capability floor.
     let verify = Request {
         id: 81,
         revision: target.revision(),
@@ -184,7 +178,7 @@ fn worker82_preserves_actual_branched_preparation_and_existing_candidate18_opera
             target: target.clone(),
         },
     };
-    assert!(protocol::process_request(&wire(b"CGQ\0", 81, &verify)).is_ok());
+    assert!(protocol::process_request(&wire(b"CGQ\0", 81, &verify)).is_err());
     for job in [
         AnalysisJob::ExportProtocolHtml {
             plan: candidate.plan.clone(),
@@ -285,7 +279,7 @@ fn flat_saved_run_preparation_variant7_cannot_hide_under_old_from_run_envelope()
     for version in [74, 81] {
         let error = protocol::process_request(&wire(b"CGQ\0", version, &req)).unwrap_err();
         assert!(
-            error.to_string().contains("requires worker schema 82"),
+            matches!(error, collagene_core::Error::Unsupported(_)),
             "{error}"
         );
     }
@@ -318,32 +312,4 @@ fn flat_saved_run_preparation_variant7_cannot_hide_under_old_from_run_envelope()
             .as_str(),
         TARGET
     );
-}
-#[test]
-fn worker82_draft_attachment_floor_does_not_raise_older_plain_recipe_floor() {
-    let (inputs, target, mut recipe) = fixture();
-    recipe.fragments[0].preparation = Preparation::ExactPcr {
-        forward: Primer::new("Original F", "AGTCCGAT", "").unwrap(),
-        reverse: Primer::new("Original R", "TGACGATC", "").unwrap(),
-    };
-    let req = request(inputs, target.clone(), recipe);
-    assert!(protocol::process_request(&wire(b"CGQ\0", 81, &req)).is_ok());
-    let mut w = Workspace::from_documents("Draft transport", vec![target], 0).unwrap();
-    let bytes = b"{}".to_vec();
-    w.attachments.insert(
-        blake3::hash(&bytes).to_hex().to_string(),
-        WorkspaceAttachment {
-            kind: "assembly-draft-v8".into(),
-            name: "draft".into(),
-            media_type: "application/json".into(),
-            bytes,
-        },
-    );
-    let req = Request {
-        id: 82,
-        revision: w.head(&w.active_document).unwrap().revision(),
-        job: AnalysisJob::SaveWorkspace { workspace: w },
-    };
-    assert!(protocol::process_request(&wire(b"CGQ\0", 81, &req)).is_err());
-    assert!(protocol::process_request(&protocol::encode_request(&req).unwrap()).is_ok());
 }

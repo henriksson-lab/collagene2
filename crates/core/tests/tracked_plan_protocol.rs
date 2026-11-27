@@ -1,4 +1,4 @@
-//! Tracked operations never hide in historical plan/workspace/worker schemas.
+//! Current plan, workspace and worker frames preserve tracked chemistry.
 use collagene_core::{
     Molecule, Topology,
     methylation::MethylationState,
@@ -48,7 +48,7 @@ fn wire(magic: &[u8; 4], version: u16, value: &impl serde::Serialize) -> Vec<u8>
     b
 }
 #[test]
-fn appended_operations_require_candidate_six_and_worker_seventeen_in_nested_plans() {
+fn tracked_chemistry_roundtrips_through_current_candidate_and_worker_frames() {
     let (target, plan) = fixture();
     let candidate = Candidate::new(plan.clone());
     let bytes = transfer::save_candidate(&candidate).unwrap();
@@ -57,7 +57,10 @@ fn appended_operations_require_candidate_six_and_worker_seventeen_in_nested_plan
         &collagene_core::protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
     );
     transfer::load_candidate(&bytes).unwrap();
-    for version in 1..6 {
+    for version in [
+        protocol::CANDIDATE_SCHEMA_VERSION - 1,
+        protocol::CANDIDATE_SCHEMA_VERSION + 1,
+    ] {
         assert!(transfer::load_candidate(&wire(b"CGP\0", version, &candidate)).is_err());
     }
     for job in [
@@ -75,7 +78,10 @@ fn appended_operations_require_candidate_six_and_worker_seventeen_in_nested_plan
             revision: target.revision(),
             job,
         };
-        for version in 1..17 {
+        for version in [
+            protocol::WORKER_SCHEMA_VERSION - 1,
+            protocol::WORKER_SCHEMA_VERSION + 1,
+        ] {
             assert!(protocol::process_request(&wire(b"CGQ\0", version, &request)).is_err());
         }
         let bytes = protocol::encode_request(&request).unwrap();
@@ -87,7 +93,7 @@ fn appended_operations_require_candidate_six_and_worker_seventeen_in_nested_plan
     }
 }
 #[test]
-fn inline_and_binary_workspace_plan_graphs_cannot_downcast_tracked_operations() {
+fn tracked_workspace_payloads_retain_current_plan_and_archive_data() {
     let (target, plan) = fixture();
     let mut workspace = Workspace::from_documents(
         "tracked",
@@ -115,7 +121,20 @@ fn inline_and_binary_workspace_plan_graphs_cannot_downcast_tracked_operations() 
             revision,
             job,
         };
-        assert!(protocol::process_request(&wire(b"CGQ\0", 16, &request)).is_err());
+        assert!(
+            protocol::process_request(&wire(
+                b"CGQ\0",
+                protocol::WORKER_SCHEMA_VERSION - 1,
+                &request
+            ))
+            .is_err()
+        );
+        let current =
+            protocol::process_request(&protocol::encode_request(&request).unwrap()).unwrap();
+        assert!(matches!(
+            protocol::decode_response(&current).unwrap().result,
+            AnalysisResult::WorkspaceSaved(_) | AnalysisResult::WorkspaceLoaded(_)
+        ));
     }
     for result in [
         AnalysisResult::WorkspaceLoaded(workspace),
@@ -126,80 +145,21 @@ fn inline_and_binary_workspace_plan_graphs_cannot_downcast_tracked_operations() 
             revision: target.revision(),
             result,
         };
-        assert!(protocol::decode_response(&wire(b"CGR\0", 16, &response)).is_err());
-        protocol::decode_response(&wire(b"CGR\0", 17, &response)).unwrap();
+        assert!(
+            protocol::decode_response(&wire(
+                b"CGR\0",
+                protocol::WORKER_SCHEMA_VERSION - 1,
+                &response
+            ))
+            .is_err()
+        );
+        protocol::decode_response(&wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &response))
+            .unwrap();
     }
 }
-#[test]
-fn current_reports_require_new_envelopes_while_eight_and_seven_stay_historical() {
-    fn historical_wire(version: u16, response: &Response) -> Vec<u8> {
-        let AnalysisResult::Verification(report) = &response.result else {
-            panic!("expected verification")
-        };
-        assert!(report.step_reports.is_empty());
-        wire(
-            b"CGR\0",
-            version,
-            &(
-                response.id,
-                &response.revision,
-                4u32,
-                (
-                    &report.plan_revision,
-                    &report.target_revision,
-                    &report.engine_version,
-                    report.status,
-                    &report.findings,
-                    &report.assumptions,
-                    &report.products,
-                    report.exhaustive_alternative_search,
-                ),
-            ),
-        )
-    }
-    let (target, plan) = fixture();
-    let report = verify(&plan, &target);
-    assert!(report.engine_version == collagene_core::verification::ENGINE_VERSION);
-    let response = Response {
-        id: 503,
-        revision: target.revision(),
-        result: AnalysisResult::Verification(report.clone()),
-    };
-    assert!(protocol::decode_response(&wire(b"CGR\0", 16, &response)).is_err());
-    assert!(protocol::decode_response(&wire(b"CGR\0", 21, &response)).is_err());
-    protocol::decode_response(&wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &response)).unwrap();
-    let mut historical_eight = report.clone();
-    historical_eight.engine_version = "0.1.0/science-8".into();
-    let historical = Response {
-        id: 503,
-        revision: target.revision(),
-        result: AnalysisResult::Verification(historical_eight),
-    };
-    protocol::decode_response(&historical_wire(17, &historical)).unwrap();
 
-    let pdf = collagene_core::pdf::export_protocol_pdf(&plan, &target).unwrap();
-    let response = Response {
-        id: 503,
-        revision: target.revision(),
-        result: AnalysisResult::ProtocolPdf(pdf),
-    };
-    assert!(protocol::decode_response(&wire(b"CGR\0", 16, &response)).is_err());
-    let mut old = report;
-    old.engine_version = "0.1.0/science-7".into();
-    let response = Response {
-        id: 503,
-        revision: target.revision(),
-        result: AnalysisResult::Verification(old),
-    };
-    let decoded = protocol::decode_response(&historical_wire(16, &response)).unwrap();
-    let AnalysisResult::Verification(old) = decoded.result else {
-        panic!()
-    };
-    assert_eq!(old.engine_version, "0.1.0/science-7");
-    assert_ne!(old.engine_version, ENGINE_VERSION);
-}
 #[test]
-fn native_archive_plan_four_floor_is_checked_even_when_its_candidate_hashes_are_valid() {
+fn archive_manifest_rejects_unsupported_plan_schema_even_with_valid_candidate_hashes() {
     use std::io::{Cursor, Read, Write};
     let (target, plan) = fixture();
     let mut workspace =
@@ -207,7 +167,10 @@ fn native_archive_plan_four_floor_is_checked_even_when_its_candidate_hashes_are_
             .unwrap();
     workspace.candidates.push(Candidate::new(plan));
     let archive = collagene_core::workspace::save_workspace(&workspace).unwrap();
-    for schema in 1..4 {
+    for schema in [
+        collagene_core::workspace::PLAN_SCHEMA_VERSION - 1,
+        collagene_core::workspace::PLAN_SCHEMA_VERSION + 1,
+    ] {
         let mut input = zip::ZipArchive::new(Cursor::new(&archive)).unwrap();
         let mut output = zip::ZipWriter::new(Cursor::new(Vec::new()));
         for index in 0..input.len() {
@@ -234,7 +197,7 @@ fn native_archive_plan_four_floor_is_checked_even_when_its_candidate_hashes_are_
     }
 }
 #[test]
-fn retained_runs_and_their_workspaces_cannot_hide_new_semantics_under_old_outer_variants() {
+fn retained_run_replay_binds_current_plan_and_scientific_assessment() {
     use collagene_core::run_lineage::*;
     let (target, plan) = fixture();
     let workspace = Workspace::from_documents(
@@ -264,7 +227,14 @@ fn retained_runs_and_their_workspaces_cannot_hide_new_semantics_under_old_outer_
             allow_incomplete: false,
         },
     };
-    assert!(protocol::process_request(&wire(b"CGQ\0", 16, &request)).is_err());
+    assert!(
+        protocol::process_request(&wire(
+            b"CGQ\0",
+            protocol::WORKER_SCHEMA_VERSION - 1,
+            &request
+        ))
+        .is_err()
+    );
     let commit = record_run(&workspace, &plan, target_binding, input_bindings, false).unwrap();
     let record =
         load_run_record(&commit.workspace.attachments[&commit.receipt.attachment_hash].bytes)
@@ -274,7 +244,8 @@ fn retained_runs_and_their_workspaces_cannot_hide_new_semantics_under_old_outer_
         collagene_core::workspace::PLAN_SCHEMA_VERSION
     );
     let mut mislabeled = serde_json::to_value(&record).unwrap();
-    mislabeled["plan_schema"] = serde_json::json!(3);
+    mislabeled["plan_schema"] =
+        serde_json::json!(collagene_core::workspace::PLAN_SCHEMA_VERSION - 1);
     assert!(load_run_record(&serde_json::to_vec(&mislabeled).unwrap()).is_err());
     let replay = replay_run(&commit.workspace, &commit.receipt.run_id).unwrap();
     assert!(replay.products_match);
@@ -293,13 +264,27 @@ fn retained_runs_and_their_workspaces_cannot_hide_new_semantics_under_old_outer_
         revision: workspace_fingerprint(&workspace).unwrap(),
         result: AnalysisResult::RunCommit(commit.clone()),
     };
-    assert!(protocol::decode_response(&wire(b"CGR\0", 16, &response)).is_err());
+    assert!(
+        protocol::decode_response(&wire(
+            b"CGR\0",
+            protocol::WORKER_SCHEMA_VERSION - 1,
+            &response
+        ))
+        .is_err()
+    );
     let response = Response {
         id: 504,
         revision: workspace_fingerprint(&commit.workspace).unwrap(),
         result: AnalysisResult::RunReplay(replay),
     };
-    assert!(protocol::decode_response(&wire(b"CGR\0", 16, &response)).is_err());
+    assert!(
+        protocol::decode_response(&wire(
+            b"CGR\0",
+            protocol::WORKER_SCHEMA_VERSION - 1,
+            &response
+        ))
+        .is_err()
+    );
     for job in [
         AnalysisJob::SaveWorkspace {
             workspace: commit.workspace.clone(),
@@ -314,72 +299,13 @@ fn retained_runs_and_their_workspaces_cannot_hide_new_semantics_under_old_outer_
             revision: workspace_fingerprint(&commit.workspace).unwrap(),
             job,
         };
-        assert!(protocol::process_request(&wire(b"CGQ\0", 16, &request)).is_err());
+        assert!(
+            protocol::process_request(&wire(
+                b"CGQ\0",
+                protocol::WORKER_SCHEMA_VERSION - 1,
+                &request
+            ))
+            .is_err()
+        );
     }
-}
-#[test]
-fn genuine_schema_three_run_identity_remains_readable_with_its_recorded_engine() {
-    use collagene_core::run_lineage::*;
-    let source = Molecule::dna("old source", "AACCGG", Topology::Linear).unwrap();
-    let target = source.clone();
-    let workspace = Workspace::from_documents("history", vec![source.clone()], 0).unwrap();
-    let event = EventBinding {
-        document_id: workspace.documents[0].id.clone(),
-        event_id: workspace.documents[0].head_event.clone().unwrap(),
-        revision: source.revision(),
-    };
-    let plan = DesignPlan {
-        name: "old model".into(),
-        target_revision: target.revision(),
-        inputs: vec![PlanInput {
-            id: "s".into(),
-            revision: source.revision(),
-            molecule: source,
-        }],
-        steps: vec![Operation::Overlap {
-            fragments: vec![Source::Input("s".into())],
-            overlaps: vec![],
-            circular: false,
-        }],
-    };
-    let commit = record_run(
-        &workspace,
-        &plan,
-        event.clone(),
-        vec![InputEventBinding {
-            input_id: "s".into(),
-            event,
-        }],
-        false,
-    )
-    .unwrap();
-    let mut record =
-        load_run_record(&commit.workspace.attachments[&commit.receipt.attachment_hash].bytes)
-            .unwrap();
-    record.plan_schema = 3;
-    record.assessment.engine_version = "0.1.0/science-7".into();
-    record.run_id = blake3::hash(
-        &serde_json::to_vec(&(
-            "cloning-run-v1",
-            record.schema_version,
-            record.plan_schema,
-            &record.plan_revision,
-            &record.plan,
-            &record.target,
-            &record.inputs,
-            record
-                .products
-                .iter()
-                .map(|p| (&p.step_index, &p.revision))
-                .collect::<Vec<_>>(),
-            &record.assessment,
-        ))
-        .unwrap(),
-    )
-    .to_hex()
-    .to_string();
-    let historical = load_run_record(&serde_json::to_vec(&record).unwrap()).unwrap();
-    assert_eq!(historical.plan_schema, 3);
-    assert_eq!(historical.assessment.engine_version, "0.1.0/science-7");
-    assert_ne!(historical.assessment.engine_version, ENGINE_VERSION);
 }

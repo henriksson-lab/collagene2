@@ -9,7 +9,6 @@ use collagene_core::{
     translation::{InitiationPolicy, OrfOptions, TranslationOptions},
     *,
 };
-use serde::Serialize;
 
 fn molecule(bases: &str) -> Molecule {
     Molecule::dna("worker fixture", bases, Topology::Linear).unwrap()
@@ -266,77 +265,6 @@ fn computation_failures_return_typed_error_responses_with_request_identity() {
             panic!("expected analysis error")
         };
         assert!(!message.is_empty());
-    }
-}
-
-// These legacy wire types deliberately do not use today's AnalysisJob/Result:
-// appended enum variants must not change the discriminants of original variants.
-#[derive(Serialize)]
-enum LegacyJob {
-    Search { molecule: Molecule, query: String },
-}
-#[derive(Serialize)]
-struct LegacyRequest {
-    id: u32,
-    revision: String,
-    job: LegacyJob,
-}
-#[derive(Serialize)]
-enum LegacyResult {
-    Search(Vec<collagene_core::analysis::Match>),
-}
-#[derive(Serialize)]
-struct LegacyResponse {
-    id: u32,
-    revision: String,
-    result: LegacyResult,
-}
-
-fn legacy_envelope(magic: &[u8; 4], version: u16, value: &impl Serialize) -> Vec<u8> {
-    let payload = postcard::to_allocvec(value).unwrap();
-    let mut bytes = magic.to_vec();
-    bytes.extend_from_slice(&version.to_le_bytes());
-    bytes.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-    bytes.extend_from_slice(blake3::hash(&payload).as_bytes());
-    bytes.extend_from_slice(&payload);
-    bytes
-}
-
-#[test]
-fn original_worker_variants_remain_compatible_with_versions_one_and_two() {
-    let source = molecule("AAACCC");
-    for version in [1, 2] {
-        let legacy = LegacyRequest {
-            id: 72,
-            revision: source.revision(),
-            job: LegacyJob::Search {
-                molecule: source.clone(),
-                query: "AAA".into(),
-            },
-        };
-        let reply = process_request(&legacy_envelope(b"CGQ\0", version, &legacy)).unwrap();
-        let response = decode_response(&reply).unwrap();
-        assert_eq!(
-            (response.id, response.revision.as_str()),
-            (72, source.revision().as_str())
-        );
-        let AnalysisResult::Search(matches) = response.result else {
-            panic!("legacy variant changed")
-        };
-        assert_eq!(matches.len(), 1);
-        assert_eq!((matches[0].start, matches[0].length), (0, 3));
-        let old_reply = legacy_envelope(
-            b"CGR\0",
-            version,
-            &LegacyResponse {
-                id: 72,
-                revision: source.revision(),
-                result: LegacyResult::Search(matches),
-            },
-        );
-        let decoded = decode_response(&old_reply).unwrap();
-        assert_eq!(decoded.id, 72);
-        assert!(matches!(decoded.result, AnalysisResult::Search(found) if found.len() == 1));
     }
 }
 

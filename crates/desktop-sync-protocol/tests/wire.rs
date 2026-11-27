@@ -1,4 +1,4 @@
-use collagene_desktop_sync_protocol::{self as wire, library, *};
+use collagene_desktop_sync_protocol::{library, *};
 
 fn remote() -> Remote {
     Remote {

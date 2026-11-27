@@ -198,6 +198,7 @@ fn failed_final_operation_never_exposes_preparation_as_final_but_wrong_target_do
                 ],
                 circular: false,
                 allow_nicked: true,
+                options: Default::default(),
             },
         ],
     };

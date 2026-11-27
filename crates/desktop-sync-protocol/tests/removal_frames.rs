@@ -37,7 +37,7 @@ fn response(q: &wire::RequestEnvelope, success: wire::Success) -> wire::Response
     }
 }
 #[test]
-fn only_removal_commands_and_results_need_schema3_while_old_floors_remain() {
+fn current_removal_and_metadata_commands_reject_noncurrent_headers() {
     let commands = [
         wire::Command::PrepareRemoteRemoval { remote: remote() },
         wire::Command::ConfirmRemoteRemoval {
@@ -58,8 +58,8 @@ fn only_removal_commands_and_results_need_schema3_while_old_floors_remain() {
             assert!(wire::decode_request(&bad).is_err());
         }
     }
-    let legacy = wire::encode_request(&request(wire::Command::Remotes)).unwrap();
-    assert_eq!(&legacy[4..6], &1u16.to_le_bytes());
+    let ordinary = wire::encode_request(&request(wire::Command::Remotes)).unwrap();
+    assert_eq!(&ordinary[4..6], &wire::SCHEMA_VERSION.to_le_bytes());
     let prior = wire::encode_request(&request(wire::Command::PrepareMetadataPublication {
         target: wire::PublicationTarget::Folder(
             library::FolderId::new(format!("fld-{:032x}", 1)).unwrap(),
@@ -67,7 +67,7 @@ fn only_removal_commands_and_results_need_schema3_while_old_floors_remain() {
         remote: remote(),
     }))
     .unwrap();
-    assert_eq!(&prior[4..6], &2u16.to_le_bytes());
+    assert_eq!(&prior[4..6], &wire::SCHEMA_VERSION.to_le_bytes());
 }
 #[test]
 fn removal_reply_is_exactly_request_bound_and_unknown_receipt_versions_or_counts_fail() {

@@ -93,6 +93,7 @@ fn unmodified_checked_cut_and_self_ligation_reconstruct_literal_independent_targ
                 }],
                 circular: true,
                 allow_nicked: false,
+                options: Default::default(),
             },
         ],
     );
@@ -144,6 +145,7 @@ fn legacy_cleavage_cannot_hide_declared_modifications_and_cut_ligate_preserves_t
                 }],
                 circular: true,
                 allow_nicked: false,
+                options: Default::default(),
             },
             checked(Source::Step(2), "NotI"),
         ],

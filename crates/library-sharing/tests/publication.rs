@@ -174,10 +174,10 @@ fn fixture() -> (Workspace, Selection, run_material::Selection, String) {
     let ui = WorkspaceAttachment {
         // App's current homology-capable autosave kind (app.rs). Closure treats
         // working bytes opaquely, including unfinished/recovery-only drafts.
-        kind: "assembly-draft-v10".into(),
+        kind: "assembly-draft-v14".into(),
         name: "Private draft".into(),
         media_type: "application/json".into(),
-        bytes: br#"{"version":10,"name":"PRIVATE WORKING DRAFT","unpublished_source":"DO NOT PUBLISH"}"#.to_vec(),
+        bytes: br#"{"version":14,"name":"PRIVATE WORKING DRAFT","unpublished_source":"DO NOT PUBLISH"}"#.to_vec(),
     };
     // Attachment identity uses the exact bytes, not a private draft's semantics.
     let ui_hash = hash_bytes(&ui.bytes);
@@ -205,7 +205,7 @@ fn published_pcr_history_reopens_and_replays_nested_saved_material_without_priva
             .workspace
             .attachments
             .values()
-            .any(|a| a.kind == "assembly-draft-v10")
+            .any(|a| a.kind == "assembly-draft-v14")
     );
     assert_eq!(export.workspace.name, "Plasmid publication");
     assert_eq!(
@@ -345,14 +345,11 @@ fn current_and_historical_app_state_is_local_but_future_or_scientific_schemas_ar
         revision: selected.head.clone(),
         head_event: selected.head_event.clone(),
     };
-    let mut kinds: Vec<String> = (1..=11)
-        .map(|version| format!("assembly-draft-v{version}"))
-        .collect();
+    let mut kinds = vec!["assembly-draft-v14".to_owned()];
     kinds.extend(
         [
             "assembly-design-v1",
             "assembly-library-history-v1",
-            "primer-pair-draft-v1",
             "primer-pair-draft-v2",
             "annotation-display-v1",
             "lab-library-bindings-v1",
@@ -400,7 +397,9 @@ fn current_and_historical_app_state_is_local_but_future_or_scientific_schemas_ar
     );
 
     for kind in [
-        "assembly-draft-v12",
+        "assembly-draft-v15",
+        "assembly-draft-v13",
+        "primer-pair-draft-v1",
         "primer-pair-draft-v3",
         "assembly-design-v2",
         "pcr-output-reference-v1",

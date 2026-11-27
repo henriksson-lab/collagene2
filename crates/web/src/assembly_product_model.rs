@@ -183,14 +183,9 @@ pub(crate) fn operation_label(operation: &Operation) -> String {
             fragments,
             circular,
             allow_nicked,
-        }
-        | Operation::LigateWithOutcomes {
-            fragments,
-            circular,
-            allow_nicked,
             ..
         } => format!(
-            "Ordered ligation · {} fragments · {} · retained nicks {}",
+            "Ligation with bounded alternatives · {} fragments · {} · retained nicks {}",
             fragments.len(),
             if *circular { "circular" } else { "linear" },
             if *allow_nicked {

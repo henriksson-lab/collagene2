@@ -221,9 +221,9 @@ fn unknown_alternative_junction_chemistry_is_not_reported_as_proven_absence() {
 
 #[test]
 fn above_enumeration_limit_retains_supported_ordered_material_without_attempting_alternatives() {
-    assert_eq!(l::MAX_FRAGMENTS, 32);
+    assert_eq!(l::MAX_FRAGMENTS, 1000);
     assert_eq!(l::MAX_ENUMERATION_FRAGMENTS, 8);
-    for n in [9, 32] {
+    for n in [9, 32, 129, 1000] {
         let material = blunt("AG", true);
         let keys = (0..n).map(|i| format!("fragment-{i}")).collect::<Vec<_>>();
         let operands = keys

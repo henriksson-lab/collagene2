@@ -339,6 +339,7 @@ mod tests {
                     }],
                     circular: true,
                     allow_nicked: false,
+                    options: Default::default(),
                 },
             ],
         };

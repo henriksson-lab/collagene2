@@ -19,7 +19,7 @@ fn wire(magic: &[u8; 4], version: u16, value: &impl serde::Serialize) -> Vec<u8>
     b
 }
 #[test]
-fn new_jobs_roundtrip_bound_source_and_keep_old_search_tag() {
+fn search_and_track_jobs_roundtrip_bound_sources() {
     let m = source();
     for job in [
         AnalysisJob::SearchDocument {
@@ -52,20 +52,8 @@ fn new_jobs_roundtrip_bound_source_and_keep_old_search_tag() {
             assert!(process_request(&wire(b"CGQ\0", version, &request)).is_err());
         }
     }
-    let old = Request {
-        id: 8,
-        revision: m.revision(),
-        job: AnalysisJob::Search {
-            molecule: m.clone(),
-            query: "AAAA".into(),
-        },
-    };
-    for version in 1..=9 {
-        let response =
-            decode_response(&process_request(&wire(b"CGQ\0", version, &old)).unwrap()).unwrap();
-        assert!(matches!(response.result, AnalysisResult::Search(_)));
-    }
 }
+
 #[test]
 fn new_results_cannot_claim_old_versions_and_corruption_fails() {
     let m = source();
@@ -78,8 +66,19 @@ fn new_results_cannot_claim_old_versions_and_corruption_fails() {
     for version in 1..9 {
         assert!(decode_response(&wire(b"CGR\0", version, &response)).is_err());
     }
-    assert!(decode_response(&wire(b"CGR\0", 9, &response)).is_ok());
-    let mut corrupt = wire(b"CGR\0", 9, &response);
+    assert!(
+        decode_response(&wire(
+            b"CGR\0",
+            collagene_core::protocol::WORKER_SCHEMA_VERSION,
+            &response
+        ))
+        .is_ok()
+    );
+    let mut corrupt = wire(
+        b"CGR\0",
+        collagene_core::protocol::WORKER_SCHEMA_VERSION,
+        &response,
+    );
     *corrupt.last_mut().unwrap() ^= 1;
     assert!(decode_response(&corrupt).is_err());
     let mut invalid = report;
@@ -89,7 +88,14 @@ fn new_results_cannot_claim_old_versions_and_corruption_fails() {
         revision: m.revision(),
         result: AnalysisResult::DocumentSearch(invalid),
     };
-    assert!(decode_response(&wire(b"CGR\0", 9, &response)).is_err());
+    assert!(
+        decode_response(&wire(
+            b"CGR\0",
+            collagene_core::protocol::WORKER_SCHEMA_VERSION,
+            &response
+        ))
+        .is_err()
+    );
     let report = view_tracks(
         &m,
         TrackWindow { start: 0, end: 10 },
@@ -104,7 +110,14 @@ fn new_results_cannot_claim_old_versions_and_corruption_fails() {
     for version in 1..9 {
         assert!(decode_response(&wire(b"CGR\0", version, &response)).is_err());
     }
-    assert!(decode_response(&wire(b"CGR\0", 9, &response)).is_ok());
+    assert!(
+        decode_response(&wire(
+            b"CGR\0",
+            collagene_core::protocol::WORKER_SCHEMA_VERSION,
+            &response
+        ))
+        .is_ok()
+    );
 }
 #[test]
 fn stale_input_and_result_revisions_are_rejected() {
@@ -123,14 +136,14 @@ fn stale_input_and_result_revisions_are_rejected() {
         revision: "stale".into(),
         result: AnalysisResult::DocumentSearch(search_document(&m, &options()).unwrap()),
     };
-    assert!(decode_response(&wire(b"CGR\0", 9, &response)).is_err());
+    assert!(decode_response(&wire(b"CGR\0", WORKER_SCHEMA_VERSION, &response)).is_err());
 }
 #[test]
 fn oversized_new_variant_is_rejected_before_payload_deserialization() {
     let mut payload = postcard::to_allocvec(&(0u32, "", 30u32)).unwrap();
     payload.resize(32 * 1024 * 1024 + 1, 0);
     let mut b = b"CGQ\0".to_vec();
-    b.extend(9u16.to_le_bytes());
+    b.extend(collagene_core::protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
     b.extend((payload.len() as u32).to_le_bytes());
     b.extend(blake3::hash(&payload).as_bytes());
     b.extend(payload);

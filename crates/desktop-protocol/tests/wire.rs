@@ -20,7 +20,7 @@ fn response(request: &RequestEnvelope, outcome: Outcome) -> ResponseEnvelope {
 fn frame(raw: &[u8]) -> Vec<u8> {
     let mut b = vec![];
     b.extend_from_slice(b"DTQ\0");
-    b.extend_from_slice(&1u16.to_le_bytes());
+    b.extend_from_slice(&SCHEMA_VERSION.to_le_bytes());
     b.extend_from_slice(&(raw.len() as u32).to_le_bytes());
     b.extend_from_slice(blake3::hash(raw).as_bytes());
     b.extend_from_slice(raw);
@@ -60,7 +60,7 @@ fn desktop_frames_reject_wrong_namespace_versions_corruption_and_length_before_d
     assert_eq!(decode_request(&frame(&trailing)), Err(Error::Malformed));
     let mut oversized = vec![0; HEADER_BYTES];
     oversized[..4].copy_from_slice(b"DTQ\0");
-    oversized[4..6].copy_from_slice(&1u16.to_le_bytes());
+    oversized[4..6].copy_from_slice(&SCHEMA_VERSION.to_le_bytes());
     oversized[6..10].copy_from_slice(&((MAX_REQUEST_BYTES + 1) as u32).to_le_bytes());
     assert_eq!(decode_request(&oversized), Err(Error::TooLarge));
     oversized[..4].copy_from_slice(b"DTR\0");

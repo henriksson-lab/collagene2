@@ -48,7 +48,7 @@ fn fixture(gc: bool) -> (Vec<PlanInput>, Molecule, Recipe) {
             },
             reverse: false,
         },
-        base,
+        action: collagene_core::tailing_recipe::Action::AddTail { base },
         treatment: Some(EndTreatment::Phosphorylate),
     })
     .collect();
@@ -66,6 +66,12 @@ fn fixture(gc: bool) -> (Vec<PlanInput>, Molecule, Recipe) {
         inputs,
         target,
         Recipe {
+            profile: if gc {
+                collagene_core::tailing_recipe::Profile::Gc
+            } else {
+                collagene_core::tailing_recipe::Profile::Ta
+            },
+
             name: "Explicit original-source two-row tailing".into(),
             fragments,
             circular: true,
@@ -110,7 +116,7 @@ fn circle_eq(a: &str, b: &str) -> bool {
             || format!("{}{}", reverse.as_str(), reverse.as_str()).contains(b))
 }
 #[test]
-fn appended_worker156_result148_reconstructs_literal_ta_and_gc_with_old_operations() {
+fn tailing_recipe_reconstructs_literal_ta_and_gc_with_current_operations() {
     assert!(protocol::WORKER_SCHEMA_VERSION >= 70);
     assert!(protocol::CANDIDATE_SCHEMA_VERSION >= 16);
     assert!(workspace::PLAN_SCHEMA_VERSION >= 14);
@@ -182,13 +188,18 @@ fn tail_base_treatment_and_independent_target_are_bound_and_unsealed_nicks_are_r
     assert_eq!(value.product_physical.as_ref().unwrap().nicks.len(), 2);
     assert!(value.preparation_complete);
     let mut tampered = value.clone();
-    tampered.recipe.fragments[0].base = TailingBase::A;
+    tampered.recipe.fragments[0].action = tailing_recipe::Action::AddTail {
+        base: TailingBase::A,
+    };
     let forged = Response {
         id: req.id,
         revision: req.revision.clone(),
         result: AnalysisResult::TailingRecipePreview(tampered),
     };
-    assert!(protocol::decode_response(&wire(b"CGR\0", 70, &forged)).is_err());
+    assert!(
+        protocol::decode_response(&wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &forged))
+            .is_err()
+    );
     let wrong = Molecule::dna(
         "Independent wrong14bp target",
         "AAAAAAAAAAAAAA",
@@ -197,53 +208,4 @@ fn tail_base_treatment_and_independent_target_are_bound_and_unsealed_nicks_are_r
     .unwrap();
     let (_, value) = preview(&request(inputs, wrong, recipe));
     assert_eq!(value.verification.status, Status::Invalid);
-}
-#[test]
-fn existing_ligation_selectors_remain_valid_under_schema69() {
-    let (inputs, _, tailing) = fixture(false);
-    let target = Molecule::dna(
-        "Independent old blunt12bp circle",
-        "AAACCCGGGTTT",
-        Topology::Circular,
-    )
-    .unwrap();
-    let recipe = ligation_recipe::Recipe {
-        name: "Existing ordinary ligation route".into(),
-        fragments: tailing
-            .fragments
-            .into_iter()
-            .map(|f| ligation_recipe::Fragment {
-                source: f.source,
-                treatment: f.treatment,
-            })
-            .collect(),
-        circular: true,
-        allow_nicked: false,
-    };
-    let req = Request {
-        id: 95,
-        revision: ligation_recipe::preview_revision(&inputs, &target, &recipe).unwrap(),
-        job: AnalysisJob::PreviewLigationRecipe {
-            inputs,
-            target,
-            recipe,
-        },
-    };
-    let bytes = wire(b"CGQ\0", 69, &req);
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 95);
-    let reply = protocol::process_request(&bytes).unwrap();
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&reply[42..]).unwrap();
-    assert_eq!(tag, 87);
-    let response = protocol::decode_response(&reply).unwrap();
-    let AnalysisResult::LigationRecipePreview(value) = &response.result else {
-        panic!("existing ligation selector changed")
-    };
-    assert_eq!(
-        value.verification.status,
-        Status::ConsistentUnderAssumptions
-    );
-    // The old request remains valid, but its freshly produced science20
-    // evidence cannot claim a historical worker69 envelope.
-    assert!(protocol::decode_response(&wire(b"CGR\0", 69, &response)).is_err());
 }

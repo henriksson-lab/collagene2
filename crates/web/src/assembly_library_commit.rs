@@ -109,7 +109,7 @@ pub fn stage(
 /// happen independently of any native record claims before recovery is offered.
 pub fn load_recovery(frame: &Workspace, record_hash: &str) -> Result<(Draft, Record), String> {
     let record = history::load(frame, record_hash).map_err(|e| e.to_string())?;
-    let recovered = assembly_draft_model::decode_version(&record.before_draft, 3)?;
+    let recovered = assembly_draft_model::decode(&record.before_draft)?;
     let pins = normalize(captures(frame, &recovered)?)?;
     if pins.iter().any(|pin| {
         !record

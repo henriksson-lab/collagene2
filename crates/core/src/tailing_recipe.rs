@@ -1,9 +1,8 @@
-//! Ordered single-base TA/GC tailing from original-source preparations. Compilation emits
-//! existing operations; only a fresh verifier pass supplies chemical evidence.
+//! Explicit per-row hold/add-tail TA/GC recipes; no implied commercial chemistry.
 use crate::{
     Error, Molecule,
     assembly_recipe::{self as preparation, FragmentSpec, PreparedRow},
-    chemistry::{Duplex, DuplexSummary, EndTreatment},
+    chemistry::{Duplex, DuplexSummary, EndTreatment, Polarity},
     tailing::TailingBase,
     verification::{
         self, DesignPlan, Operation, OrientedSource, PlanInput, Source, VerificationReport,
@@ -12,28 +11,74 @@ use crate::{
 use serde::{Deserialize, Serialize};
 pub const ENGINE_VERSION: &str = "tailing-recipe-1";
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
-dto! {pub struct Fragment {pub source:FragmentSpec,pub base:TailingBase,pub treatment:Option<EndTreatment>}}
-dto! {pub struct Recipe {pub name:String,pub fragments:Vec<Fragment>,pub circular:bool,pub allow_nicked:bool}}
-dto! {pub struct Row {pub preparation:PreparedRow,pub tail_step:usize,pub base:TailingBase,pub treatment_step:Option<usize>,pub prepared_source:Source}}
-dto! {pub struct Compiled {pub plan:DesignPlan,pub rows:Vec<Row>,pub ligation_step:usize}}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum Profile {
+    Ta,
+    Gc,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub enum Action {
+    KeepExisting,
+    AddTail { base: TailingBase },
+}
+/// Geometry-family assessment from the fresh native prefix; independent of ligation chemistry/status.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum ProfileStatus {
+    Matched,
+    Incompatible,
+    Undetermined,
+}
+dto! {pub struct Fragment{pub source:FragmentSpec,pub action:Action,pub treatment:Option<EndTreatment>}}
+dto! {pub struct Recipe{pub name:String,pub profile:Profile,pub fragments:Vec<Fragment>,pub circular:bool,pub allow_nicked:bool}}
+dto! {pub struct Row{pub preparation:PreparedRow,pub action:Action,pub tail_step:Option<usize>,pub treatment_step:Option<usize>,pub prepared_source:Source}}
+dto! {pub struct Compiled{pub plan:DesignPlan,pub rows:Vec<Row>,pub ligation_step:usize}}
 pub use crate::ligation_recipe::Junction;
-dto! {pub struct Preview {pub context_revision:String,pub recipe:Recipe,pub compiled:Compiled,pub verification:VerificationReport,
-/// Leading prepared reference-document prefix, before assembly orientation.
-pub prepared:Vec<Molecule>,
-/// Fresh physical summaries in assembly orientation; absent state is explicit.
-pub physical:Vec<Option<DuplexSummary>>,pub product_physical:Option<DuplexSummary>,pub junctions:Vec<Junction>,pub preparation_complete:bool}}
+dto! {pub struct Preview{pub context_revision:String,pub recipe:Recipe,pub compiled:Compiled,pub verification:VerificationReport,
+pub prepared:Vec<Molecule>,pub physical:Vec<Option<DuplexSummary>>,pub product_physical:Option<DuplexSummary>,
+pub junctions:Vec<Junction>,pub preparation_complete:bool,pub profile_status:ProfileStatus,pub profile_findings:Vec<String>,pub warnings:Vec<String>}}
 fn bad(s: &str) -> Error {
     Error::Format(format!("tailing recipe: {s}"))
 }
-fn hex(s: &str) -> bool {
-    s.len() == 64
-        && s.bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-}
-fn sources(recipe: &Recipe) -> Result<Vec<FragmentSpec>, Error> {
-    if recipe.fragments.is_empty() || recipe.fragments.len() > preparation::MAX_ROWS {
+fn shape(recipe: &Recipe) -> Result<(), Error> {
+    if recipe.fragments.is_empty()
+        || recipe.fragments.len() > preparation::MAX_ROWS
+        || recipe.name.len() > 1024
+    {
         return Err(Error::TooLarge);
     }
+    let mut operations = 1usize;
+    for fragment in &recipe.fragments {
+        operations = operations
+            .checked_add(preparation::preparation_operation_count(
+                &fragment.source.preparation,
+            ))
+            .and_then(|n| {
+                n.checked_add(
+                    usize::from(matches!(fragment.action, Action::AddTail { .. }))
+                        + usize::from(fragment.treatment.is_some()),
+                )
+            })
+            .filter(|n| *n <= 1000)
+            .ok_or(Error::TooLarge)?;
+        if let Action::AddTail { base } = fragment.action {
+            let allowed = match recipe.profile {
+                Profile::Ta => matches!(base, TailingBase::A | TailingBase::T),
+                Profile::Gc => matches!(base, TailingBase::G | TailingBase::C),
+            };
+            if !allowed {
+                return Err(bad(
+                    "added base does not belong to the explicitly selected TA/GC profile",
+                ));
+            }
+        }
+    }
+    // Streamed recipe bound precedes spec/primer/origin cloning. Shared preparation
+    // preflight below owns every preparation's more specific shape/model limits.
+    preparation::hash(recipe)?;
     crate::run_material::material_capsules_preflight(recipe.fragments.iter().filter_map(|row| {
         match &row.source.preparation {
             preparation::Preparation::FromRun { origin, .. } => {
@@ -48,137 +93,18 @@ fn sources(recipe: &Recipe) -> Result<Vec<FragmentSpec>, Error> {
             _ => None,
         }
     }))?;
-    for row in &recipe.fragments {
-        if let preparation::Preparation::FromDigest {
-            origin,
-            preparation: child,
-        } = &row.source.preparation
-        {
-            preparation::from_digest_shape(origin, child)?;
-        } else if let preparation::Preparation::FromDerived {
-            origin,
-            preparation: child,
-        } = &row.source.preparation
-        {
-            preparation::from_derived_shape(origin, child)?;
-        }
-    }
-    Ok(recipe.fragments.iter().map(|f| f.source.clone()).collect())
-}
-fn recipe_shape(recipe: &Recipe) -> Result<(), Error> {
-    // Guard before cloning the small serialized recipe fields: large untrusted
-    // primer/tail/name strings must not be copied merely to call the shared helper.
-    if recipe.fragments.is_empty()
-        || recipe.fragments.len() > preparation::MAX_ROWS
-        || recipe.name.len() > 1024
-    {
-        return Err(Error::TooLarge);
-    }
-    let operations = recipe
-        .fragments
-        .iter()
-        .try_fold(1usize, |total, fragment| {
-            total
-                .checked_add(preparation::preparation_operation_count(
-                    &fragment.source.preparation,
-                ))
-                .and_then(|n| n.checked_add(1 + usize::from(fragment.treatment.is_some())))
-                .ok_or(Error::TooLarge)
-        })?;
-    if operations > 1000 {
-        return Err(Error::TooLarge);
-    }
-    for f in &recipe.fragments {
-        if f.source.role.len() > 128 || f.source.input_id.len() > 128 {
-            return Err(Error::TooLarge);
-        }
-        if let preparation::Preparation::PcrCatalogDigest { selection, .. } = &f.source.preparation
-        {
-            selection.validate()?;
-        }
-        match &f.source.preparation {
-            preparation::Preparation::OverlapExtensionPcrCatalogDigest {
-                request,
-                selection,
-                fragment_index,
-                ..
-            } => {
-                preparation::overlap_extension_catalog_shape(request, selection, *fragment_index)?;
-            }
-            preparation::Preparation::OverlapExtensionPcr { request } => {
-                request.validate_shape()?
-            }
-            preparation::Preparation::MismatchPcrCatalogDigest {
-                forward,
-                reverse,
-                options,
-                selection,
-                fragment_index,
-                ..
-            } => preparation::mismatch_pcr_catalog_shape(
-                forward,
-                reverse,
-                options,
-                selection,
-                *fragment_index,
-            )?,
-            preparation::Preparation::MismatchPcr {
-                forward,
-                reverse,
-                options,
-            } => preparation::mismatch_pcr_shape(forward, reverse, options)?,
-            preparation::Preparation::ExactPcr { forward, reverse }
-            | preparation::Preparation::PcrCatalogDigest {
-                forward, reverse, ..
-            } => {
-                for p in [forward, reverse] {
-                    if p.name.len() > 256 || p.annealing.len() > 1000 || p.tail.len() > 1000 {
-                        return Err(Error::TooLarge);
-                    }
-                }
-            }
-            preparation::Preparation::FromRun {
-                origin,
-                preparation: child,
-            } => preparation::from_run_shape(origin, child)?,
-            preparation::Preparation::FromDigest {
-                origin,
-                preparation: child,
-            } => preparation::from_digest_shape(origin, child)?,
-            preparation::Preparation::FromDerived {
-                origin,
-                preparation: child,
-            } => preparation::from_derived_shape(origin, child)?,
-            preparation::Preparation::AnnealedOligos {
-                bottom_input_id,
-                options,
-                candidate_index,
-            } => {
-                preparation::anneal_shape(bottom_input_id, options, *candidate_index)?;
-            }
-            preparation::Preparation::CatalogDigest { selection, .. } => {
-                selection.validate()?;
-            }
-            preparation::Preparation::Digest { enzymes, .. } => {
-                if enzymes.len() > 32 || enzymes.iter().any(|s| s.len() > 128) {
-                    return Err(Error::TooLarge);
-                }
-            }
-            _ => {}
-        }
-    }
-    preparation::hash(recipe)?;
     Ok(())
 }
-/// Borrowed host guard before document copies, hashing or scientific work.
+fn sources(recipe: &Recipe) -> Vec<FragmentSpec> {
+    recipe.fragments.iter().map(|f| f.source.clone()).collect()
+}
 pub fn source_preflight(
     inputs: &[(&str, &Molecule)],
     target: &Molecule,
     recipe: &Recipe,
 ) -> Result<(), Error> {
-    recipe_shape(recipe)?;
-    preparation::preparation_source_preflight(inputs, target, &recipe.name, &sources(recipe)?)?;
-    Ok(())
+    shape(recipe)?;
+    preparation::preparation_source_preflight(inputs, target, &recipe.name, &sources(recipe))
 }
 pub fn preflight(inputs: &[PlanInput], target: &Molecule, recipe: &Recipe) -> Result<(), Error> {
     if inputs.is_empty() || inputs.len() > preparation::MAX_ROWS {
@@ -192,24 +118,8 @@ pub fn preflight(inputs: &[PlanInput], target: &Molecule, recipe: &Recipe) -> Re
         target,
         recipe,
     )?;
-    if inputs.iter().any(|i| !hex(&i.revision)) {
-        return Err(bad("explicit canonical original revisions required"));
-    }
+    preparation::bound_revisions(inputs, target)?;
     Ok(())
-}
-fn context_revision(
-    inputs: &[PlanInput],
-    target_revision: &str,
-    recipe: &Recipe,
-) -> Result<String, Error> {
-    preparation::hash(&(
-        ENGINE_VERSION,
-        verification::ENGINE_VERSION,
-        "preview",
-        inputs,
-        target_revision,
-        recipe,
-    ))
 }
 pub fn preview_revision(
     inputs: &[PlanInput],
@@ -217,8 +127,13 @@ pub fn preview_revision(
     recipe: &Recipe,
 ) -> Result<String, Error> {
     preflight(inputs, target, recipe)?;
-    let target_revision = preparation::bound_revisions(inputs, target)?;
-    context_revision(inputs, &target_revision, recipe)
+    preparation::hash(&(
+        ENGINE_VERSION,
+        verification::ENGINE_VERSION,
+        inputs,
+        target.revision(),
+        recipe,
+    ))
 }
 pub fn compile(
     inputs: &[PlanInput],
@@ -226,18 +141,49 @@ pub fn compile(
     recipe: &Recipe,
 ) -> Result<Compiled, Error> {
     preflight(inputs, target, recipe)?;
-    let prepared =
-        preparation::compile_preparations(inputs, target, &recipe.name, &sources(recipe)?)?;
-    let mut steps = prepared.steps;
-    let mut rows = Vec::with_capacity(prepared.rows.len());
-    let mut fragments = Vec::with_capacity(prepared.rows.len());
-    for (row, request) in prepared.rows.into_iter().zip(&recipe.fragments) {
-        let tail_step = steps.len();
-        steps.push(Operation::Tail3Prime {
-            template: row.prepared_source.clone(),
-            base: request.base,
-        });
-        let (mut source, mut treatment_step) = (Source::Step(tail_step), None);
+    compile_bound(inputs, &target.revision(), recipe)
+}
+/// Compile declared operations against an independently pinned target revision.
+/// No target DNA or physical replay is needed to check a documentary receipt.
+fn compile_bound(
+    inputs: &[PlanInput],
+    target_revision: &str,
+    recipe: &Recipe,
+) -> Result<Compiled, Error> {
+    shape(recipe)?;
+    if target_revision.len() != 64 || !target_revision.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(bad("invalid target revision"));
+    }
+    let specs = sources(recipe);
+    preparation::preparation_rows_preflight(
+        &inputs
+            .iter()
+            .map(|i| (i.id.as_str(), &i.molecule))
+            .collect::<Vec<_>>(),
+        &recipe.name,
+        &specs,
+    )?;
+    for input in inputs {
+        if preparation::hash(&input.molecule)? != input.revision {
+            return Err(bad("original source revision changed"));
+        }
+    }
+    let (mut steps, prepared_rows) = preparation::preparation_steps(inputs, &specs)?;
+    let mut rows = Vec::with_capacity(prepared_rows.len());
+    let mut fragments = Vec::with_capacity(prepared_rows.len());
+    for (row, request) in prepared_rows.into_iter().zip(&recipe.fragments) {
+        let mut source = row.prepared_source.clone();
+        let mut tail_step = None;
+        let mut treatment_step = None;
+        if let Action::AddTail { base } = request.action {
+            let index = steps.len();
+            steps.push(Operation::Tail3Prime {
+                template: source,
+                base,
+            });
+            source = Source::Step(index);
+            tail_step = Some(index);
+        }
         if let Some(treatment) = request.treatment {
             let index = steps.len();
             steps.push(Operation::TreatEnds {
@@ -253,8 +199,8 @@ pub fn compile(
         });
         rows.push(Row {
             preparation: row,
+            action: request.action,
             tail_step,
-            base: request.base,
             treatment_step,
             prepared_source: source,
         });
@@ -265,409 +211,226 @@ pub fn compile(
         recipe.circular,
         recipe.allow_nicked,
     ));
-    let compiled = Compiled {
+    let result = Compiled {
         plan: DesignPlan {
             name: recipe.name.clone(),
-            target_revision: prepared.target_revision,
-            inputs: prepared.inputs,
+            target_revision: target_revision.into(),
+            inputs: inputs.to_vec(),
             steps,
         },
         rows,
         ligation_step,
     };
-    preparation::hash(&compiled)?;
-    Ok(compiled)
+    preparation::hash(&result)?;
+    Ok(result)
 }
-fn summary(duplex: &Duplex, reverse: bool) -> Result<DuplexSummary, Error> {
-    if reverse {
-        duplex.reverse()?.summary()
-    } else {
-        duplex.summary()
+fn source_document<'a>(
+    plan: &'a DesignPlan,
+    report: &'a VerificationReport,
+    source: &Source,
+) -> Option<&'a Molecule> {
+    match source {
+        Source::Input(id) => plan
+            .inputs
+            .iter()
+            .find(|i| &i.id == id)
+            .map(|i| &i.molecule),
+        Source::Step(i) => report.products.get(*i),
     }
 }
 fn junctions(physical: &[Option<DuplexSummary>], rows: usize, circular: bool) -> Vec<Junction> {
-    let count = rows.saturating_sub(1) + usize::from(circular);
-    (0..count)
+    (0..rows.saturating_sub(1) + usize::from(circular))
         .map(|index| {
-            let upstream = index;
-            let downstream = (index + 1) % rows;
+            let next = (index + 1) % rows;
             Junction {
                 index,
-                upstream,
-                downstream,
-                closing: downstream == 0,
+                upstream: index,
+                downstream: next,
+                closing: next == 0,
                 upstream_end: physical
-                    .get(upstream)
+                    .get(index)
                     .and_then(Option::as_ref)
                     .and_then(|s| s.ends.as_ref())
-                    .map(|(_, right)| right.clone()),
+                    .map(|(_, r)| r.clone()),
                 downstream_end: physical
-                    .get(downstream)
+                    .get(next)
                     .and_then(Option::as_ref)
                     .and_then(|s| s.ends.as_ref())
-                    .map(|(left, _)| left.clone()),
+                    .map(|(l, _)| l.clone()),
             }
         })
         .collect()
 }
-pub fn preview(inputs: &[PlanInput], target: &Molecule, recipe: &Recipe) -> Result<Preview, Error> {
-    Ok(preview_with_physical(inputs, target, recipe)?.0)
-}
-/// Same fresh verifier pass as public preview; private raw-orientation duplexes
-/// cannot be reconstructed from the serialized summaries or molecule metadata.
-pub(crate) fn preview_with_physical(
-    inputs: &[PlanInput],
-    target: &Molecule,
-    recipe: &Recipe,
-) -> Result<(Preview, Vec<Option<Duplex>>), Error> {
-    let context_revision = preview_revision(inputs, target, recipe)?;
-    let compiled = compile(inputs, target, recipe)?;
-    let (verification, mut trace) = verification::verify_with_physical(&compiled.plan, target);
-    let mut available = Vec::with_capacity(compiled.rows.len());
-    for row in &compiled.rows {
-        let m = match &row.prepared_source {
-            Source::Input(id) => compiled
-                .plan
-                .inputs
-                .iter()
-                .find(|i| &i.id == id)
-                .map(|i| &i.molecule),
-            Source::Step(i) => verification.products.get(*i),
+// Preview invokes this only on summaries just produced from native duplex values.
+// Readonly DTO validation can check documentary correspondence, never recreate authority.
+fn profile_assessment(
+    physical: &[Option<DuplexSummary>],
+    rows: usize,
+    profile: Profile,
+    circular: bool,
+) -> (ProfileStatus, Vec<String>) {
+    let mut findings = Vec::new();
+    let mut incompatible = false;
+    let mut unknown = physical.len() != rows;
+    for row in 0..rows {
+        let Some(s) = physical.get(row).and_then(Option::as_ref) else {
+            unknown = true;
+            findings.push(format!(
+                "Row {} has no fresh native end geometry; the TA/GC profile is not established.",
+                row + 1
+            ));
+            continue;
         };
-        if let Some(m) = m {
-            available.push(m)
-        } else {
-            break;
+        let Some((left, right)) = &s.ends else {
+            incompatible = true;
+            findings.push(format!(
+                "Row {} has no accessible linear ends; it does not match this tailing profile.",
+                row + 1
+            ));
+            continue;
+        };
+        for (side, end) in [("left", left), ("right", right)] {
+            let family = match profile {
+                Profile::Ta => matches!(end.overhang.as_str(), "A" | "T"),
+                Profile::Gc => matches!(end.overhang.as_str(), "G" | "C"),
+            };
+            if end.polarity != Polarity::ThreePrime || !family {
+                incompatible = true;
+                findings.push(format!("Row {} {side} end is not an actual single-base 3′ overhang in the declared TA/GC family.",row+1));
+            }
         }
     }
-    crate::model::bounds::model_preflight(&available)?;
+    for junction in junctions(physical, rows, circular) {
+        if let (Some(a), Some(b)) = (junction.upstream_end, junction.downstream_end) {
+            let complementary = matches!(
+                (a.overhang.as_str(), b.overhang.as_str()),
+                ("A", "T") | ("T", "A") | ("G", "C") | ("C", "G")
+            );
+            if !complementary {
+                incompatible = true;
+                findings.push(format!("Declared junction {} lacks complementary one-base tails in the fresh prepared geometry.",junction.index+1));
+            }
+        }
+    }
+    if incompatible {
+        (ProfileStatus::Incompatible, findings)
+    } else if unknown {
+        (ProfileStatus::Undetermined, findings)
+    } else {
+        findings.push("Fresh prepared end geometry matches the declared TA/GC family and intended junction complements. Phosphate/OH eligibility, nicking and product compatibility remain separate native verifier conclusions.".into());
+        (ProfileStatus::Matched, findings)
+    }
+}
+pub fn preview(inputs: &[PlanInput], target: &Molecule, recipe: &Recipe) -> Result<Preview, Error> {
+    let context_revision = preview_revision(inputs, target, recipe)?;
+    let compiled = compile(inputs, target, recipe)?;
+    let (verification, trace) = verification::verify_with_physical(&compiled.plan, target);
+    let mut prepared = Vec::new();
+    let mut physical = Vec::new();
     let mut bases = 0usize;
-    for m in &available {
+    for row in &compiled.rows {
+        let Some(molecule) = source_document(&compiled.plan, &verification, &row.prepared_source)
+        else {
+            break;
+        };
         bases = bases
-            .checked_add(m.sequence.len())
+            .checked_add(molecule.sequence.len())
             .filter(|n| *n <= preparation::MAX_ROLE_BASES)
             .ok_or(Error::TooLarge)?;
-    }
-    preparation::hash(&available)?;
-    let preparation_complete = available.len() == compiled.rows.len();
-    let mut physical = Vec::with_capacity(available.len());
-    let mut fresh: Vec<Option<Duplex>> = vec![None; compiled.rows.len()];
-    for (index, (row, m)) in compiled.rows.iter().zip(&available).enumerate() {
+        crate::model::bounds::model_preflight(&[molecule])?;
         let raw = match &row.prepared_source {
-            Source::Step(i) => trace.get_mut(*i).and_then(Option::take),
-            // Existing original intact-reference assumption only. Markers may
-            // restrict it; serialized end/graph summaries never restore state.
-            Source::Input(_) => Duplex::from_molecule(m).ok(),
+            Source::Step(i) => trace.get(*i).and_then(Option::as_ref).cloned(),
+            Source::Input(_) => Duplex::from_molecule(molecule).ok(),
         };
-        physical.push(
-            raw.as_ref()
-                .map(|d| summary(d, row.preparation.reverse))
-                .transpose()?,
-        );
-        fresh[index] = raw;
+        let summary = raw
+            .map(|d| {
+                if row.preparation.reverse {
+                    d.reverse()?.summary()
+                } else {
+                    d.summary()
+                }
+            })
+            .transpose()?;
+        prepared.push(molecule.clone());
+        physical.push(summary);
     }
+    let preparation_complete = prepared.len() == compiled.rows.len();
     let product_physical = trace
         .get(compiled.ligation_step)
         .and_then(Option::as_ref)
         .map(Duplex::summary)
         .transpose()?;
     let junctions = junctions(&physical, compiled.rows.len(), recipe.circular);
-    let prepared = available.into_iter().cloned().collect();
-    let result = Preview {
-        context_revision,
-        recipe: recipe.clone(),
-        compiled,
-        verification,
-        prepared,
-        physical,
-        product_physical,
-        junctions,
-        preparation_complete,
-    };
-    result.validate()?;
-    Ok((result, fresh))
-}
-/// Structural correspondence only: compare each declared preparation operation
-/// with the common compiler's retained prefix, without simulating any DNA.
-fn validate_preparation_prefix(
-    compiled: &Compiled,
-    recipe: &Recipe,
-    tail_start: usize,
-) -> Result<(), Error> {
-    let fragments = sources(recipe)?;
-    let (steps, rows) = preparation::preparation_steps(&compiled.plan.inputs, &fragments)?;
-    if steps.len() != tail_start
-        || tail_start > compiled.plan.steps.len()
-        || preparation::hash(&steps)? != preparation::hash(&&compiled.plan.steps[..tail_start])?
-        || rows.len() != compiled.rows.len()
-    {
-        return Err(bad(
-            "preparation prefix differs from the declared original-source recipe",
-        ));
-    }
-    for (expected, row) in rows.iter().zip(&compiled.rows) {
-        if preparation::hash(expected)? != preparation::hash(&row.preparation)? {
-            return Err(bad("preparation row differs from declared source chain"));
-        }
-    }
-    Ok(())
-}
-
-fn same(a: &Source, b: &Source) -> bool {
-    match (a, b) {
-        (Source::Input(a), Source::Input(b)) => a == b,
-        (Source::Step(a), Source::Step(b)) => a == b,
-        _ => false,
-    }
-}
-fn summary_bounds(s: &DuplexSummary) -> Result<(), Error> {
-    if s.model.len() > 256
-        || s.top_length > preparation::MAX_ROLE_BASES
-        || s.bottom_length > preparation::MAX_ROLE_BASES
-        || s.nicks.len() > 10_000
-        || s.bottom_start.unsigned_abs() > preparation::MAX_ROLE_BASES as u64
-    {
-        return Err(Error::TooLarge);
-    }
-    if s.ends.as_ref().is_some_and(|(a, b)| {
-        a.overhang.len() > preparation::MAX_ROLE_BASES
-            || b.overhang.len() > preparation::MAX_ROLE_BASES
-    }) {
-        return Err(Error::TooLarge);
-    }
-    Ok(())
+    let (profile_status, profile_findings) = profile_assessment(
+        &physical,
+        compiled.rows.len(),
+        recipe.profile,
+        recipe.circular,
+    );
+    let result=Preview{context_revision,recipe:recipe.clone(),compiled,verification,prepared,physical,product_physical,junctions,preparation_complete,profile_status,profile_findings,
+        warnings:vec!["KeepExisting adds no tail and makes no assertion that the existing ends are complementary, phosphorylated, intact or ligatable. Only fresh native source reconstruction and ligation assess those states.".into(),
+        "TA/GC profile geometry requires fresh one-base 3′ tails of the declared family on every prepared row and complementary intended junctions; KeepExisting alone proves none of these. Profiles do not identify an enzyme, commercial kit, reaction yield, isolated clone or exclusive product; retained alternatives remain within their declared one-copy search scope.".into()]};
+    preparation::hash(&result)?;
+    Ok(result)
 }
 impl Preview {
-    /// Readonly bounds/correspondence checks, never chemical replay or authority.
+    /// Readonly declaration/source correspondence, never chemical replay or authority.
     pub fn validate(&self) -> Result<(), Error> {
-        recipe_shape(&self.recipe)?;
-        let rows = self.compiled.rows.len();
-        let steps = self.compiled.plan.steps.len();
-        if !hex(&self.context_revision)
-            || rows == 0
-            || rows > preparation::MAX_ROWS
-            || steps > (preparation::MAX_STEPS_PER_ROW + 2) * preparation::MAX_ROWS + 1
-            || self.compiled.ligation_step.checked_add(1) != Some(steps)
-            || self.compiled.plan.inputs.len() > preparation::MAX_ROWS
-            || self.verification.products.len() > steps
-            || self.prepared.len() > rows
+        self.validate_binding(&self.context_revision)
+    }
+    pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
+        let recipe = &self.recipe;
+        let inputs = &self.compiled.plan.inputs;
+        let target_revision = &self.compiled.plan.target_revision;
+        let context = preparation::hash(&(
+            ENGINE_VERSION,
+            verification::ENGINE_VERSION,
+            inputs,
+            target_revision,
+            recipe,
+        ))?;
+        if self.context_revision != expected
+            || context != expected
+            || preparation::hash(&self.compiled)?
+                != preparation::hash(&compile_bound(inputs, target_revision, recipe)?)?
+            || self.verification.engine_version != verification::ENGINE_VERSION
+            || self.verification.plan_revision != verification::plan_revision(&self.compiled.plan)
+            || self.verification.target_revision != *target_revision
+            || self.verification.products.len() > self.compiled.plan.steps.len()
+            || self.prepared.len() > self.compiled.rows.len()
             || self.physical.len() != self.prepared.len()
-            || self.preparation_complete != (self.prepared.len() == rows)
-            || self.verification.step_reports.len() > steps
-            || self.verification.annotation_reports.len() > steps
-        {
-            return Err(bad("invalid preview shape"));
-        }
-        for m in self
-            .compiled
-            .plan
-            .inputs
-            .iter()
-            .map(|i| &i.molecule)
-            .chain(self.prepared.iter())
-            .chain(self.verification.products.iter())
-        {
-            crate::model::bounds::model_preflight(&[m])?;
-        }
-        for report in &self.verification.annotation_reports {
-            if report.step_index >= steps || report.evidence.sources.len() > preparation::MAX_ROWS {
-                return Err(Error::TooLarge);
-            }
-            let mut budget = crate::model::bounds::ModelBudget::default();
-            budget.features(&report.evidence.features)?;
-            for role in &report.evidence.sources {
-                if role.unmapped.len() > 4096 {
-                    return Err(Error::TooLarge);
-                }
-                for f in &role.unmapped {
-                    budget.features(std::slice::from_ref(&f.feature))?;
-                }
-            }
-        }
-        preparation::validate_prepared_inputs(
-            &self.compiled.plan.inputs,
-            &self.compiled.plan.steps,
-        )?;
-        for input in &self.compiled.plan.inputs {
-            if preparation::hash(&input.molecule)? != input.revision {
-                return Err(bad("original source content/revision differs"));
-            }
-        }
-        if self.verification.engine_version != verification::ENGINE_VERSION
-            || self.recipe.fragments.len() != rows
-            || self.compiled.plan.name != self.recipe.name
-            || !hex(&self.compiled.plan.target_revision)
-            || self.context_revision
-                != context_revision(
-                    &self.compiled.plan.inputs,
-                    &self.compiled.plan.target_revision,
-                    &self.recipe,
-                )?
-            || self.verification.plan_revision != preparation::hash(&self.compiled.plan)?
-            || self.verification.target_revision != self.compiled.plan.target_revision
-        {
-            return Err(bad("verification plan/target binding mismatch"));
-        }
-        let (fragments, circular, allow_nicked) = match self.compiled.plan.steps.last() {
-            Some(Operation::LigateWithOutcomes {
-                fragments,
-                circular,
-                allow_nicked,
-                options,
-            }) if rows <= crate::ligation_outcomes::MAX_FRAGMENTS => {
-                if preparation::hash(options)?
-                    != preparation::hash(&crate::ligation_outcomes::Options::default())?
-                {
-                    return Err(bad("compiled outcome bounds changed"));
-                }
-                (fragments, circular, allow_nicked)
-            }
-            Some(Operation::Ligate {
-                fragments,
-                circular,
-                allow_nicked,
-            }) if rows > crate::ligation_outcomes::MAX_FRAGMENTS => {
-                (fragments, circular, allow_nicked)
-            }
-            _ => return Err(bad("preview final ligation/outcomes profile changed")),
-        };
-        if *circular != self.recipe.circular
-            || *allow_nicked != self.recipe.allow_nicked
-            || fragments.len() != rows
-            || self.compiled.plan.steps[..self.compiled.ligation_step]
-                .iter()
-                .any(|s| {
-                    !matches!(
-                        s,
-                        Operation::Pcr { .. }
-                            | Operation::PcrWithMismatches { .. }
-                            | Operation::OverlapExtension { .. }
-                            | Operation::ReconstructRunProduct { .. }
-                            | Operation::ReconstructDigestFragment { .. }
-                            | Operation::ReconstructMaterial { .. }
-                            | Operation::AnnealOligos { .. }
-                            | Operation::DeclareSourceTermini { .. }
-                            | Operation::Digest { .. }
-                            | Operation::CatalogDigest { .. }
-                            | Operation::RepairEnds { .. }
-                            | Operation::TreatEnds { .. }
-                            | Operation::Tail3Prime { .. }
-                    )
-                })
-        {
-            return Err(bad("preview operation shape changed"));
-        }
-        let tail_start = self
-            .compiled
-            .rows
-            .first()
-            .map(|r| r.tail_step)
-            .ok_or_else(|| bad("no tail rows"))?;
-        if tail_start > self.compiled.ligation_step {
-            return Err(bad("tail prefix outside plan"));
-        }
-        validate_preparation_prefix(&self.compiled, &self.recipe, tail_start)?;
-        let mut next_tail = tail_start;
-        if self.compiled.plan.steps[..tail_start].iter().any(|op| {
-            matches!(
-                op,
-                Operation::Tail3Prime { .. } | Operation::TreatEnds { .. }
-            )
-        }) {
-            return Err(bad("unexpected tail/treatment in preparation prefix"));
-        }
-
-        for (index, (row, fragment)) in self.compiled.rows.iter().zip(fragments).enumerate() {
-            let request = &self.recipe.fragments[index];
-            let p = &row.preparation;
-            if p.row_index != index
-                || p.role.len() > 128
-                || p.input_id.len() > 128
-                || p.input_id != request.source.input_id
-                || p.role != request.source.role
-                || p.reverse != request.source.reverse
-                || row.base != request.base
-                || row.tail_step != next_tail
-                || row.tail_step >= self.compiled.ligation_step
-                || !hex(&p.input_revision)
-                || !same(&fragment.source, &row.prepared_source)
-                || fragment.reverse != p.reverse
-            {
-                return Err(bad("row source/orientation binding changed"));
-            }
-            let input = self
-                .compiled
-                .plan
-                .inputs
-                .iter()
-                .find(|i| i.id == p.input_id)
-                .ok_or_else(|| bad("row lost original source"))?;
-            if input.revision != p.input_revision {
-                return Err(bad("row original revision changed"));
-            }
-            let Some(Operation::Tail3Prime { template, base }) =
-                self.compiled.plan.steps.get(row.tail_step)
-            else {
-                return Err(bad("row lost its explicit tail operation"));
-            };
-            if *base != request.base
-                || !same(template, &p.prepared_source)
-                || matches!(&p.prepared_source,Source::Step(i) if *i>=tail_start)
-            {
-                return Err(bad("tail base or prepared-source binding changed"));
-            }
-            next_tail = next_tail.checked_add(1).ok_or(Error::TooLarge)?;
-            if let Some(t) = row.treatment_step {
-                let Some(Operation::TreatEnds {
-                    template,
-                    treatment,
-                }) = self.compiled.plan.steps.get(t)
-                else {
-                    return Err(bad("row lost explicit treatment"));
-                };
-                if t >= self.compiled.ligation_step
-                    || t != next_tail
-                    || Some(*treatment) != request.treatment
-                    || !same(template, &Source::Step(row.tail_step))
-                    || !same(&row.prepared_source, &Source::Step(t))
-                {
-                    return Err(bad("treatment source mapping changed"));
-                }
-                next_tail = next_tail.checked_add(1).ok_or(Error::TooLarge)?;
-            } else if request.treatment.is_some()
-                || !same(&row.prepared_source, &Source::Step(row.tail_step))
-            {
-                return Err(bad("unexpected tail/treatment source mapping"));
-            }
-        }
-        if next_tail != self.compiled.ligation_step {
-            return Err(bad("extra or missing tail/treatment steps"));
-        }
-        let expected_prepared = self
-            .compiled
-            .rows
-            .iter()
-            .map(|r| match &r.prepared_source {
-                Source::Step(i) => self.verification.products.get(*i),
-                Source::Input(id) => self
-                    .compiled
-                    .plan
-                    .inputs
-                    .iter()
-                    .find(|i| &i.id == id)
-                    .map(|i| &i.molecule),
-            })
-            .take_while(Option::is_some)
-            .collect::<Vec<_>>();
-        if expected_prepared.len() != self.prepared.len()
-            || expected_prepared
-                .iter()
-                .zip(&self.prepared)
-                .any(|(a, b)| *a != Some(b))
+            || self.preparation_complete != (self.prepared.len() == self.compiled.rows.len())
         {
             return Err(bad(
-                "prepared documents differ from retained reconstructed row products",
+                "preview source, recipe, compiler or verifier binding differs",
             ));
+        }
+        let prefix = self
+            .compiled
+            .rows
+            .iter()
+            .take_while(|row| {
+                source_document(
+                    &self.compiled.plan,
+                    &self.verification,
+                    &row.prepared_source,
+                )
+                .is_some()
+            })
+            .count();
+        if self.prepared.len() != prefix {
+            return Err(bad("prepared prefix was truncated or extended"));
+        }
+        for (row, molecule) in self.compiled.rows.iter().zip(&self.prepared) {
+            let expected = source_document(
+                &self.compiled.plan,
+                &self.verification,
+                &row.prepared_source,
+            )
+            .ok_or_else(|| bad("prepared source missing"))?;
+            if preparation::hash(molecule)? != preparation::hash(expected)? {
+                return Err(bad("prepared source snapshot differs"));
+            }
         }
         for s in self
             .physical
@@ -675,29 +438,56 @@ impl Preview {
             .filter_map(Option::as_ref)
             .chain(self.product_physical.iter())
         {
-            summary_bounds(s)?;
+            if s.model.len() > 256
+                || s.top_length > preparation::MAX_ROLE_BASES
+                || s.bottom_length > preparation::MAX_ROLE_BASES
+                || s.bottom_start.unsigned_abs() > preparation::MAX_ROLE_BASES as u64
+                || s.nicks.len() > 10_000
+                || s.ends.as_ref().is_some_and(|(a, b)| {
+                    a.overhang.len() > preparation::MAX_ROLE_BASES
+                        || b.overhang.len() > preparation::MAX_ROLE_BASES
+                })
+            {
+                return Err(Error::TooLarge);
+            }
         }
-        let expected = junctions(&self.physical, rows, *circular);
-        if preparation::hash(&expected)? != preparation::hash(&self.junctions)? {
-            return Err(bad(
-                "junction endpoints disagree with actual prepared summaries",
-            ));
-        }
-        if self.product_physical.is_some()
-            && self.verification.products.len() <= self.compiled.ligation_step
+        if preparation::hash(&self.junctions)?
+            != preparation::hash(&junctions(
+                &self.physical,
+                self.compiled.rows.len(),
+                recipe.circular,
+            ))?
         {
-            return Err(bad(
-                "product physical evidence has no reconstructed product",
-            ));
+            return Err(bad("junction correspondence differs"));
+        }
+        let (profile_status, profile_findings) = profile_assessment(
+            &self.physical,
+            self.compiled.rows.len(),
+            recipe.profile,
+            recipe.circular,
+        );
+        if self.profile_status != profile_status || self.profile_findings != profile_findings {
+            return Err(bad("profile geometry correspondence differs"));
         }
         preparation::hash(self)?;
         Ok(())
     }
-    pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
-        self.validate()?;
-        if self.context_revision != expected {
-            return Err(bad("preview source/target/recipe context changed"));
+    /// Additionally binds a receipt to the caller's actual independently declared request.
+    pub fn validate_for(
+        &self,
+        inputs: &[PlanInput],
+        target: &Molecule,
+        recipe: &Recipe,
+        expected: &str,
+    ) -> Result<(), Error> {
+        let context = preview_revision(inputs, target, recipe)?;
+        if context != expected
+            || preparation::hash(&inputs)? != preparation::hash(&self.compiled.plan.inputs)?
+            || target.revision() != self.compiled.plan.target_revision
+            || preparation::hash(recipe)? != preparation::hash(&self.recipe)?
+        {
+            return Err(bad("preview belongs to another source/target request"));
         }
-        Ok(())
+        self.validate_binding(expected)
     }
 }

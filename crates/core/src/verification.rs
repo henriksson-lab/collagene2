@@ -64,11 +64,12 @@ pub enum Operation {
         template: Source,
         treatment: EndTreatment,
     },
-    /// One ordered candidate, with explicit orientation and nick acceptance.
+    /// Declared intended ligation and bounded one-copy alternatives, with explicit orientation and nick acceptance.
     Ligate {
         fragments: Vec<OrientedSource>,
         circular: bool,
         allow_nicked: bool,
+        options: crate::ligation_outcomes::Options,
     },
     PcrWithMismatches {
         template: Source,
@@ -217,13 +218,6 @@ pub enum Operation {
     ReconstructMaterial {
         template: Source,
         origin: crate::material_derivation::Capsule,
-    },
-    /// Preserve the declared intended ligation and bounded one-copy alternatives.
-    LigateWithOutcomes {
-        fragments: Vec<OrientedSource>,
-        circular: bool,
-        allow_nicked: bool,
-        options: crate::ligation_outcomes::Options,
     },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1397,12 +1391,6 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
     Ok(())
 }
 
-/// Upstream PCR synthesis in TOPO actions needs the newer semantic capability.
-pub(crate) fn topo_uses_step_source(op: &Operation) -> bool {
-    matches!(op, Operation::TopoActions { sources, .. }
-        if sources.iter().any(|source| matches!(source.source, Source::Step(_))))
-}
-
 /// Actual typed dependencies; producer metadata never supplies graph authority.
 pub fn operation_sources(op: &Operation) -> Vec<&Source> {
     match op {
@@ -1438,7 +1426,6 @@ pub fn operation_sources(op: &Operation) -> Vec<&Source> {
             ..
         } => fragments.iter().collect(),
         Operation::Ligate { fragments, .. }
-        | Operation::LigateWithOutcomes { fragments, .. }
         | Operation::ProfiledOverlap { fragments, .. }
         | Operation::HomologyAssembly { fragments, .. }
         | Operation::HomologyAnnealing { fragments, .. } => {
@@ -1485,7 +1472,6 @@ pub fn operation_sources_mut(op: &mut Operation) -> Vec<&mut Source> {
             ..
         } => fragments.iter_mut().collect(),
         Operation::Ligate { fragments, .. }
-        | Operation::LigateWithOutcomes { fragments, .. }
         | Operation::ProfiledOverlap { fragments, .. }
         | Operation::HomologyAssembly { fragments, .. }
         | Operation::HomologyAnnealing { fragments, .. } => {
@@ -4038,23 +4024,16 @@ fn reconstruct(
                 fragments,
                 circular,
                 allow_nicked,
-            }
-            | Operation::LigateWithOutcomes {
-                fragments,
-                circular,
-                allow_nicked,
-                ..
+                options,
             } => {
                 if fragments.is_empty() || fragments.len() > 1000 {
                     return Err(Error::Format(
                         "ligation requires1–1000 explicitly oriented fragments".into(),
                     ));
                 }
-                if let Operation::LigateWithOutcomes { options, .. } = step {
-                    options.validate()?;
-                    if fragments.len() > crate::ligation_outcomes::MAX_FRAGMENTS {
-                        return Err(Error::TooLarge);
-                    }
+                options.validate()?;
+                if fragments.len() > crate::ligation_outcomes::MAX_FRAGMENTS {
+                    return Err(Error::TooLarge);
                 }
                 let mut raw = Vec::with_capacity(fragments.len());
                 let mut oriented_lengths = Vec::with_capacity(fragments.len());
@@ -4074,8 +4053,7 @@ fn reconstruct(
                     });
                     raw.push(duplex);
                 }
-                let mut outcomes_receipt = None;
-                let duplex = if let Operation::LigateWithOutcomes { options, .. } = step {
+                let (duplex, outcomes_receipt) = {
                     if physical_processing_reports.len() >= 64 {
                         return Err(Error::TooLarge);
                     }
@@ -4135,33 +4113,21 @@ fn reconstruct(
                         options,
                     )?;
                     step_evidence_bytes = step_evidence_bytes.checked_add(evidence_bytes(&evidence,32*1024*1024)?).filter(|n|*n<=32*1024*1024).ok_or_else(||Error::Unsupported("Complete ligation outcomes plus prior processing evidence exceed the32MiB plan evidence bound; reduce explicit outcome bounds before capturing this plan. The intended chemistry was not rejected and no alternatives were silently dropped.".into()))?;
-                    outcomes_receipt = Some((
+                    let outcomes_receipt = (
                         crate::assembly_recipe::hash(&evidence)?,
                         evidence.report.context_revision.clone(),
-                    ));
+                    );
                     findings.push(format!("Step {} retains the declared intended ligation and {} alternative one-copy paths; enumeration complete {}, exhaustive within that scope {}. Alternative existence does not invalidate the intended path or establish isolation; other copy numbers and incomplete assemblies remain outside this scope.",index+1,evidence.report.alternatives.len(),evidence.report.enumeration_complete,evidence.report.exhaustive_within_scope));
                     physical_processing_reports.push(PhysicalProcessingStepReport {
                         step_index: index,
                         evidence: PhysicalProcessingEvidence::LigationOutcomes(evidence),
                     });
-                    actual
-                } else {
-                    let oriented = raw
-                        .iter()
-                        .zip(fragments)
-                        .map(|(material, source)| {
-                            if source.reverse {
-                                material.reverse()
-                            } else {
-                                Ok(material.clone())
-                            }
-                        })
-                        .collect::<Result<Vec<_>, Error>>()?;
-                    modified_duplex::ligate(&oriented, *circular, *allow_nicked)?
+                    (actual, outcomes_receipt)
                 };
                 findings.push(format!("Step {} ligation reconstructs both strands with {} retained nicks; covalently closed circular duplex in this model: {}. No nick repair is assumed.",index+1,duplex.nicks.len(),duplex.topology==Topology::Circular && duplex.nicks.is_empty()));
                 let mut product = duplex.molecule(format!("Ligation {}", index + 1))?;
-                if let Some((hash, context)) = outcomes_receipt {
+                {
+                    let (hash, context) = outcomes_receipt;
                     product
                         .metadata
                         .insert("source:ligation_outcomes:evidence_hash".into(), hash);
@@ -4453,8 +4419,7 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
             Operation::ProfiledOverlap{fragments,overlaps,circular,options}=>body.push_str(&format!("<li>Profiled {:?} ordered overlap assembly: {}. Overlaps {:?} bp; {} product. Explicit source orientation is retained. Method recommendations are advisory, not evidence of reagent compatibility, experimental completion or uniqueness. Policy <code>{}</code>.</li>",options.method,fragments.iter().map(|f|format!("{} ({})",source(&f.source),if f.reverse{"reverse complement"}else{"forward"})).collect::<Vec<_>>().join(" → "),overlaps,if *circular{"circular"}else{"linear"},e(&serde_json::to_string(options).unwrap_or_default()))),
             Operation::RepairEnds{template,method}=>body.push_str(&format!("<li>End repair {:?} of {}. Only explicitly modeled 3′ fill-in/exonuclease changes occur. Five-prime chemistry and internal nicks are retained; polymerase activity, reagents and experimental success are assumptions.</li>",method,source(template))),
             Operation::AnnealOligos{top,bottom,options,candidate_index}=>body.push_str(&format!("<li>Anneal declared 5′→3′ ssDNA inputs {} and {}.<br>Top ordered oligo 5′→3′: <code>{}</code> (5′ {:?}; 3′ {:?}).<br>Bottom ordered oligo 5′→3′: <code>{}</code> (5′ {:?}; 3′ {:?}).<br>Select zero-based candidate {} under policy <code>{}</code>. Exact antiparallel pairing and placement alternatives are reconstructed; no covalent ligation or implicit phosphorylation occurs.</li>",source(top),source(bottom),e(protocol_oligo_sequence(plan,&report,top,step_index).unwrap_or("Unresolved or unsupported bound oligo sequence")),options.top_chemistry.five_prime,options.top_chemistry.three_prime,e(protocol_oligo_sequence(plan,&report,bottom,step_index).unwrap_or("Unresolved or unsupported bound oligo sequence")),options.bottom_chemistry.five_prime,options.bottom_chemistry.three_prime,candidate_index,e(&serde_json::to_string(options).unwrap_or_default()))),
-            Operation::LigateWithOutcomes{fragments,circular,allow_nicked,options}=>body.push_str(&format!("<li>Intended ordered ligation: {}. Product {}; retained nicks {}. Enumerate one-copy alternatives under explicit bounds <code>{}</code>; retain the intended path independently. No probabilities or experimental isolation are inferred. Full extractable outcome paths/sequences are retained below.</li>",fragments.iter().map(|f|format!("{} ({})",source(&f.source),if f.reverse{"reverse"}else{"forward"})).collect::<Vec<_>>().join(", "),if *circular{"circular"}else{"linear"},if *allow_nicked{"allowed"}else{"not allowed"},e(&serde_json::to_string(options).unwrap_or_default()))),
-            Operation::Ligate{fragments,circular,allow_nicked}=>body.push_str(&format!("<li>Ordered ligation: {}. Product {}. Retained nicks {}. Exact end complementarity and terminal chemistry are checked; competing products and reaction conditions are not modeled.</li>",fragments.iter().map(|f|format!("{} ({})",source(&f.source),if f.reverse {"reversed"}else{"forward"})).collect::<Vec<_>>().join(", "),if *circular {"circular"}else{"linear"},if *allow_nicked {"explicitly allowed"}else{"not allowed"})),
+            Operation::Ligate{fragments,circular,allow_nicked,options}=>body.push_str(&format!("<li>Intended ordered ligation: {}. Product {}; retained nicks {}. Enumerate one-copy alternatives under explicit bounds <code>{}</code>; retain the intended path independently. No probabilities or experimental isolation are inferred. Full extractable outcome paths/sequences are retained below.</li>",fragments.iter().map(|f|format!("{} ({})",source(&f.source),if f.reverse{"reverse"}else{"forward"})).collect::<Vec<_>>().join(", "),if *circular{"circular"}else{"linear"},if *allow_nicked{"allowed"}else{"not allowed"},e(&serde_json::to_string(options).unwrap_or_default()))),
             Operation::Overlap { fragments, overlaps, circular } => body.push_str(&format!("<li>Ordered overlap assembly, in this order: {}. Junction overlaps {:?} bp; {} product. Reagent conditions and quantities are unspecified.</li>",fragments.iter().map(source).collect::<Vec<_>>().join(", "),overlaps,if *circular {"circular"} else {"linear"})),
         }
     }

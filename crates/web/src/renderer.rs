@@ -63,6 +63,20 @@ pub struct MapHit {
 
 #[derive(Clone)]
 pub struct MapRenderer(Rc<RefCell<State>>);
+/// Read-only export pin. It does not change camera, cached geometry or selection.
+pub struct ExportView {
+    pub source_revision: String,
+    pub interaction_context: String,
+    pub rotation_radians: f64,
+    pub zoom: f64,
+    pub selected_feature: Option<usize>,
+    pub hidden_features: Vec<usize>,
+    pub highlighted_spans: Vec<(usize, usize)>,
+    pub restriction_sites: Arc<Vec<collagene_core::restriction_inspection::InspectionSite>>,
+    pub selected_site: Option<usize>,
+    pub overlay_context: Option<String>,
+}
+
 pub struct ResizeListener {
     observer: web_sys::ResizeObserver,
     _callback: Closure<dyn FnMut(js_sys::Array, web_sys::ResizeObserver)>,
@@ -259,6 +273,30 @@ fn quad(out: &mut Vec<f32>, a: f64, b: f64, c: f64, d: f64, color: [f32; 4]) {
 }
 
 impl MapRenderer {
+    pub fn export_view(&self) -> Result<ExportView, String> {
+        let state = self.0.borrow();
+        if state.drag.is_some() {
+            return Err("Finish the map gesture before preparing an export.".into());
+        }
+        Ok(ExportView {
+            source_revision: state.revision.clone(),
+            interaction_context: state.interaction_context.clone(),
+            rotation_radians: state.rotation,
+            zoom: state.zoom,
+            selected_feature: state.selected_feature,
+            hidden_features: state.hidden_features.iter().copied().collect(),
+            highlighted_spans: state.selection_spans.clone(),
+            restriction_sites: state.restriction_sites.clone(),
+            selected_site: state.hovered_restriction.or(state.selected_restriction),
+            // Overlay is immutable and bounded by its installation preflight.
+            // This runtime-only presentation pin is not scientific evidence.
+            overlay_context: state.pcr_overlay.as_ref().map(|overlay| {
+                blake3::hash(format!("{overlay:?}").as_bytes())
+                    .to_hex()
+                    .to_string()
+            }),
+        })
+    }
     pub fn new(
         canvas: HtmlCanvasElement,
         overlay: HtmlCanvasElement,

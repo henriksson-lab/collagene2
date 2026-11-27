@@ -119,10 +119,6 @@ fn appended164_156_proposal_roundtrip_keeps_independent_expected_and_original_st
         &protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
     );
     assert!(transfer::load_candidate(&encoded_candidate).is_ok());
-    // These existing operations still retain their historical candidate18 floor.
-    let mut historical_candidate = encoded_candidate;
-    historical_candidate[4..6].copy_from_slice(&18u16.to_le_bytes());
-    assert!(transfer::load_candidate(&historical_candidate).is_ok());
     let verified = verification::verify(&candidate.plan, &report.expected);
     assert_eq!(verified.status, Status::ConsistentUnderAssumptions);
     assert_eq!(

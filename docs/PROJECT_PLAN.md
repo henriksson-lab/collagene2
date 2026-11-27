@@ -3194,12 +3194,12 @@ internal Type IIS domestication beyond circular inverse PCR; methylation-aware
 Golden Gate cleavage/recutting; internal edits across combinatorial library rows;
 generic saved-material mutagenesis/TOPO inputs and prepared TOPO vectors;
 actual-strand-aware reverse sticky-fragment intent; direct saved-material end
-repair; per-row keep-existing versus add-tail TA/GC preparation; saved-run
-rehydration/current review and direct saved-run protocol exports; and typed
-plate/well assignments. Gateway products remain reference-only until actual
-strand crossover/composition is implemented. Standalone map SVG controls, wider
-format corpus checks, GUI refinement/user review, collaboration and desktop
-installation acceptance also remain open. Do not confuse these gaps with already
+repair; saved-run editing/rehydration; and typed plate/well assignments.
+Per-row keep/add TA/GC preparation, read-only fresh saved-run review and direct
+saved-run protocol exports are implemented. Gateway products remain reference-only until actual
+strand crossover/composition is implemented. Map SVG controls are implemented. Wider format corpus checks, GUI
+refinement/user review, collaboration and desktop installation acceptance remain
+open. Do not confuse these gaps with already
 implemented general indel/OE primer design, fusion-fidelity ranking or TOPO
 TA/CACC transfer chemistry. BAM/index extensions remain last; excluded ELN,
 inventory, instruments, external aligners and mobile remain outside this work.
@@ -3220,15 +3220,35 @@ unchanged. This investigation made no inference requests or biological uploads.
 
 The ligation integration now passes44 focused native core/SDK cases, including
 full JSON/FASTA retained in native history and independently extracted PDF text
-and attachments. It uses operation29/evidence8 and worker92/candidate23/plan21/
-science26. Whole-mixture products remain outside the explicitly bounded one-copy
+and attachments. The ongoing consolidation uses one Ligate operation, with
+worker94/candidate24/plan22 and science26; focused validation of the consolidated
+source is pending. Whole-mixture products remain outside the explicitly bounded one-copy
 all-fragment search. Further alternatives such as vector-only/self-ligation and
 other copy counts must not be described as proven absent.
 
-The Tauri continuation adds DTQ4 editor-only bootstrap and exact append-only
+The Tauri continuation uses DTQ5 with one editor-only-capable Bootstrap API and exact append-only
 pending-switch cancellation. A bad source, target or selector cannot prevent
 working-editor startup; catalog/sync remain unavailable without a real native
 context. Cancelled transitions consume their generation and preserve both
 branches. Focused native recovery/host/protocol/MCP cases and integrated WASM/Linux Tauri
 shell compiler checks pass. New cross-platform CI is pending; installation and
 graphical acceptance remain separate, with browser checks deferred.
+
+### Current implementation consolidation — 27 November 2026
+
+Fix or delete obsolete development code directly. Current internal codecs accept
+only one representation; external format interoperability remains in scope.
+Browser persistence uses current draft14 and primer2, with no old-shape adapters.
+The first focused native current-codec/sole-Ligate batch passes43 cases. Keep/add
+TA/GC row choices now use the single tailing recipe compiler and its existing
+worker/MCP/UI path. Generic verification and TA/GC profile
+matching remain distinct assessments. Native model/desktop/MCP checks and the integrated web/worker WASM check pass.
+Core callers compile with JSON-schema support and all nine corrected protocol
+fixtures pass. Cross-platform CI remains pending; browser checks remain deferred.
+
+The dedicated saved-run digest path is superseded by generic
+`material_derivation::CatalogDigest`; the live UI already uses the generic path.
+Remove its module, operation/origin variants and remaining consumers directly,
+using Saved(Run) → CatalogDigest → Derived for equivalent fixtures. Keep Run
+(independently targeted workflows) and Derived (target-free processing) distinct.
+Do not add capsule conversion or old-plan rewriting.

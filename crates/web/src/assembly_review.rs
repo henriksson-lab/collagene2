@@ -1896,7 +1896,7 @@ mod tests {
             }
         ));
         assert!(matches!(&candidate.plan.steps[2], Operation::Ligate {
-            fragments, circular: true, allow_nicked: false,
+            fragments, circular: true, allow_nicked: false, ..
         } if fragments.len()==1 && matches!(&fragments[0].source, Source::Step(1)) && !fragments[0].reverse));
         let assessed = collagene_core::verification::verify(&candidate.plan, &intent.target);
         assert_eq!(

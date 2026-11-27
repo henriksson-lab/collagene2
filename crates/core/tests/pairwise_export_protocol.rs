@@ -165,32 +165,6 @@ fn schema55_cannot_carry_new_selectors_even_when_the_variant_body_is_missing() {
 }
 
 #[test]
-fn old_comparison_layout_remains_readable_under_schema55() {
-    let record = record();
-    let reference = Molecule::dna("reference", "ACGTACGT", Topology::Linear).unwrap();
-    let query = Molecule::dna("query", "ACCTACGT", Topology::Linear).unwrap();
-    let request = Request {
-        id: 55,
-        revision: record.report.context_revision,
-        job: AnalysisJob::CompareSequences {
-            reference,
-            query,
-            options: Options::Stored(AlignmentOptions::default()),
-        },
-    };
-    let mut wire = protocol::encode_request(&request).unwrap();
-    assert_eq!(selector(&wire), 119);
-    wire[4..6].copy_from_slice(&55u16.to_le_bytes());
-    let mut reply = protocol::process_request(&wire).unwrap();
-    assert_eq!(selector(&reply), 111);
-    reply[4..6].copy_from_slice(&55u16.to_le_bytes());
-    assert!(matches!(
-        protocol::decode_response(&reply).unwrap().result,
-        AnalysisResult::ReviewedComparison(_)
-    ));
-}
-
-#[test]
 fn export_responses_reject_unsafe_metadata_and_keep_the_ordinary_32mib_budget() {
     let (_, response) = roundtrip(&request(Format::AlignedFasta));
     for index in 0..3 {

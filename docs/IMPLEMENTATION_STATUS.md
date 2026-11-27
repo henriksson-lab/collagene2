@@ -4,22 +4,33 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-Current source uses worker92, candidate23, native plan21, science26 and187 MCP
-tools. Ligation outcomes retain the intended path and expose bounded alternatives
-in native history, HTML and PDF with extractable strand FASTA/JSON. Tauri recovery
-uses DTQ/DTR4 for editor-only bootstrap and exact pending-switch cancellation;
-legacy prefix commands retain their historical floors. Remote review remains
-DSQ/DSR3. Working recovery and file export remain available without a catalog,
-while library/sync access requires the actual native context and process generation.
+Current source uses worker94, candidate24, native plan22, science26 and189 MCP
+tools. One Ligate operation retains the intended path and bounded alternatives
+in native history, HTML and PDF, including extractable strand FASTA/JSON. DTQ/DTR5
+has one Bootstrap API supporting editor-only startup and exact pending-switch
+cancellation. DSQ/DSR3 handles remote review. Unsupported internal schemas are
+rejected; development compatibility branches have been removed.
 
-Focused native/model/SDK checks cover416 distinct cases for this increment.
-Integrated web/worker WASM and Linux Tauri shell compiler checks pass. New
-cross-platform CI remains pending. The desktop shell has a durable offline local
-library, explicit multi-remote synchronization, scoped native credentials,
-saved-branch review, embedded stdio MCP and authenticated URL imports. Export
-controls await native receipts under the configured root. Installer workflow
-sources exist; installation and graphical/offline acceptance remain unfinished.
-No browser or application HTTP checks were performed.
+The first current-codec/sole-Ligate batch passed43 focused native cases, including
+ligation alternatives/history/PDF, exact saved-run review, SVG transport, plan
+editing and material-origin/derivation boundaries. One assertion was corrected to
+expect unsupported-plan refusal without relying on an obsolete error category.
+The consolidated per-row tailing recipe subsequently passes18 related native
+cases. Both MCP SDK integrations pass, including exact saved-run review/SVG and
+TA/GC keep/add actions, protocol artifacts and incompatible-profile disclosure.
+All332 native web-model cases now pass. The surrounding desktop/recovery,
+publication and protocol increment passes424 native cases across24 targets,
+including those332 cases; the direct library-history suite adds8 passing cases.
+These results preserve the scientific refusals and reject obsolete internal
+formats. The integrated web/worker WASM check passes. Native core callers compile, including all core tests with JSON-schema support.
+The nine corrected protocol fixtures pass. Cross-platform CI remains pending. The earlier `1a491f2` checkpoint
+passed416 focused native/model/SDK cases, integrated web/worker WASM and the Linux
+Tauri shell compiler check; these results do not validate the present refactor.
+The shell has offline local storage, explicit multi-remote synchronization,
+scoped credentials, saved-branch review, embedded stdio MCP and authenticated URL
+imports. Export controls await native receipts under the configured root.
+Installation and graphical/offline acceptance remain unfinished. Browser and
+application HTTP checks remain deferred by request.
 
 The format checkpoint `73fd9d8` passes scientific tests, WASM, desktop builds/MCP
 and unsigned package builds on Windows/macOS/Linux. Desktop builds/MCP and WASM
@@ -1637,40 +1648,38 @@ backup/restore operations were performed.
 
 ## Ligation outcomes and Tauri recovery integration
 
-Uncommitted source appends operation29 `LigateWithOutcomes` and evidence8, with
-worker92/candidate23/plan21/science26. New TA/GC, blunt and ordinary restriction
-ligation plans retain their intended order/orientation while exposing bounded
-one-copy alternatives. Enumeration does not choose the target. Native fresh
-material is retained privately, while full outcomes are bound to the recorded
-product and history. HTML exposes extractable JSON/strand FASTA; PDF includes
-complete printable outcomes plus embedded JSON/FASTA. Explicit resource refusal
-replaces silent omission. This is bounded one-copy full-fragment enumeration, not
-a reaction-mixture simulator: other copy numbers, vector-only self-ligation and
-partial assemblies remain outside its stated scope. Forty-four focused native
-core/SDK cases now pass, including native history replay, complete PDF extraction,
-legacy capability preservation and nested opaque-origin version floors.
+The current source has one `Ligate` operation with explicit outcome options.
+TA/GC, blunt and ordinary restriction ligation retain the intended order and
+orientation while exposing bounded one-copy alternatives. Enumeration never
+chooses the target. Fresh material remains private; complete outcomes are bound
+to recorded products and history. HTML exposes JSON/strand FASTA; PDF includes
+printable outcomes and embedded JSON/FASTA. Other copy numbers, vector-only
+self-ligation and partial assemblies remain outside the declared scope.
 
-The isolated Tauri changes have been applied for combined validation. They add
-DTQ/DTR4 recovery bootstrap, exact review, repeated append-only restart-bound
-activation/rollback, native per-catalog admission and genuinely read-only MCP
-preload. Escaped writable repositories and backup services retain the desktop
-session lease; activation limits refuse before durable journal writes. Native
-recovery/host/protocol/MCP cases pass, as do the integrated web/worker WASM and
-Linux Tauri shell compiler checks. Catalog failure now leaves the
-working editor available without a fabricated lab context; exact pending-switch
-cancellation appends a terminal journal generation and requires restart. Corrupt
-journals block catalog access/cancellation while preserving editor startup. Shell
-admission observes durable session generation after every attempt; refused or
-historical cancellation requests do not themselves pause a healthy catalog.
+Obsolete development codecs, compatibility conversions and version ladders have
+been removed. Current internal schemas are worker94, candidate24, native plan22,
+DTQ/DTR5 and DSQ/DSR3; scientific engine26 is unchanged. Unsupported internal
+versions are rejected. External biological formats remain intentional features.
+Current source integration and focused native/WASM validation are pending; earlier
+checkpoint results do not prove this refactor.
+
+Desktop has one Bootstrap API with an optional genuine catalog context. Catalog
+failure preserves the working editor. Exact pending-switch cancellation appends a
+terminal journal generation and requires restart. Corrupt journals block catalog
+access/cancellation while preserving editor startup. Repositories and backup
+services retain their native session lease. Historical or refused cancellation
+requests do not themselves pause a healthy catalog.
+
+Saved-run fresh review, canonical SVG map export and their MCP tools are being
+integrated. These preserve recorded evidence and require fresh verification before
+producing new verified protocols; they do not rewrite historical assessments or
+install candidate plans into the current editor.
 
 The requested [SciLifeLab assessment](SCILIFELAB_LLM_ASSESSMENT.md) is committed
 as `7eb3e22`. Native OpenAI-compatible HTTP planning is feasible; current model
 capabilities, data terms and desktop/public-web entitlement remain unconfirmed.
 No inference endpoint was contacted and no credentials or sequence data were sent.
 
-Material checkpoint `a9b0e4c` passes remote WASM compilation. Its scientific CI
-identified three stale current-version fixtures in `material_origin_protocol`:
-producer header90 versus91, scientific25 stamped into a schema19 diagnostic, and
-a scientific25 reply offered under worker90. Corrections now pass locally and
-separate current producer assertions from explicit historical capability tests. These findings do
-not waive the new-version gates or establish full cross-platform scientific success.
+Earlier CI exposed fixtures relying on obsolete development encodings. Those
+positive compatibility fixtures are removed; retained tests exercise current
+scientific behavior, integrity bounds and explicit unsupported-version refusal.

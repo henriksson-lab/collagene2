@@ -114,7 +114,10 @@ fn record_replay_source_binding_and_schema_twelve_roundtrip() {
     assert!(protocol::decode_response(&envelope(b"CGR\0", 11, &loaded)).is_err());
     let mut wrong = response;
     wrong.revision = "0".repeat(64);
-    assert!(protocol::decode_response(&envelope(b"CGR\0", 12, &wrong)).is_err());
+    assert!(
+        protocol::decode_response(&envelope(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &wrong))
+            .is_err()
+    );
     let replay = Request {
         id: 104,
         revision: workspace_fingerprint(&commit.workspace).unwrap(),
@@ -139,7 +142,14 @@ fn record_replay_source_binding_and_schema_twelve_roundtrip() {
     assert!(protocol::decode_response(&envelope(b"CGR\0", 11, &response)).is_err());
     let mut substituted = response;
     substituted.revision = "0".repeat(64);
-    assert!(protocol::decode_response(&envelope(b"CGR\0", 12, &substituted)).is_err());
+    assert!(
+        protocol::decode_response(&envelope(
+            b"CGR\0",
+            protocol::WORKER_SCHEMA_VERSION,
+            &substituted
+        ))
+        .is_err()
+    );
     let mut wrong = replay;
     wrong.revision = original;
     assert!(protocol::process_request(&protocol::encode_request(&wrong).unwrap()).is_err());

@@ -42,7 +42,6 @@ fn reference_count(op: &Operation) -> usize {
             ..
         } => fragments.len(),
         Operation::Ligate { fragments, .. }
-        | Operation::LigateWithOutcomes { fragments, .. }
         | Operation::ProfiledOverlap { fragments, .. }
         | Operation::HomologyAssembly { fragments, .. }
         | Operation::HomologyAnnealing { fragments, .. } => fragments.len(),

@@ -41,6 +41,7 @@ fn fixture() -> (Workspace, DesignPlan) {
                 }],
                 circular: true,
                 allow_nicked: false,
+                options: Default::default(),
             },
         ],
     };

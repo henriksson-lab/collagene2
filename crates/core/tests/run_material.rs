@@ -194,6 +194,7 @@ fn named_circular_pcr_ligation_retains_both_unsealed_origin_nicks() {
                 ],
                 circular: true,
                 allow_nicked: true,
+                options: Default::default(),
             },
         ],
     };

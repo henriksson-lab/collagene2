@@ -10,7 +10,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 pub const KIND: &str = "assembly-library-history-v1";
-pub const ACTIVE_DRAFT_KIND: &str = "assembly-draft-v3";
+pub const ACTIVE_DRAFT_VERSION: u32 = 14;
+pub const ACTIVE_DRAFT_KIND: &str = "assembly-draft-v14";
 pub const MEDIA_TYPE: &str = "application/x-collagene-assembly-library-history+postcard";
 pub const MAX_RECORD_BYTES: usize = 32 << 20;
 pub const MAX_HISTORY_BYTES: usize = 32 << 20;
@@ -90,9 +91,14 @@ fn header(bytes: &[u8]) -> Result<LibraryHeader, Error> {
     }
     // Ignored values are skipped by serde; no WebDraft/Molecule is materialized.
     let h: Header = serde_json::from_slice(bytes)
-        .map_err(|_| bad("raw draft requires a bounded version3 library header"))?;
-    if h.version != 3 || !id(&h.alternatives.id, 48) || h.alternatives.next_id == 0 {
-        return Err(bad("invalid version3 library identity/allocation header"));
+        .map_err(|_| bad("raw draft requires a bounded current-version library header"))?;
+    if h.version != ACTIVE_DRAFT_VERSION
+        || !id(&h.alternatives.id, 48)
+        || h.alternatives.next_id == 0
+    {
+        return Err(bad(
+            "invalid current-version library identity/allocation header",
+        ));
     }
     Ok(h.alternatives)
 }
@@ -258,27 +264,18 @@ fn attest(w: &Workspace, record: &Record) -> Result<(), Error> {
     Ok(())
 }
 fn active(w: &Workspace) -> Result<(&str, &WorkspaceAttachment), Error> {
-    let mut matches = w.attachments.iter().filter(|(_, a)| {
-        matches!(
-            a.kind.as_str(),
-            "assembly-draft-v1"
-                | "assembly-draft-v2"
-                | "assembly-draft-v4"
-                | "assembly-draft-v5"
-                | "assembly-draft-v6"
-                | "assembly-draft-v7"
-                | "assembly-draft-v8"
-                | "assembly-draft-v9"
-                | "assembly-draft-v10"
-                | ACTIVE_DRAFT_KIND
-        )
-    });
+    let mut matches = w
+        .attachments
+        .iter()
+        .filter(|(_, a)| a.kind.starts_with("assembly-draft-v"));
     let (hash, a) = matches
         .next()
-        .ok_or_else(|| bad("one persisted active version3 draft is required"))?;
+        .ok_or_else(|| bad("one persisted active current-version draft is required"))?;
     if matches.next().is_some() || a.kind != ACTIVE_DRAFT_KIND || a.media_type != "application/json"
     {
-        return Err(bad("exactly one active version3 JSON draft is required"));
+        return Err(bad(
+            "exactly one active current-version JSON draft is required",
+        ));
     }
     Ok((hash.as_str(), a))
 }
@@ -347,21 +344,7 @@ pub fn allocation_highwater(w: &Workspace, library_id: &str) -> Result<u64, Erro
     let active_count = w
         .attachments
         .values()
-        .filter(|a| {
-            matches!(
-                a.kind.as_str(),
-                "assembly-draft-v1"
-                    | "assembly-draft-v2"
-                    | "assembly-draft-v4"
-                    | "assembly-draft-v5"
-                    | "assembly-draft-v6"
-                    | "assembly-draft-v7"
-                    | "assembly-draft-v8"
-                    | "assembly-draft-v9"
-                    | "assembly-draft-v10"
-                    | ACTIVE_DRAFT_KIND
-            )
-        })
+        .filter(|a| a.kind.starts_with("assembly-draft-v"))
         .count();
     if active_count > 0 {
         let (_, a) = active(w)?;
@@ -480,21 +463,7 @@ pub fn install(mut w: Workspace, record: Record, after: Vec<u8>) -> Result<Commi
     }
     // No operation above mutates the frame. History retention cannot be pruned to
     // make an edit succeed; any failure publishes neither replacement nor history.
-    w.attachments.retain(|_, a| {
-        !matches!(
-            a.kind.as_str(),
-            "assembly-draft-v1"
-                | "assembly-draft-v2"
-                | "assembly-draft-v4"
-                | "assembly-draft-v5"
-                | "assembly-draft-v6"
-                | "assembly-draft-v7"
-                | "assembly-draft-v8"
-                | "assembly-draft-v9"
-                | "assembly-draft-v10"
-                | ACTIVE_DRAFT_KIND
-        )
-    });
+    w.attachments.retain(|_, a| a.kind != ACTIVE_DRAFT_KIND);
     w.attachments.insert(
         record.after_hash.clone(),
         WorkspaceAttachment {

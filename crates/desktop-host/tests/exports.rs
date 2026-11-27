@@ -228,14 +228,13 @@ fn export_symlinks_and_insecure_directories_fail_closed() {
 }
 
 #[test]
-fn two_native_connections_cannot_publish_different_payloads_under_one_operation() {
+fn two_export_services_cannot_publish_different_payloads_under_one_operation() {
     let disk = Disk::new();
-    let mut first = DesktopHost::open(&disk.0).unwrap();
-    let mut second = DesktopHost::open(&disk.0).unwrap();
-    let first_access = first.authorize_window().unwrap();
-    let second_access = second.authorize_window().unwrap();
-    let one = first.open_exports().unwrap();
-    let two = second.open_exports().unwrap();
+    let mut host = DesktopHost::open(&disk.0).unwrap();
+    let first_access = host.authorize_window().unwrap();
+    let second_access = host.authorize_window().unwrap();
+    let one = host.open_exports().unwrap();
+    let two = host.open_exports().unwrap();
     let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
     let request_a = request(8, "shared.gb", b"first exact payload");
     let request_b = request(8, "shared.gb", b"second exact payload");
@@ -269,8 +268,7 @@ fn two_native_connections_cannot_publish_different_payloads_under_one_operation(
     let bytes = std::fs::read(disk.0.join("exports").join(name.as_str())).unwrap();
     assert!(bytes == b"first exact payload" || bytes == b"second exact payload");
     // A persisted descriptor binds the content even if the display name is unchanged.
-    drop(first);
-    drop(second);
+    drop(host);
     let mut host = DesktopHost::open(&disk.0).unwrap();
     let access = host.authorize_window().unwrap();
     let service = host.open_exports().unwrap();

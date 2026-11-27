@@ -948,7 +948,7 @@ fn payload<'a>(magic: &[u8; 4], bytes: &'a [u8], limit: usize) -> Result<&'a [u8
         return Err(Error::Malformed);
     }
     let version = u16::from_le_bytes([bytes[4], bytes[5]]);
-    if !(1..=SCHEMA_VERSION).contains(&version) {
+    if version != SCHEMA_VERSION {
         return Err(Error::Version(version));
     }
     let length =
@@ -982,16 +982,12 @@ fn decode<T: for<'de> Deserialize<'de>>(
 }
 pub fn encode_request(r: &RequestEnvelope) -> Result<Vec<u8>, Error> {
     r.validate()?;
-    let mut bytes = encode(REQUEST_MAGIC, r, MAX_REQUEST_BYTES)?;
-    bytes[4..6].copy_from_slice(&request_version(&r.command).to_le_bytes());
-    Ok(bytes)
+    encode(REQUEST_MAGIC, r, MAX_REQUEST_BYTES)
 }
 pub fn decode_request(bytes: &[u8]) -> Result<RequestEnvelope, Error> {
     let value: RequestEnvelope = decode(REQUEST_MAGIC, bytes, MAX_REQUEST_BYTES)?;
     value.validate()?;
-    if u16::from_le_bytes([bytes[4], bytes[5]]) < request_version(&value.command) {
-        return Err(Error::Version(1));
-    }
+
     Ok(value)
 }
 pub fn encode_response(r: &ResponseEnvelope) -> Result<Vec<u8>, Error> {
@@ -1001,9 +997,7 @@ pub fn encode_response(r: &ResponseEnvelope) -> Result<Vec<u8>, Error> {
 pub fn decode_response(bytes: &[u8]) -> Result<ResponseEnvelope, Error> {
     let value: ResponseEnvelope = decode(RESPONSE_MAGIC, bytes, MAX_RESPONSE_BYTES)?;
     value.validate()?;
-    if u16::from_le_bytes([bytes[4], bytes[5]]) < response_version(&value.outcome) {
-        return Err(Error::Version(1));
-    }
+
     Ok(value)
 }
 pub fn decode_response_for(
@@ -1011,80 +1005,14 @@ pub fn decode_response_for(
     request: &RequestEnvelope,
 ) -> Result<ResponseEnvelope, Error> {
     let value = decode_response(bytes)?;
-    if u16::from_le_bytes([bytes[4], bytes[5]]) < request_version(&request.command) {
-        return Err(Error::Version(1));
-    }
+
     value.validate_for(request)?;
     Ok(value)
 }
 
-fn request_version(c: &Command) -> u16 {
-    if matches!(
-        c,
-        Command::PrepareRemoteRemoval { .. }
-            | Command::ConfirmRemoteRemoval { .. }
-            | Command::DiscardRemoteRemovalReview { .. }
-            | Command::CheckRemoteRemovalOutcome { .. }
-    ) {
-        return 3;
-    }
-    if matches!(
-        c,
-        Command::PrepareMetadataPublication { .. }
-            | Command::QueueMetadataPublication { .. }
-            | Command::InspectPushChoices { .. }
-            | Command::PrepareReviewedPush { .. }
-            | Command::QueueReviewedPush { .. }
-            | Command::DiscardPushReview { .. }
-            | Command::ListDeletedFolderPublications { .. }
-    ) {
-        2
-    } else {
-        1
-    }
-}
-fn response_version(o: &Outcome) -> u16 {
-    if matches!(
-        o,
-        Outcome::Success(
-            Success::RemoteRemovalPrepared { .. }
-                | Success::RemoteRemoved(_)
-                | Success::RemoteRemovalReviewDiscarded { .. }
-                | Success::RemoteRemovalOutcome { .. }
-        ) | Outcome::Failure(Failure::Error {
-            code: ErrorCode::CredentialForgetFailed | ErrorCode::RemovalChangedAfterForget,
-            ..
-        })
-    ) {
-        return 3;
-    }
-    if matches!(
-        o,
-        Outcome::Success(
-            Success::MetadataPrepared(_)
-                | Success::PushChoices(_)
-                | Success::PushPrepared(_)
-                | Success::PushReviewDiscarded { .. }
-                | Success::DeletedFolderPublications(_)
-        ) | Outcome::Failure(Failure::Error {
-            code: ErrorCode::ReviewChanged,
-            ..
-        })
-    ) {
-        2
-    } else {
-        1
-    }
-}
-/// Match a compatible legacy caller without weakening new review capability floors.
+/// Validate the exact current request/response correlation before encoding.
 pub fn encode_response_for_frame(r: &ResponseEnvelope, request: &[u8]) -> Result<Vec<u8>, Error> {
     let q = decode_request(request)?;
     r.validate_for(&q)?;
-    let version = u16::from_le_bytes([request[4], request[5]]);
-    if version < response_version(&r.outcome) {
-        return Err(Error::Version(version));
-    }
-    let mut bytes = encode_response(r)?;
-    bytes[4..6].copy_from_slice(&version.to_le_bytes());
-    Ok(bytes)
+    encode_response(r)
 }

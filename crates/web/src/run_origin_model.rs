@@ -65,25 +65,12 @@ impl PartialEq for PinnedOrigin {
 impl Eq for PinnedOrigin {}
 impl Serialize for PinnedOrigin {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self.as_ref() {
-            MaterialOrigin::Run(origin) => origin.serialize(serializer),
-            origin => origin.serialize(serializer),
-        }
+        self.as_ref().serialize(serializer)
     }
 }
 impl<'de> Deserialize<'de> for PinnedOrigin {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        // Versions 1–11 stored bare run capsules. New drafts write the explicit material tag.
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Stored {
-            Material(MaterialOrigin),
-            Legacy(Capsule),
-        }
-        let origin = match Stored::deserialize(deserializer)? {
-            Stored::Material(p) => p,
-            Stored::Legacy(p) => MaterialOrigin::Run(p),
-        };
+        let origin = MaterialOrigin::deserialize(deserializer)?;
         Self::from_material(origin).map_err(serde::de::Error::custom)
     }
 }

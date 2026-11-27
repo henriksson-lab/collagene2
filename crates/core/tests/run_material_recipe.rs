@@ -91,6 +91,7 @@ fn circle_saved() -> (Molecule, Capsule) {
                 }],
                 circular: true,
                 allow_nicked: false,
+                options: Default::default(),
             },
         ],
     )
@@ -346,6 +347,8 @@ fn replay_pcr_catalog_repair_tail_and_treatment_preserve_the_full_typed_chain() 
     )
     .unwrap();
     let recipe = tail::Recipe {
+        profile: collagene_core::tailing_recipe::Profile::Ta,
+
         name: "Serial prepared material with complete downstream chain".into(),
         circular: true,
         allow_nicked: false,
@@ -366,7 +369,9 @@ fn replay_pcr_catalog_repair_tail_and_treatment_preserve_the_full_typed_chain() 
                         },
                     },
                 },
-                base: TailingBase::T,
+                action: collagene_core::tailing_recipe::Action::AddTail {
+                    base: TailingBase::T,
+                },
                 treatment: None,
             },
             tail::Fragment {
@@ -379,7 +384,9 @@ fn replay_pcr_catalog_repair_tail_and_treatment_preserve_the_full_typed_chain() 
                         reverse: Primer::new("NewR", "AAA", "").unwrap(),
                     },
                 },
-                base: TailingBase::A,
+                action: collagene_core::tailing_recipe::Action::AddTail {
+                    base: TailingBase::A,
+                },
                 treatment: Some(EndTreatment::Phosphorylate),
             },
         ],

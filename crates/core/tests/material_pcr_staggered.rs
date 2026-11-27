@@ -177,6 +177,7 @@ fn freshly_replayed_unsealed_nicks_remain_unsupported_for_pcr_and_source_is_unch
                 ],
                 circular: true,
                 allow_nicked: true,
+                options: Default::default(),
             },
         ],
     };

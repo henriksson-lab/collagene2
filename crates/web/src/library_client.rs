@@ -502,7 +502,9 @@ impl LibraryClient for DesktopSession {
                 }
                 match bootstrap {
                     desktop::Success::Bootstrap(b) => {
-                        *self.context.borrow_mut() = Some(b.library_context)
+                        *self.context.borrow_mut() = Some(b.library_context.ok_or(
+                            "Saved library is paused; inspect native recovery status. Working-editor autosave remains available."
+                        )?)
                     }
                     _ => return Err("Unexpected local library bootstrap".into()),
                 }

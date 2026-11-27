@@ -148,6 +148,7 @@ fn nicked_circle() -> Commit {
                 ],
                 circular: true,
                 allow_nicked: true,
+                options: Default::default(),
             },
         ],
         "Named saved nicked circle",

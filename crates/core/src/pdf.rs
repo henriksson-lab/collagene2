@@ -1397,7 +1397,7 @@ pub(crate) fn export_protocol_pdf_checked(
             .plan()
             .steps
             .iter()
-            .any(|step| matches!(step, Operation::LigateWithOutcomes { .. }))
+            .any(|step| matches!(step, Operation::Ligate { .. }))
         {
             ligation_pdf_limit(error)
         } else {
@@ -1762,7 +1762,7 @@ fn export_protocol_pdf_checked_inner(
                 candidate_index,
                 serde_json::to_string(options).map_err(|e| Error::Format(e.to_string()))?
             ),
-            Operation::LigateWithOutcomes {
+            Operation::Ligate {
                 fragments,
                 circular,
                 allow_nicked,
@@ -1786,28 +1786,6 @@ fn export_protocol_pdf_checked_inner(
                 options.max_total_product_bases,
                 options.max_report_bytes,
                 options.max_work
-            ),
-            Operation::Ligate {
-                fragments,
-                circular,
-                allow_nicked,
-            } => format!(
-                "Ordered ligation: {}. {} product. Retained nicks {}. Exact end complementarity and terminal chemistry are checked; competing products and reaction conditions are not modeled.",
-                fragments
-                    .iter()
-                    .map(|f| format!(
-                        "{} ({})",
-                        source_name(&f.source),
-                        if f.reverse { "reversed" } else { "forward" }
-                    ))
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                if *circular { "Circular" } else { "Linear" },
-                if *allow_nicked {
-                    "explicitly allowed"
-                } else {
-                    "not allowed"
-                }
             ),
             Operation::Overlap {
                 fragments,

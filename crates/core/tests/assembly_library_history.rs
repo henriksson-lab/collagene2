@@ -10,7 +10,7 @@ fn hash(bytes: &[u8]) -> String {
 }
 // Deliberately only a probe-valid header: core does not own WebDraft semantics.
 fn draft(counter: u64, text: &str) -> Vec<u8> {
-    serde_json::to_vec(&serde_json::json!({"version":3,"alternatives":{"id":"literal-library","next_id":counter},"working":text})).unwrap()
+    serde_json::to_vec(&serde_json::json!({"version":14,"alternatives":{"id":"literal-library","next_id":counter},"working":text})).unwrap()
 }
 fn fixture() -> Workspace {
     let mut w = Workspace::from_documents(
@@ -65,7 +65,7 @@ fn proposal() -> String {
 fn exact_unsaved_before_bytes_survive_atomic_replacement_and_native_archive() {
     let w = fixture();
     let snapshot = serde_json::to_vec(&w).unwrap();
-    let before=b"{\n  \"working\": \"invalid overlap text: 12,,7; intentional primer edit\",\n  \"version\":3,\"alternatives\":{\"id\":\"literal-library\",\"next_id\":9}\n}".to_vec();
+    let before=b"{\n  \"working\": \"invalid overlap text: 12,,7; intentional primer edit\",\n  \"version\":14,\"alternatives\":{\"id\":\"literal-library\",\"next_id\":9}\n}".to_vec();
     let after = draft(12, "new reviewed order");
     let pin = binding(&w, 0);
     let record = history::create(
@@ -289,7 +289,7 @@ fn recovery_preserves_allocation_highwater_and_rejects_header_regression() {
         history::create(
             &restored.workspace,
             draft(40, "current"),
-            br#"{"version":3,"alternatives":{"id":"other-library","next_id":41}}"#,
+            br#"{"version":14,"alternatives":{"id":"other-library","next_id":41}}"#,
             &proposal(),
             vec![],
             vec![]
@@ -447,9 +447,13 @@ fn record_retention_count_exhaustion_refuses_the_whole_edit_without_pruning() {
 }
 
 #[test]
-fn newer_ordinary_drafts_cannot_be_ignored_as_second_active_library_drafts() {
+fn competing_current_or_unsupported_draft_kinds_cannot_be_ignored() {
     let original = fixture();
-    for version in 5..=10 {
+    for version in [
+        history::ACTIVE_DRAFT_VERSION - 1,
+        history::ACTIVE_DRAFT_VERSION,
+        history::ACTIVE_DRAFT_VERSION + 1,
+    ] {
         let mut w = original.clone();
         let raw = format!("ordinary editable draft {version}").into_bytes();
         w.attachments.insert(

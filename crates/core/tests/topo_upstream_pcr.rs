@@ -353,6 +353,7 @@ fn prepared_correspondence_unused_roles_and_nicked_or_staggered_templates_cannot
             }],
             circular: true,
             allow_nicked: true,
+            options: Default::default(),
         },
     );
     if let Operation::TopoActions { sources, .. } = &mut nicked.steps[2] {

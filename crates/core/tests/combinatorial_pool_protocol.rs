@@ -14,7 +14,7 @@ use collagene_core::{
     verification::{self, DesignPlan, Operation, Status},
     workspace::{self, Workspace},
 };
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Read};
 const A: &str = "ATGACCCCGGGGTTTCCAGA";
 fn fixture() -> (Workspace, Design, SelectedConstruct) {
     let source = Molecule::dna(
@@ -113,68 +113,7 @@ fn wire(magic: &[u8; 4], version: u16, value: &impl serde::Serialize) -> Vec<u8>
     b.extend(payload);
     b
 }
-fn index_only(plan: &DesignPlan) -> DesignPlan {
-    let mut old = plan.clone();
-    for step in &mut old.steps {
-        if let Operation::SelectedGoldenGate {
-            templates,
-            options,
-            candidate_index,
-            ..
-        } = step
-        {
-            *step = Operation::GoldenGate {
-                templates: templates.clone(),
-                options: options.clone(),
-                candidate_index: *candidate_index,
-            };
-        }
-    }
-    old
-}
-fn plan_schema(archive: &[u8], schema: u32) -> Vec<u8> {
-    let mut input = zip::ZipArchive::new(Cursor::new(archive)).unwrap();
-    let mut output = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    for i in 0..input.len() {
-        let mut entry = input.by_index(i).unwrap();
-        let name = entry.name().to_owned();
-        let mut bytes = Vec::new();
-        entry.read_to_end(&mut bytes).unwrap();
-        if name == "manifest.json" {
-            let mut value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-            value["plan_schema"] = schema.into();
-            bytes = serde_json::to_vec(&value).unwrap();
-        }
-        output
-            .start_file(name, zip::write::SimpleFileOptions::default())
-            .unwrap();
-        output.write_all(&bytes).unwrap();
-    }
-    output.finish().unwrap().into_inner()
-}
-fn rekey(record: &mut RunRecord) {
-    record.plan_revision = verification::plan_revision(&record.plan);
-    record.run_id = blake3::hash(
-        &serde_json::to_vec(&(
-            "cloning-run-v1",
-            record.schema_version,
-            record.plan_schema,
-            &record.plan_revision,
-            &record.plan,
-            &record.target,
-            &record.inputs,
-            record
-                .products
-                .iter()
-                .map(|p| (&p.step_index, &p.revision))
-                .collect::<Vec<_>>(),
-            &record.assessment,
-        ))
-        .unwrap(),
-    )
-    .to_hex()
-    .to_string();
-}
+
 fn released() -> release::Commit {
     let (w, d, row) = fixture();
     let mut analysis = batch::Session::begin(
@@ -207,48 +146,7 @@ fn released() -> release::Commit {
     assert_eq!(session.inspect(0).unwrap().product.sequence.as_str(), A);
     session.into_commit(&context).unwrap()
 }
-#[test]
-fn selected_opcode18_requires_candidate12_and_worker59_without_rejecting_index_only_history() {
-    let (w, d, row) = fixture();
-    let compiled = design::compile(&d, &row, &w).unwrap();
-    assert!(protocol::WORKER_SCHEMA_VERSION >= 59);
-    assert!(protocol::CANDIDATE_SCHEMA_VERSION >= 14);
-    assert!(workspace::PLAN_SCHEMA_VERSION >= 12);
-    assert_eq!(
-        postcard::to_allocvec(compiled.plan.steps.last().unwrap()).unwrap()[0],
-        18
-    );
-    let selected = Candidate::new(compiled.plan.clone());
-    let encoded = transfer::save_candidate(&selected).unwrap();
-    transfer::load_candidate(&encoded).unwrap();
-    assert!(transfer::load_candidate(&wire(b"CGP\0", 11, &selected)).is_err());
-    let old = Candidate::new(index_only(&compiled.plan));
-    transfer::load_candidate(&wire(b"CGP\0", 11, &old)).unwrap();
-    for version in [57, 58] {
-        let request = Request {
-            id: 18,
-            revision: compiled.resolved.target.revision(),
-            job: AnalysisJob::Verify {
-                plan: compiled.plan.clone(),
-                target: compiled.resolved.target.clone(),
-            },
-        };
-        assert!(protocol::process_request(&wire(b"CGQ\0", version, &request)).is_err());
-    }
-    let request = Request {
-        id: 6,
-        revision: compiled.resolved.target.revision(),
-        job: AnalysisJob::Verify {
-            plan: old.plan,
-            target: compiled.resolved.target,
-        },
-    };
-    let response = protocol::decode_response(
-        &protocol::process_request(&wire(b"CGQ\0", 58, &request)).unwrap(),
-    )
-    .unwrap();
-    assert!(matches!(response.result, AnalysisResult::Verification(_)));
-}
+
 #[test]
 fn pool_method_cannot_hide_in_per_construct_overrides_under_worker57_or58() {
     let (w, mut d, mut row) = fixture();
@@ -290,79 +188,8 @@ fn pool_method_cannot_hide_in_per_construct_overrides_under_worker57_or58() {
         result.result,
         AnalysisResult::CombinatorialBatchStarted(_)
     ));
-    let mut ordinary = request.clone();
-    let AnalysisJob::BeginCombinatorialBatch { workspace, matrix } = &mut ordinary.job else {
-        unreachable!()
-    };
-    let batch::RowRequest::Ready(row) = &mut matrix.rows[0] else {
-        unreachable!()
-    };
-    row.overrides.as_mut().unwrap().method = None;
-    ordinary.revision = batch::begin_revision(workspace, matrix).unwrap();
-    for version in [57, 58] {
-        let reply = AnalysisSession::default()
-            .process_request(&wire(b"CGQ\0", version, &ordinary))
-            .unwrap();
-        protocol::decode_response(&reply).unwrap();
-    }
 }
-#[test]
-fn current_and_historical_reports_keep_their_actual_layout_and_version_gates() {
-    let (w, d, row) = fixture();
-    let compiled = design::compile(&d, &row, &w).unwrap();
-    let report = verification::verify(&compiled.plan, &compiled.resolved.target);
-    assert_eq!(report.engine_version, verification::ENGINE_VERSION);
-    let old_report = (
-        report.plan_revision.clone(),
-        report.target_revision.clone(),
-        "0.1.0/science-15".to_owned(),
-        report.status.clone(),
-        report.findings.clone(),
-        report.assumptions.clone(),
-        report.products.clone(),
-        report.exhaustive_alternative_search,
-        report.step_reports.clone(),
-        report.annotation_reports.clone(),
-    );
-    let historical = (15u32, compiled.resolved.target.revision(), 4u32, old_report);
-    protocol::decode_response(&wire(b"CGR\0", 59, &historical)).unwrap();
-    assert!(protocol::decode_response(&wire(b"CGR\0", 58, &historical)).is_err());
-    assert_eq!(report.status, Status::ConsistentUnderAssumptions);
-    let response = Response {
-        id: 15,
-        revision: compiled.resolved.target.revision(),
-        result: AnalysisResult::Verification(report),
-    };
-    protocol::decode_response(&wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &response)).unwrap();
-    assert!(protocol::decode_response(&wire(b"CGR\0", 66, &response)).is_err());
-}
-#[test]
-fn workspace_and_rekeyed_runrecord_cannot_downcast_selected_semantics_to_plan9() {
-    let (mut w, d, row) = fixture();
-    let compiled = design::compile(&d, &row, &w).unwrap();
-    w.candidates.push(Candidate::new(compiled.plan.clone()));
-    let archive = workspace::save_workspace(&w).unwrap();
-    workspace::load_workspace(&archive).unwrap();
-    assert!(workspace::load_workspace(&plan_schema(&archive, 9)).is_err());
-    w.candidates[0] = Candidate::new(index_only(&compiled.plan));
-    let old = workspace::save_workspace(&w).unwrap();
-    workspace::load_workspace(&plan_schema(&old, 9)).unwrap();
-    let committed = released();
-    let manifest = release::load(&committed.workspace, &committed.manifest_hash).unwrap();
-    let mut record =
-        run_lineage::load_run(&committed.workspace, &manifest.rows[0].output.run.run_id).unwrap();
-    assert_eq!(record.plan_schema, workspace::PLAN_SCHEMA_VERSION);
-    record.plan_schema = 9;
-    record.assessment.engine_version = "0.1.0/science-14".into();
-    rekey(&mut record);
-    assert!(
-        run_lineage::load_run_record(&serde_json::to_vec(&record).unwrap()).is_err(),
-        "valid rekey does not hide selected operation"
-    );
-    record.plan = index_only(&record.plan);
-    rekey(&mut record);
-    run_lineage::load_run_record(&serde_json::to_vec(&record).unwrap()).unwrap();
-}
+
 #[test]
 fn historical_batch_selected_pool_releases_and_exports_protocols_through_binary_worker() {
     let committed = released();

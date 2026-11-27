@@ -86,7 +86,14 @@ fn unique_actual_pcr_digest_roundtrips_new_tags_and_rejects_downgrade_and_stale_
     assert!(protocol::process_request(&protocol::encode_request(&stale).unwrap()).is_err());
     let mut stale_reply: Response = response;
     stale_reply.revision = "0".repeat(64);
-    assert!(protocol::decode_response(&wire(b"CGR\0", 72, &stale_reply)).is_err());
+    assert!(
+        protocol::decode_response(&wire(
+            b"CGR\0",
+            protocol::WORKER_SCHEMA_VERSION,
+            &stale_reply
+        ))
+        .is_err()
+    );
 }
 #[test]
 fn ambiguous_actual_pcr_geometry_has_no_digest_products() {

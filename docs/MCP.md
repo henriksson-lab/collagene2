@@ -846,9 +846,35 @@ remain original-input interfaces. [Contract and limits](TOPO_UPSTREAM_PCR.md).
 
 ## Source-bound TA/GC assembly
 
-`propose_tailing_assembly` accepts `{inputs, target, recipe}` with exact immutable source document references and an independent target. Its recipe is `{name, fragments, circular, allow_nicked}`; each fragment is `{source: FragmentSpec, base: "A" | "C" | "G" | "T", treatment}`. Preparations use the same original-source PCR, digest, optional end repair or explicitly declared intact duplex contracts as ordered ligation. `treatment` is `null`, `"Phosphorylate"` or `"Dephosphorylate"` and occurs after tailing. Each ideal tailing operation adds the declared nucleotide to both actual 3′ ends of a freshly established blunt duplex. Primer extensions and added tail nucleotides remain distinct.
+`propose_tailing_assembly` accepts `{inputs, target, recipe}` with exact immutable
+sources and an independent target. The recipe is `{name, profile, fragments,
+circular, allow_nicked}`, where `profile` is `"Ta"` or `"Gc"`. Each fragment is
+`{source: FragmentSpec, action, treatment}`. The action is `"KeepExisting"` or,
+for example, `{"AddTail":{"base":"A"}}`. TA permits newly added A/T and GC
+permits newly added G/C. KeepExisting emits no tail step and preserves the actual
+prepared material, including selected saved origins. It does not infer end
+chemistry from a stock name or imported annotation.
 
-The tool freshly compiles and verifies the complete recipe against the supplied target. It atomically retains a candidate and bounded complete `tailing-assembly-recipe.json` evidence, including unsuccessful designs, physical junctions, explicit retained nicks and assumptions. The response gives `plan_revision`, `context_revision`, preparation completeness, compact verifier findings and an artifact ID. Saving a candidate returns `verified: false`; use `verify_plan`, `export_protocol` and `export_protocol_pdf` for fresh checks and handoff. Repeated identical requests reuse immutable outputs. No source documents change, and factory chemistry, polymerase activity, host repair and proprietary kit performance are not inferred.
+Preparations use the shared original-source PCR, digest, end repair and native
+saved-material contracts. Optional `treatment` is `null`, `"Phosphorylate"` or
+`"Dephosphorylate"`, applied after the selected keep/add action. Adding a tail
+requires an established blunt duplex with accessible actual 3′ ends and adds one
+declared nucleotide to both strands. Primer extensions remain separate.
+
+Fresh compilation and verification produce an immutable candidate and bounded
+complete `tailing-assembly-recipe.json`, including unsuccessful designs, physical
+junctions, alternative products and retained nicks. The response exposes
+`profile_status` and `profile_findings` separately from `verification.status`.
+Successful generic blunt ligation can have an incompatible TA/GC profile;
+matching the profile cannot supply a missing phosphate or establish isolation.
+
+The response also includes plan/context revisions, preparation completeness and
+an artifact ID. Candidates remain `verified: false`; `verify_plan`,
+`export_protocol` and `export_protocol_pdf` provide fresh checks and protocol
+handoff. Identical requests reuse immutable outputs. Source documents remain
+unchanged. Polymerase activity, factory-vector chemistry, host repair, kit
+performance and probabilities are not inferred. See the
+[per-row recipe contract](TAILING_RECIPE_ACTIONS.md).
 
 The existing overlap, ligation and tailing recipe tools also accept `Preparation::AnnealedOligos {bottom_input_id, options, candidate_index}`. Supply both original ordered oligos in `inputs`; a fragment's `input_id` is the top original and `bottom_input_id` identifies its separately revision-bound bottom original. Consequently three original inputs can yield two prepared ligation fragments, such as one pinned backbone digest plus one explicitly selected oligo pair. `options` declares pairing/search bounds and each oligo's terminal chemistry; annealing supplies no phosphorylation or covalent bond. Candidate availability and completeness are reconstructed freshly, and the independently supplied target never chooses a placement. The paired preparation itself adds no MCP tool or plan operation.
 

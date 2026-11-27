@@ -180,7 +180,7 @@ mod tests {
         draft.sync_rows();
         assembly_draft_model::set_digest_fragment(&mut draft, chosen).unwrap();
         assert_eq!(draft.name, "My intended construct");
-        assert_eq!(draft.version, 5);
+        assert_eq!(draft.version, crate::assembly_draft_model::CURRENT_VERSION);
         assert!(draft.methods.rows[0].run_origin == pin);
         assert_eq!(draft.slots[0].captured.as_ref().unwrap().source, parent);
         assert_eq!(
@@ -198,11 +198,9 @@ mod tests {
             "AAAGAATTCTTT"
         );
         assert!(draft.methods.rows[0].preparation == OverlapPreparation::CatalogDigest);
-        let restored = assembly_draft_model::decode_version(
-            &assembly_draft_model::encode_raw(&draft).unwrap(),
-            5,
-        )
-        .unwrap();
+        let restored =
+            assembly_draft_model::decode(&assembly_draft_model::encode_raw(&draft).unwrap())
+                .unwrap();
         assert!(restored.methods.rows[0].run_origin == pin);
         let (_, rows) = crate::cloning_preparations::prepared_rows(&restored.methods, 1).unwrap();
         assert!(matches!(

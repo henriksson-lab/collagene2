@@ -440,24 +440,17 @@ impl Preview {
             return Err(bad("verification plan/target binding mismatch"));
         }
         let (fragments, circular, _allow_nicked) = match self.compiled.plan.steps.last() {
-            Some(Operation::LigateWithOutcomes {
+            Some(Operation::Ligate {
                 fragments,
                 circular,
                 allow_nicked,
                 options,
-            }) if rows <= crate::ligation_outcomes::MAX_FRAGMENTS => {
+            }) => {
                 if preparation::hash(options)?
                     != preparation::hash(&crate::ligation_outcomes::Options::default())?
                 {
                     return Err(bad("compiled outcome bounds changed"));
                 }
-                (fragments, circular, allow_nicked)
-            }
-            Some(Operation::Ligate {
-                fragments,
-                circular,
-                allow_nicked,
-            }) if rows > crate::ligation_outcomes::MAX_FRAGMENTS => {
                 (fragments, circular, allow_nicked)
             }
             _ => return Err(bad("preview final ligation/outcomes profile changed")),

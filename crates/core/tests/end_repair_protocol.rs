@@ -115,20 +115,8 @@ fn appended_tags_and_new_results_cannot_claim_old_worker_versions() {
     }
 }
 #[test]
-fn legacy_version_seven_jobs_still_work_and_stale_new_job_bindings_are_rejected() {
+fn stale_repair_job_bindings_are_rejected() {
     let m = source();
-    let request = Request {
-        id: 41,
-        revision: m.revision(),
-        job: AnalysisJob::Search {
-            molecule: m.clone(),
-            query: "GAA".into(),
-        },
-    };
-    assert!(matches!(
-        response(&envelope(b"CGQ\0", 7, &request)).result,
-        AnalysisResult::Search(_)
-    ));
     let request = Request {
         id: 9,
         revision: "0".repeat(64),
@@ -210,7 +198,7 @@ fn oversized_new_normal_jobs_are_rejected_before_scientific_deserialization() {
     let mut payload = postcard::to_allocvec(&(1u32, "revision", 27u32)).unwrap();
     payload.resize(32 * 1024 * 1024 + 1, 0);
     let mut bytes = b"CGQ\0".to_vec();
-    bytes.extend(8u16.to_le_bytes());
+    bytes.extend(collagene_core::protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
     bytes.extend((payload.len() as u32).to_le_bytes());
     bytes.extend(blake3::hash(&payload).as_bytes());
     bytes.extend(payload);
@@ -236,7 +224,14 @@ fn malformed_repair_result_geometry_never_becomes_valid_preview_state() {
         panic!("repair")
     };
     preview.repair.duplex.bottom_start = 10_000;
-    assert!(protocol::decode_response(&envelope(b"CGR\0", 8, &output)).is_err());
+    assert!(
+        protocol::decode_response(&envelope(
+            b"CGR\0",
+            protocol::WORKER_SCHEMA_VERSION,
+            &output
+        ))
+        .is_err()
+    );
 }
 
 #[test]
@@ -295,7 +290,7 @@ fn annealed_document_replays_report_in_worker_and_never_imports_physical_authori
     assert!(
         protocol::decode_response(&envelope(
             b"CGR\0",
-            8,
+            protocol::WORKER_SCHEMA_VERSION,
             &Response {
                 id: 12,
                 revision: top.revision(),

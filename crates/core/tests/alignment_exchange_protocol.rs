@@ -24,7 +24,7 @@ fn document() -> alignment::AlignmentDocument {
 }
 
 #[test]
-fn new_profiles_require_worker87_but_legacy_alignment_frames_keep_their_floor() {
+fn alignment_profiles_roundtrip_and_reject_unsupported_worker_versions() {
     let bytes = request(
         AnalysisJob::ImportAlignment {
             bytes: NEXUS.to_vec(),
@@ -44,21 +44,6 @@ fn new_profiles_require_worker87_but_legacy_alignment_frames_keep_their_floor() 
     };
     assert_eq!(document.rows[0].identifier, "alpha one");
     assert_eq!(document.rows[0].aligned, "AC-GT-");
-    let old = b">alpha\nAC-GT-\n>beta\nA-TGT-\n";
-    let legacy = request(
-        AnalysisJob::ImportAlignment {
-            bytes: old.to_vec(),
-            format: AlignmentFormat::AlignedFasta,
-            alphabet: Alphabet::Dna,
-            name: "legacy".into(),
-        },
-        blake3::hash(old).to_hex().to_string(),
-    );
-    let response = protocol::process_request(&version(legacy, 10)).unwrap();
-    assert!(matches!(
-        protocol::decode_response(&response).unwrap().result,
-        AnalysisResult::AlignmentDocument(_)
-    ));
 }
 
 #[test]

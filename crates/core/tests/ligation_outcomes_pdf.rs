@@ -222,7 +222,7 @@ fn fixture(options: Options, nicked: bool) -> (DesignPlan, Molecule) {
                 template: Source::Step(2),
                 treatment,
             },
-            Operation::LigateWithOutcomes {
+            Operation::Ligate {
                 fragments: vec![
                     OrientedSource {
                         source: Source::Step(1),

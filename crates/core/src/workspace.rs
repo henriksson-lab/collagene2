@@ -30,7 +30,7 @@ const MAX_ENTRIES: usize = 50_000;
 const MAX_STACK: usize = 1000;
 const FORMAT: &str = "collagene-workspace";
 const VERSION: u32 = 1;
-pub const PLAN_SCHEMA_VERSION: u32 = 21;
+pub const PLAN_SCHEMA_VERSION: u32 = 22;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -39,11 +39,8 @@ pub struct WorkspaceDocument {
     pub head: String,
     pub undo: Vec<String>,
     pub redo: Vec<String>,
-    #[serde(default)]
     pub head_event: Option<String>,
-    #[serde(default)]
     pub undo_events: Vec<String>,
-    #[serde(default)]
     pub redo_events: Vec<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -123,9 +120,7 @@ pub struct Workspace {
     pub revisions: BTreeMap<String, Molecule>,
     pub history: Vec<RevisionEvent>,
     pub candidates: Vec<Candidate>,
-    #[serde(default)]
     pub active_candidate: Option<String>,
-    #[serde(default)]
     pub attachments: BTreeMap<String, WorkspaceAttachment>,
 }
 impl Workspace {
@@ -483,7 +478,6 @@ struct Manifest {
     history: Vec<RevisionEvent>,
     revisions: BTreeMap<String, String>,
     candidates: Vec<String>,
-    #[serde(default)]
     active_candidate: Option<String>,
     unresolved_candidate_targets: Vec<String>,
     attachments: BTreeMap<String, AttachmentRecord>,
@@ -1051,31 +1045,7 @@ pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
     }
     if header.get("version").and_then(|v| v.as_u64()) != Some(VERSION as u64)
         || header.get("molecule_schema").and_then(|v| v.as_u64()) != Some(1)
-        || !matches!(
-            header.get("plan_schema").and_then(|v| v.as_u64()),
-            Some(
-                1 | 2
-                    | 3
-                    | 4
-                    | 5
-                    | 6
-                    | 7
-                    | 8
-                    | 9
-                    | 10
-                    | 11
-                    | 12
-                    | 13
-                    | 14
-                    | 15
-                    | 16
-                    | 17
-                    | 18
-                    | 19
-                    | 20
-                    | 21
-            )
-        )
+        || header.get("plan_schema").and_then(|v| v.as_u64()) != Some(PLAN_SCHEMA_VERSION as u64)
     {
         return Err(Error::Unsupported(
             "workspace archive/model schema version".into(),
@@ -1236,195 +1206,6 @@ pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
             });
         }
         let steps: Vec<Operation> = json_exact(get(&blobs, &record.steps)?)?;
-        if manifest.plan_schema < 21
-            && steps
-                .iter()
-                .any(|step| matches!(step, Operation::LigateWithOutcomes { .. }))
-        {
-            return Err(Error::Unsupported(
-                "Ligation outcomes require plan schema21".into(),
-            ));
-        }
-        if manifest.plan_schema < 20
-            && steps
-                .iter()
-                .any(|step| matches!(step, Operation::ReconstructMaterial { .. }))
-        {
-            return Err(Error::Unsupported(
-                "Material derivation reconstruction requires plan schema20".into(),
-            ));
-        }
-        if manifest.plan_schema < 19
-            && steps
-                .iter()
-                .any(|step| matches!(step, Operation::ReconstructDigestFragment { .. }))
-        {
-            return Err(Error::Unsupported(
-                "Saved digest reconstruction requires plan schema19".into(),
-            ));
-        }
-        if manifest.plan_schema < 18
-            && steps.iter().any(|step| {
-                matches!(
-                    step,
-                    Operation::ResectThreePrime { .. } | Operation::HomologyAnnealing { .. }
-                )
-            })
-        {
-            return Err(Error::Unsupported(
-                "3′ resection/annealing requires plan schema18".into(),
-            ));
-        }
-        if manifest.plan_schema < 17
-            && steps
-                .iter()
-                .any(|step| matches!(step, Operation::HomologyAssembly { .. }))
-        {
-            return Err(Error::Unsupported(
-                "Physical homology assembly requires plan schema17".into(),
-            ));
-        }
-        if manifest.plan_schema < 16
-            && steps
-                .iter()
-                .any(|s| matches!(s, Operation::OverlapExtension { .. }))
-        {
-            return Err(Error::Unsupported(
-                "Physical overlap extension requires plan schema16".into(),
-            ));
-        }
-        if manifest.plan_schema < 15
-            && steps
-                .iter()
-                .any(|s| matches!(s, Operation::ReconstructRunProduct { .. }))
-        {
-            return Err(Error::Unsupported(
-                "Reconstructing a retained run product requires plan schema15".into(),
-            ));
-        }
-        if manifest.plan_schema < 14
-            && steps
-                .iter()
-                .any(|s| matches!(s, Operation::MultiSiteRecombineReference { .. }))
-        {
-            return Err(Error::Unsupported(
-                "MultiSite reference exchange requires plan schema14".into(),
-            ));
-        }
-        if manifest.plan_schema < 13 && steps.iter().any(crate::verification::topo_uses_step_source)
-        {
-            return Err(Error::Unsupported(
-                "Upstream TOPO PCR synthesis requires plan schema13".into(),
-            ));
-        }
-        if manifest.plan_schema < 12
-            && steps
-                .iter()
-                .any(|s| matches!(s, Operation::TopoActions { .. }))
-        {
-            return Err(Error::Unsupported(
-                "Accounted chemical actions require plan schema12".into(),
-            ));
-        }
-        if manifest.plan_schema < 11
-            && steps
-                .iter()
-                .any(|step| matches!(step, Operation::ProcessedTopo { .. }))
-        {
-            return Err(Error::Unsupported(
-                "Processed TOPO material requires workspace plan schema 11".into(),
-            ));
-        }
-        if manifest.plan_schema < 10
-            && steps
-                .iter()
-                .any(|step| matches!(step, Operation::SelectedGoldenGate { .. }))
-        {
-            return Err(Error::Unsupported(
-                "Key-bound Golden Gate selection requires plan schema 10".into(),
-            ));
-        }
-        if manifest.plan_schema < 9
-            && steps
-                .iter()
-                .any(|step| matches!(step, Operation::CatalogDigest { .. }))
-        {
-            return Err(Error::Unsupported(
-                "Catalog-pinned digest requires workspace plan schema 9".into(),
-            ));
-        }
-        if manifest.plan_schema < 8
-            && steps
-                .iter()
-                .any(|step| matches!(step, Operation::DeclareSourceTermini { .. }))
-        {
-            return Err(Error::Unsupported(
-                "Declared source termini require workspace plan schema 8".into(),
-            ));
-        }
-        if manifest.plan_schema < 7
-            && steps
-                .iter()
-                .any(|step| matches!(step, Operation::CheckedTopo { .. }))
-        {
-            return Err(Error::Unsupported(
-                "Explicit TOPO target acceptance requires workspace plan schema 7".into(),
-            ));
-        }
-        if manifest.plan_schema < 6
-            && steps
-                .iter()
-                .any(|step| matches!(step, Operation::Topo { .. }))
-        {
-            return Err(Error::Unsupported(
-                "TOPO reconstruction requires workspace plan schema 6".into(),
-            ));
-        }
-        if manifest.plan_schema < 5
-            && steps
-                .iter()
-                .any(|step| matches!(step, Operation::RecombineReference { .. }))
-        {
-            return Err(Error::Unsupported(
-                "reference recombination requires workspace plan schema 5".into(),
-            ));
-        }
-        if manifest.plan_schema < 4
-            && steps.iter().any(|step| {
-                matches!(
-                    step,
-                    Operation::DeclareSourceModifications { .. } | Operation::CheckedDigest { .. }
-                )
-            })
-        {
-            return Err(Error::Unsupported(
-                "tracked modifications and checked digest require workspace plan schema 4".into(),
-            ));
-        }
-        if manifest.plan_schema < 3
-            && steps.iter().any(|step| {
-                matches!(
-                    step,
-                    Operation::Tail3Prime { .. } | Operation::ProfiledOverlap { .. }
-                )
-            })
-        {
-            return Err(Error::Unsupported(
-                "tailing and profiled-overlap operations require workspace plan schema3".into(),
-            ));
-        }
-        if manifest.plan_schema < 2
-            && steps.iter().any(|step| {
-                matches!(
-                    step,
-                    Operation::RepairEnds { .. } | Operation::AnnealOligos { .. }
-                )
-            })
-        {
-            return Err(Error::Unsupported(
-                "end-repair and oligo-annealing operations require workspace plan schema 2".into(),
-            ));
-        }
         let candidate = Candidate {
             plan_revision: record.plan_revision,
             plan: DesignPlan {
@@ -1448,9 +1229,9 @@ pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
         charge(&mut expanded, bytes.len(), MAX_EXPANDED_BYTES)?;
         if record.kind == crate::run_lineage::WORKSPACE_ATTACHMENT_KIND {
             let run = crate::run_lineage::load_run_record(bytes)?;
-            if manifest.plan_schema < run.plan_schema {
+            if manifest.plan_schema != run.plan_schema {
                 return Err(Error::Unsupported(
-                    "retained cloning run requires a newer workspace plan schema".into(),
+                    "retained cloning run has an unsupported current plan schema".into(),
                 ));
             }
         }

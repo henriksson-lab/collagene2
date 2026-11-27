@@ -88,25 +88,12 @@ fn presentation(kind: &str) -> bool {
             | "restriction-enzyme-sets-v1"
             | "named-digest-setup-v1"
             | "assembly-library-history-v1"
-            // Exact versions read by App's draft restoration/autosave. Do not
-            // prefix-match future schemas that might acquire different roles.
-            | "assembly-draft-v1"
-            | "assembly-draft-v2"
-            | "assembly-draft-v3"
-            | "assembly-draft-v4"
-            | "assembly-draft-v5"
-            | "assembly-draft-v6"
-            | "assembly-draft-v7"
-            | "assembly-draft-v8"
-            | "assembly-draft-v9"
-            | "assembly-draft-v10"
-            | "assembly-draft-v11"
-            | "assembly-draft-v12"
-            | "assembly-draft-v13"
+            // Only current internal drafts are presentation state. Unknown or
+            // superseded schemas are refused rather than guessed or migrated.
+            | "assembly-draft-v14"
             // Named working designs, unfinished primer text and visibility
             // preferences produce no immutable plasmid/run event themselves.
             | "assembly-design-v1"
-            | "primer-pair-draft-v1"
             | "primer-pair-draft-v2"
             | "annotation-display-v1"
             | "lab-library-bindings-v1"

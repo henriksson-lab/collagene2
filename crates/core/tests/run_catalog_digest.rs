@@ -192,6 +192,7 @@ fn saved_circle_keeps_the_cut_overhangs_instead_of_unknown_reference_ends() {
                 }],
                 circular: true,
                 allow_nicked: false,
+                options: Default::default(),
             },
         ],
     );
@@ -320,6 +321,7 @@ fn actual_retained_nicks_withhold_products_but_keep_recognition_scan() {
                 ],
                 circular: true,
                 allow_nicked: true,
+                options: Default::default(),
             },
         ],
     );

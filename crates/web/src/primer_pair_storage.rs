@@ -3,7 +3,6 @@ use crate::primer_pair_model::{PairDraft, anchor_reference, selected_guard};
 use collagene_core::{Molecule, run_lineage::EventBinding};
 use serde::{Deserialize, Serialize};
 
-pub const LEGACY_ATTACHMENT_KIND: &str = "primer-pair-draft-v1";
 pub const ATTACHMENT_KIND: &str = "primer-pair-draft-v2";
 const MAX_BYTES: usize = 64 * 1024;
 
@@ -57,16 +56,14 @@ pub fn decode(
         return Err("Primer pair draft exceeds64KiB.".into());
     }
     let saved: Saved = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
-    if !matches!(saved.version, 1 | 2) {
+    if saved.version != 2 {
         return Err("Unsupported primer pair draft version.".into());
     }
     guard(&saved.draft)?;
     for oligo in [&saved.draft.forward, &saved.draft.reverse] {
         let Some(a) = &oligo.anchor else { continue };
         let source = resolve(&a.source)?;
-        if saved.version == 1 && a.end > source.sequence.len() {
-            return Err("Version 1 primer anchors cannot wrap the circular origin.".into());
-        }
+
         let expected = anchor_reference(&source, &a.source, a.start, a.end, a.reverse)?;
         if a.reference != expected {
             return Err(
@@ -193,7 +190,7 @@ mod tests {
         let mut value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         value["version"] = 3.into();
         assert!(decode(&serde_json::to_vec(&value).unwrap(), resolve).is_err());
-        value["version"] = 1.into();
+        value["version"] = 2.into();
         value["draft"]["forward"]["anchor"]["reference"] = "TTTTT".into();
         assert!(decode(&serde_json::to_vec(&value).unwrap(), resolve).is_err());
         assert!(
@@ -216,29 +213,7 @@ mod tests {
     }
 
     #[test]
-    fn version_one_nonwrapping_data_reads_explicitly_and_writer_upgrades_to_two() {
-        let source =
-            Molecule::dna("legacy circular source", "ACGTAAGC", Topology::Circular).unwrap();
-        let doc = DocumentHistory::new("legacy", source.clone()).unwrap();
-        let mut draft = PairDraft::default();
-        draft.forward = SelectionSeed::capture(&source, &binding(&doc), 1, 6)
-            .unwrap()
-            .oligo("legacy domain", false, "")
-            .unwrap();
-        let mut json: serde_json::Value = serde_json::from_slice(&encode(&draft).unwrap()).unwrap();
-        assert_eq!(json["version"], 2);
-        json["version"] = 1.into();
-        let restored = decode(&serde_json::to_vec(&json).unwrap(), |_| Ok(source.clone())).unwrap();
-        assert_eq!(restored, draft);
-        let upgraded: serde_json::Value =
-            serde_json::from_slice(&encode(&restored).unwrap()).unwrap();
-        assert_eq!(upgraded["version"], 2);
-        assert_eq!(LEGACY_ATTACHMENT_KIND, "primer-pair-draft-v1");
-        assert_eq!(ATTACHMENT_KIND, "primer-pair-draft-v2");
-    }
-
-    #[test]
-    fn wrapped_version_two_anchor_reopens_exact_historical_event_but_v1_rejects_it() {
+    fn wrapped_anchor_reopens_exact_historical_event_and_rejects_unsupported_schema() {
         let source = Molecule::dna("original circle", "ACGTAAGC", Topology::Circular).unwrap();
         let mut doc = DocumentHistory::new("circle", source.clone()).unwrap();
         let exact = binding(&doc);
@@ -270,6 +245,30 @@ mod tests {
                 &serde_json::to_vec(&legacy).unwrap(),
                 |_| Ok(source.clone())
             )
+            .is_err()
+        );
+    }
+    #[test]
+    fn current_pair_requires_explicit_anchor_and_rejects_unknown_fields() {
+        let bytes = encode(&PairDraft::default()).unwrap();
+        let current: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let mut missing = current.clone();
+        missing["draft"]["forward"]
+            .as_object_mut()
+            .unwrap()
+            .remove("anchor");
+        assert!(
+            decode(&serde_json::to_vec(&missing).unwrap(), |_| panic!(
+                "No anchor may resolve"
+            ))
+            .is_err()
+        );
+        let mut unknown = current;
+        unknown["draft"]["obsolete"] = true.into();
+        assert!(
+            decode(&serde_json::to_vec(&unknown).unwrap(), |_| panic!(
+                "No anchor may resolve"
+            ))
             .is_err()
         );
     }

@@ -258,7 +258,7 @@ impl DesktopHost {
             C::CatalogBackup(_) => {
                 return Err(HostError::Invalid("Use the catalog backup service lane."));
             }
-            C::BootstrapRecovery => {
+            C::Bootstrap => {
                 let catalog = self.catalog_status();
                 let library_context = if matches!(catalog, wire::CatalogStatus::Ready { .. }) {
                     self.catalog_context().ok()
@@ -272,34 +272,14 @@ impl DesktopHost {
                 } else {
                     catalog
                 };
-                S::BootstrapRecovery(wire::BootstrapRecovery {
+                S::Bootstrap(wire::Bootstrap {
                     library_context,
                     working: self.working.metadata()?,
                     preferences: self.working.preferences()?,
                     catalog,
                 })
             }
-            C::Bootstrap => {
-                if !self.catalog_available() {
-                    return Err(HostError::Invalid(
-                        "Saved catalog is paused. Use recovery bootstrap to access editor autosaves.",
-                    ));
-                }
-                let c = self.catalog.as_ref().ok_or(HostError::Unavailable)?;
-                let lab = c
-                    .reads
-                    .lab(&c.local_access)
-                    .map_err(|_| HostError::Unavailable)?;
-                S::Bootstrap(wire::Bootstrap {
-                    library_context: base::LabContext {
-                        lab_id: base::LabId::new(lab.id.as_str())
-                            .map_err(|_| HostError::Unavailable)?,
-                        name: base::Text::new(&lab.name).map_err(|_| HostError::Unavailable)?,
-                    },
-                    working: self.working.metadata()?,
-                    preferences: self.working.preferences()?,
-                })
-            }
+
             C::Library(command) => {
                 if !self.catalog_available() {
                     return Err(HostError::Invalid(
@@ -378,7 +358,7 @@ impl DesktopHost {
         let started = matches!(&begin, Ok(control::Begin::Run));
         let outcome = match begin {
             Ok(control::Begin::Cached(reply)) => {
-                if matches!(&request.command, wire::Command::BootstrapRecovery) {
+                if matches!(&request.command, wire::Command::Bootstrap) {
                     // Bootstrap is an observational read. A cached Ready/Pending
                     // receipt must not hide a later accepted/cancelled generation.
                     let result = self.execute(access, &request, &AtomicBool::new(false));
@@ -421,12 +401,8 @@ impl DesktopHost {
         response
             .validate_for(&request)
             .map_err(|_| HostError::Wire)?;
-        let reply = wire::encode_response_for_request(
-            &response,
-            &request,
-            u16::from_le_bytes([bytes[4], bytes[5]]),
-        )
-        .map_err(|_| HostError::Wire)?;
+        let reply =
+            wire::encode_response_for_request(&response, &request).map_err(|_| HostError::Wire)?;
         if started {
             self.control
                 .finish(access, &request.operation_id, state, &reply)?;

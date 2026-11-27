@@ -34,7 +34,7 @@ fn fixture() -> (DesignPlan, Molecule) {
             right: Terminus::CLEAVED,
         })
         .collect::<Vec<_>>();
-    steps.push(Operation::LigateWithOutcomes {
+    steps.push(Operation::Ligate {
         fragments: (0..2)
             .map(|i| OrientedSource {
                 source: Source::Step(i),
@@ -63,9 +63,9 @@ fn tag(value: &impl serde::Serialize) -> u32 {
 }
 
 #[test]
-fn operation29_and_evidence8_keep_intended_and_extractable_alternatives() {
+fn ligation_and_evidence_keep_intended_and_extractable_alternatives() {
     let (plan, target) = fixture();
-    assert_eq!(tag(&plan.steps[2]), 29);
+    assert_eq!(tag(&plan.steps[2]), 4);
     let report = verification::verify(&plan, &target);
     assert_eq!(
         report.status,
@@ -122,7 +122,6 @@ fn new_semantics_cannot_hide_in_old_worker_or_candidate_envelopes() {
     let AnalysisResult::Verification(report) = &mut response.result else {
         panic!("verification")
     };
-    report.engine_version = report.engine_version.replace("/science-26", "/science-25");
     let payload = postcard::to_allocvec(&response).unwrap();
     let mut bytes = b"CGR\0".to_vec();
     bytes.extend(protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
@@ -135,10 +134,13 @@ fn new_semantics_cannot_hide_in_old_worker_or_candidate_envelopes() {
     assert_eq!(&old[6..], &bytes[6..]);
     assert!(protocol::decode_response(&old).is_err());
     let bytes = transfer::save_candidate(&transfer::Candidate::new(plan)).unwrap();
-    assert_eq!(&bytes[4..6], &23u16.to_le_bytes());
+    assert_eq!(
+        &bytes[4..6],
+        &protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
+    );
     let mut old = bytes.clone();
     old[4..6].copy_from_slice(&22u16.to_le_bytes());
     assert_eq!(&old[6..], &bytes[6..]);
     assert!(transfer::load_candidate(&old).is_err());
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 21);
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 22);
 }

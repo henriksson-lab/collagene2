@@ -81,7 +81,7 @@ mod tests {
     fn suggested_oligos_preserve_independent_draft_and_inactive_settings() {
         let (before, after) = transition();
         assert_eq!(validate(&before, &after, &before).unwrap(), 1);
-        assert_eq!(after.version, 8);
+        assert_eq!(after.version, crate::assembly_draft_model::CURRENT_VERSION);
         assert_eq!(after.methods.rows[1].forward_tail, "ACGT");
         assert!(after.slots == before.slots);
         assert!(after.methods.rows[0] == before.methods.rows[0]);
@@ -117,7 +117,7 @@ mod tests {
             after.methods.rows[1].fragment = "3".into();
             after.sync_rows();
             assert_eq!(validate(&before, &after, &before).unwrap(), 1);
-            assert_eq!(after.version, 9);
+            assert_eq!(after.version, crate::assembly_draft_model::CURRENT_VERSION);
             let mut dropped = after.clone();
             dropped.methods.rows[1].preparation = OverlapPreparation::OverlapExtensionPcr;
             assert!(validate(&before, &dropped, &before).is_err());

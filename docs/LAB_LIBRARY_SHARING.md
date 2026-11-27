@@ -82,14 +82,14 @@ records and local remote bookkeeping. The exact App contracts audited are:
 
 | Attachment kinds | Role and source evidence |
 | --- | --- |
-| `assembly-draft-v1` through `assembly-draft-v10`, explicitly enumerated | Editable active assembly fields; `web/src/app.rs` defines/restores these ten versions and its autosave chooses the required kind. `assembly_draft_model.rs::sync_rows` raises the version for newer fields; `Draft::default` remains version 3 and homology fields require version 10. |
+| `assembly-draft-v14` | Current editable assembly declaration; no scientific status or physical authority is restored. |
 | `assembly-design-v1` | `assembly_saved_designs_model.rs` stores named **editable declarations**; no candidate/result authority is restored. Their source pins/capsules belong to unpublished future designs, not dependencies of an existing plasmid event. |
 | `assembly-library-history-v1` | Local draft-edit recovery bytes; not an immutable product producer. |
-| `primer-pair-draft-v1`, `primer-pair-draft-v2` | `primer_pair_storage.rs` explicitly describes unfinished editable text, not successful PCR or saved binding. |
+| `primer-pair-draft-v2` | `primer_pair_storage.rs` explicitly describes unfinished editable text, not successful PCR or saved binding. |
 | `annotation-display-v1` | `annotation_visibility.rs` stores hidden feature indices as display preferences, without sequence edits. |
 | `lab-library-bindings-v1`, `lab-library-branches-v1` | `library_bindings.rs`/`library_documents.rs` store per-remote links and retained local branch bookmarks, outside scientific ancestry. |
 
-No generic draft/version prefix is accepted: for example, `assembly-draft-v11`
+No generic draft/version prefix is accepted: for example, `assembly-draft-v15`
 requires a separate role/schema review. Scientific feature/alignment libraries,
 PCR preview/reference evidence and read evidence are not classified as private UI
 state merely because the App displays them. They retain the unsupported-contract
@@ -133,7 +133,7 @@ load its native archive and freshly reconstruct/reuse it again. Independent lite
 DNA is checked after replay. Unrelated private documents, later source edits,
 candidate proposals and local drafts must be absent, while exact ancestor source
 events remain available. The saved-material fixture uses the actual current App
-`assembly-draft-v10` attachment kind with private working bytes. A separate fixture
+`assembly-draft-v14` attachment kind with private working bytes. A separate fixture
 checks all ten known draft kinds, named designs, primer drafts, visibility and
 remote/branch bookkeeping, including opaque unfinished/recovery bytes, and proves
 that unrelated private DNA does not enter the reopened publication. Future draft

@@ -369,10 +369,18 @@ impl Prepared {
                     treatment: crate::chemistry::EndTreatment::Phosphorylate
                 }
             )
-            || !matches!(&steps[2],Operation::Ligate{fragments,circular:true,allow_nicked:false}
+            || !matches!(&steps[2],Operation::Ligate{fragments,circular:true,allow_nicked:false,..}
                 if fragments.len()==1&&matches!(fragments[0].source,Source::Step(1))&&!fragments[0].reverse)
         {
             return Err(bad("inverse-PCR physical operation chain changed"));
+        }
+        let Operation::Ligate { options, .. } = &steps[2] else {
+            unreachable!("validated above")
+        };
+        if assembly_recipe::hash(options)?
+            != assembly_recipe::hash(&crate::ligation_outcomes::Options::default())?
+        {
+            return Err(bad("inverse-PCR ligation search bounds changed"));
         }
         for primer in [&self.preparation.forward, &self.preparation.reverse] {
             if primer.ordered_sequence().len() > 200 {

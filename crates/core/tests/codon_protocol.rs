@@ -98,9 +98,23 @@ fn design_and_independent_check_are_source_options_and_candidate_bound() {
         revision: "0".repeat(64),
         result: AnalysisResult::CodonDesign(report),
     };
-    assert!(protocol::decode_response(&envelope(b"CGR\0", 13, &response)).is_err());
+    assert!(
+        protocol::decode_response(&envelope(
+            b"CGR\0",
+            protocol::WORKER_SCHEMA_VERSION,
+            &response
+        ))
+        .is_err()
+    );
     response.result = AnalysisResult::CodonCheck(check);
-    assert!(protocol::decode_response(&envelope(b"CGR\0", 13, &response)).is_err());
+    assert!(
+        protocol::decode_response(&envelope(
+            b"CGR\0",
+            protocol::WORKER_SCHEMA_VERSION,
+            &response
+        ))
+        .is_err()
+    );
 }
 #[test]
 fn new_tags_reject_old_versions_before_payload_and_retain_ordinary_limits() {
@@ -147,12 +161,12 @@ fn new_tags_reject_old_versions_before_payload_and_retain_ordinary_limits() {
     for tag in [44u32, 45] {
         let prefix = postcard::to_allocvec(&(1u32, "source", tag)).unwrap();
         let err = protocol::process_request(&raw(b"CGQ\0", 12, &prefix)).unwrap_err();
-        assert!(err.to_string().contains("schema 13"));
+        assert!(matches!(err, collagene_core::Error::Unsupported(_)));
     }
     for tag in [42u32, 43] {
         let prefix = postcard::to_allocvec(&(1u32, "source", tag)).unwrap();
         let err = protocol::decode_response(&raw(b"CGR\0", 12, &prefix)).unwrap_err();
-        assert!(err.to_string().contains("schema 13"));
+        assert!(matches!(err, collagene_core::Error::Unsupported(_)));
     }
     let mut payload = postcard::to_allocvec(&(1u32, "source", 44u32)).unwrap();
     payload.resize(32 * 1024 * 1024 + 1, 0);

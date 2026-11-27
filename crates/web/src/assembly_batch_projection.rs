@@ -820,7 +820,7 @@ mod tests {
         );
         assert_eq!(selection.selection.candidate_index, 3);
         let bytes = crate::assembly_draft_model::encode(&saved).unwrap();
-        let restored = crate::assembly_draft_model::decode_version(&bytes, 3).unwrap();
+        let restored = crate::assembly_draft_model::decode(&bytes).unwrap();
         assert_eq!(project(&restored).unwrap().revision, after.revision);
         // Equal DNA under a different source event is a new declaration. The
         // old explicit pin remains old; projection must never refresh its token.

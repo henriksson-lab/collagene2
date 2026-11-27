@@ -237,7 +237,7 @@ mod tests {
     fn declarations_and_new_slots_keep_original_role_pins_through_reordering() {
         let d = draft(Topology::Linear);
         let mut edited = declare(&d, 0, "3", "T").unwrap();
-        assert_eq!(edited.version, 6);
+        assert_eq!(edited.version, crate::assembly_draft_model::CURRENT_VERSION);
         assert_eq!(edited.substitutions[0].expected, "C");
         assert!(edited.slots == d.slots);
         assert!(edited.methods.rows == d.methods.rows);

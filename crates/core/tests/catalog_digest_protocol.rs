@@ -132,8 +132,12 @@ fn exact_catalog_geometry_source_and_options_are_bound_before_fresh_products() {
         result: R::CatalogRestrictionInspection(r),
     };
     assert!(
-        protocol::decode_response(&raw(b"CGR\0", 21, &postcard::to_allocvec(&forged).unwrap()))
-            .is_err()
+        protocol::decode_response(&raw(
+            b"CGR\0",
+            protocol::WORKER_SCHEMA_VERSION,
+            &postcard::to_allocvec(&forged).unwrap()
+        ))
+        .is_err()
     );
     let forged = Response {
         id: 1001,
@@ -141,8 +145,12 @@ fn exact_catalog_geometry_source_and_options_are_bound_before_fresh_products() {
         result: R::CatalogDigestProduct(p),
     };
     assert!(
-        protocol::decode_response(&raw(b"CGR\0", 21, &postcard::to_allocvec(&forged).unwrap()))
-            .is_err()
+        protocol::decode_response(&raw(
+            b"CGR\0",
+            protocol::WORKER_SCHEMA_VERSION,
+            &postcard::to_allocvec(&forged).unwrap()
+        ))
+        .is_err()
     );
 }
 #[test]
@@ -204,8 +212,12 @@ fn installed_catalog_fragment_has_exact_event_parent_and_native_recipe_pin() {
         result: R::CatalogDigestInstalled(p),
     };
     assert!(
-        protocol::decode_response(&raw(b"CGR\0", 21, &postcard::to_allocvec(&forged).unwrap()))
-            .is_err()
+        protocol::decode_response(&raw(
+            b"CGR\0",
+            protocol::WORKER_SCHEMA_VERSION,
+            &postcard::to_allocvec(&forged).unwrap()
+        ))
+        .is_err()
     );
 }
 #[test]
@@ -223,11 +235,11 @@ fn catalog_tags_require_twenty_one_and_only_installation_extends_workspace_cap()
                 } else {
                     protocol::decode_response(&b).unwrap_err()
                 };
-                assert!(e.to_string().contains("schema 21"), "{e}");
+                assert!(matches!(e, collagene_core::Error::Unsupported(_)), "{e}");
             }
             let mut large = p;
             large.resize(collagene_core::formats::MAX_IMPORT_BYTES + 1, 0);
-            let b = raw(magic, 21, &large);
+            let b = raw(magic, protocol::WORKER_SCHEMA_VERSION, &large);
             let e = if magic == b"CGQ\0" {
                 protocol::process_request(&b).unwrap_err()
             } else {
@@ -243,45 +255,4 @@ fn catalog_tags_require_twenty_one_and_only_installation_extends_workspace_cap()
             }
         }
     }
-}
-#[test]
-fn literal_schema_twenty_inspection_still_reads_without_inventing_a_catalog_pin() {
-    let (_, _, m, o) = fixture();
-    let enzymes = vec![
-        analysis::starter_enzymes()
-            .into_iter()
-            .find(|e| e.name == "EcoRI")
-            .unwrap(),
-    ];
-    let revision =
-        collagene_core::restriction_inspection::batch_revision("old", &m, &enzymes, &o).unwrap();
-    let r = Request {
-        id: 1003,
-        revision,
-        job: J::InspectRestriction {
-            source_role: "old".into(),
-            molecule: m,
-            enzymes,
-            options: o,
-        },
-    };
-    let b = raw(b"CGQ\0", 20, &postcard::to_allocvec(&r).unwrap());
-    let reply = protocol::decode_response(&protocol::process_request(&b).unwrap()).unwrap();
-    let R::RestrictionInspection(report) = reply.result else {
-        panic!()
-    };
-    assert!(report.scan_complete);
-    let response = Response {
-        id: 1003,
-        revision: reply.revision,
-        result: R::RestrictionInspection(report),
-    };
-    assert!(
-        protocol::decode_response(&raw(
-            b"CGR\0",
-            20,
-            &postcard::to_allocvec(&response).unwrap()
-        ))
-        .is_ok()
-    );
 }

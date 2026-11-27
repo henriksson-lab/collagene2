@@ -336,32 +336,22 @@ fn later_pcr_run_closes_nested_saved_digest_recipe_and_replays_after_publication
 #[test]
 fn newest_editable_drafts_are_presentation_only_not_publication_dependencies() {
     let (mut w, product, _, _, _) = fixture();
-    let mut hashes = vec![];
-    for version in [11, 12] {
-        let bytes =
-            format!("{{\"version\":{version},\"private_unfinished_text\":\"DO NOT PUBLISH\"}}")
-                .into_bytes();
-        let hash = blake3::hash(&bytes).to_hex().to_string();
-        w.attachments.insert(
-            hash.clone(),
-            WorkspaceAttachment {
-                kind: format!("assembly-draft-v{version}"),
-                name: "private draft".into(),
-                media_type: "application/json".into(),
-                bytes,
-            },
-        );
-        hashes.push(hash);
-    }
+    let bytes = br#"{"version":14,"private_unfinished_text":"DO NOT PUBLISH"}"#.to_vec();
+    let hash = blake3::hash(&bytes).to_hex().to_string();
+    w.attachments.insert(
+        hash.clone(),
+        WorkspaceAttachment {
+            kind: "assembly-draft-v14".into(),
+            name: "private draft".into(),
+            media_type: "application/json".into(),
+            bytes,
+        },
+    );
     for projected in [
         sharing::project_document_closure(&w, &pin(&product)).unwrap(),
         sharing::project_private_document_closure(&w, &pin(&product)).unwrap(),
     ] {
-        assert!(
-            hashes
-                .iter()
-                .all(|hash| !projected.inventory.attachments.contains(hash)
-                    && !projected.workspace.attachments.contains_key(hash))
-        );
+        assert!(!projected.inventory.attachments.contains(&hash));
+        assert!(!projected.workspace.attachments.contains_key(&hash));
     }
 }

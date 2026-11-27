@@ -151,7 +151,13 @@ fn validate_plan(plan: &DesignPlan) -> Result<(), Error> {
             ));
         }
         let refs = sources(op);
-        if refs.len() > 128 {
+        if refs.len()
+            > if matches!(op, Operation::Ligate { .. }) {
+                1000
+            } else {
+                128
+            }
+        {
             return Err(Error::TooLarge);
         }
         for s in refs {
@@ -188,200 +194,13 @@ fn validate_texts(values: &[String], limit: usize) -> Result<(), Error> {
 }
 fn validate_record(r: &RunRecord) -> Result<(), Error> {
     if r.schema_version != 1
-        || !matches!(
-            r.plan_schema,
-            3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21
-        )
+        || r.plan_schema != crate::workspace::PLAN_SCHEMA_VERSION
         || !digest(&r.run_id)
         || r.assessment.engine_version.is_empty()
         || r.assessment.engine_version.len() > 128
         || r.assessment.status == Status::Invalid
     {
         return Err(bad("invalid schema or assessment"));
-    }
-    if r.plan_schema < 21
-        && (r.assessment.engine_version.ends_with("/science-26")
-            || r.plan
-                .steps
-                .iter()
-                .any(|step| matches!(step, Operation::LigateWithOutcomes { .. })))
-    {
-        return Err(bad("Ligation outcomes require plan schema21"));
-    }
-    if r.plan_schema < 20
-        && (r.assessment.engine_version.ends_with("/science-25")
-            || r.plan
-                .steps
-                .iter()
-                .any(|step| matches!(step, Operation::ReconstructMaterial { .. })))
-    {
-        return Err(bad(
-            "Material derivation reconstruction requires plan schema20",
-        ));
-    }
-    if r.plan_schema < 19
-        && (r.assessment.engine_version.ends_with("/science-24")
-            || r.plan
-                .steps
-                .iter()
-                .any(|step| matches!(step, Operation::ReconstructDigestFragment { .. })))
-    {
-        return Err(bad("Saved digest reconstruction requires plan schema19"));
-    }
-    if r.plan_schema < 18
-        && (r.assessment.engine_version.ends_with("/science-23")
-            || r.plan.steps.iter().any(|step| {
-                matches!(
-                    step,
-                    Operation::ResectThreePrime { .. } | Operation::HomologyAnnealing { .. }
-                )
-            }))
-    {
-        return Err(bad("3′ resection/annealing requires plan schema18"));
-    }
-    if r.plan_schema < 17
-        && r.plan
-            .steps
-            .iter()
-            .any(|step| matches!(step, Operation::HomologyAssembly { .. }))
-    {
-        return Err(bad("Physical homology assembly requires plan schema17"));
-    }
-    if r.plan_schema < 16
-        && (r.assessment.engine_version.ends_with("/science-22")
-            || r.plan
-                .steps
-                .iter()
-                .any(|s| matches!(s, Operation::OverlapExtension { .. })))
-    {
-        return Err(bad("Reciprocal overlap extension requires plan schema16"));
-    }
-    if r.plan_schema < 15
-        && (r.assessment.engine_version.ends_with("/science-20")
-            || r.assessment.engine_version.ends_with("/science-21")
-            || r.plan
-                .steps
-                .iter()
-                .any(|s| matches!(s, Operation::ReconstructRunProduct { .. })))
-    {
-        return Err(bad(
-            "Reconstructing a retained run product requires plan schema15",
-        ));
-    }
-    if r.plan_schema < 14
-        && (r.assessment.engine_version.ends_with("/science-19")
-            || r.plan
-                .steps
-                .iter()
-                .any(|step| matches!(step, Operation::MultiSiteRecombineReference { .. })))
-    {
-        return Err(bad("Multi-site reference exchange requires plan schema14"));
-    }
-    if r.plan_schema < 13
-        && (r.assessment.engine_version.ends_with("/science-18")
-            || r.plan.steps.iter().any(verification::topo_uses_step_source))
-    {
-        return Err(bad("Upstream TOPO PCR synthesis requires plan schema13"));
-    }
-    if r.plan_schema < 12
-        && (r.assessment.engine_version.ends_with("/science-17")
-            || r.plan
-                .steps
-                .iter()
-                .any(|s| matches!(s, Operation::TopoActions { .. })))
-    {
-        return Err(bad("Accounted chemical actions require plan schema12"));
-    }
-    if r.plan_schema < 11
-        && (r.assessment.engine_version.ends_with("/science-16")
-            || r.plan
-                .steps
-                .iter()
-                .any(|op| matches!(op, Operation::ProcessedTopo { .. })))
-    {
-        return Err(bad(
-            "Processed TOPO material requires workspace plan schema 11",
-        ));
-    }
-    if r.plan_schema < 10
-        && (r.assessment.engine_version.ends_with("/science-15")
-            || r.plan
-                .steps
-                .iter()
-                .any(|op| matches!(op, Operation::SelectedGoldenGate { .. })))
-    {
-        return Err(bad(
-            "Key-bound Golden Gate requires workspace plan schema 10",
-        ));
-    }
-    if r.plan_schema < 9
-        && (r.assessment.engine_version.ends_with("/science-14")
-            || r.plan
-                .steps
-                .iter()
-                .any(|op| matches!(op, Operation::CatalogDigest { .. })))
-    {
-        return Err(bad(
-            "Catalog-pinned digest requires workspace plan schema 9",
-        ));
-    }
-    if r.plan_schema < 8
-        && (r.assessment.engine_version.ends_with("/science-13")
-            || r.plan
-                .steps
-                .iter()
-                .any(|op| matches!(op, Operation::DeclareSourceTermini { .. })))
-    {
-        return Err(bad(
-            "Declared source termini require workspace plan schema 8",
-        ));
-    }
-    if r.plan_schema < 7
-        && (r.assessment.engine_version.ends_with("/science-12")
-            || r.plan
-                .steps
-                .iter()
-                .any(|op| matches!(op, Operation::CheckedTopo { .. })))
-    {
-        return Err(bad(
-            "Explicit TOPO target acceptance requires workspace plan schema 7",
-        ));
-    }
-    if r.plan_schema < 6
-        && ((r.assessment.engine_version.ends_with("/science-10")
-            || r.assessment.engine_version.ends_with("/science-11"))
-            || r.plan
-                .steps
-                .iter()
-                .any(|op| matches!(op, Operation::Topo { .. })))
-    {
-        return Err(bad(
-            "TOPO-aware reconstruction requires workspace plan schema 6",
-        ));
-    }
-    if r.plan_schema < 5
-        && (r.assessment.engine_version.ends_with("/science-9")
-            || r.plan
-                .steps
-                .iter()
-                .any(|op| matches!(op, Operation::RecombineReference { .. })))
-    {
-        return Err(bad(
-            "reference recombination requires workspace plan schema 5",
-        ));
-    }
-    if r.plan_schema < 4
-        && (r.assessment.engine_version.ends_with("/science-8")
-            || r.plan.steps.iter().any(|op| {
-                matches!(
-                    op,
-                    Operation::DeclareSourceModifications { .. } | Operation::CheckedDigest { .. }
-                )
-            }))
-    {
-        return Err(bad(
-            "tracked modification semantics require workspace plan schema 4",
-        ));
     }
     validate_texts(&r.assessment.findings, 10_000)?;
     validate_texts(&r.assessment.assumptions, 1_000)?;

@@ -371,7 +371,7 @@ fn walk<'a>(
     visit: impl FnMut(&Capsule, &Candidate) -> Result<(), Error>,
     digest_visit: impl FnMut(&crate::run_digest_history::Record, Option<&Molecule>) -> Result<(), Error>,
 ) -> Result<(), Error> {
-    walk_enclosed(stack, None, budget, visit, digest_visit)
+    walk_mixed_impl(stack, budget, visit, digest_visit, |_, _| Ok(()))
 }
 fn walk_mixed<'a>(
     nodes: Vec<(usize, Pending<'a>)>,
@@ -383,20 +383,11 @@ fn walk_mixed<'a>(
         Option<&Molecule>,
     ) -> Result<(), Error>,
 ) -> Result<(), Error> {
-    walk_enclosed_mixed(nodes, None, budget, visit, digest_visit, derived_visit)
+    walk_mixed_impl(nodes, budget, visit, digest_visit, derived_visit)
 }
-fn walk_enclosed<'a>(
-    nodes: Vec<(usize, Pending<'a>)>,
-    enclosing: Option<u16>,
-    budget: Budget,
-    visit: impl FnMut(&Capsule, &Candidate) -> Result<(), Error>,
-    digest_visit: impl FnMut(&crate::run_digest_history::Record, Option<&Molecule>) -> Result<(), Error>,
-) -> Result<(), Error> {
-    walk_enclosed_mixed(nodes, enclosing, budget, visit, digest_visit, |_, _| Ok(()))
-}
-fn walk_enclosed_mixed<'a>(
+
+fn walk_mixed_impl<'a>(
     roots: Vec<(usize, Pending<'a>)>,
-    enclosing_version: Option<u16>,
     mut budget: Budget,
     mut visit: impl FnMut(&Capsule, &Candidate) -> Result<(), Error>,
     mut digest_visit: impl FnMut(
@@ -408,11 +399,8 @@ fn walk_enclosed_mixed<'a>(
         Option<&Molecule>,
     ) -> Result<(), Error>,
 ) -> Result<(), Error> {
-    let mut stack = roots
-        .into_iter()
-        .map(|(depth, node)| (depth, enclosing_version, node))
-        .collect::<Vec<_>>();
-    while let Some((depth, enclosing, node)) = stack.pop() {
+    let mut stack = roots;
+    while let Some((depth, node)) = stack.pop() {
         if depth > MAX_NESTING {
             return Err(bad("mixed origin recipe nesting exceeds eight generations"));
         }
@@ -434,50 +422,19 @@ fn walk_enclosed_mixed<'a>(
                 }
                 budget.model(&origin.target)?;
                 let candidate = transfer::decode_candidate_shallow(&origin.candidate)?;
-                let version = u16::from_le_bytes([origin.candidate[4], origin.candidate[5]]);
-                let enclosing = Some(enclosing.map_or(version, |prior| prior.min(version)));
-                if enclosing.is_some_and(|version| version < 23)
-                    && candidate
-                        .plan
-                        .steps
-                        .iter()
-                        .any(|step| matches!(step, Operation::LigateWithOutcomes { .. }))
-                {
-                    return Err(bad(
-                        "ligation outcomes require candidate schema23 in every enclosing native capsule",
-                    ));
-                }
-                if enclosing.is_some_and(|version| version < 21)
-                    && candidate
-                        .plan
-                        .steps
-                        .iter()
-                        .any(|step| matches!(step, Operation::ReconstructDigestFragment { .. }))
-                {
-                    return Err(bad(
-                        "digest reconstruction requires candidate schema21 in every enclosing native capsule",
-                    ));
-                }
+
                 budget.plan(&candidate.plan)?;
                 shallow_binding(&origin, &candidate)?;
                 visit(&origin, &candidate)?;
                 for step in candidate.plan.steps {
                     match step {
-                        Operation::ReconstructRunProduct { origin, .. } => stack.push((
-                            depth + 1,
-                            enclosing,
-                            Pending::Run(std::borrow::Cow::Owned(origin)),
-                        )),
-                        Operation::ReconstructDigestFragment { origin, .. } => stack.push((
-                            depth + 1,
-                            enclosing,
-                            Pending::Digest(std::borrow::Cow::Owned(origin)),
-                        )),
-                        Operation::ReconstructMaterial { origin, .. } => stack.push((
-                            depth + 1,
-                            enclosing,
-                            Pending::Derived(std::borrow::Cow::Owned(origin)),
-                        )),
+                        Operation::ReconstructRunProduct { origin, .. } => {
+                            stack.push((depth + 1, Pending::Run(std::borrow::Cow::Owned(origin))))
+                        }
+                        Operation::ReconstructDigestFragment { origin, .. } => stack
+                            .push((depth + 1, Pending::Digest(std::borrow::Cow::Owned(origin)))),
+                        Operation::ReconstructMaterial { origin, .. } => stack
+                            .push((depth + 1, Pending::Derived(std::borrow::Cow::Owned(origin)))),
                         _ => {}
                     }
                 }
@@ -497,12 +454,10 @@ fn walk_enclosed_mixed<'a>(
                 match origin {
                     std::borrow::Cow::Borrowed(origin) => stack.push((
                         depth + 1,
-                        enclosing,
                         Pending::Run(std::borrow::Cow::Borrowed(&origin.record.request.origin)),
                     )),
                     std::borrow::Cow::Owned(origin) => stack.push((
                         depth + 1,
-                        enclosing,
                         Pending::Run(std::borrow::Cow::Owned(origin.record.request.origin)),
                     )),
                 }
@@ -514,16 +469,10 @@ fn walk_enclosed_mixed<'a>(
                 digest_visit(record, None)?;
                 stack.push((
                     depth + 1,
-                    enclosing,
                     Pending::Run(std::borrow::Cow::Borrowed(&record.request.origin)),
                 ));
             }
             Pending::Derived(origin) => {
-                if enclosing.is_some_and(|version| version < 22) {
-                    return Err(bad(
-                        "material derivation requires candidate schema22 in every enclosing native capsule",
-                    ));
-                }
                 // Account the opaque bytes and full wrapper BEFORE decoding it.
                 charge_serialized_bounded(
                     &mut budget,
@@ -547,15 +496,10 @@ fn walk_enclosed_mixed<'a>(
                 if let crate::material_derivation::SourceOrigin::Saved(saved) =
                     record.request.origin
                 {
-                    stack.push((depth + 1, enclosing, material_owned(saved)));
+                    stack.push((depth + 1, material_owned(saved)));
                 }
             }
             Pending::DerivedRecord(record) => {
-                if enclosing.is_some_and(|version| version < 22) {
-                    return Err(bad(
-                        "material derivation requires candidate schema22 in every enclosing native capsule",
-                    ));
-                }
                 charge_serialized(&mut budget, record.as_ref())?;
                 record.validate_shallow()?;
                 add(&mut budget.steps, 1, MAX_STEPS)?;
@@ -565,14 +509,14 @@ fn walk_enclosed_mixed<'a>(
                         if let crate::material_derivation::SourceOrigin::Saved(saved) =
                             &record.request.origin
                         {
-                            stack.push((depth + 1, enclosing, material_node(saved)));
+                            stack.push((depth + 1, material_node(saved)));
                         }
                     }
                     std::borrow::Cow::Owned(record) => {
                         if let crate::material_derivation::SourceOrigin::Saved(saved) =
                             record.request.origin
                         {
-                            stack.push((depth + 1, enclosing, material_owned(saved)));
+                            stack.push((depth + 1, material_owned(saved)));
                         }
                     }
                 }
@@ -1001,7 +945,7 @@ pub(crate) fn validate_derived_capsule_origins(
         Budget::default(),
     )
 }
-/// Capability checks can visit nested plans without another recursive decoder or
+/// Attestation can visit current nested plans without another recursive decoder or
 /// per-generation budget. The initial bytes are an origin's candidate envelope.
 pub fn visit_candidate_plans(
     first: &[u8],
@@ -1019,11 +963,11 @@ pub fn visit_candidate_plans(
         .into_iter()
         .map(|(depth, node)| (depth + 1, node))
         .collect();
-    walk_enclosed(
+    walk_mixed_impl(
         nodes,
-        Some(u16::from_le_bytes([first[4], first[5]])),
         budget,
         |_, candidate| visit(candidate),
+        |_, _| Ok(()),
         |_, _| Ok(()),
     )
 }

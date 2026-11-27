@@ -298,6 +298,7 @@ fn plan_fixture() -> (DesignPlan, Molecule) {
                 ],
                 circular: true,
                 allow_nicked: false,
+                options: Default::default(),
             },
         ],
     };
@@ -337,6 +338,7 @@ fn typed_plan_reconstructs_duplex_graph_and_retains_intermediates_on_failure() {
         ],
         circular: true,
         allow_nicked: false,
+        options: Default::default(),
     };
     let report = verify(&plan, &target);
     assert_eq!(report.status, Status::Invalid);

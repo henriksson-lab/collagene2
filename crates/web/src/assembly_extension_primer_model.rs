@@ -744,7 +744,7 @@ mod tests {
         let after = p
             .apply(&draft, &intent, &p.capture.source, &options)
             .unwrap();
-        assert_eq!(after.version, 9);
+        assert_eq!(after.version, crate::assembly_draft_model::CURRENT_VERSION);
         assert!(
             after.methods.rows[1].preparation
                 == OverlapPreparation::OverlapExtensionPcrCatalogDigest
@@ -783,7 +783,7 @@ mod tests {
             .apply(&draft, &intent, &p.capture.source, &options)
             .unwrap();
         let mut expected = draft.clone();
-        expected.version = 8;
+        expected.version = crate::assembly_draft_model::CURRENT_VERSION;
         expected.methods.rows[1].preparation = OverlapPreparation::OverlapExtensionPcr;
         expected.methods.rows[1].overlap_extension_pcr =
             after.methods.rows[1].overlap_extension_pcr.clone();

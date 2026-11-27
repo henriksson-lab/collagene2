@@ -37,6 +37,7 @@ pub struct OligoDraft {
     pub name: String,
     pub annealing: String,
     pub tail: String,
+    #[serde(deserialize_with = "required_anchor")]
     pub anchor: Option<SelectionAnchor>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -716,4 +717,10 @@ mod tests {
         oversized.tail = "A".repeat(MAX_OLIGO);
         assert!(capture_binding_hit(&m, &b, &oversized, &hit).is_err());
     }
+}
+
+fn required_anchor<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<SelectionAnchor>, D::Error> {
+    Option::deserialize(deserializer)
 }

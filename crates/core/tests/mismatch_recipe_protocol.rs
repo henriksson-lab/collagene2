@@ -61,12 +61,15 @@ fn wire(magic: &[u8; 4], v: u16, value: &impl serde::Serialize) -> Vec<u8> {
 fn old_rejected(r: &Request) {
     let error = protocol::process_request(&wire(b"CGQ\0", 75, r)).unwrap_err();
     assert!(
-        error.to_string().contains("requires worker schema 76"),
+        matches!(error, collagene_core::Error::Unsupported(_)),
         "{error}"
     );
 }
+
+// Explicit historical operation4 fixture; current recipe compilers intentionally emit operation29.
+
 #[test]
-fn shared_mismatch_requests_and_previews_require76_but_old_operation_candidates_remain_valid() {
+fn mismatch_preparations_roundtrip_current_plans_and_reject_unsupported_versions() {
     assert!(protocol::WORKER_SCHEMA_VERSION >= 76);
     assert_eq!(postcard::to_allocvec(&preparation()).unwrap()[0], 8);
     let inputs = vec![input(
@@ -111,8 +114,21 @@ fn shared_mismatch_requests_and_previews_require76_but_old_operation_candidates_
         MUTATED
     );
     assert!(protocol::decode_response(&wire(b"CGR\0", 75, &response)).is_err());
+    let current_candidate = Candidate::new(p.compiled.plan.clone());
+    assert!(transfer::load_candidate(&wire(b"CGP\0", 3, &current_candidate)).is_err());
+    assert!(transfer::load_candidate(&wire(b"CGP\0", 22, &current_candidate)).is_err());
+    let current_verify = Request {
+        id: 20,
+        revision: target.revision(),
+        job: AnalysisJob::Verify {
+            plan: current_candidate.plan,
+            target: target.clone(),
+        },
+    };
+    assert!(protocol::process_request(&wire(b"CGQ\0", 75, &current_verify)).is_err());
+    assert!(protocol::process_request(&wire(b"CGQ\0", 91, &current_verify)).is_err());
     let candidate = Candidate::new(p.compiled.plan.clone());
-    assert!(transfer::load_candidate(&wire(b"CGP\0", 3, &candidate)).is_ok());
+    assert!(transfer::load_candidate(&wire(b"CGP\0", 3, &candidate)).is_err());
     let verify = Request {
         id: 2,
         revision: target.revision(),
@@ -121,7 +137,7 @@ fn shared_mismatch_requests_and_previews_require76_but_old_operation_candidates_
             target: target.clone(),
         },
     };
-    assert!(protocol::process_request(&wire(b"CGQ\0", 75, &verify)).is_ok());
+    assert!(protocol::process_request(&wire(b"CGQ\0", 75, &verify)).is_err());
     let overlap = assembly_recipe::Recipe {
         name: "Mismatch overlap preparation".into(),
         fragments: vec![fragment(preparation())],
@@ -140,10 +156,14 @@ fn shared_mismatch_requests_and_previews_require76_but_old_operation_candidates_
     };
     old_rejected(&request);
     let tail = tailing_recipe::Recipe {
+        profile: collagene_core::tailing_recipe::Profile::Ta,
+
         name: "Mismatch before explicit tailing".into(),
         fragments: vec![tailing_recipe::Fragment {
             source: fragment(preparation()),
-            base: TailingBase::A,
+            action: collagene_core::tailing_recipe::Action::AddTail {
+                base: TailingBase::A,
+            },
             treatment: None,
         }],
         circular: false,
@@ -247,7 +267,7 @@ fn saved_run_flat_mismatch_variant5_cannot_hide_under_existing_from_run_floor74_
     };
     old_rejected(&request);
     let error = protocol::process_request(&wire(b"CGQ\0", 74, &request)).unwrap_err();
-    assert!(error.to_string().contains("requires worker schema 76"));
+    assert!(matches!(error, collagene_core::Error::Unsupported(_)));
     let response = protocol::decode_response(
         &protocol::process_request(&protocol::encode_request(&request).unwrap()).unwrap(),
     )

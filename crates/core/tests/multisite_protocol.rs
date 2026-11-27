@@ -1,14 +1,11 @@
-//! Real worker dispatch and independently encoded pre-68 positional reports.
+//! Current worker dispatch preserves source roles and independent reference intent.
 use collagene_core::{
     Molecule, Topology,
     multisite_recombination::{self as adapter, AnnotationLimits, Request, Selection, multisite},
     protocol,
     recombination::reference::{Family, Input, Limits, Reaction, SiteVariant, SourceRecord},
-    topo, topo_actions as actions,
-    verification::{self as v, DesignPlan, Operation, PlanInput, Source, TopoSource},
 };
 use serde::Serialize;
-use topo::physical::{self as p, processing as process, processing_projection as pp, projection};
 fn core(id: u8) -> &'static str {
     match id {
         1 => "GTACAAA",
@@ -158,7 +155,7 @@ fn simulate_job152_returns_source_bound_batch144_and_rejects_stale_sources() {
         revision: revision.clone(),
         result: protocol::AnalysisResult::MultiSiteRecombination(batch),
     };
-    let payload = wire(b"CGR\0", 68, &result);
+    let payload = wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &result);
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&payload[42..]).unwrap();
     assert_eq!(tag, 144);
     assert!(protocol::decode_response(&payload).is_ok());
@@ -167,7 +164,10 @@ fn simulate_job152_returns_source_bound_batch144_and_rejects_stale_sources() {
     assert!(protocol::process_request(&protocol::encode_request(&stale).unwrap()).is_err());
     let mut stale = result;
     stale.revision = "0".repeat(64);
-    assert!(protocol::decode_response(&wire(b"CGR\0", 68, &stale)).is_err());
+    assert!(
+        protocol::decode_response(&wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &stale))
+            .is_err()
+    );
 }
 #[test]
 fn project_job153_result145_preserves_explicit_component_and_reference_only_boundary() {
@@ -198,13 +198,16 @@ fn project_job153_result145_preserves_explicit_component_and_reference_only_boun
         revision,
         result: protocol::AnalysisResult::MultiSiteRecombinationProduct(product),
     };
-    let payload = wire(b"CGR\0", 68, &result);
+    let payload = wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &result);
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&payload[42..]).unwrap();
     assert_eq!(tag, 145);
     assert!(protocol::decode_response(&payload).is_ok());
     let mut stale = result;
     stale.revision = "0".repeat(64);
-    assert!(protocol::decode_response(&wire(b"CGR\0", 68, &stale)).is_err());
+    assert!(
+        protocol::decode_response(&wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &stale))
+            .is_err()
+    );
 }
 #[test]
 fn check_job154_result146_binds_independent_target_and_never_accepts_wrong_target_revision() {
@@ -234,7 +237,7 @@ fn check_job154_result146_binds_independent_target_and_never_accepts_wrong_targe
         revision: revision.clone(),
         result: protocol::AnalysisResult::MultiSiteRecombinationChecked(checked),
     };
-    let payload = wire(b"CGR\0", 68, &response);
+    let payload = wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &response);
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&payload[42..]).unwrap();
     assert_eq!(tag, 146);
     assert!(protocol::decode_response(&payload).is_ok());
@@ -268,10 +271,16 @@ fn check_job154_result146_binds_independent_target_and_never_accepts_wrong_targe
         revision: wrong_revision,
         result: protocol::AnalysisResult::MultiSiteRecombinationChecked(checked),
     };
-    assert!(protocol::decode_response(&wire(b"CGR\0", 68, &changed)).is_ok());
+    assert!(
+        protocol::decode_response(&wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &changed))
+            .is_ok()
+    );
     let mut changed = changed;
     changed.revision = revision;
-    assert!(protocol::decode_response(&wire(b"CGR\0", 68, &changed)).is_err());
+    assert!(
+        protocol::decode_response(&wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &changed))
+            .is_err()
+    );
 }
 #[test]
 fn new_worker_jobs_and_results_cannot_be_relabelled_as_worker67() {
@@ -317,250 +326,4 @@ fn new_worker_jobs_and_results_cannot_be_relabelled_as_worker67() {
         old_result[4..6].copy_from_slice(&67u16.to_le_bytes());
         assert!(protocol::decode_response(&old_result).is_err());
     }
-}
-fn call(strand: usize, index: usize) -> p::Call {
-    p::Call { strand, index }
-}
-fn cut(anchor: usize) -> process::Action {
-    process::Action::CleaveThreePrimeFlap{bond:process::Bond{upstream:call(3,anchor),downstream:call(3,anchor+1)},displacement_step:0,profile:process::FlapCleavageProfile::IdealDuplexAnchoredThreePrimeHydrolysisV1,assumption:"Explicit ideal hydrolytic cut of this anchored four-call flap; no named nuclease, host repair or kit claim".into()}
-}
-fn seal(three: p::Call, five: p::Call) -> process::Action {
-    process::Action::SealNick {
-        selection: p::nick_sealing::NickSelection { three, five },
-        ligase_assumption:
-            "Explicit active ligase/cofactor hypothesis for continuous-template3OH5P nicks".into(),
-    }
-}
-fn physical_fixture(site: bool) -> (Vec<topo::Input>, actions::ActionsRequest) {
-    let dna = if site {
-        [
-            "AAGGGGCATCCCTT",
-            "GGTGAAGGGATGCCCCTT",
-            "CACCGAATTCA",
-            "TGAATTCGGTG",
-        ]
-    } else {
-        [
-            "AAGGGGCATCCCTT",
-            "GGTGAAGGGATGCCCCTT",
-            "CACCATGACG",
-            "CGTCATGGTG",
-        ]
-    };
-    let inputs = dna
-        .iter()
-        .enumerate()
-        .map(|(i, s)| topo::Input {
-            role: format!("original-{i}"),
-            molecule: Molecule::dna(
-                format!("Original directional strand{i}"),
-                s,
-                Topology::Linear,
-            )
-            .unwrap(),
-        })
-        .collect();
-    let strands = dna
-        .iter()
-        .enumerate()
-        .map(|(i, s)| topo::PreparedStrand {
-            id: format!("source{i}"),
-            segments: vec![topo::SourceInterval {
-                source_role: format!("original-{i}"),
-                start: 0,
-                length: s.len(),
-                reverse: false,
-            }],
-            five_prime: if i < 2 {
-                p::FivePrime::Phosphate
-            } else {
-                p::FivePrime::Hydroxyl
-            },
-            three_prime: if i < 2 {
-                p::ThreePrime::Phosphotyrosyl {
-                    enzyme: p::Enzyme::VacciniaTypeIBTyr274,
-                    activation_id: format!("enzyme{i}"),
-                }
-            } else {
-                p::ThreePrime::Hydroxyl
-            },
-        })
-        .collect();
-    let preparation=topo::Request{recipe:topo::GenerationRecipe{schema_version:1,materials:vec![topo::MaterialRecipe::Prepared{declaration_id:"Original directional material declaration".into(),assumption:"Exact source correspondence, activation and terminal state are operator hypotheses, never inferred supplier evidence".into(),strands,pairing:vec![p::PairSpan{strand_a:0,start_a:0,strand_b:1,start_b:4,length:14},p::PairSpan{strand_a:2,start_a:0,strand_b:3,start_b:0,length:dna[2].len()}]}]},transfers:vec![p::Transfer{donor:0,acceptor:2,geometry:p::Geometry::DirectionalCacc},p::Transfer{donor:1,acceptor:3,geometry:p::Geometry::Flush}],engine_limits:p::Limits::default(),projection_options:projection::Options::default()};
-    let (anchor, last) = if site { (6, 10) } else { (5, 9) };
-    let processing = process::Request {
-        actions: vec![
-            cut(anchor),
-            seal(call(2, last), call(0, 0)),
-            seal(call(3, anchor), call(1, 0)),
-        ],
-        limits: process::ProcessingLimits::default(),
-    };
-    (
-        inputs,
-        actions::ActionsRequest {
-            preparation,
-            processing,
-        },
-    )
-}
-fn physical_select(inputs: &[topo::Input], request: actions::ActionsRequest) -> actions::Request {
-    // Discover actual source component independently of any desired target.
-    let fresh = actions::inspect_actions(inputs, &request).unwrap();
-    let graph = &fresh.processing.product;
-    let chain = graph
-        .chains
-        .iter()
-        .position(|c| {
-            c.sources
-                .iter()
-                .any(|m| m.source_strand == 0 && m.start == 0)
-        })
-        .unwrap();
-    let component = graph
-        .components
-        .iter()
-        .position(|c| c.chains.contains(&chain))
-        .unwrap();
-    actions::Request {
-        preparation: request.preparation,
-        processing: request.processing,
-        selection: pp::Selection {
-            processing_context_revision: fresh.processing.context_revision,
-            component,
-            reference_seed: call(0, 0),
-        },
-        options: projection::Options {
-            require_all_requested_transfers_applied: true,
-            require_known_terminal_chemistry: true,
-            ..Default::default()
-        },
-    }
-}
-fn physical_plan(
-    inputs: &[topo::Input],
-    request: actions::Request,
-    target: &Molecule,
-) -> DesignPlan {
-    DesignPlan {
-        name: "Directional accounted flap actions with independent intent".into(),
-        target_revision: target.revision(),
-        inputs: inputs
-            .iter()
-            .map(|i| PlanInput {
-                id: i.role.clone(),
-                revision: i.molecule.revision(),
-                molecule: i.molecule.clone(),
-            })
-            .collect(),
-        steps: vec![Operation::TopoActions {
-            sources: inputs
-                .iter()
-                .map(|i| TopoSource {
-                    role: i.role.clone(),
-                    source: Source::Input(i.role.clone()),
-                })
-                .collect(),
-            request,
-        }],
-    }
-}
-
-// Exactly the twelve pre-68 positional fields: deliberately no serde default,
-// trailing reference vector or conversion from the current serializable report.
-#[derive(Serialize)]
-struct Report67<'a> {
-    plan_revision: &'a str,
-    target_revision: &'a str,
-    engine_version: &'a str,
-    status: v::Status,
-    findings: &'a [String],
-    assumptions: &'a [String],
-    products: &'a [Molecule],
-    exhaustive_alternative_search: bool,
-    step_reports: &'a [v::StepReport],
-    annotation_reports: &'a [v::AnnotationStepReport],
-    processed_step_reports: &'a [v::ProcessedTopoStepReport],
-    physical_processing_reports: &'a [v::PhysicalProcessingStepReport],
-}
-#[allow(dead_code)]
-#[derive(Serialize)]
-enum Result67<'a> {
-    Search(()),
-    Restriction(()),
-    Error(()),
-    Pcr(()),
-    Verification(Report67<'a>),
-}
-#[derive(Serialize)]
-struct Response67<'a> {
-    id: u32,
-    revision: &'a str,
-    result: Result67<'a>,
-}
-#[test]
-fn real_twelve_field_worker67_report_keeps_nonempty_physical_graphs_and_gets_no_reference_evidence()
-{
-    let (inputs, request) = physical_fixture(false);
-    let request = physical_select(&inputs, request);
-    let target = Molecule::dna(
-        "Independent original24bp circle",
-        "AAGGGGCATCCCTTCACCATGACG",
-        Topology::Circular,
-    )
-    .unwrap();
-    let plan = physical_plan(&inputs, request, &target);
-    let fresh = v::verify(&plan, &target);
-    assert_eq!(fresh.physical_processing_reports.len(), 1);
-    assert!(fresh.reference_step_reports.is_empty());
-    let v::PhysicalProcessingEvidence::TopoActions(graph) =
-        &fresh.physical_processing_reports[0].evidence
-    else {
-        panic!("expected retained TopoActions evidence")
-    };
-    assert_eq!(graph.projection.processing.source_bases, 52);
-    assert!(
-        graph
-            .projection
-            .processing
-            .product
-            .chains
-            .iter()
-            .any(|c| c.sequence.as_str() == "GGTG")
-    );
-    let before = serde_json::to_vec(&fresh.physical_processing_reports).unwrap();
-    let historical_engine = "0.1.0/science-18";
-    let old = Response67 {
-        id: 67,
-        revision: &fresh.plan_revision,
-        result: Result67::Verification(Report67 {
-            plan_revision: &fresh.plan_revision,
-            target_revision: &fresh.target_revision,
-            engine_version: historical_engine,
-            status: fresh.status,
-            findings: &fresh.findings,
-            assumptions: &fresh.assumptions,
-            products: &fresh.products,
-            exhaustive_alternative_search: fresh.exhaustive_alternative_search,
-            step_reports: &fresh.step_reports,
-            annotation_reports: &fresh.annotation_reports,
-            processed_step_reports: &fresh.processed_step_reports,
-            physical_processing_reports: &fresh.physical_processing_reports,
-        }),
-    };
-    let bytes = wire(b"CGR\0", 67, &old);
-    let decoded = protocol::decode_response(&bytes).unwrap();
-    let protocol::AnalysisResult::Verification(restored) = decoded.result else {
-        panic!("expected historical verification")
-    };
-    assert_eq!(restored.engine_version, historical_engine);
-    assert_ne!(restored.engine_version, v::ENGINE_VERSION);
-    assert!(restored.reference_step_reports.is_empty());
-    assert_eq!(restored.physical_processing_reports.len(), 1);
-    assert_eq!(
-        serde_json::to_vec(&restored.physical_processing_reports).unwrap(),
-        before
-    );
-    assert_eq!(restored.plan_revision, fresh.plan_revision);
-    assert_eq!(restored.target_revision, target.revision());
 }

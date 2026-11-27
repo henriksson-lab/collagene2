@@ -163,5 +163,8 @@ fn actual_saved_pcr_catalog_inspection_roundtrips160_152_and_rejects_old_headers
     assert!(protocol::process_request(&protocol::encode_request(&stale).unwrap()).is_err());
     let mut stale = response;
     stale.revision = "0".repeat(64);
-    assert!(protocol::decode_response(&wire(b"CGR\0", 75, &stale)).is_err());
+    assert!(
+        protocol::decode_response(&wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &stale))
+            .is_err()
+    );
 }

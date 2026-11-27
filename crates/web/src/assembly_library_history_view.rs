@@ -102,7 +102,7 @@ pub fn LibraryHistoryView(
             if epoch.get_untracked() != saved_epoch {
                 return Err("Workspace changed while opening recovery history.".into());
             }
-            let summary = crate::assembly_draft_model::decode_version(&record.before_draft, 3)
+            let summary = crate::assembly_draft_model::decode(&record.before_draft)
                 .ok()
                 .and_then(|draft| {
                     draft.alternatives.as_ref().map(|library| HumanSummary {

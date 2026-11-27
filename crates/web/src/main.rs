@@ -405,3 +405,12 @@ mod sequence_compat_export;
 mod sequence_compat_import;
 #[cfg(any(target_arch = "wasm32", test))]
 mod sequence_export_model;
+
+#[cfg(target_arch = "wasm32")]
+mod map_export;
+#[cfg(any(target_arch = "wasm32", test))]
+mod map_export_model;
+#[cfg(any(target_arch = "wasm32", test))]
+mod saved_run_review_model;
+#[cfg(target_arch = "wasm32")]
+mod saved_run_review_view;

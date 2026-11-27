@@ -145,7 +145,6 @@ struct State {
     folders: BTreeMap<String, BTreeMap<String, FolderBinding>>,
     pending: BTreeMap<String, Pending>,
     bookmarks: Vec<HeadBookmark>,
-    #[serde(default)]
     snapshot_bookmarks: Vec<SnapshotBookmark>,
 }
 /// Token-free native outbox projection. Frames, archive bytes and credentials

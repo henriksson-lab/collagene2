@@ -6,8 +6,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 92;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 23;
+pub const WORKER_SCHEMA_VERSION: u16 = 94;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 24;
 
 fn current_version(magic: &[u8; 4]) -> u16 {
     match magic {
@@ -80,7 +80,7 @@ fn envelope_info(magic: &[u8; 4], bytes: &[u8], maximum: usize) -> Result<(u16, 
         ));
     }
     let version = u16::from_le_bytes([bytes[4], bytes[5]]);
-    if version != current_version(magic) && !(version >= 1 && version < current_version(magic)) {
+    if version != current_version(magic) {
         return Err(Error::Unsupported(format!(
             "binary schema version {version}"
         )));
@@ -121,23 +121,16 @@ fn decode_with_limit<T: for<'de> Deserialize<'de>>(
 fn worker_limit(
     magic: &[u8; 4],
     bytes: &[u8],
-    allowed_large_variants: &[(u32, u16)],
+    allowed_large_variants: &[u32],
 ) -> Result<usize, Error> {
-    let (version, len) = envelope_info(magic, bytes, MAX_WORKSPACE_MESSAGE_BYTES)?;
+    let (_, len) = envelope_info(magic, bytes, MAX_WORKSPACE_MESSAGE_BYTES)?;
     if len <= MAX_IMPORT_BYTES {
         return Ok(MAX_IMPORT_BYTES);
-    }
-    if version < 6 {
-        return Err(Error::TooLarge);
     }
     let ((_, revision, variant), _) =
         postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
             .map_err(|e| Error::Format(e.to_string()))?;
-    if revision.len() > 128
-        || !allowed_large_variants
-            .iter()
-            .any(|&(tag, minimum)| tag == variant && version >= minimum)
-    {
+    if revision.len() > 128 || !allowed_large_variants.iter().any(|&tag| tag == variant) {
         return Err(Error::TooLarge);
     }
     Ok(MAX_WORKSPACE_MESSAGE_BYTES)
@@ -1004,6 +997,13 @@ pub enum AnalysisJob {
         selection: crate::catalog_digest::CatalogSelection,
         options: crate::catalog_digest::InspectionOptions,
     },
+    PrepareSavedRunReview {
+        workspace: crate::workspace::Workspace,
+        run_id: String,
+    },
+    RenderMapSvg {
+        request: crate::svg_export::Request,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1185,6 +1185,8 @@ pub enum AnalysisResult {
     ScfTraceExported(crate::scf_export::Exported),
     MaterialDerivationInstalled(crate::material_derivation::Installed),
     MaterialDigestInspection(crate::material_derivation::DigestPreview),
+    SavedRunReviewPrepared(crate::run_review::PreparedReview),
+    MapSvgExported(crate::svg_export::Rendered),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1203,189 +1205,6 @@ pub struct Response {
     pub result: AnalysisResult,
 }
 
-/// Versions 1/2 did not record the scientific engine in verification reports.
-/// Migration must never attribute those historical findings to today's engine.
-pub const LEGACY_ENGINE_VERSION: &str = "unrecorded/legacy-worker-v1-v2";
-
-#[derive(Deserialize)]
-struct LegacyVerificationReport {
-    plan_revision: String,
-    target_revision: String,
-    status: crate::verification::Status,
-    findings: Vec<String>,
-    assumptions: Vec<String>,
-    products: Vec<Molecule>,
-    exhaustive_alternative_search: bool,
-}
-impl From<LegacyVerificationReport> for crate::verification::VerificationReport {
-    fn from(old: LegacyVerificationReport) -> Self {
-        Self {
-            plan_revision: old.plan_revision,
-            target_revision: old.target_revision,
-            engine_version: LEGACY_ENGINE_VERSION.into(),
-            status: old.status,
-            findings: old.findings,
-            assumptions: old.assumptions,
-            products: old.products,
-            exhaustive_alternative_search: old.exhaustive_alternative_search,
-            step_reports: Vec::new(),
-            annotation_reports: Vec::new(),
-            processed_step_reports: Vec::new(),
-            physical_processing_reports: Vec::new(),
-            reference_step_reports: Vec::new(),
-        }
-    }
-}
-// Versions 3–24 include engine provenance but no per-step physical graph.
-// Keep this positional layout separate: serde defaults do not extend postcard
-// structs at EOF. Historical reports gain no invented physical evidence.
-#[derive(Deserialize)]
-struct LegacyVerificationReportV24 {
-    plan_revision: String,
-    target_revision: String,
-    engine_version: String,
-    status: crate::verification::Status,
-    findings: Vec<String>,
-    assumptions: Vec<String>,
-    products: Vec<Molecule>,
-    exhaustive_alternative_search: bool,
-}
-#[derive(Deserialize)]
-#[allow(dead_code)] // Positional selectors 0–3 precede the historical verification layout.
-enum LegacyVerificationResultV24 {
-    Search(Vec<Match>),
-    Restriction(Vec<CutSite>),
-    Error(String),
-    Pcr(Vec<crate::analysis::PcrProduct>),
-    Verification(LegacyVerificationReportV24),
-}
-#[derive(Deserialize)]
-struct LegacyVerificationResponseV24 {
-    id: u32,
-    revision: String,
-    result: LegacyVerificationResultV24,
-}
-impl From<LegacyVerificationReportV24> for crate::verification::VerificationReport {
-    fn from(old: LegacyVerificationReportV24) -> Self {
-        Self {
-            plan_revision: old.plan_revision,
-            target_revision: old.target_revision,
-            engine_version: old.engine_version,
-            status: old.status,
-            findings: old.findings,
-            assumptions: old.assumptions,
-            products: old.products,
-            exhaustive_alternative_search: old.exhaustive_alternative_search,
-            step_reports: Vec::new(),
-            annotation_reports: Vec::new(),
-            processed_step_reports: Vec::new(),
-            physical_processing_reports: Vec::new(),
-            reference_step_reports: Vec::new(),
-        }
-    }
-}
-// Schemas25/26 retain physical step reports but predate annotation evidence.
-// Their positional payload is migrated explicitly, without inventing mappings.
-#[derive(Deserialize)]
-struct LegacyVerificationReportV26 {
-    plan_revision: String,
-    target_revision: String,
-    engine_version: String,
-    status: crate::verification::Status,
-    findings: Vec<String>,
-    assumptions: Vec<String>,
-    products: Vec<Molecule>,
-    exhaustive_alternative_search: bool,
-    step_reports: Vec<crate::verification::StepReport>,
-}
-#[derive(Deserialize)]
-#[allow(dead_code)]
-enum LegacyVerificationResultV26 {
-    Search(Vec<Match>),
-    Restriction(Vec<CutSite>),
-    Error(String),
-    Pcr(Vec<crate::analysis::PcrProduct>),
-    Verification(LegacyVerificationReportV26),
-}
-#[derive(Deserialize)]
-struct LegacyVerificationResponseV26 {
-    id: u32,
-    revision: String,
-    result: LegacyVerificationResultV26,
-}
-impl From<LegacyVerificationReportV26> for crate::verification::VerificationReport {
-    fn from(old: LegacyVerificationReportV26) -> Self {
-        Self {
-            plan_revision: old.plan_revision,
-            target_revision: old.target_revision,
-            engine_version: old.engine_version,
-            status: old.status,
-            findings: old.findings,
-            assumptions: old.assumptions,
-            products: old.products,
-            exhaustive_alternative_search: old.exhaustive_alternative_search,
-            step_reports: old.step_reports,
-            annotation_reports: Vec::new(),
-            processed_step_reports: Vec::new(),
-            physical_processing_reports: Vec::new(),
-            reference_step_reports: Vec::new(),
-        }
-    }
-}
-// Separate historical enums encode the actual old layouts, not the present DTO
-// under an older header. In particular, old Verification lacks engine_version.
-#[derive(Deserialize)]
-enum LegacyResultV1 {
-    Search(Vec<Match>),
-    Restriction(Vec<CutSite>),
-    Error(String),
-    Pcr(Vec<crate::analysis::PcrProduct>),
-    Verification(LegacyVerificationReport),
-}
-#[derive(Deserialize)]
-struct LegacyResponseV1 {
-    id: u32,
-    revision: String,
-    result: LegacyResultV1,
-}
-#[derive(Deserialize)]
-enum LegacyResultV2 {
-    Search(Vec<Match>),
-    Restriction(Vec<CutSite>),
-    Error(String),
-    Pcr(Vec<crate::analysis::PcrProduct>),
-    Verification(LegacyVerificationReport),
-    DuplexDigest(Vec<crate::chemistry::DigestFragment>),
-}
-#[derive(Deserialize)]
-struct LegacyResponseV2 {
-    id: u32,
-    revision: String,
-    result: LegacyResultV2,
-}
-impl From<LegacyResultV1> for AnalysisResult {
-    fn from(old: LegacyResultV1) -> Self {
-        match old {
-            LegacyResultV1::Search(value) => Self::Search(value),
-            LegacyResultV1::Restriction(value) => Self::Restriction(value),
-            LegacyResultV1::Error(value) => Self::Error(value),
-            LegacyResultV1::Pcr(value) => Self::Pcr(value),
-            LegacyResultV1::Verification(value) => Self::Verification(value.into()),
-        }
-    }
-}
-impl From<LegacyResultV2> for AnalysisResult {
-    fn from(old: LegacyResultV2) -> Self {
-        match old {
-            LegacyResultV2::Search(value) => Self::Search(value),
-            LegacyResultV2::Restriction(value) => Self::Restriction(value),
-            LegacyResultV2::Error(value) => Self::Error(value),
-            LegacyResultV2::Pcr(value) => Self::Pcr(value),
-            LegacyResultV2::Verification(value) => Self::Verification(value.into()),
-            LegacyResultV2::DuplexDigest(value) => Self::DuplexDigest(value),
-        }
-    }
-}
 pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
     if let AnalysisJob::ExportPairwiseComparison {
         record,
@@ -1447,6 +1266,10 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         AnalysisJob::InstallMaterialDerivation { workspace, request } => {
             crate::material_derivation::preflight(workspace, request)?;
         }
+        AnalysisJob::PrepareSavedRunReview { workspace, run_id } => {
+            crate::run_review::request_revision(workspace, run_id)?;
+        }
+        AnalysisJob::RenderMapSvg { request } => request.validate()?,
         AnalysisJob::InspectMaterialDigest {
             source_role,
             source,
@@ -1742,6 +1565,7 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::ExportScfTrace { .. }
             | AnalysisJob::InstallMaterialDerivation { .. }
             | AnalysisJob::InspectMaterialDigest { .. }
+            | AnalysisJob::PrepareSavedRunReview { .. }
     ) {
         MAX_WORKSPACE_MESSAGE_BYTES
     } else {
@@ -1756,456 +1580,46 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         b"CGR\0",
         bytes,
         &[
-            (20, 6),
-            (21, 6),
-            (40, 12),
-            (41, 12),
-            (62, 20),
-            (65, 21),
-            (94, 39),
-            (97, 42),
-            (100, 43),
-            (122, 57),
-            (126, 58),
-            (127, 58),
-            (159, 89),
-            (160, 90),
-            (161, 90),
-            (162, 90),
-            (163, 90),
-            (164, 90),
-            (165, 90),
-            (166, 90),
-            (167, 91),
-            (168, 91),
+            20, 21, 40, 41, 62, 65, 94, 97, 100, 122, 126, 127, 159, 160, 161, 162, 163, 164, 165,
+            166, 167, 168, 169,
         ],
     )?;
-    preflight_codon_tag(bytes, &[42, 43])?;
-    preflight_dotplot_tag(bytes, &[44])?;
-    preflight_contig_tag(bytes, &[45])?;
-    preflight_methylation_tag(bytes, &[46])?;
-    preflight_crispr_tag(bytes, &[47, 48, 49, 50])?;
-    preflight_genome_tag(bytes, &[51, 52, 53, 54, 55, 56, 57, 58, 59])?;
-    preflight_restriction_tag(bytes, &[60, 61, 62])?;
-    preflight_catalog_tag(bytes, &[63, 64, 65])?;
-    preflight_recombination_tag(bytes, &[66, 67, 68])?;
-    preflight_read_alignment_tag(bytes, &[69, 70, 71, 72, 73])?;
-    preflight_topo_tag(bytes, &[74, 75, 76, 77])?;
-    preflight_annotated_topo_tag(bytes, &[78, 79])?;
-    preflight_variants_tag(bytes, &[80, 81, 82, 83, 84, 85])?;
-    preflight_overlap_recipe_tag(bytes, &[86])?;
-    preflight_ligation_recipe_tag(bytes, &[87])?;
-    preflight_assembly_junctions_tag(bytes, &[88])?;
-    preflight_overlap_primer_design_tag(bytes, &[89])?;
-    preflight_assembly_intent_tag(bytes, &[90])?;
-    preflight_cloning_output_tag(bytes, &[91, 92, 93])?;
-    preflight_finalize_tag(bytes, &[94])?;
-    preflight_golden_gate_primer_tag(bytes, &[95])?;
-    preflight_mutation_intent_tag(bytes, &[96])?;
-    preflight_read_check_tag(bytes, &[97, 98])?;
-    preflight_read_review_tag(bytes, &[99, 100])?;
-    preflight_edited_assembly_tag(bytes, &[101, 102])?;
-    preflight_selective_assembly_tag(bytes, &[103])?;
-    preflight_golden_gate_junction_tag(bytes, &[104])?;
-    preflight_prepared_golden_gate_tag(bytes, &[105, 106])?;
-    preflight_golden_gate_reaction_tag(bytes, &[107, 108])?;
-    preflight_pcr_outputs_tag(bytes, &[109])?;
-    preflight_mismatch_pcr_outputs_tag(bytes, &[110])?;
-    preflight_pairwise_review_tag(bytes, &[111])?;
-    preflight_reference_transfer_tag(bytes, &[112, 113])?;
-    preflight_translation_reference_tag(bytes, &[114, 115])?;
-    preflight_pinned_gel_tag(bytes, &[116])?;
-    preflight_pairwise_export_tag(bytes, &[117, 118, 119])?;
-    preflight_combinatorial_batch_tag(bytes, &[120, 121, 122])?;
-    preflight_combinatorial_release_tag(bytes, &[123, 124, 125, 126, 127])?;
-    preflight_fusion_design_tag(bytes, &[128, 129, 130])?;
-    preflight_domestication_tag(bytes, &[131, 132, 133, 134])?;
-    preflight_published_ligation_tag(bytes, &[135, 136, 137, 138])?;
-    preflight_nick_sealing_tag(bytes, &[139])?;
-    preflight_processed_topo_tag(bytes, &[140])?;
-    preflight_processed_run_tag(bytes, &[141])?;
-    preflight_topo_actions_tag(bytes, &[142, 143])?;
-    preflight_multisite_recombination_tag(bytes, &[144, 145, 146])?;
-    preflight_combinatorial_multisite_tag(bytes, &[147])?;
-    preflight_tailing_recipe_tag(bytes, &[148])?;
-    preflight_pcr_digest_tag(bytes, &[149])?;
-    preflight_run_material_tag(bytes, &[150, 151])?;
-    preflight_run_catalog_tag(bytes, &[152])?;
-    preflight_substitution_intent_tag(bytes, &[153])?;
-    preflight_mismatch_digest_tag(bytes, &[154])?;
-    preflight_contribution_edit_tag(bytes, &[155])?;
-    preflight_overlap_extension_primer_tag(bytes, &[156])?;
-    preflight_overlap_extension_digest_tag(bytes, &[157])?;
-    preflight_edited_overlap_primer_tag(bytes, &[158])?;
-    preflight_topo_run_tag(bytes, &[159])?;
-    let version = bytes.get(4..6).map(|v| u16::from_le_bytes([v[0], v[1]]));
-    let response: Response = match version {
-        Some(1) => {
-            let old: LegacyResponseV1 = decode(b"CGR\0", bytes)?;
-            Response {
-                id: old.id,
-                revision: old.revision,
-                result: old.result.into(),
-            }
+
+    let response: Response = decode_with_limit(b"CGR\0", bytes, maximum)?;
+    match &response.result {
+        AnalysisResult::SavedRunReviewPrepared(report) => {
+            report.validate_request_binding(&response.revision)?;
         }
-        Some(2) => {
-            let old: LegacyResponseV2 = decode(b"CGR\0", bytes)?;
-            Response {
-                id: old.id,
-                revision: old.revision,
-                result: old.result.into(),
-            }
+        AnalysisResult::MapSvgExported(report) => {
+            report.validate_binding(&report.source_revision)?;
         }
-        Some(3..=24)
-            if postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-                .is_ok_and(|((_, _, tag), _)| tag == 4) =>
-        {
-            let old: LegacyVerificationResponseV24 = decode_with_limit(b"CGR\0", bytes, maximum)?;
-            let LegacyVerificationResultV24::Verification(report) = old.result else {
-                return Err(Error::Format(
-                    "historical verification selector mismatch".into(),
-                ));
-            };
-            Response {
-                id: old.id,
-                revision: old.revision,
-                result: AnalysisResult::Verification(report.into()),
-            }
-        }
-        Some(25 | 26)
-            if postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-                .is_ok_and(|((_, _, tag), _)| tag == 4) =>
-        {
-            let old: LegacyVerificationResponseV26 = decode_with_limit(b"CGR\0", bytes, maximum)?;
-            let LegacyVerificationResultV26::Verification(report) = old.result else {
-                return Err(Error::Format(
-                    "historical physical verification selector mismatch".into(),
-                ));
-            };
-            Response {
-                id: old.id,
-                revision: old.revision,
-                result: AnalysisResult::Verification(report.into()),
-            }
-        }
-        _ => match crate::protocol_legacy_v64::decode(bytes, maximum)? {
-            Some(old) => old,
-            None => decode_with_limit(b"CGR\0", bytes, maximum)?,
-        },
-    };
-    let required = match &response.result {
         AnalysisResult::MaterialOriginInspection(report) => {
             report.validate_binding(&response.revision)?;
-            90
         }
         AnalysisResult::RunDigestInstalled(report) => {
             report.validate_binding(&response.revision)?;
-            90
         }
         AnalysisResult::MaterialDerivationInstalled(report) => {
             report.validate_binding(&response.revision)?;
-            91
         }
         AnalysisResult::MaterialDigestInspection(report) => {
             report.validate_binding(&response.revision)?;
-            91
         }
         AnalysisResult::SequenceExportAssessment(report) => {
             report.validate_binding(&response.revision)?;
-            90
         }
         AnalysisResult::SequenceExportPrepared(report) => {
             report.validate_binding(&response.revision)?;
-            90
         }
         AnalysisResult::ScfTraceExported(report) => {
             report.validate_binding(&response.revision)?;
-            90
         }
-        AnalysisResult::MaterialPcrDocuments(_) => 90,
         AnalysisResult::MaterialPcrOutputsPrepared(report) => {
             report.validate_binding(&response.revision)?;
-            90
-        }
-        AnalysisResult::TopoRunInspection(_) => 89,
-        AnalysisResult::EditedOverlapPrimersDesigned(_) => 85,
-        AnalysisResult::OverlapExtensionDigestInspection(_) => 84,
-        AnalysisResult::OverlapExtensionPrimersDesigned(_) => 83,
-        AnalysisResult::ContributionEditIntent(_) => 79,
-        AnalysisResult::MismatchPcrDigestInspection(_) => 78,
-        AnalysisResult::SubstitutedAssemblyIntent(_) => 77,
-        AnalysisResult::RunCatalogRestrictionInspection(_) => 75,
-        AnalysisResult::RunMaterialInspection(_) | AnalysisResult::RunPcrDigestInspection(_) => 74,
-        AnalysisResult::PcrDigestInspection(_) => 72,
-        AnalysisResult::TailingRecipePreview(report) => {
-            check_variant_version(bytes, plan_worker_version(&report.compiled.plan))?;
-            70
-        }
-        AnalysisResult::CombinatorialMultiSiteInspection(_) => 69,
-        AnalysisResult::MultiSiteRecombination(_)
-        | AnalysisResult::MultiSiteRecombinationProduct(_)
-        | AnalysisResult::MultiSiteRecombinationChecked(_) => 68,
-        AnalysisResult::TopoActionsProduct(_) | AnalysisResult::TopoActionsInspected(_) => 66,
-        AnalysisResult::HistoricalProcessedRunEvidence(_) => 65,
-        AnalysisResult::ProcessedTopoProduct(_) => 64,
-        AnalysisResult::TopoNicksSealed(_) => 63,
-        AnalysisResult::LigationProfiles(_)
-        | AnalysisResult::PublishedLigationScore(_)
-        | AnalysisResult::RankedGoldenGateFusions(_)
-        | AnalysisResult::LigationCompetition(_) => 62,
-        AnalysisResult::DomesticationInspected(_)
-        | AnalysisResult::DomesticationProposed(_)
-        | AnalysisResult::DomesticationChecked { .. }
-        | AnalysisResult::DomesticationPrepared(_) => 61,
-        AnalysisResult::GoldenGateFusions(_)
-        | AnalysisResult::GoldenGateFusionMaterialized(_)
-        | AnalysisResult::LigationFidelity(_) => 60,
-        AnalysisResult::PcrOutputs(_) => 50,
-        AnalysisResult::MismatchPcrOutputs(_) => 51,
-        AnalysisResult::ReviewedComparison(_) => 52,
-        AnalysisResult::ReferenceFragment(_) | AnalysisResult::ReferencePaste(_) => 53,
-        AnalysisResult::TranslatedReference(_) | AnalysisResult::TranslatedOutputs(_) => 54,
-        AnalysisResult::PinnedGel(_) => 55,
-        AnalysisResult::ExportedPairwiseComparison(_) => 56,
-        AnalysisResult::SearchedPairwiseComparison(_) => 56,
-        AnalysisResult::PreparedPairwiseContext(_) => 56,
-        AnalysisResult::CombinatorialBatchStarted(_)
-        | AnalysisResult::CombinatorialBatchAdvanced(_)
-        | AnalysisResult::CombinatorialBatchCaptured(_) => 57,
-        AnalysisResult::CombinatorialReleaseStarted(_)
-        | AnalysisResult::CombinatorialReleaseAdvanced(_)
-        | AnalysisResult::CombinatorialReleaseInspected(_)
-        | AnalysisResult::CombinatorialReleaseFinished(_)
-        | AnalysisResult::CombinatorialOutputsArchive(_) => 58,
-        AnalysisResult::GoldenGateReaction(_) | AnalysisResult::GoldenGateReactionCandidate(_) => {
-            49
-        }
-        AnalysisResult::EditedAssemblyIntent(_) | AnalysisResult::EditedAssemblyPrimers(_) => 44,
-        AnalysisResult::SelectiveAssemblyPrimers(_) => 45,
-        AnalysisResult::GoldenGateJunctionPrimers(_) => 46,
-        AnalysisResult::PreparedGoldenGatePool(_)
-        | AnalysisResult::PreparedGoldenGateCandidate(_) => 47,
-        AnalysisResult::ReadReviewPreview(_) | AnalysisResult::ReadReviewCommitted(_) => 43,
-        AnalysisResult::ReadCheckCaptured(_) | AnalysisResult::ReadCheckReplayed(_) => 42,
-        AnalysisResult::MutationIntent(_) => 41,
-        AnalysisResult::GoldenGatePrimersDesigned(_) => 40,
-        AnalysisResult::CloningOutputsFinalized(_) => 39,
-        AnalysisResult::DigestFragmentSelected(_)
-        | AnalysisResult::PlanOligosExported(_)
-        | AnalysisResult::ProtocolHtml(_) => 38,
-        AnalysisResult::AssemblyIntent(_) => 36,
-        AnalysisResult::OverlapPrimersDesigned(_) => 35,
-        AnalysisResult::AssemblyJunctionInspection(_) => 33,
-        AnalysisResult::LigationRecipePreview(report) => {
-            check_variant_version(bytes, plan_worker_version(&report.compiled.plan))?;
-            plan_worker_version(&report.compiled.plan).max(32)
-        }
-        AnalysisResult::OverlapRecipePreview(report) => {
-            check_variant_version(bytes, plan_worker_version(&report.compiled.plan))?;
-            plan_worker_version(&report.compiled.plan).max(31)
-        }
-        AnalysisResult::VariantsPrepared(_)
-        | AnalysisResult::VariantPage(_)
-        | AnalysisResult::VariantReferenceChecked(_)
-        | AnalysisResult::VariantAllelePreview(_)
-        | AnalysisResult::VariantsExported(_)
-        | AnalysisResult::VariantsDisposed(_) => 29,
-        AnalysisResult::AnnotatedTopoProjection(_) | AnalysisResult::AnnotatedTopoTarget(_) => 27,
-        AnalysisResult::TopoSimulation(_)
-        | AnalysisResult::TopoOrientations(_)
-        | AnalysisResult::TopoProjection(_)
-        | AnalysisResult::TopoTarget(_) => 26,
-        AnalysisResult::ReadAlignmentsPrepared(_)
-        | AnalysisResult::ReadAlignmentPage(_)
-        | AnalysisResult::ReadAlignmentChecked(_)
-        | AnalysisResult::ReadAlignmentsExported(_)
-        | AnalysisResult::ReadAlignmentsDisposed(_) => 24,
-        AnalysisResult::RecombinationInspection(_)
-        | AnalysisResult::RecombinationTargetCheck(_)
-        | AnalysisResult::RecombinationProduct(_) => 22,
-        AnalysisResult::CatalogRestrictionInspection(_)
-        | AnalysisResult::CatalogDigestProduct(_)
-        | AnalysisResult::CatalogDigestInstalled(_) => 21,
-        AnalysisResult::RestrictionInspection(_)
-        | AnalysisResult::DigestProduct(_)
-        | AnalysisResult::DigestInstalled(_) => 20,
-        AnalysisResult::GenomeImportStarted(_)
-        | AnalysisResult::GenomeImportProgress(_)
-        | AnalysisResult::GenomeFastaFinished(_)
-        | AnalysisResult::GenomeRegistered(_)
-        | AnalysisResult::GenomeIntervalGuides(_)
-        | AnalysisResult::GenomeSearchState(_)
-        | AnalysisResult::GenomeSearchPage(_)
-        | AnalysisResult::GenomeDisposed(_)
-        | AnalysisResult::GenomeIntervalRead(_) => 19,
-        AnalysisResult::Search(_)
-        | AnalysisResult::Restriction(_)
-        | AnalysisResult::Error(_)
-        | AnalysisResult::Pcr(_)
-        | AnalysisResult::Verification(_) => 1,
-        AnalysisResult::DuplexDigest(_) => 2,
-        AnalysisResult::Translation(_)
-        | AnalysisResult::CdsTranslation(_)
-        | AnalysisResult::Orfs(_)
-        | AnalysisResult::Alignment(_) => 3,
-        AnalysisResult::PcrDocuments(_)
-        | AnalysisResult::PrimerEvidence(_)
-        | AnalysisResult::PrimerDesign(_)
-        | AnalysisResult::ProtocolPdf(_) => 4,
-        AnalysisResult::WorkspaceSaved(_)
-        | AnalysisResult::WorkspaceLoaded(_)
-        | AnalysisResult::TraceValidation(_) => 6,
-        AnalysisResult::CrisprGuides(_)
-        | AnalysisResult::CrisprOffTargets(_)
-        | AnalysisResult::EditTemplate(_)
-        | AnalysisResult::EditTemplateCheck(_) => 18,
-        AnalysisResult::Methylation(_) => 16,
-        AnalysisResult::Contigs(_) => 15,
-        AnalysisResult::DotPlot(_) => 14,
-        AnalysisResult::CodonDesign(_) | AnalysisResult::CodonCheck(_) => 13,
-        AnalysisResult::RunCommit(_) | AnalysisResult::RunReplay(_) => 12,
-        AnalysisResult::TailPreview(_) | AnalysisResult::OverlapProfile(_) => 11,
-        AnalysisResult::ProteinProperties(_) => 10,
-        AnalysisResult::AlignmentDocument(_)
-        | AnalysisResult::AlignmentExport(_)
-        | AnalysisResult::AlignmentRows(_)
-        | AnalysisResult::AlignmentSaved(_) => 10,
-        AnalysisResult::ViewTracks(_)
-        | AnalysisResult::DocumentSearch(_)
-        | AnalysisResult::TracksPrepared(_) => 9,
-        AnalysisResult::RepairPreview(_)
-        | AnalysisResult::AnnealPreview(_)
-        | AnalysisResult::PhysicalPreviewDocument(_) => 8,
-        AnalysisResult::FeatureLibraryScan(_)
-        | AnalysisResult::AnnotatedDocument(_)
-        | AnalysisResult::AnnotationImport(_)
-        | AnalysisResult::AnnotationExport(_) => 7,
-        _ => 5,
-    };
-    check_variant_version(bytes, required)?;
-    check_preparation_version(bytes, &response.result)?;
-    // Existing generic AnnealOligos plans keep their historical version. These
-    // recipe previews newly admit annealing as a row preparation in schema71.
-    match &response.result {
-        AnalysisResult::OverlapRecipePreview(p)
-            if p.compiled
-                .rows
-                .iter()
-                .any(|r| annealed_preparation(&p.compiled.plan, r)) =>
-        {
-            check_variant_version(bytes, 71)?
-        }
-        AnalysisResult::LigationRecipePreview(p)
-            if p.compiled
-                .rows
-                .iter()
-                .any(|r| annealed_preparation(&p.compiled.plan, &r.preparation)) =>
-        {
-            check_variant_version(bytes, 71)?
-        }
-        AnalysisResult::TailingRecipePreview(p)
-            if p.compiled
-                .rows
-                .iter()
-                .any(|r| annealed_preparation(&p.compiled.plan, &r.preparation)) =>
-        {
-            check_variant_version(bytes, 71)?
         }
         _ => {}
     }
-    let recipe_plan = match &response.result {
-        AnalysisResult::OverlapRecipePreview(p) => Some(&p.compiled.plan),
-        AnalysisResult::LigationRecipePreview(p) => Some(&p.compiled.plan),
-        AnalysisResult::TailingRecipePreview(p) => Some(&p.compiled.plan),
-        _ => None,
-    };
-    if recipe_plan.is_some_and(|plan| {
-        plan.steps.iter().any(|operation| {
-            let crate::verification::Operation::CatalogDigest {
-                template: crate::verification::Source::Step(outer),
-                ..
-            } = operation
-            else {
-                return false;
-            };
-            let Some(crate::verification::Operation::Pcr {
-                template: crate::verification::Source::Step(extension),
-                ..
-            }) = plan.steps.get(*outer)
-            else {
-                return false;
-            };
-            matches!(
-                plan.steps.get(*extension),
-                Some(crate::verification::Operation::OverlapExtension { .. })
-            )
-        })
-    }) {
-        check_variant_version(bytes, 84)?;
-    }
-    // The existing Operation stays worker81-compatible, but interpreting it as
-    // a forked recipe-row preparation requires the ownership model of schema82.
-    if recipe_plan.is_some_and(|p| {
-        p.steps
-            .iter()
-            .any(|op| matches!(op, crate::verification::Operation::OverlapExtension { .. }))
-    }) {
-        check_variant_version(bytes, 82)?;
-    }
-    if recipe_plan.is_some_and(|p| {
-        p.steps.iter().any(|op| {
-            matches!(
-                op,
-                crate::verification::Operation::ReconstructRunProduct { .. }
-            )
-        })
-    }) {
-        check_variant_version(bytes, 74)?;
-    }
-    if recipe_plan.is_some_and(|p| {
-        p.steps
-            .iter()
-            .any(|op| matches!(op, crate::verification::Operation::PcrWithMismatches { .. }))
-    }) {
-        check_variant_version(bytes, 76)?;
-    }
-    if recipe_plan.is_some_and(|p| {
-        p.steps.iter().any(|op| match op {
-            crate::verification::Operation::CatalogDigest {
-                template: crate::verification::Source::Step(index),
-                ..
-            } => matches!(
-                p.steps.get(*index),
-                Some(crate::verification::Operation::PcrWithMismatches { .. })
-            ),
-            _ => false,
-        })
-    }) {
-        check_variant_version(bytes, 78)?;
-    }
-    if let AnalysisResult::AnnotationImport(report) = &response.result {
-        check_annotation_format_version(bytes, report.format)?;
-    }
-    if let AnalysisResult::WorkspaceLoaded(workspace) = &response.result {
-        check_workspace_version(bytes, workspace)?;
-        if workspace
-            .attachments
-            .values()
-            .any(|a| a.kind == crate::run_lineage::WORKSPACE_ATTACHMENT_KIND)
-        {
-            check_variant_version(bytes, 12)?;
-        }
-        if workspace
-            .attachments
-            .values()
-            .any(|a| a.kind == "read-assembly-v1")
-        {
-            check_variant_version(bytes, 15)?;
-        }
-        for c in &workspace.candidates {
-            check_variant_version(bytes, plan_worker_version(&c.plan))?;
-        }
-    }
+
     match &response.result {
         AnalysisResult::TopoRunInspection(report) => {
             report.validate_binding(&response.revision)?;
@@ -2267,8 +1681,8 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             }
         }
         AnalysisResult::DomesticationPrepared(report) => {
-            check_verification_report_version(bytes, &report.verification)?;
-            check_variant_version(bytes, plan_worker_version(&report.preparation.plan))?;
+            validate_verification_report(&report.verification)?;
+
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::GoldenGateFusions(report) => report.validate_binding(&response.revision)?,
@@ -2289,12 +1703,11 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::PreparedGoldenGatePool(report) => {
-            check_verification_report_version(bytes, &report.preview.verification)?;
-            check_variant_version(bytes, plan_worker_version(&report.preview.compiled.plan))?;
+            validate_verification_report(&report.preview.verification)?;
+
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::PreparedGoldenGateCandidate(report) => {
-            check_variant_version(bytes, plan_worker_version(&report.plan))?;
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::PcrOutputs(report) => {
@@ -2324,7 +1737,6 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             }
         }
         AnalysisResult::CombinatorialBatchCaptured(commit) => {
-            check_workspace_version(bytes, &commit.workspace)?;
             commit.validate_binding(&response.revision)?;
         }
         AnalysisResult::CombinatorialReleaseStarted(progress)
@@ -2345,7 +1757,6 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             }
         }
         AnalysisResult::CombinatorialReleaseFinished(commit) => {
-            check_workspace_version(bytes, &commit.workspace)?;
             commit.validate_binding(&response.revision, &commit.source_workspace_fingerprint)?;
         }
         AnalysisResult::CombinatorialOutputsArchive(archive) => {
@@ -2369,23 +1780,19 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             outputs.validate_binding(&response.revision)?;
         }
         AnalysisResult::GoldenGateReaction(report) => {
-            check_variant_version(bytes, plan_worker_version(&report.probe_plan))?;
-            check_verification_report_version(bytes, &report.verification)?;
+            validate_verification_report(&report.verification)?;
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::GoldenGateReactionCandidate(report) => {
-            check_variant_version(bytes, plan_worker_version(&report.plan))?;
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::ReadReviewPreview(preview) => {
             preview.validate_binding(&response.revision)?
         }
         AnalysisResult::ReadReviewCommitted(commit) => {
-            check_workspace_version(bytes, &commit.workspace)?;
             commit.validate_binding(&response.revision)?;
         }
         AnalysisResult::ReadCheckCaptured(commit) => {
-            check_workspace_version(bytes, &commit.workspace)?;
             commit.validate_binding(&response.revision)?;
         }
         AnalysisResult::ReadCheckReplayed(checked) => {
@@ -2396,7 +1803,6 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::CloningOutputsFinalized(commit) => {
-            check_workspace_version(bytes, &commit.workspace)?;
             commit.validate_binding(&response.revision)?;
         }
         AnalysisResult::DigestFragmentSelected(report) => {
@@ -2410,24 +1816,22 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             report.validate_binding(&response.revision)?;
         }
         AnalysisResult::OverlapExtensionPrimersDesigned(report) => {
-            check_verification_report_version(bytes, &report.verification)?;
+            validate_verification_report(&report.verification)?;
             report.validate_binding(&response.revision)?;
         }
         AnalysisResult::OverlapExtensionDigestInspection(report) => {
             report.validate_binding(&response.revision)?;
         }
         AnalysisResult::EditedOverlapPrimersDesigned(report) => {
-            check_verification_report_version(bytes, &report.preview.verification)?;
+            validate_verification_report(&report.preview.verification)?;
             report.validate_binding(&response.revision)?;
         }
         AnalysisResult::AssemblyJunctionInspection(report) => {
-            check_verification_report_version(bytes, &report.verification)?;
+            validate_verification_report(&report.verification)?;
             if matches!(
                 report.method,
                 Some(crate::assembly_junctions::Method::GoldenGate { .. })
-            ) {
-                check_variant_version(bytes, 48)?;
-            }
+            ) {}
             report.validate_binding(&response.revision)?
         }
         AnalysisResult::MismatchPcrDigestInspection(report) => {
@@ -2452,15 +1856,15 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             report.validate_binding(&response.revision)?;
         }
         AnalysisResult::TailingRecipePreview(report) => {
-            check_verification_report_version(bytes, &report.verification)?;
+            validate_verification_report(&report.verification)?;
             report.validate_binding(&response.revision)?;
         }
         AnalysisResult::LigationRecipePreview(report) => {
-            check_verification_report_version(bytes, &report.verification)?;
+            validate_verification_report(&report.verification)?;
             report.validate_binding(&response.revision)?;
         }
         AnalysisResult::OverlapRecipePreview(report) => {
-            check_verification_report_version(bytes, &report.verification)?;
+            validate_verification_report(&report.verification)?;
             report.validate()?;
             if report.context_revision != response.revision {
                 return Err(Error::Format(
@@ -2668,14 +2072,10 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             crate::genome_session::validate_result(&response.result, &response.revision)?
         }
         AnalysisResult::InversePcr(report) => {
-            check_verification_report_version(bytes, &report.verification)?;
-            check_variant_version(bytes, plan_worker_version(&report.plan))?;
+            validate_verification_report(&report.verification)?;
         }
         AnalysisResult::Verification(report) => {
-            check_verification_report_version(bytes, report)?;
-        }
-        AnalysisResult::ProtocolPdf(report) => {
-            check_scientific_report_version(bytes, &report.engine_version)?;
+            validate_verification_report(report)?;
         }
         AnalysisResult::EditTemplate(report) => {
             report.validate()?;
@@ -2740,16 +2140,13 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             }
         }
         AnalysisResult::RunCommit(commit) => {
-            check_workspace_version(bytes, &commit.workspace)?;
-            check_scientific_report_version(bytes, &commit.receipt.recorded_engine)?;
             commit.validate()?;
             if commit.receipt.source_workspace_fingerprint != response.revision {
                 return Err(Error::Format("run commit source workspace mismatch".into()));
             }
         }
         AnalysisResult::RunReplay(report) => {
-            check_scientific_report_version(bytes, &report.recorded_engine)?;
-            check_verification_report_version(bytes, &report.current_report)?;
+            validate_verification_report(&report.current_report)?;
             report.validate()?;
             if report.source_workspace_fingerprint != response.revision {
                 return Err(Error::Format("run replay source workspace mismatch".into()));
@@ -2791,7 +2188,6 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             }
         }
         AnalysisResult::AlignmentDocument(document) => {
-            check_variant_version(bytes, alignment_document_worker_version(document))?;
             document.validate()?;
         }
         AnalysisResult::AlignmentRows(rows) => {
@@ -2803,8 +2199,8 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             }
         }
         AnalysisResult::AlignmentSaved(archive) => {
-            let document = crate::alignment_formats::load_alignment(archive)?;
-            check_variant_version(bytes, alignment_document_worker_version(&document))?;
+            crate::alignment_formats::load_alignment(archive)?;
+
             if blake3::hash(archive).to_hex().as_str() != response.revision {
                 return Err(Error::Format(
                     "saved alignment response revision mismatch".into(),
@@ -2863,508 +2259,15 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             if data.len() > crate::workspace::MAX_ARCHIVE_BYTES {
                 return Err(Error::TooLarge);
             }
-            if u16::from_le_bytes([bytes[4], bytes[5]]) < WORKER_SCHEMA_VERSION {
-                let workspace = crate::workspace::load_workspace(data)?;
-                check_workspace_version(bytes, &workspace)?;
-            }
         }
         _ => {}
     }
     Ok(response)
 }
-// Probe the borrowed selector before decoding a schema-13 scientific payload.
-// These new jobs/results are never eligible for the larger workspace budget.
-fn preflight_codon_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 13)?;
-    }
-    Ok(())
-}
-fn preflight_fusion_design_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 60)?;
-    }
-    Ok(())
-}
-fn preflight_domestication_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 61)?;
-    }
-    Ok(())
-}
-fn preflight_topo_actions_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 66)?;
-    }
-    Ok(())
-}
-fn preflight_processed_run_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 65)?;
-    }
-    Ok(())
-}
-fn preflight_processed_topo_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 64)?;
-    }
-    Ok(())
-}
-fn preflight_nick_sealing_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 63)?;
-    }
-    Ok(())
-}
-fn preflight_published_ligation_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 62)?;
-    }
-    Ok(())
-}
-// Dot plots retain the ordinary scientific budget; gate the new selector before
-// deserializing any schema-14 source/query body under a historical envelope.
-fn preflight_dotplot_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 14)?;
-    }
-    Ok(())
-}
-// Assembly retains ordinary scientific limits and requires its explicit schema
-// before any read batch is deserialized under a historical envelope.
-fn preflight_contig_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 15)?;
-    }
-    Ok(())
-}
-fn preflight_methylation_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 16)?;
-    }
-    Ok(())
-}
-fn preflight_topo_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 26)?;
-    }
-    Ok(())
-}
-fn preflight_pinned_gel_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 55)?;
-    }
-    Ok(())
-}
-fn preflight_pairwise_export_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 56)?;
-    }
-    Ok(())
-}
-fn preflight_combinatorial_batch_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 57)?;
-    }
-    Ok(())
-}
-fn preflight_combinatorial_release_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 58)?;
-    }
-    Ok(())
-}
-fn preflight_translation_reference_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 54)?;
-    }
-    Ok(())
-}
-fn preflight_reference_transfer_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 53)?;
-    }
-    Ok(())
-}
-fn preflight_pairwise_review_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 52)?;
-    }
-    Ok(())
-}
-fn preflight_mismatch_pcr_outputs_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 51)?;
-    }
-    Ok(())
-}
-fn preflight_pcr_outputs_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 50)?;
-    }
-    Ok(())
-}
-fn preflight_golden_gate_reaction_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 49)?;
-    }
-    Ok(())
-}
-fn preflight_prepared_golden_gate_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 47)?;
-    }
-    Ok(())
-}
-fn preflight_golden_gate_junction_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 46)?;
-    }
-    Ok(())
-}
-fn preflight_selective_assembly_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 45)?;
-    }
-    Ok(())
-}
-fn preflight_edited_assembly_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 44)?;
-    }
-    Ok(())
-}
-fn preflight_read_review_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 43)?;
-    }
-    Ok(())
-}
-fn preflight_read_check_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 42)?;
-    }
-    Ok(())
-}
-fn preflight_mutation_intent_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 41)?;
-    }
-    Ok(())
-}
-fn preflight_golden_gate_primer_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 40)?;
-    }
-    Ok(())
-}
-fn preflight_finalize_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 39)?;
-    }
-    Ok(())
-}
-fn preflight_cloning_output_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 38)?;
-    }
-    Ok(())
-}
-fn preflight_assembly_intent_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 36)?;
-    }
-    Ok(())
-}
-fn preflight_overlap_primer_design_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 35)?;
-    }
-    Ok(())
-}
-fn preflight_assembly_junctions_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 33)?;
-    }
-    Ok(())
-}
-fn preflight_mismatch_digest_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 78)?;
-    }
-    Ok(())
-}
-fn preflight_topo_run_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 89)?;
-    }
-    Ok(())
-}
-fn preflight_homology_recipe_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 86)?;
-    }
-    Ok(())
-}
-fn preflight_annealing_recipe_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 88)?;
-    }
-    Ok(())
-}
-fn preflight_edited_overlap_primer_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 85)?;
-    }
-    Ok(())
-}
-fn preflight_overlap_extension_digest_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 84)?;
-    }
-    Ok(())
-}
-fn preflight_overlap_extension_primer_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 83)?;
-    }
-    Ok(())
-}
-fn preflight_contribution_edit_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 79)?;
-    }
-    Ok(())
-}
-fn preflight_substitution_intent_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 77)?;
-    }
-    Ok(())
-}
-fn preflight_run_catalog_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 75)?;
-    }
-    Ok(())
-}
-fn preflight_run_material_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 74)?;
-    }
-    Ok(())
-}
-fn preflight_pcr_digest_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 72)?;
-    }
-    Ok(())
-}
-fn preflight_tailing_recipe_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 70)?;
-    }
-    Ok(())
-}
-fn preflight_ligation_recipe_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 32)?;
-    }
-    Ok(())
-}
-fn preflight_overlap_recipe_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 31)?;
-    }
-    Ok(())
-}
-fn preflight_variants_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 29)?;
-    }
-    Ok(())
-}
-fn preflight_annotated_topo_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 27)?;
-    }
-    Ok(())
-}
-fn preflight_read_alignment_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 24)?;
-    }
-    Ok(())
-}
-fn preflight_combinatorial_multisite_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 69)?;
-    }
-    Ok(())
-}
-fn preflight_multisite_recombination_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 68)?;
-    }
-    Ok(())
-}
-fn preflight_recombination_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 22)?;
-    }
-    Ok(())
-}
-fn preflight_catalog_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 21)?;
-    }
-    Ok(())
-}
-fn preflight_restriction_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 20)?;
-    }
-    Ok(())
-}
-fn preflight_genome_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 19)?;
-    }
-    Ok(())
-}
-fn preflight_crispr_tag(bytes: &[u8], tags: &[u32]) -> Result<(), Error> {
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tags.contains(&tag) {
-        check_variant_version(bytes, 18)?;
-    }
-    Ok(())
-}
-fn check_verification_report_version(
-    bytes: &[u8],
+fn validate_verification_report(
     report: &crate::verification::VerificationReport,
 ) -> Result<(), Error> {
-    check_scientific_report_version(bytes, &report.engine_version)?;
     if !report.reference_step_reports.is_empty() {
-        check_variant_version(bytes, 68)?;
         if report.reference_step_reports.len() > 64 {
             return Err(Error::TooLarge);
         }
@@ -3389,7 +2292,6 @@ fn check_verification_report_version(
         }
     }
     if !report.physical_processing_reports.is_empty() {
-        check_variant_version(bytes, 66)?;
         if report.physical_processing_reports.len() > 64 {
             return Err(Error::TooLarge);
         }
@@ -3402,56 +2304,36 @@ fn check_verification_report_version(
             }
             match &step.evidence {
                 crate::verification::PhysicalProcessingEvidence::LigationOutcomes(r) => {
-                    check_variant_version(bytes, 92)?;
                     r.validate_documentary()?;
                 }
                 crate::verification::PhysicalProcessingEvidence::DerivedOrigin(r) => {
-                    check_variant_version(bytes, 91)?;
                     r.validate_documentary()?;
                 }
                 crate::verification::PhysicalProcessingEvidence::SavedDigestOrigin(r) => {
-                    check_variant_version(bytes, 90)?;
                     r.validate_documentary()?;
-                    check_capsule_candidate_version(
-                        u16::from_le_bytes([bytes[4], bytes[5]]),
-                        &r.origin.record.request.origin.candidate,
-                    )?;
                 }
                 crate::verification::PhysicalProcessingEvidence::RunProduct(r) => {
-                    check_variant_version(bytes, 73)?;
                     r.validate_documentary()?;
-                    check_capsule_candidate_version(
-                        u16::from_le_bytes([bytes[4], bytes[5]]),
-                        &r.origin.candidate,
-                    )?;
-                    // Inspect the retained scientific stamp without replaying or
-                    // conferring freshness on this documentary report.
-                    check_scientific_report_version(bytes, &r.decode_report()?.engine_version)?;
                 }
                 crate::verification::PhysicalProcessingEvidence::TopoActions(r) => {
                     r.validate_binding(&r.context_revision)?
                 }
                 crate::verification::PhysicalProcessingEvidence::OverlapExtension(r) => {
-                    check_variant_version(bytes, 81)?;
                     r.validate_documentary()?;
                 }
                 crate::verification::PhysicalProcessingEvidence::ThreePrimeResection(report) => {
-                    check_variant_version(bytes, 88)?;
                     report.validate_documentary()?;
                 }
                 crate::verification::PhysicalProcessingEvidence::HomologyAnnealing(report) => {
-                    check_variant_version(bytes, 88)?;
                     report.validate_documentary()?;
                 }
                 crate::verification::PhysicalProcessingEvidence::HomologyAssembly(report) => {
-                    check_variant_version(bytes, 86)?;
                     report.validate_documentary()?;
                 }
             }
         }
     }
     if !report.processed_step_reports.is_empty() {
-        check_variant_version(bytes, 65)?;
         if report.processed_step_reports.len() > 64 {
             return Err(Error::TooLarge);
         }
@@ -3468,559 +2350,7 @@ fn check_verification_report_version(
     }
     Ok(())
 }
-fn check_scientific_report_version(bytes: &[u8], engine: &str) -> Result<(), Error> {
-    if engine.ends_with("/science-26") {
-        check_variant_version(bytes, 92)?;
-    }
-    if engine.ends_with("/science-25") {
-        check_variant_version(bytes, 91)?;
-    }
-    if engine.ends_with("/science-24") {
-        check_variant_version(bytes, 90)?;
-    }
-    if engine.ends_with("/science-23") {
-        check_variant_version(bytes, 88)?;
-    }
-    if engine.ends_with("/science-22") {
-        check_variant_version(bytes, 81)?;
-    }
-    if engine.ends_with("/science-21") {
-        check_variant_version(bytes, 80)?;
-    }
-    if engine.ends_with("/science-20") {
-        check_variant_version(bytes, 73)?;
-    }
-    if engine.ends_with("/science-19") {
-        check_variant_version(bytes, 68)?;
-    }
-    if engine.ends_with("/science-18") {
-        check_variant_version(bytes, 67)?;
-    }
-    if engine.ends_with("/science-17") {
-        check_variant_version(bytes, 66)?;
-    }
-    if engine.ends_with("/science-16") {
-        check_variant_version(bytes, 65)?;
-    }
-    if engine.ends_with("/science-15") {
-        check_variant_version(bytes, 59)?;
-    }
-    if engine.ends_with("/science-14") {
-        check_variant_version(bytes, 37)?;
-    }
-    if engine.ends_with("/science-13") {
-        check_variant_version(bytes, 34)?;
-    }
-    if engine.ends_with("/science-12") {
-        check_variant_version(bytes, 28)?;
-    }
-    if engine.ends_with("/science-11") {
-        check_variant_version(bytes, 27)?;
-    }
-    if engine.ends_with("/science-10") {
-        check_variant_version(bytes, 25)?;
-    }
-    if engine.ends_with("/science-9") {
-        check_variant_version(bytes, 22)?;
-    }
-    if engine.ends_with("/science-8") {
-        check_variant_version(bytes, 17)?;
-    }
-    Ok(())
-}
-fn annealed_preparation(
-    plan: &crate::verification::DesignPlan,
-    row: &crate::assembly_recipe::PreparedRow,
-) -> bool {
-    row.preparation_step
-        .and_then(|i| plan.steps.get(i))
-        .is_some_and(|step| matches!(step, crate::verification::Operation::AnnealOligos { .. }))
-}
-// A post-decode semantic gate for an appended nested enum. This visits borrowed
-// typed shapes without allocating an intermediate JSON value or copying DNA.
-// Byte payloads remain opaque; recognized workspace records have their own
-// decoded typed request checks below.
-mod preparation_shape {
-    use serde::Serialize;
-    use serde::ser::{
-        self, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant, SerializeTuple,
-        SerializeTupleStruct, SerializeTupleVariant,
-    };
-    #[derive(Debug)]
-    pub struct Found(u16);
-    impl std::fmt::Display for Found {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(
-                f,
-                "recipe preparation capability requires worker schema {}",
-                self.0
-            )
-        }
-    }
-    impl std::error::Error for Found {}
-    impl ser::Error for Found {
-        fn custom<T: std::fmt::Display>(_: T) -> Self {
-            Self(74)
-        }
-    }
-    pub struct Visitor {
-        pub worker: u16,
-        pub candidate: bool,
-    }
-    fn variant(worker: u16, name: &str, variant: &str) -> Result<(), Found> {
-        let minimum = match (name, variant) {
-            ("Operation", "LigateWithOutcomes")
-            | ("PhysicalProcessingEvidence", "LigationOutcomes") => 92,
-            ("Preparation", "FromDerived")
-            | ("Operation", "ReconstructMaterial")
-            | ("PhysicalProcessingEvidence", "DerivedOrigin")
-            | ("MaterialOrigin", "Derived")
-            | ("MaterialSelection", "Derived") => 91,
-            ("Preparation", "FromDigest")
-            | ("Operation", "ReconstructDigestFragment")
-            | ("PhysicalProcessingEvidence", "SavedDigestOrigin")
-            | ("MaterialOrigin", "Digest") => 90,
-            ("Operation", "ResectThreePrime")
-            | ("Operation", "HomologyAnnealing")
-            | ("PhysicalProcessingEvidence", "ThreePrimeResection")
-            | ("PhysicalProcessingEvidence", "HomologyAnnealing")
-            | ("Method", "HomologyAnnealing") => 88,
-            ("Operation", "HomologyAssembly")
-            | ("PhysicalProcessingEvidence", "HomologyAssembly")
-            | ("Method", "HomologyAssembly") => 86,
-            ("Preparation", "OverlapExtensionPcrCatalogDigest")
-            | ("RunPreparation", "OverlapExtensionPcrCatalogDigest") => 84,
-            ("Preparation", "OverlapExtensionPcr")
-            | ("RunPreparation", "OverlapExtensionPcr")
-            | ("Stage", "OverlapExtension") => 82,
-            ("Operation", "OverlapExtension")
-            | ("PhysicalProcessingEvidence", "OverlapExtension") => 81,
-            ("Preparation", "AnnealedOligos") => 71,
-            ("Preparation", "FromRun") => 74,
-            ("Preparation", "MismatchPcr") | ("RunPreparation", "MismatchPcr") => 76,
-            ("Preparation", "MismatchPcrCatalogDigest")
-            | ("RunPreparation", "MismatchPcrCatalogDigest") => 78,
-            _ => 0,
-        };
-        if worker < minimum {
-            Err(Found(minimum))
-        } else {
-            Ok(())
-        }
-    }
-    macro_rules! scalar {
-        ($($method:ident($ty:ty)),* $(,)?) => { $(fn $method(self, _: $ty) -> Result<(),Found> { Ok(()) })* };
-    }
-    impl ser::Serializer for Visitor {
-        fn is_human_readable(&self) -> bool {
-            false
-        }
-        type Ok = ();
-        type Error = Found;
-        type SerializeSeq = Self;
-        type SerializeTuple = Self;
-        type SerializeTupleStruct = Self;
-        type SerializeTupleVariant = Self;
-        type SerializeMap = Self;
-        type SerializeStruct = Self;
-        type SerializeStructVariant = Self;
-        scalar!(
-            serialize_bool(bool),
-            serialize_i8(i8),
-            serialize_i16(i16),
-            serialize_i32(i32),
-            serialize_i64(i64),
-            serialize_i128(i128),
-            serialize_u8(u8),
-            serialize_u16(u16),
-            serialize_u32(u32),
-            serialize_u64(u64),
-            serialize_u128(u128),
-            serialize_f32(f32),
-            serialize_f64(f64),
-            serialize_char(char),
-            serialize_str(&str)
-        );
-        fn serialize_bytes(self, bytes: &[u8]) -> Result<(), Found> {
-            if self.candidate {
-                super::check_capsule_candidate_version(self.worker, bytes)
-                    .map_err(|_| Found(81))?;
-            }
-            Ok(())
-        }
-        fn serialize_none(self) -> Result<(), Found> {
-            Ok(())
-        }
-        fn serialize_some<T: ?Sized + Serialize>(self, v: &T) -> Result<(), Found> {
-            v.serialize(Self {
-                worker: self.worker,
-                candidate: false,
-            })
-        }
-        fn serialize_unit(self) -> Result<(), Found> {
-            Ok(())
-        }
-        fn serialize_unit_struct(self, _: &'static str) -> Result<(), Found> {
-            Ok(())
-        }
-        fn serialize_unit_variant(
-            self,
-            n: &'static str,
-            _: u32,
-            v: &'static str,
-        ) -> Result<(), Found> {
-            variant(self.worker, n, v)
-        }
-        fn serialize_newtype_struct<T: ?Sized + Serialize>(
-            self,
-            _: &'static str,
-            v: &T,
-        ) -> Result<(), Found> {
-            v.serialize(Self {
-                worker: self.worker,
-                candidate: false,
-            })
-        }
-        fn serialize_newtype_variant<T: ?Sized + Serialize>(
-            self,
-            n: &'static str,
-            _: u32,
-            v: &'static str,
-            value: &T,
-        ) -> Result<(), Found> {
-            variant(self.worker, n, v)?;
-            // Native archive bytes are inspected through check_workspace_version,
-            // not traversed one scalar byte at a time by this shape-only visitor.
-            if n == "AnalysisResult" && v == "WorkspaceSaved" {
-                return Ok(());
-            }
-            value.serialize(Self {
-                worker: self.worker,
-                candidate: false,
-            })
-        }
-        fn serialize_seq(self, _: Option<usize>) -> Result<Self, Found> {
-            Ok(self)
-        }
-        fn serialize_tuple(self, _: usize) -> Result<Self, Found> {
-            Ok(self)
-        }
-        fn serialize_tuple_struct(self, _: &'static str, _: usize) -> Result<Self, Found> {
-            Ok(self)
-        }
-        fn serialize_tuple_variant(
-            self,
-            n: &'static str,
-            _: u32,
-            v: &'static str,
-            _: usize,
-        ) -> Result<Self, Found> {
-            variant(self.worker, n, v)?;
-            Ok(self)
-        }
-        fn serialize_map(self, _: Option<usize>) -> Result<Self, Found> {
-            Ok(self)
-        }
-        fn serialize_struct(self, _: &'static str, _: usize) -> Result<Self, Found> {
-            Ok(self)
-        }
-        fn serialize_struct_variant(
-            self,
-            n: &'static str,
-            _: u32,
-            v: &'static str,
-            _: usize,
-        ) -> Result<Self, Found> {
-            variant(self.worker, n, v)?;
-            Ok(self)
-        }
-        fn collect_str<T: ?Sized + std::fmt::Display>(self, _: &T) -> Result<(), Found> {
-            Ok(())
-        }
-    }
-    macro_rules! sequence {
-        ($trait:ident,$method:ident) => {
-            impl $trait for Visitor {
-                type Ok = ();
-                type Error = Found;
-                fn $method<T: ?Sized + Serialize>(&mut self, v: &T) -> Result<(), Found> {
-                    v.serialize(Visitor {
-                        worker: self.worker,
-                        candidate: false,
-                    })
-                }
-                fn end(self) -> Result<(), Found> {
-                    Ok(())
-                }
-            }
-        };
-    }
-    sequence!(SerializeSeq, serialize_element);
-    sequence!(SerializeTuple, serialize_element);
-    sequence!(SerializeTupleStruct, serialize_field);
-    sequence!(SerializeTupleVariant, serialize_field);
-    impl SerializeMap for Visitor {
-        type Ok = ();
-        type Error = Found;
-        fn serialize_key<T: ?Sized + Serialize>(&mut self, v: &T) -> Result<(), Found> {
-            v.serialize(Visitor {
-                worker: self.worker,
-                candidate: false,
-            })
-        }
-        fn serialize_value<T: ?Sized + Serialize>(&mut self, v: &T) -> Result<(), Found> {
-            v.serialize(Visitor {
-                worker: self.worker,
-                candidate: false,
-            })
-        }
-        fn end(self) -> Result<(), Found> {
-            Ok(())
-        }
-    }
-    macro_rules! structure {
-        ($trait:ident) => {
-            impl $trait for Visitor {
-                type Ok = ();
-                type Error = Found;
-                fn serialize_field<T: ?Sized + Serialize>(
-                    &mut self,
-                    key: &'static str,
-                    v: &T,
-                ) -> Result<(), Found> {
-                    if key == "bytes" {
-                        Ok(())
-                    } else {
-                        v.serialize(Visitor {
-                            worker: self.worker,
-                            candidate: key == "candidate",
-                        })
-                    }
-                }
-                fn end(self) -> Result<(), Found> {
-                    Ok(())
-                }
-            }
-        };
-    }
-    structure!(SerializeStruct);
-    structure!(SerializeStructVariant);
-}
-fn check_preparation_version(bytes: &[u8], value: &impl Serialize) -> Result<(), Error> {
-    let worker = u16::from_le_bytes([bytes[4], bytes[5]]);
-    if worker < WORKER_SCHEMA_VERSION {
-        value
-            .serialize(preparation_shape::Visitor {
-                worker,
-                candidate: false,
-            })
-            .map_err(|e| Error::Format(e.to_string()))?;
-    }
-    Ok(())
-}
 
-fn check_combinatorial_request_version(
-    bytes: &[u8],
-    request: &crate::combinatorial_batch::Request,
-) -> Result<(), Error> {
-    check_preparation_version(bytes, request)?;
-    use crate::combinatorial_design::Method;
-    let required = |method: &Method| match method {
-        Method::MultiSiteReference { .. } => 69,
-        Method::GoldenGatePool { .. } => 59,
-        _ => 57,
-    };
-    if let Some(design) = &request.design {
-        check_variant_version(bytes, required(&design.method))?;
-    }
-    for row in &request.rows {
-        if let crate::combinatorial_batch::RowRequest::Ready(row) = row
-            && let Some(method) = row.overrides.as_ref().and_then(|o| o.method.as_ref())
-        {
-            check_variant_version(bytes, required(method))?;
-        }
-    }
-    Ok(())
-}
-fn alignment_format_worker_version(format: &crate::alignment_formats::AlignmentFormat) -> u16 {
-    use crate::alignment_formats::AlignmentFormat::*;
-    if matches!(format, AlignedFasta | Clustal | Stockholm) {
-        10
-    } else {
-        87
-    }
-}
-fn alignment_document_worker_version(
-    document: &crate::alignment_formats::AlignmentDocument,
-) -> u16 {
-    if document
-        .rows
-        .iter()
-        .any(|row| row.identifier.bytes().any(|b| b.is_ascii_whitespace()))
-    {
-        87
-    } else {
-        alignment_format_worker_version(&document.source.format)
-    }
-}
-fn check_workspace_version(
-    bytes: &[u8],
-    workspace: &crate::workspace::Workspace,
-) -> Result<(), Error> {
-    if u16::from_le_bytes([bytes[4], bytes[5]]) >= WORKER_SCHEMA_VERSION {
-        return Ok(());
-    }
-    for candidate in &workspace.candidates {
-        check_variant_version(bytes, plan_worker_version(&candidate.plan))?;
-        check_preparation_version(bytes, &candidate.plan)?;
-    }
-    for attachment in workspace.attachments.values() {
-        if attachment.kind == crate::alignment_formats::WORKSPACE_ATTACHMENT_KIND {
-            let document = crate::alignment_formats::load_alignment(&attachment.bytes)?;
-            check_variant_version(bytes, alignment_document_worker_version(&document))?;
-        } else if attachment.kind == "assembly-draft-v13" {
-            check_variant_version(bytes, 91)?;
-        } else if attachment.kind == crate::material_derivation::WORKSPACE_ATTACHMENT_KIND {
-            check_variant_version(bytes, 91)?;
-            crate::material_derivation::load_record(&attachment.bytes)?;
-        } else if attachment.kind == "assembly-draft-v12" {
-            check_variant_version(bytes, 90)?;
-        } else if attachment.kind == crate::run_digest_history::WORKSPACE_ATTACHMENT_KIND {
-            check_variant_version(bytes, 90)?;
-            let record = crate::run_digest_history::load_record(&attachment.bytes)?;
-            check_capsule_candidate_version(
-                u16::from_le_bytes([bytes[4], bytes[5]]),
-                &record.request.origin.candidate,
-            )?;
-        } else if attachment.kind == "assembly-draft-v11" {
-            check_variant_version(bytes, 88)?;
-        } else if attachment.kind == "assembly-draft-v10" {
-            check_variant_version(bytes, 86)?;
-        } else if attachment.kind == "assembly-draft-v9" {
-            check_variant_version(bytes, 84)?;
-        } else if attachment.kind == "assembly-draft-v8" {
-            check_variant_version(bytes, 82)?;
-        } else if attachment.kind == "assembly-draft-v7" {
-            check_variant_version(bytes, 79)?;
-        } else if attachment.kind == "assembly-draft-v6" {
-            check_variant_version(bytes, 77)?;
-        } else if attachment.kind == "assembly-draft-v5" {
-            check_variant_version(bytes, 74)?;
-        } else if attachment.kind == "assembly-draft-v4" {
-            check_variant_version(bytes, 71)?;
-        } else if attachment.kind == crate::run_lineage::WORKSPACE_ATTACHMENT_KIND {
-            check_variant_version(bytes, 12)?;
-            let record = crate::run_lineage::load_run_record(&attachment.bytes)?;
-            check_variant_version(bytes, plan_worker_version(&record.plan))?;
-            check_preparation_version(bytes, &record.plan)?;
-            if record.plan_schema >= 20 {
-                check_variant_version(bytes, 91)?;
-            }
-            if record.plan_schema >= 19 {
-                check_variant_version(bytes, 90)?;
-            }
-            if record.plan_schema >= 18 {
-                check_variant_version(bytes, 88)?;
-            }
-            if record.plan_schema >= 17 {
-                check_variant_version(bytes, 86)?;
-            }
-            if record.plan_schema >= 16 {
-                check_variant_version(bytes, 81)?;
-            }
-            if record.plan_schema >= 15 {
-                check_variant_version(bytes, 73)?;
-            }
-            if record.plan_schema >= 14 {
-                check_variant_version(bytes, 68)?;
-            }
-            if record.plan_schema >= 13 {
-                check_variant_version(bytes, 67)?;
-            }
-            if record.plan_schema >= 12 {
-                check_variant_version(bytes, 66)?;
-            }
-            if record.plan_schema >= 11 {
-                check_variant_version(bytes, 65)?;
-            }
-            if record.plan_schema >= 10 {
-                check_variant_version(bytes, 59)?;
-            }
-            if record.plan_schema >= 4 {
-                check_variant_version(bytes, 17)?;
-            }
-            if record.plan_schema >= 9 {
-                check_variant_version(bytes, 37)?;
-            }
-            if record.plan_schema >= 8 {
-                check_variant_version(bytes, 34)?;
-            }
-            if record.plan_schema >= 7 {
-                check_variant_version(bytes, 28)?;
-            }
-            if record.plan_schema >= 6 {
-                check_variant_version(bytes, 25)?;
-            }
-            if record.plan_schema >= 5 {
-                check_variant_version(bytes, 22)?;
-            }
-            check_scientific_report_version(bytes, &record.assessment.engine_version)?;
-        } else if attachment.kind == crate::combinatorial_batch::KIND {
-            check_variant_version(bytes, 57)?;
-            let record = crate::combinatorial_batch::load(
-                workspace,
-                &blake3::hash(&attachment.bytes).to_hex().to_string(),
-            )?;
-            check_combinatorial_request_version(bytes, &record.request)?;
-            check_scientific_report_version(bytes, &record.engine_version)?;
-        } else if attachment.kind == crate::combinatorial_release::KIND {
-            check_variant_version(bytes, 58)?;
-            let manifest = crate::combinatorial_release::load(
-                workspace,
-                &blake3::hash(&attachment.bytes).to_hex().to_string(),
-            )?;
-            check_scientific_report_version(bytes, &manifest.engine_version)?;
-        } else if attachment.kind == crate::genome::WORKSPACE_ATTACHMENT_KIND {
-            check_variant_version(bytes, 19)?;
-        } else if attachment.kind == "read-assembly-v1" {
-            check_variant_version(bytes, 15)?;
-        }
-    }
-    Ok(())
-}
-// Closed run origins retain typed plans in compact candidate envelopes. Walk
-// those packages iteratively so a new operation cannot hide under an old worker
-// envelope. This is capability validation only, never scientific replay.
-fn check_capsule_candidate_version(worker: u16, first: &[u8]) -> Result<(), Error> {
-    crate::run_material_capsule::visit_candidate_plans(first, |candidate| {
-        if worker < plan_worker_version(&candidate.plan) {
-            return Err(Error::Unsupported(
-                "Nested material origin requires a newer worker schema".into(),
-            ));
-        }
-        Ok(())
-    })
-}
-// AnnotationFormat is append-only inside existing jobs/reports. A new selector
-// must not acquire semantics under an older envelope, even when the outer tag
-// predates it. Historical GFF3/BED payloads retain their schema-7 contract.
-fn check_annotation_format_version(
-    bytes: &[u8],
-    format: crate::annotation_formats::AnnotationFormat,
-) -> Result<(), Error> {
-    if format == crate::annotation_formats::AnnotationFormat::Gtf {
-        check_variant_version(bytes, 30)?;
-    }
-    Ok(())
-}
-fn check_variant_version(bytes: &[u8], required: u16) -> Result<(), Error> {
-    if u16::from_le_bytes([bytes[4], bytes[5]]) < required {
-        return Err(Error::Unsupported(format!(
-            "message variant requires binary schema {required} or later"
-        )));
-    }
-    Ok(())
-}
 fn profile_binding(
     revisions: &[String],
     reverse: &[bool],
@@ -4059,526 +2389,30 @@ pub fn overlap_profile_revision(
         options,
     )
 }
-fn plan_worker_version(plan: &crate::verification::DesignPlan) -> u16 {
-    plan.steps
-        .iter()
-        .map(|step| match step {
-            crate::verification::Operation::LigateWithOutcomes { .. } => 92,
-            crate::verification::Operation::ReconstructMaterial { .. } => 91,
-            crate::verification::Operation::ReconstructDigestFragment { .. } => 90,
-            crate::verification::Operation::ResectThreePrime { .. }
-            | crate::verification::Operation::HomologyAnnealing { .. } => 88,
-            crate::verification::Operation::HomologyAssembly { .. } => 86,
-            crate::verification::Operation::OverlapExtension { .. } => 81,
-            crate::verification::Operation::ReconstructRunProduct { .. } => 73,
-            crate::verification::Operation::MultiSiteRecombineReference { .. } => 68,
-            step if crate::verification::topo_uses_step_source(step) => 67,
-            crate::verification::Operation::TopoActions { .. } => 66,
-            crate::verification::Operation::ProcessedTopo { .. } => 65,
-            crate::verification::Operation::SelectedGoldenGate { .. } => 59,
-            crate::verification::Operation::CatalogDigest { .. } => 37,
-            crate::verification::Operation::DeclareSourceTermini { .. } => 34,
-            crate::verification::Operation::CheckedTopo { .. } => 28,
-            crate::verification::Operation::Topo { .. } => 25,
-            crate::verification::Operation::RecombineReference { .. } => 22,
-            crate::verification::Operation::DeclareSourceModifications { .. }
-            | crate::verification::Operation::CheckedDigest { .. } => 17,
-            crate::verification::Operation::Tail3Prime { .. }
-            | crate::verification::Operation::ProfiledOverlap { .. } => 11,
-            crate::verification::Operation::RepairEnds { .. }
-            | crate::verification::Operation::AnnealOligos { .. } => 8,
-            crate::verification::Operation::PcrWithMismatches { .. }
-            | crate::verification::Operation::GoldenGate { .. } => 5,
-            crate::verification::Operation::Digest { .. }
-            | crate::verification::Operation::TreatEnds { .. }
-            | crate::verification::Operation::Ligate { .. } => 2,
-            _ => 1,
-        })
-        .max()
-        .unwrap_or(1)
-}
+
 pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     let maximum = worker_limit(
         b"CGQ\0",
         bytes,
         &[
-            (19, 6),
-            (20, 6),
-            (42, 12),
-            (43, 12),
-            (69, 20),
-            (72, 21),
-            (102, 39),
-            (105, 42),
-            (106, 42),
-            (107, 43),
-            (108, 43),
-            (128, 57),
-            (130, 57),
-            (131, 58),
-            (134, 58),
-            (135, 58),
-            (149, 65),
-            (155, 69),
-            (158, 74),
-            (168, 88),
-            (169, 89),
-            (170, 90),
-            (171, 90),
-            (172, 90),
-            (173, 90),
-            (174, 90),
-            (175, 90),
-            (176, 90),
-            (177, 91),
-            (178, 91),
+            19, 20, 42, 43, 69, 72, 102, 105, 106, 107, 108, 128, 130, 131, 134, 135, 149, 155,
+            158, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179,
         ],
     )?;
-    preflight_codon_tag(bytes, &[44, 45])?;
-    preflight_dotplot_tag(bytes, &[46])?;
-    preflight_contig_tag(bytes, &[47])?;
-    preflight_methylation_tag(bytes, &[48])?;
-    preflight_crispr_tag(bytes, &[49, 50, 51, 52])?;
-    preflight_genome_tag(
-        bytes,
-        &[53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66],
-    )?;
-    preflight_restriction_tag(bytes, &[67, 68, 69])?;
-    preflight_catalog_tag(bytes, &[70, 71, 72])?;
-    preflight_recombination_tag(bytes, &[73, 74, 75])?;
-    preflight_read_alignment_tag(bytes, &[77, 78, 79, 80, 81])?;
-    preflight_topo_tag(bytes, &[82, 83, 84, 85])?;
-    preflight_annotated_topo_tag(bytes, &[86, 87])?;
-    preflight_variants_tag(bytes, &[88, 89, 90, 91, 92, 93])?;
-    preflight_overlap_recipe_tag(bytes, &[94])?;
-    preflight_ligation_recipe_tag(bytes, &[95])?;
-    preflight_assembly_junctions_tag(bytes, &[96])?;
-    preflight_overlap_primer_design_tag(bytes, &[97])?;
-    preflight_assembly_intent_tag(bytes, &[98])?;
-    preflight_cloning_output_tag(bytes, &[99, 100, 101])?;
-    preflight_finalize_tag(bytes, &[102])?;
-    preflight_golden_gate_primer_tag(bytes, &[103])?;
-    preflight_mutation_intent_tag(bytes, &[104])?;
-    preflight_read_check_tag(bytes, &[105, 106])?;
-    preflight_read_review_tag(bytes, &[107, 108])?;
-    preflight_edited_assembly_tag(bytes, &[109, 110])?;
-    preflight_selective_assembly_tag(bytes, &[111])?;
-    preflight_golden_gate_junction_tag(bytes, &[112])?;
-    preflight_prepared_golden_gate_tag(bytes, &[113, 114])?;
-    preflight_golden_gate_reaction_tag(bytes, &[115, 116])?;
-    preflight_pcr_outputs_tag(bytes, &[117])?;
-    preflight_mismatch_pcr_outputs_tag(bytes, &[118])?;
-    preflight_pairwise_review_tag(bytes, &[119])?;
-    preflight_reference_transfer_tag(bytes, &[120, 121])?;
-    preflight_translation_reference_tag(bytes, &[122, 123])?;
-    preflight_pinned_gel_tag(bytes, &[124])?;
-    preflight_pairwise_export_tag(bytes, &[125, 126, 127])?;
-    preflight_combinatorial_batch_tag(bytes, &[128, 129, 130])?;
-    preflight_combinatorial_release_tag(bytes, &[131, 132, 133, 134, 135])?;
-    preflight_fusion_design_tag(bytes, &[136, 137, 138])?;
-    preflight_domestication_tag(bytes, &[139, 140, 141, 142])?;
-    preflight_published_ligation_tag(bytes, &[143, 144, 145, 146])?;
-    preflight_nick_sealing_tag(bytes, &[147])?;
-    preflight_processed_topo_tag(bytes, &[148])?;
-    preflight_processed_run_tag(bytes, &[149])?;
-    preflight_topo_actions_tag(bytes, &[150, 151])?;
-    preflight_multisite_recombination_tag(bytes, &[152, 153, 154])?;
-    preflight_combinatorial_multisite_tag(bytes, &[155])?;
-    preflight_tailing_recipe_tag(bytes, &[156])?;
-    preflight_pcr_digest_tag(bytes, &[157])?;
-    preflight_run_material_tag(bytes, &[158, 159])?;
-    preflight_run_catalog_tag(bytes, &[160])?;
-    preflight_substitution_intent_tag(bytes, &[161])?;
-    preflight_mismatch_digest_tag(bytes, &[162])?;
-    preflight_contribution_edit_tag(bytes, &[163])?;
-    preflight_overlap_extension_primer_tag(bytes, &[164])?;
-    preflight_overlap_extension_digest_tag(bytes, &[165])?;
-    preflight_edited_overlap_primer_tag(bytes, &[166])?;
-    preflight_homology_recipe_tag(bytes, &[167])?;
-    preflight_annealing_recipe_tag(bytes, &[168])?;
-    preflight_topo_run_tag(bytes, &[169])?;
-    let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
-        .map_err(|e| Error::Format(e.to_string()))?;
-    if tag == 76 {
-        check_variant_version(bytes, 23)?;
-    }
+
     let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
-    let required = match &r.job {
-        AnalysisJob::InstallMaterialDerivation { .. }
-        | AnalysisJob::InspectMaterialDigest { .. } => 91,
-        AnalysisJob::InspectMaterialOrigin { .. }
-        | AnalysisJob::InstallRunDigestFragment { .. }
-        | AnalysisJob::MaterialPcrDocuments { .. }
-        | AnalysisJob::PrepareMaterialPcrOutputs { .. }
-        | AnalysisJob::ReviewSequenceExport { .. }
-        | AnalysisJob::PrepareSequenceExport { .. }
-        | AnalysisJob::ExportScfTrace { .. } => 90,
-        AnalysisJob::InspectTopoRun { .. } => 89,
-        AnalysisJob::PreviewAnnealingRecipe { .. } => 88,
-        AnalysisJob::PreviewHomologyRecipe { .. } => 86,
-        AnalysisJob::DesignEditedOverlapPrimers { .. } => 85,
-        AnalysisJob::InspectOverlapExtensionDigest { .. } => 84,
-        AnalysisJob::DesignOverlapExtensionPrimers { .. } => 83,
-        AnalysisJob::BuildContributionEditIntent { .. } => 79,
-        AnalysisJob::InspectMismatchPcrDigest { .. } => 78,
-        AnalysisJob::BuildSubstitutedAssemblyIntent { .. } => 77,
-        AnalysisJob::InspectRunCatalogRestriction { .. } => 75,
-        AnalysisJob::InspectRunMaterial { .. } | AnalysisJob::InspectRunPcrDigest { .. } => 74,
-        AnalysisJob::InspectPcrDigest { .. } => 72,
-        AnalysisJob::PreviewTailingRecipe { .. } => 70,
-        AnalysisJob::InspectCombinatorialMultiSite { .. } => 69,
-        AnalysisJob::SimulateMultiSiteRecombination { .. }
-        | AnalysisJob::ProjectMultiSiteRecombination { .. }
-        | AnalysisJob::CheckMultiSiteRecombination { .. } => 68,
-        AnalysisJob::ProcessTopoActions { .. } | AnalysisJob::InspectTopoActions { .. } => 66,
-        AnalysisJob::LoadProcessedRunEvidence { .. } => 65,
-        AnalysisJob::ProjectProcessedTopo { .. } => 64,
-        AnalysisJob::SealTopoNicks { .. } => 63,
-        AnalysisJob::ListLigationProfiles
-        | AnalysisJob::ScorePublishedLigation { .. }
-        | AnalysisJob::RankGoldenGateFusions { .. }
-        | AnalysisJob::ScoreLigationCompetition { .. } => 62,
-        AnalysisJob::InspectDomestication { .. }
-        | AnalysisJob::ProposeDomestication { .. }
-        | AnalysisJob::CheckDomestication { .. }
-        | AnalysisJob::PrepareDomestication { .. } => 61,
-        AnalysisJob::SearchGoldenGateFusions { .. }
-        | AnalysisJob::MaterializeGoldenGateFusions { .. }
-        | AnalysisJob::ScoreLigationFidelity { .. } => 60,
-        AnalysisJob::PreparePcrOutputs { .. } => 50,
-        AnalysisJob::PrepareMismatchPcrOutputs { .. } => 51,
-        AnalysisJob::CompareSequences { .. } => 52,
-        AnalysisJob::CopyReferenceFragment { .. } => 53,
-        AnalysisJob::PasteReferenceFragment { .. } => 53,
-        AnalysisJob::TranslateReference { .. } => 54,
-        AnalysisJob::PrepareTranslatedReference { .. } => 54,
-        AnalysisJob::PredictPinnedGel { .. } => 55,
-        AnalysisJob::ExportPairwiseComparison { .. } => 56,
-        AnalysisJob::SearchPairwiseComparison { .. } => 56,
-        AnalysisJob::PreparePairwiseContext { .. } => 56,
-        AnalysisJob::BeginCombinatorialBatch { .. }
-        | AnalysisJob::AdvanceCombinatorialBatch { .. }
-        | AnalysisJob::CaptureCombinatorialBatch { .. } => 57,
-        AnalysisJob::BeginCombinatorialRelease { .. }
-        | AnalysisJob::AdvanceCombinatorialRelease { .. }
-        | AnalysisJob::InspectCombinatorialRelease { .. }
-        | AnalysisJob::FinishCombinatorialRelease { .. }
-        | AnalysisJob::ExportCombinatorialOutputs { .. } => 58,
-        AnalysisJob::PredictGel { lanes, .. }
-            if lanes.iter().any(|lane| {
-                matches!(
-                    lane.preparation,
-                    crate::gel::Preparation::CatalogDigest { .. }
-                )
-            }) =>
-        {
-            55
-        }
-        AnalysisJob::InspectGoldenGateReaction { .. }
-        | AnalysisJob::SelectGoldenGateReaction { .. } => 49,
-        AnalysisJob::BuildEditedAssemblyIntent { .. }
-        | AnalysisJob::DesignEditedAssemblyPrimers { .. } => 44,
-        AnalysisJob::DesignSelectiveAssemblyPrimers { .. } => 45,
-        AnalysisJob::DesignGoldenGateJunctionPrimers { .. } => 46,
-        AnalysisJob::InspectPreparedGoldenGatePool { .. }
-        | AnalysisJob::SelectPreparedGoldenGateCandidate { .. } => 47,
-        AnalysisJob::PreviewReadReview { .. } | AnalysisJob::CommitReadReview { .. } => 43,
-        AnalysisJob::CaptureReadCheck { .. } | AnalysisJob::ReplayReadCheck { .. } => 42,
-        AnalysisJob::BuildMutationIntent { .. } => 41,
-        AnalysisJob::DesignGoldenGatePrimers { .. } => 40,
-        AnalysisJob::PreviewOverlapRecipe { recipe, .. }
-            if recipe.fragments.iter().any(|row| {
-                matches!(
-                    row.preparation,
-                    crate::assembly_recipe::Preparation::PcrCatalogDigest { .. }
-                )
-            }) =>
-        {
-            40
-        }
-        AnalysisJob::PreviewLigationRecipe { recipe, .. }
-            if recipe.fragments.iter().any(|row| {
-                matches!(
-                    row.source.preparation,
-                    crate::assembly_recipe::Preparation::PcrCatalogDigest { .. }
-                )
-            }) =>
-        {
-            40
-        }
-        AnalysisJob::FinalizeCloningOutputs { .. } => 39,
-        AnalysisJob::SelectDigestFragment { .. }
-        | AnalysisJob::ExportPlanOligos { .. }
-        | AnalysisJob::ExportProtocolHtml { .. } => 38,
-        AnalysisJob::BuildAssemblyIntent { .. } => 36,
-        AnalysisJob::DesignOverlapPrimers { .. } => 35,
-        AnalysisJob::InspectAssemblyJunctions { plan, .. } => plan_worker_version(plan).max(33),
-        AnalysisJob::PreviewOverlapRecipe { recipe, .. }
-            if recipe.fragments.iter().any(|row| {
-                matches!(
-                    row.preparation,
-                    crate::assembly_recipe::Preparation::CatalogDigest { .. }
-                )
-            }) =>
-        {
-            37
-        }
-        AnalysisJob::PreviewLigationRecipe { recipe, .. }
-            if recipe.fragments.iter().any(|row| {
-                matches!(
-                    row.source.preparation,
-                    crate::assembly_recipe::Preparation::CatalogDigest { .. }
-                )
-            }) =>
-        {
-            37
-        }
-        AnalysisJob::PreviewOverlapRecipe { recipe, .. }
-            if recipe.fragments.iter().any(|row| {
-                matches!(
-                    row.preparation,
-                    crate::assembly_recipe::Preparation::DeclaredDuplex { .. }
-                )
-            }) =>
-        {
-            34
-        }
-        AnalysisJob::PreviewLigationRecipe { recipe, .. }
-            if recipe.fragments.iter().any(|row| {
-                matches!(
-                    row.source.preparation,
-                    crate::assembly_recipe::Preparation::DeclaredDuplex { .. }
-                )
-            }) =>
-        {
-            34
-        }
-        AnalysisJob::PreviewLigationRecipe { .. } => 32,
-        AnalysisJob::PreviewOverlapRecipe { .. } => 31,
-        AnalysisJob::PrepareVariants { .. }
-        | AnalysisJob::VariantPage { .. }
-        | AnalysisJob::CheckVariantReference { .. }
-        | AnalysisJob::PreviewVariantAllele { .. }
-        | AnalysisJob::ExportVariants { .. }
-        | AnalysisJob::DisposeVariants { .. } => 29,
-        AnalysisJob::ProjectAnnotatedTopo { .. } | AnalysisJob::CheckAnnotatedTopoTarget { .. } => {
-            27
-        }
-        AnalysisJob::SimulateTopo { .. }
-        | AnalysisJob::InspectTopoOrientations { .. }
-        | AnalysisJob::ProjectTopoProduct { .. }
-        | AnalysisJob::CheckTopoTarget { .. } => 26,
-        AnalysisJob::PrepareReadAlignments { .. }
-        | AnalysisJob::ReadAlignmentPage { .. }
-        | AnalysisJob::CheckReadAlignment { .. }
-        | AnalysisJob::ExportReadAlignments { .. }
-        | AnalysisJob::DisposeReadAlignments { .. } => 24,
-        AnalysisJob::ScanRestriction { .. } => 23,
-        AnalysisJob::InspectRecombination { .. }
-        | AnalysisJob::CheckRecombinationTarget { .. }
-        | AnalysisJob::SelectRecombinationComponent { .. } => 22,
-        AnalysisJob::InspectCatalogRestriction { .. }
-        | AnalysisJob::MaterializeCatalogDigestFragment { .. }
-        | AnalysisJob::InstallCatalogDigestFragment { .. } => 21,
-        AnalysisJob::InspectRestriction { .. }
-        | AnalysisJob::MaterializeDigestFragment { .. }
-        | AnalysisJob::InstallDigestFragment { .. } => 20,
-        AnalysisJob::BeginGenomeFasta { .. }
-        | AnalysisJob::PushGenomeFasta { .. }
-        | AnalysisJob::FinishGenomeFasta { .. }
-        | AnalysisJob::BeginGenomeNative { .. }
-        | AnalysisJob::PushGenomeNativeBlock { .. }
-        | AnalysisJob::FinishGenomeNative { .. }
-        | AnalysisJob::AbortGenomeImport { .. }
-        | AnalysisJob::RegisterGenome { .. }
-        | AnalysisJob::GenomeIntervalGuides { .. }
-        | AnalysisJob::StartGenomeSearch { .. }
-        | AnalysisJob::AdvanceGenomeSearch { .. }
-        | AnalysisJob::PageGenomeSearch { .. }
-        | AnalysisJob::CancelGenomeJob { .. }
-        | AnalysisJob::ReadGenomeInterval { .. } => 19,
-        AnalysisJob::Search { .. }
-        | AnalysisJob::Restriction { .. }
-        | AnalysisJob::Pcr { .. }
-        | AnalysisJob::Verify { .. } => 1,
-        AnalysisJob::DuplexDigest { .. } => 2,
-        AnalysisJob::Translate { .. }
-        | AnalysisJob::TranslateCds { .. }
-        | AnalysisJob::FindOrfs { .. }
-        | AnalysisJob::Align { .. } => 3,
-        AnalysisJob::PcrDocuments { .. }
-        | AnalysisJob::AnalyzePrimer { .. }
-        | AnalysisJob::DesignPrimers { .. }
-        | AnalysisJob::ExportProtocolPdf { .. } => 4,
-        AnalysisJob::SaveWorkspace { .. }
-        | AnalysisJob::LoadWorkspace { .. }
-        | AnalysisJob::ValidateTraces { .. } => 6,
-        AnalysisJob::DesignCrisprGuides { .. }
-        | AnalysisJob::SearchCrisprOffTargets { .. }
-        | AnalysisJob::DesignEditTemplate { .. }
-        | AnalysisJob::CheckEditTemplate { .. } => 18,
-        AnalysisJob::AssessMethylation { .. } => 16,
-        AnalysisJob::AssembleContigs { .. } => 15,
-        AnalysisJob::DotPlot { .. } => 14,
-        AnalysisJob::DesignCodons { .. } | AnalysisJob::CheckCodonDesign { .. } => 13,
-        AnalysisJob::RecordCloningRun { .. } | AnalysisJob::ReplayCloningRun { .. } => 12,
-        AnalysisJob::TailPreview { .. } | AnalysisJob::CheckOverlapProfile { .. } => 11,
-        AnalysisJob::ProteinProperties { .. } => 10,
-        AnalysisJob::ImportAlignment { format, .. } => alignment_format_worker_version(format),
-        AnalysisJob::ExportAlignment { document, format } => {
-            alignment_document_worker_version(document).max(alignment_format_worker_version(format))
-        }
-        AnalysisJob::ExtractAlignmentRows { document, .. }
-        | AnalysisJob::SaveAlignment { document } => alignment_document_worker_version(document),
-        AnalysisJob::LoadAlignment { bytes: archive } => {
-            crate::alignment_formats::load_alignment(archive)
-                .map(|document| alignment_document_worker_version(&document))
-                .unwrap_or(10)
-        }
-        AnalysisJob::ViewTracks { .. }
-        | AnalysisJob::SearchDocument { .. }
-        | AnalysisJob::PrepareTracks { .. }
-        | AnalysisJob::CachedViewTracks { .. } => 9,
-        AnalysisJob::RepairPreview { .. }
-        | AnalysisJob::AnnealPreview { .. }
-        | AnalysisJob::AnnealedDocument { .. } => 8,
-        AnalysisJob::ScanFeatureLibrary { .. }
-        | AnalysisJob::ApplyFeatureLibrary { .. }
-        | AnalysisJob::ImportAnnotations { .. }
-        | AnalysisJob::ApplyAnnotations { .. }
-        | AnalysisJob::ExportAnnotations { .. } => 7,
-        _ => 5,
-    };
-    check_variant_version(bytes, required)?;
-    check_preparation_version(bytes, &r.job)?;
-    if let AnalysisJob::BeginCombinatorialBatch { workspace, matrix } = &r.job {
-        check_workspace_version(bytes, workspace)?;
-        check_combinatorial_request_version(bytes, matrix)?;
-    }
+
     match &r.job {
         AnalysisJob::SelectGoldenGateReaction { report, .. } => {
-            check_verification_report_version(bytes, &report.verification)?;
-            check_variant_version(bytes, plan_worker_version(&report.probe_plan))?;
+            validate_verification_report(&report.verification)?
         }
         AnalysisJob::SelectPreparedGoldenGateCandidate { report, .. } => {
-            check_verification_report_version(bytes, &report.preview.verification)?;
-            check_variant_version(bytes, plan_worker_version(&report.preview.compiled.plan))?;
-            check_variant_version(bytes, plan_worker_version(&report.preview.compiled.plan))?;
+            validate_verification_report(&report.preview.verification)?
         }
-        AnalysisJob::ImportAnnotations { format, .. }
-        | AnalysisJob::ExportAnnotations { format, .. } => {
-            check_annotation_format_version(bytes, *format)?;
-        }
-        AnalysisJob::ApplyAnnotations { report, .. } => {
-            check_annotation_format_version(bytes, report.format)?;
-        }
-        _ => {}
-    }
-    if let AnalysisJob::SaveWorkspace { workspace } = &r.job {
-        check_workspace_version(bytes, workspace)?;
-        if workspace
-            .attachments
-            .values()
-            .any(|a| a.kind == crate::run_lineage::WORKSPACE_ATTACHMENT_KIND)
-        {
-            check_variant_version(bytes, 12)?;
-        }
-        if workspace
-            .attachments
-            .values()
-            .any(|a| a.kind == "read-assembly-v1")
-        {
-            check_variant_version(bytes, 15)?;
-        }
-        for c in &workspace.candidates {
-            check_variant_version(bytes, plan_worker_version(&c.plan))?;
-        }
-    }
-    if let AnalysisJob::RecordCloningRun {
-        workspace, plan, ..
-    } = &r.job
-    {
-        check_workspace_version(bytes, workspace)?;
-        check_variant_version(bytes, plan_worker_version(plan))?;
-    }
-    if let AnalysisJob::LoadProcessedRunEvidence { workspace, run_id } = &r.job {
-        if run_id.len() != 64 {
+        AnalysisJob::LoadProcessedRunEvidence { run_id, .. } if run_id.len() != 64 => {
             return Err(Error::Format("Invalid run identity".into()));
         }
-        check_workspace_version(bytes, workspace)?;
-    }
-    if let AnalysisJob::ReplayCloningRun { workspace, .. } = &r.job {
-        check_workspace_version(bytes, workspace)?;
-    }
-    if let AnalysisJob::PreviewReadReview { workspace, .. }
-    | AnalysisJob::CommitReadReview { workspace, .. } = &r.job
-    {
-        check_workspace_version(bytes, workspace)?;
-    }
-    if let AnalysisJob::CaptureReadCheck { workspace, .. }
-    | AnalysisJob::ReplayReadCheck { workspace, .. } = &r.job
-    {
-        check_workspace_version(bytes, workspace)?;
-    }
-    if let AnalysisJob::FinalizeCloningOutputs {
-        workspace, plan, ..
-    } = &r.job
-    {
-        check_workspace_version(bytes, workspace)?;
-        check_variant_version(bytes, plan_worker_version(plan))?;
-    }
-    if let AnalysisJob::Verify { plan, .. }
-    | AnalysisJob::ExportProtocolPdf { plan, .. }
-    | AnalysisJob::ExportProtocolHtml { plan, .. }
-    | AnalysisJob::ExportPlanOligos { plan, .. } = &r.job
-    {
-        check_variant_version(bytes, plan_worker_version(plan))?;
-        if plan.steps.iter().any(|step| {
-            matches!(
-                step,
-                crate::verification::Operation::Tail3Prime { .. }
-                    | crate::verification::Operation::ProfiledOverlap { .. }
-            )
-        }) {
-            check_variant_version(bytes, 11)?;
-        }
-        if plan.steps.iter().any(|step| {
-            matches!(
-                step,
-                crate::verification::Operation::RepairEnds { .. }
-                    | crate::verification::Operation::AnnealOligos { .. }
-            )
-        }) {
-            check_variant_version(bytes, 8)?;
-        }
-        if plan.steps.iter().any(|step| {
-            matches!(
-                step,
-                crate::verification::Operation::PcrWithMismatches { .. }
-                    | crate::verification::Operation::GoldenGate { .. }
-            )
-        }) {
-            check_variant_version(bytes, 5)?;
-        }
-        if plan.steps.iter().any(|step| {
-            matches!(
-                step,
-                crate::verification::Operation::Digest { .. }
-                    | crate::verification::Operation::TreatEnds { .. }
-                    | crate::verification::Operation::Ligate { .. }
-            )
-        }) {
-            check_variant_version(bytes, 2)?;
-        }
-    }
-    if let AnalysisJob::LoadWorkspace { bytes: archive } = &r.job {
-        // A valid archive cannot hide new operation semantics in an old envelope.
-        // Malformed archives retain the ordinary typed worker-error response below.
-        if u16::from_le_bytes([bytes[4], bytes[5]]) < WORKER_SCHEMA_VERSION {
-            if let Ok(workspace) = crate::workspace::load_workspace(archive) {
-                check_workspace_version(bytes, &workspace)?;
-            }
-        }
+        _ => {}
     }
     if let AnalysisJob::PredictGel { lanes, .. } = &r.job {
         if lanes.iter().any(|lane| {
@@ -4598,7 +2432,6 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             event,
             selection,
         } => {
-            check_workspace_version(bytes, workspace)?;
             if crate::run_material::material_inspection_revision(workspace, event, selection)?
                 != r.revision
             {
@@ -4607,7 +2440,6 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::InstallRunDigestFragment { workspace, request } => {
-            check_workspace_version(bytes, workspace)?;
             if crate::run_digest_history::installation_revision(workspace, request)? != r.revision {
                 return Err(Error::Format(
                     "Saved digest installation source/selection changed".into(),
@@ -4664,6 +2496,28 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
 
+        AnalysisJob::PrepareSavedRunReview { workspace, run_id } => {
+            if crate::run_review::request_revision(workspace, run_id)? != r.revision {
+                return Err(Error::Format(
+                    "Saved-run review workspace/run changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::RenderMapSvg { request } => {
+            request.validate()?;
+            if r.revision.len() != 64
+                || !r
+                    .revision
+                    .bytes()
+                    .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+            {
+                return Err(Error::Format(
+                    "Map export capture context is invalid".into(),
+                ));
+            }
+            None
+        }
         AnalysisJob::InstallMaterialDerivation { workspace, request } => {
             if crate::material_derivation::revision(workspace, request)? != r.revision {
                 return Err(Error::Format(
@@ -5303,7 +3157,6 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             event,
             selection,
         } => {
-            check_workspace_version(bytes, workspace)?;
             if crate::run_material::inspection_revision(workspace, event, selection)? != r.revision
             {
                 return Err(Error::Format(
@@ -5525,7 +3378,6 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             design,
             construct,
         } => {
-            check_workspace_version(bytes, workspace)?;
             if crate::combinatorial_design::inspect_multisite_revision(
                 design, construct, workspace,
             )? != r.revision
@@ -5993,6 +3845,13 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         .map(AnalysisResult::SequenceExportPrepared),
         AnalysisJob::ExportScfTrace { trace, options } => {
             crate::scf_export::export(&trace, &options).map(AnalysisResult::ScfTraceExported)
+        }
+        AnalysisJob::PrepareSavedRunReview { workspace, run_id } => {
+            crate::run_review::prepare(&workspace, &run_id)
+                .map(AnalysisResult::SavedRunReviewPrepared)
+        }
+        AnalysisJob::RenderMapSvg { request } => {
+            crate::svg_export::render(&request).map(AnalysisResult::MapSvgExported)
         }
         AnalysisJob::InstallMaterialDerivation { workspace, request } => {
             crate::material_derivation::install(&workspace, &request)
@@ -6880,6 +4739,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             | AnalysisResult::ScfTraceExported(_)
             | AnalysisResult::MaterialDerivationInstalled(_)
             | AnalysisResult::MaterialDigestInspection(_)
+            | AnalysisResult::SavedRunReviewPrepared(_)
     ) {
         MAX_WORKSPACE_MESSAGE_BYTES
     } else {
@@ -6913,25 +4773,8 @@ impl AnalysisSession {
             b"CGQ\0",
             bytes,
             &[
-                (19, 6),
-                (20, 6),
-                (42, 12),
-                (43, 12),
-                (69, 20),
-                (72, 21),
-                (102, 39),
-                (105, 42),
-                (106, 42),
-                (107, 43),
-                (108, 43),
-                (128, 57),
-                (130, 57),
-                (131, 58),
-                (134, 58),
-                (135, 58),
-                (149, 65),
-                (155, 69),
-                (158, 74),
+                19, 20, 42, 43, 69, 72, 102, 105, 106, 107, 108, 128, 130, 131, 134, 135, 149, 155,
+                158,
             ],
         )?;
         // Route by a borrowed prefix so ordinary jobs are not fully decoded twice.
@@ -6942,21 +4785,13 @@ impl AnalysisSession {
         if !matches!(tag, 32 | 33 | 53..=66 | 77..=81 | 88..=93 | 128..=134) {
             return process_request(bytes);
         }
-        preflight_combinatorial_batch_tag(bytes, &[128, 129, 130])?;
-        preflight_combinatorial_release_tag(bytes, &[131, 132, 133, 134])?;
-        if (53..=66).contains(&tag) {
-            check_variant_version(bytes, 19)?;
-        }
-        if (88..=93).contains(&tag) {
-            check_variant_version(bytes, 29)?;
-        }
-        if (77..=81).contains(&tag) {
-            check_variant_version(bytes, 24)?;
-        }
+
+        if (53..=66).contains(&tag) {}
+        if (88..=93).contains(&tag) {}
+        if (77..=81).contains(&tag) {}
         let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
         let result = match r.job {
             AnalysisJob::BeginCombinatorialRelease { workspace, request } => {
-                check_workspace_version(bytes, &workspace)?;
                 let pending =
                     crate::combinatorial_release::ReleaseSession::begin(workspace, request)?;
                 let progress = pending.summary();
@@ -7013,7 +4848,6 @@ impl AnalysisSession {
                 workspace,
                 current_context,
             } => {
-                check_workspace_version(bytes, &workspace)?;
                 if current_context != r.revision
                     || self
                         .release
@@ -7034,8 +4868,6 @@ impl AnalysisSession {
                 )
             }
             AnalysisJob::BeginCombinatorialBatch { workspace, matrix } => {
-                check_workspace_version(bytes, &workspace)?;
-                check_combinatorial_request_version(bytes, &matrix)?;
                 let pending = crate::combinatorial_batch::Session::begin(workspace, matrix)?;
                 let progress = pending.summary();
                 if progress.context_revision != r.revision {
@@ -7061,7 +4893,6 @@ impl AnalysisSession {
                 workspace,
                 current_context,
             } => {
-                check_workspace_version(bytes, &workspace)?;
                 if crate::combinatorial_batch::capture_revision(&workspace, &current_context)?
                     != r.revision
                 {
@@ -7104,7 +4935,6 @@ impl AnalysisSession {
             | AnalysisJob::CancelGenomeJob { .. }
             | AnalysisJob::ReadGenomeInterval { .. }) => self.genomes.process(job, &r.revision)?,
             AnalysisJob::PrepareTracks { molecule } => {
-                check_variant_version(bytes, 9)?;
                 let prepared =
                     crate::view_tracks::PreparedTracks::new(std::sync::Arc::new(molecule))?;
                 if prepared.source_revision() != r.revision {
@@ -7114,7 +4944,6 @@ impl AnalysisSession {
                 AnalysisResult::TracksPrepared(r.revision.clone())
             }
             AnalysisJob::CachedViewTracks { window, options } => {
-                check_variant_version(bytes, 9)?;
                 let prepared = self.tracks.as_ref().ok_or_else(|| {
                     Error::Unsupported("cached track source has not been prepared".into())
                 })?;

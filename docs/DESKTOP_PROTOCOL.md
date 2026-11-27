@@ -7,8 +7,9 @@ existing native document/workspace formats. No JSON integer-array transport,
 filesystem path, actor claim, window credential or network command is introduced.
 
 The trusted host supplies window access, the owned repository/profile root and
-the local library scope out of band. Bootstrap returns the host-derived local
-`LabContext`; supplying an identifier in a request does not grant access. This
+the local library scope out of band. Bootstrap returns working-editor metadata and an optional genuine host-derived
+`LabContext`, together with catalog availability. Supplying an identifier in a
+request does not grant access. This
 crate is portable Rust/serde and contains no Tauri, SQLite, native filesystem,
 HTTP or external-program dependency.
 
@@ -19,16 +20,14 @@ Frames use a separate namespace from browser/server library and sync traffic:
 | Bytes | Meaning |
 | --- | --- |
 | 0–3 | `DTQ\0` request or `DTR\0` response |
-| 4–5 | little-endian schema, supported **1–2** |
+| 4–5 | little-endian schema, current **5** |
 | 6–9 | little-endian payload length |
 | 10–41 | BLAKE3 of postcard payload bytes |
 | 42 onward | postcard payload, with no trailing data |
 
-Version 1 remains the minimum for existing commands/replies. Appended
-`CatalogBackup` commands/results require version 2, including generic failures
-acknowledging those requests. Matched response encoding preserves the incoming
-supported version; low-level generic response encoding uses its minimum feature
-version. Legacy command/result tags and field prefixes remain unchanged.
+Only the current schema is accepted. Commands and replies share this schema;
+unsupported development versions are rejected. Response encoding binds the
+exchange and operation IDs to the actual request.
 
 The request payload limit is 129 MiB, allowing two independently supplied native
 64 MiB workspaces plus bounded metadata. Responses are limited to 65 MiB, working

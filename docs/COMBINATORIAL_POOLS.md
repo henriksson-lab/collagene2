@@ -52,7 +52,7 @@ fresh protocol export retain the same declaration checks.
 
 Draft version3 stores bounded candidate intent with each construct's pool settings.
 Versions1/2 migrate without acquiring a choice or scientific evidence. The new
-attachment kind is `assembly-draft-v3`; kind/version mismatches and duplicate active
+attachment kind is `assembly-draft-v14`; kind/version mismatches and duplicate active
 drafts fail. Source/geometry/order changes invalidate selection where appropriate.
 Clearing a choice keeps the pool draft; returning to ordered prepared assembly
 explicitly clears the pool mode. Result filters preserve original construct IDs

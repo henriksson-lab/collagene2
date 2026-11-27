@@ -1,6 +1,6 @@
 # Ligation alternatives in protocol output
 
-The normal protocol PDF renderer handles `LigateWithOutcomes` and the fresh
+The normal protocol PDF renderer handles `Ligate` and the fresh
 verifier's `LigationOutcomes` evidence. It does not run a second target-selected
 alternative search: the protocol's ordinary fresh native reconstruction supplies
 the actual intended material and the bounded documentary alternative report.

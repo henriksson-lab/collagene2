@@ -79,10 +79,13 @@ async fn ta_gc_roundtrip_preserves_originals_target_and_explicit_nicks() {
             .any(|tool| tool.name == "propose_tailing_assembly")
     );
     let text = "LOCUS       vector 6 bp DNA linear SYN 01-JAN-2026\nFEATURES             Location/Qualifiers\nORIGIN\n        1 aaaccc\n//\nLOCUS       insert 6 bp DNA linear SYN 01-JAN-2026\nFEATURES             Location/Qualifiers\nORIGIN\n        1 gggttt\n//\nLOCUS       ta_target 14 bp DNA circular SYN 01-JAN-2026\nFEATURES             Location/Qualifiers\nORIGIN\n        1 aaaccctgggttta\n//\nLOCUS       gc_target 14 bp DNA circular SYN 01-JAN-2026\nFEATURES             Location/Qualifiers\nORIGIN\n        1 aaaccccgggtttg\n//\nLOCUS       wrong_target 14 bp DNA circular SYN 01-JAN-2026\nFEATURES             Location/Qualifiers\nORIGIN\n        1 aaaccctgggtttc\n//\n";
+    let text = format!(
+        "{text}LOCUS       blunt_target 12 bp DNA circular SYN 01-JAN-2026\nFEATURES             Location/Qualifiers\nORIGIN\n        1 aaacccgggttt\n//\n"
+    );
     let imported = call(&client, "import_document", json!({"text":text})).await;
-    let recipe = json!({"name":"Original PCR products and explicit tails","fragments":[
-        {"source":{"role":"vector","input_id":"vector","preparation":{"ExactPcr":{"forward":Primer::new("VF","AAA","").unwrap(),"reverse":Primer::new("VR","GGG","").unwrap()}},"reverse":false},"base":"T","treatment":"Phosphorylate"},
-        {"source":{"role":"insert","input_id":"insert","preparation":{"ExactPcr":{"forward":Primer::new("IF","GGG","").unwrap(),"reverse":Primer::new("IR","AAA","").unwrap()}},"reverse":false},"base":"A","treatment":"Phosphorylate"}
+    let recipe = json!({"name":"Original PCR products and explicit tails","profile":"Ta","fragments":[
+        {"source":{"role":"vector","input_id":"vector","preparation":{"ExactPcr":{"forward":Primer::new("VF","AAA","").unwrap(),"reverse":Primer::new("VR","GGG","").unwrap()}},"reverse":false},"action":{"AddTail":{"base":"T"}},"treatment":"Phosphorylate"},
+        {"source":{"role":"insert","input_id":"insert","preparation":{"ExactPcr":{"forward":Primer::new("IF","GGG","").unwrap(),"reverse":Primer::new("IR","AAA","").unwrap()}},"reverse":false},"action":{"AddTail":{"base":"A"}},"treatment":"Phosphorylate"}
     ],"circular":true,"allow_nicked":false});
     let args = json!({"inputs":[{"id":"vector","document":named(&imported,"vector")},{"id":"insert","document":named(&imported,"insert")}],"target":named(&imported,"ta_target"),"recipe":recipe});
     let result = call(&client, "propose_tailing_assembly", args.clone()).await;
@@ -94,6 +97,7 @@ async fn ta_gc_roundtrip_preserves_originals_target_and_explicit_nicks() {
     );
     assert_eq!(result["product_physical"]["top_length"], 14);
     assert_eq!(result["product_physical"]["nick_count"], 0);
+    assert_eq!(result["profile_status"], "Matched");
     let full = evidence(&client, &result["artifact_id"]).await;
     let plan: DesignPlan = serde_json::from_value(full["compiled"]["plan"].clone()).unwrap();
     assert_eq!(plan.inputs[0].molecule.sequence.as_str(), "AAACCC");
@@ -133,8 +137,9 @@ async fn ta_gc_roundtrip_preserves_originals_target_and_explicit_nicks() {
     assert_eq!(retry["artifact_id"], result["artifact_id"]);
     let mut gc = args.clone();
     gc["target"] = named(&imported, "gc_target");
-    gc["recipe"]["fragments"][0]["base"] = json!("C");
-    gc["recipe"]["fragments"][1]["base"] = json!("G");
+    gc["recipe"]["profile"] = json!("Gc");
+    gc["recipe"]["fragments"][0]["action"] = json!({"AddTail":{"base":"C"}});
+    gc["recipe"]["fragments"][1]["action"] = json!({"AddTail":{"base":"G"}});
     assert_eq!(
         call(&client, "propose_tailing_assembly", gc).await["verification"]["status"],
         "ConsistentUnderAssumptions"
@@ -158,10 +163,27 @@ async fn ta_gc_roundtrip_preserves_originals_target_and_explicit_nicks() {
         call(&client, "propose_tailing_assembly", wrong).await["verification"]["status"],
         "Invalid"
     );
+    let mut held = args.clone();
+    held["target"] = named(&imported, "blunt_target");
+    for fragment in held["recipe"]["fragments"].as_array_mut().unwrap() {
+        fragment["action"] = json!("KeepExisting");
+    }
+    let blunt = call(&client, "propose_tailing_assembly", held).await;
+    assert_eq!(
+        blunt["verification"]["status"],
+        "ConsistentUnderAssumptions"
+    );
+    assert_eq!(blunt["profile_status"], "Incompatible");
+    let full = evidence(&client, &blunt["artifact_id"]).await;
+    let plan: DesignPlan = serde_json::from_value(full["compiled"]["plan"].clone()).unwrap();
+    assert!(!plan.steps.iter().any(|step| matches!(
+        step,
+        collagene_core::verification::Operation::Tail3Prime { .. }
+    )));
     let mut stale = args;
     stale["inputs"][0]["document"]["revision"] = json!("stale");
     reject(&client, "propose_tailing_assembly", stale).await;
-    assert_eq!(call(&client, "list_documents", json!({})).await["total"], 5);
+    assert_eq!(call(&client, "list_documents", json!({})).await["total"], 6);
     drop(client);
     server.abort();
 }

@@ -127,7 +127,10 @@ fn guide_and_selected_reference_worker_reports_bind_exact_roles_labels_options_a
         revision: "0".repeat(64),
         result: AnalysisResult::CrisprOffTargets(report),
     };
-    assert!(protocol::decode_response(&wire(b"CGR\0", 18, &response)).is_err());
+    assert!(
+        protocol::decode_response(&wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &response))
+            .is_err()
+    );
 }
 fn donor_fixture() -> (Molecule, Molecule, edit_template::EditTemplateOptions) {
     (
@@ -214,11 +217,14 @@ fn all_four_new_jobs_and_results_require_schema_eighteen_before_body_decode_and_
                 } else {
                     protocol::decode_response(&b).unwrap_err()
                 };
-                assert!(error.to_string().contains("schema 18"), "{error}");
+                assert!(
+                    matches!(error, collagene_core::Error::Unsupported(_)),
+                    "{error}"
+                );
             }
             let mut large = prefix;
             large.resize(collagene_core::formats::MAX_IMPORT_BYTES + 1, 0);
-            let b = raw(magic, 18, &large);
+            let b = raw(magic, protocol::WORKER_SCHEMA_VERSION, &large);
             let error = if magic == b"CGQ\0" {
                 protocol::process_request(&b).unwrap_err()
             } else {

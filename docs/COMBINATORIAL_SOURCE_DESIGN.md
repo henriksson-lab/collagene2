@@ -66,7 +66,7 @@ preparation choices do not block a separately valid selected construct.
 
 Editable data now lives in UI-independent Rust modules for draft, preparation,
 source identity, roles and alternatives. Scientific receipts remain private and
-transient. The native attachment writer uses `assembly-draft-v3`, JSON version3;
+transient. The native attachment writer uses `assembly-draft-v14`, JSON version14;
 the reader explicitly migrates versions1/2 and accepts version3. Attachment-kind and
 payload version must agree. Multiple active known drafts are an error. Old readers
 can preserve the unknown new attachment kind instead of interpreting alternatives

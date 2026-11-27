@@ -239,7 +239,7 @@ mod tests {
     fn declarations_preserve_originals_and_reference_boundaries() {
         let original = fixture(Topology::Linear);
         let mut d = declare(&original, 0, "3", "5", "tag").unwrap();
-        assert_eq!(d.version, 7);
+        assert_eq!(d.version, crate::assembly_draft_model::CURRENT_VERSION);
         assert_eq!(d.edits[0].expected, "CC");
         assert_eq!(d.edits[0].replacement, "TAG");
         assert!(d.slots == original.slots && d.methods.rows == original.methods.rows);
@@ -281,9 +281,8 @@ mod tests {
         let mut edited = declare(&d, 0, "3", "5", "T").unwrap();
         edited = declare(&edited, 1, "1", "1", "G").unwrap();
         let old = edited.edits.clone();
-        let restored = crate::assembly_draft_model::decode_version(
+        let restored = crate::assembly_draft_model::decode(
             &crate::assembly_draft_model::encode_raw(&edited).unwrap(),
-            7,
         )
         .unwrap();
         assert!(restored == edited);

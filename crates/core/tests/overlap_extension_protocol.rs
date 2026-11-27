@@ -171,7 +171,7 @@ fn real_binary_pcr_extension_outer_pcr_matches_independent_target_and_exports() 
     assert_eq!(report.products.last().unwrap().sequence.as_str(), EXPECTED);
 }
 #[test]
-fn appended_operation_and_candidate_floor_preserve_historical_plain_plans() {
+fn extension_candidates_reject_unsupported_internal_versions() {
     let (plan, target) = fixture();
     let encoded = postcard::to_allocvec(&plan.steps[2]).unwrap();
     let (tag, _) = postcard::take_from_bytes::<u32>(&encoded).unwrap();
@@ -182,7 +182,7 @@ fn appended_operation_and_candidate_floor_preserve_historical_plain_plans() {
         &bytes[4..6],
         &protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
     );
-    assert!(transfer::load_candidate(&wire(b"CGP\0", 18, &candidate)).is_ok());
+    assert!(transfer::load_candidate(&wire(b"CGP\0", 18, &candidate)).is_err());
     assert!(transfer::load_candidate(&bytes).is_ok());
     assert!(transfer::load_candidate(&wire(b"CGP\0", 17, &candidate)).is_err());
     let request = Request {
@@ -197,7 +197,7 @@ fn appended_operation_and_candidate_floor_preserve_historical_plain_plans() {
     let mut plain = plan;
     plain.steps.truncate(1);
     let candidate = Candidate::new(plain);
-    assert!(transfer::load_candidate(&wire(b"CGP\0", 1, &candidate)).is_ok());
+    assert!(transfer::load_candidate(&wire(b"CGP\0", 1, &candidate)).is_err());
 }
 fn event(w: &Workspace, i: usize) -> EventBinding {
     let d = &w.documents[i];

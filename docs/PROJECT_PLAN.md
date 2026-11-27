@@ -4117,3 +4117,15 @@ integrated WASM check. Only corrected SDK/model fixture groups were rechecked;
 graphical acceptance and exact-source cross-platform CI
 remain separate gates. The implemented scope is explicitly loaded workspace/SDK
 subjects, not a claimed server-wide or genomic index. [Workflow](SEQUENCE_SIMILARITY.md).
+
+### Desktop catalog recovery schema integration
+
+CI found schema-1 assumptions in read-only native catalog probes and recovery
+review, despite the current collaboration catalog being schema 2. The native
+store, backup checks and desktop protocol now share one database-version constant;
+the desktop probes call the store's application/version guard. There is no
+migration, old reader or live-database mutation. Independent editor storage and
+activation-journal formats are unchanged. All 53 focused native/model cases pass,
+including real startup, adoption/rollback, cancellation, wrong scope, malformed
+archives and refusal of unsupported schema metadata. Current-source CI and
+graphical acceptance remain separate gates. The integrated WASM check also passes.

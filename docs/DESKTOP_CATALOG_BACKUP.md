@@ -297,3 +297,17 @@ and legacy-bootstrap floors; and refusal to cancel an already-applied selection.
 Current and caller-supplied previous private workspace archives/preferences remain
 byte-exact. These are parent-run fixtures; the source worker ran no compiler,
 browser, application HTTP, external program or live-user-data checks.
+
+## Current catalog format
+
+The native store, read-only startup/backup probes and recovery-review protocol
+share `collagene_library_protocol::DATABASE_SCHEMA_VERSION` (currently 2).
+This catalog version is independent of transport envelopes, activation journals
+and the separate editor working-state database. Header checks reject foreign
+application IDs and unsupported catalog versions; they do not establish lab
+membership, content integrity or permission. Exact lab scope, schema fingerprints,
+archive hashes and the normal recovery review remain required.
+
+Cross-platform CI exposed stale schema-1 guards after discussion storage changed
+the catalog to schema 2. Those guards are updated directly. There is no migration
+or fallback reader, and existing running databases are not modified by this fix.

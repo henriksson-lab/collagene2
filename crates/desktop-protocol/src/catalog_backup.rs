@@ -70,7 +70,7 @@ impl CatalogRecoveryReview {
         if self.target == self.current_catalog
             || self.activation_generation >= 4096
             || self.target_snapshot.database_bytes == 0
-            || self.target_snapshot.schema_version != 1
+            || self.target_snapshot.schema_version != library::DATABASE_SCHEMA_VERSION
             || self.revision()? != self.review_revision
         {
             return Err(Error::Mismatch);
@@ -123,7 +123,7 @@ impl CatalogBackupReceipt {
             || self.archive_bytes == 0
             || self.database_bytes == 0
             || self.archive_bytes <= self.database_bytes
-            || self.schema_version == 0
+            || self.schema_version != library::DATABASE_SCHEMA_VERSION
         {
             return Err(Error::Invalid("catalog backup receipt"));
         }

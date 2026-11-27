@@ -1822,3 +1822,20 @@ WASM check pass. Two fixture issues were corrected directly; passing scientific
 cases were not rerun. Current-source browser acceptance and cross-platform CI remain open.
 The implemented search covers explicitly loaded workspace/session subjects.
 [Profile and controls](SEQUENCE_SIMILARITY.md) · [Remaining delivery triage](DELIVERY_AUDIT.md).
+
+### Desktop catalog recovery CI regression
+
+Cross-platform scientific CI exposed a production mismatch: native catalog schema
+2 was still rejected by schema-1 checks in desktop startup/backup and recovery
+review. One shared database-version constant now drives the store and protocol;
+native read-only probes reuse the store's application/version guard. Unsupported
+versions remain refused, with no migration or fallback. Working-state databases
+and activation journals retain their separate formats. Running services and user
+databases remain untouched.
+
+All 53 focused native/model cases pass: 24 desktop unit cases, five real temporary
+startup/recovery fixtures, 19 storage/backup/discussion cases, one binary receipt
+case and four web recovery-model cases. The receipt fixture also rejects schema
+0, superseded schema 1 and the next unknown schema. The integrated WASM check
+also passes. Exact-source cross-platform CI remains a delivery gate.
+[Recovery contract](DESKTOP_CATALOG_BACKUP.md).

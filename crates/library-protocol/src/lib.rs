@@ -6,6 +6,9 @@ pub use bounded::{Blob, Rows, Text};
 use serde::{Deserialize, Serialize};
 
 pub const SCHEMA_VERSION: u16 = 1;
+/// Current native catalog format reported by backup/recovery metadata. This is
+/// independent of the library transport envelope version above.
+pub const DATABASE_SCHEMA_VERSION: u32 = 2;
 pub const HEADER_BYTES: usize = 42;
 pub const MAX_DOCUMENT_BYTES: usize = 32 << 20;
 pub const MAX_ARCHIVE_BYTES: usize = 64 << 20;

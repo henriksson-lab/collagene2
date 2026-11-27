@@ -296,15 +296,13 @@ impl CatalogBackupService {
             .map_err(io)?;
             c.execute_batch("PRAGMA trusted_schema=OFF; PRAGMA query_only=ON")
                 .map_err(io)?;
-            if c.query_row("PRAGMA application_id", [], |r| r.get::<_, i64>(0))
-                .map_err(io)?
-                != 0x43474c42
-                || c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
-                    .map_err(io)?
-                    != 1
-            {
-                return Err(HostError::Corrupt);
-            }
+            store::validate_database_header(
+                c.query_row("PRAGMA application_id", [], |r| r.get::<_, i64>(0))
+                    .map_err(io)?,
+                c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                    .map_err(io)?,
+            )
+            .map_err(|_| HostError::Corrupt)?;
             let mut q = c
                 .prepare("SELECT id FROM labs ORDER BY id LIMIT 2")
                 .map_err(io)?;

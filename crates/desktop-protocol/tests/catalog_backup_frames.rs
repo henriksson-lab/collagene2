@@ -12,7 +12,7 @@ fn receipt() -> CatalogBackupReceipt {
         database_hash: Digest::of(b"independent SQLite payload"),
         database_bytes: 4096,
         schema_hash: Digest::of(b"schema"),
-        schema_version: 1,
+        schema_version: library::DATABASE_SCHEMA_VERSION,
         lab: LabId::new("lab-0123456789abcdef0123456789abcdef").unwrap(),
         lab_count: 1,
         documents: 2,
@@ -26,6 +26,12 @@ fn receipt() -> CatalogBackupReceipt {
 #[test]
 fn backup_receipts_bind_selected_archive_hash_and_distinct_recovery_operation() {
     let r = receipt();
+    r.validate().unwrap();
+    for version in [0, 1, library::DATABASE_SCHEMA_VERSION + 1] {
+        let mut unsupported = r.clone();
+        unsupported.schema_version = version;
+        assert!(unsupported.validate().is_err());
+    }
     let verify = CatalogBackupCommand::Verify {
         id: op(1),
         expected_hash: Some(r.archive_hash.clone()),

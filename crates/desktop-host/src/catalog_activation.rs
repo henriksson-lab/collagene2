@@ -150,6 +150,7 @@ fn scope(path: &Path, lab: &base::LabId) -> HostResult<()> {
     let schema: i64 = c
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(io)?;
+    store::validate_database_header(app, schema).map_err(|_| HostError::Corrupt)?;
     let mut q = c
         .prepare("SELECT id FROM labs ORDER BY id LIMIT 2")
         .map_err(io)?;
@@ -158,7 +159,7 @@ fn scope(path: &Path, lab: &base::LabId) -> HostResult<()> {
         .map_err(io)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(io)?;
-    if app != 0x43474c42 || schema != 1 || labs != [lab.as_str()] {
+    if labs != [lab.as_str()] {
         return Err(HostError::Corrupt);
     }
     Ok(())

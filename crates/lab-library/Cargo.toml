@@ -6,6 +6,7 @@ license = "MIT"
 rust-version = "1.88"
 
 [dependencies]
+collagene-library-protocol = { path = "../library-protocol" }
 rusqlite = { version = "=0.32.1", features = ["bundled", "backup"] }
 blake3 = { version = "1", default-features = false, features = ["pure", "std"] }
 serde = { version = "1", features = ["derive"] }

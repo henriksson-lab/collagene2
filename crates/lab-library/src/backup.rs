@@ -194,11 +194,11 @@ fn schema(c: &Connection) -> Result<Vec<(String, String, String, Option<String>)
     Ok(out)
 }
 fn schema_check(c: &Connection) -> Result<Digest> {
-    if c.query_row("PRAGMA application_id", [], |r| r.get::<_, i64>(0))? != APPLICATION_ID
-        || c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? != SCHEMA_VERSION
-    {
-        return Err(invalid("foreign or unsupported database"));
-    }
+    validate_database_header(
+        c.query_row("PRAGMA application_id", [], |r| r.get::<_, i64>(0))?,
+        c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))?,
+    )
+    .map_err(|_| invalid("foreign or unsupported database"))?;
     let actual = schema(c)?;
     let mut expected = Library::open_in_memory()?;
     if actual.iter().any(|(_, n, _, _)| n == "cg_reliable_schema") {

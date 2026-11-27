@@ -32,9 +32,18 @@ impl StorageOptions {
     }
 }
 const APPLICATION_ID: i64 = 0x43474c42;
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = collagene_library_protocol::DATABASE_SCHEMA_VERSION as i64;
 
 type Result<T> = std::result::Result<T, Error>;
+/// Current native database identity/version guard shared with read-only desktop
+/// probes. Header acceptance alone grants no membership or integrity authority.
+pub fn validate_database_header(application_id: i64, schema_version: i64) -> Result<()> {
+    if application_id != APPLICATION_ID || schema_version != SCHEMA_VERSION {
+        return Err(Error::UnsupportedDatabase);
+    }
+    Ok(())
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("invalid {0}")]
@@ -269,9 +278,7 @@ impl Library {
         )?;
         let version: i64 = connection.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         let application: i64 = connection.query_row("PRAGMA application_id", [], |r| r.get(0))?;
-        if version != SCHEMA_VERSION || application != APPLICATION_ID {
-            return Err(Error::UnsupportedDatabase);
-        }
+        validate_database_header(application, version)?;
         Ok(Self {
             connection,
             options: StorageOptions::default(),
@@ -308,8 +315,8 @@ impl Library {
             tx.execute_batch(collaboration::SCHEMA)?;
             tx.pragma_update(None, "application_id", APPLICATION_ID)?;
             tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-        } else if version != SCHEMA_VERSION || application != APPLICATION_ID {
-            return Err(Error::UnsupportedDatabase);
+        } else {
+            validate_database_header(application, version)?;
         }
         tx.commit()?;
         connection.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;")?;

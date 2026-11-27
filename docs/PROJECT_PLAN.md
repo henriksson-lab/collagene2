@@ -4373,3 +4373,23 @@ application integration remain required. Native fixtures independently compare
 all retained translations with the existing Rust scientific core. All three new
 native cases, focused optional-schema WASM checks and deterministic regeneration
 pass. [Reference contract](ANTIBODY_NUMBERING.md).
+
+### F34 source-bound V-reference modeling and mapping
+
+The current antibody module constructs independent per-locus models from distinct
+human V-prefix proteins, retaining all training/omitted allele identities and
+actual IMGT columns. All-gap positions stay explicit; per-column empirical counts
+and caller-declared bounded integer scoring remain inspectable. Canonical-anchor
+models omit the six flagged atypical Cys alleles without removing them from the
+reference corpus. No external model, program or biological classifier is substituted.
+
+Query mapping preserves all three independent locus results, original source
+indices, profile gaps and unassigned insertions. A unique resolved path may yield
+candidate reference correspondences; ties and source ambiguity withhold that
+projection. These scores and correspondences do not certify chain/species,
+domain identity, full numbering or CDRs. Model/report validation reconstructs from
+the current corpus and exact source/options. Cell limits cover all three grids
+in aggregate. All five new native cases and optional-schema WASM checks pass;
+full classifier calibration, rearranged-domain/
+scheme assignment and application integration remain required.
+[Mapping contract](ANTIBODY_NUMBERING.md).

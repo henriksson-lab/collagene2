@@ -152,3 +152,48 @@ worker/MCP/protein/alignment tracks. The corpus does not complete those gates.
 [Source attribution, license and rebuild instructions](../crates/antibody-numbering/data/ogrdb-human-v/ATTRIBUTION.md)
 · [Provider content license](https://ogrdb.airr-community.org/render_page/licensing_statement.html)
 · [AIRR numbering/delineation contract](https://docs.airr-community.org/en/latest/datarep/germline.html).
+
+## Query-to-reference V-prefix mapping
+
+`v_mapping::models` constructs three explicit human reference models (heavy,
+kappa, lambda) from the current corpus. The six atypical Cys23/Cys104 alleles are
+excluded from this canonical-anchor modeling policy, with their identities
+retained. The other 348 alleles yield 140, 60 and 72 distinct aligned protein
+sequences, respectively. Identical protein sequences count once, irrespective of
+how many synonymous alleles encode them. This is reference-sequence weighting,
+not an estimate of repertoire abundance or a biological prior.
+
+Each populated column retains its actual provider position. All-gap columns
+have no emitting model state and stay explicit as omitted reference positions;
+subsequent positions are not renumbered. Per-column counts include gaps and every
+residue. For an observed residue, the integer score is `observed_reward +
+floor(frequency_bonus * count / occupied_sequences)`; unobserved residues receive
+the separately declared penalty. Required Cys23/Cys104 states emit only C. Other
+populated states permit deletions and insertions according to the affine kernel.
+These are authored heuristic scores, not trained likelihoods or calibrated
+antibody evidence. Callers supply all weights and their score threshold explicitly.
+
+`v_mapping::map_query` returns all three locus alignments independently. It does
+not select a chain or species by comparing scores from differently sized profiles.
+Above the declared score filter, a unique path through a fully resolved query can
+produce candidate reference correspondences, deleted model positions and query
+insertion indices. Inserted residues receive no invented numbering labels. Any
+ambiguous residue anywhere in the source conservatively withholds the projection;
+tied optimal paths also withhold it. Alignment bounds and paths remain available
+for inspection. Even a unique, high-scoring correspondence does not certify an
+antibody, complete domain, actual IMGT numbering or a CDR/framework assignment.
+The current model is not an independently calibrated domain detector.
+
+Model construction, corpus identity, explicit scoring, profile-engine semantics,
+source revision and limits bind the mapping report. Model validation reconstructs
+from the current embedded corpus; report validation reconstructs every alignment
+and projection. The cell budget covers all three model grids together, not three
+separate uses of the caller's budget. Cancellation never returns a partial
+successful report. Source and per-model bounds remain those of the native kernel.
+
+Native fixtures check independent literal reference counts and missing columns,
+real V-prefix source anchors, all-locus evidence, duplicate best matches,
+ambiguity, declared thresholds, budgets, cancellation and tampering. This does not
+replace independent biological calibration and full-domain scheme validation.
+J/FR4 and rearranged CDR3, accepted alternative schemes and nonhuman scope,
+alternative-domain handling, region derivation and application tracks remain open.

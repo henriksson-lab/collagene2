@@ -9,7 +9,8 @@ schema 31, draft
 schema 19 and 197 native
 MCP tools. RNA chemistry/declaration review, protein liability screening and
 imported structure viewing are integrated. Antibody numbering currently has
-standalone exact-label, conditional IMGT CDR3 and profile-alignment components;
+standalone exact-label, conditional IMGT CDR3, profile-alignment and reference-
+correspondence components;
 automatic detection, full numbering schemes, derived regions and application
 integration remain unfinished. The latest kernel batch passes 16 selected native
 cases and focused optional-schema WASM checks. This does not establish whole-
@@ -2134,3 +2135,19 @@ pass. Unlabeled germline CDR3 tails are excluded; this is not a trained classifi
 or automatic query numbering. Profile calibration, rearranged-domain completion,
 other accepted schemes/species, application tracks and whole-product acceptance
 remain required. [Contract and data attribution](ANTIBODY_NUMBERING.md).
+
+### Human V-prefix reference mapping
+
+The antibody module now derives explicit heavy/kappa/lambda scoring models from
+140/60/72 distinct human reference proteins. Original allele identities, atypical
+anchor exclusions, count tables and omitted IMGT positions remain inspectable.
+Queries retain every locus result; raw scores do not choose a chain/species.
+Unique resolved paths may project candidate reference correspondences, with
+insertions unassigned; ties and ambiguity withhold projection. Complete source,
+corpus, scoring and aggregate cell-budget bindings are reconstructed on validation.
+All five new native cases, focused optional-schema WASM checks and formatting pass.
+
+This is a reference-mapping component, not a calibrated biological detector or
+full-domain numbering/CDR assignment. Automatic classification/calibration,
+rearranged CDR3/J/FR4, other accepted schemes/species, application integration and
+whole-product acceptance remain open. [Contract](ANTIBODY_NUMBERING.md).

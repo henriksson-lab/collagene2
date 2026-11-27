@@ -32,7 +32,7 @@ impl StorageOptions {
     }
 }
 const APPLICATION_ID: i64 = 0x43474c42;
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, thiserror::Error)]
@@ -305,6 +305,7 @@ impl Library {
                 return Err(Error::UnsupportedDatabase);
             }
             tx.execute_batch(SCHEMA)?;
+            tx.execute_batch(collaboration::SCHEMA)?;
             tx.pragma_update(None, "application_id", APPLICATION_ID)?;
             tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         } else if version != SCHEMA_VERSION || application != APPLICATION_ID {
@@ -1055,7 +1056,9 @@ CREATE TABLE labs(
  id TEXT PRIMARY KEY NOT NULL,
  name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 1024),
  catalog_generation INTEGER NOT NULL DEFAULT 0 CHECK(typeof(catalog_generation)='integer' AND catalog_generation>=0),
- archive_bytes INTEGER NOT NULL DEFAULT 0 CHECK(typeof(archive_bytes)='integer' AND archive_bytes>=0)
+ archive_bytes INTEGER NOT NULL DEFAULT 0 CHECK(typeof(archive_bytes)='integer' AND archive_bytes>=0),
+ discussion_events INTEGER NOT NULL DEFAULT 0 CHECK(typeof(discussion_events)='integer' AND discussion_events BETWEEN 0 AND 100000),
+ discussion_bytes INTEGER NOT NULL DEFAULT 0 CHECK(typeof(discussion_bytes)='integer' AND discussion_bytes BETWEEN 0 AND 16777216)
 );
 CREATE TABLE folders(
  id TEXT PRIMARY KEY NOT NULL,
@@ -1104,3 +1107,6 @@ pub mod mutations;
 
 /// Operator-only consistent SQLite backup and new-destination recovery.
 pub mod backup;
+
+/// Revision-bound human discussion and trusted member capabilities.
+pub mod collaboration;

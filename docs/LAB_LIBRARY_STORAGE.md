@@ -133,3 +133,10 @@ literal search, transactional byte quotas, depth/subtree bounds, refusal of
 unrelated databases and immutable revision triggers. Fixtures are opaque storage
 bytes and intentionally make no scientific-validity claim; host-loader integration
 requires its own tests with actual native documents and history archives.
+
+## Human collaboration
+
+The native [revision-bound discussion and review](LAB_COLLABORATION.md) model uses
+trusted individual member capabilities and append-only events. Its server
+authentication, binary transport and UI integration are still pending. The current
+SQLite schema is 2; older internal schemas are rejected without migration.

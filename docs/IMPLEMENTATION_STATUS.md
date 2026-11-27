@@ -1768,3 +1768,16 @@ No inference endpoint was contacted and no credentials or sequence data were sen
 Earlier CI exposed fixtures relying on obsolete development encodings. Those
 positive compatibility fixtures are removed; retained tests exercise current
 scientific behavior, integrity bounds and explicit unsupported-version refusal.
+
+
+### Native lab discussion and human review storage
+
+The native library now retains immutable revision-bound discussion/review events
+with trusted member identity, role checks, generation conflicts and independent
+quotas. Whole-database backups validate and restore them. All 29 native storage,
+reliable-mutation and backup cases pass (six new collaboration cases). Individual
+server authentication, binary service integration and application controls are
+still pending; this feature is not exposed by the running server. SQLite schema 2
+rejects older internal schemas; live storage remains untouched. See
+[lab collaboration](LAB_COLLABORATION.md). Human review never replaces native
+scientific verification or propagates to a changed revision.

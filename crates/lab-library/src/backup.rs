@@ -327,6 +327,7 @@ fn inspect_database(
         )?;
         previous = Some((doc, id, number));
     }
+    collaboration::check_integrity(&library.connection)?;
     if counts.contains_key("cg_reliable_schema") {
         check_reliable(&library.connection, &labs)?;
     }

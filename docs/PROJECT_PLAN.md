@@ -4024,3 +4024,24 @@ Human review must remain separate from deterministic molecular verification.
 Sequence or source changes cannot inherit a human approval for a different exact
 revision. Preserve local/offline documents and chosen-remote scope; this does not
 introduce ELN, inventory, workflow scheduling or organizational reporting.
+
+
+### F30 native revision discussion and review storage
+
+Implemented the native collaboration store with separately trusted member identity
+and Reader/Contributor/Maintainer discussion roles, immutable threads/replies,
+owner/moderator resolution and revision-specific human review decisions. All writes
+compare the exact discussion generation and enforce per-revision/lab event and
+byte bounds in one immediate SQLite transaction; pagination is snapshot-bound.
+Human decisions never change documents, catalog generations or scientific reports,
+and a new revision does not inherit previous approvals. Operator backup verification
+also checks discussion grammar, authority transitions and quota accounting.
+
+Current SQLite schema 2 rejects the superseded schema directly; no compatibility
+reader or migration was added. Existing live databases were not read or altered.
+All 29 native library cases pass, including six new collaboration cases, existing
+backup/recovery and reliable-mutation cases. This is the storage portion of F30,
+not complete delivery: individual server credentials/current role enforcement,
+bounded binary transport, escaped UI review/discussion controls and explicit
+local/remote discussion scope remain required. No browser or application HTTP
+checks were run. [Contract and deployment boundary](LAB_COLLABORATION.md).

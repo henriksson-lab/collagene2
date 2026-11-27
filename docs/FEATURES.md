@@ -2,6 +2,16 @@
 
 Collagene 2 is in active development. These tables summarize implemented capabilities; see the linked profiles for limitations and [implementation status](IMPLEMENTATION_STATUS.md) for remaining acceptance work.
 
+## Workspace capabilities
+
+- Sequence editing, annotations, translations and synchronized circular/linear maps.
+- Restriction-site filtering, virtual digests, primer design and cloning workflows.
+- Independent target verification, retained intermediate products and alternative cloning products.
+- Saved history, primer orders and HTML/PDF protocols.
+- MCP-assisted design, optional WebMCP, shared plasmid folders and offline desktop storage/sync.
+
+See the [application guide](APPLICATION_GUIDE.md) for usage instructions, [desktop guide](TAURI_DESKTOP.md) for installation/build details and [server guide](SERVER_LIBRARY.md) for shared-library setup.
+
 ## Cloning methods
 
 | Methods | Capabilities |

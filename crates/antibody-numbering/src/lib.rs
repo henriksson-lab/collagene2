@@ -18,9 +18,13 @@ pub enum Error {
     Binding,
     #[error("invalid source model: {0}")]
     Source(String),
+    #[error("profile alignment cancelled")]
+    Cancelled,
 }
 pub type Result<T> = std::result::Result<T, Error>;
 macro_rules! data {($($t:tt)*)=>{#[derive(Clone,Debug,PartialEq,Eq,Serialize,Deserialize)] #[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))] #[serde(deny_unknown_fields)] $($t)*};}
+pub mod profile;
+
 data! {pub enum Insertion {None,Letters(String),Decimal(u16)}}
 data! {
 /// A label, not a floating-point quantity. No generic Ord is provided: e.g.

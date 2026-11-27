@@ -2077,3 +2077,21 @@ published cases and binding/anchor/resource failures. No third-party code,
 sequences, datasets or trained models ship in this batch. Full automatic antibody
 numbering, application integration and the full delivery gates remain open.
 [Numbering contract](ANTIBODY_NUMBERING.md).
+
+### Native antibody profile alignment
+
+The new `antibody-numbering::profile` kernel computes full-profile / free-source-
+flank affine paths in bounded integer dynamic programming. Required match states,
+allowed insertion sites, forbidden emissions, optional deletions and stop barriers
+are explicit. Ambiguity yields lower/upper score bounds; tied optimal paths remain
+flagged. Scores and profile thresholds are not biological identity, scheme or CDR
+certificates. The matrix is reused between bounds and reports can be reconstructed
+against the exact original source, profile and limits.
+
+Protein alternatives now have one canonical definition in `collagene-model`;
+liability masks consume it directly with their existing column order. There are
+no copied third-party models/sequences or external executable calls. An exhaustive
+independent path oracle and concrete ambiguity expansion accompany the new kernel.
+All 16 selected native cases and focused optional-schema WASM checks pass. Reference
+profiles, full automatic numbering, region derivation, UI/MCP/worker tracks and
+whole-product acceptance remain open.

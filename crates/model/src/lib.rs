@@ -5,6 +5,24 @@ use std::collections::BTreeMap;
 
 pub const MAX_SEQUENCE_LEN: usize = 10_000_000;
 
+/// Canonical column order for embedded protein scoring/matching, including O/U.
+pub const PROTEIN_RESIDUES: &[u8] = b"ACDEFGHIKLMNPQRSTVWYOU";
+/// IUPAC alternatives in the stored uppercase protein alphabet. A stop has no
+/// amino-acid alternatives; unsupported symbols are distinct from a stop.
+pub fn protein_choices(symbol: u8) -> Option<&'static [u8]> {
+    match symbol {
+        b'B' => Some(b"DN"),
+        b'Z' => Some(b"EQ"),
+        b'J' => Some(b"IL"),
+        b'X' => Some(PROTEIN_RESIDUES),
+        b'*' => Some(b""),
+        _ => PROTEIN_RESIDUES
+            .iter()
+            .position(|&b| b == symbol)
+            .map(|i| &PROTEIN_RESIDUES[i..i + 1]),
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Invalid {alphabet:?} character {character:?} at input position {position}")]

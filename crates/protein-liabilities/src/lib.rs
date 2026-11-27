@@ -9,7 +9,7 @@ pub const MAX_HITS: usize = 100_000;
 pub const MAX_CDRS: usize = 256;
 const MAX_SOURCE_BYTES: usize = 32 << 20;
 const MAX_OPTIONS_BYTES: usize = 512 << 10;
-const AA: &[u8] = b"ACDEFGHIKLMNPQRSTVWYOU";
+const AA: &[u8] = collagene_model::PROTEIN_RESIDUES;
 const LU: &str = "https://pmc.ncbi.nlm.nih.gov/articles/PMC6343770/";
 const LAP: &str = "https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1011881";
 const BENCHLING: &str = "https://help.benchling.com/hc/en-us/articles/9684246077325-Annotate-antibody-specific-information-on-protein-sequences";
@@ -57,14 +57,16 @@ pub struct Rule {
     pub reference: &'static str,
 }
 fn mask(b: u8) -> u32 {
-    match b {
-        b'B' => mask(b'D') | mask(b'N'),
-        b'Z' => mask(b'E') | mask(b'Q'),
-        b'J' => mask(b'I') | mask(b'L'),
-        b'X' => (1 << AA.len()) - 1,
-        b'*' => 0,
-        _ => AA.iter().position(|&a| a == b).map(|i| 1 << i).unwrap_or(0),
-    }
+    collagene_model::protein_choices(b)
+        .unwrap_or(&[])
+        .iter()
+        .fold(0, |bits, &residue| {
+            bits | (1u32
+                << AA
+                    .iter()
+                    .position(|&a| a == residue)
+                    .expect("canonical protein choice"))
+        })
 }
 fn group(b: &[u8]) -> u32 {
     b.iter().fold(0, |m, &b| m | mask(b))

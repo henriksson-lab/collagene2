@@ -4337,3 +4337,20 @@ No third-party code, sequences or trained models are bundled. Reference-data
 strategy uses explicit schemes/provenance; raw PDB residue IDs cannot be assumed
 to carry a scheme. Full automatic domain/numbering/CDR work, application tracks and
 whole-product acceptance remain required. [Contract and sources](ANTIBODY_NUMBERING.md).
+
+### F34 native profile-alignment kernel
+
+The antibody-numbering module now implements bounded semiglobal affine profile
+alignment with explicit required states, permitted insertions, optional deletions,
+stop barriers and tied-path reporting. Source/model indices survive in paths.
+Conservative lower and attainable upper scores account for ambiguous residues;
+threshold status is only a property of a declared score model, not biological
+classification or numbering. The shared molecular model now owns protein-residue
+alternatives, used directly by both alignment and liability screening.
+
+No trained model or antibody sequence dataset is bundled. Validated reference
+profiles, full scheme assignment, path-to-label/CDR derivation, ambiguity handling
+and application tracks remain required. Native tests include an independent
+exhaustive path-language oracle over 1,020 small-profile comparisons and concrete
+ambiguity expansion. All 16 selected native cases and the focused optional-schema
+WASM checks pass. This does not complete F34 or the whole delivery goal.

@@ -1,8 +1,9 @@
 # Antibody numbering implementation
 
 `collagene-antibody-numbering` is a new independent MIT Rust/WASM module for exact
-position labels and the published IMGT CDR3 allocation rule. This is a numbering
-primitive, not automatic antibody or variable-domain detection. No worker, UI,
+position labels, the published IMGT CDR3 allocation rule and an embedded profile-
+alignment kernel. These are numbering components, not automatic antibody or
+variable-domain detection. No worker, UI,
 MCP integration, full-domain numbering, Kabat/Chothia assignment or automatic
 CDR/framework derivation is implemented yet. Those remain part of F34.
 
@@ -69,3 +70,53 @@ a 2–2,048 length/uniqueness/boundary sweep, source/provenance/report tampering
 resolved and unresolved anchors, interrupted loops and resource/coordinate refusal.
 These are not evidence of automatic detection, full-domain numbering or integrated
 GUI/platform acceptance.
+
+## Profile-alignment kernel
+
+`profile::align` performs bounded semiglobal affine alignment against a declared
+integer-scoring profile. Source flanks are free; the whole profile must be consumed.
+Match, deletion and insertion states have explicit transitions, with no direct
+insertion/deletion edges. Required match states cannot be deleted, and insertion
+permission is specified after each model state. Stops block emitting states; a
+new alignment may start after a stop. The profile must have at least one required
+state, avoiding empty all-deletion matches.
+
+The native profile version is 1 and kernel engine is
+`antibody-profile-alignment-1`. Emission columns use the shared 22-residue ordering
+in `collagene-model`. Null forbids an emission; finite weights and nonpositive
+affine gap costs are bounded integers. No unvalidated third-party trained profile
+is bundled. A profile name/provenance string does not certify its biological
+calibration or provide a numbering scheme.
+
+B/Z/J/X alternatives come from the shared molecular model, also used by liability
+screening. The engine computes a conservative lower bound on the best score using
+minimum emission scores, and an upper bound using maximum scores. The lower bound
+need not be tight; absent lower paths can coexist with possible upper paths. The
+upper bound is attainable across residue assignments. Threshold status describes
+only these score bounds under the supplied model, not antibody identity or a
+numbering certificate. Neither probabilities nor biological risk scores are emitted.
+
+Each bound retains a deterministic representative state path with original source
+and model indices, plus an explicit flag for multiple optimal paths. A tied
+representative must not be silently promoted to a unique numbering map. Endpoint
+ties choose the earliest source end; state ties choose match, deletion, insertion
+order. Insertions and deletions remain in the path instead of disappearing into
+an offset. Full automatic numbering still needs validated profiles, classification,
+path-to-label rules, ambiguity handling and independent biological fixtures.
+
+Profiles are limited to 512 match states, sources to 2,000 positions and the
+caller-selected grid budget to two million cells. Every cell holds three states;
+the same bounded matrix is reused for both bounds. Emissions are cached by input
+symbol. Cancellation produces an error rather than a partial successful report.
+Source, complete profile, algorithm/topology interpretation and limits bind the
+report; `profile::Report::validate_for` reconstructs all scores, paths and tie flags.
+It validates computation under the profile, not the model's biological accuracy.
+
+Five additional native fixture groups check explicit affine paths, required and
+optional states, tied endpoints, stop barriers, thresholds, impossible emissions,
+ambiguity bounds, current-version/budget checks, cancellation and report tampering.
+An independent recursive path-language oracle covers all 340 canonical inputs of
+lengths 1–4 for three small profiles (1,020 comparisons); concrete residue expansion
+checks ambiguous score bounds. Together with the four numbering and seven affected
+liability fixtures, 16 native cases pass. Optional-schema WASM checks cover both
+consumers of the shared amino-acid alternatives.

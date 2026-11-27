@@ -4013,35 +4013,35 @@ capture/export paths remain the sole implementation. All six focused model
 cases and the integrated web/worker WASM check pass. Exact-source cross-platform
 CI remains open; general browser acceptance remains deferred. [Workflow](REACTION_QUANTITY_EDITING.md).
 
-### Next source-confirmed collaboration delivery
+### F30 revision-bound discussion and review
 
-F30 still needs revision-bound lab comments and human review: the current shared
-library protocol/storage exposes folders, document revisions and optimistic save
-conflicts, but no comment/thread or human review records. Add bounded revision-
-bound discussion and review through trusted lab membership/author identity,
-explicit concurrent-update guards and the existing binary service boundary.
-Human review must remain separate from deterministic molecular verification.
-Sequence or source changes cannot inherit a human approval for a different exact
-revision. Preserve local/offline documents and chosen-remote scope; this does not
-introduce ELN, inventory, workflow scheduling or organizational reporting.
+The native collaboration store, individual member registry, bounded binary
+service and web revision-history controls are implemented. Reader credentials
+cannot mutate shared documents through either ordinary or reliable sync writes.
+Contributors can post threads/replies and human review; thread owners and
+maintainers can resolve/reopen eligible threads. Every discussion event pins its
+exact library document/revision, trusted author and role, with generation CAS,
+immutable history and independent lab quotas. New sequence revisions inherit no
+human approval and human decisions never replace scientific verification.
 
+The operator now supplies `--members-file`, containing stable actor IDs, display
+names, roles and paths to individually protected key files. The former shared-key
+serve configuration is removed directly. Current SQLite schema 2 rejects the
+superseded schema; no migrations or compatibility readers were introduced. Live
+services and databases were not accessed or changed.
 
-### F30 native revision discussion and review storage
+Web discussion is an expandable section under each saved server-library revision.
+Complete current paging is required before posting or presenting current review
+summaries; failed/unacknowledged writes keep drafts and require explicit refresh.
+An acknowledged save followed by refresh failure is reported distinctly. Login
+changes and closed views discard pending results. Discussion is not silently
+copied with offline documents or chosen-remote plasmid sync.
 
-Implemented the native collaboration store with separately trusted member identity
-and Reader/Contributor/Maintainer discussion roles, immutable threads/replies,
-owner/moderator resolution and revision-specific human review decisions. All writes
-compare the exact discussion generation and enforce per-revision/lab event and
-byte bounds in one immediate SQLite transaction; pagination is snapshot-bound.
-Human decisions never change documents, catalog generations or scientific reports,
-and a new revision does not inherit previous approvals. Operator backup verification
-also checks discussion grammar, authority transitions and quota accounting.
-
-Current SQLite schema 2 rejects the superseded schema directly; no compatibility
-reader or migration was added. Existing live databases were not read or altered.
-All 29 native library cases pass, including six new collaboration cases, existing
-backup/recovery and reliable-mutation cases. This is the storage portion of F30,
-not complete delivery: individual server credentials/current role enforcement,
-bounded binary transport, escaped UI review/discussion controls and explicit
-local/remote discussion scope remain required. No browser or application HTTP
-checks were run. [Contract and deployment boundary](LAB_COLLABORATION.md).
+Native storage/backup validation covers 29 cases. The native binary SDK and
+credential/permission boundary cover 18 cases; both focused web-model cases and
+the final integrated WASM check also pass (20 distinct service/UI batch cases). HTTP/router fixtures are compiled
+but not executed under the current no-HTTP/browser-check rule. F30 graphical
+acceptance, controlled service cutover and any remaining concurrent editing
+requirements remain open, along with the full plan's other delivery gates.
+[Discussion contract and controls](LAB_COLLABORATION.md) ·
+[Operator configuration](SERVER_LIBRARY.md).

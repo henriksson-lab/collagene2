@@ -5,14 +5,15 @@
 namespace. It dispatches through `collagene-library-host` into
 the embedded SQLite lab library. It does not start external scientific tools,
 database executables or git processes. Static assets remain public; library
-operations require the server's shared access key.
+operations require an individual member credential.
 
-This is an initial deployment mode with one trusted startup lab and one shared
-member key. Individual accounts, membership administration and review remain
-future work. The host never accepts a client member identity or lab selector as
-authorization. Holders of the current key share access to this lab's folders and
-plasmids; restarting with a replacement key revokes the old key for subsequent
-requests. Do not hand out a key to someone who should not have lab-wide access.
+One trusted startup lab is shared through an operator-owned member registry. Each
+credential resolves to a stable actor ID, display name and Reader, Contributor or
+Maintainer role. Clients cannot choose their author or role. Readers can browse
+and read revisions, but ordinary document writes and reliable sync `Apply` are
+forbidden. Contributors can edit documents and author discussion/reviews;
+maintainers can additionally resolve/reopen other authors' discussion threads.
+There are no user-private folders or self-service account administration.
 
 Local/offline documents remain a separate deployment concern. This server is not
 a mandatory remote, nor a complete synchronization engine. Future Tauri local
@@ -25,15 +26,50 @@ from per-plasmid publication and biological document exports.
 
 ## Operator configuration
 
-The binary has three explicit actions:
+Initialize storage and generate a separate credential for each member:
 
 ```text
-collagene-server keygen --key-file /private/lab/access.key
+collagene-server keygen --key-file /private/lab/alice.key
 collagene-server init --storage-root /private/lab/database --lab-name "Example lab"
 collagene-server serve --storage-root /private/lab/database \
-  --lab-id lab-ID-PRINTED-BY-INIT --key-file /private/lab/access.key \
+  --lab-id lab-ID-PRINTED-BY-INIT --members-file /private/lab/members.json \
   --assets /srv/collagene/static-snapshot
 ```
+
+Before serving, create an owner-only `members.json` outside the static asset tree:
+
+```json
+{
+  "schema_version": 1,
+  "members": [
+    {
+      "actor_id": "alice",
+      "display_name": "Alice",
+      "role": "Maintainer",
+      "key_file": "alice.key"
+    }
+  ]
+}
+```
+
+Use a stable actor ID per person; changing a display name does not change identity.
+Relative key paths resolve against the registry directory. Duplicate actor IDs or
+secrets, unknown fields/roles/versions, unsafe files and keys inside static assets
+are rejected. The registry supports 1–256 members and at most 256 KiB. On Unix both
+registry and key files must be owner-only (`0600`). On Windows restrict them with
+operator-managed ACLs. The registry contains key paths, never embedded key values.
+
+`serve` loads the registry at startup. Restart with an updated registry to revoke a
+credential or change a role; no public administration endpoint is exposed. Embedded
+hosts can atomically replace the shared registry. Requests resolve current registry
+membership before reading bodies and again before native dispatch, so a cached lab
+capability cannot bypass revocation. Do not share individual keys or reuse actor
+IDs for different people. The former shared-key serve configuration is removed;
+`--key-file` is used only by `keygen`.
+
+The current SQLite schema is 2. Earlier internal schemas are rejected without
+migration. Use an explicitly initialized current-schema storage area for cutover;
+this code change does not modify any running service's existing storage.
 
 The parent directory must exist. `init` creates the selected database directory
 if absent, and prints the generated stable lab ID. Serving requires an existing
@@ -90,8 +126,8 @@ Every known lab context is also pinned with the
 `X-Collagene-Expected-Lab: lab-…` request header. The header is an assertion about
 the already selected startup database, never a namespace selector or permission.
 After authentication and origin checks, a present malformed/duplicate pin returns
-400 and a different lab returns 412 **before the body is polled**. Reusing a
-shared access key while reconfiguring the server cannot redirect a pinned write
+400 and a different lab returns 412 **before the body is polled**. Reusing an
+individual credential while reconfiguring the server cannot redirect a pinned write
 into another lab. The sync endpoint requires this header on every request
 (missing means 428). V1 read/bootstrap requests may omit it to discover the
 trusted lab context, but all eight v1 mutation operations require it before
@@ -99,7 +135,7 @@ dispatch; missing mutation pins return 428 without a database effect. V1 binary
 frames and media types remain unchanged.
 
 HTTP transport failures have generic bounded messages and meaningful statuses:
-401 authentication, 403 origin, 413 body size, 415 media type, 408 body timeout,
+401 authentication, 403 origin or member write permission, 413 body size, 415 media type, 408 body timeout,
 429 concurrent capacity, and 400 malformed framing. Successful transport returns
 a typed binary envelope, including typed operation failures/conflicts and the
 trusted lab context. Responses containing library information use `no-store`.
@@ -222,3 +258,23 @@ The expected-lab router fixture covers wrong/malformed/duplicate pre-body pins,
 missing sync and every v1 mutation pin, unpinned read/bootstrap compatibility,
 contradictory sync envelope/header pins, absence of a receipt or data effect,
 and successful writes under the same correct explicit lab pin.
+
+
+## Human discussion endpoint
+
+`POST /api/library/discussion` accepts only
+`application/vnd.collagene.discussion+postcard`, with checked `CDQ`/`CDR` frames.
+Requests are at most 16 KiB and responses at most 2 MiB. The expected-lab header
+is required on every request, including identity lookup. The endpoint supports
+`Identify`, revision-bound `List` and compare-and-append `Append`. Authenticated
+author/role appear only in the server reply; no request can supply them.
+
+Responses retain request correlation, trusted lab/member context and typed
+permission, missing-target, bound and generation-conflict failures. Appends bind
+the exact target, action, author, role and next sequence; list responses bind exact
+contiguous paging and generation. This is a human discussion API; it cannot grant
+molecular verification or approval to a changed revision. [Discussion contract](LAB_COLLABORATION.md).
+
+The binary SDK and native credential/permission fixtures are exercised without
+HTTP or browser requests. Updated router fixtures are compiled; application HTTP
+and graphical acceptance remain deferred until in-scope code is complete.

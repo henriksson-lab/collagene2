@@ -608,3 +608,6 @@ pub fn dispatch_frame(
     let response = dispatch(db, access, &request, scope)?;
     wire::encode_response(&response).map_err(|_| Error::Unavailable)
 }
+
+/// Revision-bound human discussion; uses authenticated member capabilities.
+pub mod discussion;

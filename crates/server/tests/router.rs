@@ -6,7 +6,9 @@ use axum::{
 };
 use collagene_lab_library::Library;
 use collagene_library_protocol as wire;
-use collagene_server::{AccessKey, AssetSnapshot, Limits, ServerState};
+use collagene_server::{
+    AccessKey, AssetSnapshot, Limits, MemberCredential, MemberRegistry, ServerState,
+};
 use std::{
     convert::Infallible,
     path::PathBuf,
@@ -41,6 +43,24 @@ impl Drop for Temp {
         let _ = std::fs::remove_dir_all(&self.0);
     }
 }
+
+fn registry(key: AccessKey) -> MemberRegistry {
+    use collagene_lab_library::collaboration::{ActorId, Author, Role};
+    MemberRegistry::new(vec![
+        MemberCredential::new(
+            key,
+            Author::new(
+                ActorId::parse("fixture-scientist").unwrap(),
+                "Fixture scientist",
+            )
+            .unwrap(),
+            Role::Contributor,
+        )
+        .unwrap(),
+    ])
+    .unwrap()
+}
+
 struct TestSession {
     authorization: String,
     lab: wire::LabId,
@@ -79,7 +99,7 @@ fn source_fixture<B: collagene_source_gateway::Backend>(
     let state = ServerState::with_source_backend(
         db,
         access,
-        key,
+        registry(key),
         "https://lab.example",
         snapshot,
         limits,
@@ -613,7 +633,7 @@ async fn server_capability_marker_is_in_memory_exact_and_does_not_mutate_integri
         ServerState::new(
             db,
             access,
-            key,
+            registry(key),
             "https://lab.example",
             snapshot,
             Limits::default(),

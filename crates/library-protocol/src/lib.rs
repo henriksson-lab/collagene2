@@ -283,6 +283,23 @@ dto! {pub enum Request {
     ListRevisions{id:DocumentId,page:PageRequest},
 }}
 impl Request {
+    /// One exhaustive classification shared by clients and trusted member guards.
+    pub fn is_mutation(&self) -> bool {
+        match self {
+            Self::Browse { .. }
+            | Self::OpenDocument { .. }
+            | Self::Search { .. }
+            | Self::ListRevisions { .. } => false,
+            Self::CreateFolder { .. }
+            | Self::RenameFolder { .. }
+            | Self::MoveFolder { .. }
+            | Self::DeleteEmptyFolder { .. }
+            | Self::ImportDocument { .. }
+            | Self::SaveRevision { .. }
+            | Self::RenameDocument { .. }
+            | Self::MoveDocument { .. } => true,
+        }
+    }
     pub fn validate(&self) -> Result<(), Error> {
         match self {
             Self::Browse { page, .. } | Self::ListRevisions { page, .. } => page.validate()?,
@@ -771,3 +788,6 @@ pub fn decode_response_for(
     value.validate_for(request)?;
     Ok(value)
 }
+
+/// Bounded revision discussion, separate from large molecular payload messages.
+pub mod discussion;

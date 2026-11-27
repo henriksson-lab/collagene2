@@ -2,9 +2,9 @@
 
 The native storage layer in `collagene-lab-library::collaboration` now stores
 comments, thread resolution and human review against an exact **library document
-ID and library revision ID**. It is not yet exposed by the server or application
-UI. Individual authentication, binary service messages and review controls remain
-required before this is an available shared-library feature.
+ID and library revision ID**. The server exposes bounded binary discussion messages
+using operator-configured individual credentials. The web library's revision
+history provides discussion/review controls; graphical acceptance remains open.
 
 A library revision pins the complete immutable stored payload and its selected
 native document/event. Renaming or moving its catalog entry preserves discussion.
@@ -26,10 +26,11 @@ role. Display names and text embedded in a comment cannot grant permission.
 - Maintainer: the same actions, plus resolve or reopen any thread in the lab.
 
 The host must check current membership for every request and issue a fresh
-capability. The existing shared lab key does **not** establish individual authors;
-it must not be presented as doing so. Role restrictions here govern discussion,
-not the separate operator-only native document APIs. The service must enforce its
-member policy on all exposed writes when individual authentication is added.
+capability. The server now requires individual member credentials, resolved through a trusted
+operator registry; it accepts no client author/role claim. Reader credentials also
+refuse ordinary document writes and reliable sync mutations. Role restrictions
+in the storage module govern discussion; separate native operator APIs retain
+their trusted administrative capability. [Server configuration](SERVER_LIBRARY.md).
 
 ## Events, concurrency and bounds
 
@@ -76,4 +77,35 @@ copying is implied by ordinary plasmid sharing.
 The native tests cover revision isolation, role enforcement, exact authorship,
 concurrent independent SQLite writers, lost acknowledgments, snapshot paging,
 text bounds, immutable events, quota refusal, recovery and unsupported-schema
-rejection. They do not establish completion of the service or graphical workflow.
+rejection. Additional native binary SDK and credential fixtures check the service contract,
+author binding, role restrictions and registry revocation. They do not establish
+HTTP or graphical acceptance.
+
+
+## Web workflow
+
+Connect using your individual member key, choose a plasmid's **Revision history**,
+then expand **Comments and human review** on the exact saved revision. **Load /
+refresh discussion** fetches its current generation and trusted member identity.
+Use **Load more events** until all current events are available before posting or
+interpreting current review decisions. Partial/stale pages do not present a
+current approval summary.
+
+Post a new comment, choose **Reply** on an open thread, or resolve/reopen an
+eligible thread. Review controls append your decision for that exact revision:
+**Approve revision**, **Request changes**, or **Withdraw my review**. The optional
+note uses the same plain-text draft. Resolved threads retain their messages;
+withdrawal retains earlier review history. Latest decisions are shown per author,
+without turning them into a collective molecular-verification status.
+
+A generation conflict or uncertain transport result invalidates posting controls
+and retains an unacknowledged draft. Refresh and review before resubmitting; the
+application never retries a write automatically. Once a write is acknowledged,
+the draft clears and the first page refreshes. Failure of that refresh is reported
+as a successful save with unavailable refresh, not a failed write. Changing the
+member session or closing the revision view discards pending display updates.
+
+Discussion is currently a server-library feature. Offline desktop document storage
+and chosen-remote plasmid synchronization remain separate; no discussion or actor
+identity is silently copied to another database. Desktop remote discussion access
+and any deliberate offline comment queue are not implemented by this batch.

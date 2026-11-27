@@ -432,3 +432,8 @@ mod protocol_layout_view;
 mod protocol_quantities_model;
 #[cfg(target_arch = "wasm32")]
 mod protocol_quantities_view;
+
+#[cfg(any(target_arch = "wasm32", test))]
+mod library_discussion_model;
+#[cfg(target_arch = "wasm32")]
+mod library_discussion_view;

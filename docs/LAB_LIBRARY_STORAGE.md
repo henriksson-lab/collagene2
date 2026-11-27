@@ -137,6 +137,7 @@ requires its own tests with actual native documents and history archives.
 ## Human collaboration
 
 The native [revision-bound discussion and review](LAB_COLLABORATION.md) model uses
-trusted individual member capabilities and append-only events. Its server
-authentication, binary transport and UI integration are still pending. The current
+trusted individual member capabilities and append-only events. The server uses
+individual credentials and bounded binary messages; the web revision history
+contains discussion/review controls, with graphical acceptance still pending. The current
 SQLite schema is 2; older internal schemas are rejected without migration.

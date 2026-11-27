@@ -1091,6 +1091,8 @@ dependencies = [
  "collagene-sources",
  "getrandom 0.4.3",
  "http-body",
+ "serde",
+ "serde_json",
  "subtle",
  "thiserror 2.0.21",
  "tokio",

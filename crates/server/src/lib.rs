@@ -1,7 +1,8 @@
 //! Authenticated same-origin HTTP adapter. No client identity/lab fields grant
-//! permission; one trusted startup lab is shared by holders of its access key.
+//! permission; operator-configured individual credentials share one startup lab.
 mod assets;
 mod auth;
+mod members;
 pub use assets::AssetSnapshot;
 pub use auth::AccessKey;
 use axum::{
@@ -16,6 +17,9 @@ use axum::{
 use collagene_lab_library::{LabAccess, Library};
 use collagene_library_host as host;
 use collagene_library_protocol as wire;
+pub use members::{AuthenticatedMember, MemberCredential, MemberRegistry};
+use wire::discussion;
+
 use collagene_library_sync as sync;
 use collagene_source_gateway::{self as sources, wire as source_wire};
 use std::{
@@ -133,7 +137,7 @@ struct Inner {
     source_ingress: Arc<Semaphore>,
     database: Mutex<Library>,
     access: LabAccess,
-    key: AccessKey,
+    members: MemberRegistry,
     origin: CanonicalOrigin,
     assets: AssetSnapshot,
     permits: Arc<Semaphore>,
@@ -147,7 +151,7 @@ impl ServerState {
     pub fn new(
         database: Library,
         access: LabAccess,
-        key: AccessKey,
+        members: MemberRegistry,
         origin: &str,
         assets: AssetSnapshot,
         limits: Limits,
@@ -155,7 +159,7 @@ impl ServerState {
         Self::with_source_backend(
             database,
             access,
-            key,
+            members,
             origin,
             assets,
             limits,
@@ -166,7 +170,7 @@ impl ServerState {
     pub fn with_source_backend<B: sources::Backend>(
         database: Library,
         access: LabAccess,
-        key: AccessKey,
+        members: MemberRegistry,
         origin: &str,
         assets: AssetSnapshot,
         limits: Limits,
@@ -185,7 +189,7 @@ impl ServerState {
             }),
             database: Mutex::new(database),
             access,
-            key,
+            members,
             origin: CanonicalOrigin::parse(origin)?,
             assets,
             permits: Arc::new(Semaphore::new(limits.max_concurrent_library_requests)),
@@ -198,6 +202,7 @@ pub fn router(state: ServerState) -> Router {
         .route("/api/library", post(library))
         .route("/api/library/sync", post(reliable_library))
         .route(sources::PATH, post(source_import))
+        .route(discussion::ENDPOINT, post(discussion_request))
         .fallback(static_asset)
         .layer(middleware::from_fn(response_headers))
         .with_state(state)
@@ -237,6 +242,7 @@ fn rejection(status: StatusCode) -> Response {
 enum Endpoint {
     Library,
     Reliable,
+    Discussion,
     Source,
 }
 impl Endpoint {
@@ -245,6 +251,7 @@ impl Endpoint {
             Self::Library => wire::MEDIA_TYPE,
             Self::Reliable => sync::MEDIA_TYPE,
             Self::Source => sources::CONTENT_TYPE,
+            Self::Discussion => discussion::MEDIA_TYPE,
         }
     }
 }
@@ -253,6 +260,9 @@ async fn library(State(state): State<ServerState>, request: Request<Body>) -> Re
 }
 async fn reliable_library(State(state): State<ServerState>, request: Request<Body>) -> Response {
     binary_library(state, request, Endpoint::Reliable).await
+}
+async fn discussion_request(State(state): State<ServerState>, request: Request<Body>) -> Response {
+    binary_library(state, request, Endpoint::Discussion).await
 }
 async fn source_import(State(state): State<ServerState>, request: Request<Body>) -> Response {
     binary_library(state, request, Endpoint::Source).await
@@ -284,19 +294,6 @@ fn expected_lab_pin(
     }
     Ok(true)
 }
-fn is_v1_mutation(request: &wire::Request) -> bool {
-    matches!(
-        request,
-        wire::Request::CreateFolder { .. }
-            | wire::Request::RenameFolder { .. }
-            | wire::Request::MoveFolder { .. }
-            | wire::Request::DeleteEmptyFolder { .. }
-            | wire::Request::ImportDocument { .. }
-            | wire::Request::SaveRevision { .. }
-            | wire::Request::RenameDocument { .. }
-            | wire::Request::MoveDocument { .. }
-    )
-}
 async fn binary_library(
     state: ServerState,
     request: Request<Body>,
@@ -305,11 +302,16 @@ async fn binary_library(
     // Authenticate before reading, buffering, decoding or dispatching any body.
     let headers = request.headers();
     let mut authorization = headers.get_all(header::AUTHORIZATION).iter();
-    let valid = authorization
-        .next()
-        .is_some_and(|value| state.0.key.authenticates(value.as_bytes()))
-        && authorization.next().is_none();
-    if !valid {
+    let Some(credential) = authorization.next().cloned() else {
+        return rejection(StatusCode::UNAUTHORIZED);
+    };
+    if authorization.next().is_some()
+        || state
+            .0
+            .members
+            .authenticate(credential.as_bytes())
+            .is_none()
+    {
         return rejection(StatusCode::UNAUTHORIZED);
     }
     if !state.0.origin.accepts(headers) {
@@ -318,7 +320,10 @@ async fn binary_library(
     let lab_pinned = match expected_lab_pin(
         headers,
         state.0.access.lab_id().as_str(),
-        matches!(endpoint, Endpoint::Reliable | Endpoint::Source),
+        matches!(
+            endpoint,
+            Endpoint::Reliable | Endpoint::Source | Endpoint::Discussion
+        ),
     ) {
         Ok(present) => present,
         Err(status) => return rejection(status),
@@ -349,6 +354,12 @@ async fn binary_library(
     }
     let max_body = if matches!(endpoint, Endpoint::Source) {
         state.0.limits.max_body_bytes.min(source_wire::MAX_REQUEST)
+    } else if matches!(endpoint, Endpoint::Discussion) {
+        state
+            .0
+            .limits
+            .max_body_bytes
+            .min(discussion::MAX_REQUEST_BYTES)
     } else {
         state.0.limits.max_body_bytes
     };
@@ -381,6 +392,14 @@ async fn binary_library(
         Ok(Err(_)) => return rejection(StatusCode::PAYLOAD_TOO_LARGE),
         Err(_) => return rejection(StatusCode::REQUEST_TIMEOUT),
     };
+    if state
+        .0
+        .members
+        .authenticate(credential.as_bytes())
+        .is_none()
+    {
+        return rejection(StatusCode::UNAUTHORIZED);
+    }
     if matches!(endpoint, Endpoint::Source) {
         return execute_source(state, bytes, permit).await;
     }
@@ -392,12 +411,16 @@ async fn binary_library(
         enum Decoded {
             Library(wire::RequestEnvelope),
             Reliable(sync::RequestEnvelope),
+            Discussion(discussion::RequestEnvelope),
         }
         let decoded = match endpoint {
             Endpoint::Source => return Err(StatusCode::BAD_REQUEST),
+            Endpoint::Discussion => Decoded::Discussion(
+                discussion::decode_request(&bytes).map_err(|_| StatusCode::BAD_REQUEST)?,
+            ),
             Endpoint::Library => {
                 let request = wire::decode_request(&bytes).map_err(|_| StatusCode::BAD_REQUEST)?;
-                if !lab_pinned && is_v1_mutation(&request.request) {
+                if !lab_pinned && request.request.is_mutation() {
                     return Err(StatusCode::PRECONDITION_REQUIRED);
                 }
                 Decoded::Library(request)
@@ -409,9 +432,8 @@ async fn binary_library(
                 if prefix.expected_lab != state.0.access.lab_id().as_str() {
                     return Err(StatusCode::PRECONDITION_FAILED);
                 }
-                Decoded::Reliable(
-                    sync::decode_request(&bytes).map_err(|_| StatusCode::BAD_REQUEST)?,
-                )
+                let request = sync::decode_request(&bytes).map_err(|_| StatusCode::BAD_REQUEST)?;
+                Decoded::Reliable(request)
             }
         };
         let mut db = state
@@ -419,7 +441,31 @@ async fn binary_library(
             .database
             .lock()
             .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+        // Resolve identity after waiting for the database lock: membership may
+        // have changed while this request's body was decoded or work was queued.
+        let member = state
+            .0
+            .members
+            .authenticate(credential.as_bytes())
+            .ok_or(StatusCode::UNAUTHORIZED)?;
+        match &decoded {
+            Decoded::Library(request) if !member.permits_library(&request.request) => {
+                return Err(StatusCode::FORBIDDEN);
+            }
+            Decoded::Reliable(request) if !member.permits_sync(&request.request) => {
+                return Err(StatusCode::FORBIDDEN);
+            }
+            _ => (),
+        }
         match decoded {
+            Decoded::Discussion(request) => {
+                let access = db
+                    .trusted_member_access(&state.0.access, member.author, member.role)
+                    .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+                let response = host::discussion::dispatch(&mut db, &access, &request)
+                    .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+                discussion::encode_response(&response).map_err(|_| StatusCode::SERVICE_UNAVAILABLE)
+            }
             Decoded::Reliable(request) => {
                 // The native adapter performs exact receipt lookup before a retry,
                 // and fresh native/publication validation before any new mutation.

@@ -673,7 +673,7 @@ pub fn LibraryPane(
         <details class="lab-library-pane"><summary>{if local { "Local library" } else { "Lab library" }}</summary>
             <Show when=move||!local&&connected.with(Option::is_none)>
                 <form class="library-connect" on:submit=move|event|{event.prevent_default();connect.run(());}>
-                    <label>"Lab access key"<input type="password" autocomplete="off" aria-label="Lab library access key" prop:value=move||key.get() disabled=move||busy.get() on:input=move|event|key.set(event_target_value(&event))/></label>
+                    <label>"Member access key"<input type="password" autocomplete="off" aria-label="Lab member access key" prop:value=move||key.get() disabled=move||busy.get() on:input=move|event|key.set(event_target_value(&event))/></label>
                     <button class="button secondary" type="submit" disabled=move||busy.get()||locked.get()>"Connect"</button>
                     <p class="helper">"The key is kept in memory for this session. Local documents stay on this device."</p>
                 </form>
@@ -720,7 +720,13 @@ pub fn LibraryPane(
                     let previous=listing.clone(); let next=listing.clone();
                     view!{<section class="library-revisions">
                         <div class="library-heading"><strong>{format!("{} revisions",listing.document.name.as_str())}</strong><button class="text-tool" on:click=move|_|history.set(None)>"Close"</button></div>
-                        <ul>{listing.revisions.into_iter().map(|revision|{let document=listing.document.clone();view!{<li><button class="text-tool" disabled=move||busy.get()||locked.get() on:click=move|_|send.run(Command::Open(document.clone(),Some(revision.id.clone())))>{format!("Revision {} · {} bytes",revision.number,revision.archive_size)}</button></li>}}).collect_view()}</ul>
+                        <ul>{listing.revisions.into_iter().map(|revision|{
+                            let document=listing.document.clone();
+                            let target=wire::discussion::Target{document:document.id.clone(),revision:revision.id.clone()};
+                            view!{<li><button class="text-tool" disabled=move||busy.get()||locked.get() on:click=move|_|send.run(Command::Open(document.clone(),Some(revision.id.clone())))>{format!("Revision {} · {} bytes",revision.number,revision.archive_size)}</button>
+                                {(!local).then(||view!{<crate::library_discussion_view::LibraryDiscussion target=target/>})}
+                            </li>}
+                        }).collect_view()}</ul>
                         <div class="library-pages">
                             <button class="text-tool" disabled=move||busy.get()||previous.offset==0 on:click=move|_|send.run(Command::Request(wire::Request::ListRevisions{id:previous.document.id.clone(),page:wire::PageRequest{offset:previous.offset.saturating_sub(100),limit:100,expected_catalog_generation:Some(previous.generation)}},String::new()))>"Previous revisions"</button>
                             <button class="text-tool" disabled=move||busy.get()||next.next_offset.is_none() on:click=move|_|if let Some(offset)=next.next_offset{send.run(Command::Request(wire::Request::ListRevisions{id:next.document.id.clone(),page:wire::PageRequest{offset,limit:100,expected_catalog_generation:Some(next.generation)}},String::new()));}>"Older revisions"</button>

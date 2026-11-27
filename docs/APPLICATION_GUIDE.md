@@ -174,3 +174,12 @@ job when ready; local originals remain intact. Shared-library operators can use
 `backup`, `verify-backup` and `restore-new` without an external SQLite program.
 [Publication](REPOSITORY_METADATA_PUBLICATION.md) ·
 [Recovery](LAB_LIBRARY_BACKUP.md).
+
+
+Shared-library revision history now includes comments and human review. Connect
+with an individual member credential, open a plasmid's revision history and expand
+**Comments and human review** for the exact saved revision. Load all current events
+before posting; conflicts retain unacknowledged drafts and require refresh.
+Human review remains separate from deterministic scientific verification.
+[Discussion controls and scope](LAB_COLLABORATION.md) ·
+[Member registry setup](SERVER_LIBRARY.md).

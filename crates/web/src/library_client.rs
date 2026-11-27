@@ -83,12 +83,21 @@ impl LibraryClient for Session {
     }
 }
 
+enum Call {
+    Library(wire::Request),
+    Discussion(wire::discussion::Request),
+}
+enum Reply {
+    Library(wire::ResponseEnvelope),
+    Discussion(wire::discussion::ResponseEnvelope),
+}
+
 impl Session {
     /// A connection is confirmed only by a successfully validated server reply.
     pub fn connect(&self, key: String) -> Result<(), String> {
         let key = key.trim();
         if key.len() != 64 || !key.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err("Enter the 64-character lab access key.".into());
+            return Err("Enter the 64-character member access key.".into());
         }
         self.disconnect();
         self.0.borrow_mut().key = key.to_owned();
@@ -240,6 +249,21 @@ impl Session {
         operation: wire::Request,
     ) -> Result<wire::ResponseEnvelope, String> {
         crate::library_capture::ensure_public_document_request(&operation)?;
+        match self.exchange(Call::Library(operation)).await? {
+            Reply::Library(reply) => Ok(reply),
+            _ => unreachable!("matched request domain"),
+        }
+    }
+    pub async fn discussion(
+        &self,
+        operation: wire::discussion::Request,
+    ) -> Result<wire::discussion::ResponseEnvelope, String> {
+        match self.exchange(Call::Discussion(operation)).await? {
+            Reply::Discussion(reply) => Ok(reply),
+            _ => unreachable!("matched request domain"),
+        }
+    }
+    async fn exchange(&self, operation: Call) -> Result<Reply, String> {
         let controller =
             web_sys::AbortController::new().map_err(|_| "Cannot start a library request")?;
         let (request_id, epoch, key, context) = {
@@ -247,17 +271,10 @@ impl Session {
             if state.key.is_empty() {
                 return Err("Connect to the lab library first.".into());
             }
-            let mutation = matches!(
-                &operation,
-                wire::Request::CreateFolder { .. }
-                    | wire::Request::RenameFolder { .. }
-                    | wire::Request::MoveFolder { .. }
-                    | wire::Request::DeleteEmptyFolder { .. }
-                    | wire::Request::ImportDocument { .. }
-                    | wire::Request::SaveRevision { .. }
-                    | wire::Request::RenameDocument { .. }
-                    | wire::Request::MoveDocument { .. }
-            );
+            let mutation = match &operation {
+                Call::Discussion(_) => true,
+                Call::Library(request) => request.is_mutation(),
+            };
             if mutation && state.context.is_none() {
                 return Err("Load and review the selected lab before sending changes.".into());
             }
@@ -284,11 +301,39 @@ impl Session {
             )
             .map_err(|_| "Cannot bound the library request duration")?;
         lifetime.timeout = Some((timeout, on_timeout));
-        let request = wire::RequestEnvelope {
-            request_id,
-            request: operation,
+        let (request, discussion_request, bytes, endpoint, media, max_response) = match operation {
+            Call::Library(operation) => {
+                let request = wire::RequestEnvelope {
+                    request_id,
+                    request: operation,
+                };
+                let bytes = wire::encode_request(&request).map_err(|e| e.to_string())?;
+                (
+                    Some(request),
+                    None,
+                    bytes,
+                    ENDPOINT,
+                    wire::MEDIA_TYPE,
+                    MAX_FRAME_BYTES,
+                )
+            }
+            Call::Discussion(operation) => {
+                let request = wire::discussion::RequestEnvelope {
+                    request_id,
+                    request: operation,
+                };
+                let bytes =
+                    wire::discussion::encode_request(&request).map_err(|e| e.to_string())?;
+                (
+                    None,
+                    Some(request),
+                    bytes,
+                    wire::discussion::ENDPOINT,
+                    wire::discussion::MEDIA_TYPE,
+                    wire::discussion::MAX_RESPONSE_BYTES,
+                )
+            }
         };
-        let bytes = wire::encode_request(&request).map_err(|error| error.to_string())?;
         let body = js_sys::Uint8Array::from(bytes.as_slice());
         let init = web_sys::RequestInit::new();
         init.set_method("POST");
@@ -297,13 +342,13 @@ impl Session {
         init.set_redirect(web_sys::RequestRedirect::Error);
         init.set_signal(Some(&controller.signal()));
         init.set_body(&body);
-        let http = web_sys::Request::new_with_str_and_init(ENDPOINT, &init)
+        let http = web_sys::Request::new_with_str_and_init(endpoint, &init)
             .map_err(|_| "Cannot prepare the library request")?;
         http.headers()
-            .set("Content-Type", wire::MEDIA_TYPE)
+            .set("Content-Type", media)
             .map_err(|_| "Cannot prepare the library content type")?;
         http.headers()
-            .set("Accept", wire::MEDIA_TYPE)
+            .set("Accept", media)
             .map_err(|_| "Cannot prepare the library response type")?;
         http.headers()
             .set("Authorization", &format!("Bearer {key}"))
@@ -325,8 +370,9 @@ impl Session {
         match response.status() {
             401 => {
                 self.disconnect();
-                return Err("The lab access key was not accepted. Connect again.".into());
+                return Err("The member access key was not accepted. Connect again.".into());
             }
+            403 => return Err("Your current member role does not permit this operation.".into()),
             412 => {
                 self.disconnect();
                 return Err("The server's lab changed. Reconnect and review the selected database before saving.".into());
@@ -357,31 +403,45 @@ impl Session {
             .get("content-type")
             .ok()
             .flatten()
-            .is_none_or(|value| value.split(';').next().unwrap_or("").trim() != wire::MEDIA_TYPE)
+            .is_none_or(|value| value.split(';').next().unwrap_or("").trim() != media)
         {
             return Err("The server returned an unexpected library response type.".into());
         }
-        let bytes = read_bounded(&response).await?;
-        let reply = wire::decode_response_for(&bytes, &request)
-            .map_err(|error| format!("Library reply was rejected: {error}"))?;
-        if let Some(context) = &context {
+        let bytes = read_bounded_limit(&response, max_response).await?;
+        let (reply, reply_context) = if let Some(request) = request {
+            let reply = wire::decode_response_for(&bytes, &request)
+                .map_err(|e| format!("Library reply was rejected: {e}"))?;
+            if let Some(context) = &context {
+                reply
+                    .validate_for_in_context(&request, &context.lab_id)
+                    .map_err(|_| "The server's lab changed; reconnect before continuing.")?;
+            }
+            let context = reply.context.clone();
+            (Reply::Library(reply), context)
+        } else {
+            let request = discussion_request.ok_or("Missing discussion request")?;
+            let context = context
+                .as_ref()
+                .ok_or("Connect to the lab library first.")?;
+            let reply = wire::discussion::decode_response(&bytes).map_err(|e| e.to_string())?;
             reply
-                .validate_for_in_context(&request, &context.lab_id)
-                .map_err(|_| "The server's lab changed; reconnect before continuing.")?;
-        }
+                .validate_for(&request, &context.lab_id)
+                .map_err(|_| "Discussion reply does not match this exact request and lab.")?;
+            let context = Some(reply.context.clone());
+            (Reply::Discussion(reply), context)
+        };
         let mut state = self.0.borrow_mut();
         if state.epoch != epoch {
             return Err("The library session changed; this reply was discarded.".into());
         }
         if let Some(previous) = &state.context {
-            if reply
-                .context
+            if reply_context
                 .as_ref()
                 .is_none_or(|context| context.lab_id != previous.lab_id)
             {
                 return Err("The server's lab changed; reconnect before continuing.".into());
             }
-        } else if let Some(context) = &reply.context {
+        } else if let Some(context) = &reply_context {
             state.context = Some(context.clone());
         }
         Ok(reply)
@@ -417,9 +477,6 @@ impl Drop for RequestLifetime {
     }
 }
 
-async fn read_bounded(response: &web_sys::Response) -> Result<Vec<u8>, String> {
-    read_bounded_limit(response, MAX_FRAME_BYTES).await
-}
 async fn read_bounded_limit(response: &web_sys::Response, limit: usize) -> Result<Vec<u8>, String> {
     if response
         .headers()

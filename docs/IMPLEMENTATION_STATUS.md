@@ -1770,14 +1770,20 @@ positive compatibility fixtures are removed; retained tests exercise current
 scientific behavior, integrity bounds and explicit unsupported-version refusal.
 
 
-### Native lab discussion and human review storage
+### Revision-bound lab discussion and human review
 
-The native library now retains immutable revision-bound discussion/review events
-with trusted member identity, role checks, generation conflicts and independent
-quotas. Whole-database backups validate and restore them. All 29 native storage,
-reliable-mutation and backup cases pass (six new collaboration cases). Individual
-server authentication, binary service integration and application controls are
-still pending; this feature is not exposed by the running server. SQLite schema 2
-rejects older internal schemas; live storage remains untouched. See
-[lab collaboration](LAB_COLLABORATION.md). Human review never replaces native
-scientific verification or propagates to a changed revision.
+Native storage, individual server credentials, bounded binary discussion messages
+and web revision-history controls are implemented. The operator registry supplies
+trusted author/role; readers cannot mutate shared documents or submit reliable
+sync writes. Threads, replies, resolution and review decisions remain immutable
+and bound to exact stored revisions. Partial/stale pages cannot present a current
+approval summary or enable posting. Human review never replaces deterministic
+scientific verification or propagates to changed revisions.
+
+All 29 native storage/backup cases and 18 binary SDK/credential/permission cases
+pass. Both focused web-model cases and the final integrated WASM check also pass
+(20 distinct native/model cases in this service/UI batch). HTTP/router fixtures are compiled but not executed. Graphical
+acceptance and controlled service cutover remain open. SQLite schema 2 rejects
+older schemas, and `serve` now requires `--members-file`; existing running storage
+and services remain untouched. Offline/remote plasmid synchronization does not
+silently transfer discussion or actor identity. See [lab collaboration](LAB_COLLABORATION.md).

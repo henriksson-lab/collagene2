@@ -80,6 +80,9 @@ impl AccessKey {
         file.sync_all()?;
         Ok(())
     }
+    pub(crate) fn same_secret(&self, other: &Self) -> bool {
+        bool::from(self.0.ct_eq(&other.0))
+    }
     pub(crate) fn authenticates(&self, value: &[u8]) -> bool {
         let Some(encoded) = value.strip_prefix(b"Bearer ") else {
             return false;

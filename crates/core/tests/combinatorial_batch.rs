@@ -266,7 +266,7 @@ fn native_records_deduplicate_and_archived_assertions_need_fresh_replay() {
     record.rows[1].status = Some(Status::ConsistentUnderAssumptions);
     record.context_revision = blake3::hash(
         &serde_json::to_vec(&(
-            "combinatorial-batch-record-1",
+            "combinatorial-batch-record-2",
             &record.engine_version,
             &record.request,
             &record.rows,

@@ -4,7 +4,7 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-Current source uses worker109, candidate30, native plan28, science31, draft18 and
+Published6af40c7 uses worker109, candidate30, native plan28, science31, draft18 and
 189 MCP tools. There is one current internal representation; unsupported internal
 schemas are rejected without compatibility readers. Native TOPO graph records
 use schema2 and a single ordered transfer/flap/sealing transcript, freshly
@@ -12,14 +12,28 @@ replayed from original substrates. One physical bridge replaces the separate
 phase executors. Full reviewed-reaction graph capture retains processing steps,
 all components, effective cut-end chemistry and consumed activation through restart.
 
-The working batch also connects generic Run/Derived mismatch-PCR and reciprocal-
+The published batch also connects generic Run/Derived mismatch-PCR and reciprocal-
 extension digest inspectors with exact workspace ownership, stages literal
 WebMCP design proposals for visible apply/review, and fixes saved-source inverse-
 PCR's missing workspace attestation. Nine browser tools share existing Rust
 commands. The integrated batch passes234 distinct focused native cases across53 target/
 filter groups, including the52-call post-flap/sealed continuation, root ownership
 and endpoint/backbone/nick tampering refusals. The web/worker WASM check and static
-WebMCP JavaScript syntax check pass. Exact-source CI is pending publication.
+WebMCP JavaScript syntax check pass. Exact-source web CI passes. Native CI found two stale tag expectations, corrected
+in the new working batch without changing scientific assertions. All three
+Windows/macOS/Linux desktop build jobs pass for6af40c7.
+
+Working source advances only the worker schema to110 for saved-material
+preparation and TA/GC library method/row evidence. Candidate30, plan28, science31,
+draft18 and189 MCP tools remain unchanged: existing native operations perform the
+science. Current batch records are schema2; domestication preparation/review use
+engine/evidence3. Saved Run/Derived sources retain exact owning-workspace guards,
+and tailing-family assessment stays distinct from target/ligation consistency.
+The integrated batch passes193 distinct focused native cases, including in-process
+MCP, source ownership refusals, retained protocol/orders, library release/reopen
+and web preparation models. The web/worker WASM check passes. The final fixture
+repairs were rechecked individually; unchanged passing cases were not rerun.
+Exact-source CI and publication of this batch remain open.
 
 Published19a1a1c (worker108/candidate29/plan27/science30/draft18) passed118 focused
 native cases and the integrated WASM check. Exact-source web CI and all three
@@ -35,12 +49,12 @@ binary selector/size-lane fixture expectations, corrected in f66deff without
 relaxing bounds. Its web and all three desktop build jobs passed. Full graphical
 and installed-desktop acceptance remain open.
 
-Port8082 serves the immutable successful CI frontend for `443f51b` (worker105),
-including saved activated TOPO graph reuse. Static asset integrity, exact process
-ownership and the listening socket were checked without application requests.
-The working per-construct library and actual-strand changes are not served there. Private library
-assets and storage remain untouched. Browser and application HTTP acceptance
-remain deferred until all in-scope code is complete.
+Port8082 serves the immutable successful CI frontend for `6af40c7` (worker109),
+including ordered TOPO continuation and staged WebMCP design changes. Its14 assets,
+SRI references, WASM headers, worker namespace and listening socket were checked
+without executing the application. Private library assets/storage are untouched.
+Browser and application HTTP acceptance remains deferred until in-scope code is
+complete. The next working batch is not yet published there.
 
 Saved-run review now explicitly opens a separate candidate in the existing DAG
 editor, preserving original source and target events after document heads advance.

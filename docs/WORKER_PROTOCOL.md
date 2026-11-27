@@ -1,7 +1,7 @@
 # Binary worker protocol
 
 The web worker and native adapters share Rust DTOs in `core::protocol` and the
-same deterministic scientific engines. Current schemas are worker **109**,
+same deterministic scientific engines. Current schemas are worker **110**,
 candidate **30** and native workspace plan **28**; the verifier is **science-31**.
 Only current internal encodings are accepted. Unsupported development versions
 have no decoder, migration or capability ladder.
@@ -477,3 +477,11 @@ correspondence; it does not replace that native execution.
 
 Compiler and scientific-fixture evidence is tracked in the implementation status.
 Browser acceptance remains deferred until the requested code is complete.
+
+`PrepareDomestication` carries an explicit nullable owning workspace (selector140
+uses the workspace envelope). Its request carries a required-nullable native
+origin. Original sources use null/null; saved Run/Derived sources require their
+exact retained event and owner before preparation. Response validation checks the
+caller-computed context and documentary correspondence without restoring material.
+Library method values include explicit keyed TA/GC additions and current batch
+records use schema2 with required-nullable typed end-family evidence.

@@ -977,3 +977,24 @@ ordered oligos use normalized DNA. Candidate and bounded evidence are published
 atomically in the session store. Historical source findings remain visible, and
 acceptance/export still require fresh ordinary verification.
 [Native scope](INVERSE_PCR_MATERIAL.md) · [Wire and SDK contract](INVERSE_PCR_ORIGIN_TRANSPORT.md).
+
+
+## Saved-source domestication and tailing libraries
+
+`prepare_domestication` accepts explicit `request.origin` and `origin_workspace`
+(required nullable values). Null/null declares an original reference; a native
+Run/Derived origin requires its exact retained workspace and event. The source
+session document must equal that event snapshot. The checked genotype is fixed
+before inverse PCR, sequential inverse-PCR rounds or OE planning. Returned plans
+contain the native reconstruction prefix and only new primer orders; inherited
+source limitations remain visible. Missing/foreign owners and marker-only source
+claims are refused. Imported Prepared reports confer no material authority.
+
+Combinatorial `Method::Tailing` carries `profile`, `allow_nicked`, and one explicit
+`{bin_id, action}` per source bin. Actions use the ordinary KeepExisting/AddTail
+contract; per-construct whole-method overrides preserve deliberate differences.
+Every computed tailing row retains typed `tailing_profile` evidence separately
+from physical verification. A matched end family cannot repair a wrong independent
+target, and a valid generic blunt ligation does not establish TA/GC profile match.
+Current batch records are schema2. See [tailing libraries](TAILING_SOURCE_LIBRARIES.md)
+and [saved domestication](DOMESTICATION_SAVED_MATERIAL.md).

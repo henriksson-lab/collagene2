@@ -43,6 +43,7 @@ fn fixture(dna: &str, patches: Vec<(usize, &str, &str)>) -> (PlanInput, physical
             molecule: source,
         },
         physical::Request {
+            origin: None,
             design: request,
             selection,
             route: physical::Route::InversePcr {
@@ -71,8 +72,8 @@ fn a_checked_literal_site_change_is_supplied_by_real_primers_from_original_dna()
     let mut expected = original.sequence.as_str().as_bytes().to_vec();
     expected[10] = b'C';
     let expected = String::from_utf8(expected).unwrap();
-    let bound = physical::revision(&input, &request).unwrap();
-    let report = physical::materialize(&input, &request).unwrap();
+    let bound = physical::revision(&input, &request, None).unwrap();
+    let report = physical::materialize(&input, &request, None).unwrap();
     report.validate_binding(&bound).unwrap();
     assert_eq!(report.target.sequence.as_str(), expected);
     assert!(
@@ -136,7 +137,7 @@ fn origin_spanning_edits_keep_original_coordinates_and_encode_both_tails() {
         reverse_length: 8,
         reverse_tail_bases: 2,
     };
-    let report = physical::materialize(&input, &request).unwrap();
+    let report = physical::materialize(&input, &request, None).unwrap();
     let mut expected = dna.as_bytes().to_vec();
     expected[0] = b'C';
     expected[n - 1] = b'A';
@@ -169,13 +170,13 @@ fn stale_original_candidate_and_out_of_interval_changes_are_refused() {
     let (input, request) = simple();
     let mut wrong = input.clone();
     wrong.id = "recoded template".into();
-    assert!(physical::preflight(&wrong, &request).is_err());
+    assert!(physical::preflight(&wrong, &request, None).is_err());
     wrong = input.clone();
     wrong.revision = "a".repeat(64);
-    assert!(physical::preflight(&wrong, &request).is_err());
+    assert!(physical::preflight(&wrong, &request, None).is_err());
     let mut stale = request.clone();
     stale.selection.candidate_id = "a".repeat(64);
-    assert!(physical::preflight(&input, &stale).is_err());
+    assert!(physical::preflight(&input, &stale, None).is_err());
     let mut uncovered = request.clone();
     uncovered.route = physical::Route::InversePcr {
         edit_start: 1,
@@ -184,15 +185,15 @@ fn stale_original_candidate_and_out_of_interval_changes_are_refused() {
         reverse_length: 8,
         reverse_tail_bases: 0,
     };
-    assert!(physical::preflight(&input, &uncovered).is_err());
+    assert!(physical::preflight(&input, &uncovered, None).is_err());
     let mut forged = request.clone();
     forged.selection.patches[0].expected = "A".into();
     repin(&input, &mut forged);
-    assert!(physical::materialize(&input, &forged).is_err());
+    assert!(physical::materialize(&input, &forged, None).is_err());
     let mut outside = request.clone();
     outside.selection.patches[0].position = usize::MAX;
     repin(&input, &mut outside);
-    assert!(physical::preflight(&input, &outside).is_err());
+    assert!(physical::preflight(&input, &outside, None).is_err());
 }
 #[test]
 fn distant_substitutions_and_a_201_base_ordered_oligo_need_another_explicit_route() {
@@ -208,7 +209,7 @@ fn distant_substitutions_and_a_201_base_ordered_oligo_need_another_explicit_rout
         reverse_length: 8,
         reverse_tail_bases: 0,
     };
-    let error = physical::preflight(&input, &distant)
+    let error = physical::preflight(&input, &distant, None)
         .unwrap_err()
         .to_string();
     assert!(error.contains("200"));
@@ -221,7 +222,7 @@ fn distant_substitutions_and_a_201_base_ordered_oligo_need_another_explicit_rout
         reverse_tail_bases: 0,
     };
     assert!(
-        physical::preflight(&input, &long)
+        physical::preflight(&input, &long, None)
             .unwrap_err()
             .to_string()
             .contains("200")
@@ -233,12 +234,12 @@ fn distant_substitutions_and_a_201_base_ordered_oligo_need_another_explicit_rout
         reverse_length: 8,
         reverse_tail_bases: 1,
     };
-    physical::preflight(&input, &long).unwrap(); // exactly200, still only a declaration
+    physical::preflight(&input, &long, None).unwrap(); // exactly200, still only a declaration
 }
 #[test]
 fn independent_target_and_method_evidence_tampering_fail_under_current_compiler() {
     let (input, request) = simple();
-    let report = physical::materialize(&input, &request).unwrap();
+    let report = physical::materialize(&input, &request, None).unwrap();
     let bound = report.context_revision.clone();
     let physical::MethodEvidence::InversePcr { options, .. } = &report.method else {
         panic!("inverse evidence");

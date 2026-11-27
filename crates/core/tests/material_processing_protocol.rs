@@ -73,7 +73,7 @@ fn mismatch_install_redigest_and_repair_keep_literal_tails_and_actual_sticky_str
         reverse: reverse.clone(),
         options: options.clone(),
     };
-    let response = call(job.clone(), context.clone(), 178, 168);
+    let response = call(job.clone(), context.clone(), 175, 165);
     let AnalysisResult::MaterialMismatchPcrPreview(preview) = response.result else {
         panic!("mismatch preview")
     };

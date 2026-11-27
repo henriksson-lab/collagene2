@@ -29,3 +29,10 @@ Optional primer collections are atomic presentation attachments containing only 
 The existing shared ancestry ledger charges full wrappers and source models before decoding opaque children: aggregate 32 MiB, depth eight and 1000 steps, with 8 MiB native records and existing model/material bounds. Mismatch calls retain the existing bounded native search policy and reject an estimated call above 200 million units; this does not claim a new absolute end-to-end budget for replaying all closed ancestors. Full preview/report serialization is bounded to 32 MiB. All algorithms are native Rust/WASM with no external scientific process.
 
 `material_derivation_actions` fixtures independently specify substitutions/tails and annotation/order receipts, archive replay and downstream PCR; actual EcoRV cleavage followed by explicit3′ shortening and 13/17-strand repair with retained Dam calls, unknown original outer5′ group, cleavage-created inner5′ phosphate and unmodified filled bases; competing versus conditionally capped mismatch searches; source/policy/geometry guards; and a real nick retained through end repair with mismatch PCR still refused. Existing exact-PCR, catalog-digest, mixed-ancestry and target-based assembly fixtures remain current regression coverage. These interfaces do not claim laboratory success or target verification for target-free processing.
+
+PCR selection identities bind one selected preview document. Set
+`PcrSelection.expected_preview_revision` from the selected
+`preview.molecule.revision()`; mismatch selection uses the selected
+`preview.preview.documents[0].revision()`. The aggregate `pcr_preview_revision`
+and `mismatch_pcr_preview_revision` values bind the source/options inspection
+request. Keep those identities separate when constructing an installation.

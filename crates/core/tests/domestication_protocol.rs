@@ -118,6 +118,7 @@ fn inspection_proposal_check_and_original_template_preparation_keep_append_only_
         molecule: source,
     };
     let request = physical::Request {
+        origin: None,
         design: request,
         selection,
         route: physical::Route::InversePcr {
@@ -128,9 +129,10 @@ fn inspection_proposal_check_and_original_template_preparation_keep_append_only_
             reverse_tail_bases: 0,
         },
     };
-    let revision = physical::revision(&input, &request).unwrap();
+    let revision = physical::revision(&input, &request, None).unwrap();
     let AnalysisResult::DomesticationPrepared(prepared) = exchange(
         AnalysisJob::PrepareDomestication {
+            workspace: None,
             input: input.clone(),
             request: request.clone(),
         },
@@ -149,7 +151,11 @@ fn inspection_proposal_check_and_original_template_preparation_keep_append_only_
     let stale = protocol::encode_request(&Request {
         id: 611,
         revision: "0".repeat(64),
-        job: AnalysisJob::PrepareDomestication { input, request },
+        job: AnalysisJob::PrepareDomestication {
+            workspace: None,
+            input,
+            request,
+        },
     })
     .unwrap();
     assert!(protocol::process_request(&stale).is_err());

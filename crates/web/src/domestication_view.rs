@@ -2,6 +2,7 @@
 use crate::{
     domestication_form::{Form, RouteForm},
     domestication_review::Open,
+    run_origin_model::PinnedOrigin,
     source_identity::SourceInfo,
     worker::CachedWorker,
 };
@@ -9,6 +10,7 @@ use collagene_core::{
     Molecule, domestication as design, domestication_preparation as physical,
     protocol::{AnalysisJob, AnalysisResult, Request},
     verification::PlanInput,
+    workspace::Workspace,
 };
 use leptos::prelude::*;
 use std::{
@@ -41,7 +43,12 @@ struct Checked {
     report: design::CheckReport,
     target: Molecule,
 }
+struct MaterialSource {
+    origin: Option<PinnedOrigin>,
+    workspace: Option<Arc<Workspace>>,
+}
 struct Prepared {
+    material: Arc<MaterialSource>,
     checked: Arc<Checked>,
     route: RouteForm,
     report: physical::Prepared,
@@ -90,7 +97,7 @@ fn Pager(page: RwSignal<usize>, total: usize, limit: usize, label: &'static str)
     let count = pages(total, limit);
     view! {<p>{move||format!("{} {} · page {} of {}",total,label,page.get().min(count-1)+1,count)}</p>
     <button class="text-tool" disabled=move||page.get()==0 on:click=move|_|page.update(|value|*value=value.saturating_sub(1))>{format!("Previous {label}")}</button>
-    <button class="text-tool" disabled=move||page.get()+1>=count on:click=move|_|page.update(|value|*value=(*value+1).min(count-1))>{format!("Next {label}")}</button>}
+    <button class="text-tool" disabled={move||page.get()+1>=count} on:click=move|_|page.update(|value|*value=(*value+1).min(count-1))>{format!("Next {label}")}</button>}
 }
 
 #[component]
@@ -99,12 +106,14 @@ pub fn DomesticationView(
     molecule: Memo<Molecule>,
     selected_feature: RwSignal<Option<usize>>,
     epoch: RwSignal<u64>,
+    get_workspace: Callback<(), Result<Workspace, String>>,
     on_open: Callback<Open, Result<(), String>>,
     on_navigate: Callback<(usize, usize), Result<(), String>>,
 ) -> impl IntoView {
     let form =
         RwSignal::new(molecule.with_untracked(|m| Form::new(m, selected_feature.get_untracked())));
     let route = RwSignal::new(RouteForm::default());
+    let origin = RwSignal::new(None::<PinnedOrigin>);
     let inspection = RwSignal::new(None::<Arc<Inspection>>);
     let proposed = RwSignal::new(None::<Arc<Proposed>>);
     let checked = RwSignal::new(None::<Arc<Checked>>);
@@ -153,6 +162,7 @@ pub fn DomesticationView(
         cancel.run(true);
         form.set(molecule.with_untracked(|m| Form::new(m, selected_feature.get_untracked())));
         route.set(RouteForm::default());
+        origin.set(None);
         feature_page.set(0);
         retained_page.set(0);
         search_page.set(0);
@@ -181,6 +191,21 @@ pub fn DomesticationView(
         worker.set_value(None);
         pending.set(false);
         prepared.set(None);
+    });
+    Effect::new(move |_| {
+        let _ = origin.get();
+        generation.update(|value| *value = value.wrapping_add(1));
+        if let Some(worker) = worker.get_value() {
+            worker.close();
+        }
+        worker.set_value(None);
+        pending.set(false);
+        prepared.set(None);
+    });
+    let attest_material=Callback::new(move |(saved,selected):(Arc<Scope>,Option<PinnedOrigin>)|->Result<Arc<MaterialSource>,String>{
+        let workspace=if selected.is_some(){Some(Arc::new(get_workspace.run(())?))}else{None};
+        if let Some(workspace)=workspace.as_deref(){crate::domestication_review::validate_origin(workspace,&saved.source.binding,&saved.molecule,selected.as_ref())?;}
+        Ok(Arc::new(MaterialSource{origin:selected,workspace}))
     });
     let guard = Callback::new(move |saved: Arc<Scope>| -> Result<(), String> {
         if source.get_untracked() != saved.source
@@ -221,6 +246,7 @@ pub fn DomesticationView(
             return;
         }
         let result = (|| -> Result<_, String> {
+            let mut material = None;
             let (scope, revision, job) = match &work {
                 Work::Inspect => {
                     let scope = capture.run(())?;
@@ -279,10 +305,14 @@ pub fn DomesticationView(
                     {
                         return Err("The checked substitutions or physical route changed.".into());
                     }
+                    let captured =
+                        attest_material.run((saved.scope.clone(), origin.get_untracked()))?;
                     let request = settings.request(
                         &saved.scope.molecule,
                         saved.scope.request.clone(),
                         saved.selection.clone(),
+                        captured.origin.as_ref().map(|pin| pin.as_ref()),
+                        captured.workspace.as_deref(),
                     )?;
                     let input = PlanInput {
                         id: physical::INPUT_ID.into(),
@@ -290,17 +320,30 @@ pub fn DomesticationView(
                         molecule: saved.scope.molecule.as_ref().clone(),
                     };
                     let revision =
-                        physical::revision(&input, &request).map_err(|e| e.to_string())?;
+                        physical::revision(&input, &request, captured.workspace.as_deref())
+                            .map_err(|e| e.to_string())?;
+                    let workspace = captured.workspace.as_deref().cloned();
+                    material = Some(captured);
                     (
                         saved.scope.clone(),
                         revision,
-                        AnalysisJob::PrepareDomestication { input, request },
+                        AnalysisJob::PrepareDomestication {
+                            input,
+                            request,
+                            workspace,
+                        },
                     )
                 }
             };
-            Ok((scope, revision, job, Rc::new(CachedWorker::new()?)))
+            Ok((
+                scope,
+                revision,
+                job,
+                Rc::new(CachedWorker::new()?),
+                material,
+            ))
         })();
-        let (scope, revision, job, w) = match result {
+        let (scope, revision, job, w, material) = match result {
             Ok(value) => value,
             Err(error) => {
                 status.set(error);
@@ -330,7 +373,7 @@ pub fn DomesticationView(
                 Work::Propose => "Searching source-bound synonymous substitutions in Rust…",
                 Work::Check(_) => "Independently rescanning sites and affected coding sequences…",
                 Work::Prepare(_, _) => {
-                    "Reconstructing original-template PCR, phosphorylation and circular ligation…"
+                    "Reconstructing the selected source and declared PCR preparation…"
                 }
             }
             .into(),
@@ -417,6 +460,15 @@ pub fn DomesticationView(
                         if settings != route.get_untracked() {
                             return Err("The physical preparation route changed.".into());
                         }
+                        let material =
+                            material.ok_or("Missing captured physical source context.")?;
+                        if origin.get_untracked() != material.origin {
+                            return Err(
+                                "The selected saved material changed; prepare again.".into()
+                            );
+                        }
+                        let _ = attest_material
+                            .run((previous.scope.clone(), material.origin.clone()))?;
                         report
                             .validate_binding(&revision)
                             .map_err(|e| e.to_string())?;
@@ -426,6 +478,7 @@ pub fn DomesticationView(
                             return Err("Physical preparation differs from the independently checked original substitutions.".into());
                         }
                         prepared.set(Some(Arc::new(Prepared {
+                            material,
                             checked: previous,
                             route: settings,
                             report,
@@ -454,7 +507,10 @@ pub fn DomesticationView(
             }) {
                 return Err("The checked reference is stale.".into());
             }
+            let selected = origin.get_untracked();
+            let _ = attest_material.run((saved.scope.clone(), selected.clone()))?;
             on_open.run(Open {
+                origin: selected,
                 source: saved.scope.source.binding.clone(),
                 epoch: saved.scope.epoch,
                 request: saved.scope.request.clone(),
@@ -483,7 +539,13 @@ pub fn DomesticationView(
             {
                 return Err("The physical preparation is stale.".into());
             }
+            if origin.get_untracked() != saved.material.origin {
+                return Err("The selected material origin changed; prepare again.".into());
+            }
+            let _ = attest_material
+                .run((saved.checked.scope.clone(), saved.material.origin.clone()))?;
             on_open.run(Open {
+                origin: saved.material.origin.clone(),
                 source: saved.checked.scope.source.binding.clone(),
                 epoch: saved.checked.scope.epoch,
                 request: saved.checked.scope.request.clone(),
@@ -529,8 +591,14 @@ pub fn DomesticationView(
             revision: saved.checked.scope.molecule.revision(),
             molecule: saved.checked.scope.molecule.as_ref().clone(),
         };
+        if origin.get_untracked() != saved.material.origin {
+            return Err("The selected material origin changed; prepare again.".into());
+        }
+        let current =
+            attest_material.run((saved.checked.scope.clone(), saved.material.origin.clone()))?;
         let context =
-            physical::revision(&input, &saved.report.request).map_err(|e| e.to_string())?;
+            physical::revision(&input, &saved.report.request, current.workspace.as_deref())
+                .map_err(|e| e.to_string())?;
         saved
             .report
             .validate_binding(&context)
@@ -550,14 +618,24 @@ pub fn DomesticationView(
     });
     let preparation_current = Memo::new(move |_| {
         prepared.with(|value| {
-            value
-                .as_ref()
-                .is_some_and(|saved| check_current.get() && route.get() == saved.route)
+            value.as_ref().is_some_and(|saved| {
+                check_current.get()
+                    && route.get() == saved.route
+                    && origin.get() == saved.material.origin
+            })
         })
     });
     view!{<section class="domestication-design"><h2>"Remove unwanted restriction sites"</h2>
-        <p>{move||source.with(|source|format!("Original source: {}",source.name))}</p>
-        {move||source.with(|source|view!{<details><summary>"Exact original source event"</summary><p>{source.binding.document_id.clone()}</p><code>{source.binding.event_id.clone()}</code><p>"Revision"</p><code>{source.binding.revision.clone()}</code></details>})}
+        <p>{move||source.with(|source|format!("Source: {}",source.name))}</p>
+        {move||source.with(|source|view!{<details><summary>"Exact source event"</summary><p>{source.binding.document_id.clone()}</p><code>{source.binding.event_id.clone()}</code><p>"Revision"</p><code>{source.binding.revision.clone()}</code></details>})}
+        <crate::run_origin_view::SourceOriginPicker source=Memo::new(move|_|Some(source.get())) epoch get_workspace selected=Memo::new(move|_|origin.get()) on_select=Callback::new(move|selected:Option<PinnedOrigin>|{
+            if let Some(pin)=selected.as_ref(){
+                let frame=get_workspace.run(())?;let current=source.get_untracked();
+                molecule.with_untracked(|m|crate::domestication_review::validate_origin(&frame,&current.binding,m,Some(pin)))?;
+            }
+            origin.set(selected);Ok(())
+        })/>
+        <p class="helper">"Saved material changes the preparation source, not the independently checked substitutions. Unsupported source geometry stays diagnostic."</p>
         <p class="helper">"Select the sites to remove and the coding sequences whose protein must be preserved. Every affected CDS is checked, including unselected overlaps. A checked reference is design intent; only a separately reconstructed physical route can propose material."</p>
         <fieldset disabled=move||pending.get()><legend>"Source declarations"</legend>
             <label>"Enzyme catalog IDs (comma-separated)"<input maxlength="2048" prop:value=move||form.with(|value|value.enzymes.clone()) on:input=move|event|form.update(|value|value.enzymes=event_target_value(&event))/></label>
@@ -760,6 +838,6 @@ fn PreparationEvidence(method: Arc<physical::MethodEvidence>) -> impl IntoView {
     match method.as_ref(){
   physical::MethodEvidence::InversePcr{forward,reverse,..}=>view!{<details open><summary>"Inverse-PCR primer pair"</summary><pre>{format!("{}\n\n{}",primer_text(forward),primer_text(reverse))}</pre></details>}.into_any(),
   physical::MethodEvidence::InversePcrRounds{rounds}=>view!{<section><h4>"Sequential inverse-PCR primer pairs"</h4>{rounds.iter().enumerate().map(|(index,round)|view!{<details><summary>{format!("Round {} · original {}–{}",index+1,round.round.edit_start+1,round.round.edit_end)}</summary><p>{format!("Template {:?}; intended source origin {} (zero-based original coordinate).",round.template,round.source_origin)}</p><pre>{format!("{}\n\n{}",primer_text(&round.forward),primer_text(&round.reverse))}</pre></details>}).collect_view()}<p class="helper">"The canonical graph retains every round, actual PCR alternatives, phosphorylation and circular ligation. Intermediate intended frames are primer declarations, never extra template stocks."</p></section>}.into_any(),
-  physical::MethodEvidence::OverlapExtension{preparation,designs,search,..}=>view!{<section><h4>"Three actual PCR primer pairs"</h4>{[("Left PCR",&preparation.left),("Right PCR",&preparation.right),("Outer PCR",&preparation.outer)].into_iter().map(|(label,pair)|view!{<details><summary>{label}</summary><pre>{format!("{}\n\n{}",primer_text(&pair.forward),primer_text(&pair.reverse))}</pre></details>}).collect_view()}{designs.iter().enumerate().map(|(i,report)|view!{<details><summary>{format!("Primer call {} diagnostics",i+1)}</summary><p>{format!("{} ranked pairs retained · {} evaluated · {} rejected",report.pairs.len(),report.evaluated_pairs,report.rejected_pairs)}</p>{report.warnings.iter().map(|w|view!{<p>{w.clone()}</p>}).collect_view()}{search.get(i).map(|s|view!{<p>{format!("{} · selected rank {} · {} examined · {} rejected · capped {} · unique geometry {}",s.call,s.selected_index+1,s.examined,s.rejected,s.capped,s.unique_geometry)}</p>{s.notes.iter().map(|n|view!{<p>{n.clone()}</p>}).collect_view()}{report.pairs.get(s.selected_index).map(|pair|view!{<p>{format!("Annealing Tm forward {:?} / reverse {:?} °C · ΔTm {:.2} °C · heterodimer max3′run {}",pair.forward.analysis.tm.as_ref().map(|t|t.tm_c),pair.reverse.analysis.tm.as_ref().map(|t|t.tm_c),pair.tm_difference_c,pair.heterodimer.max_three_prime_run)}</p>})}})}</details>}).collect_view()}<p class="helper">"Order sheets and HTML/PDF use the canonical reconstructed plan above, including all six ordered oligos and declared circular closure steps."</p></section>}.into_any(),
+  physical::MethodEvidence::OverlapExtension{source_frame,preparation,designs,search,..}=>view!{<section><p>{format!("Template {:?} · {:?} · {} actual bases",source_frame.template_strand,source_frame.topology,source_frame.sequence.len())}</p><h4>"Three actual PCR primer pairs"</h4>{[("Left PCR",&preparation.left),("Right PCR",&preparation.right),("Outer PCR",&preparation.outer)].into_iter().map(|(label,pair)|view!{<details><summary>{label}</summary><pre>{format!("{}\n\n{}",primer_text(&pair.forward),primer_text(&pair.reverse))}</pre></details>}).collect_view()}{designs.iter().enumerate().map(|(i,report)|view!{<details><summary>{format!("Primer call {} diagnostics",i+1)}</summary><p>{format!("{} ranked pairs retained · {} evaluated · {} rejected",report.pairs.len(),report.evaluated_pairs,report.rejected_pairs)}</p>{report.warnings.iter().map(|w|view!{<p>{w.clone()}</p>}).collect_view()}{search.get(i).map(|s|view!{<p>{format!("{} · selected rank {} · {} examined · {} rejected · capped {} · unique geometry {}",s.call,s.selected_index+1,s.examined,s.rejected,s.capped,s.unique_geometry)}</p>{s.notes.iter().map(|n|view!{<p>{n.clone()}</p>}).collect_view()}{report.pairs.get(s.selected_index).map(|pair|view!{<p>{format!("Annealing Tm forward {:?} / reverse {:?} °C · ΔTm {:.2} °C · heterodimer max3′run {}",pair.forward.analysis.tm.as_ref().map(|t|t.tm_c),pair.reverse.analysis.tm.as_ref().map(|t|t.tm_c),pair.tm_difference_c,pair.heterodimer.max_three_prime_run)}</p>})}})}</details>}).collect_view()}<p class="helper">"Order sheets and HTML/PDF use the canonical reconstructed plan above, including all six ordered oligos and declared circular closure steps."</p></section>}.into_any(),
  }
 }

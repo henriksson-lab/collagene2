@@ -125,7 +125,7 @@ async fn source_pins_synonymous_proposal_real_preparation_and_html_pdf_oligos_sh
     let prepared = call(
         &c,
         "prepare_domestication",
-        json!({"source":source,"request":{"design":request,"selection":selection,"route":route}}),
+        json!({"source":source,"origin_workspace":null,"request":{"origin":null,"design":request,"selection":selection,"route":route}}),
     )
     .await;
     assert_eq!(prepared["verified"], false);
@@ -201,7 +201,7 @@ async fn stale_feature_source_or_candidate_and_uncovered_physical_route_are_refu
         json!({"source":wrong_source,"request":request}),
     )
     .await;
-    reject(&c,"prepare_domestication",json!({"source":source,"request":{"design":request,"selection":selection,"route":{"InversePcr":{"edit_start":20,"edit_end":21,"forward_length":8,"reverse_length":8,"reverse_tail_bases":0}}}})).await;
+    reject(&c,"prepare_domestication",json!({"source":source,"origin_workspace":null,"request":{"origin":null,"design":request,"selection":selection,"route":{"InversePcr":{"edit_start":20,"edit_end":21,"forward_length":8,"reverse_length":8,"reverse_tail_bases":0}}}})).await;
     c.cancel().await.unwrap();
     server.abort();
 }

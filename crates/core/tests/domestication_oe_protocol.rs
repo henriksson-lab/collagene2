@@ -14,11 +14,12 @@ fn whole_linear_and_circular_oe_materialize_the_frozen_literal_target_through_cu
             domestication::check(&input.molecule, &request.design, &request.selection).unwrap();
         assert_eq!(intent.target().sequence.as_str(), fixture::INTENDED);
         let target = intent.target().clone();
-        let context = physical::revision(&input, &request).unwrap();
+        let context = physical::revision(&input, &request, None).unwrap();
         let q = Request {
             id: 12,
             revision: context.clone(),
             job: AnalysisJob::PrepareDomestication {
+                workspace: None,
                 input: input.clone(),
                 request: request.clone(),
             },
@@ -71,7 +72,12 @@ fn whole_linear_and_circular_oe_materialize_the_frozen_literal_target_through_cu
         let wrong = verification::verify(&p.plan, &source_before);
         assert_eq!(wrong.status, Status::Invalid);
         let mut changed = q.clone();
-        if let AnalysisJob::PrepareDomestication { request, .. } = &mut changed.job {
+        if let AnalysisJob::PrepareDomestication {
+            workspace: None,
+            request,
+            ..
+        } = &mut changed.job
+        {
             if let physical::Route::OverlapExtension { options } = &mut request.route {
                 options.max_candidates = 99;
             }

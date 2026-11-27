@@ -9,6 +9,7 @@ use crate::{
     ligation_recipe,
     overlap_profiles::ProfileOptions,
     run_lineage::{EventBinding, InputEventBinding},
+    tailing_recipe,
     verification::PlanInput,
     workspace::Workspace,
 };
@@ -33,7 +34,9 @@ dto! {pub struct Choice {
     #[serde(deserialize_with="assembly_recipe::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]pub generation:Option<crate::modified_duplex::GenerationAssumptions>,
 }}
 dto! {pub struct Bin {pub id:String,pub label:String,pub choices:Vec<Choice>}}
+dto! {pub struct TailingAction {pub bin_id:String,pub action:tailing_recipe::Action}}
 dto! {pub enum Method {
+    Tailing{profile:tailing_recipe::Profile,actions:Vec<TailingAction>,allow_nicked:bool},
     Overlap{overlaps:Vec<usize>,options:ProfileOptions,finishing:OverlapFinishing},
     Ligation{allow_nicked:bool},
     /// Same existing pinned-site geometry requirement; no kinetic-mixture inference.
@@ -79,6 +82,9 @@ pub enum IndependentIntent {
 }
 #[derive(Clone, Debug)]
 pub enum Recipe {
+    Tailing {
+        recipe: tailing_recipe::Recipe,
+    },
     Overlap {
         recipe: assembly_recipe::Recipe,
         finishing: OverlapFinishing,
@@ -124,6 +130,7 @@ pub struct Compiled {
     pub plan: crate::verification::DesignPlan,
 }
 pub enum Preview {
+    Tailing(tailing_recipe::Preview),
     Overlap(assembly_recipe::Preview),
     Ligation(ligation_recipe::Preview),
     GoldenGatePool(PoolPreview),
@@ -442,6 +449,30 @@ fn preparation_shape(preparation: &assembly_recipe::Preparation) -> Result<(), E
     Ok(())
 }
 fn method_shape(method: &Method, bins: usize, circular: bool) -> Result<(), Error> {
+    if let Method::Tailing {
+        profile, actions, ..
+    } = method
+    {
+        if actions.len() != bins || actions.len() > MAX_BINS {
+            return Err(bad("declare exactly one explicit tail action per bin"));
+        }
+        let mut ids = BTreeSet::new();
+        for row in actions {
+            if !identifier(&row.bin_id) || !ids.insert(&row.bin_id) {
+                return Err(bad("invalid or duplicate tail-action bin"));
+            }
+            if let tailing_recipe::Action::AddTail { base } = row.action {
+                use crate::tailing::TailingBase;
+                let allowed = match profile {
+                    tailing_recipe::Profile::Ta => matches!(base, TailingBase::A | TailingBase::T),
+                    tailing_recipe::Profile::Gc => matches!(base, TailingBase::G | TailingBase::C),
+                };
+                if !allowed {
+                    return Err(bad("added base differs from the declared TA/GC profile"));
+                }
+            }
+        }
+    }
     if let Method::Overlap {
         overlaps,
         options,
@@ -515,6 +546,14 @@ fn method_shape(method: &Method, bins: usize, circular: bool) -> Result<(), Erro
     Ok(())
 }
 fn pool_bins(method: &Method, bins: &[Bin]) -> Result<(), Error> {
+    if let Method::Tailing { actions, .. } = method {
+        if actions
+            .iter()
+            .any(|row| !bins.iter().any(|bin| bin.id == row.bin_id))
+        {
+            return Err(bad("tail action references an unknown bin"));
+        }
+    }
     if let Method::GoldenGatePool { substrates, .. } = method {
         if substrates
             .iter()
@@ -1412,6 +1451,39 @@ pub(crate) fn resolve_validated(
             });
         }
         match method {
+            Method::Tailing {
+                profile,
+                actions,
+                allow_nicked,
+            } => {
+                let fragments = rows
+                    .into_iter()
+                    .zip(&choices)
+                    .map(|(source, (bin, choice))| {
+                        let action = actions
+                            .iter()
+                            .find(|row| row.bin_id == bin.id)
+                            .ok_or_else(|| bad("chosen bin has no explicit tail action"))?
+                            .action;
+                        Ok(tailing_recipe::Fragment {
+                            source,
+                            action,
+                            treatment: preparation_override(construct, &bin.id)
+                                .map(|o| o.treatment)
+                                .unwrap_or(choice.treatment),
+                        })
+                    })
+                    .collect::<Result<Vec<_>, Error>>()?;
+                Recipe::Tailing {
+                    recipe: tailing_recipe::Recipe {
+                        name: construct.name.clone(),
+                        profile: *profile,
+                        fragments,
+                        circular,
+                        allow_nicked: *allow_nicked,
+                    },
+                }
+            }
             Method::Overlap {
                 overlaps,
                 options,
@@ -1511,6 +1583,9 @@ fn preflight_resolved(resolved: &Resolved) -> Result<(), Error> {
         .map(|i| (i.id.as_str(), &i.molecule))
         .collect::<Vec<_>>();
     match &resolved.recipe {
+        Recipe::Tailing { recipe } => {
+            tailing_recipe::source_preflight(&borrowed, &resolved.target, recipe)
+        }
         Recipe::Overlap { recipe, finishing } => {
             finishing.preflight(&resolved.inputs, &resolved.target, recipe)
         }
@@ -1685,6 +1760,9 @@ pub fn compile(
 /// enumeration. Callers must not treat the resulting plan as verification evidence.
 pub fn compile_resolved(resolved: &Resolved) -> Result<crate::verification::DesignPlan, Error> {
     match &resolved.recipe {
+        Recipe::Tailing { recipe } => {
+            Ok(tailing_recipe::compile(&resolved.inputs, &resolved.target, recipe)?.plan)
+        }
         Recipe::Overlap { recipe, finishing } => Ok(finishing
             .compile(&resolved.inputs, &resolved.target, recipe)?
             .plan),
@@ -1786,6 +1864,11 @@ pub fn evaluate(
 }
 pub(crate) fn evaluate_resolved(resolved: Resolved) -> Result<Evaluation, Error> {
     let preview = match &resolved.recipe {
+        Recipe::Tailing { recipe } => Preview::Tailing(tailing_recipe::preview(
+            &resolved.inputs,
+            &resolved.target,
+            recipe,
+        )?),
         Recipe::Overlap { recipe, finishing } => {
             Preview::Overlap(finishing.preview(&resolved.inputs, &resolved.target, recipe)?)
         }
@@ -1825,6 +1908,7 @@ pub(crate) fn evaluate_resolved(resolved: Resolved) -> Result<Evaluation, Error>
 impl Evaluation {
     pub fn verification(&self) -> &crate::verification::VerificationReport {
         match &self.preview {
+            Preview::Tailing(preview) => &preview.verification,
             Preview::Overlap(preview) => &preview.verification,
             Preview::Ligation(preview) => &preview.verification,
             Preview::GoldenGatePool(preview) | Preview::MultiSiteReference(preview) => {
@@ -1834,6 +1918,7 @@ impl Evaluation {
     }
     pub fn plan(&self) -> &crate::verification::DesignPlan {
         match &self.preview {
+            Preview::Tailing(preview) => &preview.compiled.plan,
             Preview::Overlap(preview) => &preview.compiled.plan,
             Preview::Ligation(preview) => &preview.compiled.plan,
             Preview::GoldenGatePool(preview) | Preview::MultiSiteReference(preview) => {
@@ -1843,6 +1928,7 @@ impl Evaluation {
     }
     pub fn preparation_complete(&self) -> bool {
         match &self.preview {
+            Preview::Tailing(preview) => preview.preparation_complete,
             Preview::Overlap(preview) => preview.preparation_complete,
             Preview::Ligation(preview) => preview.preparation_complete,
             Preview::GoldenGatePool(preview) | Preview::MultiSiteReference(preview) => {

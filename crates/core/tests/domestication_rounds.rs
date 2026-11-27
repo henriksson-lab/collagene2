@@ -63,6 +63,7 @@ fn fixture() -> (PlanInput, physical::Request) {
             molecule: source,
         },
         physical::Request {
+            origin: None,
             design: request,
             selection,
             route: physical::Route::InversePcrRounds { rounds },
@@ -72,10 +73,10 @@ fn fixture() -> (PlanInput, physical::Request) {
 #[test]
 fn scattered_changes_form_one_original_source_graph_with_actual_intermediate_consumption() {
     let (input, request) = fixture();
-    let report = physical::materialize(&input, &request).unwrap();
+    let report = physical::materialize(&input, &request, None).unwrap();
     assert_eq!(report.target.sequence.as_str(), EXPECTED);
     report
-        .validate_binding(&physical::revision(&input, &request).unwrap())
+        .validate_binding(&physical::revision(&input, &request, None).unwrap())
         .unwrap();
     assert_eq!(report.plan.inputs.len(), 1);
     assert_eq!(report.plan.inputs[0].molecule.sequence.as_str(), ORIGINAL);
@@ -134,23 +135,23 @@ fn coverage_order_and_work_limits_are_explicit_not_automatic_clustering() {
     };
     rounds[1].edit_start = 22;
     rounds[1].edit_end = 23;
-    assert!(physical::preflight(&input, &request).is_err());
+    assert!(physical::preflight(&input, &request, None).is_err());
     let (input, mut request) = fixture();
     let physical::Route::InversePcrRounds { rounds } = &mut request.route else {
         unreachable!()
     };
     rounds[1].edit_start = 50;
     rounds[1].edit_end = 51;
-    assert!(physical::preflight(&input, &request).is_err());
+    assert!(physical::preflight(&input, &request, None).is_err());
     let (input, mut request) = fixture();
-    let before = physical::revision(&input, &request).unwrap();
+    let before = physical::revision(&input, &request, None).unwrap();
     let physical::Route::InversePcrRounds { rounds } = &mut request.route else {
         unreachable!()
     };
     rounds.swap(0, 1);
-    assert_ne!(before, physical::revision(&input, &request).unwrap());
+    assert_ne!(before, physical::revision(&input, &request, None).unwrap());
     assert_eq!(
-        physical::materialize(&input, &request)
+        physical::materialize(&input, &request, None)
             .unwrap()
             .target
             .sequence
@@ -161,8 +162,12 @@ fn coverage_order_and_work_limits_are_explicit_not_automatic_clustering() {
 #[test]
 fn worker_roundtrip_retains_rounds_and_unchanged_independent_target() {
     let (input, request) = fixture();
-    let revision = physical::revision(&input, &request).unwrap();
-    let job = AnalysisJob::PrepareDomestication { input, request };
+    let revision = physical::revision(&input, &request, None).unwrap();
+    let job = AnalysisJob::PrepareDomestication {
+        workspace: None,
+        input,
+        request,
+    };
     let request = protocol::Request {
         id: 99,
         revision: revision.clone(),
@@ -198,7 +203,7 @@ fn partial_reverse_tail_and_original_origin_crossing_keep_actual_round_frames() 
     rounds[1].edit_start = 75;
     rounds[1].edit_end = 131;
     rounds[1].reverse_tail_bases = 4;
-    let report = physical::materialize(&input, &request).unwrap();
+    let report = physical::materialize(&input, &request, None).unwrap();
     assert_eq!(report.target.sequence.as_str(), EXPECTED);
     assert_eq!(
         report.verification.status,

@@ -447,11 +447,7 @@ fn reserved_work(
 }
 /// Borrowed source, literal-edit, geometry and aggregate work guards before any
 /// full source is cloned or native primer/PCR search is started.
-fn binding_preflight(
-    source: &Molecule,
-    request: &Request,
-    workspace: Option<&crate::workspace::Workspace>,
-) -> Result<(), Error> {
+pub(crate) fn documentary_preflight(source: &Molecule, request: &Request) -> Result<(), Error> {
     crate::model::bounds::model_preflight(&[source])?;
     crate::run_material::material_origins_preflight(
         request.material_binding.iter().map(|b| &b.origin),
@@ -493,19 +489,30 @@ fn binding_preflight(
             bounds(Template::reference(source)?.into(), request)?;
         }
         Some(binding) => {
-            let workspace = workspace
-                .ok_or_else(|| bad("saved template requires its retained native workspace"))?;
-            if binding.event.revision != source.revision()
-                || binding.origin.event() != &binding.event
+            binding.origin.validate_documentary()?;
+            if binding.origin.event() != &binding.event
+                || binding.event.revision != source.revision()
             {
                 return Err(bad("saved template event differs from exact source"));
             }
-            binding
-                .origin
-                .validate_for_workspace(workspace, &binding.event)?;
-            if crate::run_material::resolve(workspace, &binding.event)? != source {
-                return Err(bad("saved template differs from retained event snapshot"));
-            }
+        }
+    }
+    Ok(())
+}
+fn binding_preflight(
+    source: &Molecule,
+    request: &Request,
+    workspace: Option<&crate::workspace::Workspace>,
+) -> Result<(), Error> {
+    documentary_preflight(source, request)?;
+    if let Some(binding) = &request.material_binding {
+        let workspace = workspace
+            .ok_or_else(|| bad("saved template requires its retained native workspace"))?;
+        binding
+            .origin
+            .validate_for_workspace(workspace, &binding.event)?;
+        if crate::run_material::resolve(workspace, &binding.event)? != source {
+            return Err(bad("saved template differs from retained event snapshot"));
         }
     }
     Ok(())
@@ -1304,6 +1311,65 @@ fn validate_frame_preparation(
     }
     expected(source, request, &b)
 }
+/// Documentary frame/oligo correspondence only; never reconstructs native state.
+pub(crate) fn validate_documentary_preparation(
+    source: &Molecule,
+    request: &Request,
+    frame: &SourceFrame,
+    internal_context: &str,
+    prepared: &overlap_extension_pcr::Request,
+    designs: &[DesignReport],
+    searches: &[PairSearch],
+) -> Result<Molecule, Error> {
+    documentary_preflight(source, request)?;
+    if frame.template_strand != request.template_strand
+        || !hex(&frame.state_revision)
+        || !hex(&frame.context_revision)
+        || frame.sequence.is_empty()
+        || frame.sequence.len() > MAX_SOURCE_BASES
+        || frame.sequence.alphabet() != Alphabet::Dna
+        || frame.topology != source.topology
+        || frame.template_strand == crate::chemistry::Strand::Top
+            && frame.sequence != source.sequence
+    {
+        return Err(bad("documentary native source frame changed"));
+    }
+    match &request.material_binding {
+        None => {
+            let reference = Template::reference(source)?;
+            if frame.template_strand != crate::chemistry::Strand::Top
+                || frame.state_revision != source.revision()
+                || frame.context_revision != reference.context_revision()?
+            {
+                return Err(bad("original reference frame changed"));
+            }
+        }
+        Some(binding) => {
+            crate::run_material::material_origins_preflight([&binding.origin])?;
+            binding.origin.validate_documentary()?;
+            if binding.origin.event() != &binding.event
+                || binding.event.revision != source.revision()
+            {
+                return Err(bad("documentary saved source event changed"));
+            }
+        }
+    }
+    let view = Frame {
+        reference: source,
+        sequence: &frame.sequence,
+        topology: frame.topology,
+        strand: frame.template_strand,
+    };
+    validate_frame_preparation(
+        view,
+        request,
+        internal_context,
+        &frame.context_revision,
+        prepared,
+        designs,
+        searches,
+    )
+}
 impl Report {
     /// Bounded documentary correspondence only. This does not repeat primer
     /// ranking/PCR or grant material authority to an imported report.
@@ -1342,53 +1408,19 @@ impl Report {
         {
             return Err(bad("returned source input changed"));
         }
-        let frame = &self.source_frame;
-        if frame.template_strand != self.request.template_strand
-            || !hex(&frame.state_revision)
-            || !hex(&frame.context_revision)
-            || frame.sequence.is_empty()
-            || frame.sequence.len() > MAX_SOURCE_BASES
-            || frame.sequence.alphabet() != Alphabet::Dna
-            || frame.topology != source.topology
-            || frame.template_strand == crate::chemistry::Strand::Top
-                && frame.sequence != source.sequence
-            || context(source, &self.request)? != self.context_revision
-        {
-            return Err(bad("documentary native source frame changed"));
+        if context(source, &self.request)? != self.context_revision {
+            return Err(bad("documentary source/request context changed"));
         }
-        match &self.request.material_binding {
-            None => {
-                let reference = Template::reference(source)?;
-                if frame.template_strand != crate::chemistry::Strand::Top
-                    || frame.state_revision != source.revision()
-                    || frame.context_revision != reference.context_revision()?
-                {
-                    return Err(bad("original reference frame changed"));
-                }
-            }
-            Some(binding) => {
-                crate::run_material::material_origins_preflight([&binding.origin])?;
-                binding.origin.validate_documentary()?;
-                if binding.origin.event() != &binding.event
-                    || binding.event.revision != source.revision()
-                {
-                    return Err(bad("documentary saved source event changed"));
-                }
-            }
-        }
-        let view = Frame {
-            reference: source,
-            sequence: &frame.sequence,
-            topology: frame.topology,
-            strand: frame.template_strand,
-        };
-        let internal_context =
-            assembly_recipe::hash(&(ENGINE_VERSION, &frame.context_revision, &self.request))?;
-        let expected = validate_frame_preparation(
-            view,
+        let internal_context = assembly_recipe::hash(&(
+            ENGINE_VERSION,
+            &self.source_frame.context_revision,
             &self.request,
+        ))?;
+        let expected = validate_documentary_preparation(
+            source,
+            &self.request,
+            &self.source_frame,
             &internal_context,
-            &frame.context_revision,
             &self.preparation,
             &self.designs,
             &self.search,

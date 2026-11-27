@@ -267,6 +267,8 @@ impl RouteForm {
         source: &Molecule,
         design: design::Request,
         selection: design::Selection,
+        origin: Option<&collagene_core::run_material::MaterialOrigin>,
+        workspace: Option<&collagene_core::workspace::Workspace>,
     ) -> Result<physical::Request, String> {
         if [
             &self.start,
@@ -329,6 +331,7 @@ impl RouteForm {
                 );
             }
             let request = physical::Request {
+                origin: origin.cloned(),
                 design,
                 selection,
                 route: physical::Route::InversePcrRounds { rounds },
@@ -338,11 +341,12 @@ impl RouteForm {
                 revision: source.revision(),
                 molecule: source.clone(),
             };
-            physical::preflight(&input, &request).map_err(|e| e.to_string())?;
+            physical::preflight(&input, &request, workspace).map_err(|e| e.to_string())?;
             return Ok(request);
         }
         if self.kind == PreparationKind::OverlapExtension {
             return Ok(physical::Request {
+                origin: origin.cloned(),
                 design,
                 selection,
                 route: physical::Route::OverlapExtension {
@@ -352,6 +356,7 @@ impl RouteForm {
         }
         let interval = range(source, &self.start, &self.end)?;
         Ok(physical::Request {
+            origin: origin.cloned(),
             design,
             selection,
             route: physical::Route::InversePcr {
@@ -467,7 +472,9 @@ mod tests {
             reverse_tail: "2".into(),
         };
         let before = serde_json::to_vec(&request).unwrap();
-        let built = route.request(&source, request.clone(), selection).unwrap();
+        let built = route
+            .request(&source, request.clone(), selection, None, None)
+            .unwrap();
         let physical::Route::InversePcr {
             edit_start,
             edit_end,
@@ -495,7 +502,7 @@ mod tests {
             revision: source.revision(),
             molecule: source,
         };
-        assert!(physical::preflight(&input, &built).is_err());
+        assert!(physical::preflight(&input, &built, None).is_err());
     }
     #[test]
     fn route_switch_preserves_inactive_partial_text_and_explicit_oe_options() {
@@ -512,7 +519,7 @@ mod tests {
         form.overlap_extension.values[0] = "8".into();
         form.overlap_extension.values[1] = "12".into();
         let native = form
-            .request(&source, request.clone(), selection.clone())
+            .request(&source, request.clone(), selection.clone(), None, None)
             .unwrap();
         assert!(
             matches!(native.route,physical::Route::OverlapExtension{options} if options.primer_options.min_length==8&&options.primer_options.max_length==12)
@@ -520,12 +527,15 @@ mod tests {
         assert_eq!(form.start, "unfinished");
         form.kind = PreparationKind::InversePcr;
         assert!(
-            form.request(&source, request.clone(), selection.clone())
+            form.request(&source, request.clone(), selection.clone(), None, None)
                 .is_err()
         );
         form.kind = PreparationKind::OverlapExtension;
         form.overlap_extension.values[2] = "6e".into();
-        assert!(form.request(&source, request, selection).is_err());
+        assert!(
+            form.request(&source, request, selection, None, None)
+                .is_err()
+        );
         assert_eq!(form.overlap_extension.values[2], "6e");
     }
 }

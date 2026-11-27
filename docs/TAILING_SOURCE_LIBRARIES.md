@@ -1,0 +1,13 @@
+# TA/GC source libraries
+
+A source library can use `combinatorial_design::Method::Tailing` with an explicit TA or GC profile, an `allow_nicked` decision, and exactly one `TailingAction { bin_id, action }` per contribution bin. Actions are the ordinary native `KeepExisting` or `AddTail { base }` actions. An absent, repeated, foreign-bin or wrong-family action is rejected. A selected construct can override the entire method to make a different explicit decision for that row.
+
+Source alternatives, independent contribution selectors, physical preparation orientation, original generation declarations and terminal treatments retain their existing meaning. Native Run and Derived choices require their exact event-owned material binding and matching preparation origin; a copied reference or equal-DNA event does not substitute for that binding. Tailing compiles through the single `tailing_recipe` implementation. It neither repairs ends nor infers complementary tails, phosphorylation, isolation, a commercial formulation or reaction yield.
+
+The independent target is resolved before preparation. Tail bases and target scars are not inferred from an observed product: callers must explicitly supply the intended target/scars. KeepExisting can produce a valid ordinary blunt ligation while failing the declared TA/GC geometry profile. Conversely, matched tail geometry does not establish correct target sequence or ligatable chemistry. Batch rows retain `tailing_profile { profile, status, findings }` separately from their actual native verification status; uncomputed/error and other-method rows carry explicit null.
+
+The final native Ligate operation retains its bounded finite alternative-path evidence. Source alternatives enumerate declared stock choices; those choices are distinct from the possible reaction paths within a selected row. Existing sequential batch computation, immutable restart records, fresh per-row replay and atomic selected-row release apply unchanged. One wrong target does not suppress other rows; a failed multi-row release exposes no partial committed workspace.
+
+`core/tests/combinatorial_tailing.rs` covers independently literal TA and GC scarred circles, complete explicit-action validation, retained Run tails with a Derived insert after native archive restart, equal-DNA wrong-owner refusal, separated geometry/target verdicts, and batch/release rollback. These fixtures exercise existing native compilers rather than a second TA/GC implementation.
+
+Current immutable batch records use `combinatorial-batch-record-v2`, record schema 2 and the `combinatorial-batch-3` context contract. The required nullable profile evidence is part of this one current representation; superseded batch kinds and schemas are refused.

@@ -67,6 +67,7 @@ fn fixture(topology: Topology) -> (PlanInput, physical::Request) {
             molecule: source,
         },
         physical::Request {
+            origin: None,
             design: r,
             selection,
             route: physical::Route::OverlapExtension { options: options() },
@@ -94,7 +95,7 @@ fn whole_linear_and_circular_sources_use_four_or_six_actual_steps_and_all_oligos
         let original = input.molecule.clone();
         let checked = design::check(&original, &r.design, &r.selection).unwrap();
         assert_eq!(checked.target().sequence.as_str(), EDITED); // Before primer planning.
-        let report = physical::materialize(&input, &r).unwrap();
+        let report = physical::materialize(&input, &r, None).unwrap();
         report.validate_binding(&report.context_revision).unwrap();
         assert_eq!(report.target.revision(), checked.target().revision());
         assert!(report.proposal_ready);
@@ -141,7 +142,6 @@ fn whole_linear_and_circular_sources_use_four_or_six_actual_steps_and_all_oligos
             );
         }
         let physical::MethodEvidence::OverlapExtension {
-            request,
             preparation,
             designs,
             search,
@@ -150,9 +150,9 @@ fn whole_linear_and_circular_sources_use_four_or_six_actual_steps_and_all_oligos
         else {
             panic!("OE method evidence");
         };
-        assert_eq!(request.edits.len(), 1);
-        assert_eq!(request.edits[0].expected, "A");
-        assert_eq!(request.edits[0].replacement, "C");
+        assert_eq!(report.request.selection.patches.len(), 1);
+        assert_eq!(report.request.selection.patches[0].expected, "A");
+        assert_eq!(report.request.selection.patches[0].replacement, "C");
         assert_eq!(designs.len(), 3);
         assert!(search.iter().all(|s| s.unique_geometry));
         assert!(
@@ -196,18 +196,18 @@ fn synonym_phase_protected_bases_and_wanted_sites_are_checked_before_preparation
     repin(&mut input, &mut r);
     r.design.coding_features = vec![design::feature_pin(&input.molecule, 1).unwrap()];
     repin(&mut input, &mut r);
-    let report = physical::materialize(&input, &r).unwrap();
+    let report = physical::materialize(&input, &r, None).unwrap();
     assert_eq!(report.check.features[0].before_protein, "EF");
     assert_eq!(report.check.features[0].after_protein, "EF");
     assert_eq!(&report.target.sequence.as_str()[16..22], "GAGTTC");
     let mut nonsyn = r.clone();
     nonsyn.selection.patches[0].replacement = "C".into();
     repin(&mut input, &mut nonsyn);
-    assert!(physical::materialize(&input, &nonsyn).is_err());
+    assert!(physical::materialize(&input, &nonsyn, None).is_err());
     let mut protected = r.clone();
     protected.design.protected = vec![design::SourceRange { start: 18, end: 19 }];
     repin(&mut input, &mut protected);
-    assert!(physical::materialize(&input, &protected).is_err());
+    assert!(physical::materialize(&input, &protected, None).is_err());
     let mut wanted = r.clone();
     wanted.design.retained_sites = vec![design::SitePin {
         enzyme_id: "ecori".into(),
@@ -215,12 +215,12 @@ fn synonym_phase_protected_bases_and_wanted_sites_are_checked_before_preparation
         reverse: false,
     }];
     repin(&mut input, &mut wanted);
-    assert!(physical::materialize(&input, &wanted).is_err());
+    assert!(physical::materialize(&input, &wanted, None).is_err());
 }
 #[test]
 fn source_method_target_and_pair_tampering_do_not_become_checked_preparations() {
     let (input, r) = fixture(Topology::Linear);
-    let report = physical::materialize(&input, &r).unwrap();
+    let report = physical::materialize(&input, &r, None).unwrap();
     let context = report.context_revision.clone();
     let mut changed = report.clone();
     changed.target = Molecule::dna("Unrelated target", ORIGINAL, Topology::Linear).unwrap();
@@ -231,9 +231,7 @@ fn source_method_target_and_pair_tampering_do_not_become_checked_preparations() 
     }
     assert!(changed.validate_binding(&context).is_err());
     let mut changed = report.clone();
-    if let physical::MethodEvidence::OverlapExtension { request, .. } = &mut changed.method {
-        request.edits[0].replacement = "T".into();
-    }
+    changed.request.selection.patches[0].replacement = "T".into();
     assert!(changed.validate_binding(&context).is_err());
     let mut changed = report.clone();
     if let Operation::Pcr { template, .. } = &mut changed.plan.steps[1] {
@@ -248,13 +246,13 @@ fn source_method_target_and_pair_tampering_do_not_become_checked_preparations() 
     assert!(changed.validate_binding(&context).is_err());
     let mut stale = input.clone();
     stale.revision = "a".repeat(64);
-    assert!(physical::preflight(&stale, &r).is_err());
+    assert!(physical::preflight(&stale, &r, None).is_err());
 }
 #[test]
 fn saved_native_history_and_protocols_keep_original_source_and_independent_target() {
     for topology in [Topology::Linear, Topology::Circular] {
         let (input, r) = fixture(topology);
-        let report = physical::materialize(&input, &r).unwrap();
+        let report = physical::materialize(&input, &r, None).unwrap();
         let w = Workspace::from_documents(
             "Original plus independent frozen intent",
             vec![input.molecule.clone(), report.target.clone()],
@@ -326,7 +324,7 @@ fn capped_terminal_search_remains_incomplete_without_target_fitting() {
         unreachable!()
     };
     options.max_comparisons = 17;
-    let report = physical::materialize(&input, &r).unwrap();
+    let report = physical::materialize(&input, &r, None).unwrap();
     assert_eq!(report.target.sequence.as_str(), EDITED);
     assert_eq!(
         report.verification.status,
@@ -349,7 +347,7 @@ fn competing_native_geometries_remain_an_explicit_nonready_diagnostic_proposal()
     r.design.scope[0].end = input.molecule.sequence.len();
     r.selection.patches[0].position = 26;
     repin(&mut input, &mut r);
-    let report = physical::materialize(&input, &r).unwrap();
+    let report = physical::materialize(&input, &r, None).unwrap();
     assert!(!report.proposal_ready);
     assert!(
         report
@@ -389,13 +387,13 @@ fn native_options_literals_markers_and_boundary_limits_fail_without_a_recoded_st
             _ => options.max_comparisons = 0,
         };
         assert!(
-            physical::preflight(&input, &changed).is_err(),
+            physical::preflight(&input, &changed, None).is_err(),
             "invalid options {kind}"
         );
     }
     let mut wrong = r.clone();
     wrong.selection.patches[0].expected = "G".into();
-    assert!(physical::materialize(&input, &wrong).is_err());
+    assert!(physical::materialize(&input, &wrong, None).is_err());
     let mut marked = input.clone();
     marked
         .molecule
@@ -403,7 +401,7 @@ fn native_options_literals_markers_and_boundary_limits_fail_without_a_recoded_st
         .insert("duplex_model".into(), "untrusted source summary".into());
     let mut r2 = r.clone();
     repin(&mut marked, &mut r2);
-    assert!(physical::preflight(&marked, &r2).is_err());
+    assert!(physical::preflight(&marked, &r2, None).is_err());
     let mut boundary = r.clone();
     boundary.selection.patches[0] = design::Patch {
         position: 0,
@@ -412,5 +410,5 @@ fn native_options_literals_markers_and_boundary_limits_fail_without_a_recoded_st
     };
     let mut same = input.clone();
     repin(&mut same, &mut boundary);
-    assert!(physical::preflight(&same, &boundary).is_err());
+    assert!(physical::preflight(&same, &boundary, None).is_err());
 }

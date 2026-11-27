@@ -10,6 +10,7 @@ use collagene_core::{
 #[derive(Clone)]
 pub struct Open {
     pub source: EventBinding,
+    pub origin: Option<crate::run_origin_model::PinnedOrigin>,
     pub epoch: u64,
     pub request: design::Request,
     pub selection: design::Selection,
@@ -49,6 +50,33 @@ fn fingerprint(value: &impl serde::Serialize) -> Result<String, collagene_core::
     serde_json::to_writer(&mut writer, value).map_err(|_| collagene_core::Error::TooLarge)?;
     Ok(writer.hash.finalize().to_hex().to_string())
 }
+/// Attest an independently captured material selection against the exact native
+/// event and complete source snapshot. No replay or material restoration occurs.
+pub fn validate_origin(
+    frame: &Workspace,
+    event: &EventBinding,
+    source: &Molecule,
+    origin: Option<&crate::run_origin_model::PinnedOrigin>,
+) -> Result<(), String> {
+    if let Some(origin) = origin {
+        if origin.event() != event {
+            return Err("Saved material belongs to another source event.".into());
+        }
+        origin
+            .as_ref()
+            .validate_for_workspace(frame, event)
+            .map_err(|e| e.to_string())?;
+        if frame
+            .revisions
+            .get(&event.revision)
+            .ok_or("Native source revision is absent")?
+            != source
+        {
+            return Err("Saved material source snapshot changed.".into());
+        }
+    }
+    Ok(())
+}
 pub fn stage(frame: &Workspace, opened: &Open) -> Result<Staged, String> {
     frame.validate().map_err(|e| e.to_string())?;
     let docs = DocumentHistory::restore_all(frame).map_err(|e| e.to_string())?;
@@ -64,6 +92,7 @@ pub fn stage(frame: &Workspace, opened: &Open) -> Result<Staged, String> {
     {
         return Err("Domestication must retain its exact original source event.".into());
     }
+    validate_origin(frame, &opened.source, &source, opened.origin.as_ref())?;
     let checked =
         design::check(&source, &opened.request, &opened.selection).map_err(|e| e.to_string())?;
     opened
@@ -82,7 +111,17 @@ pub fn stage(frame: &Workspace, opened: &Open) -> Result<Staged, String> {
             revision: source.revision(),
             molecule: source.clone(),
         };
-        let expected = physical::revision(&input, &prepared.request).map_err(|e| e.to_string())?;
+        if fingerprint(&prepared.request.origin).map_err(|e| e.to_string())?
+            != fingerprint(&opened.origin.as_ref().map(|origin| origin.as_ref()))
+                .map_err(|e| e.to_string())?
+        {
+            return Err(
+                "The preparation material origin differs from the independently selected source."
+                    .into(),
+            );
+        }
+        let expected = physical::revision(&input, &prepared.request, Some(frame))
+            .map_err(|e| e.to_string())?;
         prepared
             .validate_binding(&expected)
             .map_err(|e| e.to_string())?;
@@ -136,6 +175,7 @@ pub fn stage(frame: &Workspace, opened: &Open) -> Result<Staged, String> {
     struct ReviewEvidence<'a> {
         version: u16,
         source: &'a EventBinding,
+        origin: Option<&'a collagene_core::run_material::MaterialOrigin>,
         target_event: &'a EventBinding,
         check: &'a design::CheckReport,
         // Always serialized, including explicit null for intent-only staging.
@@ -162,6 +202,7 @@ pub fn stage(frame: &Workspace, opened: &Open) -> Result<Staged, String> {
     serde_json::to_writer(&mut output,&ReviewEvidence{
         version:physical::REVIEW_EVIDENCE_VERSION,
         source:&opened.source,
+        origin:opened.origin.as_ref().map(|origin|origin.as_ref()),
         target_event:&target,
         check:checked.report(),
         prepared:opened.prepared.as_ref(),
@@ -270,6 +311,7 @@ mod tests {
             revision: original.head.clone(),
         };
         let opened = Open {
+            origin: None,
             source,
             epoch: 4,
             request,
@@ -321,6 +363,12 @@ mod tests {
             record["target_event"],
             serde_json::to_value(&staged.target).unwrap()
         );
+        assert!(
+            record
+                .get("origin")
+                .expect("required nullable origin")
+                .is_null()
+        );
         assert!(staged.candidate.is_none());
         assert!(staged.workspace.active_candidate.is_none());
         let again = stage(&staged.workspace, &opened).unwrap();
@@ -357,6 +405,7 @@ mod tests {
             physical::materialize(
                 &input,
                 &physical::Request {
+                    origin: None,
                     design: opened.request.clone(),
                     selection: opened.selection.clone(),
                     route: physical::Route::InversePcr {
@@ -367,6 +416,7 @@ mod tests {
                         reverse_tail_bases: 0,
                     },
                 },
+                None,
             )
             .unwrap(),
         );
@@ -483,10 +533,12 @@ mod tests {
                     molecule: source.clone(),
                 },
                 &physical::Request {
+                    origin: None,
                     design: request.clone(),
                     selection: selection.clone(),
                     route: physical::Route::OverlapExtension { options },
                 },
+                None,
             )
             .unwrap();
             assert!(prepared.proposal_ready, "{:?}", prepared.proposal_findings);
@@ -501,6 +553,7 @@ mod tests {
                 prepared.verification.findings
             );
             let opened = Open {
+                origin: None,
                 source: event.clone(),
                 epoch: 9,
                 request: request.clone(),
@@ -640,10 +693,12 @@ mod tests {
                 molecule: source,
             },
             &physical::Request {
+                origin: None,
                 design: request.clone(),
                 selection: selection.clone(),
                 route: physical::Route::OverlapExtension { options },
             },
+            None,
         )
         .unwrap();
         assert!(!prepared.proposal_ready);
@@ -655,6 +710,7 @@ mod tests {
             revision: doc.head.clone(),
         };
         let opened = Open {
+            origin: None,
             source: event,
             epoch: 3,
             request,
@@ -689,5 +745,219 @@ mod tests {
             reopened.documents[0].head_event,
             frame.documents[0].head_event
         );
+    }
+    #[test]
+    fn derived_source_open_retains_exact_origin_and_only_new_oligos_after_restart() {
+        use crate::run_origin_model::PinnedOrigin;
+        use collagene_core::{
+            analysis::Primer,
+            chemistry::Strand,
+            material_derivation as native,
+            run_material::{self, MaterialOrigin},
+            verification::{self, PlanInput},
+            workspace,
+        };
+        let source = Molecule::dna(
+            "Seed reference",
+            "AGTCCGATGCTACGTAGAATTCCAGACCTGTAGATCGTCA",
+            Topology::Linear,
+        )
+        .unwrap();
+        let frame =
+            Workspace::from_documents("Saved domestication source", vec![source.clone()], 0)
+                .unwrap();
+        let doc = &frame.documents[0];
+        let seed = EventBinding {
+            document_id: doc.id.clone(),
+            event_id: doc.head_event.clone().unwrap(),
+            revision: doc.head.clone(),
+        };
+        let forward =
+            Primer::new("Seed stock forward", &source.sequence.as_str()[..8], "").unwrap();
+        let reverse = Primer::new(
+            "Seed stock reverse",
+            collagene_core::Sequence::dna(&source.sequence.as_str()[source.sequence.len() - 8..])
+                .unwrap()
+                .reverse_complement()
+                .unwrap()
+                .as_str(),
+            "",
+        )
+        .unwrap();
+        let source_origin = native::SourceOrigin::OriginalReference;
+        let previews =
+            native::preview_pcr(&source, &source_origin, &forward, &reverse, Strand::Top).unwrap();
+        assert_eq!(previews.len(), 1);
+        let installed = native::prepare_install(
+            &frame,
+            &native::Request {
+                source: seed,
+                origin: source_origin.clone(),
+                name: "Saved PCR stock".into(),
+                save_primers: true,
+                derivation: native::Derivation::ExactPcr {
+                    template_strand: Strand::Top,
+                    selection: native::PcrSelection {
+                        selected_index: 0,
+                        expected_preview_revision: previews[0].molecule.revision(),
+                        geometry: previews[0].geometry.clone(),
+                    },
+                    forward,
+                    reverse,
+                },
+            },
+        )
+        .unwrap();
+        let frame =
+            workspace::load_workspace(&workspace::save_workspace(&installed.workspace).unwrap())
+                .unwrap();
+        let event = installed.receipt.product;
+        let origin = MaterialOrigin::Derived(native::capsule(&frame, &event).unwrap());
+        let pin = PinnedOrigin::from_material(origin.clone()).unwrap();
+        let source = frame.revisions[&event.revision].clone();
+        let mut form = crate::domestication_form::Form::new(&source, None);
+        form.enzymes = "ecori".into();
+        let request = form.request(&source).unwrap();
+        let patches = vec![design::Patch {
+            position: 18,
+            expected: "A".into(),
+            replacement: "C".into(),
+        }];
+        let selection = design::Selection {
+            context_revision: design::propose_revision(&source, &request).unwrap(),
+            candidate_id: design::candidate_id(&request, &patches).unwrap(),
+            patches,
+        };
+        let checked = design::check(&source, &request, &selection).unwrap();
+        assert_eq!(
+            checked.target().sequence.as_str(),
+            "AGTCCGATGCTACGTAGACTTCCAGACCTGTAGATCGTCA"
+        );
+        let mut options = collagene_core::overlap_extension_primer_design::Options::default();
+        options.primer_options.min_length = 8;
+        options.primer_options.max_length = 8;
+        options.primer_options.min_gc_fraction = 0.;
+        options.primer_options.max_gc_fraction = 1.;
+        options.primer_options.max_tm_difference_c = 100.;
+        options.primer_options.max_homopolymer = 200;
+        options.primer_options.max_three_prime_complementarity = 200;
+        options.homology_flank = 8;
+        options.min_paired_bases = 8;
+        let input = PlanInput {
+            id: physical::INPUT_ID.into(),
+            revision: source.revision(),
+            molecule: source.clone(),
+        };
+        let mut native_request = physical::Request {
+            design: request.clone(),
+            selection: selection.clone(),
+            route: physical::Route::OverlapExtension { options },
+            origin: Some(origin.clone()),
+        };
+        let prepared = physical::materialize(&input, &native_request, Some(&frame)).unwrap();
+        assert!(prepared.proposal_ready, "{:?}", prepared.proposal_findings);
+        let oligos = collagene_core::plan_oligos::build(
+            &prepared.plan,
+            &prepared.target,
+            &Default::default(),
+        )
+        .unwrap();
+        assert!(oligos.complete);
+        // Outer PCR can reuse branch primers; order records deduplicate DNA.
+        assert_eq!(oligos.uses.len(), 6);
+        assert!(
+            !serde_json::to_string(&oligos.oligos)
+                .unwrap()
+                .contains("Seed stock")
+        );
+        native_request.origin = None;
+        assert!(physical::preflight(&input, &native_request, Some(&frame)).is_err());
+        let opened = Open {
+            source: event.clone(),
+            origin: Some(pin),
+            epoch: 2,
+            request,
+            selection,
+            check: checked.report().clone(),
+            target: checked.target().clone(),
+            prepared: Some(prepared),
+        };
+        let staged = stage(&frame, &opened).unwrap();
+        let candidate = staged.candidate.as_ref().unwrap();
+        assert_eq!(
+            verification::verify(&candidate.plan, &opened.target).status,
+            verification::Status::ConsistentUnderAssumptions
+        );
+        let saved = collagene_core::cloning_outputs::finalize(
+            &staged.workspace,
+            &candidate.plan,
+            staged.target.clone(),
+            staged.inputs.clone(),
+            &collagene_core::cloning_outputs::Options {
+                name: "Domesticated saved stock".into(),
+                show_prepared: true,
+                save_primers: true,
+                allow_incomplete: false,
+            },
+        )
+        .unwrap();
+        assert!(saved.receipt.primer_attachment.is_some());
+        let reopened =
+            workspace::load_workspace(&workspace::save_workspace(&saved.workspace).unwrap())
+                .unwrap();
+        for original in &frame.documents {
+            let retained = reopened
+                .documents
+                .iter()
+                .find(|d| d.id == original.id)
+                .unwrap();
+            assert_eq!(retained.head_event, original.head_event);
+            assert_eq!(retained.head, original.head);
+        }
+        let asset = reopened
+            .attachments
+            .values()
+            .find(|a| a.kind == physical::REVIEW_EVIDENCE_KIND)
+            .unwrap();
+        let record: serde_json::Value = serde_json::from_slice(&asset.bytes).unwrap();
+        assert_eq!(record["version"], 3);
+        let restored_origin: MaterialOrigin =
+            serde_json::from_value(record["origin"].clone()).unwrap();
+        restored_origin
+            .validate_for_workspace(&reopened, &event)
+            .unwrap();
+        assert_eq!(
+            serde_json::to_vec(&restored_origin).unwrap(),
+            serde_json::to_vec(&origin).unwrap()
+        );
+        let restored: physical::Prepared =
+            serde_json::from_value(record["prepared"].clone()).unwrap();
+        restored
+            .validate_binding(&opened.prepared.as_ref().unwrap().context_revision)
+            .unwrap();
+        assert_eq!(
+            restored.proposal_findings,
+            opened.prepared.as_ref().unwrap().proposal_findings
+        );
+        let mut unpinned = opened.clone();
+        unpinned.origin = None;
+        assert!(stage(&frame, &unpinned).is_err());
+        let mut alias_frame = frame.clone();
+        let docs = DocumentHistory::restore_all(&frame).unwrap();
+        let owner = docs.iter().find(|d| d.id == event.document_id).unwrap();
+        let alias = owner
+            .fork_event(&event.event_id, "equal-stock-other-event")
+            .unwrap();
+        let mut alias_open = opened.clone();
+        alias_open.source = EventBinding {
+            document_id: alias.id.clone(),
+            event_id: alias.head_event().into(),
+            revision: alias.head_revision().into(),
+        };
+        alias.contribute(&mut alias_frame).unwrap();
+        assert!(stage(&alias_frame, &alias_open).is_err());
+        let mut wrong = opened;
+        wrong.target.sequence = collagene_core::Sequence::dna("AAAACCCC").unwrap();
+        assert!(stage(&frame, &wrong).is_err());
     }
 }

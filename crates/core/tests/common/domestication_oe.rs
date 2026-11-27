@@ -53,6 +53,7 @@ pub fn fixture(topology: Topology) -> (PlanInput, physical::Request) {
             molecule: source,
         },
         physical::Request {
+            origin: None,
             design,
             selection,
             route: physical::Route::OverlapExtension { options },

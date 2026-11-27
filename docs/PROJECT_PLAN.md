@@ -3821,32 +3821,21 @@ copying sources. The strict Invalid/empty-plan-revision assertions are preserved
 These corrections and the remaining newly compiled cases await the grouped run;
 WASM compilation is in progress. No browser/application HTTP checks were run.
 
-### Next source-confirmed ordinary cloning gaps
+### Source-confirmed ordinary cloning priorities
 
-A read-only follow-up audit of current source identifies these next coherent
-batches, independently of the superseded milestone notes above:
+The saved-material domestication and TA/GC library gaps identified by the source
+audit are implemented and validated in the worker110 batch below. Their native
+and web contracts are documented in [saved domestication](DOMESTICATION_SAVED_MATERIAL.md)
+and [tailing libraries](TAILING_SOURCE_LIBRARIES.md).
 
-1. Saved-material domestication preparation. `domestication_preparation::Request`
-   currently has no native origin binding and rejects physical-evidence-marked
-   sources. Carry one exact Run/Derived origin and owning workspace through the
-   existing native source resolver and inverse/OE preparation compilers. Freeze
-   the independently checked requested genotype before preparation; preserve the
-   sequential actual `Source::Step` chain and inherited incomplete findings.
-2. TA/GC library rows. Ordinary `tailing_recipe` supports real `KeepExisting` /
-   `AddTail` chemistry, but `combinatorial_design::Method` has no tailing method
-   and the draft rejects tailing libraries. Add one typed library method through
-   native compilation, batch/release and row controls, preserving source-strand
-   selectors, preparation orientation, actual ends, alternative paths and per-row
-   independent wrong-target refusal.
-3. Target-free reusable OE material. Native physical OE preparation exists, while
-   `material_derivation::Derivation` lacks an OE/outer-PCR transform and standalone
-   OE proposal controls install only oligo declarations. Connect a source-backed,
-   reviewed derivation/install/reopen path without inventing an assembly target
-   or promoting a primer proposal to material authority.
+The next concrete gap is target-free reusable OE material. Native physical OE
+preparation exists, while `material_derivation::Derivation` lacks an OE/outer-PCR
+transform and standalone OE proposal controls install only oligo declarations.
+Connect a source-backed, reviewed derivation/install/reopen path without inventing
+an assembly target or promoting a primer proposal to material authority.
 
-These gaps keep the full cloning-first objective active. Existing BAM/mobile and
-other exclusions/deferrals remain unchanged.
-
+This keeps the full cloning-first objective active. Existing BAM/mobile and other
+exclusions/deferrals remain unchanged.
 
 ### Integrated ordered-reaction validation
 
@@ -3868,3 +3857,32 @@ plan28/science31/draft18 and189 MCP tools are one representation, with no obsole
 phase wrappers or alternate internal readers. Exact-source cross-platform CI,
 public preview publication, installed/GUI acceptance and the next ordinary cloning
 batches above remain open. The full implementation objective stays active.
+
+
+### Saved-material domestication and TA/GC libraries — integrated validation
+
+The next coherent batch uses worker110 with existing candidate30, native plan28,
+science31 and draft18. It adds one exact Run/Derived origin to domestication
+preparation, attests its owner before source copying/planning, and reconstructs
+actual saved material before inverse/OE preparation. Sequential rounds consume
+actual preceding products. Independent checked genotype, source-event pins,
+new-only oligos and inherited incompleteness stay separate from proposals.
+
+TA/GC libraries now use the ordinary native tailing compiler with explicit
+per-bin additions/KeepExisting actions and per-construct method overrides. The web
+projection preserves those raw actions and independently declared junction scars;
+missing target scars are not supplied from a predicted product. Typed end-family
+evidence is retained separately from physical verification in schema2 batch
+records. No aliases, old-record readers or automatic material repair are added.
+All193 distinct selected native/SDK/model cases pass, including actual saved
+Run/Derived reconstruction, frozen-genotype wrong-target refusals, six new OE
+primer uses, native archive/replay, TA/GC profile-versus-target separation and
+atomic library release. The integrated web/worker WASM check passes. Fixture-only
+repairs were checked individually without rerunning unchanged passing cases.
+Formatting and whitespace checks pass. Exact-source CI remains open.
+
+The published6af40c7 frontend is now served on public8082 from its successful CI
+artifact. Static asset integrity/worker/WASM checks and process/socket ownership
+were verified; no browser or application HTTP checks ran. Its Linux CI identified
+two remaining stale binary-tag fixture assertions, now corrected in this batch.
+Full graphical/installed acceptance and the complete project objective stay open.

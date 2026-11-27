@@ -6,15 +6,15 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 109;
+pub const WORKER_SCHEMA_VERSION: u16 = 110;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 30;
 
 // Current selectors whose accepted payloads can contain complete workspace archives.
 // Stateless and session dispatch must admit the same envelope before routing.
 const WORKSPACE_REQUEST_SELECTORS: &[u32] = &[
     19, 20, 42, 43, 69, 72, 82, 83, 84, 85, 96, 100, 103, 104, 105, 106, 107, 126, 128, 129, 132,
-    133, 145, 146, 150, 153, 154, 156, 157, 158, 159, 160, 161, 163, 164, 165, 166, 167, 168, 169,
-    170, 171, 172, 173, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187,
+    133, 140, 145, 146, 150, 153, 154, 156, 157, 158, 159, 160, 161, 163, 164, 165, 166, 167, 168,
+    169, 170, 171, 172, 173, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187,
 ];
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -831,6 +831,8 @@ pub enum AnalysisJob {
     PrepareDomestication {
         input: crate::verification::PlanInput,
         request: crate::domestication_preparation::Request,
+        #[serde(deserialize_with = "crate::assembly_recipe::required_option")]
+        workspace: Option<crate::workspace::Workspace>,
     },
     ListLigationProfiles,
     ScorePublishedLigation {
@@ -1687,8 +1689,12 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         } => {
             crate::domestication::preflight(source, request)?;
         }
-        AnalysisJob::PrepareDomestication { input, request } => {
-            crate::domestication_preparation::preflight(input, request)?;
+        AnalysisJob::PrepareDomestication {
+            input,
+            request,
+            workspace,
+        } => {
+            crate::domestication_preparation::preflight(input, request, workspace.as_ref())?;
         }
         AnalysisJob::SearchGoldenGateFusions { inputs, request }
         | AnalysisJob::MaterializeGoldenGateFusions {
@@ -1766,6 +1772,7 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::InspectMismatchPcrDigest { .. }
             | AnalysisJob::InspectOverlapExtensionDigest { .. }
             | AnalysisJob::InspectTopoRun { .. }
+            | AnalysisJob::PrepareDomestication { .. }
             | AnalysisJob::InspectMaterialOrigin { .. }
             | AnalysisJob::MaterialPcrDocuments { .. }
             | AnalysisJob::PrepareMaterialPcrOutputs { .. }
@@ -3378,8 +3385,14 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             }
             None
         }
-        AnalysisJob::PrepareDomestication { input, request } => {
-            if crate::domestication_preparation::revision(input, request)? != r.revision {
+        AnalysisJob::PrepareDomestication {
+            input,
+            request,
+            workspace,
+        } => {
+            if crate::domestication_preparation::revision(input, request, workspace.as_ref())?
+                != r.revision
+            {
                 return Err(Error::Format(
                     "Domestication preparation context changed".into(),
                 ));
@@ -4282,10 +4295,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
                 target: checked.target().clone(),
             }
         }),
-        AnalysisJob::PrepareDomestication { input, request } => {
-            crate::domestication_preparation::materialize(&input, &request)
-                .map(AnalysisResult::DomesticationPrepared)
-        }
+        AnalysisJob::PrepareDomestication {
+            input,
+            request,
+            workspace,
+        } => crate::domestication_preparation::materialize(&input, &request, workspace.as_ref())
+            .map(AnalysisResult::DomesticationPrepared),
         AnalysisJob::SearchGoldenGateFusions { inputs, request } => {
             crate::golden_gate_fusion_design::inspect(&inputs, &request)
                 .map(AnalysisResult::GoldenGateFusions)

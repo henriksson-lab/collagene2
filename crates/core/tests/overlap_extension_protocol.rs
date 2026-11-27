@@ -182,7 +182,7 @@ fn extension_candidates_reject_unsupported_internal_versions() {
     let (plan, target) = fixture();
     let encoded = postcard::to_allocvec(&plan.steps[2]).unwrap();
     let (tag, _) = postcard::take_from_bytes::<u32>(&encoded).unwrap();
-    assert_eq!(tag, 23);
+    assert_eq!(tag, 22);
     let candidate = Candidate::new(plan.clone());
     let bytes = transfer::save_candidate(&candidate).unwrap();
     assert_eq!(

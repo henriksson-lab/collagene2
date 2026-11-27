@@ -11,9 +11,9 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io};
-pub const KIND: &str = "combinatorial-batch-record-v1";
+pub const KIND: &str = "combinatorial-batch-record-v2";
 pub const ENGINE_VERSION: &str = verification::ENGINE_VERSION;
-const CONTRACT: &str = "combinatorial-batch-2";
+const CONTRACT: &str = "combinatorial-batch-3";
 pub const MAX_RECORD_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_RECORDS: usize = 128;
 /// Aggregate declared DNA-search/repeat work, not a measured CPU-time claim.
@@ -33,12 +33,14 @@ pub enum RowState {
     Error,
     Evaluated,
 }
+dto! {pub struct TailingProfileEvidence {pub profile:crate::tailing_recipe::Profile,pub status:crate::tailing_recipe::ProfileStatus,pub findings:Vec<String>}}
 dto! {pub struct RowEvidence {
     pub index:usize,pub construct_id:String,pub name:String,pub state:RowState,
     pub status:Option<Status>,pub error:Option<String>,pub combination_id:Option<String>,pub declaration_revision:Option<String>,
     pub input_bindings:Vec<InputEventBinding>,pub target_binding:Option<EventBinding>,
     pub plan_revision:Option<String>,pub target_revision:Option<String>,pub final_product_revision:Option<String>,
     pub completed_steps:usize,pub planned_steps:usize,pub preparation_complete:bool,
+    #[serde(deserialize_with="assembly_recipe::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]pub tailing_profile:Option<TailingProfileEvidence>,
     pub findings:Vec<String>,pub assumptions:Vec<String>,pub exhaustive_alternative_search:Option<bool>,
 }}
 dto! {pub struct Progress {pub context_revision:String,pub next_index:usize,pub total_rows:usize,pub finished:bool,pub row:Option<RowEvidence>}}
@@ -147,6 +149,10 @@ impl Request {
                     // preparation/profile in one ready row must not hide others.
                     if let Some(overrides) = &construct.overrides {
                         if overrides.preparations.len() > design::MAX_BINS {
+                            return Err(Error::TooLarge);
+                        }
+                        if matches!(&overrides.method, Some(design::Method::Tailing { actions, .. }) if actions.len() > design::MAX_BINS)
+                        {
                             return Err(Error::TooLarge);
                         }
                         if let Some(design::Method::Overlap {
@@ -258,6 +264,7 @@ fn error_row(
         completed_steps: 0,
         planned_steps: 0,
         preparation_complete: false,
+        tailing_profile: None,
         findings: vec![],
         assumptions: vec![],
         exhaustive_alternative_search: None,
@@ -337,6 +344,14 @@ fn evaluate_row(
             completed_steps: report.products.len(),
             planned_steps: plan.steps.len(),
             preparation_complete,
+            tailing_profile: match &evaluated.preview {
+                design::Preview::Tailing(p) => Some(TailingProfileEvidence {
+                    profile: p.recipe.profile,
+                    status: p.profile_status,
+                    findings: p.profile_findings.clone(),
+                }),
+                _ => None,
+            },
             findings: report.findings.clone(),
             assumptions: report.assumptions.clone(),
             exhaustive_alternative_search: Some(report.exhaustive_alternative_search),
@@ -361,6 +376,11 @@ impl RowEvidence {
             || self.assumptions.len() > 4096
         {
             return Err(bad("invalid row summary dimensions"));
+        }
+        if self.tailing_profile.as_ref().is_some_and(|profile| {
+            profile.findings.len() > 64 || profile.findings.iter().any(|s| s.len() > 4096)
+        }) {
+            return Err(Error::TooLarge);
         }
         if self
             .error
@@ -440,6 +460,7 @@ impl RowEvidence {
                     || self.completed_steps != 0
                     || self.planned_steps != 0
                     || self.preparation_complete
+                    || self.tailing_profile.is_some()
                     || !self.findings.is_empty()
                     || !self.assumptions.is_empty()
                     || self.exhaustive_alternative_search.is_some()
@@ -589,7 +610,7 @@ impl Session {
         }
         let context_revision = record_revision(ENGINE_VERSION, &self.request, &self.rows)?;
         let record = Record {
-            schema_version: 1,
+            schema_version: 2,
             context_revision,
             engine_version: ENGINE_VERSION.into(),
             request: self.request.clone(),
@@ -620,7 +641,7 @@ impl Session {
 }
 fn record_revision(engine: &str, request: &Request, rows: &[RowEvidence]) -> Result<String, Error> {
     count(&(engine, request, rows), MAX_RECORD_BYTES - 1024)?;
-    assembly_recipe::hash(&("combinatorial-batch-record-1", engine, request, rows))
+    assembly_recipe::hash(&("combinatorial-batch-record-2", engine, request, rows))
 }
 fn expected_inputs(
     design: &Design,
@@ -694,7 +715,7 @@ impl Record {
         Ok(())
     }
     pub fn validate(&self) -> Result<(), Error> {
-        if self.schema_version != 1
+        if self.schema_version != 2
             || !digest(&self.context_revision)
             || self.engine_version.is_empty()
             || self.engine_version.len() > 256
@@ -721,6 +742,21 @@ impl Record {
                         != Some(&design::combination_key(design, &construct.choices)?)
                     {
                         return Err(bad("recorded combination differs from selected choices"));
+                    }
+                    let method = construct
+                        .overrides
+                        .as_ref()
+                        .and_then(|o| o.method.as_ref())
+                        .unwrap_or(&design.method);
+                    match (method, &row.tailing_profile) {
+                        (design::Method::Tailing { profile, .. }, Some(evidence))
+                            if *profile == evidence.profile => {}
+                        (design::Method::Tailing { .. }, _) | (_, Some(_)) => {
+                            return Err(bad(
+                                "recorded tailing profile differs from the selected method",
+                            ));
+                        }
+                        (_, None) => {}
                     }
                     let expected = expected_inputs(design, construct)?;
                     if row.input_bindings.len() != expected.len()

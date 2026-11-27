@@ -3,7 +3,6 @@
 use crate::{
     assembly_alternatives::{self as alternatives, Choice},
     assembly_workspace::Draft,
-    cloning_methods::Mode,
 };
 use leptos::prelude::*;
 use std::sync::Arc;
@@ -65,9 +64,6 @@ pub fn AssemblyAlternativesView(draft: RwSignal<Draft>, epoch: RwSignal<u64>) ->
                 }
                 let (next, message) = match action {
                     Action::Enable => {
-                        if saved.methods.mode == Mode::Tailing {
-                            return Err("Choose overlap assembly, ordered ligation or Golden Gate before enabling source alternatives.".into());
-                        }
                         let seed = format!(
                             "{}:{}:{}",
                             js_sys::Date::now(),
@@ -161,7 +157,7 @@ pub fn AssemblyAlternativesView(draft: RwSignal<Draft>, epoch: RwSignal<u64>) ->
                     </section>}.into_any()
                 } else {
                     view!{<section><p class="helper">"Set the ordinary backbone/insert slots and preparation first. Enabling alternatives keeps that current design as the first construct and turns each slot into an ordered source bin."</p>
-                        <button class="button secondary" disabled=saved.methods.mode==Mode::Tailing on:click=move|_|action.run(Action::Enable)>"Enable source alternatives for this assembly"</button>
+                        <button class="button secondary" on:click=move|_|action.run(Action::Enable)>"Enable source alternatives for this assembly"</button>
                     </section>}.into_any()
                 }
             }}

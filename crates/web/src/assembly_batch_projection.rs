@@ -157,10 +157,28 @@ fn typed_row(
             }
         }
         Mode::Tailing => {
-            return Err(
-                "TA/GC tailing is not a source-bin assembly method; inspect this row separately."
-                    .into(),
-            );
+            if library.bins.len() != 2 || state.rows.len() != 2 {
+                return Err(
+                    "TA/GC library constructs require two explicit prepared source bins.".into(),
+                );
+            }
+            Method::Tailing {
+                profile: state.tailing_profile,
+                actions: library
+                    .bins
+                    .iter()
+                    .enumerate()
+                    .map(|(index, bin)| design::TailingAction {
+                        bin_id: bin.id.clone(),
+                        action: if index == 0 {
+                            state.vector.action
+                        } else {
+                            state.insert.action
+                        },
+                    })
+                    .collect(),
+                allow_nicked: state.allow_nicked,
+            }
         }
     };
     let ordered_preparations = !matches!(
@@ -1464,5 +1482,117 @@ mod tests {
             );
             assert_eq!(native.target, intended);
         }
+    }
+    #[test]
+    fn tailing_rows_keep_explicit_actions_and_scarred_targets_through_projection_and_restart() {
+        use collagene_core::{
+            tailing::TailingBase,
+            tailing_recipe::{Action, Profile, ProfileStatus},
+            verification::Status,
+        };
+        let originals = vec![
+            Molecule::dna("Left", "AAACCC", Topology::Linear).unwrap(),
+            Molecule::dna("Right", "GGGTTT", Topology::Linear).unwrap(),
+        ];
+        let frame =
+            Workspace::from_documents("Actual tailing sources", originals.clone(), 0).unwrap();
+        let mut draft = ordinary();
+        draft.circular = true;
+        draft.methods.mode = Mode::Tailing;
+        for (i, slot) in draft.slots.iter_mut().enumerate() {
+            let doc = &frame.documents[i];
+            slot.captured = Some(Arc::new(CapturedSource {
+                source: SourceInfo {
+                    binding: EventBinding {
+                        document_id: doc.id.clone(),
+                        event_id: doc.head_event.clone().unwrap(),
+                        revision: doc.head.clone(),
+                    },
+                    name: originals[i].name.clone(),
+                    length: 6,
+                    alphabet: originals[i].sequence.alphabet(),
+                    topology: Topology::Linear,
+                },
+                molecule: originals[i].clone(),
+            }));
+            slot.selector = collagene_core::assembly_intent::Selector::ReferenceRange {
+                start: 0,
+                end: 6,
+                reverse: false,
+            };
+        }
+        draft.methods.vector.action = Action::AddTail {
+            base: TailingBase::T,
+        };
+        draft.methods.insert.action = Action::AddTail {
+            base: TailingBase::A,
+        };
+        draft.junction_edits = vec![
+            Edit {
+                junction: 0,
+                remove_left: 0,
+                remove_right: 0,
+                inserted: "T".into(),
+            },
+            Edit {
+                junction: 1,
+                remove_left: 0,
+                remove_right: 0,
+                inserted: "A".into(),
+            },
+        ];
+        draft.sync_rows();
+        let first = alternatives::enable(&draft, "ta-library").unwrap();
+        let ids = first.alternatives.as_ref().unwrap().rows[0].choices.clone();
+        let mut second = alternatives::add_row(&first, ids).unwrap();
+        second.methods.tailing_profile = Profile::Gc;
+        second.methods.vector.action = Action::AddTail {
+            base: TailingBase::C,
+        };
+        second.methods.insert.action = Action::AddTail {
+            base: TailingBase::G,
+        };
+        second.junction_edits.clear();
+        let stored = crate::assembly_draft_model::encode(&second).unwrap();
+        let restored = crate::assembly_draft_model::decode(&stored).unwrap();
+        let before = crate::assembly_draft_model::encode(&restored).unwrap();
+        let projected = project(&restored).unwrap();
+        let catalog = projected.request.design.as_ref().unwrap();
+        let first = design::resolve(catalog, ready(&projected.request, 0), &frame).unwrap();
+        assert_eq!(first.target.sequence.as_str(), "AAACCCTGGGTTTA");
+        let second = design::resolve(catalog, ready(&projected.request, 1), &frame).unwrap();
+        assert_eq!(
+            second.target.sequence.as_str(),
+            "AAACCCGGGTTT",
+            "missing independently declared scars cannot be supplied by tailing predictions"
+        );
+        let design::Recipe::Tailing { recipe } = second.recipe else {
+            panic!("tailing recipe")
+        };
+        assert!(recipe.profile == Profile::Gc);
+        assert!(matches!(
+            recipe.fragments[0].action,
+            Action::AddTail {
+                base: TailingBase::C
+            }
+        ));
+        let context = batch::begin_revision(&frame, &projected.request).unwrap();
+        let mut session = batch::Session::begin(frame.clone(), projected.request.clone()).unwrap();
+        let first = session.advance(&context, 0).unwrap().row.unwrap();
+        let second = session.advance(&context, 1).unwrap().row.unwrap();
+        assert_eq!(first.status, Some(Status::ConsistentUnderAssumptions));
+        assert_eq!(second.status, Some(Status::Invalid));
+        assert_eq!(
+            first.tailing_profile.unwrap().status,
+            ProfileStatus::Matched
+        );
+        assert_eq!(
+            second.tailing_profile.unwrap().status,
+            ProfileStatus::Matched
+        );
+        assert_eq!(
+            crate::assembly_draft_model::encode(&restored).unwrap(),
+            before
+        );
     }
 }

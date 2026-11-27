@@ -860,15 +860,6 @@ impl Draft {
                 "Paired-oligo sources/settings are not supported in assembly libraries.".into(),
             );
         }
-        if self.alternatives.as_ref().is_some_and(|library| {
-            self.methods.mode == Mode::Tailing
-                || library
-                    .rows
-                    .iter()
-                    .any(|row| row.edits.methods.mode == Mode::Tailing)
-        }) {
-            return Err("TA/GC cloning is an ordinary two-source workflow; library preparations are not supported.".into());
-        }
 
         validate_controls(
             &self.name,
@@ -1288,7 +1279,8 @@ mod tailing_tests {
     }
 
     #[test]
-    fn tailing_rejects_wrong_count_source_drift_unsupported_schema_and_library_rows() {
+    fn tailing_rejects_wrong_count_source_drift_and_unsupported_schema_but_retains_library_settings()
+     {
         let mut invalid = draft();
         invalid.methods.rows[1].document = 0;
         assert!(invalid.validate().is_err());
@@ -1307,7 +1299,17 @@ mod tailing_tests {
             crate::assembly_alternatives::enable(&Draft::default(), "ta-exclusion").unwrap();
         let saved = &mut library.alternatives.as_mut().unwrap().rows[0].edits.methods;
         saved.mode = Mode::Tailing;
-        assert!(library.validate().unwrap_err().contains("library"));
+        library.methods.mode = Mode::Tailing;
+        assert!(library.validate().is_ok());
+        let stored = encode(&library).unwrap();
+        let restored = decode(&stored).unwrap();
+        assert!(
+            restored.alternatives.as_ref().unwrap().rows[0]
+                .edits
+                .methods
+                .mode
+                == Mode::Tailing
+        );
     }
 
     #[test]

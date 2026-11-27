@@ -102,13 +102,15 @@ pub(crate) fn compile(
     input: &PlanInput,
     patches: &[Patch],
     rounds: &[InverseRound],
+    material: Option<&crate::run_material::MaterialOrigin>,
 ) -> Result<(Vec<Operation>, Vec<RoundEvidence>), Error> {
     preflight(input, patches, rounds)?;
     let n = input.molecule.sequence.len();
     let mut intended = input.molecule.sequence.as_str().as_bytes().to_vec();
     let mut origin = 0usize;
-    let mut template = Source::Input(input.id.clone());
-    let mut steps = Vec::with_capacity(3 * rounds.len());
+    let mut steps = Vec::with_capacity(3 * rounds.len() + usize::from(material.is_some()));
+    let mut template =
+        crate::domestication_preparation::append_origin(&input.id, material, &mut steps);
     let mut evidence = Vec::with_capacity(rounds.len());
     for (index, round) in rounds.iter().enumerate() {
         // This sequence is explicitly an intended coordinate frame for oligo

@@ -1,17 +1,19 @@
-//! Original-template physical preparation for explicitly checked domestication.
+//! Exact-source physical preparation for explicitly checked domestication.
 //! A reference-only recoded target never becomes an invented PCR template.
 use crate::{
     Error, Molecule, Topology, assembly_recipe, domestication,
     mutagenesis::{self, InversePcrOptions},
+    run_material::MaterialOrigin,
     verification::{self, Operation, PlanInput, Source},
+    workspace::Workspace,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io};
 
-pub const ENGINE_VERSION: &str = "domestication-preparation-2";
+pub const ENGINE_VERSION: &str = "domestication-preparation-3";
 /// Current documentary review receipt, not executable material authority.
-pub const REVIEW_EVIDENCE_KIND: &str = "domestication-intent-v2";
-pub const REVIEW_EVIDENCE_VERSION: u16 = 2;
+pub const REVIEW_EVIDENCE_KIND: &str = "domestication-intent-v3";
+pub const REVIEW_EVIDENCE_VERSION: u16 = 3;
 pub const INPUT_ID: &str = "template";
 const MAX_SOURCE_BASES: usize = 8 << 20;
 const MAX_WIRE_BYTES: usize = 32 << 20;
@@ -29,10 +31,10 @@ dto! {pub struct RoundEvidence {
     pub forward:crate::analysis::Primer,pub reverse:crate::analysis::Primer,
     pub forward_location:crate::Location,pub reverse_location:crate::Location,pub retained_template_length:usize,
 }}
-dto! {pub struct Request {pub design:domestication::Request,pub selection:domestication::Selection,pub route:Route}}
+dto! {pub struct Request {pub design:domestication::Request,pub selection:domestication::Selection,pub route:Route,#[serde(deserialize_with="crate::assembly_recipe::required_option")]pub origin:Option<MaterialOrigin>}}
 dto! {pub enum MethodEvidence {
     InversePcr {options:InversePcrOptions,forward:crate::analysis::Primer,reverse:crate::analysis::Primer,forward_location:crate::Location,reverse_location:crate::Location,retained_template_length:usize},
-    OverlapExtension {context_revision:String,request:crate::overlap_extension_primer_design::Request,preparation:crate::overlap_extension_pcr::Request,#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]designs:Vec<crate::primers::DesignReport>,search:Vec<crate::overlap_extension_primer_design::PairSearch>},
+    OverlapExtension {context_revision:String,source_frame:crate::overlap_extension_primer_design::SourceFrame,preparation:crate::overlap_extension_pcr::Request,#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]designs:Vec<crate::primers::DesignReport>,search:Vec<crate::overlap_extension_primer_design::PairSearch>},
     InversePcrRounds {rounds:Vec<RoundEvidence>},
 }}
 dto! {pub struct Prepared {
@@ -161,7 +163,8 @@ fn dimensions(
     ))
 }
 /// Cheap bounded identity/geometry guards; no genetic checking or PCR is replayed.
-pub fn preflight(input: &PlanInput, request: &Request) -> Result<(), Error> {
+fn documentary_preflight(input: &PlanInput, request: &Request) -> Result<(), Error> {
+    crate::run_material::material_origins_preflight(request.origin.iter())?;
     if input.id != INPUT_ID
         || input.revision != request.design.source_revision
         || !digest(&input.revision)
@@ -182,7 +185,12 @@ pub fn preflight(input: &PlanInput, request: &Request) -> Result<(), Error> {
     }
     // Native domestication preflight owns catalog, feature, patch and search bounds.
     domestication::check_revision(&input.molecule, &request.design, &request.selection)?;
-    if crate::chemistry::has_unmapped_physical_evidence(&input.molecule) {
+    if let Some(origin) = &request.origin {
+        origin.validate_documentary()?;
+        if origin.event().revision != input.revision {
+            return Err(bad("saved origin differs from exact input revision"));
+        }
+    } else if crate::chemistry::has_unmapped_physical_evidence(&input.molecule) {
         return Err(bad(
             "these routes require an original DNA reference; saved/imported physical material must retain a separately supported native origin, never lose its markers",
         ));
@@ -193,25 +201,32 @@ pub fn preflight(input: &PlanInput, request: &Request) -> Result<(), Error> {
         }
         Route::OverlapExtension { .. } => {
             let native = oe_request(input, request)?;
-            crate::overlap_extension_primer_design::preflight(&input.molecule, &native, None)?;
-            let (work, material) =
-                crate::overlap_extension_primer_design::work_preflight(&input.molecule, &native)?;
-            let extra = if input.molecule.topology == Topology::Circular {
-                input
-                    .molecule
-                    .sequence
-                    .len()
-                    .checked_mul(64)
-                    .ok_or(Error::TooLarge)?
-            } else {
-                0
-            };
-            if work.checked_add(extra).is_none_or(|n| n > 100_000_000)
-                || material
-                    .checked_add(extra)
-                    .is_none_or(|n| n > 64 * 1024 * 1024)
-            {
-                return Err(Error::TooLarge);
+            crate::overlap_extension_primer_design::documentary_preflight(
+                &input.molecule,
+                &native,
+            )?;
+            if request.origin.is_none() {
+                let (work, material) = crate::overlap_extension_primer_design::work_preflight(
+                    &input.molecule,
+                    &native,
+                )?;
+                let extra = if input.molecule.topology == Topology::Circular {
+                    input
+                        .molecule
+                        .sequence
+                        .len()
+                        .checked_mul(64)
+                        .ok_or(Error::TooLarge)?
+                } else {
+                    0
+                };
+                if work.checked_add(extra).is_none_or(|n| n > 100_000_000)
+                    || material
+                        .checked_add(extra)
+                        .is_none_or(|n| n > 64 * 1024 * 1024)
+                {
+                    return Err(Error::TooLarge);
+                }
             }
         }
         Route::InversePcrRounds { rounds } => {
@@ -220,9 +235,58 @@ pub fn preflight(input: &PlanInput, request: &Request) -> Result<(), Error> {
     }
     Ok(())
 }
-pub fn revision(input: &PlanInput, request: &Request) -> Result<String, Error> {
-    preflight(input, request)?;
+pub fn preflight(
+    input: &PlanInput,
+    request: &Request,
+    workspace: Option<&Workspace>,
+) -> Result<(), Error> {
+    crate::model::bounds::model_preflight(&[&input.molecule])?;
+    crate::run_material::material_origins_preflight(request.origin.iter())?;
+    if let Some(origin) = &request.origin {
+        let workspace =
+            workspace.ok_or_else(|| bad("saved material requires its exact owning workspace"))?;
+        origin.validate_for_workspace(workspace, origin.event())?;
+        if crate::run_material::resolve(workspace, origin.event())? != &input.molecule {
+            return Err(bad(
+                "saved source snapshot differs from its exact native event",
+            ));
+        }
+    }
+    documentary_preflight(input, request)
+}
+fn documentary_revision(input: &PlanInput, request: &Request) -> Result<String, Error> {
+    documentary_preflight(input, request)?;
     assembly_recipe::hash(&(ENGINE_VERSION, input, request))
+}
+pub fn revision(
+    input: &PlanInput,
+    request: &Request,
+    workspace: Option<&Workspace>,
+) -> Result<String, Error> {
+    preflight(input, request, workspace)?;
+    assembly_recipe::hash(&(ENGINE_VERSION, input, request))
+}
+pub(crate) fn append_origin(
+    input: &str,
+    origin: Option<&MaterialOrigin>,
+    steps: &mut Vec<Operation>,
+) -> Source {
+    let template = Source::Input(input.into());
+    if let Some(origin) = origin {
+        steps.push(match origin {
+            MaterialOrigin::Run(origin) => Operation::ReconstructRunProduct {
+                template,
+                origin: origin.clone(),
+            },
+            MaterialOrigin::Derived(origin) => Operation::ReconstructMaterial {
+                template,
+                origin: origin.clone(),
+            },
+        });
+        Source::Step(steps.len() - 1)
+    } else {
+        template
+    }
 }
 fn options(input: &PlanInput, request: &Request) -> Result<InversePcrOptions, Error> {
     let (edit_start, edit_end, forward_length, reverse_length, reverse_tail_bases) =
@@ -294,7 +358,12 @@ fn oe_request(
     }
     Ok(crate::overlap_extension_primer_design::Request {
         template_strand: crate::chemistry::Strand::Top,
-        material_binding: None,
+        material_binding: request.origin.as_ref().map(|origin| {
+            crate::overlap_extension_primer_design::BoundOrigin {
+                event: origin.event().clone(),
+                origin: origin.clone(),
+            }
+        }),
         fragment: crate::overlap_primer_design::Fragment {
             role: INPUT_ID.into(),
             input_id: INPUT_ID.into(),
@@ -338,8 +407,12 @@ fn readiness(method: &MethodEvidence) -> (bool, Vec<String>) {
 }
 /// Freeze the independently checked literal target BEFORE source-bound primer
 /// planning, then verify the one composed canonical operation graph once.
-pub fn materialize(input: &PlanInput, request: &Request) -> Result<Prepared, Error> {
-    let context_revision = revision(input, request)?;
+pub fn materialize(
+    input: &PlanInput,
+    request: &Request,
+    workspace: Option<&Workspace>,
+) -> Result<Prepared, Error> {
+    let context_revision = revision(input, request, workspace)?;
     let checked = domestication::check(&input.molecule, &request.design, &request.selection)?;
     let target = checked.target().clone();
     let check = checked.report().clone();
@@ -347,12 +420,16 @@ pub fn materialize(input: &PlanInput, request: &Request) -> Result<Prepared, Err
         Route::InversePcr { .. } => inverse_evidence(mutagenesis::compile_inverse_pcr(
             &input.molecule,
             &target,
-            None,
+            request.origin.as_ref(),
             &options(input, request)?,
         )?),
         Route::InversePcrRounds { rounds } => {
-            let (steps, evidence) =
-                crate::domestication_rounds::compile(input, &request.selection.patches, rounds)?;
+            let (steps, evidence) = crate::domestication_rounds::compile(
+                input,
+                &request.selection.patches,
+                rounds,
+                request.origin.as_ref(),
+            )?;
             (verification::DesignPlan {
                 name: format!("Sequential inverse-PCR domestication of {}", input.molecule.name),
                 target_revision: target.revision(), inputs: vec![input.clone()], steps,
@@ -375,8 +452,40 @@ pub fn materialize(input: &PlanInput, request: &Request) -> Result<Prepared, Err
                 limit: 100_000_000,
                 materialized: extra,
             };
+            let fresh = request
+                .origin
+                .as_ref()
+                .map(|o| o.replay(&input.molecule))
+                .transpose()?;
+            let template = match &fresh {
+                Some(f) => crate::pcr_source::Template::fresh(
+                    &input.molecule,
+                    f.tracked(),
+                    crate::chemistry::Strand::Top,
+                )?,
+                None => crate::pcr_source::Template::reference(&input.molecule)?,
+            };
+            let (work, material) =
+                crate::overlap_extension_primer_design::source_work_preflight(template, &native)?;
+            if work.checked_add(extra).is_none_or(|n| n > 100_000_000)
+                || material
+                    .checked_add(extra)
+                    .is_none_or(|n| n > 64 * 1024 * 1024)
+            {
+                return Err(Error::TooLarge);
+            }
+            let source_frame = crate::overlap_extension_primer_design::SourceFrame {
+                template_strand: template.strand,
+                sequence: template.sequence.clone(),
+                topology: template.topology,
+                context_revision: template.context_revision()?,
+                state_revision: match &fresh {
+                    Some(f) => crate::modified_duplex::summary(f.tracked())?.state_revision,
+                    None => input.revision.clone(),
+                },
+            };
             let compiled = crate::overlap_extension_primer_design::compile_source_with_budget(
-                crate::pcr_source::Template::reference(&input.molecule)?,
+                template,
                 &native,
                 &mut budget,
             )?;
@@ -388,9 +497,8 @@ pub fn materialize(input: &PlanInput, request: &Request) -> Result<Prepared, Err
                 ));
             }
             let mut steps = vec![];
-            compiled
-                .preparation
-                .append(Source::Input(INPUT_ID.into()), &mut steps)?;
+            let template = append_origin(INPUT_ID, request.origin.as_ref(), &mut steps);
+            let outer = compiled.preparation.append(template, &mut steps)?;
             let mut plan = verification::DesignPlan {
                 name: format!("Overlap-extension domestication of {}", input.molecule.name),
                 target_revision: target.revision(),
@@ -399,12 +507,12 @@ pub fn materialize(input: &PlanInput, request: &Request) -> Result<Prepared, Err
             };
             if input.molecule.topology == Topology::Circular {
                 plan.steps.push(Operation::TreatEnds {
-                    template: Source::Step(3),
+                    template: outer.clone(),
                     treatment: crate::chemistry::EndTreatment::Phosphorylate,
                 });
                 plan.steps.push(Operation::Ligate {
                     fragments: vec![verification::OrientedSource {
-                        source: Source::Step(4),
+                        source: Source::Step(plan.steps.len() - 1),
                         reverse: false,
                     }],
                     circular: true,
@@ -416,7 +524,7 @@ pub fn materialize(input: &PlanInput, request: &Request) -> Result<Prepared, Err
                 plan,
                 MethodEvidence::OverlapExtension {
                     context_revision: compiled.context_revision,
-                    request: compiled.request,
+                    source_frame,
                     preparation: compiled.preparation,
                     designs: compiled.designs,
                     search: compiled.search,
@@ -460,7 +568,7 @@ impl Prepared {
             return Err(bad("prepared context/input malformed"));
         }
         let input = &self.plan.inputs[0];
-        if revision(input, &self.request)? != expected
+        if documentary_revision(input, &self.request)? != expected
             || input.revision != self.source_revision
             || self.plan.target_revision != self.target.revision()
         {
@@ -527,7 +635,7 @@ impl Prepared {
                 let compiled = mutagenesis::compile_inverse_pcr(
                     &input.molecule,
                     &self.target,
-                    None,
+                    self.request.origin.as_ref(),
                     &desired,
                 )?;
                 if assembly_recipe::hash(&self.plan)? != assembly_recipe::hash(&compiled.plan)?
@@ -556,20 +664,18 @@ impl Prepared {
                 Route::OverlapExtension { .. },
                 MethodEvidence::OverlapExtension {
                     context_revision,
-                    request,
+                    source_frame,
                     preparation,
                     designs,
                     search,
                 },
             ) => {
                 let native = oe_request(input, &self.request)?;
-                if assembly_recipe::hash(request)? != assembly_recipe::hash(&native)? {
-                    return Err(bad("OE request differs from literal original patches"));
-                }
                 let independently_edited =
-                    crate::overlap_extension_primer_design::validate_preparation(
+                    crate::overlap_extension_primer_design::validate_documentary_preparation(
                         &input.molecule,
-                        request,
+                        &native,
+                        source_frame,
                         context_revision,
                         preparation,
                         designs,
@@ -579,15 +685,16 @@ impl Prepared {
                     return Err(bad("OE literals differ from checked intended reference"));
                 }
                 let mut steps = vec![];
-                preparation.append(Source::Input(INPUT_ID.into()), &mut steps)?;
+                let template = append_origin(INPUT_ID, self.request.origin.as_ref(), &mut steps);
+                let outer = preparation.append(template, &mut steps)?;
                 if input.molecule.topology == Topology::Circular {
                     steps.push(Operation::TreatEnds {
-                        template: Source::Step(3),
+                        template: outer.clone(),
                         treatment: crate::chemistry::EndTreatment::Phosphorylate,
                     });
                     steps.push(Operation::Ligate {
                         fragments: vec![verification::OrientedSource {
-                            source: Source::Step(4),
+                            source: Source::Step(steps.len() - 1),
                             reverse: false,
                         }],
                         circular: true,
@@ -612,6 +719,7 @@ impl Prepared {
                     input,
                     &self.request.selection.patches,
                     rounds,
+                    self.request.origin.as_ref(),
                 )?;
                 if self.plan.name
                     != format!(

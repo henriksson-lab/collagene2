@@ -19,6 +19,9 @@ pub struct CheckQuery {
 pub struct PrepareQuery {
     pub source: DocumentRef,
     pub request: preparation::Request,
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[schemars(required)]
+    pub origin_workspace: Option<WorkspaceRef>,
 }
 impl CollageneServer {
     fn domestication_source(
@@ -85,17 +88,28 @@ impl CollageneServer {
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
         self.compute(move||{
+            collagene_core::run_material::material_origins_preflight(args.request.origin.iter()).map_err(bad)?;
+            let workspace=args.origin_workspace.as_ref().map(|r|server.restore_workspace(r)).transpose()?;
+            // Attest the exact native owner and source before copying the input.
+            if let Some(origin)=&args.request.origin {
+                let frame=workspace.as_ref().ok_or_else(||bad("Saved domestication sources require their exact owning workspace"))?;
+                origin.validate_for_workspace(frame,origin.event()).map_err(bad)?;
+                let store=server.store.lock().unwrap();
+                if store.document(&args.source)?!=frame.revisions.get(&origin.event().revision).ok_or_else(||bad("Native source revision is absent"))? {
+                    return Err(bad("The session source differs from the exact native origin event"));
+                }
+            }
             let source=server.domestication_source(&args.source,&args.request.design)?;
             let input=PlanInput{id:"template".into(),revision:source.revision(),molecule:source};
-            let prepared=preparation::materialize(&input,&args.request).map_err(bad)?;
-            prepared.validate_binding(&preparation::revision(&input,&args.request).map_err(bad)?).map_err(bad)?;
+            let prepared=preparation::materialize(&input,&args.request,workspace.as_ref()).map_err(bad)?;
+            prepared.validate_binding(&preparation::revision(&input,&args.request,workspace.as_ref()).map_err(bad)?).map_err(bad)?;
             let target=prepared.target.clone();
             let plan=prepared.plan.clone();
             let plan_revision=verification::plan_revision(&plan);
             if plan_revision.is_empty()||plan.target_revision!=target.revision(){return Err(bad("prepared plan lost its independent target"));}
             #[derive(Serialize)]
-            struct Evidence<'a>{source:&'a DocumentRef,prepared:&'a preparation::Prepared}
-            let text=bounded_json_limit(&Evidence{source:&args.source,prepared:&prepared},32*1024*1024)?;
+            struct Evidence<'a>{source:&'a DocumentRef,origin_workspace:&'a Option<WorkspaceRef>,prepared:&'a preparation::Prepared}
+            let text=bounded_json_limit(&Evidence{source:&args.source,origin_workspace:&args.origin_workspace,prepared:&prepared},32*1024*1024)?;
             let method=match &prepared.method{preparation::MethodEvidence::InversePcr{..}=>"InversePcr",preparation::MethodEvidence::OverlapExtension{..}=>"OverlapExtension",preparation::MethodEvidence::InversePcrRounds{..}=>"InversePcrRounds"};
             let artifact_id=blake3::hash(text.as_bytes()).to_hex().to_string();
             let target_id=target.revision();
@@ -107,7 +121,7 @@ impl CollageneServer {
                 "target":summary(&target_id,&target),"verification":{"status":prepared.verification.status,
                     "engine_version":prepared.verification.engine_version,"findings":prepared.verification.findings.iter().take(40).collect::<Vec<_>>(),"findings_total":prepared.verification.findings.len(),"findings_truncated":prepared.verification.findings.len()>40},
                 "warnings":prepared.warnings,"artifact_id":artifact_id,
-                "authority":"Native original-source preparation proposal against the separately frozen reference. A diagnostic fallback is not ready under the requested primer-construction conditions. Actual verification remains separate. Use verify_plan, export_protocol, export_protocol_pdf and export_plan_oligos with plan_revision. No efficiency, template clearance or experimental success is established."}))?;
+                "authority":"Native exact-source preparation proposal against the separately frozen reference. A diagnostic fallback is not ready under the requested primer-construction conditions. Actual verification remains separate. Use verify_plan, export_protocol, export_protocol_pdf and export_plan_oligos with plan_revision. No efficiency, template clearance or experimental success is established."}))?;
             let mut store=server.store.lock().unwrap();
             let new_plan=!store.plans.contains_key(&plan_revision);
             let new_doc=!store.documents.contains_key(&target_id);

@@ -18,6 +18,20 @@ use std::{
 };
 use wasm_bindgen_futures::spawn_local;
 
+fn tailing_profile_text(profile: &batch::TailingProfileEvidence) -> String {
+    use collagene_core::tailing_recipe::{Profile, ProfileStatus};
+    let family = match profile.profile {
+        Profile::Ta => "TA",
+        Profile::Gc => "GC",
+    };
+    let assessment = match profile.status {
+        ProfileStatus::Matched => "matches actual prepared ends",
+        ProfileStatus::Incompatible => "does not match actual prepared ends",
+        ProfileStatus::Undetermined => "not determined from the available preparation",
+    };
+    format!("{family} end family: {assessment}")
+}
+
 #[derive(Clone)]
 enum Origin {
     Current(String),
@@ -532,7 +546,7 @@ fn BatchRows(
             let pages=matching.div_ceil(20).max(1);let current=page.get().min(pages-1);
             let rendered=all.iter().enumerate().filter(|(_,row)|matches(row)).skip(current*20).take(20).map(|(index,row)|{
                 let id=row.construct_id.clone();
-                view!{<article><button class="text-tool" on:click=move|_|{selected.set(Some(index));note_page.set(0);}>{format!("{} · {} · {:?} · {}",index+1,row.name,row.state,row.status.map(|s|format!("{s:?}")).unwrap_or_else(||"not computed".into()))}</button><p class="helper">{format!("Construct {} · completed steps {}/{} · preparation complete {}",row.construct_id,row.completed_steps,row.planned_steps,row.preparation_complete)}</p>{row.error.clone().map(|error|view!{<p role="alert">{error}</p>})}<button class="text-tool" disabled=move||!editable.get() on:click=move|_|on_edit.run(id.clone())>"Edit construct in assembly dock"</button></article>}
+                view!{<article><button class="text-tool" on:click=move|_|{selected.set(Some(index));note_page.set(0);}>{format!("{} · {} · {:?} · {}",index+1,row.name,row.state,row.status.map(|s|format!("{s:?}")).unwrap_or_else(||"not computed".into()))}</button><p class="helper">{format!("Construct {} · completed steps {}/{} · preparation complete {}",row.construct_id,row.completed_steps,row.planned_steps,row.preparation_complete)}</p>{row.tailing_profile.as_ref().map(|profile|view!{<p class="helper">{tailing_profile_text(profile)}</p>})}{row.error.clone().map(|error|view!{<p role="alert">{error}</p>})}<button class="text-tool" disabled=move||!editable.get() on:click=move|_|on_edit.run(id.clone())>"Edit construct in assembly dock"</button></article>}
             }).collect_view();
             view!{<div><p>{format!("{matching} matching constructs of {}",all.len())}</p>{rendered}<p>{format!("Result page {} of {pages}",current+1)}</p><button class="text-tool" disabled=current==0 on:click=move|_|page.set(current.saturating_sub(1))>"Previous results"</button><button class="text-tool" disabled={current+1>=pages} on:click=move|_|page.set(current+1)>"Next results"</button></div>}
         })}
@@ -540,6 +554,7 @@ fn BatchRows(
             let count=row.findings.len()+row.assumptions.len();let pages=count.div_ceil(50).max(1);let current=note_page.get().min(pages-1);
             let notes=row.findings.iter().map(|s|format!("Finding: {s}")).chain(row.assumptions.iter().map(|s|format!("Assumption: {s}"))).skip(current*50).take(50).map(|s|view!{<li>{s}</li>}).collect_view();
             view!{<section><h4>{row.name.clone()}</h4><p>{format!("Construct {} · combination {} · declaration {}",row.construct_id,row.combination_id.as_deref().unwrap_or("unavailable"),row.declaration_revision.as_deref().unwrap_or("not computed"))}</p><p>{format!("Plan {} · intended target {} · final reconstructed product {}",row.plan_revision.as_deref().unwrap_or("unavailable"),row.target_revision.as_deref().unwrap_or("unavailable"),row.final_product_revision.as_deref().unwrap_or("unavailable"))}</p>
+                {row.tailing_profile.as_ref().map(|profile|view!{<details><summary>{tailing_profile_text(profile)}</summary><p class="helper">"End-family matching is separate from physical ligation and independent-target consistency."</p>{profile.findings.iter().map(|text|view!{<p>{text.clone()}</p>}).collect_view()}</details>})}
                 <details><summary>"Pinned source events"</summary>{row.input_bindings.iter().map(|binding|view!{<p>{format!("{}: document {} · event {} · revision {}",binding.input_id,binding.event.document_id,binding.event.event_id,binding.event.revision)}</p>}).collect_view()}</details>
                 <p class="helper">{format!("Exhaustive alternative-product search: {:?}. A consistent sequence model does not establish amplification, sample identity or laboratory success.",row.exhaustive_alternative_search)}</p><ul>{notes}</ul><p>{format!("Evidence note page {} of {pages}",current+1)}</p><button class="text-tool" disabled=current==0 on:click=move|_|note_page.set(current.saturating_sub(1))>"Previous notes"</button><button class="text-tool" disabled={current+1>=pages} on:click=move|_|note_page.set(current+1)>"Next notes"</button>
             </section>}

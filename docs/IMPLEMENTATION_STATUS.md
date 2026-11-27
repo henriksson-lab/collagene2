@@ -1919,3 +1919,28 @@ preview was replaced. Process metadata and startup logs confirm the listener;
 no browser or application HTTP check was run. Main desktop CI now preserves its
 active main-branch build while keeping the latest pending batch, allowing long
 frontend/Windows builds to finish during continued development.
+
+### Source-bound RNA chemistry core
+
+The new MIT `collagene-rna-chemistry` crate models explicit base, sugar, backbone
+and terminal declarations against an exact RNA molecule revision. Neutral
+composition uses integer atom accounting, explicit phosphodiester condensation,
+terminal phosphate states and circular seams. Supported modified nucleosides,
+sugars and phosphorothioates retain distinct identities even when isobaric.
+Unspecified PS stereochemistry withholds complete identity while leaving a known
+formula available. Partial/unknown chemistry, ambiguous references and unreviewed
+retained source modification evidence withhold aggregate formula/mass.
+
+Declaration version 1 and `rna-chemistry-1` bind source, documentary provenance,
+canonical/modified catalog data and mass constants. Unsupported versions refuse;
+report validation recomputes from independent source and declaration. The source
+revision matches the shared molecule hash through bounded streaming serialization.
+
+Eight distinct fixture groups pass, including published monomer/AMP/ATP checks
+and an independent condensation oracle for all 340 canonical sequences of lengths
+1–4 in linear and circular form. Affected catalog/bond groups were rechecked after
+centralizing atom tables and binding them into the catalog revision. The final
+optional-schema WASM check also passes. Three-platform scientific CI and WASM CI
+include the crate. This core does not yet provide worker/UI/MCP integration,
+event-bound workspace persistence or imported annotation review. Those remain in
+the full F34 scope alongside antibody analysis. [Contract](RNA_MODIFICATIONS.md).

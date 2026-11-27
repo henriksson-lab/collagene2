@@ -4185,3 +4185,22 @@ artifact with its current viewer and pinned worker. No browser/application HTTP
 checks were used. The preceding fixture correction (`540c7e0`) is now green on all
 three native CI platforms and web. Current-source CI and the full delivery gates
 remain separate; the goal is not complete.
+
+### F34 declared RNA chemistry foundation
+
+`collagene-rna-chemistry` adds one source-bound declaration representation for
+RNA base/sugar modifications, backbone linkages and linear/circular end states.
+Coverage is explicit: a partial declaration never becomes an unmodified molecule.
+Known neutral chemistry yields integer composition and declared-model mass;
+unknown chemistry, ambiguous reference bases and unreviewed retained modification
+evidence withhold quantities. PS stereochemistry remains separate from mass, and
+isobaric base/sugar identities are not collapsed. These declarations are hypotheses,
+not measured-state or cloning/material authority.
+
+The current declaration version 1 and engine `rna-chemistry-1` reject unsupported
+representations directly. Source, provenance, complete catalog/mass data and
+report quantities bind together and can be reconstructed independently. Eight
+fixture groups and the final optional-schema WASM check pass; CI includes the new
+crate on all three native platforms and WASM. Worker, UI, MCP, imported annotation
+review and exact-event persistence remain required integration work, followed by
+the rest of F34 and the existing delivery/acceptance gates. [RNA contract](RNA_MODIFICATIONS.md).

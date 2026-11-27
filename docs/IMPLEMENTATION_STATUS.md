@@ -23,17 +23,23 @@ WebMCP JavaScript syntax check pass. Exact-source web CI passes. Native CI found
 in the new working batch without changing scientific assertions. All three
 Windows/macOS/Linux desktop build jobs pass for6af40c7.
 
-Working source advances only the worker schema to110 for saved-material
-preparation and TA/GC library method/row evidence. Candidate30, plan28, science31,
-draft18 and189 MCP tools remain unchanged: existing native operations perform the
-science. Current batch records are schema2; domestication preparation/review use
-engine/evidence3. Saved Run/Derived sources retain exact owning-workspace guards,
-and tailing-family assessment stays distinct from target/ligation consistency.
-The integrated batch passes193 distinct focused native cases, including in-process
-MCP, source ownership refusals, retained protocol/orders, library release/reopen
-and web preparation models. The web/worker WASM check passes. The final fixture
-repairs were rechecked individually; unchanged passing cases were not rerun.
-Exact-source CI and publication of this batch remain open.
+Publishedc06cdeb uses worker110 with candidate30, plan28, science31, draft18 and
+189 MCP tools. It adds exact Run/Derived domestication preparation and TA/GC
+library method/row evidence. Current batch records use schema2; domestication
+preparation/review use engine/evidence3. Saved sources retain exact owning-
+workspace guards, and tailing-family assessment stays distinct from target/
+ligation consistency. All193 selected native/SDK/model cases and the integrated
+web/worker WASM check pass; exact-source web CI passes and all three desktop builds pass. Native CI found
+a missed sharing-test caller and outdated unsupported-version assertion; those
+are corrected and checked in the working batch.
+
+Working source advances worker111 for target-free reusable OE PCR material.
+The existing native material-derivation install/replay path gains a source-bound
+OE preview and selected outer-PCR product. Core execution is shared with OE digest
+inspection, and explicit web/MCP review retains all six newly performed primer
+uses. All97 distinct selected native/SDK/web-model cases and the integrated web/worker
+WASM check pass. Native fixture repairs were checked directly. Exact-source
+cross-platform CI for this increment remains open. [Contract](OE_REUSABLE_MATERIAL.md).
 
 Published19a1a1c (worker108/candidate29/plan27/science30/draft18) passed118 focused
 native cases and the integrated WASM check. Exact-source web CI and all three
@@ -49,12 +55,13 @@ binary selector/size-lane fixture expectations, corrected in f66deff without
 relaxing bounds. Its web and all three desktop build jobs passed. Full graphical
 and installed-desktop acceptance remain open.
 
-Port8082 serves the immutable successful CI frontend for `6af40c7` (worker109),
-including ordered TOPO continuation and staged WebMCP design changes. Its14 assets,
+Port8082 serves the immutable successful CI frontend for `c06cdeb` (worker110),
+including saved-material domestication, TA/GC libraries, ordered TOPO continuation
+and staged WebMCP design changes. Its14 assets,
 SRI references, WASM headers, worker namespace and listening socket were checked
 without executing the application. Private library assets/storage are untouched.
 Browser and application HTTP acceptance remains deferred until in-scope code is
-complete. The next working batch is not yet published there.
+complete. The worker111 OE material increment is not yet published there.
 
 Saved-run review now explicitly opens a separate candidate in the existing DAG
 editor, preserving original source and target events after document heads advance.

@@ -275,6 +275,69 @@ impl MismatchChoice {
         Ok(request)
     }
 }
+/// Target-free OE review binds the complete source event, six oligos and actual
+/// outer-PCR product. A primer proposal is never a material selection.
+#[derive(Debug, Clone)]
+pub struct OverlapExtensionChoice {
+    source: SourcePin,
+    preparation: collagene_core::overlap_extension_pcr::Request,
+    selection: native::OverlapExtensionSelection,
+}
+impl OverlapExtensionChoice {
+    pub fn from_preview(
+        source: SourcePin,
+        molecule: &Molecule,
+        workspace: &Workspace,
+        preparation: collagene_core::overlap_extension_pcr::Request,
+        preview: &native::OverlapExtensionPreview,
+    ) -> Result<Self, String> {
+        source.validate_current(source.event(), source.epoch(), molecule, source.origin())?;
+        source.attest(workspace)?;
+        let revision = native::overlap_extension_preview_revision(
+            workspace,
+            source.event(),
+            &source.native_origin(),
+            &preparation,
+        )
+        .map_err(|e| e.to_string())?;
+        preview
+            .validate_binding(&revision)
+            .map_err(|e| e.to_string())?;
+        if &preview.source != source.event()
+            || preview.source_revision != molecule.revision()
+            || hash(&preview.preparation)? != hash(&preparation)?
+        {
+            return Err("The overlap-extension preview differs from the selected source event or six-oligo preparation.".into());
+        }
+        let selection = preview.selection().map_err(|e| e.to_string())?;
+        Ok(Self {
+            source,
+            preparation,
+            selection,
+        })
+    }
+    pub fn request(
+        &self,
+        workspace: &Workspace,
+        name: &str,
+        save_primers: bool,
+    ) -> Result<native::Request, String> {
+        self.source.attest(workspace)?;
+        let request = native::Request {
+            source: self.source.event.clone(),
+            origin: self.source.native_origin(),
+            derivation: Derivation::OverlapExtensionPcr {
+                preparation: self.preparation.clone(),
+                selection: self.selection.clone(),
+            },
+            name: name.into(),
+            save_primers,
+        };
+        native::preflight(workspace, &request).map_err(|e| e.to_string())?;
+        Ok(request)
+    }
+}
+
 /// Repair acts on freshly reconstructed saved material, never imported end summaries.
 #[derive(Debug, Clone)]
 pub struct RepairChoice {
@@ -801,5 +864,196 @@ mod mismatch_repair_tests {
         let mut other = event;
         other.event_id = "another-retained-event".into();
         assert!(SourcePin::capture(other, 4, &molecule, Some(origin)).is_err());
+    }
+}
+
+#[cfg(test)]
+mod overlap_extension_tests {
+    use super::*;
+    use collagene_core::{
+        Topology, chemistry::Strand, overlap_extension, overlap_extension_pcr, workspace,
+    };
+    const SOURCE: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
+    const PRODUCT: &str = "ATGCGAATTCAGTCCGATGCTACGTATTTTCAGACCTGTAGATCGTCAGAATTCGCAT";
+    fn event(frame: &Workspace) -> EventBinding {
+        let doc = &frame.documents[0];
+        EventBinding {
+            document_id: doc.id.clone(),
+            event_id: doc.head_event.clone().unwrap(),
+            revision: doc.head.clone(),
+        }
+    }
+    fn preparation() -> overlap_extension_pcr::Request {
+        let pair =
+            |label: &str, f: &str, ft: &str, r: &str, rt: &str| overlap_extension_pcr::PrimerPair {
+                forward: Primer::new(&format!("{label} forward"), f, ft).unwrap(),
+                reverse: Primer::new(&format!("{label} reverse"), r, rt).unwrap(),
+                template_strand: Strand::Top,
+            };
+        overlap_extension_pcr::Request {
+            left: pair("Left", "AGTCCGAT", "", "TACGTAGC", "GGTCTGAAAA"),
+            right: pair("Right", "TTCAGACC", "GCTACGTATT", "TGACGATC", ""),
+            outer: pair("Outer", "AGTCCGAT", "ATGCGAATTC", "TGACGATC", "ATGCGAATTC"),
+            extension: overlap_extension::Options {
+                overlap: 18,
+                min_paired_bases: 8,
+                ..Default::default()
+            },
+        }
+    }
+    fn frame() -> (Workspace, Molecule, EventBinding) {
+        let source = Molecule::dna("Immutable source", SOURCE, Topology::Linear).unwrap();
+        let frame =
+            Workspace::from_documents("OE material review", vec![source.clone()], 0).unwrap();
+        let event = event(&frame);
+        (frame, source, event)
+    }
+    #[test]
+    fn oe_review_installs_actual_outer_product_and_six_uses_without_an_assembly_target() {
+        let (frame, source, event) = frame();
+        let before = serde_json::to_vec(&frame).unwrap();
+        let preparation = preparation();
+        let preview = native::preview_overlap_extension(
+            &frame,
+            &event,
+            &SourceOrigin::OriginalReference,
+            &preparation,
+        )
+        .unwrap();
+        assert_eq!(preview.product.as_ref().unwrap().sequence.as_str(), PRODUCT);
+        let pin = SourcePin::capture(event, 19, &source, None).unwrap();
+        let choice = OverlapExtensionChoice::from_preview(
+            pin,
+            &source,
+            &frame,
+            preparation.clone(),
+            &preview,
+        )
+        .unwrap();
+        let request = choice
+            .request(&frame, "Reviewed OE material", true)
+            .unwrap();
+        let installed = native::install(&frame, &request).unwrap();
+        let reopened = workspace::load_workspace(&installed.archive).unwrap();
+        installed.receipt.validate_archive(&reopened).unwrap();
+        let product = installed.receipt.product;
+        let fresh = native::reconstruct(&reopened, &product).unwrap();
+        assert_eq!(fresh.reference().sequence.as_str(), PRODUCT);
+        assert!(!fresh.incomplete());
+        let capsule = native::capsule(&reopened, &product).unwrap();
+        let record = native::load_record(&capsule.record_bytes).unwrap();
+        let table = native::primer_table(&record).unwrap().unwrap();
+        assert_eq!(table.records.len(), 6);
+        let saved_source = reopened.revisions[&product.revision].clone();
+        let origin = Arc::new(MaterialOrigin::Derived(capsule));
+        let pin =
+            SourcePin::capture(product.clone(), 20, &saved_source, Some(origin.clone())).unwrap();
+        let preview = native::preview_overlap_extension(
+            &reopened,
+            &product,
+            &SourceOrigin::Saved(origin.as_ref().clone()),
+            &preparation,
+        )
+        .unwrap();
+        let choice = OverlapExtensionChoice::from_preview(
+            pin.clone(),
+            &saved_source,
+            &reopened,
+            preparation,
+            &preview,
+        )
+        .unwrap();
+        let again = choice
+            .request(&reopened, "Second OE material", true)
+            .unwrap();
+        assert!(matches!(
+            &again.origin,
+            SourceOrigin::Saved(MaterialOrigin::Derived(_))
+        ));
+        assert!(
+            pin.validate_current(&product, 20, &saved_source, None)
+                .is_err()
+        );
+        let mut alias = product;
+        alias.event_id = "same-DNA-other-event".into();
+        assert!(SourcePin::capture(alias, 20, &saved_source, Some(origin)).is_err());
+        assert_eq!(serde_json::to_vec(&frame).unwrap(), before);
+    }
+    #[test]
+    fn oe_review_rejects_changed_six_oligo_settings_source_epoch_and_product_selection() {
+        let (frame, source, event) = frame();
+        let preparation = preparation();
+        let preview = native::preview_overlap_extension(
+            &frame,
+            &event,
+            &SourceOrigin::OriginalReference,
+            &preparation,
+        )
+        .unwrap();
+        let pin = SourcePin::capture(event.clone(), 3, &source, None).unwrap();
+        assert!(pin.validate_current(&event, 4, &source, None).is_err());
+        let mut changed = preparation.clone();
+        changed.outer.forward = Primer::new("Outer forward", "AGTCCGAT", "AAAA").unwrap();
+        assert!(
+            OverlapExtensionChoice::from_preview(pin.clone(), &source, &frame, changed, &preview,)
+                .is_err()
+        );
+        let choice = OverlapExtensionChoice::from_preview(
+            pin,
+            &source,
+            &frame,
+            preparation.clone(),
+            &preview,
+        )
+        .unwrap();
+        let mut request = choice
+            .request(&frame, "Reviewed OE material", false)
+            .unwrap();
+        if let Derivation::OverlapExtensionPcr { selection, .. } = &mut request.derivation {
+            selection.expected_product_revision = "0".repeat(64);
+        } else {
+            panic!("Expected the canonical OE derivation");
+        }
+        assert!(native::prepare_install(&frame, &request).is_err());
+        let mut alias = event;
+        alias.document_id = "equal-DNA-other-document".into();
+        let alias_pin = SourcePin::capture(alias, 3, &source, None).unwrap();
+        assert!(
+            OverlapExtensionChoice::from_preview(
+                alias_pin,
+                &source,
+                &frame,
+                preparation,
+                &preview,
+            )
+            .is_err()
+        );
+    }
+    #[test]
+    fn oe_review_never_promotes_a_competing_source_pcr_to_selected_material() {
+        let source = Molecule::dna(
+            "Two source copies",
+            &format!("{SOURCE}{SOURCE}"),
+            Topology::Linear,
+        )
+        .unwrap();
+        let frame =
+            Workspace::from_documents("Ambiguous OE source", vec![source.clone()], 0).unwrap();
+        let event = event(&frame);
+        let preparation = preparation();
+        let preview = native::preview_overlap_extension(
+            &frame,
+            &event,
+            &SourceOrigin::OriginalReference,
+            &preparation,
+        )
+        .unwrap();
+        assert!(!preview.reusable());
+        assert!(preview.product.is_none());
+        let pin = SourcePin::capture(event, 2, &source, None).unwrap();
+        assert!(
+            OverlapExtensionChoice::from_preview(pin, &source, &frame, preparation, &preview)
+                .is_err()
+        );
     }
 }

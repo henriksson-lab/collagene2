@@ -3886,3 +3886,43 @@ artifact. Static asset integrity/worker/WASM checks and process/socket ownership
 were verified; no browser or application HTTP checks ran. Its Linux CI identified
 two remaining stale binary-tag fixture assertions, now corrected in this batch.
 Full graphical/installed acceptance and the complete project objective stay open.
+
+### Target-free reusable overlap-extension PCR — integrated validation
+
+Worker111 connects one shared source-backed OE executor to digest inspection and
+the existing native material-derivation lifecycle. An explicit six-oligo recipe
+reconstructs both PCR branches, reciprocal extension and outer PCR. The selected
+product is bound by context and product revisions, never an invented independent
+assembly target. Unique supported stage geometries, exact original/Run/Derived
+source events, inherited incompleteness and newly synthesized chemistry remain
+explicit. Reuse replays native source ancestry after archive restart.
+
+The existing worker install lane and MCP `material_derivation` tool gain this
+method; web controls use the same pinned source and reviewed installation.
+Primer proposals continue to be declarations until a separate explicit native
+material action is requested. All97 distinct selected native/SDK/web-model cases and the integrated web/worker
+WASM check pass. The preceding source CI exposed one missed sharing-test caller
+and current-version refusal fixture; both are corrected and checked without
+relaxing scientific assertions. Exact-source cross-platform CI remains open.
+No browser/application HTTP checks were performed.
+
+### Next source-confirmed cloning lifecycle gaps
+
+After reusable OE, finish reusable terminal-treatment and tailing intermediates.
+Native `TrackedDuplex::treat` and `.tail` already supply phosphorylation,
+dephosphorylation and single-base 3′ tail chemistry, but the standalone material
+derivation currently cannot retain those descendants without a target-bound
+plan. Extend the existing preview/install/replay lifecycle with exact source
+chemistry, mapped modifications, inherited limitations and source ancestry.
+This should support PCR → explicit phosphorylation or dA tailing → later cloning
+without inventing an assembly target.
+
+Reusable annealed-oligo duplexes follow. This requires retained multi-source
+provenance: the current material request/record/capsule and parent-event/sharing
+closure assume one source. Update that representation coherently instead of
+embedding an unretained second sequence or adding a parallel install mechanism.
+
+Saved reaction-quantity reports also still need lossless request-to-form editing,
+explicit revision as a new immutable report and selected compatible reaction
+copy/apply. Existing quantity arithmetic, capture and exports remain the shared
+implementation. These gaps do not reopen excluded inventory or scheduling.

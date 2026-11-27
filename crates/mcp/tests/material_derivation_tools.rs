@@ -143,7 +143,10 @@ async fn ordinary_pcr_native_install_redigest_and_derived_discovery_preserve_imm
         !schema_has_property(&schema, "record_bytes"),
         "Closed capsules are not MCP arguments"
     );
-    assert!(!schema_has_property(&schema, "expected_product_revision"));
+    assert!(
+        schema_has_property(&schema, "expected_product_revision"),
+        "OE selection binds a native product revision without accepting geometry"
+    );
     assert!(
         !schema_has_property(&schema, "geometry"),
         "Amplicon geometry is resolved in-process"

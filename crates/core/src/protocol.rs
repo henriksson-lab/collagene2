@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 110;
+pub const WORKER_SCHEMA_VERSION: u16 = 111;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 30;
 
 // Current selectors whose accepted payloads can contain complete workspace archives.
@@ -14,7 +14,7 @@ pub const CANDIDATE_SCHEMA_VERSION: u16 = 30;
 const WORKSPACE_REQUEST_SELECTORS: &[u32] = &[
     19, 20, 42, 43, 69, 72, 82, 83, 84, 85, 96, 100, 103, 104, 105, 106, 107, 126, 128, 129, 132,
     133, 140, 145, 146, 150, 153, 154, 156, 157, 158, 159, 160, 161, 163, 164, 165, 166, 167, 168,
-    169, 170, 171, 172, 173, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187,
+    169, 170, 171, 172, 173, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188,
 ];
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -1066,6 +1066,12 @@ pub enum AnalysisJob {
         workspace: crate::workspace::Workspace,
         selection: crate::topo_graph_history::Selection,
     },
+    InspectMaterialOverlapExtension {
+        workspace: crate::workspace::Workspace,
+        source: crate::run_lineage::EventBinding,
+        origin: crate::material_derivation::SourceOrigin,
+        preparation: crate::overlap_extension_pcr::Request,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1256,6 +1262,7 @@ pub enum AnalysisResult {
     TopoGraphsListed(crate::topo_graph_history::Listed),
     TopoGraphCaptured(crate::topo_graph_history::PreparedCapture),
     TopoGraphInspected(crate::topo_graph_history::Inspection),
+    MaterialOverlapExtensionPreview(crate::material_derivation::OverlapExtensionPreview),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1401,6 +1408,19 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             method,
         } => {
             crate::material_derivation::repair_preview_revision(source, origin, *method)?;
+        }
+        AnalysisJob::InspectMaterialOverlapExtension {
+            workspace,
+            source,
+            origin,
+            preparation,
+        } => {
+            crate::material_derivation::overlap_extension_preview_revision(
+                workspace,
+                source,
+                origin,
+                preparation,
+            )?;
         }
         AnalysisJob::InstallMaterialDerivation { workspace, request } => {
             crate::material_derivation::preflight(workspace, request)?;
@@ -1782,6 +1802,7 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::InspectMaterialMismatchPcr { .. }
             | AnalysisJob::InspectMaterialRepair { .. }
             | AnalysisJob::InstallMaterialDerivation { .. }
+            | AnalysisJob::InspectMaterialOverlapExtension { .. }
             | AnalysisJob::InspectMaterialDigest { .. }
             | AnalysisJob::PrepareSavedRunReview { .. }
             | AnalysisJob::PreviewProtocolLayout { .. }
@@ -1807,7 +1828,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         bytes,
         &[
             20, 21, 40, 41, 62, 65, 92, 95, 98, 120, 124, 125, 157, 158, 159, 160, 161, 162, 163,
-            164, 165, 166, 168, 169, 171, 174, 179,
+            164, 165, 166, 168, 169, 171, 174, 176, 178,
         ],
     )?;
 
@@ -1854,6 +1875,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             report.validate_binding(&response.revision)?;
         }
         AnalysisResult::MaterialRepairPreview(report) => {
+            report.validate_binding(&response.revision)?;
+        }
+        AnalysisResult::MaterialOverlapExtensionPreview(report) => {
             report.validate_binding(&response.revision)?;
         }
         AnalysisResult::MaterialDerivationInstalled(report) => {
@@ -2780,6 +2804,25 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             {
                 return Err(Error::Format(
                     "Material repair source/origin/policy changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::InspectMaterialOverlapExtension {
+            workspace,
+            source,
+            origin,
+            preparation,
+        } => {
+            if crate::material_derivation::overlap_extension_preview_revision(
+                workspace,
+                source,
+                origin,
+                preparation,
+            )? != r.revision
+            {
+                return Err(Error::Format(
+                    "OE material source/origin/preparation changed".into(),
                 ));
             }
             None
@@ -4222,6 +4265,18 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             method,
         } => crate::material_derivation::preview_repair(&source, &origin, method)
             .map(AnalysisResult::MaterialRepairPreview),
+        AnalysisJob::InspectMaterialOverlapExtension {
+            workspace,
+            source,
+            origin,
+            preparation,
+        } => crate::material_derivation::preview_overlap_extension(
+            &workspace,
+            &source,
+            &origin,
+            &preparation,
+        )
+        .map(AnalysisResult::MaterialOverlapExtensionPreview),
         AnalysisJob::InstallMaterialDerivation { workspace, request } => {
             crate::material_derivation::install(&workspace, &request)
                 .map(AnalysisResult::MaterialDerivationInstalled)
@@ -5169,6 +5224,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             | AnalysisResult::ScfTraceExported(_)
             | AnalysisResult::MaterialMismatchPcrPreview(_)
             | AnalysisResult::MaterialRepairPreview(_)
+            | AnalysisResult::MaterialOverlapExtensionPreview(_)
             | AnalysisResult::MaterialDerivationInstalled(_)
             | AnalysisResult::MaterialDigestInspection(_)
             | AnalysisResult::SavedRunReviewPrepared(_)

@@ -14,7 +14,7 @@ use collagene_core::{
     run_material::{self, Selection},
     transfer::{self, Candidate},
     verification::{DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::{Workspace, WorkspaceAttachment},
+    workspace::Workspace,
 };
 const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
 const AMPLICON: &str = "ATGCGAATTCAGTCCGATGCTACGTATTTTCAGACCTGTAGATCGTCAGAATTCGCAT";

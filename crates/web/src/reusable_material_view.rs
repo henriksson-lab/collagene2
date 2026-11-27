@@ -1,6 +1,6 @@
 //! Explicit target-free material review; installation uses the shared native archive transaction.
 use crate::{
-    material_derivation_model::{MismatchChoice, RepairChoice, SourcePin},
+    material_derivation_model::{MismatchChoice, OverlapExtensionChoice, RepairChoice, SourcePin},
     run_origin_model::PinnedOrigin,
     source_identity::SourceInfo,
     worker::CachedWorker,
@@ -25,6 +25,42 @@ use std::{
 };
 use wasm_bindgen_futures::spawn_local;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    MismatchPcr,
+    EndRepair,
+    OverlapExtensionPcr,
+}
+impl Kind {
+    fn title(self) -> &'static str {
+        match self {
+            Self::MismatchPcr => "Open reusable mismatch-PCR material",
+            Self::EndRepair => "Repair saved material directly",
+            Self::OverlapExtensionPcr => "Reconstruct reusable overlap-extension PCR material",
+        }
+    }
+    fn product_name(self) -> &'static str {
+        match self {
+            Self::MismatchPcr => "Reusable mismatch-PCR product",
+            Self::EndRepair => "Repaired material",
+            Self::OverlapExtensionPcr => "Reusable overlap-extension PCR product",
+        }
+    }
+    fn preview_label(self) -> &'static str {
+        match self {
+            Self::MismatchPcr => "Preview reusable mismatch PCR",
+            Self::EndRepair => "Preview direct end repair",
+            Self::OverlapExtensionPcr => "Preview reusable overlap-extension PCR",
+        }
+    }
+    fn evidence_name(self) -> &'static str {
+        match self {
+            Self::MismatchPcr => "material-mismatch-pcr.json",
+            Self::EndRepair => "material-end-repair.json",
+            Self::OverlapExtensionPcr => "material-overlap-extension-pcr.json",
+        }
+    }
+}
 #[derive(Clone, Serialize)]
 pub enum Settings {
     Mismatch {
@@ -35,10 +71,14 @@ pub enum Settings {
     Repair {
         method: EndRepairMethod,
     },
+    OverlapExtension {
+        preparation: collagene_core::overlap_extension_pcr::Request,
+    },
 }
 enum Preview {
     Mismatch(native::MismatchPreview),
     Repair(native::RepairPreview),
+    OverlapExtension(native::OverlapExtensionPreview),
 }
 struct Reviewed {
     source: SourcePin,
@@ -60,22 +100,15 @@ pub fn ReusableMaterialView(
     source_info: Memo<Option<SourceInfo>>,
     settings: Callback<(), Result<Settings, String>>,
     settings_revision: Memo<String>,
-    repair: bool,
+    kind: Kind,
+    origin: RwSignal<Option<PinnedOrigin>>,
     epoch: RwSignal<u64>,
     get_workspace: Callback<(), Result<Workspace, String>>,
     on_open: Callback<crate::digest_product::MaterialOpenRequest, Result<(), String>>,
 ) -> impl IntoView {
-    let origin = RwSignal::new(None::<PinnedOrigin>);
     let reviewed = RwSignal::new(None::<Arc<Reviewed>>);
     let selected = RwSignal::new(String::new());
-    let name = RwSignal::new(
-        if repair {
-            "Repaired material"
-        } else {
-            "Reusable mismatch-PCR product"
-        }
-        .to_string(),
-    );
+    let name = RwSignal::new(kind.product_name().to_string());
     let save_primers = RwSignal::new(false);
     let status = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
@@ -162,7 +195,7 @@ pub fn ReusableMaterialView(
                 .get_untracked()
                 .ok_or("Choose an exact source event.")?;
             let frame = get_workspace.run(())?;
-            if repair && origin.get_untracked().is_none() {
+            if kind == Kind::EndRepair && origin.get_untracked().is_none() {
                 return Err(
                     "Select the saved Run or Derived material origin before direct end repair."
                         .into(),
@@ -203,6 +236,21 @@ pub fn ReusableMaterialView(
                         forward: forward.clone(),
                         reverse: reverse.clone(),
                         options: options.clone(),
+                    },
+                ),
+                Settings::OverlapExtension { preparation } => (
+                    native::overlap_extension_preview_revision(
+                        &frame,
+                        pin.event(),
+                        &pin.native_origin(),
+                        preparation,
+                    )
+                    .map_err(|e| e.to_string())?,
+                    AnalysisJob::InspectMaterialOverlapExtension {
+                        workspace: frame,
+                        source: pin.event().clone(),
+                        origin: pin.native_origin(),
+                        preparation: preparation.clone(),
                     },
                 ),
                 Settings::Repair { method } => (
@@ -263,20 +311,33 @@ pub fn ReusableMaterialView(
                 if response.id != token || response.revision != revision {
                     return Err("The worker reply names another operation context.".into());
                 }
-                match (repair, response.result) {
-                    (false, AnalysisResult::MaterialMismatchPcrPreview(p)) => {
+                match (kind, response.result) {
+                    (Kind::MismatchPcr, AnalysisResult::MaterialMismatchPcrPreview(p)) => {
                         p.validate_binding(&revision).map_err(|e| e.to_string())?;
                         if p.source_revision != pin.event().revision {
                             return Err("Mismatch-PCR preview names another source.".into());
                         }
                         Ok(Preview::Mismatch(p))
                     }
-                    (true, AnalysisResult::MaterialRepairPreview(p)) => {
+                    (Kind::EndRepair, AnalysisResult::MaterialRepairPreview(p)) => {
                         p.validate_binding(&revision).map_err(|e| e.to_string())?;
                         if p.source_revision != pin.event().revision {
                             return Err("Repair preview names another source.".into());
                         }
                         Ok(Preview::Repair(p))
+                    }
+                    (
+                        Kind::OverlapExtensionPcr,
+                        AnalysisResult::MaterialOverlapExtensionPreview(p),
+                    ) => {
+                        p.validate_binding(&revision).map_err(|e| e.to_string())?;
+                        if &p.source != pin.event() || p.source_revision != pin.event().revision {
+                            return Err(
+                                "Overlap-extension PCR preview names another exact source event."
+                                    .into(),
+                            );
+                        }
+                        Ok(Preview::OverlapExtension(p))
                     }
                     (_, AnalysisResult::Error(e)) => Err(e),
                     _ => Err("Unexpected material preview reply.".into()),
@@ -334,6 +395,21 @@ pub fn ReusableMaterialView(
                         save_primers.get_untracked(),
                     )?
                 }
+                (
+                    Settings::OverlapExtension { preparation },
+                    Preview::OverlapExtension(preview),
+                ) => OverlapExtensionChoice::from_preview(
+                    review.source.clone(),
+                    &molecule,
+                    &frame,
+                    preparation.clone(),
+                    preview,
+                )?
+                .request(
+                    &frame,
+                    &name.get_untracked(),
+                    save_primers.get_untracked(),
+                )?,
                 (Settings::Repair { method }, Preview::Repair(preview)) => {
                     RepairChoice::from_preview(review.source.clone(), &molecule, *method, preview)?
                         .request(&frame, &name.get_untracked())?
@@ -374,18 +450,11 @@ pub fn ReusableMaterialView(
             let bytes = match &review.preview {
                 Preview::Mismatch(p) => serde_json::to_vec_pretty(p),
                 Preview::Repair(p) => serde_json::to_vec_pretty(p),
+                Preview::OverlapExtension(p) => serde_json::to_vec_pretty(p),
             }
             .map_err(|e| e.to_string())?;
             Ok((
-                crate::app::prepare_download(
-                    if repair {
-                        "material-end-repair.json"
-                    } else {
-                        "material-mismatch-pcr.json"
-                    },
-                    "application/json",
-                    &bytes,
-                )?,
+                crate::app::prepare_download(kind.evidence_name(), "application/json", &bytes)?,
                 review,
             ))
         })();
@@ -415,11 +484,11 @@ pub fn ReusableMaterialView(
             Err(e) => status.set(e),
         }
     };
-    view! {<details class="physical-evidence"><summary>{if repair {"Repair saved material directly"}else{"Open reusable mismatch-PCR material"}}</summary>
+    view! {<details class="physical-evidence"><summary>{kind.title()}</summary>
         <p class="helper">"Reconstruct the exact selected source and its retained chemistry. This creates a target-free material product; it does not verify or replace an intended assembly target."</p>
         <crate::run_origin_view::SourceOriginPicker source=source_info epoch get_workspace selected=Memo::new(move|_|origin.get()) on_select=select_origin/>
-        <Show when=move||repair><p class="helper">"Choose an explicit repair method above and a saved material origin here. No restriction digest, PCR, nick sealing, or activation step is inserted."</p></Show>
-        <button class="button secondary full" disabled=move||busy.get() on:click=run>{if repair {"Preview direct end repair"}else{"Preview reusable mismatch PCR"}}</button>
+        <Show when=move||kind==Kind::EndRepair><p class="helper">"Choose an explicit repair method above and a saved material origin here. No restriction digest, PCR, nick sealing, or activation step is inserted."</p></Show>
+        <button class="button secondary full" disabled=move||busy.get() on:click=run>{kind.preview_label()}</button>
         <p class="helper" role="status">{move||status.get()}</p>
         {move||reviewed.get().map(|review|{
             let (summary,details,incomplete,total,truncated)=match &review.preview {
@@ -428,10 +497,16 @@ pub fn ReusableMaterialView(
                     let products=report.products.iter().enumerate().take(100).map(|(i,g)|format!("Geometry {} · {} bases · certain {} · overlapping domains {}\n{}",i+1,g.sequence.len(),g.certain,g.overlapping_domains,snippet(g.sequence.as_str()))).collect::<Vec<_>>().join("\n\n");
                     (format!("{} geometries · search complete {} · enumeration complete {}. Initial physical PCR products have unmodified blunt 5′ OH / 3′ OH ends. Only a single supported certain non-overlapping geometry can be reusable. Incomplete search stays conditional and never claims isolation.",report.products.len(),report.search_complete,report.enumeration_complete),format!("Source chemistry:\n{}\n\n{}\n\n{}",p.source_duplex.describe(),products,p.findings.join("\n")),p.incomplete,p.findings_total,p.findings_truncated)
                 },
+                Preview::OverlapExtension(p)=>{
+                    let stages=p.pcr_stages.iter().map(|stage|format!("{} · {} geometries · {}",stage.stage,stage.geometries.len(),stage.product_length.map(|n|format!("{n} bases")).unwrap_or_else(||"product withheld".into()))).collect::<Vec<_>>().join("\n");
+                    let extension=p.extension.as_ref().map(|g|format!("Selected terminal overlap {} bp · pairings {:?} · search complete {} · unique {}",g.options.overlap,g.terminal_pairings.overlaps,g.terminal_pairings.complete,g.terminal_pairings.unique)).unwrap_or_else(||"Reciprocal extension withheld.".into());
+                    let product=p.product.as_ref().map(|m|format!("Outer-PCR product · {} bases\n{}",m.sequence.len(),snippet(m.sequence.as_str()))).unwrap_or_else(||"Reusable outer-PCR product withheld: review the stage diagnostics.".into());
+                    (format!("{} PCR stages · reusable outer product {}",p.pcr_stages.len(),p.reusable()),format!("{stages}\n\n{extension}\n\n{product}\n\n{}",p.findings.join("\n")),p.incomplete,p.findings_total,p.findings_truncated)
+                },
                 Preview::Repair(p)=>(format!("{} bases after explicit repair",p.molecule.sequence.len()),format!("Source chemistry:\n{}\n\nResult chemistry:\n{}\n\nTop 3′ added '{}' / removed '{}'; bottom 3′ added '{}' / removed '{}'\nResult DNA:\n{}\n\n{}",p.source_duplex.describe(),p.repair.duplex.summary().map(|v|v.describe()).unwrap_or_else(|e|e.to_string()),p.repair.top_added_3prime,p.repair.top_removed_3prime,p.repair.bottom_added_3prime,p.repair.bottom_removed_3prime,snippet(p.molecule.sequence.as_str()),p.findings.join("\n")),p.incomplete,p.findings_total,p.findings_truncated)
             };
             view!{<section><h4>{summary}</h4><pre>{details}</pre><p class="helper">{format!("Inherited/operation incompleteness: {incomplete}. {total} findings; excerpt truncated: {truncated}. At most 100 geometries and 240 bases per sequence are shown; the evidence download retains the full native preview.")}</p></section>}
         })}
-        <Show when=move||reviewed.get().is_some()><Show when=move||!repair><label>"Geometry number"<input aria-label="Reusable mismatch PCR geometry" type="number" min="1" prop:value=move||selected.get() on:input=move|e|selected.set(event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" prop:checked=move||save_primers.get() on:change=move|e|save_primers.set(event_target_checked(&e))/>"Save ordered primer collection"</label></Show><label>"Material product name"<input aria-label="Reusable material name" prop:value=move||name.get() on:input=move|e|name.set(event_target_value(&e))/></label><button class="button secondary full" on:click=download.clone()>"Download full material evidence"</button><button class="button primary full" disabled=move||busy.get()||reviewed.with(|r|r.as_ref().is_none_or(|r|match &r.preview {Preview::Mismatch(p)=>!p.reusable(),Preview::Repair(_)=>false})) on:click=open.clone()>"Review reusable material installation"</button></Show>
+        <Show when=move||reviewed.get().is_some()><Show when=move||kind==Kind::MismatchPcr><label>"Geometry number"<input aria-label="Reusable mismatch PCR geometry" type="number" min="1" prop:value=move||selected.get() on:input=move|e|selected.set(event_target_value(&e))/></label></Show><Show when=move||kind!=Kind::EndRepair><label class="checkbox-label"><input type="checkbox" prop:checked=move||save_primers.get() on:change=move|e|save_primers.set(event_target_checked(&e))/>"Save ordered primer collection"</label></Show><label>"Material product name"<input aria-label="Reusable material name" prop:value=move||name.get() on:input=move|e|name.set(event_target_value(&e))/></label><button class="button secondary full" on:click=download.clone()>"Download full material evidence"</button><button class="button primary full" disabled=move||busy.get()||reviewed.with(|r|r.as_ref().is_none_or(|r|match &r.preview {Preview::Mismatch(p)=>!p.reusable(),Preview::Repair(_)=>false,Preview::OverlapExtension(p)=>!p.reusable()})) on:click=open.clone()>"Review reusable material installation"</button></Show>
     </details>}
 }

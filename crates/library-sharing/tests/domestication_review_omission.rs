@@ -18,7 +18,7 @@ fn event(w: &Workspace, index: usize) -> EventBinding {
 #[test]
 fn current_designer_review_is_omitted_while_actual_native_run_and_sources_replay() {
     let (input, request) = fixture::fixture(Topology::Linear);
-    let prepared = preparation::materialize(&input, &request).unwrap();
+    let prepared = preparation::materialize(&input, &request, None).unwrap();
     assert!(prepared.proposal_ready, "{:?}", prepared.proposal_findings);
     let source = Molecule::dna(
         "Unrelated private construct",
@@ -104,7 +104,7 @@ fn current_designer_review_is_omitted_while_actual_native_run_and_sources_replay
     );
     assert!(replay.products_match);
     assert_eq!(workspace::save_workspace(&w).unwrap(), before);
-    for unsupported in ["domestication-intent-v1", "domestication-intent-v3"] {
+    for unsupported in ["domestication-intent-v1", "domestication-intent-v2"] {
         let mut bad = w.clone();
         bad.attachments.get_mut(&hash).unwrap().kind = unsupported.into();
         assert!(sharing::project_document_closure(&bad, &selection).is_err());

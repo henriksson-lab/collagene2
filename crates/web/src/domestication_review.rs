@@ -753,7 +753,7 @@ mod tests {
             analysis::Primer,
             chemistry::Strand,
             material_derivation as native,
-            run_material::{self, MaterialOrigin},
+            run_material::MaterialOrigin,
             verification::{self, PlanInput},
             workspace,
         };

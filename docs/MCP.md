@@ -998,3 +998,23 @@ from physical verification. A matched end family cannot repair a wrong independe
 target, and a valid generic blunt ligation does not establish TA/GC profile match.
 Current batch records are schema2. See [tailing libraries](TAILING_SOURCE_LIBRARIES.md)
 and [saved domestication](DOMESTICATION_SAVED_MATERIAL.md).
+
+### Reusable overlap-extension PCR material
+
+The existing `material_derivation` tool adds
+`PreviewOverlapExtensionPcr { source, origin, preparation }`. The source is an
+exact native event; saved origins are small `MaterialSelection` handles freshly
+resolved within the supplied immutable session workspace. Six explicit oligos
+and extension conditions declare the physical recipe. The bounded summary
+returns `reusable`, an optional `selection` containing exact preview/product
+revisions, product metadata, retained findings and the full documentary artifact.
+No preview installs a material document.
+
+`Install` accepts `OverlapExtensionPcr { preparation, selection }` through the
+existing native derivation request. Fresh native execution, unique supported
+PCR geometries, matching source/event/origin and exact selected outer product
+are required before the new session workspace/archive is committed. Optional
+primer export contains the six newly performed uses; historical source primers
+remain ancestry. Native replay and source closure govern later Derived reuse.
+No intended target, cloning success, isolation, stock quantity or probability is
+invented. There is no additional MCP tool or external scientific executable.

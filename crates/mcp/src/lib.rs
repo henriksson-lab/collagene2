@@ -1013,6 +1013,10 @@ pub struct MaterialPcrChoice {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub enum MaterialDerivationOperation {
+    OverlapExtensionPcr {
+        preparation: collagene_core::overlap_extension_pcr::Request,
+        selection: collagene_core::material_derivation::OverlapExtensionSelection,
+    },
     ExactPcr {
         forward: Primer,
         reverse: Primer,
@@ -1046,6 +1050,11 @@ pub struct MaterialDerivationInstallRequest {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub enum MaterialDerivationTask {
+    PreviewOverlapExtensionPcr {
+        source: collagene_core::run_lineage::EventBinding,
+        origin: MaterialDerivationOrigin,
+        preparation: collagene_core::overlap_extension_pcr::Request,
+    },
     PreviewPcr {
         source: collagene_core::run_lineage::EventBinding,
         origin: MaterialDerivationOrigin,
@@ -2851,12 +2860,12 @@ impl CollageneServer {
         }
         Ok(())
     }
-    fn material_derivation_source(
+    fn material_derivation_source<'a>(
         &self,
-        workspace: &workspace::Workspace,
+        workspace: &'a workspace::Workspace,
         event: &collagene_core::run_lineage::EventBinding,
         origin: &collagene_core::material_derivation::SourceOrigin,
-    ) -> Result<Molecule, ErrorData> {
+    ) -> Result<&'a Molecule, ErrorData> {
         origin.validate_shallow_for(event).map_err(bad)?;
         workspace.validate().map_err(bad)?;
         let exact = workspace
@@ -2889,7 +2898,7 @@ impl CollageneServer {
             .get(&event.revision)
             .ok_or_else(|| bad("material source revision is absent"))?;
         collagene_core::model::bounds::model_preflight(&[source]).map_err(bad)?;
-        Ok(source.clone())
+        Ok(source)
     }
     fn restore_workspace(
         &self,
@@ -6484,7 +6493,7 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
         }).await
     }
     #[tool(
-        description = "Preview or install target-free native exact PCR, intentional-mismatch PCR, catalog digestion or saved-material end repair from an exact current source event in an immutable workspace. Preview tasks return bounded metadata plus complete reference/geometry artifacts; they create no material documents. Install freshly reconstructs actual source strands, validates the literal selected PCR geometry or actual digest fragment and atomically returns a NEW session workspace, receipt and native archive, with optional newly performed PCR primers. No independent target, isolation, yield, experimental success, database write or filesystem authority is fabricated. Pass saved-origin MaterialSelection handles and explicit PCR preview index/revision only; closed capsules and whole amplicon geometry are resolved natively, never copied into requests. Saved Run/Derived handles must match their exact retained source events; marked reference-only documents cannot bypass replay as plain originals."
+        description = "Preview or install target-free native exact PCR, intentional-mismatch PCR, overlap-extension PCR, catalog digestion or saved-material end repair from an exact current source event in an immutable workspace. Preview tasks return bounded metadata plus complete reference/geometry artifacts; they create no material documents. Install freshly reconstructs actual source strands, validates the literal selected PCR geometry or actual digest fragment and atomically returns a NEW session workspace, receipt and native archive, with optional newly performed PCR primers. No independent target, isolation, yield, experimental success, database write or filesystem authority is fabricated. Pass saved-origin MaterialSelection handles and explicit PCR preview index/revision or OE context/product revisions only; closed capsules and whole amplicon geometry are resolved natively, never copied into requests. Saved Run/Derived handles must match their exact retained source events; marked reference-only documents cannot bypass replay as plain originals."
     )]
     async fn material_derivation(
         &self,
@@ -6497,6 +6506,15 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             struct MaterialPreviewEvidence<'a,T:Serialize,P:Serialize>{workspace:&'a WorkspaceRef,source:&'a collagene_core::run_lineage::EventBinding,parameters:P,preview:&'a T}
             let mut workspace=server.restore_workspace(&args.workspace)?;
             match args.task {
+                MaterialDerivationTask::PreviewOverlapExtensionPcr{source,origin,preparation}=>{
+                    let origin=server.resolve_material_derivation_origin(&workspace,&source,&origin)?;
+                    server.material_derivation_source(&workspace,&source,&origin)?;
+                    let context=native::overlap_extension_preview_revision(&workspace,&source,&origin,&preparation).map_err(bad)?;
+                    let preview=native::preview_overlap_extension(&workspace,&source,&origin,&preparation).map_err(bad)?;
+                    preview.validate_binding(&context).map_err(bad)?;
+                    let artifact=server.text_artifact(bounded_json_limit(&MaterialPreviewEvidence{workspace:&args.workspace,source:&source,parameters:&preparation,preview:&preview},32*1024*1024)?,"application/json","material-overlap-extension-pcr-preview.json")?;
+                    output(json!({"workspace":args.workspace,"source":source,"context_revision":context,"reusable":preview.reusable(),"selection":preview.selection().ok(),"product":preview.product.as_ref().map(|m|json!({"revision":m.revision(),"length":m.sequence.len(),"topology":m.topology})),"incomplete":preview.incomplete,"findings":preview.findings,"findings_total":preview.findings_total,"findings_truncated":preview.findings_truncated,"artifact_id":artifact,"authority":"Source-bound target-free OE PCR preview only. Both source PCR branches, reciprocal extension and outer PCR are freshly executed. Explicit installation repeats native execution and retains all six new primer uses; no independent target, isolation, yield or experimental success is established."}))
+                },
                 MaterialDerivationTask::PreviewPcr{source,origin,forward,reverse,template_strand}=>{
                     let origin=server.resolve_material_derivation_origin(&workspace,&source,&origin)?;
                     let molecule=server.material_derivation_source(&workspace,&source,&origin)?;
@@ -6560,6 +6578,7 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
                             let geometry=preview.preview.report.products.get(selection.selected_index).cloned().ok_or_else(||bad("The selected mismatch-PCR geometry is unavailable."))?;
                             native::Derivation::MismatchPcr{forward,reverse,options,selection:native::MismatchPcrSelection{selected_index:selection.selected_index,expected_preview_revision:selection.expected_preview_revision,geometry}}
                         },
+                        MaterialDerivationOperation::OverlapExtensionPcr{preparation,selection}=>native::Derivation::OverlapExtensionPcr{preparation,selection},
                         MaterialDerivationOperation::EndRepair{method}=>native::Derivation::EndRepair{method},
                         MaterialDerivationOperation::CatalogDigest{selection,options,fragment_index}=>native::Derivation::CatalogDigest{selection,options,fragment_index},
                     };

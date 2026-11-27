@@ -1,7 +1,7 @@
 # Binary worker protocol
 
 The web worker and native adapters share Rust DTOs in `core::protocol` and the
-same deterministic scientific engines. Current schemas are worker **110**,
+same deterministic scientific engines. Current schemas are worker **111**,
 candidate **30** and native workspace plan **28**; the verifier is **science-31**.
 Only current internal encodings are accepted. Unsupported development versions
 have no decoder, migration or capability ladder.
@@ -236,6 +236,7 @@ when an internal enum layout changes.
 | 185 | `ListTopoGraphs` |
 | 186 | `CaptureTopoGraph` |
 | 187 | `InspectTopoGraph` |
+| 188 | `InspectMaterialOverlapExtension` |
 
 ## Current result tags
 
@@ -422,6 +423,7 @@ when an internal enum layout changes.
 | 175 | `TopoGraphsListed` |
 | 176 | `TopoGraphCaptured` |
 | 177 | `TopoGraphInspected` |
+| 178 | `MaterialOverlapExtensionPreview` |
 
 ## Current source and evidence contracts
 
@@ -485,3 +487,16 @@ exact retained event and owner before preparation. Response validation checks th
 caller-computed context and documentary correspondence without restoring material.
 Library method values include explicit keyed TA/GC additions and current batch
 records use schema2 with required-nullable typed end-family evidence.
+
+## Target-free reusable overlap-extension PCR
+
+`InspectMaterialOverlapExtension` (request188, result178) carries the exact owning
+workspace, source event, explicit original/saved origin and six-oligo preparation.
+Admission verifies that complete binding before sequence search. Its context binds
+the source event, workspace, origin and preparation; the independently selected
+outer product revision cannot be supplied as material authority. Installation uses
+the existing generic material-derivation lane and freshly executes the retained
+recipe. The inspector and saved derivation share one native OE executor.
+Both branches and outer PCR require unique supported geometry. Inherited
+incomplete evidence survives outer PCR and archive restart. No intended assembly
+target is generated or assessed. Only current worker111 is accepted.

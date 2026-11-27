@@ -1,24 +1,21 @@
 //! Target-free digest inspection of freshly reconstructed overlap-extension PCR.
 //! Imported summaries never restore physical state; saved origins are replayed.
 use crate::{
-    Error, Molecule, Topology,
-    annotations::{self, MappingSegment},
-    assembly_recipe,
+    Error, Molecule, assembly_recipe,
     catalog_digest::{self, CatalogSelection},
     chemistry,
     modified_duplex::TrackedDuplex,
-    overlap_extension::{self, Geometry},
+    overlap_extension::Geometry,
     overlap_extension_pcr,
     pcr_digest_inspection::GeometrySummary,
     restriction_inspection::{self, InspectionOptions, RestrictionInspection},
     run_lineage::EventBinding,
     run_material::{MaterialOrigin, MaterialSelection},
-    verification::{self, PcrDocument},
+    verification,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeSet, io::Write};
+use std::io::Write;
 pub const ENGINE_VERSION: &str = "overlap-extension-digest-inspection-2";
-const MAX_GEOMETRIES: usize = 10_000;
 const MAX_BYTES: usize = 32 << 20;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
 dto! {pub struct Request {pub source_role:String,pub preparation:overlap_extension_pcr::Request,pub selection:CatalogSelection,pub options:InspectionOptions}}
@@ -156,104 +153,6 @@ pub fn inspection_revision(
         request,
     )
 }
-fn pcr_stage(
-    stage: &str,
-    template: &Molecule,
-    result: Result<Vec<PcrDocument>, Error>,
-    findings: &mut Vec<String>,
-) -> Result<(PcrStage, Option<PcrDocument>), Error> {
-    let documents = match result {
-        Ok(documents) => documents,
-        Err(error) => {
-            findings.push(format!("{stage} PCR could not complete: {error}"));
-            return Ok((
-                PcrStage {
-                    stage: stage.into(),
-                    template_revision: template.revision(),
-                    geometries: vec![],
-                    product_revision: None,
-                    product_length: None,
-                },
-                None,
-            ));
-        }
-    };
-    if documents.len() > MAX_GEOMETRIES {
-        return Err(Error::TooLarge);
-    }
-    let geometries = documents
-        .iter()
-        .enumerate()
-        .map(|(index, p)| GeometrySummary {
-            template_strand: p.geometry.template_strand,
-            index,
-            forward_start: p.geometry.forward_start,
-            reverse_start: p.geometry.reverse_start,
-            product_length: p.molecule.sequence.len(),
-        })
-        .collect();
-    let product = if documents.len() == 1 {
-        documents.into_iter().next()
-    } else {
-        findings.push(format!("{stage} PCR retained{} geometries; downstream material is withheld rather than selecting a sequence matching an intended product.",documents.len()));
-        None
-    };
-    let summary = PcrStage {
-        stage: stage.into(),
-        template_revision: template.revision(),
-        geometries,
-        product_revision: product.as_ref().map(|p| p.molecule.revision()),
-        product_length: product.as_ref().map(|p| p.molecule.sequence.len()),
-    };
-    if let Some(p) = &product {
-        findings.extend(p.findings.iter().take(100).cloned());
-    }
-    Ok((summary, product))
-}
-fn project(
-    source: &Molecule,
-    offset: usize,
-    product: &mut Molecule,
-    findings: &mut Vec<String>,
-) -> Result<(), Error> {
-    if source.features.is_empty() {
-        return Ok(());
-    }
-    let projected = annotations::project_features_with_topology(
-        source,
-        &[MappingSegment {
-            source_start: 0,
-            source_end: source.sequence.len(),
-            destination_start: offset,
-            reverse: false,
-        }],
-        product.sequence.len(),
-        product.topology,
-    )?;
-    product.features.extend(projected.features);
-    if !projected.unmapped_features.is_empty() {
-        product.metadata.insert(
-            format!("annotation_mapping:unmapped:{}", source.revision()),
-            serde_json::to_string(&projected.unmapped_features).map_err(|_| Error::TooLarge)?,
-        );
-    }
-    findings.extend(
-        projected
-            .warnings
-            .iter()
-            .take(100)
-            .map(|s| s.chars().take(2048).collect()),
-    );
-    let mut seen = BTreeSet::new();
-    let mut features = Vec::with_capacity(product.features.len());
-    for feature in product.features.drain(..) {
-        if seen.insert(assembly_recipe::hash(&feature)?) {
-            features.push(feature);
-        }
-    }
-    product.features = features;
-    Ok(())
-}
 pub fn inspect(
     source: &Molecule,
     origin: Option<&MaterialOrigin>,
@@ -263,29 +162,6 @@ pub fn inspect(
     let context_revision = inspection_revision(source, origin, request, workspace)?;
     let mut findings=vec!["Fresh ideal exact-PCR branches, selected reciprocal extension and outer PCR, followed by the pinned assumed-complete digest. There is no intended target input. Geometry uniqueness is conditional on this model and is not experimental isolation or reaction success.".into()];
     let material = origin.map(|origin| origin.replay(source)).transpose()?;
-    // The same actual source frames bound both first-branch PCRs. This readonly
-    // work estimate borrows the already fresh material, never replays for cost.
-    if let Some(material) = material
-        .as_ref()
-        .filter(|m| m.tracked().duplex.nicks.is_empty())
-    {
-        let preparation = assembly_recipe::Preparation::OverlapExtensionPcrCatalogDigest {
-            request: request.preparation.clone(),
-            selection: request.selection.clone(),
-            fragment_index: 0,
-            repair: None,
-        };
-        for pair in [&request.preparation.left, &request.preparation.right] {
-            let template = crate::pcr_source::Template::fresh(
-                source,
-                material.tracked(),
-                pair.template_strand,
-            )?;
-            if assembly_recipe::preparation_work_from_frame(template, &preparation)? > 100_000_000 {
-                return Err(Error::TooLarge);
-            }
-        }
-    }
     let origin_evidence = origin
         .zip(material.as_ref())
         .map(|(origin, material)| {
@@ -307,101 +183,33 @@ pub fn inspect(
         findings.push("Source strands and chemistry were freshly reconstructed from the exact retained native Run/Derived event; inherited limitations remain applicable. This does not establish experimental isolation.".into());
         findings.extend(material.findings().iter().map(|s| format!("Origin: {s}")));
     }
-    let initial = |pair: &overlap_extension_pcr::PrimerPair| {
-        if let Some(material) = &material {
-            verification::simulate_pcr_documents_from_fresh(
-                source,
-                &pair.forward,
-                &pair.reverse,
-                material.tracked(),
-                pair.template_strand,
-            )
-        } else {
-            verification::simulate_pcr_documents(
-                source,
-                &pair.forward,
-                &pair.reverse,
-                pair.template_strand,
-            )
-        }
-    };
-    let (left_stage, left) = pcr_stage(
-        "left",
+    let executed = crate::overlap_extension_execution::execute(
         source,
-        initial(&request.preparation.left),
-        &mut findings,
+        material.as_ref().map(|m| m.tracked()),
+        &request.preparation,
     )?;
-    let (right_stage, right) = pcr_stage(
-        "right",
-        source,
-        initial(&request.preparation.right),
-        &mut findings,
-    )?;
-    let mut pcr_stages = vec![left_stage, right_stage];
-    let mut extension = None;
-    let mut amplicon = None;
+    incomplete |= executed.incomplete;
+    findings.extend(executed.findings);
+    let pcr_stages = executed.stages;
+    let extension = executed.extension;
+    let amplicon = executed.product;
     let mut inspection = None;
-    if let (Some(left), Some(right)) = (left, right) {
-        let a = TrackedDuplex::exact_pcr(&left.molecule.sequence)?;
-        let b = TrackedDuplex::exact_pcr(&right.molecule.sequence)?;
-        match a.overlap_extend(&b, &request.preparation.extension) {
-            Ok((extended, geometry)) => {
-                incomplete |=
-                    !geometry.terminal_pairings.complete || !geometry.terminal_pairings.unique;
-                findings.extend(geometry.warnings.iter().take(100).cloned());
-                let mut reference = extended
-                    .duplex
-                    .molecule("Fresh reciprocal overlap-extension substrate")?;
-                project(&left.molecule, 0, &mut reference, &mut findings)?;
-                project(
-                    &right.molecule,
-                    a.duplex.top.len() - request.preparation.extension.overlap,
-                    &mut reference,
-                    &mut findings,
-                )?;
-                let outer = &request.preparation.outer;
-                let (outer_stage, product) = pcr_stage(
-                    "outer",
-                    &reference,
-                    verification::simulate_pcr_documents_from_fresh(
-                        &reference,
-                        &outer.forward,
-                        &outer.reverse,
-                        &extended,
-                        outer.template_strand,
-                    ),
-                    &mut findings,
-                )?;
-                pcr_stages.push(outer_stage);
-                if let Some(product) = product {
-                    if incomplete {
-                        findings.push("The selected actual digest is conditional: originating/terminal-pair uncertainty remains incomplete. Selecting a fragment never resolves alternative pairings or upgrades whole-plan status.".into());
-                    }
-                    let physical = TrackedDuplex::exact_pcr(&product.molecule.sequence)?;
-                    let catalog = catalog_digest::builtin_catalog()?;
-                    let enzymes = request.selection.resolved_enzymes(&catalog)?;
-                    let result = restriction_inspection::inspect_fresh_duplex(
-                        &request.source_role,
-                        &product.molecule,
-                        &enzymes,
-                        &request.options,
-                        &physical.duplex,
-                    )?;
-                    incomplete |= !result.scan_complete || !result.products_determined;
-                    inspection = Some(result);
-                    amplicon = Some(product.molecule);
-                } else {
-                    incomplete = true;
-                }
-                extension = Some(geometry);
-            }
-            Err(error) => {
-                incomplete = true;
-                findings.push(format!("Reciprocal extension unavailable: {error}"));
-            }
+    if let Some(product) = &amplicon {
+        if incomplete {
+            findings.push("The selected actual digest is conditional: originating/terminal-pair uncertainty remains incomplete. Selecting a fragment never resolves alternative pairings or upgrades whole-plan status.".into());
         }
-    } else {
-        incomplete = true;
+        let physical = TrackedDuplex::exact_pcr(&product.sequence)?;
+        let catalog = catalog_digest::builtin_catalog()?;
+        let enzymes = request.selection.resolved_enzymes(&catalog)?;
+        let result = restriction_inspection::inspect_fresh_duplex(
+            &request.source_role,
+            product,
+            &enzymes,
+            &request.options,
+            &physical.duplex,
+        )?;
+        incomplete |= !result.scan_complete || !result.products_determined;
+        inspection = Some(result);
     }
     let preview = Preview {
         engine_version: ENGINE_VERSION.into(),
@@ -440,43 +248,13 @@ impl Preview {
                 "invalid preview context, source or bounded stage evidence",
             ));
         }
-        for (i, p) in self.pcr_stages.iter().enumerate() {
-            if p.stage != ["left", "right", "outer"][i]
-                || !hex(&p.template_revision)
-                || i < 2 && p.template_revision != self.source_revision
-                || p.geometries.len() > MAX_GEOMETRIES
-            {
-                return Err(bad("invalid native PCR stage binding"));
-            }
-            for (index, g) in p.geometries.iter().enumerate() {
-                let expected_strand = [
-                    self.request.preparation.left.template_strand,
-                    self.request.preparation.right.template_strand,
-                    self.request.preparation.outer.template_strand,
-                ][i];
-                if g.template_strand != expected_strand
-                    || g.index != index
-                    || g.product_length == 0
-                    || g.product_length > crate::model::MAX_SEQUENCE_LEN
-                    || g.forward_start > crate::model::MAX_SEQUENCE_LEN
-                    || g.reverse_start > crate::model::MAX_SEQUENCE_LEN
-                {
-                    return Err(bad("invalid native PCR geometry summary"));
-                }
-            }
-            match (&p.product_revision, p.product_length) {
-                (Some(revision), Some(length))
-                    if p.geometries.len() == 1
-                        && hex(revision)
-                        && length == p.geometries[0].product_length => {}
-                (None, None) if p.geometries.len() != 1 => {}
-                _ => {
-                    return Err(bad(
-                        "only a native singleton PCR may expose a selected stage product",
-                    ));
-                }
-            }
-        }
+        crate::overlap_extension_execution::validate_evidence(
+            &self.source_revision,
+            &self.request.preparation,
+            &self.pcr_stages,
+            &self.extension,
+            &self.amplicon,
+        )?;
         size(self)?;
         match (
             &self.origin_revision,
@@ -499,62 +277,7 @@ impl Preview {
             }
             _ => return Err(bad("saved-origin documentary binding changed")),
         }
-        if let Some(g) = &self.extension {
-            if g.engine_version != overlap_extension::ENGINE_VERSION
-                || g.options != self.request.preparation.extension
-                || g.homology.len() != g.options.overlap
-                || g.mappings.len() > 8
-                || g.fill.mappings.len() > 8
-                || g.source_geometry_revisions.iter().any(|s| !hex(s))
-                || g.terminal_pairings.overlaps.len() > g.options.max_candidates
-                || g.terminal_pairings.comparisons > g.options.max_comparisons
-                || g.terminal_pairings.unique
-                    && (!g.terminal_pairings.complete
-                        || g.terminal_pairings.first_alternative.is_some())
-                || g.fill.source != g.annealed
-                || g.fill.method != chemistry::EndRepairMethod::FillFivePrimeOverhangs
-                || self.pcr_stages[0].product_length != Some(g.annealed.top.len())
-                || self.pcr_stages[1].product_length != Some(g.annealed.bottom.len())
-                || self.pcr_stages.len() != 3
-            {
-                return Err(bad(
-                    "extension evidence differs from actual singleton branch lengths/options",
-                ));
-            }
-        } else if self.pcr_stages.len() != 2 || self.amplicon.is_some() || self.inspection.is_some()
-        {
-            return Err(bad(
-                "downstream products require retained native extension evidence",
-            ));
-        }
-        if let Some(m) = &self.amplicon {
-            crate::model::bounds::model_preflight(&[m])?;
-            m.validate()?;
-            let outer = &self.pcr_stages[2];
-            let amplicon_revision = m.revision();
-            if m.topology != Topology::Linear
-                || outer.product_length != Some(m.sequence.len())
-                || outer.product_revision.as_deref() != Some(amplicon_revision.as_str())
-                || m.metadata.get("pcr:template_revision") != Some(&outer.template_revision)
-                || m.metadata.get("pcr:engine_version").map(String::as_str)
-                    != Some(verification::ENGINE_VERSION)
-                || m.metadata.get("pcr:primers")
-                    != Some(
-                        &serde_json::to_string(&(
-                            &self.request.preparation.outer.forward,
-                            &self.request.preparation.outer.reverse,
-                        ))
-                        .map_err(|_| Error::TooLarge)?,
-                    )
-            {
-                return Err(bad("outer amplicon differs from its native PCR stage"));
-            }
-        } else if self.inspection.is_some()
-            || self
-                .pcr_stages
-                .get(2)
-                .is_some_and(|p| p.product_revision.is_some())
-        {
+        if self.amplicon.is_none() && self.inspection.is_some() {
             return Err(bad("digest fragments require a native singleton outer PCR"));
         }
         let pipeline_available = self.extension.is_some() && self.amplicon.is_some();

@@ -3,7 +3,7 @@
 The native `sequence_similarity` module, binary worker, Compare panel and
 `search_sequence_library` MCP tool share one bounded collection-search profile.
 The scientific engine is `sequence-similarity-2`; the current worker schema is
-114 (job191, result181). Previous worker versions are rejected directly.
+115 (job191, result181). Previous worker versions are rejected directly.
 
 Each query/subject has a bounded stable source key and its full typed molecule.
 The report context binds those keys, exact molecule revisions, source order,

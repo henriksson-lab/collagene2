@@ -4,8 +4,9 @@
 coordinate import and source-indexed scene preparation, available on native and
 WASM targets. The application's **Tools → Structures** inspector uses this core
 through the binary analysis worker and a WebGL2 point/connection viewer. Original
-files are retained as workspace attachments. MCP structure tools, RNA modification
-semantics and antibody-specific analysis remain separate planned work.
+files are retained as workspace attachments. The native/embedded MCP registry
+also exposes fresh source import and inspection. RNA modification semantics and
+antibody-specific analysis remain separate planned work.
 
 ## Open and inspect
 
@@ -126,6 +127,50 @@ chooses the frontmost visible point. Fixed point sizes and element colors are
 display conventions, not atomic radii. The selected atom receives an orange
 highlight. Unsupported or unresolved deposited connections remain counted rather
 than being filled in with guessed bonds.
+
+## MCP source import and inspection
+
+`import_structure` accepts a complete ASCII source as `text`, explicit `format`
+(`Pdb` or `Mmcif`) and optional native `selection`. The MCP source limit is 4 MiB;
+the portable parser's larger application limit is unchanged. The response supplies
+an immutable source handle, full report artifact and at most 32 selected-atom
+preview rows. It also reports model IDs, selected atom/edge counts and unresolved
+or withheld connections. No sequence document or cloning result is installed.
+
+```json
+{"text":"<complete PDB file>","format":"Pdb","selection":null}
+```
+
+Use the returned source handle with `inspect_structure` to reimport its original
+bytes and recompute a different view. The selection schema is shared directly
+with the Rust worker/viewer, including separate label/author chain identifiers.
+
+```json
+{
+  "source":{"id":"<returned source hash>","revision":"<same source hash>"},
+  "selection":{
+    "model":1,
+    "chains":{"Author":"A"},
+    "alternates":{"Named":"A"},
+    "hydrogens":false
+  }
+}
+```
+
+`chains: "All"` selects all chains; `{"Label":"X"}` selects a label chain;
+`{"Author":null}` selects blank/undeclared author IDs. `alternates: "All"`
+shows all deposited alternate labels. A named alternate also includes unlabelled
+atoms; the same display semantics and connection restrictions apply as in the UI.
+
+Original text and full JSON report are published atomically as session artifacts.
+They use the ordinary 128-artifact/64 MiB session budgets; insufficient capacity
+publishes neither new artifact. Read either artifact using `read_artifact` and
+follow `next_start` to `done`. Original text chunks concatenate byte-exactly,
+including CRLF. Report artifacts cannot masquerade as source handles, stale
+revisions refuse, and reinspection computes from source rather than accepting a
+stored report as fresh evidence. Identical source/options deduplicate artifacts.
+No host path, URL, external scientific program or browser workspace is accessed.
+Thin WebMCP's page-scoped capability set is unchanged.
 
 ## Specifications and verification
 

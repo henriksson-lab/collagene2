@@ -29,6 +29,7 @@ pub(crate) fn bad(line: usize, message: &'static str) -> Error {
     Error::Invalid { line, message }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Format {
     Pdb,
     Mmcif,

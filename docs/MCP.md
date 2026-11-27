@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current registry has 190 tools. Internal exchange uses only worker 100, candidate 26, native workspace plan 24, verifier `science-27`, and assembly draft 15. Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
+The current registry has 192 tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol.rs), [workspace plan](../crates/core/src/workspace.rs), [verifier](../crates/core/src/verification.rs) and [assembly draft](../crates/core/src/assembly_library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
 add exact-version matrix paging, native inspection, historical capture/list/open
 and explicit fresh replay. [Batch contracts](COMBINATORIAL_BATCHES.md).
 Reference recombination retains explicit profile discovery, source inspection,
@@ -16,6 +16,16 @@ Sequence-file exchange provides `import_compat_sequence`, `export_snapgene` and
 review without an artifact until omissions are acknowledged, and restrictive
 physical or modified-protein evidence cannot be erased through that choice.
 [Selected profiles and controls](SEQUENCE_COMPATIBILITY_CONTROLS.md).
+
+Structure coordinates use `import_structure` and `inspect_structure`. Explicit
+PDB/mmCIF text is capped at 4 MiB; both tools run fresh native import/scene
+preparation. A source handle binds exact original bytes, while separate report
+artifacts bind display options and original atom indices. Original/report artifact
+publication is atomic, with the ordinary session storage/item budgets. Preview
+rows are bounded; full data uses `read_artifact` chunks. No molecule, candidate,
+material or browser workspace is installed. These native/embedded stdio tools do
+not expand thin WebMCP's page-scoped permissions.
+[Coordinate profiles and tool examples](STRUCTURE_IMPORT.md).
 
 Build and configure:
 

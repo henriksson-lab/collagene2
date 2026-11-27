@@ -4167,7 +4167,21 @@ An obsolete unused run-only conversion helper and its test-only guard are remove
 fixture callers use the current typed material representation directly. Main
 branch CI now lets an active cross-platform check finish while retaining the
 latest pending batch, so frequent pushes do not repeatedly cancel Windows work.
-Graphical/performance acceptance, exact-source CI, structure MCP access, RNA
+Graphical/performance acceptance, exact-source CI, RNA
 modification semantics and antibody-specific analysis remain in scope.
 The final integrated web/worker WASM check also passes; no browser or application
 HTTP checks were run.
+
+Native/embedded MCP now exposes `import_structure` and `inspect_structure`, taking
+the shared typed display selection and original text up to 4 MiB. Fresh import
+and inspection publish exact source/full-report artifacts atomically and return
+bounded previews. Immutable source roles and hashes refuse stale/foreign handles;
+reports are not accepted as sources or cloning authority. The registry contains
+192 tools. Three focused SDK/admission cases and the optional schema feature's
+WASM check pass; existing passing parser fixtures were not rerun.
+
+The public 8082 preview is refreshed to the statically validated `10422ac` frontend
+artifact with its current viewer and pinned worker. No browser/application HTTP
+checks were used. The preceding fixture correction (`540c7e0`) is now green on all
+three native CI platforms and web. Current-source CI and the full delivery gates
+remain separate; the goal is not complete.

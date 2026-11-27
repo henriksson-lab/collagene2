@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 190;
+pub const CURRENT_TOOL_COUNT: usize = 192;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -1315,6 +1315,25 @@ pub struct SimilarityQuery {
     pub subjects: Vec<DocumentRef>,
     #[serde(default)]
     pub options: collagene_core::sequence_similarity::Options,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StructureImport {
+    /// Complete ASCII PDB/mmCIF file, at most 4 MiB. Original line endings remain evidence.
+    pub text: String,
+    pub format: collagene_core::structure_view::coordinates::Format,
+    /// Null chooses the lowest model ID, all chains/alternates and deposited H/D.
+    #[serde(default)]
+    pub selection: Option<collagene_core::structure_view::coordinates::scene::Selection>,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StructureInspect {
+    /// Exact source handle returned by import_structure; not a molecule or report handle.
+    pub source: EvidenceRef,
+    #[serde(default)]
+    pub selection: Option<collagene_core::structure_view::coordinates::scene::Selection>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -2651,6 +2670,42 @@ impl CollageneServer {
             });
         }
         Ok((ids[0].clone(), ids[1].clone()))
+    }
+    fn structure_output(
+        &self,
+        original: String,
+        report: &collagene_core::structure_view::Prepared,
+    ) -> Result<CallToolResult, ErrorData> {
+        use collagene_core::structure_view::coordinates::Format;
+        if blake3::hash(original.as_bytes()).to_hex().as_str() != report.source_hash {
+            return Err(bad("structure report does not bind its original source"));
+        }
+        let encoded = bounded_json(report)?;
+        let (mime, filename) = match report.format {
+            Format::Pdb => ("chemical/x-pdb", "structure.pdb"),
+            Format::Mmcif => ("chemical/x-mmcif", "structure.cif"),
+        };
+        let (source, artifact) = self.paired_text_artifacts([
+            (original, mime, filename),
+            (encoded, "application/json", "structure-view.json"),
+        ])?;
+        let models = report
+            .atoms
+            .iter()
+            .map(|a| a.model)
+            .collect::<BTreeSet<_>>();
+        output(
+            json!({"source":{"id":source,"revision":source},"artifact_id":artifact,
+            "source_hash":report.source_hash,"context_revision":report.revision,"engine":report.engine,"format":report.format,
+            "atom_count":report.atoms.len(),"models":models,"selection":report.scene.selection,
+            "selected_atom_count":report.scene.points.len(),"declared_connection_count":report.notes.connection_declarations,
+            "display_edge_count":report.scene.edges.len(),"unresolved_connections":report.scene.unresolved_connections,
+            "withheld_symmetry_or_relation":report.scene.withheld_symmetry_or_relation,
+            "atoms_without_element":report.notes.atoms_without_element,"atoms_with_alternates":report.notes.atoms_with_alternates,
+            "atom_preview":report.scene.points.iter().take(32).map(|p|json!({"source_atom_index":p.atom_index,"atom":report.atoms[p.atom_index as usize]})).collect::<Vec<_>>(),
+            "atom_preview_truncated":report.scene.points.len()>32,
+            "interpretation":"Imported coordinates only; no fold prediction, sequence correspondence, experimental validity or cloning/material authority."}),
+        )
     }
     fn analysis_artifact(&self, value: &Value) -> Result<String, ErrorData> {
         let text = serde_json::to_string(value).map_err(bad)?;
@@ -5983,6 +6038,69 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
         }).await
     }
     #[tool(
+        description = "Import a complete explicit ASCII PDB/mmCIF coordinate file up to 4 MiB using embedded Rust. Keeps exact original text and a full source/options-bound atom/scene report as immutable session artifacts, reserved atomically. Preserves separate model, label/author, alternate/insertion and deposited connection evidence. Optional typed display selection; null chooses the lowest model ID. Returns a source handle and bounded original-coordinate preview. Does not create molecule documents, infer a sequence link, predict a fold or verify cloning. No host paths, URLs or external software."
+    )]
+    async fn import_structure(
+        &self,
+        Parameters(args): Parameters<StructureImport>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || {
+            if args.text.len() > 4 * 1024 * 1024 {
+                return Err(bad("MCP structure source exceeds 4 MiB"));
+            }
+            let report = collagene_core::structure_view::prepare(
+                args.text.as_bytes(),
+                args.format,
+                args.selection,
+            )
+            .map_err(bad)?;
+            server.structure_output(args.text, &report)
+        })
+        .await
+    }
+    #[tool(
+        description = "Freshly inspect an exact retained structure source handle with a typed model/chain/alternate/H-D selection. Reimports original PDB/mmCIF bytes and recomputes bounded scene geometry in Rust; a cached display report is never replayed as fresh evidence. Returns a bounded atom preview plus immutable original/full-report artifacts. Refuses stale, unknown, foreign-role source handles, absent model/selection and unsupported syntax. Does not mutate sequence/history, install a candidate/material or infer structure-to-sequence correspondence."
+    )]
+    async fn inspect_structure(
+        &self,
+        Parameters(args): Parameters<StructureInspect>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || {
+            if args.source.id != args.source.revision {
+                return Err(bad("stale structure source revision"));
+            }
+            let (text, format) = {
+                use collagene_core::structure_view::coordinates::Format;
+                let store = server.store.lock().unwrap();
+                let a = store
+                    .artifacts
+                    .get(&args.source.id)
+                    .ok_or_else(|| bad("unknown structure source"))?;
+                let format = match (a.mime_type, a.filename) {
+                    ("chemical/x-pdb", "structure.pdb") => Format::Pdb,
+                    ("chemical/x-mmcif", "structure.cif") => Format::Mmcif,
+                    _ => return Err(bad("artifact is not a retained structure source")),
+                };
+                let ArtifactData::Text(text) = &a.data else {
+                    return Err(bad("artifact is not an original text structure"));
+                };
+                if text.len() > 4 * 1024 * 1024
+                    || blake3::hash(text.as_bytes()).to_hex().as_str() != args.source.revision
+                {
+                    return Err(bad("structure source integrity/bound mismatch"));
+                }
+                (text.clone(), format)
+            };
+            let report =
+                collagene_core::structure_view::prepare(text.as_bytes(), format, args.selection)
+                    .map_err(bad)?;
+            server.structure_output(text, &report)
+        })
+        .await
+    }
+    #[tool(
         description = "Search an explicit bounded collection of immutable DNA/RNA document references using native affine local similarity. Returns one best observed score per subject, original reverse/circular coordinates, ambiguity and explicit score completeness. Exact canonical matches prove a score upper bound; capped origins/work remain incomplete. This is not BLAST statistics, sample identity, cloning verification or a material/candidate install. Full source-bound evidence is retained as a JSON artifact."
     )]
     async fn search_sequence_library(
@@ -8584,6 +8702,40 @@ pub async fn serve_stdio(
         .waiting()
         .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod structure_artifact_tests {
+    use super::*;
+    #[test]
+    fn source_and_report_capacity_failure_publishes_neither_artifact() {
+        let server = CollageneServer::default();
+        for n in 0..MAX_ITEMS - 1 {
+            server
+                .text_artifact(
+                    format!("Occupied artifact {n}"),
+                    "text/plain",
+                    "occupied.txt",
+                )
+                .unwrap();
+        }
+        let source = "ATOM      1  CA  ALA A   1      11.104  13.207   2.100  1.00 20.00           C  \nEND\n";
+        let report = collagene_core::structure_view::prepare(
+            source.as_bytes(),
+            collagene_core::structure_view::coordinates::Format::Pdb,
+            None,
+        )
+        .unwrap();
+        let before = server.store.lock().unwrap().used;
+        assert!(server.structure_output(source.into(), &report).is_err());
+        let store = server.store.lock().unwrap();
+        assert_eq!(store.used, before);
+        assert_eq!(store.artifacts.len(), MAX_ITEMS - 1);
+        assert!(!store.artifacts.contains_key(&report.source_hash));
+        assert!(store.documents.is_empty());
+        assert!(store.plans.is_empty());
+        assert!(store.workspaces.is_empty());
+    }
 }
 
 mod sequence_exchange_tools;

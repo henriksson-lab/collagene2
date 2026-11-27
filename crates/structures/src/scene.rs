@@ -3,12 +3,14 @@
 use crate::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Chains {
     All,
     Label(String),
     Author(Option<String>),
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Alternates {
     /// Show all deposited alternate locations without claiming coexistence.
     All,
@@ -16,6 +18,7 @@ pub enum Alternates {
     Named(String),
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Selection {
     pub model: u32,

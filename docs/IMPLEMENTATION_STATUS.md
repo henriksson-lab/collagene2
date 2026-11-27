@@ -1867,8 +1867,8 @@ two concurrent tests received the same timestamp-derived name. The helper now
 includes an atomic process-local counter, as the other native disk fixtures do.
 No production behavior, recovery assertion or scientific passing criterion is
 relaxed. Both affected disk-backed fixture groups pass locally. Commit `540c7e0`
-now passes macOS and Linux scientific CI and the web job; Windows was still
-running when checked. [Exact run](https://github.com/henriksson-lab/collagene2/actions/runs/46045090052).
+now passes Windows, macOS and Linux scientific CI and the web job.
+[Exact run](https://github.com/henriksson-lab/collagene2/actions/runs/46045090052).
 
 ### Structure worker, workspace sources and WebGL inspector
 
@@ -1895,3 +1895,27 @@ The final integrated web/worker WASM check also passes. Current-source
 graphical/performance and cross-platform acceptance remain open.
 MCP structure access, RNA modifications and antibody-specific analysis remain
 planned. [Profile and usage](STRUCTURE_IMPORT.md).
+
+### Fresh structure MCP access and public viewer refresh
+
+The native/embedded registry has 192 tools, including `import_structure` and
+`inspect_structure`. Their typed selection schema uses the current shared Rust
+format/chain/alternate types. Fresh native import creates a bounded preview and
+full source/options-bound report; original text and report artifacts publish
+atomically under session limits. Reinspection resolves only exact source-role
+handles, reimports their bytes and refuses stale or foreign report handles. It
+does not install sequence documents, candidates, materials or browser state.
+
+Three focused cases pass: PDB SDK discovery/import/reinspection with byte-exact
+originals and refusal cases; mmCIF SDK nonpolymer identity/namespace checks; and
+atomic capacity refusal with no partial artifact publication. The new optional
+schema feature also passes its WASM compiler check. Scientific parser behavior
+and worker encodings are unchanged. Exact-source cross-platform CI and graphical
+acceptance remain open. [Tool contracts](STRUCTURE_IMPORT.md).
+
+Port 8082 now serves the statically validated `10422ac` viewer frontend from its
+CI artifact: 14 immutable assets with one pinned worker bundle. Only the public
+preview was replaced. Process metadata and startup logs confirm the listener;
+no browser or application HTTP check was run. Main desktop CI now preserves its
+active main-branch build while keeping the latest pending batch, allowing long
+frontend/Windows builds to finish during continued development.

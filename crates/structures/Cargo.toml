@@ -10,6 +10,10 @@ description = "Bounded, source-preserving PDB and mmCIF coordinate import"
 serde.workspace = true
 blake3.workspace = true
 thiserror.workspace = true
+schemars = { version = "1.2", optional = true }
+
+[features]
+json-schema = ["dep:schemars"]
 
 [dev-dependencies]
 serde_json.workspace = true

@@ -1,3 +1,7 @@
+#[cfg(any(target_arch = "wasm32", test))]
+mod rna_model;
+#[cfg(target_arch = "wasm32")]
+mod rna_view;
 #[cfg(target_arch = "wasm32")]
 mod alignment_view;
 #[cfg(target_arch = "wasm32")]

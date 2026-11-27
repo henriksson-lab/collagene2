@@ -253,3 +253,5 @@ mod overlap_extension_execution;
 pub mod sequence_similarity;
 
 pub use collagene_rna_chemistry as rna_chemistry;
+
+pub mod rna_history;

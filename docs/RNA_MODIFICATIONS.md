@@ -3,8 +3,9 @@
 `collagene-rna-chemistry` provides an independent MIT Rust analysis core for
 source-bound RNA base, sugar, backbone and terminal declarations. It is portable
 to native and WASM targets and has optional JSON schemas. This batch supplies the
-scientific core, imported-annotation review, binary worker and native MCP access.
-UI and exact-event workspace capture remain to be integrated. It does not complete F34 or change existing RNA documents.
+scientific core, imported-annotation review, binary worker, native MCP access and
+workspace controls with exact-event declaration storage. Graphical/platform
+acceptance remains outstanding; this does not complete F34.
 
 ## Representation and scope
 
@@ -140,6 +141,57 @@ the original strings. Analysis previews bound stereocenter examples and issue
 positions. Publication obeys the existing session artifact/storage budgets. No tool
 mutates a source, saves a declaration or installs a candidate/material. Thin WebMCP
 and filesystem permissions are unchanged.
+
+## Workspace controls
+
+Open an explicit RNA document and choose **Biology → RNA chemistry**. The panel
+pins an exact retained document event. **Use active RNA version** starts a new
+partial declaration for the selected event; it never silently retargets a saved
+hypothesis to equal sequence content elsewhere. Linear termini initially remain
+unknown. Enter a model statement, choose coverage and termini, and add any residue
+or linkage declarations. Positions shown in the form are one-based; native storage
+remains zero-based. A bond after the final residue exists only on a circle.
+
+Residue controls combine base and sugar chemistry with documentary provenance;
+backbone controls distinguish Rp, Sp and unresolved phosphorothioate stereochemistry.
+Unknown descriptions remain unknown, and a base/sugar combination is checked by
+the native analyzer. Existing entries can be edited or removed. Imported annotation
+reviews merge only their positive component constraints, allowing e.g. separate
+m5C and 2′-O-methyl annotations to describe the same residue. Removing a residue
+also removes its associated reviews and updates surviving entry references.
+
+**Calculate RNA composition** runs through the existing isolated worker. Changes
+to the pinned source, declaration or workspace invalidate the previous response;
+cancellation closes the worker. The report shows formula/mass availability,
+identity limits, unresolved source records and bounded positional diagnostics.
+Report download retains the full declaration/evidence. Residue, linkage and
+annotation lists show at most 50 rows per page.
+
+## Exact-event declaration storage and sharing
+
+**Save RNA declaration** records a named declaration after a successful native
+analysis, including analyses whose quantities remain unavailable. The current
+`rna-declaration-v1` attachment contains record version 1, name, exact source event
+and the current version-2 declaration. No report, mass, freshness flag or measured
+state is cached. Opening restores the hypothesis against the independently retained
+historical source; explicitly calculate to obtain quantities again. Saving and
+deleting change only attachments, leaving source sequences and history intact.
+
+Workspace archive validation rejects dangling/foreign event bindings, changed
+source revisions, unsupported record/declaration versions, incompatible annotation
+reviews, extra fields, invalid roles/hashes and oversized records. Serialization is
+bounded to the declaration limit plus 4 KiB for its event/name wrapper. The ordinary
+workspace attachment and expanded/archive limits still apply. Original annotation
+metadata is preserved; no sequence/material certificate is created.
+
+Whole-workspace saves, browser autosave and offline desktop storage retain these
+attachments. A single-document `.cg2`, GenBank or FASTA export contains the reference
+document, not these separately named hypotheses; use a workspace file or native
+selected-library package to retain them. Selected-document sharing uses closure engine
+`library-document-closure-2`: declarations follow only their exact retained source
+events, including retained ancestry. A declaration for another document with equal
+content is omitted. There is no automatic application of a declaration to a newly
+edited sequence and no compatibility reader for previous internal versions.
 
 ## Primary sources and fixtures
 

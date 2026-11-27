@@ -1970,3 +1970,28 @@ cases selected by the shared fixture name. The integrated web/worker WASM check
 with optional core schemas passes. Exact-event workspace capture and
 UI controls remain to be implemented, followed by antibody-specific work and the
 existing whole-product delivery gates. [RNA contract](RNA_MODIFICATIONS.md).
+
+### RNA workspace forms and exact-event saved hypotheses
+
+Biology now includes typed RNA coverage, termini, base/sugar, linkage/stereochemistry
+and provenance controls. An exact retained source event is pinned independently of
+other equal-content documents. Imported annotations are explicitly reviewed and
+merged by positive component constraints; removing residues updates review entry
+references. Large residue/linkage/annotation lists page at 50 entries. Calculation
+uses a cancellable worker; draft, source or workspace changes clear old results.
+
+The current `rna-declaration-v1` workspace attachment stores record version 1,
+name, exact source event and the current native declaration. It stores no report,
+quantities or freshness flag. Opening restores the historical hypothesis for an
+explicit new calculation. Native workspace validation rejects invalid record roles,
+hashes, versions, extra fields and source/chemistry contradictions. Capture and
+delete preserve source documents/history and obey attachment/expanded byte limits.
+
+Selected publication closure engine 2 retains declarations for exact kept events,
+including retained ancestors. Equal-content records owned by other documents are
+omitted. Whole-workspace/autosave/offline storage retains the sidecars; standalone
+sequence files export their reference document, not saved hypotheses. The native
+archive/sharing/form run passes six distinct cases; the integrated WASM check also
+passes. No browser/application HTTP checks were run. Current
+GUI/platform/performance acceptance, unlinked coordinate publication policy,
+antibody-specific work and the full existing delivery gates remain outstanding.

@@ -14,7 +14,7 @@ use collagene_core::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-pub const ENGINE_VERSION: &str = "library-document-closure-1";
+pub const ENGINE_VERSION: &str = "library-document-closure-2";
 const MAX_REFERENCE_EDGES: usize = 1_000_000;
 
 #[derive(Debug, thiserror::Error)]
@@ -128,6 +128,7 @@ struct Graph<'a> {
     run_assets: BTreeMap<String, String>,
     owners: BTreeMap<String, String>,
     companions: BTreeMap<String, Vec<String>>,
+    event_declarations: BTreeMap<String, Vec<String>>,
     kept_events: BTreeSet<String>,
     kept_revisions: BTreeSet<String>,
     kept_runs: BTreeSet<String>,
@@ -148,6 +149,7 @@ impl<'a> Graph<'a> {
             run_assets: BTreeMap::new(),
             owners: BTreeMap::new(),
             companions: BTreeMap::new(),
+            event_declarations: BTreeMap::new(),
             kept_events: BTreeSet::new(),
             kept_revisions: BTreeSet::new(),
             kept_runs: BTreeSet::new(),
@@ -182,6 +184,14 @@ impl<'a> Graph<'a> {
             } else if a.kind == collagene_core::topo_graph_history::WORKSPACE_ATTACHMENT_KIND {
                 // Native archive validation owns this current graph contract.
                 // An unrelated graph record never publishes its source scope.
+            } else if a.kind == collagene_core::rna_history::KIND {
+                let record: collagene_core::rna_history::Record = serde_json::from_slice(&a.bytes)
+                    .map_err(|_| Error::Unresolved("RNA declaration source"))?;
+                g.edge()?;
+                g.event_declarations
+                    .entry(record.source.event_id)
+                    .or_default()
+                    .push(hash.clone());
             } else if run_evidence(&a.kind) {
                 let owner: EvidenceOwner = serde_json::from_slice(&a.bytes)
                     .map_err(|_| Error::Unresolved("run evidence owner"))?;
@@ -278,6 +288,9 @@ impl<'a> Graph<'a> {
                     return Err(Error::Unresolved("event revision"));
                 }
                 self.kept_revisions.insert(event.revision.clone());
+                if let Some(assets) = self.event_declarations.get(&id) {
+                    self.kept_assets.extend(assets.iter().cloned());
+                }
                 // Actual-strand intent is documentary reference design. Its
                 // small descriptors cannot invent publication parents: every
                 // exact material event must ALREADY be retained native ancestry.

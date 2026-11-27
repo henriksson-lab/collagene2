@@ -396,6 +396,7 @@ impl Workspace {
             }
             charge(&mut expanded, attachment.bytes.len(), MAX_EXPANDED_BYTES)?;
         }
+        crate::rna_history::validate_workspace_records(self)?;
         crate::run_lineage::validate_workspace_runs(self)?;
         crate::material_derivation::validate_workspace_records(self)?;
         crate::topo_graph_history::validate_workspace_records(self)?;

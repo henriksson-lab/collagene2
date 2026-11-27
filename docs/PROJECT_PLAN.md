@@ -4238,3 +4238,23 @@ passes with optional core schemas. No browser/application HTTP checks were run.
 Exact-event declaration capture and workspace UI remain required, as do antibody
 analysis and the existing platform, graphical/performance and interoperability
 acceptance gates. [RNA integration contract](RNA_MODIFICATIONS.md).
+
+### F34 RNA workspace controls and declaration persistence
+
+The Biology panel supplies typed base/sugar, linkage/stereochemistry, terminus,
+coverage and provenance controls with explicit imported-feature review. It pins an
+exact retained source event, pages large lists and clears/cancels stale worker
+results. One-based forms feed the existing current native declaration; no second
+internal chemistry representation or scientific executable is introduced.
+
+Named declaration attachments store only the exact source event and hypothesis,
+not a cached report or mass. Reopening requires explicit fresh calculation. Native
+workspace import/save validates current records and exact source/feature bindings;
+saving/deleting changes attachments only. Selected-document closure engine 2
+retains declarations only for kept exact events, including ancestors, without
+publishing equal-content declarations belonging to another document.
+
+All six focused native archive/sharing/form cases and the integrated WASM check
+pass for this coherent batch. Graphical/performance and installed-platform acceptance,
+antibody-specific work, unlinked structure publication policy and the full existing
+delivery gates remain in scope. Browser/application HTTP checks remain deferred.

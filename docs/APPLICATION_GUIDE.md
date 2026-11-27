@@ -145,7 +145,7 @@ Build the standalone Rust server with `cargo build -p collagene-mcp --release --
 
 To confine managed native files to an existing safe folder, launch it with `--storage-root /absolute/path/to/CollageneData`, or put those two arguments in your MCP client's configuration. It creates private session storage there, uses directory capabilities and retained handles, and enables no arbitrary path-based file tools. The public web preview has no native filesystem API. [Folder configuration and boundaries](LOCAL_STORAGE.md).
 
-The server keeps immutable documents and candidate plans in memory. In the web **Plan** panel, use **Export for AI** to save an exact `.cg2design` snapshot for `import_workspace`; ask the client to save the binary artifact returned by `export_candidate` as `.cg2plan`. Use **Open candidate** to review it and **Verify candidate** to reconstruct it against current browser revisions. The original planning snapshot exchange supports up to 8 MiB. Full `.cg2workspace` archives also pass through MCP with bounded chunk uploads and immutable workspace references, retaining history, candidates and evidence; imported candidates require explicit rebinding and verification. MCP now has 96 tools, including exact dilution/mixture/DNA-ratio calculations, read validation, FASTQ/oligo collections, feature libraries and GFF3/BED annotation datasets. Live synchronization, a hosted HTTP endpoint and authorized persistent application remain pending.
+The server keeps immutable documents and candidate plans in memory. In the web **Plan** panel, use **Export for AI** to save an exact `.cg2design` snapshot for `import_workspace`; ask the client to save the binary artifact returned by `export_candidate` as `.cg2plan`. Use **Open candidate** to review it and **Verify candidate** to reconstruct it against current browser revisions. The original planning snapshot exchange supports up to 8 MiB. Full `.cg2workspace` archives also pass through MCP with bounded chunk uploads and immutable workspace references, retaining history, candidates and evidence; imported candidates require explicit rebinding and verification. [Native MCP tools](MCP.md) include exact dilution/mixture/DNA-ratio calculations, read validation, FASTQ/oligo collections, feature libraries and GFF3/BED annotation datasets. Live synchronization, a hosted HTTP endpoint and authorized persistent application remain pending.
 
 Local viewport measurements and remaining browser/hardware gates are documented in [performance measurements](PERFORMANCE.md).
 
@@ -197,3 +197,16 @@ query and choose the document scope. Search is read-only and shows one best loca
 match per subject, with incomplete origin/work searches disclosed. Click a hit to
 inspect its exact source coordinates; download the source-bound evidence if needed.
 [Search options, bounds and MCP](SEQUENCE_SIMILARITY.md).
+
+## RNA chemistry
+
+With an RNA document open, use **Biology → RNA chemistry**. Pin the active version,
+enter a model statement and explicitly choose coverage and termini. Residue,
+backbone and imported-annotation controls retain position and provenance. Partial,
+unknown or unreviewed chemistry leaves mass unavailable. Calculate in the worker,
+inspect unresolved issues and optionally download the full report.
+
+A named saved declaration retains its exact historical source event in workspace
+files, autosave and offline storage. Opening a declaration does not restore cached
+quantities; calculate again. Selected-document sharing includes declarations only
+for source events in that document's retained ancestry. [Model, controls and limits](RNA_MODIFICATIONS.md).

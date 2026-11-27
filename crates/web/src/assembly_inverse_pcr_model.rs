@@ -140,6 +140,7 @@ pub struct Capture {
     pub context_revision: String,
     pub source: EventBinding,
     pub input_id: String,
+    pub origin: Option<crate::run_origin_model::PinnedOrigin>,
     pub intent_context_revision: String,
     pub target_revision: String,
     pub options: Options,
@@ -163,10 +164,17 @@ fn context(
     intent: &str,
     target: &str,
     options: &Options,
+    origin: Option<&crate::run_origin_model::PinnedOrigin>,
 ) -> Result<String, String> {
-    let bytes = serde_json::to_vec(&(ENGINE_VERSION, event, input_id, intent, target, options))
-        .map_err(|e| e.to_string())?;
-    Ok(blake3::hash(&bytes).to_hex().to_string())
+    receipt(&(
+        ENGINE_VERSION,
+        event,
+        input_id,
+        intent,
+        target,
+        options,
+        origin,
+    ))
 }
 
 /// Rebuild independent intent from the original draft before preparing any
@@ -210,9 +218,15 @@ pub fn capture<I: IntendedEdit + ?Sized>(
         || slot.reverse
         || slot.digest_geometry.is_some()
         || slot.anneal_bottom.is_some()
-        || draft.methods.rows[0].run_origin.is_some()
     {
-        return Err("Inverse-PCR proposals currently require the complete forward original circular reference, without prepared-material or alternative-source ancestry.".into());
+        return Err("Inverse-PCR proposals currently require the complete forward original circular reference, without alternative source geometry. Saved native origins must match the exact source event.".into());
+    }
+    let origin = draft.methods.rows[0].run_origin.clone();
+    if let Some(pin) = &origin {
+        pin.validate_documentary()?;
+        if pin.event() != current_source {
+            return Err("Saved material belongs to another source event.".into());
+        }
     }
     if !(8..=80).contains(&options.forward_length)
         || !(8..=80).contains(&options.reverse_length)
@@ -271,9 +285,11 @@ pub fn capture<I: IntendedEdit + ?Sized>(
             &expected,
             &target_revision,
             options,
+            origin.as_ref(),
         )?,
         source: current_source.clone(),
         input_id: role.input_id.clone(),
+        origin,
         intent_context_revision: expected,
         target_revision,
         options: options.clone(),
@@ -339,6 +355,7 @@ fn receipt(value: &impl Serialize) -> Result<String, String> {
 }
 fn preparation_from_design(report: &InversePcrDesign) -> InversePcrPreparation {
     InversePcrPreparation {
+        context_revision: report.context_revision.clone(),
         source_revision: report.source_revision.clone(),
         target_revision: report.target_revision.clone(),
         options: report.options.clone(),
@@ -372,8 +389,13 @@ pub fn from_design<I: IntendedEdit + ?Sized>(
     let worker_receipt = receipt_with_limit(&report, 32 << 20)?;
     let (captured, source, native) =
         request(draft, intent, current_source, frozen_target, options)?;
-    let mut preparation = mutagenesis::compile_inverse_pcr(&source, frozen_target, &native)
-        .map_err(|e| e.to_string())?;
+    let mut preparation = mutagenesis::compile_inverse_pcr(
+        &source,
+        frozen_target,
+        captured.origin.as_ref().map(|p| p.as_ref()),
+        &native,
+    )
+    .map_err(|e| e.to_string())?;
     if receipt(&preparation)? != receipt(&preparation_from_design(&report))? {
         return Err("The worker inverse-PCR plan, oligos or options differ from the pinned source declaration.".into());
     }
@@ -392,7 +414,8 @@ pub fn from_design<I: IntendedEdit + ?Sized>(
         return Err("The native inverse-PCR input shape changed; inspect the adapter.".into());
     }
     match preparation.plan.steps.first_mut() {
-        Some(Operation::Pcr{template:Source::Input(id),..}) if id=="template" => *id=captured.input_id.clone(),
+        Some(Operation::Pcr{template:Source::Input(id),..}) if captured.origin.is_none()&&id=="template" => *id=captured.input_id.clone(),
+        Some(Operation::ReconstructRunProduct{template:Source::Input(id),..}|Operation::ReconstructMaterial{template:Source::Input(id),..}) if captured.origin.is_some()&&id=="template"=>*id=captured.input_id.clone(),
         _=>return Err("The native inverse-PCR preparation no longer starts with the expected original-source PCR.".into()),
     }
     preparation.plan.inputs[0].id = captured.input_id.clone();
@@ -462,9 +485,15 @@ mod tests {
         frozen_target: &Molecule,
         options: &Options,
     ) -> Result<Proposal, String> {
-        let (_, source, native) = request(draft, intent, current_source, frozen_target, options)?;
-        let report = mutagenesis::design_inverse_pcr(&source, frozen_target, &native)
-            .map_err(|e| e.to_string())?;
+        let (captured, source, native) =
+            request(draft, intent, current_source, frozen_target, options)?;
+        let report = mutagenesis::design_inverse_pcr(
+            &source,
+            frozen_target,
+            captured.origin.as_ref().map(|p| p.as_ref()),
+            &native,
+        )
+        .map_err(|e| e.to_string())?;
         from_design(
             draft,
             intent,
@@ -640,7 +669,16 @@ mod tests {
         let (captured, source, native) =
             request(&draft, &intent, &event, &intent.target, &options).unwrap();
         assert_eq!(captured.target_revision, intent.target.revision());
-        let report = mutagenesis::design_inverse_pcr(&source, &intent.target, &native).unwrap();
+        let report = mutagenesis::design_inverse_pcr(
+            &source,
+            &intent.target,
+            draft.methods.rows[0]
+                .run_origin
+                .as_ref()
+                .map(|p| p.as_ref()),
+            &native,
+        )
+        .unwrap();
         let original = serde_json::to_value(&report.verification).unwrap();
         let proposal = from_design(
             &draft,
@@ -719,7 +757,7 @@ mod tests {
         assert!(propose(&multifragment, &intent, &event, &intent.target, &options).is_err());
     }
     #[test]
-    fn existing_binary_worker_uses_original_source_revision_and_returns_bound_preparation() {
+    fn existing_binary_worker_uses_native_context_and_returns_bound_preparation() {
         use collagene_core::protocol::{self, AnalysisJob, AnalysisResult, Request};
         let (draft, intent, event, options) = fixture("11", "11", "AACG");
         let (capture, source, native) =
@@ -727,9 +765,16 @@ mod tests {
         let original = source.clone();
         let request = Request {
             id: 721,
-            revision: capture.source.revision.clone(),
+            revision: mutagenesis::inverse_pcr_revision(
+                &source,
+                &intent.target,
+                capture.origin.as_ref().map(|p| p.as_ref()),
+                &native,
+            )
+            .unwrap(),
             job: AnalysisJob::InversePcr {
                 molecule: source,
+                origin: capture.origin.as_ref().map(|p| p.as_ref().clone()),
                 target: intent.target.clone(),
                 options: native,
             },
@@ -737,7 +782,7 @@ mod tests {
         let raw = protocol::process_request(&protocol::encode_request(&request).unwrap()).unwrap();
         let response = protocol::decode_response(&raw).unwrap();
         assert_eq!(response.id, 721);
-        assert_eq!(response.revision, event.revision);
+        assert_eq!(response.revision, request.revision);
         let AnalysisResult::InversePcr(report) = response.result else {
             panic!("inverse-PCR reply");
         };
@@ -805,9 +850,16 @@ mod tests {
             assert_eq!(capture.intent_context_revision, intent.context_revision);
             let binary = Request {
                 id: 723 + split as u32,
-                revision: capture.source.revision.clone(),
+                revision: mutagenesis::inverse_pcr_revision(
+                    &original,
+                    &intent.target,
+                    capture.origin.as_ref().map(|p| p.as_ref()),
+                    &native,
+                )
+                .unwrap(),
                 job: AnalysisJob::InversePcr {
                     molecule: original,
+                    origin: capture.origin.as_ref().map(|p| p.as_ref().clone()),
                     target: intent.target.clone(),
                     options: native,
                 },
@@ -817,7 +869,7 @@ mod tests {
             )
             .unwrap();
             assert_eq!(response.id, binary.id);
-            assert_eq!(response.revision, event.revision);
+            assert_eq!(response.revision, binary.revision);
             let AnalysisResult::InversePcr(report) = response.result else {
                 panic!("inverse-PCR SNP reply")
             };
@@ -878,5 +930,170 @@ mod tests {
         let mut stale = event;
         stale.event_id = "0".repeat(64);
         assert!(super::request(&draft, &typed, &stale, &intent.target, &options).is_err());
+    }
+    #[test]
+    fn saved_run_and_derived_circle_proposals_retain_exact_origin_after_restart() {
+        use collagene_core::{
+            chemistry::Terminus,
+            run_lineage::{self, InputEventBinding},
+            run_material::{self, MaterialOrigin},
+            verification::OrientedSource,
+        };
+        let (base, _, _, options) = fixture("11", "11", "AACG");
+        let circle = base.slots[0].captured.as_ref().unwrap().molecule.clone();
+        let mut linear = circle.clone();
+        linear.topology = Topology::Linear;
+        let frame =
+            Workspace::from_documents("Native circles", vec![linear.clone(), circle.clone()], 1)
+                .unwrap();
+        let pin = |i: usize| {
+            let d = &frame.documents[i];
+            EventBinding {
+                document_id: d.id.clone(),
+                event_id: d.head_event.clone().unwrap(),
+                revision: d.head.clone(),
+            }
+        };
+        let plan = collagene_core::verification::DesignPlan {
+            name: "Explicitly close circle".into(),
+            target_revision: circle.revision(),
+            inputs: vec![PlanInput {
+                id: "stock".into(),
+                revision: linear.revision(),
+                molecule: linear,
+            }],
+            steps: vec![
+                Operation::DeclareSourceTermini {
+                    template: Source::Input("stock".into()),
+                    left: Terminus::CLEAVED,
+                    right: Terminus::CLEAVED,
+                },
+                Operation::Ligate {
+                    fragments: vec![OrientedSource {
+                        source: Source::Step(0),
+                        reverse: false,
+                    }],
+                    circular: true,
+                    allow_nicked: false,
+                    options: Default::default(),
+                },
+            ],
+        };
+        let kept = run_lineage::record_run(
+            &frame,
+            &plan,
+            pin(1),
+            vec![InputEventBinding {
+                input_id: "stock".into(),
+                event: pin(0),
+            }],
+            false,
+        )
+        .unwrap();
+        let row = kept.receipt.products.last().unwrap();
+        let event = EventBinding {
+            document_id: row.document_id.clone(),
+            event_id: row.event_id.clone(),
+            revision: row.revision.clone(),
+        };
+        let run = run_material::capsule(
+            &kept.workspace,
+            &run_material::Selection {
+                run_id: kept.receipt.run_id,
+                step_index: 1,
+                event: event.clone(),
+            },
+        )
+        .unwrap();
+        let origin = MaterialOrigin::Run(run);
+        let mut saved = kept.workspace;
+        saved.active_document = event.document_id.clone();
+        let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+        let selection =
+            collagene_core::catalog_digest::select(&catalog, &["ecori".into()]).unwrap();
+        let derived = collagene_core::material_derivation::install(
+            &saved,
+            &collagene_core::material_derivation::Request {
+                source: event.clone(),
+                origin: collagene_core::material_derivation::SourceOrigin::Saved(origin.clone()),
+                name: "Derived uncut circle".into(),
+                save_primers: false,
+                derivation: collagene_core::material_derivation::Derivation::CatalogDigest {
+                    selection,
+                    options: Default::default(),
+                    fragment_index: 0,
+                },
+            },
+        )
+        .unwrap();
+        let derived_frame = collagene_core::workspace::load_workspace(&derived.archive).unwrap();
+        let derived_event = derived.receipt.product.clone();
+        let derived_origin = MaterialOrigin::Derived(
+            collagene_core::material_derivation::capsule(&derived_frame, &derived_event).unwrap(),
+        );
+        for (workspace, event, origin) in [
+            (saved, event, origin),
+            (derived_frame, derived_event, derived_origin),
+        ] {
+            let reopened = collagene_core::workspace::load_workspace(
+                &collagene_core::workspace::save_workspace(&workspace).unwrap(),
+            )
+            .unwrap();
+            origin.validate_for_workspace(&reopened, &event).unwrap();
+            let before = serde_json::to_vec(&reopened).unwrap();
+            let molecule = reopened.revisions[&event.revision].clone();
+            let mut draft = base.clone();
+            draft.slots[0].captured = Some(Arc::new(CapturedSource {
+                source: SourceInfo {
+                    binding: event.clone(),
+                    name: molecule.name.clone(),
+                    length: molecule.sequence.len(),
+                    alphabet: Alphabet::Dna,
+                    topology: molecule.topology,
+                },
+                molecule,
+            }));
+            draft.methods.rows[0].run_origin =
+                Some(crate::run_origin_model::PinnedOrigin::from_material(origin.clone()).unwrap());
+            draft.sync_rows();
+            let (inputs, base_request, _) =
+                crate::assembly_draft_model::inputs_request(&draft).unwrap();
+            let intent = assembly_edit_intent::build(
+                &inputs,
+                &crate::assembly_draft_model::edit_request(&draft, base_request),
+            )
+            .unwrap();
+            let proposal = propose(&draft, &intent, &event, &intent.target, &options).unwrap();
+            assert!(proposal.capture.origin.is_some());
+            assert_eq!(proposal.candidate.plan.steps.len(), 4);
+            assert!(
+                matches!(&proposal.candidate.plan.steps[0],Operation::ReconstructRunProduct{template:Source::Input(id),..}|Operation::ReconstructMaterial{template:Source::Input(id),..} if id==&proposal.capture.input_id)
+            );
+            assert!(matches!(
+                proposal.candidate.plan.steps[1],
+                Operation::Pcr {
+                    template: Source::Step(0),
+                    ..
+                }
+            ));
+            assert_eq!(
+                verification::verify(&proposal.candidate.plan, &intent.target).status,
+                Status::ConsistentUnderAssumptions
+            );
+            let mut alias = event.clone();
+            alias.event_id = "equal-DNA-wrong-event".into();
+            assert!(propose(&draft, &intent, &alias, &intent.target, &options).is_err());
+            let mut changed = draft.clone();
+            changed.methods.rows[0].run_origin = None;
+            assert!(
+                proposal
+                    .validate_binding(&changed, &intent, &event, &intent.target, &options)
+                    .is_err()
+            );
+            let mut wrong = intent.target.clone();
+            wrong.sequence = collagene_core::Sequence::dna("TTTTCCCCAAAAGGGG").unwrap();
+            assert!(propose(&draft, &intent, &event, &wrong, &options).is_err());
+            assert_eq!(serde_json::to_vec(&reopened).unwrap(), before);
+        }
     }
 }

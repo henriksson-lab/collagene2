@@ -32,6 +32,7 @@ fn fixture() -> (Workspace, DesignPlan, EventBinding, InputEventBinding) {
     let design = mutagenesis::design_inverse_pcr(
         &source,
         &target,
+        None,
         &InversePcrOptions {
             edit_start: 3,
             edit_end: 5,

@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current registry has 190 tools. Internal exchange uses only worker 99, candidate 26, native workspace plan 24, verifier `science-27`, and assembly draft 15. Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
+The current registry has 190 tools. Internal exchange uses only worker 100, candidate 26, native workspace plan 24, verifier `science-27`, and assembly draft 15. Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
 add exact-version matrix paging, native inspection, historical capture/list/open
 and explicit fresh replay. [Batch contracts](COMBINATORIAL_BATCHES.md).
 Reference recombination retains explicit profile discovery, source inspection,
@@ -984,3 +984,20 @@ archive. Indivisible batch/release records may retain references outside assigne
 wells, disclosed by the review counts and notices. This creates an export
 projection, without uploading it to a database.
 [Native model](PROTOCOL_LAYOUT.md) · [Transport and sharing](PROTOCOL_LAYOUT_TRANSPORT.md).
+
+
+## Saved-template inverse PCR
+
+The existing `design_inverse_pcr` tool accepts required nullable `origin` and
+`origin_workspace` fields. Null/null selects the original-reference hypothesis.
+A saved Run/Derived selection is resolved in its exact immutable workspace and
+compared with the queried source before design. The target remains separately
+supplied. A saved template adds native reconstruction before PCR, phosphorylation
+and intended circular ligation. Unsupported nicks/strand geometry do not acquire
+repair or source authority from metadata.
+
+The returned context binds source, full origin, target and raw options; actual
+ordered oligos use normalized DNA. Candidate and bounded evidence are published
+atomically in the session store. Historical source findings remain visible, and
+acceptance/export still require fresh ordinary verification.
+[Native scope](INVERSE_PCR_MATERIAL.md) · [Wire and SDK contract](INVERSE_PCR_ORIGIN_TRANSPORT.md).

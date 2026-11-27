@@ -3140,23 +3140,24 @@ The capability versions are worker91, candidate22, plan20, science25, draft13 an
 MCP187. Focused native/model/SDK tests and web/worker WASM checking pass; browser
 and application HTTP acceptance remain deferred.
 
-Separate Tauri workers are implementing restart-bound managed-catalog adoption
-and repeated rollback with exact source/target review, append-only activation
-generations, paused library/sync lanes and preserved editor/autosave data. Native
-MCP preload must use genuinely read-only SQLite access without migration or
-initialization. This isolated branch is not yet merged or verified. Existing
-three-OS build/package CI does not prove installed/offline graphical behavior.
+Restart-bound managed-catalog adoption and rollback are implemented on main,
+with exact source/target review, append-only activation generations, paused
+library/sync lanes and preserved working-editor state. The single current native
+Bootstrap supports editor-only recovery and exact pending-switch cancellation.
+Native MCP preload uses read-only SQLite access without initialization or
+migration. Existing native fixtures cover these paths; installed/offline graphical
+acceptance remains open. [Current contract](TAURI_CATALOG_RECOVERY.md).
 
-A parallel unregistered ligation-outcomes kernel retains the intended physical
-path and enumerates bounded alternative products without probabilities. Complete
-delivery requires structured verifier/history evidence and HTML/PDF extraction;
-the kernel alone does not close that requirement.
+The current Ligate operation retains intended paths and bounded alternative
+products, including structured verifier/history evidence and extractable
+HTML/PDF output. Neither a selected path nor bounded enumeration establishes
+experimental isolation or reaction probabilities.
 
-Remaining concrete cloning gaps include
-internal Type IIS domestication beyond circular inverse PCR; methylation-aware
-Golden Gate cleavage/recutting; internal edits across combinatorial library rows;
-generic saved-material mutagenesis/TOPO inputs and prepared TOPO vectors;
-actual-strand-aware reverse sticky-fragment intent; saved-run editing/rehydration integration (implemented below); and typed plate/well assignments.
+Remaining concrete cloning gaps include internal Type IIS domestication beyond
+circular inverse PCR; internal edits across combinatorial library rows; activated TOPO vector graph reuse; actual-strand-aware reverse sticky-fragment intent; and the protocol
+reaction-quantity UI. Positional checked Golden Gate, retained-run editing,
+generic saved TOPO insert templates and documentary plate assignments are now
+implemented as detailed below.
 Per-row keep/add TA/GC preparation, read-only fresh saved-run review and direct
 saved-run protocol exports are implemented. Gateway products remain reference-only until actual
 strand crossover/composition is implemented. Map SVG controls are implemented. Wider format corpus checks, GUI
@@ -3295,9 +3296,9 @@ static references and integrity before writing a new immutable snapshot. Older
 worker-retention flags, merge logic and compatibility-only tests are removed.
 Three offline staging tests pass, including rejection of a second worker version;
 CI runs them with the two static preview-boundary cases. Application HTTP and
-browser checks remain deferred. Port8082 now serves the CI frontend for9000367 (worker98), including checked
-Golden Gate and saved-run editing, verified through static integrity and
-process/socket inspection. The newer plate-layout worktree is not served.
+browser checks remain deferred. Port8082 now serves the CI frontend for7d5dc6c (worker99), including plate layouts,
+checked Golden Gate and saved-run editing, verified through static integrity and
+process/socket inspection. The newer inverse-PCR worktree is not served.
 
 
 ### Positional checked Golden Gate
@@ -3384,3 +3385,35 @@ checks; a raw worker request now expects unknown cleavage and withheld products.
 The tagged catalog artifact reader has no fallback. All21 cases across those
 four targets now pass, giving 73 focused native cases for the plate/cleanup/CI
 increment. The current web/worker WASM check passes.
+
+
+### Inverse-PCR mutagenesis from saved Run/Derived templates
+
+The existing inverse-PCR compiler, worker and MCP tool now accept an exact saved
+origin. The dock and mutagenesis panel attest its retained native event and
+workspace, then reconstruct actual source strands before PCR, phosphorylation and
+intended circular ligation. Primer geometry comes from the pinned circular source
+and literal edits; the supplied target stays independent. Newly synthesized PCR
+strands are unmodified under the existing model. Neither imported summaries nor
+source labels restore chemistry.
+
+Both Run circles and Derived cut-free circular digest products survive archive
+restart and can feed this workflow. Native source heads and old assessments stay
+unchanged; recording creates a separate run and exports only the newly ordered
+primers. Unsupported nicked/staggered circles are not automatically repaired.
+Genuinely incomplete but reusable source contours preserve their findings. Capped
+ligation alternatives alone do not make a known intended path incomplete.
+
+Current worker100 extends job15/result16; candidate26, plan24, science27, draft15
+and the190-tool registry are unchanged. Required nullable MCP origin/workspace
+fields have no missing-field compatibility default. The current context binds
+source, full origin, independent target and raw options; ordered oligos use
+normalized DNA.
+
+Forty-eight focused native workflow cases and integrated web/worker WASM checking
+pass. The7d CI failures were five hardcoded worker98 assertions. They now inspect
+actual encoded headers against the current schema while retaining literal tags,
+source/strand assertions and rejection of noncurrent headers; all15 cases in
+those targets pass. Together with the48 workflow cases, this increment covers63
+distinct native cases. Formatting and web/worker WASM checks pass. [Native contract](INVERSE_PCR_MATERIAL.md) ·
+[Transport](INVERSE_PCR_ORIGIN_TRANSPORT.md).

@@ -43,9 +43,11 @@ fn call(job: AnalysisJob, revision: String, selector: u32, result: u32) -> proto
         job,
     };
     let b = protocol::encode_request(&q).unwrap();
+    assert_eq!(&b[4..6], &protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
     let b = protocol::AnalysisSession::default()
         .process_request(&b)
         .unwrap();
+    assert_eq!(&b[4..6], &protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
     let r = protocol::decode_response(&b).unwrap();
     assert_eq!(r.revision, revision);
     assert_eq!(tag(&r.result), result, "{:?}", r.result);
@@ -53,7 +55,6 @@ fn call(job: AnalysisJob, revision: String, selector: u32, result: u32) -> proto
 }
 #[test]
 fn mismatch_install_redigest_and_repair_keep_literal_tails_and_actual_sticky_strands() {
-    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 98);
     let source = Molecule::dna("Literal original", STOCK, Topology::Linear).unwrap();
     let w = Workspace::from_documents("Original", vec![source.clone()], 0).unwrap();
     let before = workspace::save_workspace(&w).unwrap();

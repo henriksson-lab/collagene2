@@ -200,7 +200,7 @@ async fn frozen_literal_intent_then_independent_inverse_pcr_and_wrong_target_che
     let designed = call(
         &c,
         "design_inverse_pcr",
-        json!({"document":original,"target":intent["target"],"options":options}),
+        json!({"document":original,"target":intent["target"],"origin":null,"origin_workspace":null,"options":options}),
     )
     .await;
     assert_eq!(designed["computed_status"], "ConsistentUnderAssumptions");
@@ -224,20 +224,20 @@ async fn frozen_literal_intent_then_independent_inverse_pcr_and_wrong_target_che
     let wrong = call(
         &c,
         "design_inverse_pcr",
-        json!({"document":original,"target":changed["target"],"options":options}),
+        json!({"document":original,"target":changed["target"],"origin":null,"origin_workspace":null,"options":options}),
     )
     .await;
     assert_eq!(wrong["computed_status"], "Invalid");
     reject(
         &c,
         "design_inverse_pcr",
-        json!({"document":original,"target":stale(&intent["target"]),"options":options}),
+        json!({"document":original,"target":stale(&intent["target"]),"origin":null,"origin_workspace":null,"options":options}),
     )
     .await;
     unverified(
         &c,
         "design_inverse_pcr",
-        json!({"document":intent["target"],"target":original,"options":options}),
+        json!({"document":intent["target"],"target":original,"origin":null,"origin_workspace":null,"options":options}),
     )
     .await;
     assert_eq!(sequence(&c, &original, SOURCE.len()).await, SOURCE);

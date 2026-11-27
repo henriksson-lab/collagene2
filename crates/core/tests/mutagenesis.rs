@@ -381,6 +381,7 @@ fn inverse_replacement_substitution_insertion_deletion_and_tail_splits_verify_in
             let report = design_inverse_pcr(
                 &source,
                 &target,
+                None,
                 &InversePcrOptions {
                     edit_start: start,
                     edit_end: end,
@@ -432,12 +433,12 @@ fn inverse_design_binds_the_separate_target_and_retains_failed_or_ambiguous_veri
         reverse_tail_bases: 0,
     };
     let wrong = dna("ACGTACGTACGTACGT", Topology::Circular);
-    let report = design_inverse_pcr(&source, &wrong, &options).unwrap();
+    let report = design_inverse_pcr(&source, &wrong, None, &options).unwrap();
     assert_eq!(report.verification.status, Status::Invalid);
     assert_eq!(report.verification.products.len(), 3);
     let repeated = dna("ACGTACGTACGTACGTACGTACGTACGTACGT", Topology::Circular);
     let target = desired(&repeated, 3, 5, "GGA");
-    let report = design_inverse_pcr(&repeated, &target, &options).unwrap();
+    let report = design_inverse_pcr(&repeated, &target, None, &options).unwrap();
     assert_eq!(report.verification.status, Status::Incomplete);
     assert!(
         report
@@ -482,14 +483,14 @@ fn unsupported_inputs_limits_and_replacement_geometry_fail_explicitly() {
             ..options.clone()
         },
     ] {
-        assert!(design_inverse_pcr(&source, &target, &changed).is_err());
+        assert!(design_inverse_pcr(&source, &target, None, &changed).is_err());
     }
     let mut physical = source.clone();
     physical
         .metadata
         .insert("duplex_model".into(), "untrusted".into());
     assert!(simulate_pcr(&physical, &p("ACGT", ""), &p("ACGT", ""), &opts(0, 0)).is_err());
-    assert!(design_inverse_pcr(&physical, &target, &options).is_err());
+    assert!(design_inverse_pcr(&physical, &target, None, &options).is_err());
     assert!(simulate_pcr(&source, &p("ACGN", ""), &p("ACGT", ""), &opts(0, 0)).is_err());
     assert!(
         simulate_pcr(

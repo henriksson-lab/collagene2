@@ -31,7 +31,6 @@ fn strand(role: &str, length: usize) -> t::PreparedStrand {
 }
 #[test]
 fn derived_insert_template_crosses_current_binary_worker_and_preserves_explicit_vector_geometry() {
-    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 98);
     let source = Molecule::dna("Original", "CACCATGACG", Topology::Linear).unwrap();
     let w = Workspace::from_documents("Target-free source", vec![source.clone()], 0).unwrap();
     let d = &w.documents[0];
@@ -136,9 +135,17 @@ fn derived_insert_template_crosses_current_binary_worker_and_preserves_explicit_
         .0;
     assert_eq!(tag, 169);
     let encoded = protocol::encode_request(&q).unwrap();
+    assert_eq!(
+        &encoded[4..6],
+        &protocol::WORKER_SCHEMA_VERSION.to_le_bytes()
+    );
     let encoded = protocol::AnalysisSession::default()
         .process_request(&encoded)
         .unwrap();
+    assert_eq!(
+        &encoded[4..6],
+        &protocol::WORKER_SCHEMA_VERSION.to_le_bytes()
+    );
     let response = protocol::decode_response(&encoded).unwrap();
     assert_eq!(
         postcard::take_from_bytes::<u32>(&postcard::to_allocvec(&response.result).unwrap())
@@ -166,6 +173,4 @@ fn derived_insert_template_crosses_current_binary_worker_and_preserves_explicit_
     };
     *template_role = "vt".into();
     assert!(protocol::encode_request(&wrong).is_err());
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 24);
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 26);
 }

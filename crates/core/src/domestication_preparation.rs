@@ -208,7 +208,7 @@ pub fn materialize(input: &PlanInput, request: &Request) -> Result<Prepared, Err
     let target = checked.target().clone(); // Frozen before any molecular reconstruction.
     let check = checked.report().clone();
     let route = options(input, request)?;
-    let preparation = mutagenesis::compile_inverse_pcr(&input.molecule, &target, &route)?;
+    let preparation = mutagenesis::compile_inverse_pcr(&input.molecule, &target, None, &route)?;
     if preparation.plan.inputs.len() != 1
         || preparation.plan.inputs[0].id != INPUT_ID
         || preparation.plan.inputs[0].revision != input.revision

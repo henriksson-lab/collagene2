@@ -6,6 +6,7 @@ use crate::{
     chemistry,
     model::MAX_SEQUENCE_LEN,
     primers::{self, BindingHit, BindingOptions, BindingReport},
+    run_material::MaterialOrigin,
     verification::{
         self, DesignPlan, Operation, OrientedSource, PlanInput, Source, VerificationReport,
     },
@@ -361,6 +362,7 @@ impl Default for InversePcrOptions {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InversePcrDesign {
+    pub context_revision: String,
     pub source_revision: String,
     pub target_revision: String,
     pub options: InversePcrOptions,
@@ -378,6 +380,7 @@ pub struct InversePcrDesign {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct InversePcrPreparation {
+    pub context_revision: String,
     pub source_revision: String,
     pub target_revision: String,
     pub options: InversePcrOptions,
@@ -420,25 +423,39 @@ impl io::Write for SizeLimit {
         Ok(())
     }
 }
-/// Tail-encoded replacement of a circular reference interval, followed by explicit modeled
-/// terminal phosphorylation and blunt ligation. The separately supplied target is never derived
-/// from the PCR result; the ordinary verifier independently reconstructs all exact-PCR alternatives.
-/// This is a reference design under declared reaction assumptions, not an implementation of a
-/// proprietary kit's enzyme mixture, template removal or experimental success criteria.
-pub fn compile_inverse_pcr(
+/// Bounded documentary request preflight. Saved-origin chemistry is reconstructed
+/// only by the ordinary verifier, never recovered from source metadata.
+fn inverse_source_preflight(
     source: &Molecule,
-    target: &Molecule,
-    options: &InversePcrOptions,
-) -> Result<InversePcrPreparation, Error> {
-    checked_source(source)?;
-    target.validate()?;
-    if source.topology != Topology::Circular
-        || target.topology != Topology::Circular
-        || target.sequence.alphabet() != Alphabet::Dna
-    {
-        return Err(unsupported(
-            "inverse-PCR replacement requires circular DNA source and independently supplied circular DNA target",
-        ));
+    origin: Option<&MaterialOrigin>,
+) -> Result<(), Error> {
+    crate::model::bounds::model_preflight(&[source])?;
+    crate::run_material::material_origins_preflight(origin.into_iter())?;
+    source.validate()?;
+    if source.sequence.alphabet() != Alphabet::Dna || source.topology != Topology::Circular {
+        return Err(unsupported("inverse PCR requires a circular DNA template"));
+    }
+    if let Some(origin) = origin {
+        origin.validate_documentary()?;
+        if origin.event().revision != source.revision() {
+            return Err(unsupported("inverse-PCR saved template revision changed"));
+        }
+    } else {
+        checked_source(source)?;
+    }
+    Ok(())
+}
+struct InverseParts {
+    forward: Primer,
+    reverse: Primer,
+    forward_location: Location,
+    reverse_location: Location,
+    retained: usize,
+}
+fn inverse_parts(source: &Molecule, options: &InversePcrOptions) -> Result<InverseParts, Error> {
+    // Bound the raw literal before normalization/allocation, not just the resulting oligos.
+    if options.inserted.len() > 1024 {
+        return Err(Error::TooLarge);
     }
     let n = source.sequence.len();
     let deleted = options
@@ -495,6 +512,105 @@ pub fn compile_inverse_pcr(
     {
         return Err(Error::TooLarge);
     }
+    Ok(InverseParts {
+        forward,
+        reverse,
+        forward_location,
+        reverse_location,
+        retained,
+    })
+}
+const INVERSE_ENGINE_VERSION: &str = "inverse-pcr-preparation-2";
+fn inverse_context(
+    source: &Molecule,
+    target_revision: &str,
+    origin: Option<&MaterialOrigin>,
+    options: &InversePcrOptions,
+) -> Result<String, Error> {
+    crate::assembly_recipe::hash(&(
+        INVERSE_ENGINE_VERSION,
+        verification::ENGINE_VERSION,
+        source.revision(),
+        target_revision,
+        origin,
+        options,
+    ))
+}
+/// Full source/origin/independent-target/options binding. No replay or PCR search.
+pub fn inverse_pcr_revision(
+    source: &Molecule,
+    target: &Molecule,
+    origin: Option<&MaterialOrigin>,
+    options: &InversePcrOptions,
+) -> Result<String, Error> {
+    crate::model::bounds::model_preflight(&[source, target])?;
+    // Serialize borrowed inputs under the aggregate envelope bound before
+    // source/origin hashing, cloning, normalization or molecular work.
+    serde_json::to_writer(&mut SizeLimit(65536), &(source, target, origin, options))
+        .map_err(|_| Error::TooLarge)?;
+    inverse_source_preflight(source, origin)?;
+    target.validate()?;
+    if target.topology != Topology::Circular || target.sequence.alphabet() != Alphabet::Dna {
+        return Err(unsupported(
+            "inverse PCR requires an independently supplied circular DNA target",
+        ));
+    }
+    inverse_parts(source, options)?;
+    inverse_context(source, &target.revision(), origin, options)
+}
+/// Tail-encoded replacement, explicit phosphorylation and intended circular ligation.
+/// The supplied target never chooses a PCR geometry. A selected saved origin is
+/// reconstructed natively before PCR; no physical-source marker is removed.
+pub fn compile_inverse_pcr(
+    source: &Molecule,
+    target: &Molecule,
+    origin: Option<&MaterialOrigin>,
+    options: &InversePcrOptions,
+) -> Result<InversePcrPreparation, Error> {
+    let context_revision = inverse_pcr_revision(source, target, origin, options)?;
+    let InverseParts {
+        forward,
+        reverse,
+        forward_location,
+        reverse_location,
+        retained,
+    } = inverse_parts(source, options)?;
+    let mut steps = Vec::new();
+    if let Some(origin) = origin {
+        steps.push(match origin {
+            MaterialOrigin::Run(origin) => Operation::ReconstructRunProduct {
+                template: Source::Input("template".into()),
+                origin: origin.clone(),
+            },
+            MaterialOrigin::Derived(origin) => Operation::ReconstructMaterial {
+                template: Source::Input("template".into()),
+                origin: origin.clone(),
+            },
+        });
+    }
+    let pcr_step = steps.len();
+    steps.push(Operation::Pcr {
+        template: if origin.is_some() {
+            Source::Step(0)
+        } else {
+            Source::Input("template".into())
+        },
+        forward: forward.clone(),
+        reverse: reverse.clone(),
+    });
+    steps.push(Operation::TreatEnds {
+        template: Source::Step(pcr_step),
+        treatment: chemistry::EndTreatment::Phosphorylate,
+    });
+    steps.push(Operation::Ligate {
+        fragments: vec![OrientedSource {
+            source: Source::Step(pcr_step + 1),
+            reverse: false,
+        }],
+        circular: true,
+        allow_nicked: false,
+        options: Default::default(),
+    });
     let plan = DesignPlan {
         name: format!("Inverse-PCR replacement in {}", source.name),
         target_revision: target.revision(),
@@ -503,47 +619,44 @@ pub fn compile_inverse_pcr(
             revision: source.revision(),
             molecule: source.clone(),
         }],
-        steps: vec![
-            Operation::Pcr {
-                template: Source::Input("template".into()),
-                forward: forward.clone(),
-                reverse: reverse.clone(),
-            },
-            Operation::TreatEnds {
-                template: Source::Step(0),
-                treatment: chemistry::EndTreatment::Phosphorylate,
-            },
-            Operation::Ligate {
-                fragments: vec![OrientedSource {
-                    source: Source::Step(1),
-                    reverse: false,
-                }],
-                circular: true,
-                allow_nicked: false,
-                options: Default::default(),
-            },
-        ],
+        steps,
     };
-    let mut normalized_options = options.clone();
-    normalized_options.inserted = inserted;
-    let report=InversePcrPreparation {source_revision:source.revision(),target_revision:target.revision(),options:normalized_options,forward,reverse,forward_location,reverse_location,retained_template_length:retained,plan,
-        warnings:vec!["Tail-encoded back-to-back inverse-PCR design: the replaced reference interval is omitted and the declared insertion is supplied by primer tails. No altered reference bases are smuggled in as a claimed PCR product.".into(),
-            "The returned plan explicitly phosphorylates ideal PCR termini before sealed blunt circular ligation. This does not model a commercial reagent mixture, template digestion/removal, transformation, repair or empirical success.".into(),
-            "Inspect verification and all exact-PCR alternatives. A matching target is conditional sequence/chemistry consistency, not experimental confirmation.".into()] };
-    serde_json::to_writer(&mut SizeLimit(0), &report).map_err(|_| Error::TooLarge)?;
-    Ok(report)
+    crate::run_material::plan_preflight(&plan)?;
+    let mut warnings=vec![
+        "Tail-encoded back-to-back inverse-PCR design: the replaced reference interval is omitted and the declared insertion is supplied by primer tails. No altered reference bases are smuggled in as a claimed PCR product.".into(),
+        "The returned plan explicitly phosphorylates ideal newly synthesized unmodified PCR termini before intended sealed blunt circular ligation. This does not model a commercial reagent mixture, template digestion/removal, transformation, repair or empirical success.".into(),
+        "Inspect fresh verification and all exact-PCR alternatives. A matching target is conditional sequence/chemistry consistency, not experimental confirmation or isolation.".into(),
+    ];
+    if origin.is_some() {
+        warnings.push("The exact saved origin is replayed by fresh verification. Its inherited incompleteness and assumptions remain; nicked or unsupported circular strand geometry is not silently repaired.".into());
+    }
+    let prepared = InversePcrPreparation {
+        context_revision,
+        source_revision: source.revision(),
+        target_revision: target.revision(),
+        options: options.clone(),
+        forward,
+        reverse,
+        forward_location,
+        reverse_location,
+        retained_template_length: retained,
+        plan,
+        warnings,
+    };
+    serde_json::to_writer(&mut SizeLimit(0), &prepared).map_err(|_| Error::TooLarge)?;
+    Ok(prepared)
 }
-
-/// Compile the original-source plan and run the existing verifier once.
-/// This retains the existing public result layout and inverse-PCR semantics.
+/// Compile the one current source-aware graph and perform fresh native verification.
 pub fn design_inverse_pcr(
     source: &Molecule,
     target: &Molecule,
+    origin: Option<&MaterialOrigin>,
     options: &InversePcrOptions,
 ) -> Result<InversePcrDesign, Error> {
-    let prepared = compile_inverse_pcr(source, target, options)?;
+    let prepared = compile_inverse_pcr(source, target, origin, options)?;
     let verification = verification::verify(&prepared.plan, target);
     let report = InversePcrDesign {
+        context_revision: prepared.context_revision,
         source_revision: prepared.source_revision,
         target_revision: prepared.target_revision,
         options: prepared.options,
@@ -558,4 +671,162 @@ pub fn design_inverse_pcr(
     };
     serde_json::to_writer(&mut SizeLimit(0), &report).map_err(|_| Error::TooLarge)?;
     Ok(report)
+}
+// This borrowed validator checks documentary correspondence only. It does not
+// replay material, enumerate PCR geometries, or adopt a historical assessment.
+fn validate_inverse_fields(
+    expected: &str,
+    context: &str,
+    source_revision: &str,
+    target_revision: &str,
+    options: &InversePcrOptions,
+    forward: &Primer,
+    reverse: &Primer,
+    forward_location: &Location,
+    reverse_location: &Location,
+    retained: usize,
+    plan: &DesignPlan,
+) -> Result<(), Error> {
+    let bad = || unsupported("inverse-PCR preparation binding or declared graph changed");
+    if expected != context
+        || plan.inputs.len() != 1
+        || plan.inputs[0].id != "template"
+        || plan.target_revision != target_revision
+        || plan.inputs[0].revision != source_revision
+    {
+        return Err(bad());
+    }
+    crate::run_material::plan_preflight(plan)?;
+    crate::model::bounds::model_preflight(&[&plan.inputs[0].molecule])?;
+    let source = &plan.inputs[0].molecule;
+    if source.revision() != source_revision
+        || plan.name != format!("Inverse-PCR replacement in {}", source.name)
+    {
+        return Err(bad());
+    }
+    let origin = match plan.steps.first() {
+        Some(Operation::ReconstructRunProduct {
+            template: Source::Input(id),
+            origin,
+        }) if id == "template" => Some(MaterialOrigin::Run(origin.clone())),
+        Some(Operation::ReconstructMaterial {
+            template: Source::Input(id),
+            origin,
+        }) if id == "template" => Some(MaterialOrigin::Derived(origin.clone())),
+        Some(Operation::Pcr {
+            template: Source::Input(id),
+            ..
+        }) if id == "template" => None,
+        _ => return Err(bad()),
+    };
+    inverse_source_preflight(source, origin.as_ref())?;
+    if inverse_context(source, target_revision, origin.as_ref(), options)? != context {
+        return Err(bad());
+    }
+    let parts = inverse_parts(source, options)?;
+    if crate::assembly_recipe::hash(&(
+        forward,
+        reverse,
+        forward_location,
+        reverse_location,
+        retained,
+    ))? != crate::assembly_recipe::hash(&(
+        &parts.forward,
+        &parts.reverse,
+        &parts.forward_location,
+        &parts.reverse_location,
+        parts.retained,
+    ))? {
+        return Err(bad());
+    }
+    let i = usize::from(origin.is_some());
+    if plan.steps.len() != i + 3 {
+        return Err(bad());
+    }
+    let expected_template = if i == 0 {
+        Source::Input("template".into())
+    } else {
+        Source::Step(0)
+    };
+    match &plan.steps[i] {
+        Operation::Pcr {
+            template,
+            forward: f,
+            reverse: r,
+        } if crate::assembly_recipe::hash(&(template, f, r))?
+            == crate::assembly_recipe::hash(&(expected_template, forward, reverse))? =>
+        {
+            ()
+        }
+        _ => return Err(bad()),
+    }
+    if !matches!(&plan.steps[i+1],Operation::TreatEnds{template:Source::Step(j),treatment:chemistry::EndTreatment::Phosphorylate} if *j==i)
+    {
+        return Err(bad());
+    }
+    match &plan.steps[i + 2] {
+        Operation::Ligate {
+            fragments,
+            circular: true,
+            allow_nicked: false,
+            options,
+        } if fragments.len() == 1
+            && !fragments[0].reverse
+            && matches!(&fragments[0].source,Source::Step(j) if *j==i+1)
+            && crate::assembly_recipe::hash(options)?
+                == crate::assembly_recipe::hash(&crate::ligation_outcomes::Options::default())? =>
+        {
+            ()
+        }
+        _ => return Err(bad()),
+    }
+    crate::run_material::plan_preflight(plan)
+}
+impl InversePcrPreparation {
+    /// Readonly receipt/shape check, not molecular verification or source attestation.
+    pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
+        serde_json::to_writer(&mut SizeLimit(0), self).map_err(|_| Error::TooLarge)?;
+        validate_inverse_fields(
+            expected,
+            &self.context_revision,
+            &self.source_revision,
+            &self.target_revision,
+            &self.options,
+            &self.forward,
+            &self.reverse,
+            &self.forward_location,
+            &self.reverse_location,
+            self.retained_template_length,
+            &self.plan,
+        )
+    }
+}
+impl InversePcrDesign {
+    /// Readonly receipt/shape check. Fresh verification still determines material.
+    pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
+        serde_json::to_writer(&mut SizeLimit(0), self).map_err(|_| Error::TooLarge)?;
+        validate_inverse_fields(
+            expected,
+            &self.context_revision,
+            &self.source_revision,
+            &self.target_revision,
+            &self.options,
+            &self.forward,
+            &self.reverse,
+            &self.forward_location,
+            &self.reverse_location,
+            self.retained_template_length,
+            &self.plan,
+        )?;
+        if self.verification.plan_revision != verification::plan_revision(&self.plan)
+            || self.verification.target_revision != self.target_revision
+            || self.verification.engine_version != verification::ENGINE_VERSION
+            || self.verification.products.len() > self.plan.steps.len()
+        {
+            return Err(unsupported(
+                "inverse-PCR verification receipt differs from the declared plan",
+            ));
+        }
+        Ok(())
+    }
 }

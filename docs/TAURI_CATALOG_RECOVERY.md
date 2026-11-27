@@ -69,16 +69,16 @@ adoption is refused before creating review snapshots or journal records, while
 exact retries of previously accepted operations still return their original
 receipt. Source fixtures cover the last legal generation and overflow refusal,
 and escaped writable-handle lifetime with concurrent read-only MCP access.
-These new fixtures have been added but have not yet been run.
+These native fixture groups pass in the recorded 9000367 Ubuntu CI run.
 
 A failed startup adoption no longer blocks the working editor. A changed source,
 corrupt target or unreadable selector starts a native editor-only session:
 working-file metadata, current/previous autosave, preferences, source import and
 confined exports remain usable. Saved-library and synchronization services stay
 paused; the interface never invents a lab identity or silently switches catalogs.
-The new version-4 recovery bootstrap returns real working state with an optional
-catalog context. The original bootstrap format remains available for healthy
-catalog sessions.
+The single current version-5 Bootstrap returns real working state, an optional
+catalog context and explicit catalog status for both healthy and editor-only
+sessions. Native frame validation accepts only the current schema.
 
 When the journal still identifies an exact pending selection, the recovery panel
 shows it and offers **Cancel pending switch; keep previous library**. Cancellation
@@ -93,8 +93,8 @@ its diagnostic remains visible while editor autosave and export remain available
 
 Pure source fixtures pin cancellation to the exact accepted review and generation,
 and ensure editor-only admission permits status/cancellation while rejecting
-catalog work. These additions await the parent-managed compiler/test batch; no
-GUI or browser check was performed.
+catalog work. All five native startup/cancellation cases pass in the recorded 9000367 Ubuntu
+CI run. No installed GUI, browser or application HTTP check was performed.
 
 After an adoption or cancellation attempt, shell admission rechecks the durable
 process-generation status. A rejected request or exact historical receipt replay

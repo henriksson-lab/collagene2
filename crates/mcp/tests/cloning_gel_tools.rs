@@ -410,7 +410,7 @@ async fn inverse_pcr_creates_an_explicit_reviewable_phosphorylation_and_ligation
     let response = s
         .call(
             "design_inverse_pcr",
-            json!({"document":reference(&source),"target":reference(&target),"options":options}),
+            json!({"document":reference(&source),"target":reference(&target),"origin":null,"origin_workspace":null,"options":options}),
         )
         .await;
     assert_eq!(response["computed_status"], "ConsistentUnderAssumptions");
@@ -442,14 +442,14 @@ async fn inverse_pcr_creates_an_explicit_reviewable_phosphorylation_and_ligation
     ] {
         s.reject(
             "design_inverse_pcr",
-            json!({"document":document,"target":target_ref,"options":options}),
+            json!({"document":document,"target":target_ref,"origin":null,"origin_workspace":null,"options":options}),
         )
         .await;
     }
     let wrong = s
         .call(
             "design_inverse_pcr",
-            json!({"document":reference(&source),"target":reference(&source),"options":options}),
+            json!({"document":reference(&source),"target":reference(&source),"origin":null,"origin_workspace":null,"options":options}),
         )
         .await;
     assert_eq!(wrong["computed_status"], "Invalid");

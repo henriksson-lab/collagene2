@@ -171,6 +171,10 @@ fn checked_roundtrip(
     assert_eq!(&old[6..], &bytes[6..]);
     assert!(protocol::process_request(&old).is_err());
     let encoded = protocol::process_request(&bytes).unwrap();
+    assert_eq!(
+        &encoded[4..6],
+        &protocol::WORKER_SCHEMA_VERSION.to_le_bytes()
+    );
     let response = protocol::decode_response(&encoded).unwrap();
     assert_eq!(response.id, request.id);
     assert_eq!(response.revision, revision);
@@ -188,7 +192,6 @@ fn checked_roundtrip(
 }
 #[test]
 fn current_worker_operations_reconstruct_literal_material_and_bind_outputs() {
-    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 98);
     let (w, cap, pin) = digest_fixture();
     let before = serde_json::to_value(&w).unwrap();
     let selection = Some(MaterialSelection::Derived(pin.clone()));

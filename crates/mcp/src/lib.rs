@@ -769,6 +769,12 @@ pub struct MismatchPcrQuery {
 pub struct InversePcrQuery {
     pub document: DocumentRef,
     pub target: DocumentRef,
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[schemars(required)]
+    pub origin: Option<collagene_core::run_material::MaterialSelection>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[schemars(required)]
+    pub origin_workspace: Option<WorkspaceRef>,
     pub options: collagene_core::mutagenesis::InversePcrOptions,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -5487,7 +5493,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Design inverse-PCR replacement/insertion/deletion primers from a circular source and independently supplied circular target. Reconstructs an explicit PCR, terminal phosphorylation and sealed circular ligation plan. Stores a reviewable candidate and returns computed diagnostics/full artifact; no project writes or experimental success are implied. Verify the returned plan_revision before export/use."
+        description = "Design inverse-PCR replacement/insertion/deletion primers from an explicit circular source and independently supplied circular target. origin and origin_workspace are required nullable fields: null/null declares an original reference hypothesis; a saved Run/Derived selection requires its exact immutable native workspace and fresh source-event attestation. Reconstructs the origin when present, then actual PCR, phosphorylation and circular ligation. Nicked/unsupported templates refuse without repair or metadata authority. Atomically stores an unverified candidate and full source-bound artifact; inherited incomplete findings remain explicit. Verify the returned plan_revision before export/use; no persistent project writes or experimental success are implied."
     )]
     async fn design_inverse_pcr(
         &self,
@@ -5495,12 +5501,35 @@ impl CollageneServer {
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
         self.compute(move||{
-            let (source,target)={let store=server.store.lock().unwrap();(store.document(&args.document)?.clone(),store.document(&args.target)?.clone())};
-            let design=collagene_core::mutagenesis::design_inverse_pcr(&source,&target,&args.options).map_err(bad)?;
-            let proposal=Proposal{name:design.plan.name.clone(),target:args.target.clone(),inputs:design.plan.inputs.iter().map(|i|BoundInput{id:i.id.clone(),document:args.document.clone()}).collect(),steps:design.plan.steps.clone()};
-            let proposed=server.propose_plan(Parameters(proposal))?.structured_content.ok_or_else(||bad("missing computed candidate reference"))?;
-            let artifact=server.analysis_artifact(&json!({"document":args.document,"target":args.target,"engine_version":verification::ENGINE_VERSION,"inverse_pcr":design}))?;
-            output(json!({"document":args.document,"target":args.target,"plan_revision":proposed["plan_revision"],"forward":design.forward,"reverse":design.reverse,"source_revision":design.source_revision,"target_revision":design.target_revision,"computed_status":design.verification.status,"findings":design.verification.findings,"warnings":design.warnings,"artifact_id":artifact}))
+            if args.origin.is_some()!=args.origin_workspace.is_some(){return Err(bad("Saved inverse-PCR origin and exact native workspace must be provided together."));}
+            let frame=args.origin_workspace.as_ref().map(|w|server.restore_workspace(w)).transpose()?;
+            let origin=match (&args.origin,&frame){
+                (Some(selection),Some(frame))=>Some(server.resolve_material_origin(frame,selection.event(),selection)?),
+                (None,None)=>None,
+                _=>return Err(bad("Incomplete inverse-PCR origin binding.")),
+            };
+            let (source,target,expected)={
+                let store=server.store.lock().unwrap();let source=store.document(&args.document)?;let target=store.document(&args.target)?;
+                if let (Some(frame),Some(origin))=(&frame,&origin){if frame.revisions.get(&origin.event().revision)!=Some(source){return Err(bad("Inverse-PCR source differs from the exact retained material event."));}}
+                let expected=collagene_core::mutagenesis::inverse_pcr_revision(source,target,origin.as_ref(),&args.options).map_err(bad)?;
+                (source.clone(),target.clone(),expected)
+            };
+            let design=collagene_core::mutagenesis::design_inverse_pcr(&source,&target,origin.as_ref(),&args.options).map_err(bad)?;
+            design.validate_binding(&expected).map_err(bad)?;
+            transfer::Candidate::new(design.plan.clone()).validate().map_err(bad)?;
+            #[derive(Serialize)]
+            struct Evidence<'a>{document:&'a DocumentRef,target:&'a DocumentRef,origin:&'a Option<collagene_core::run_material::MaterialSelection>,origin_workspace:&'a Option<WorkspaceRef>,source_event:Option<&'a collagene_core::run_lineage::EventBinding>,engine_version:&'static str,inverse_pcr:&'a collagene_core::mutagenesis::InversePcrDesign}
+            let text=bounded_json_limit(&Evidence{document:&args.document,target:&args.target,origin:&args.origin,origin_workspace:&args.origin_workspace,source_event:origin.as_ref().map(|o|o.event()),engine_version:verification::ENGINE_VERSION,inverse_pcr:&design},32*1024*1024)?;
+            let artifact_id=blake3::hash(text.as_bytes()).to_hex().to_string();let plan_revision=verification::plan_revision(&design.plan);
+            let plan_bytes=bounded_json_limit(&design.plan,32*1024*1024)?.len().checked_add(bounded_json_limit(&target,32*1024*1024)?.len()).ok_or_else(||bad("Inverse-PCR storage accounting overflow."))?;
+            let result=output(json!({"document":args.document,"target":args.target,"origin":args.origin,"origin_workspace":args.origin_workspace,"source_event":origin.as_ref().map(|o|o.event()),"context_revision":expected,"plan_revision":plan_revision,"verified":false,"forward":design.forward,"reverse":design.reverse,"source_revision":design.source_revision,"target_revision":design.target_revision,"computed_status":design.verification.status,"findings":design.verification.findings,"warnings":design.warnings,"artifact_id":artifact_id}))?;
+            let mut store=server.store.lock().unwrap();let new_plan=!store.plans.contains_key(&plan_revision);let new_artifact=!store.artifacts.contains_key(&artifact_id);
+            if let Some(existing)=store.artifacts.get(&artifact_id){if !matches!(existing.data,ArtifactData::Text(_))||existing.filename!="sequence-analysis.json"||existing.mime_type!="application/json"{return Err(bad("Inverse-PCR artifact has another representation; no candidate was published."));}}
+            if (new_plan&&store.plans.len()>=MAX_ITEMS)||(new_artifact&&store.artifacts.len()>=MAX_ITEMS){return Err(bad("Inverse-PCR candidate/artifact capacity reached; nothing was published."));}
+            let total=(if new_plan{plan_bytes}else{0}).checked_add(if new_artifact{text.len()}else{0}).ok_or_else(||bad("Inverse-PCR storage accounting overflow."))?;store.reserve(total)?;
+            if new_plan{store.plans.insert(plan_revision,StoredPlan{plan:design.plan,target});}
+            if new_artifact{store.artifacts.insert(artifact_id,Artifact{data:ArtifactData::Text(text),mime_type:"application/json",encoding:"utf-8",filename:"sequence-analysis.json"});}
+            Ok(result)
         }).await
     }
     #[tool(

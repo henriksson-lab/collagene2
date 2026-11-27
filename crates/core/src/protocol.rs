@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 99;
+pub const WORKER_SCHEMA_VERSION: u16 = 100;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 26;
 
 // Current selectors whose accepted payloads can contain complete workspace archives.
@@ -226,6 +226,8 @@ pub enum AnalysisJob {
     InversePcr {
         molecule: Molecule,
         target: Molecule,
+        #[serde(deserialize_with = "crate::assembly_recipe::required_option")]
+        origin: Option<crate::run_material::MaterialOrigin>,
         options: crate::mutagenesis::InversePcrOptions,
     },
     PredictGel {
@@ -1266,6 +1268,15 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         crate::pairwise_context::preflight(report, reference, query, *translate)?;
     }
     match &r.job {
+        AnalysisJob::InversePcr {
+            molecule,
+            target,
+            origin,
+            options,
+        } => {
+            crate::mutagenesis::inverse_pcr_revision(molecule, target, origin.as_ref(), options)?;
+        }
+
         AnalysisJob::PreviewProtocolLayout { workspace, request }
         | AnalysisJob::CaptureProtocolLayout { workspace, request } => {
             crate::protocol_layout::preview_revision(workspace, request)?;
@@ -2149,6 +2160,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             crate::genome_session::validate_result(&response.result, &response.revision)?
         }
         AnalysisResult::InversePcr(report) => {
+            report.validate_binding(&response.revision)?;
             validate_verification_report(&report.verification)?;
         }
         AnalysisResult::Verification(report) => {
@@ -2590,6 +2602,23 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             {
                 return Err(Error::Format(
                     "Material mismatch-PCR source/origin/primers/policy changed".into(),
+                ));
+            }
+            None
+        }
+
+        AnalysisJob::InversePcr {
+            molecule,
+            target,
+            origin,
+            options,
+        } => {
+            if crate::mutagenesis::inverse_pcr_revision(molecule, target, origin.as_ref(), options)?
+                != r.revision
+            {
+                return Err(Error::Format(
+                    "Inverse PCR source, origin, independent target or edit settings changed"
+                        .into(),
                 ));
             }
             None
@@ -3873,7 +3902,6 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         | AnalysisJob::DesignPrimers { molecule, .. }
         | AnalysisJob::GoldenGate { molecule, .. }
         | AnalysisJob::MismatchPcr { molecule, .. }
-        | AnalysisJob::InversePcr { molecule, .. }
         | AnalysisJob::PredictGel { molecule, .. }
         | AnalysisJob::DiagnosticDigests { molecule, .. }
         | AnalysisJob::MismatchPcrPreview { molecule, .. }
@@ -4758,8 +4786,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         AnalysisJob::InversePcr {
             molecule,
             target,
+            origin,
             options,
-        } => crate::mutagenesis::design_inverse_pcr(&molecule, &target, &options)
+        } => crate::mutagenesis::design_inverse_pcr(&molecule, &target, origin.as_ref(), &options)
             .map(AnalysisResult::InversePcr),
         AnalysisJob::PredictGel {
             lanes, calibration, ..

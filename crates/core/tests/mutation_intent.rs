@@ -72,7 +72,8 @@ fn circular_wrap_has_explicit_new_origin_and_retained_source_path() {
         reverse_tail_bases: 0,
     };
     let designed =
-        collagene_core::mutagenesis::design_inverse_pcr(&source24, &target27, &options).unwrap();
+        collagene_core::mutagenesis::design_inverse_pcr(&source24, &target27, None, &options)
+            .unwrap();
     assert_eq!(
         designed.verification.status,
         collagene_core::verification::Status::ConsistentUnderAssumptions,

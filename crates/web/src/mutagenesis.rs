@@ -46,6 +46,7 @@ pub struct CandidateOpen {
 type InverseForm = (String, String, String, String, String, String);
 struct BoundInverse {
     report: InversePcrDesign,
+    origin: Option<crate::run_origin_model::PinnedOrigin>,
     source: EventBinding,
     target: EventBinding,
     epoch: u64,
@@ -127,6 +128,7 @@ pub fn MutagenesisPanel(
     });
     let template_index = RwSignal::new(0usize);
     let source = Memo::new(move |_| get_query.run(template_index.get()));
+    let inverse_origin = RwSignal::new(None::<crate::run_origin_model::PinnedOrigin>);
     let applied_pair = RwSignal::new(None::<AppliedPair>);
     let source_binding = Memo::new(move |_| {
         let _ = epoch.get();
@@ -134,6 +136,29 @@ pub fn MutagenesisPanel(
             .run(template_index.get())
             .map(|info| info.binding)
     });
+    let attest_inverse =
+        Callback::new(
+            move |(event, origin): (
+                EventBinding,
+                Option<crate::run_origin_model::PinnedOrigin>,
+            )|
+                  -> Result<(), String> {
+                let frame = get_workspace.run(())?;
+                let retained =
+                    crate::plan_editing_sources::workspace_target(&frame, &event, &event.revision)?;
+                let visible = resolve_source.run(event.clone())?;
+                if retained != &visible {
+                    return Err("The exact inverse-PCR source snapshot changed.".into());
+                }
+                if let Some(origin) = origin {
+                    origin
+                        .as_ref()
+                        .validate_for_workspace(&frame, &event)
+                        .map_err(|e| e.to_string())?;
+                }
+                Ok(())
+            },
+        );
     let mismatches = RwSignal::new("1".to_string());
     let exact = RwSignal::new("1".to_string());
     let edit_start = RwSignal::new("1".to_string());
@@ -188,6 +213,7 @@ pub fn MutagenesisPanel(
             edit_end.get(),
             inserted.get(),
             source_binding.get(),
+            inverse_origin.get(),
             template_index.get(),
             epoch.get(),
         );
@@ -372,6 +398,7 @@ pub fn MutagenesisPanel(
         let _ = (
             pair_draft.get(),
             source_binding.get(),
+            inverse_origin.get(),
             target_binding.get(),
             epoch.get(),
         );
@@ -404,6 +431,7 @@ pub fn MutagenesisPanel(
             applied_pair.get(),
             pair_draft.get(),
             source_binding.get(),
+            inverse_origin.get(),
             target_binding.get(),
             epoch.get(),
             mismatches.get(),
@@ -441,7 +469,30 @@ pub fn MutagenesisPanel(
             generation.set(token);
             busy.set(true);
             status.set("Computing mutation evidence in background…".into());
-            let revision = expected_source.revision();
+            let source_revision = expected_source.revision();
+            let inverse_job = matches!(&job, AnalysisJob::InversePcr { .. });
+            let captured_origin = inverse_origin.get_untracked();
+            let revision = match &job {
+                AnalysisJob::InversePcr {
+                    molecule,
+                    target,
+                    origin,
+                    options,
+                } => match collagene_core::mutagenesis::inverse_pcr_revision(
+                    molecule,
+                    target,
+                    origin.as_ref(),
+                    options,
+                ) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        busy.set(false);
+                        status.set(e.to_string());
+                        return;
+                    }
+                },
+                _ => source_revision.clone(),
+            };
             let captured_source = source_binding.get_untracked();
             let captured_target = target_binding.get_untracked();
             let captured_epoch = epoch.get_untracked();
@@ -472,6 +523,7 @@ pub fn MutagenesisPanel(
                     || pair_draft.get_untracked() != captured_draft
                     || inverse_form.run(()) != captured_form
                     || (mismatches.get_untracked(), exact.get_untracked()) != captured_pcr_form
+                    || (inverse_job && inverse_origin.get_untracked() != captured_origin)
                     || source_binding.get_untracked() != captured_source
                     || target_binding.get_untracked() != captured_target
                 {
@@ -479,7 +531,7 @@ pub fn MutagenesisPanel(
                 }
                 if source
                     .get_untracked()
-                    .is_none_or(|m| m.revision() != revision)
+                    .is_none_or(|m| m.revision() != source_revision)
                     || target_revision.is_some_and(|r| molecule.get_untracked().revision() != r)
                 {
                     return;
@@ -529,6 +581,18 @@ pub fn MutagenesisPanel(
                             })));
                         }
                         AnalysisResult::InversePcr(report) => {
+                            if let Err(e) = report.validate_binding(&revision) {
+                                status.set(e.to_string());
+                                return;
+                            }
+                            if let Some(event) = &captured_source {
+                                if let Err(e) =
+                                    attest_inverse.run((event.clone(), captured_origin.clone()))
+                                {
+                                    status.set(e);
+                                    return;
+                                }
+                            }
                             status.set(format!("Independent inverse-PCR plan check: {:?}. Review the bound steps and target before use.",report.verification.status));
                             let Some(source) = captured_source else {
                                 status.set(
@@ -549,6 +613,7 @@ pub fn MutagenesisPanel(
                             }
                             inverse.set(Some(Arc::new(BoundInverse {
                                 report,
+                                origin: captured_origin,
                                 source,
                                 target: captured_target,
                                 epoch: captured_epoch,
@@ -619,13 +684,19 @@ pub fn MutagenesisPanel(
                 reverse_length: number(r_length.get_untracked(), "Reverse domain length")?,
                 reverse_tail_bases: number(split.get_untracked(), "Reverse-tail split")?,
             };
-            Ok((source, target, options))
+            let event = source_binding
+                .get_untracked()
+                .ok_or("Choose an exact source event")?;
+            let origin = inverse_origin.get_untracked();
+            attest_inverse.run((event, origin.clone()))?;
+            Ok((source, target, options, origin))
         })();
         match result {
-            Ok((source, target, options)) => {
+            Ok((source, target, options, origin)) => {
                 let revision = target.revision();
                 run(
                     AnalysisJob::InversePcr {
+                        origin: origin.as_ref().map(|o| o.as_ref().clone()),
                         molecule: source.clone(),
                         target,
                         options,
@@ -676,6 +747,7 @@ pub fn MutagenesisPanel(
     });
     let review_inverse = Callback::new(move |bound: Arc<BoundInverse>| {
         if epoch.get_untracked() != bound.epoch
+            || inverse_origin.get_untracked() != bound.origin
             || generation.get_untracked() != bound.generation
             || inverse_form.run(()) != bound.form
             || pair_draft.get_untracked() != bound.draft
@@ -696,6 +768,17 @@ pub fn MutagenesisPanel(
             status.set(
                 "The inverse-PCR draft, source or intended target changed; design it again.".into(),
             );
+            return;
+        }
+        if let Err(e) = attest_inverse.run((bound.source.clone(), bound.origin.clone())) {
+            status.set(e);
+            return;
+        }
+        if let Err(e) = bound
+            .report
+            .validate_binding(&bound.report.context_revision)
+        {
+            status.set(e.to_string());
             return;
         }
         let candidate = Candidate::new(bound.report.plan.clone());
@@ -761,6 +844,7 @@ pub fn MutagenesisPanel(
             mismatches.get(),
             exact.get(),
             source_binding.get(),
+            inverse_origin.get(),
             target_binding.get(),
             epoch.get(),
         ))
@@ -792,6 +876,7 @@ pub fn MutagenesisPanel(
         <crate::primer_pair_editor::PrimerPairEditor draft=pair_draft selection=pair_selection anchor_available=anchor_available resolve_source primer_sources=primer_sources list_primers=list_primers resolve_primer=resolve_primer epoch=epoch on_apply=apply_pair apply_label="Apply pair to mismatch PCR".to_string()/>
         <p class="helper" role="status">{move || applied_pair.get().map(|pair| format!("Applied: {} / {}. Draft edits require Apply again.",pair.primers.0.name,pair.primers.1.name)).unwrap_or_else(|| "No applied primer pair. Edit or reuse primers, then Apply before simulation.".into())}</p>
         <div class="mutation-grid"><label>"Allowed disjoint mismatches"<input aria-label="Mutagenesis allowed mismatches" type="number" min="0" prop:value=move||mismatches.get() on:input=move|e|mismatches.set(event_target_value(&e))/></label><label>"Required exact 3′ bases"<input aria-label="Mutagenesis exact 3prime bases" type="number" min="0" prop:value=move||exact.get() on:input=move|e|exact.set(event_target_value(&e))/></label></div><button class="button primary full" disabled=move||busy.get()||intent_busy.get()||source.get().is_none()||applied_pair.get().is_none() on:click=simulate>"Simulate mismatch PCR"</button>
+        <details class="assembly-fragment-options"><summary>"Inverse-PCR template material"</summary><crate::run_origin_view::SourceOriginPicker source=Memo::new(move|_|source_info.run(template_index.get())) epoch get_workspace selected=Memo::new(move|_|inverse_origin.get()) on_select=Callback::new(move|value:Option<crate::run_origin_model::PinnedOrigin>|{if let Some(pin)=&value{if source_binding.get_untracked().as_ref()!=Some(pin.event()){return Err("Selected material belongs to another exact template event.".into());}}inverse_origin.set(value);Ok(())})/><p class="helper">{move||inverse_origin.get().map(|o|format!("{} · source event {}…",o.label(),o.event().event_id.chars().take(12).collect::<String>())).unwrap_or_else(||"Explicit original-reference template; no saved material selected.".into())}</p><p class="helper">"Inverse PCR requires an intact, fully paired circular template under the native model. Saved material is freshly replayed. Unsupported nicks or staggered geometry are refused; no repair or linearization is inserted automatically."</p></details>
         <crate::reusable_material_view::ReusableMaterialView source source_info=Memo::new(move|_|source_info.run(template_index.get())) settings=reusable_settings settings_revision=reusable_settings_revision repair=false epoch get_workspace on_open=on_material/>
         {move||pcr.get().map(|bound|{
             let review=bound.review.clone();

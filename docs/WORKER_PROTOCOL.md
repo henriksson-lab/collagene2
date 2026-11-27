@@ -1,7 +1,7 @@
 # Binary worker protocol
 
 The web worker and native adapters share Rust DTOs in `core::protocol` and the
-same deterministic scientific engines. Current schemas are worker **99**,
+same deterministic scientific engines. Current schemas are worker **100**,
 candidate **26** and native workspace plan **24**; the verifier is **science-27**.
 Only current internal encodings are accepted. Superseded development formats have
 no fallback decoder, migration or capability ladder.
@@ -454,7 +454,7 @@ rather than changing admission or dropping ancestry.
 
 ## Documentary plate assignments
 
-Current worker99 appends PreviewProtocolLayout/CaptureProtocolLayout/
+The plate-layout worker99 checkpoint appends PreviewProtocolLayout/CaptureProtocolLayout/
 ExportProtocolLayout jobs182–184 and results172–174. Candidate26, plan24,
 science27 and draft15 are unchanged: these are documentary assignments, with no
 new scientific operation or accepted material. Workspace requests use the bounded
@@ -466,3 +466,20 @@ Layout/export records have4MiB bounds, at most384 unique occupied wells and128
 layouts per workspace; referenced immutable batch/release evidence shares a32MiB
 ledger. CSV/HTML/PDF exports preserve full identities and missing quantities.
 [Contract](PROTOCOL_LAYOUT_TRANSPORT.md).
+
+
+## Saved inverse-PCR templates
+
+Current worker100 extends the existing InversePcr job15/result16 with a required
+nullable generic material origin and full `inverse_pcr_revision` context. Existing
+candidate26, plan24, science27 and draft15 remain unchanged: reconstruction, PCR,
+phosphorylation and ligation already exist as native operations. The combined
+borrowed source/target/origin/options input reserves64KiB inside the ordinary
+32MiB lane before cloning or hashing.
+
+No-origin plans retain their three operations. Saved plans reconstruct exact
+Run/Derived material first, then consume that actual private strand state for PCR.
+Fresh PCR strands follow the existing standard-unmodified synthesis model.
+Readonly report validation establishes correspondence with the current request;
+ordinary fresh verification establishes conditional molecular consistency.
+[Contract](INVERSE_PCR_ORIGIN_TRANSPORT.md).

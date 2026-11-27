@@ -118,6 +118,7 @@ fn a_checked_literal_site_change_is_supplied_by_real_primers_from_original_dna()
         mutagenesis::compile_inverse_pcr(
             &report.target,
             &report.target,
+            None,
             &report.preparation.options
         )
         .is_err()
@@ -255,6 +256,7 @@ fn independent_target_and_plan_tampering_fail_and_old_inverse_result_stays_compa
     let original = mutagenesis::design_inverse_pcr(
         &input.molecule,
         &report.target,
+        None,
         &report.preparation.options,
     )
     .unwrap();
@@ -266,6 +268,7 @@ fn independent_target_and_plan_tampering_fail_and_old_inverse_result_stays_compa
     let wrong = mutagenesis::compile_inverse_pcr(
         &input.molecule,
         &changed.target,
+        None,
         &report.preparation.options,
     )
     .unwrap();

@@ -1881,6 +1881,7 @@ mod tests {
         let mut preparation = mutagenesis::compile_inverse_pcr(
             &original,
             &intent.target,
+            None,
             &mutagenesis::InversePcrOptions {
                 edit_start: 10,
                 edit_end: 10,

@@ -54,6 +54,17 @@ fn attest(draft: &Draft, frame: &Workspace) -> Result<EventBinding, String> {
     if molecule != source.molecule || molecule.revision() != source.source.binding.revision {
         return Err("The pinned original event no longer matches this preparation.".into());
     }
+    if let Some(origin) = draft
+        .methods
+        .rows
+        .first()
+        .and_then(|r| r.run_origin.as_ref())
+    {
+        origin
+            .as_ref()
+            .validate_for_workspace(frame, &source.source.binding)
+            .map_err(|e| e.to_string())?;
+    }
     Ok(source.source.binding.clone())
 }
 
@@ -85,10 +96,6 @@ pub fn InversePcrPreparationView(
                         && d.slots[0].digest_geometry.is_none()
                         && d.slots[0].anneal_bottom.is_none()
                 })
-                && d.methods
-                    .rows
-                    .first()
-                    .is_some_and(|r| r.run_origin.is_none())
         })
     });
     let intent = StoredValue::new(intent);
@@ -172,15 +179,30 @@ pub fn InversePcrPreparationView(
         let saved_settings = settings.get_untracked();
         pending.set(true);
         proposal.set(None);
-        status.set("Proposing original-source inverse PCR and checking its physical steps…".into());
+        status.set("Proposing exact-source inverse PCR and checking its physical steps…".into());
         let alive = alive.clone();
         spawn_local(async move {
-            let revision = capture.source.revision.clone();
+            let revision = match collagene_core::mutagenesis::inverse_pcr_revision(
+                &molecule,
+                &intent.with_value(|i| i.target().clone()),
+                capture.origin.as_ref().map(|p| p.as_ref()),
+                &native_options,
+            ) {
+                Ok(v) => v,
+                Err(e) => {
+                    if alive.load(Ordering::Relaxed) {
+                        pending.set(false);
+                        status.set(e.to_string());
+                    }
+                    return;
+                }
+            };
             let response = live
                 .ask(Request {
                     id: token,
                     revision: revision.clone(),
                     job: AnalysisJob::InversePcr {
+                        origin: capture.origin.as_ref().map(|p| p.as_ref().clone()),
                         molecule,
                         target: intent.with_value(|i| i.target().clone()),
                         options: native_options,
@@ -244,7 +266,8 @@ pub fn InversePcrPreparationView(
         Ok::<_, String>(saved.candidate.clone())
     });
     view! {<details class="assembly-fragment-options"><summary>"Prepare an internal edit by inverse PCR"</summary>
-        <p class="helper">"For one whole forward circular source and one declared edit. The proposed steps amplify the retained original DNA, phosphorylate its ends and close the circle. Your intended sequence stays fixed. More complex designs need explicitly staged preparations."</p>
+        <p class="helper">{move||draft.with(|d|d.methods.rows.first().and_then(|r|r.run_origin.as_ref()).map(|p|format!("Source provenance: {} · exact event {}…",p.label(),p.event().event_id.chars().take(12).collect::<String>())).unwrap_or_else(||"Source provenance: explicit original reference".into()))}</p>
+        <p class="helper">"For one whole forward circular source and one declared edit. Saved Run/Derived sources are freshly reconstructed first. The proposed steps amplify the retained source DNA, phosphorylate its ends and close the circle. Your intended sequence stays fixed. More complex designs need explicitly staged preparations."</p>
         <Show when=move||!single_edit.get()><p class="helper">"This draft needs staged preparation. Direct inverse PCR requires a single whole forward circular contribution and a single internal edit."</p></Show>
         <div class="primer-grid">
             <label>"Forward annealing length"<input type="number" min="8" max="80" prop:value=move||forward.get() on:input=move|e|forward.set(event_target_value(&e))/></label>
@@ -269,7 +292,7 @@ pub fn InversePcrPreparationView(
             let text=format!("{result} Review the assembly candidate for its current source-bound verification.");
             let saved=StoredValue::new(saved);
             view!{<section class="assembly-inverse-pcr-proposal"><p>{text}</p>
-                <ol><li>"PCR from the pinned original circular template"</li><li>"Phosphorylate both amplicon 5′ ends"</li><li>"Ligate the amplicon into a circle"</li></ol>
+                <ol><li>"PCR from the exact pinned circular material (saved origins reconstructed first)"</li><li>"Phosphorylate both amplicon 5′ ends"</li><li>"Ligate the amplicon into a circle"</li></ol>
                 <table><thead><tr><th>"Primer"</th><th>"Ordered sequence · 5′→3′"</th></tr></thead><tbody>
                     <tr><td>"Forward"</td><td><pre>{saved.with_value(|p|p.preparation.forward.ordered_sequence())}</pre></td></tr>
                     <tr><td>"Reverse"</td><td><pre>{saved.with_value(|p|p.preparation.reverse.ordered_sequence())}</pre></td></tr>

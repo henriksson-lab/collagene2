@@ -1,8 +1,8 @@
 # Protein sequence liability screening
 
 `collagene-protein-liabilities` is a new MIT Rust/WASM core for bounded,
-source-bound sequence screening. It does not yet have worker, UI, MCP or saved
-workspace integration. Automatic antibody domain detection, residue numbering
+source-bound sequence screening, with worker, Biology-panel and native MCP paths.
+Automatic antibody domain detection, residue numbering
 and CDR/framework derivation remain required F34 work, not inferred by this screen.
 
 ## Current profile
@@ -71,10 +71,59 @@ is scanned even after the hit-retention cap; exact per-rule certain/possible cou
 and `hits_truncated` distinguish that cap from a negative screen. Cancellation
 returns an explicit error, never an apparently complete partial report.
 
-Six native fixture groups cover literal published motifs and exclusions, authored
+Seven native fixture groups cover literal published motifs and exclusions, authored
 sequons, B/Z/J/X/U/O handling, supplied-CDR boundaries and stale context, retention
-caps, cancellation, resource bounds and report tampering. An independent concrete-
+caps, cancellation, resource bounds, report tampering, response binding and
+independently supplied match validation. An independent concrete-
 string oracle checks unions/intersections over all 258 words of lengths 1–3 from
 a six-symbol ambiguous alphabet. Native and optional-schema WASM checks pass.
 These checks do not establish numbering, integrated application behavior or
 experimental/platform acceptance.
+
+## Application controls
+
+With an explicit protein open, expand **Biology → Sequence liability screening**.
+Choose the retained-hit limit (zero for counts only) and run the screen. Counts
+always cover the complete source, while retained hits can be filtered by rule or
+possible matching and are paged at 50 rows. Selection navigates to exact source
+coordinates. **Annotate candidate** independently rechecks the match against the
+current source and adds a review-required `misc_feature`; it never declares a
+measured chemical modification or changes protein mass calculations.
+
+Optional supplied-CDR controls accept domain labels, CDR1/2/3 labels, inclusive
+one-based start/end coordinates, definition text and provenance. Current selection
+can fill the range. A context is pinned to its exact document history event;
+changing source, even to an equal-content document, requires explicit reset/clear.
+Native validation rejects overlapping/repeated, stop-crossing and invalid regions.
+Source/options/workspace changes cancel or invalidate earlier worker results.
+
+The full report download includes native options and any provided regions. Form
+settings and reports are not saved as workspace analysis records; explicit candidate
+annotations persist with ordinary source history. No automatic numbering or full
+CDR/domain coverage is inferred from supplied intervals or zero motif counts.
+
+## Transport and MCP
+
+Current worker 117 adds job 194 `ScreenProteinLiabilities` and result 184
+`ProteinLiabilities`, under the ordinary binary message limits. Stateless and
+retained-session dispatch bind the exact native request context. Response decoding
+checks catalog/source/options bindings, counts, retention/truncation, hit ordering,
+pattern certainty, supplied-CDR membership and consistent observed overlapping
+residues. Without the original source these are transport checks; accepting an
+imported report as reconstructed evidence still requires `validate_for` with its
+independently retained source/options.
+
+The native MCP registry exposes `list_protein_liability_profiles` and
+`screen_protein_liabilities`. Screening requires an immutable protein document
+reference and typed native options. Source/options are bounded before cloning;
+responses preview at most 100 retained hits and store the full JSON report in a
+session artifact. Counts-only results remain explicit. These tools do not edit a
+source, save a declaration, install a candidate/material or expand thin WebMCP.
+
+The integration batch passes 19 distinct native cases: seven scientific/binding
+fixtures, two binary-worker/annotation fixtures, one real MCP SDK round trip,
+two web-model source/form guards and seven affected RNA/structure/similarity
+worker cases. The final integrated web/worker WASM check and repository formatting
+check also pass. No browser/application HTTP checks were run. These results do
+not establish graphical/performance, installed-platform or antibody numbering
+acceptance.

@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current registry has 195 tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol.rs), [workspace plan](../crates/core/src/workspace.rs), [verifier](../crates/core/src/verification.rs) and [assembly draft](../crates/core/src/assembly_library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
+The current registry has 197 tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol.rs), [workspace plan](../crates/core/src/workspace.rs), [verifier](../crates/core/src/verification.rs) and [assembly draft](../crates/core/src/assembly_library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
 add exact-version matrix paging, native inspection, historical capture/list/open
 and explicit fresh replay. [Batch contracts](COMBINATORIAL_BATCHES.md).
 Reference recombination retains explicit profile discovery, source inspection,
@@ -36,6 +36,14 @@ evidence withholds quantities. Reports are session artifacts, with bounded
 previews; they do not install documents, persistent declarations or materials.
 The tools grant no measured-state or cloning authority and do not expand WebMCP.
 [RNA model and annotation contract](RNA_MODIFICATIONS.md).
+
+Protein candidate-pattern screening uses `list_protein_liability_profiles` and
+`screen_protein_liabilities`. Supply an immutable protein document and native
+options: retained-hit limit and optional exact-source provided-CDR context. Counts
+cover the full source after retention caps; possible/certain labels describe
+pattern matching, not measured PTMs or risk probabilities. Full JSON artifacts
+retain the complete options/report. No source or material is installed.
+[Profile, controls and interpretation](PROTEIN_LIABILITIES.md).
 
 Build and configure:
 

@@ -255,3 +255,6 @@ pub mod sequence_similarity;
 pub use collagene_rna_chemistry as rna_chemistry;
 
 pub mod rna_history;
+
+pub use collagene_protein_liabilities as protein_liabilities;
+pub mod protein_liability_annotation;

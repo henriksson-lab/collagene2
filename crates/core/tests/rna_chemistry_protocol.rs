@@ -53,7 +53,7 @@ fn binary_and_session_analysis_keep_exact_source_and_declared_chemistry() {
         },
     };
     let bytes = protocol::encode_request(&q).unwrap();
-    assert_eq!(&bytes[4..6], &116u16.to_le_bytes());
+    assert_eq!(&bytes[4..6], &117u16.to_le_bytes());
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
     assert_eq!(tag, 193);
     let mut session = protocol::AnalysisSession::default();
@@ -101,7 +101,7 @@ fn checksummed_worker_reports_reject_changed_binding_quantities_and_review_evide
         };
         let body = postcard::to_allocvec(&response).unwrap();
         let mut bytes = b"CGR\0".to_vec();
-        bytes.extend_from_slice(&116u16.to_le_bytes());
+        bytes.extend_from_slice(&117u16.to_le_bytes());
         bytes.extend_from_slice(&(body.len() as u32).to_le_bytes());
         bytes.extend_from_slice(blake3::hash(&body).as_bytes());
         bytes.extend_from_slice(&body);

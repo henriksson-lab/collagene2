@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 116;
+pub const WORKER_SCHEMA_VERSION: u16 = 117;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 31;
 
 // Current selectors whose accepted payloads can contain complete workspace archives.
@@ -1099,6 +1099,10 @@ pub enum AnalysisJob {
         molecule: Molecule,
         declaration: crate::rna_chemistry::Declaration,
     },
+    ScreenProteinLiabilities {
+        molecule: Molecule,
+        options: crate::protein_liabilities::Options,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1295,6 +1299,7 @@ pub enum AnalysisResult {
     SequenceSimilarity(crate::sequence_similarity::Report),
     StructurePrepared(crate::structure_view::Prepared),
     RnaChemistry(crate::rna_chemistry::Report),
+    ProteinLiabilities(crate::protein_liabilities::Report),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1473,6 +1478,10 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             crate::material_derivation::annealed_oligos_preview_revision(
                 workspace, top, bottom, options,
             )?;
+        }
+        AnalysisJob::ScreenProteinLiabilities { molecule, options } => {
+            crate::protein_liabilities::request_revision(molecule, options)
+                .map_err(|e| Error::Format(e.to_string()))?;
         }
         AnalysisJob::AnalyzeRnaChemistry {
             molecule,
@@ -1962,6 +1971,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         AnalysisResult::MaterialAnnealedOligosPreview(report) => {
             report.validate_binding(&response.revision)?;
         }
+        AnalysisResult::ProteinLiabilities(report) => report
+            .validate_binding(&response.revision)
+            .map_err(|e| Error::Format(e.to_string()))?,
         AnalysisResult::RnaChemistry(report) => report
             .validate_binding(&response.revision)
             .map_err(|e| Error::Format(e.to_string()))?,
@@ -2944,6 +2956,17 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             {
                 return Err(Error::Format(
                     "Annealed-material source events/options changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::ScreenProteinLiabilities { molecule, options } => {
+            if crate::protein_liabilities::request_revision(molecule, options)
+                .map_err(|e| Error::Format(e.to_string()))?
+                != r.revision
+            {
+                return Err(Error::Format(
+                    "Protein liability source/options changed".into(),
                 ));
             }
             None
@@ -4450,6 +4473,11 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         } => {
             crate::material_derivation::preview_annealed_oligos(&workspace, &top, &bottom, &options)
                 .map(AnalysisResult::MaterialAnnealedOligosPreview)
+        }
+        AnalysisJob::ScreenProteinLiabilities { molecule, options } => {
+            crate::protein_liabilities::screen(&molecule, &options, &mut || false)
+                .map(AnalysisResult::ProteinLiabilities)
+                .map_err(|e| Error::Format(e.to_string()))
         }
         AnalysisJob::AnalyzeRnaChemistry {
             molecule,

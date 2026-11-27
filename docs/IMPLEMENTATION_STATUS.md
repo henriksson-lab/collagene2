@@ -2033,3 +2033,30 @@ The native-only publication change and standalone liability core are later sourc
 work; this preview is not acceptance evidence for those or the full product.
 The previously unformatted RNA callbacks and module order are corrected, and the
 repository format check passes. No extra scientific compile was run for formatting.
+
+### Liability screening application integration
+
+Worker 117 adds source/options-bound protein liability screening at job 194 /
+result 184 under unchanged ordinary envelope limits. Source-free decoding checks
+catalog/request, counts, retention order, certainty, provided-CDR membership and
+consistent overlapping observations. Source-based reconstruction remains required
+for accepting imported report evidence. The native single-hit checker independently
+checks actual source letters, interval, certainty and context before a candidate
+annotation can be added; annotations are review-required `misc_feature` records,
+not measured modifications or changes to mass/chemical-state models.
+
+Biology includes a cancellable worker screen, complete counts, filtered 50-row hit
+pages, exact-event selection/annotation and report download. Optional supplied-CDR
+forms pin their definition/provenance/coordinates to an exact event; equal-content
+foreign documents and changed workspace epochs cannot silently retarget them.
+The native registry has 197 tools, with typed discovery and read-only screening;
+full reports are session artifacts and previews cap at 100 rows. Thin WebMCP is
+unchanged. There is still no automatic antibody domain/CDR/numbering inference.
+
+All 19 selected native cases pass: seven scientific/binding, two worker/annotation,
+one real MCP SDK, two web-model guards and seven affected existing worker cases.
+The integrated WASM check and repository format check pass. The new test fixture's
+borrow error was corrected together with the current batch; passing cases were
+not reexecuted. No browser/application HTTP checks were run. The public preview
+remains the previously published `d2904e5` artifact until a newer CI frontend is
+available. Automatic numbering and full GUI/platform/delivery acceptance remain.

@@ -26,7 +26,7 @@ fn request(selection: Option<Selection>) -> Request {
 fn current_worker_and_session_prepare_source_indexed_coordinates_without_sequence_material() {
     let q = request(None);
     let bytes = protocol::encode_request(&q).unwrap();
-    assert_eq!(&bytes[4..6], &116u16.to_le_bytes());
+    assert_eq!(&bytes[4..6], &117u16.to_le_bytes());
     let ((_, _, selector), _) =
         postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
     assert_eq!(selector, 192);
@@ -81,7 +81,7 @@ fn source_options_geometry_and_scene_index_tampering_fail_transport_validation()
             result: AnalysisResult::StructurePrepared(p),
         };
         let mut bytes = b"CGR\0".to_vec();
-        bytes.extend_from_slice(&116u16.to_le_bytes());
+        bytes.extend_from_slice(&117u16.to_le_bytes());
         let body = postcard::to_allocvec(&response).unwrap();
         bytes.extend_from_slice(&(body.len() as u32).to_le_bytes());
         bytes.extend_from_slice(blake3::hash(&body).as_bytes());

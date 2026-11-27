@@ -4296,3 +4296,26 @@ not current-source graphical or installed-platform acceptance. The unlinked-
 coordinate publication change and standalone liability core follow that frontend
 source checkpoint. Repository formatting is corrected for the RNA callbacks and
 module order; the full format check passes without another semantic compile.
+
+### F34 liability screen worker, Biology and MCP integration
+
+Worker 117 adds source/options-bound liability screening (job 194/result 184),
+with unchanged ordinary envelope limits and no workspace-admission expansion.
+Source-free response validation checks profile/context, counts, retained ordering,
+certainty and supplied-region membership; source-based reconstruction remains the
+acceptance boundary for imported evidence. Independently supplied single hits can
+also be checked against the actual source before producing review-required
+candidate annotations, without declaring measured chemistry.
+
+The Biology panel supplies cancellable worker computation, complete counts,
+50-row filtered hit pages, exact-event navigation/annotation, optional explicitly
+pinned supplied-CDR forms and full report download. Event/epoch/options changes
+invalidate prior output, and equal-content documents do not silently retarget
+provided context. Native MCP adds typed profile discovery and read-only screening
+(197 tools); complete reports are session artifacts with bounded previews.
+
+All 19 selected native cases, the integrated WASM check and repository formatting
+check pass. No browser/application HTTP checks were run. Automatic
+antibody domain detection/numbering/CDR derivation and the existing whole-product
+interoperability, GUI/performance and installed-platform gates remain required;
+this checkpoint does not complete F34 or the full goal.

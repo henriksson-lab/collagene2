@@ -2,7 +2,7 @@
 //! Supplied CDR intervals are documentary context, never validated numbering.
 use collagene_model::{Alphabet, Molecule};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 pub const ENGINE: &str = "protein-liabilities-1";
 pub const MAX_RESIDUES: usize = 1_000_000;
 pub const MAX_HITS: usize = 100_000;
@@ -171,8 +171,11 @@ fn text(s: &str, max: usize) -> Result<()> {
         Ok(())
     }
 }
-fn prepare<'a>(m: &Molecule, o: &'a Options) -> Result<(String, Vec<(usize, &'a CdrRegion)>)> {
-    let revision = source_revision(m)?;
+fn options_context<'a>(
+    revision: &str,
+    length: usize,
+    o: &'a Options,
+) -> Result<Vec<(usize, &'a CdrRegion)>> {
     if o.max_hits > MAX_HITS {
         return Err(Error::Limit("retained hits"));
     }
@@ -194,14 +197,8 @@ fn prepare<'a>(m: &Molecule, o: &'a Options) -> Result<(String, Vec<(usize, &'a 
                 CdrKind::Cdr2 => 2,
                 CdrKind::Cdr3 => 3,
             };
-            if r.start >= r.end
-                || r.end > m.sequence.len()
-                || !unique.insert((&r.domain_id, kind))
-                || m.sequence.as_str().as_bytes()[r.start..r.end].contains(&b'*')
-            {
-                return Err(Error::Invalid(
-                    "invalid, repeated or stop-crossing provided CDR",
-                ));
+            if r.start >= r.end || r.end > length || !unique.insert((&r.domain_id, kind)) {
+                return Err(Error::Invalid("invalid or repeated provided CDR"));
             }
             ordered.push((i, r));
         }
@@ -211,7 +208,43 @@ fn prepare<'a>(m: &Molecule, o: &'a Options) -> Result<(String, Vec<(usize, &'a 
         }
     }
     hash(b"protein-liability-options-1\0", o, MAX_OPTIONS_BYTES)?;
+    Ok(ordered)
+}
+fn prepare<'a>(m: &Molecule, o: &'a Options) -> Result<(String, Vec<(usize, &'a CdrRegion)>)> {
+    let revision = source_revision(m)?;
+    let ordered = options_context(&revision, m.sequence.len(), o)?;
+    if ordered
+        .iter()
+        .any(|(_, r)| m.sequence.as_str().as_bytes()[r.start..r.end].contains(&b'*'))
+    {
+        return Err(Error::Invalid("provided CDR crosses a stop"));
+    }
     Ok((revision, ordered))
+}
+fn membership(o: &Options, ordered: &[(usize, &CdrRegion)], position: usize) -> CdrMembership {
+    let i = ordered.partition_point(|(_, r)| r.end <= position);
+    if o.provided_cdrs.is_none() {
+        CdrMembership::Unassessed
+    } else if let Some((index, r)) = ordered.get(i).filter(|(_, r)| r.start <= position) {
+        let _ = r;
+        CdrMembership::Inside {
+            region_index: *index,
+        }
+    } else {
+        CdrMembership::OutsideProvided
+    }
+}
+impl RuleId {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::CanonicalAsnDeamidation => "Asn canonical-motif review",
+            Self::CanonicalAspIsomerization => "Asp canonical-motif review",
+            Self::NGlycosylationSequon => "N-glycosylation sequon",
+            Self::MethionineOxidation => "Methionine oxidation review",
+            Self::TryptophanOxidation => "Tryptophan oxidation review",
+            Self::ProvidedCdrAsparagineReview => "Asparagine in supplied CDR",
+        }
+    }
 }
 pub fn request_revision(m: &Molecule, o: &Options) -> Result<String> {
     let (source, _) = prepare(m, o)?;
@@ -246,7 +279,6 @@ pub fn screen(m: &Molecule, o: &Options, cancel: &mut impl FnMut() -> bool) -> R
     )?;
     let rules = rules();
     let bytes = m.sequence.as_str().as_bytes();
-    let mut cursor = 0;
     let mut counts = rules
         .iter()
         .map(|r| Counts {
@@ -265,18 +297,7 @@ pub fn screen(m: &Molecule, o: &Options, cancel: &mut impl FnMut() -> bool) -> R
         }
         ambiguous_residues += usize::from(matches!(bytes[i], b'B' | b'J' | b'X' | b'Z'));
         stop_symbols += usize::from(bytes[i] == b'*');
-        while cursor < ordered.len() && ordered[cursor].1.end <= i {
-            cursor += 1;
-        }
-        let membership = if o.provided_cdrs.is_none() {
-            CdrMembership::Unassessed
-        } else if cursor < ordered.len() && ordered[cursor].1.start <= i {
-            CdrMembership::Inside {
-                region_index: ordered[cursor].0,
-            }
-        } else {
-            CdrMembership::OutsideProvided
-        };
+        let membership = membership(o, &ordered, i);
         for (k, r) in rules.iter().enumerate() {
             if r.provided_cdr_only && !matches!(membership, CdrMembership::Inside { .. }) {
                 continue;
@@ -326,12 +347,146 @@ pub fn screen(m: &Molecule, o: &Options, cancel: &mut impl FnMut() -> bool) -> R
             .is_none_or(|c| c.regions.is_empty()),
     })
 }
+/// Validate one independently supplied match against the actual immutable source.
+/// This establishes a literal candidate pattern only, never a measured PTM.
+pub fn validate_hit(m: &Molecule, o: &Options, h: &Hit) -> Result<()> {
+    let (_, ordered) = prepare(m, o)?;
+    let rules = rules();
+    let r = rules
+        .iter()
+        .find(|r| r.id == h.rule)
+        .ok_or(Error::Binding)?;
+    let cdr = membership(o, &ordered, h.start);
+    let end = h.start.checked_add(r.masks.len()).ok_or(Error::Binding)?;
+    let bytes = m
+        .sequence
+        .as_str()
+        .as_bytes()
+        .get(h.start..end)
+        .ok_or(Error::Binding)?;
+    if end != h.end
+        || bytes != h.residues.as_bytes()
+        || classify(bytes, &r.masks) != Some(h.certainty.clone())
+        || cdr != h.cdr
+        || (r.provided_cdr_only && !matches!(cdr, CdrMembership::Inside { .. }))
+    {
+        return Err(Error::Binding);
+    }
+    Ok(())
+}
 impl Report {
+    /// Source-free transport consistency only. Saved evidence must still use
+    /// validate_for against independently retained original source/options.
+    pub fn validate_binding(&self, expected: &str) -> Result<()> {
+        let source = &self.source_revision;
+        let rules = rules();
+        if self.engine != ENGINE
+            || self.catalog_revision != catalog_revision()
+            || source.len() != 64
+            || !source
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            || self.source_length == 0
+            || self.source_length > MAX_RESIDUES
+            || self.counts.len() != rules.len()
+            || self.hits.len() > MAX_HITS
+            || self.ambiguous_residues > self.source_length
+            || self.stop_symbols > self.source_length - self.ambiguous_residues
+            || self.context_revision != expected
+            || hash(
+                b"protein-liability-request-1\0",
+                &(ENGINE, source, &self.catalog_revision, &self.options),
+                MAX_OPTIONS_BYTES + 65536,
+            )? != self.context_revision
+        {
+            return Err(Error::Binding);
+        }
+        let ordered = options_context(source, self.source_length, &self.options)?;
+        let unassessed = self
+            .options
+            .provided_cdrs
+            .as_ref()
+            .is_none_or(|c| c.regions.is_empty());
+        if self.cdr_rule_unassessed != unassessed {
+            return Err(Error::Binding);
+        }
+        let mut total = 0;
+        for (c, r) in self.counts.iter().zip(&rules) {
+            if c.rule != r.id
+                || c.certain > self.source_length
+                || c.possible > self.source_length - c.certain
+            {
+                return Err(Error::Binding);
+            }
+            let count = c.certain + c.possible;
+            if r.provided_cdr_only
+                && count > ordered.iter().map(|(_, r)| r.end - r.start).sum::<usize>()
+            {
+                return Err(Error::Binding);
+            }
+            total += count;
+        }
+        if self.hits.len() != total.min(self.options.max_hits)
+            || self.hits_truncated != (total > self.options.max_hits)
+        {
+            return Err(Error::Binding);
+        }
+        let mut previous = None;
+        let mut observed = BTreeMap::new();
+        let mut retained = vec![(0usize, 0usize); rules.len()];
+        for h in &self.hits {
+            let k = rules
+                .iter()
+                .position(|r| r.id == h.rule)
+                .ok_or(Error::Binding)?;
+            let r = &rules[k];
+            let end = h.start.checked_add(r.masks.len()).ok_or(Error::Binding)?;
+            if h.end != end
+                || end > self.source_length
+                || h.residues.len() != r.masks.len()
+                || !h.residues.is_ascii()
+                || previous.is_some_and(|p| p >= (h.start, k))
+                || h.cdr != membership(&self.options, &ordered, h.start)
+                || (r.provided_cdr_only && !matches!(h.cdr, CdrMembership::Inside { .. }))
+                || classify(h.residues.as_bytes(), &r.masks) != Some(h.certainty.clone())
+            {
+                return Err(Error::Binding);
+            }
+            previous = Some((h.start, k));
+            for (i, b) in h.residues.bytes().enumerate() {
+                if observed.insert(h.start + i, b).is_some_and(|old| old != b) {
+                    return Err(Error::Binding);
+                }
+            }
+            match h.certainty {
+                Certainty::CertainPattern => retained[k].0 += 1,
+                Certainty::PossiblePattern => retained[k].1 += 1,
+            };
+        }
+        if observed.len() > self.source_length - self.stop_symbols
+            || observed
+                .values()
+                .filter(|&&b| matches!(b, b'B' | b'Z' | b'J' | b'X'))
+                .count()
+                > self.ambiguous_residues
+        {
+            return Err(Error::Binding);
+        }
+        for ((certain, possible), c) in retained.iter().zip(&self.counts) {
+            if *certain > c.certain
+                || *possible > c.possible
+                || (!self.hits_truncated && (*certain != c.certain || *possible != c.possible))
+            {
+                return Err(Error::Binding);
+            }
+        }
+        Ok(())
+    }
     /// All matches, counts, context and truncation are freshly reconstructed.
     pub fn validate_for(&self, m: &Molecule, o: &Options) -> Result<()> {
         if self.engine != ENGINE
             || self.hits.len() > MAX_HITS
-            || self.counts.len() != 6
+            || self.counts.len() != rules().len()
             || screen(m, o, &mut || false)? != *self
         {
             return Err(Error::Binding);

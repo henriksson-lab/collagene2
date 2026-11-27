@@ -30,7 +30,7 @@ fn current_worker_job_and_retained_session_bind_sources_and_original_coordinates
         },
     };
     let bytes = protocol::encode_request(&request).unwrap();
-    assert_eq!(&bytes[4..6], &116u16.to_le_bytes());
+    assert_eq!(&bytes[4..6], &117u16.to_le_bytes());
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
     assert_eq!(tag, 191);
     let mut session = protocol::AnalysisSession::default();

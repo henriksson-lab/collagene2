@@ -299,3 +299,42 @@ fn reports_are_reconstructed_against_source_rules_options_and_complete_counts() 
     assert!(r.validate_for(&m, &changed).is_err());
     assert!(r.validate_for(&source("NGNATMWA"), &o).is_err());
 }
+
+#[test]
+fn response_binding_and_individual_hit_validation_refuse_forged_scope_and_observed_residues() {
+    let m = source("NGNATMWX");
+    let mut o = options();
+    o.provided_cdrs = Some(cdr(&m, 0, 1));
+    let r = screen(&m, &o, &mut || false).unwrap();
+    r.validate_binding(&r.context_revision).unwrap();
+    for h in &r.hits {
+        validate_hit(&m, &o, h).unwrap();
+    }
+    let mut h = r.hits[0].clone();
+    h.start = 3;
+    assert!(validate_hit(&m, &o, &h).is_err());
+    let mut h = r.hits[0].clone();
+    h.residues = "NS".into();
+    assert!(validate_hit(&m, &o, &h).is_err());
+    let mut h = r.hits[0].clone();
+    h.certainty = Certainty::PossiblePattern;
+    assert!(validate_hit(&m, &o, &h).is_err());
+    let mut changed = r.clone();
+    changed.source_length = 0;
+    assert!(changed.validate_binding(&r.context_revision).is_err());
+    let mut changed = r.clone();
+    changed.ambiguous_residues = 0;
+    assert!(changed.validate_binding(&r.context_revision).is_err());
+    let mut changed = r.clone();
+    changed.hits.swap(0, 1);
+    assert!(changed.validate_binding(&r.context_revision).is_err());
+    let mut changed = r.clone();
+    changed.cdr_rule_unassessed = true;
+    assert!(changed.validate_binding(&r.context_revision).is_err());
+    let o = Options {
+        max_hits: 0,
+        provided_cdrs: None,
+    };
+    let r = screen(&m, &o, &mut || false).unwrap();
+    r.validate_binding(&r.context_revision).unwrap();
+}

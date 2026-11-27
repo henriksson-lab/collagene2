@@ -210,3 +210,16 @@ A named saved declaration retains its exact historical source event in workspace
 files, autosave and offline storage. Opening a declaration does not restore cached
 quantities; calculate again. Selected-document sharing includes declarations only
 for source events in that document's retained ancestry. [Model, controls and limits](RNA_MODIFICATIONS.md).
+
+## Protein sequence liability screening
+
+With a protein open, expand **Biology → Sequence liability screening**. Choose a
+retained-hit limit and screen. Full-source counts distinguish certain and possible
+sequence-pattern matches; these do not predict measured modifications or chemical
+risk. Filter/page the retained matches, select exact positions or explicitly add
+review-required candidate annotations. Changes invalidate old results.
+
+Optional supplied-CDR controls use one-based inclusive coordinates under your
+stated definition/provenance. The context remains pinned to its exact source event;
+reset or clear it explicitly when changing source. It is not automatic antibody
+numbering or proof of complete CDR coverage. [Profile and limits](PROTEIN_LIABILITIES.md).

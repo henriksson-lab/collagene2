@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 195;
+pub const CURRENT_TOOL_COUNT: usize = 197;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -1315,6 +1315,13 @@ pub struct SimilarityQuery {
     pub subjects: Vec<DocumentRef>,
     #[serde(default)]
     pub options: collagene_core::sequence_similarity::Options,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ProteinLiabilityQuery {
+    pub document: DocumentRef,
+    pub options: collagene_core::protein_liabilities::Options,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -6047,6 +6054,31 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             let report=translation::find_orfs(&molecule,&args.options).map_err(bad)?;
             let artifact=server.analysis_artifact(&json!({"document":args.document,"engine_version":verification::ENGINE_VERSION,"orfs":report}))?;
             output(json!({"document":args.document,"options":report.options,"count":report.orfs.len(),"truncated_search":report.truncated,"display_truncated":report.orfs.len()>100,"orfs":report.orfs.iter().take(100).map(|o|json!({"location":o.location,"reverse":o.reverse,"frame":o.frame,"amino_acids":o.protein.len(),"protein_preview":o.protein.chars().take(80).collect::<String>(),"crosses_origin":o.crosses_origin,"partial_5prime":o.partial_5prime,"partial_3prime":o.partial_3prime,"termination":o.termination})).collect::<Vec<_>>(),"warnings":report.warnings,"artifact_id":artifact}))
+        }).await
+    }
+    #[tool(
+        description = "List the current embedded protein liability-screen rules, literal masks, citations, interpretation and resource bounds. Patterns are candidate sequence reviews, not measured PTMs, antibody identity, risk probabilities or automatic domain/numbering/CDR predictions. Optional supplied CDR intervals must bind an exact source revision."
+    )]
+    async fn list_protein_liability_profiles(&self) -> Result<CallToolResult, ErrorData> {
+        use collagene_core::protein_liabilities as native;
+        output(
+            json!({"engine":native::ENGINE,"catalog_revision":native::catalog_revision(),"rules":native::rules(),"max_residues":native::MAX_RESIDUES,"max_hits":native::MAX_HITS,"max_provided_cdrs":native::MAX_CDRS,"indexing":"zero-based half-open stored-source coordinates; CDR membership uses the motif anchor","authority":"Literal certain/possible pattern matches only; no measured chemical state, antibody numbering, probabilities, activity or cloning/material authority."}),
+        )
+    }
+    #[tool(
+        description = "Freshly screen an exact immutable protein document using the embedded versioned liability profile. Requires explicit retained-hit limit (0 is counts-only); exact counts continue across the full source even after the retention cap. B/Z/J/X uncertainty produces possible/certain sequence-pattern matches, not PTM probabilities. Optional supplied CDRs have exact source, label/provenance and nonoverlapping interval validation; they are not validated numbering and do not assert complete CDR coverage. Returns at most 100 hit summaries plus a full source/options-bound JSON artifact. No source/history edits, saved declarations, candidate or material installs."
+    )]
+    async fn screen_protein_liabilities(
+        &self,
+        Parameters(args): Parameters<ProteinLiabilityQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move||{
+            use collagene_core::protein_liabilities as native;
+            let molecule={let store=server.store.lock().unwrap();let m=store.document(&args.document)?;native::request_revision(m,&args.options).map_err(bad)?;m.clone()};
+            let report=native::screen(&molecule,&args.options,&mut||false).map_err(bad)?;
+            let artifact=server.analysis_artifact(&serde_json::to_value(&report).map_err(bad)?)?;
+            output(json!({"document":args.document,"engine":report.engine,"catalog_revision":report.catalog_revision,"context_revision":report.context_revision,"source_length":report.source_length,"counts":report.counts,"retained_hit_count":report.hits.len(),"hits_truncated":report.hits_truncated,"display_truncated":report.hits.len()>100,"hits":report.hits.iter().take(100).collect::<Vec<_>>(),"ambiguous_residues":report.ambiguous_residues,"stop_symbols":report.stop_symbols,"cdr_rule_unassessed":report.cdr_rule_unassessed,"artifact_id":artifact,"authority":"Sequence-pattern candidates only. Supplied CDR context is documentary, not validated antibody numbering or complete domain coverage. No measured PTM or biochemical risk prediction."}))
         }).await
     }
     #[tool(

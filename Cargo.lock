@@ -757,6 +757,7 @@ dependencies = [
  "collagene-enzyme-catalog",
  "collagene-genomic-index",
  "collagene-model",
+ "collagene-protein-liabilities",
  "collagene-protocol-units",
  "collagene-read-alignments",
  "collagene-recombination",

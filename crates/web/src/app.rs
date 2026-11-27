@@ -5808,6 +5808,92 @@ pub fn App() -> impl IntoView {
         message.set("Opened an editable copy of the exact digest source; original source heads and saved evidence are unchanged.".into());
         Ok(info)
     });
+    let prepare_protein_liabilities =
+        Callback::new(
+            move |(binding, options): (
+                EventBinding,
+                collagene_core::protein_liabilities::Options,
+            )|
+                  -> Result<Molecule, String> {
+                if workspace_restoring.get_untracked() {
+                    return Err("Wait for the workspace update to finish.".into());
+                }
+                documents.with_untracked(|docs| {
+                    let doc = &docs[active.get_untracked()];
+                    if current_event_binding(doc) != binding {
+                        return Err("The active protein source event changed.".into());
+                    }
+                    collagene_core::protein_liabilities::request_revision(&doc.molecule, &options)
+                        .map_err(|e| e.to_string())?;
+                    Ok(doc.molecule.clone())
+                })
+            },
+        );
+    let select_protein_liability = Callback::new(
+        move |(capture, hit): (
+            crate::protein_liability_model::Capture,
+            collagene_core::protein_liabilities::Hit,
+        )|
+              -> Result<(), String> {
+            if workspace_restoring.get_untracked() {
+                return Err("Wait for the workspace update to finish.".into());
+            }
+            documents.with_untracked(|docs| {
+                let doc = &docs[active.get_untracked()];
+                capture.guard(
+                    workspace_epoch.get_untracked(),
+                    &current_event_binding(doc),
+                    &capture.options,
+                )?;
+                collagene_core::protein_liabilities::validate_hit(
+                    &doc.molecule,
+                    &capture.options,
+                    &hit,
+                )
+                .map_err(|e| e.to_string())
+            })?;
+            batch(|| {
+                selected_feature.set(None);
+                search_regions.set(None);
+                biology_directed.set(None);
+                selection.set(Some((hit.start, hit.end)));
+            });
+            Ok(())
+        },
+    );
+    let annotate_protein_liability = Callback::new(
+        move |(capture, hit): (
+            crate::protein_liability_model::Capture,
+            collagene_core::protein_liabilities::Hit,
+        )|
+              -> Result<(), String> {
+            if workspace_restoring.get_untracked() {
+                return Err("Wait for the workspace update to finish.".into());
+            }
+            let edited = documents.with_untracked(|docs| {
+                let doc = &docs[active.get_untracked()];
+                capture.guard(
+                    workspace_epoch.get_untracked(),
+                    &current_event_binding(doc),
+                    &capture.options,
+                )?;
+                let feature = collagene_core::protein_liability_annotation::candidate(
+                    &doc.molecule,
+                    &capture.options,
+                    &hit,
+                )
+                .map_err(|e| e.to_string())?;
+                editing::set_feature(&doc.molecule, None, feature).map_err(|e| e.to_string())
+            })?;
+            commit_document(
+                documents,
+                active,
+                workspace_restoring,
+                &capture.source.revision,
+                edited,
+            )
+        },
+    );
     let saved_rna = Memo::new(move |_| {
         workspace_snapshot(
             &documents.get(),
@@ -6933,7 +7019,7 @@ pub fn App() -> impl IntoView {
                                                 frame.validate().map_err(|e|e.to_string())?;
                                                 batch(||{documents.set(docs);active.set(first);});Ok(())
                                             })/></Show>
-                                            <Show when=move||panel.get()=="biology"><Show when=move||molecule.with(|m|m.sequence.alphabet()!=Alphabet::Protein)><crate::biology::BiologyPanel source=Memo::new(move|_|documents.with(|docs|recombination_source_info(&docs[active.get()]))) epoch=workspace_epoch selection_location=biology_selection_location on_select_location=select_biology_location on_open_protein=open_translated_protein on_retain_cds=retain_translation_cds molecule=molecule selected_feature=selected_feature selection=selection on_annotate=Callback::new(move|(base,feature):(String,Feature)|{let current=molecule.get_untracked();if current.revision()!=base{return Err("The document changed; rerun ORF analysis before annotating it.".into());}let edited=editing::set_feature(&current,None,feature).map_err(|e|e.to_string())?;commit_document(documents,active,workspace_restoring,&base,edited)})/></Show><crate::biology_source_view::TranslationSourceLink molecule on_open=open_translation_origin/><Show when=move||molecule.with(|m|m.sequence.alphabet()==Alphabet::Protein)><crate::protein_properties::ProteinPanel molecule=molecule/></Show><Show when=move||molecule.with(|m|m.sequence.alphabet()==Alphabet::Rna)><crate::rna_view::RnaPanel active_source=Memo::new(move|_|documents.with(|docs|recombination_source_info(&docs[active.get()]))) epoch=workspace_epoch workspace_busy=workspace_restoring resolve=resolve_rna saved=saved_rna on_save=save_rna on_load=load_rna on_delete=delete_rna/></Show></Show>
+                                            <Show when=move||panel.get()=="biology"><Show when=move||molecule.with(|m|m.sequence.alphabet()!=Alphabet::Protein)><crate::biology::BiologyPanel source=Memo::new(move|_|documents.with(|docs|recombination_source_info(&docs[active.get()]))) epoch=workspace_epoch selection_location=biology_selection_location on_select_location=select_biology_location on_open_protein=open_translated_protein on_retain_cds=retain_translation_cds molecule=molecule selected_feature=selected_feature selection=selection on_annotate=Callback::new(move|(base,feature):(String,Feature)|{let current=molecule.get_untracked();if current.revision()!=base{return Err("The document changed; rerun ORF analysis before annotating it.".into());}let edited=editing::set_feature(&current,None,feature).map_err(|e|e.to_string())?;commit_document(documents,active,workspace_restoring,&base,edited)})/></Show><crate::biology_source_view::TranslationSourceLink molecule on_open=open_translation_origin/><Show when=move||molecule.with(|m|m.sequence.alphabet()==Alphabet::Protein)><crate::protein_properties::ProteinPanel molecule=molecule/><crate::protein_liability_view::ProteinLiabilityPanel source=Memo::new(move|_|documents.with(|docs|recombination_source_info(&docs[active.get()]))) epoch=workspace_epoch workspace_busy=workspace_restoring prepare=prepare_protein_liabilities on_select=select_protein_liability on_annotate=annotate_protein_liability selection=Memo::new(move|_|selection.get())/></Show><Show when=move||molecule.with(|m|m.sequence.alphabet()==Alphabet::Rna)><crate::rna_view::RnaPanel active_source=Memo::new(move|_|documents.with(|docs|recombination_source_info(&docs[active.get()]))) epoch=workspace_epoch workspace_busy=workspace_restoring resolve=resolve_rna saved=saved_rna on_save=save_rna on_load=load_rna on_delete=delete_rna/></Show></Show>
                                             <Show when=move||panel.get()=="dotplot"><crate::dotplot::DotPlotPanel molecule=molecule active_index=Memo::new(move|_|active.get()) source_identity=Memo::new(move|_|documents.with(|docs|format!("{}:{}",docs[active.get()].id,docs[active.get()].head_event()))) query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,format!("{} [{}]",d.molecule.name,d.id))).collect())) query_info=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|crate::dotplot::QueryInfo{identity:format!("{}:{}",d.id,d.head_event()),revision:d.molecule.revision(),name:d.molecule.name.clone(),length:d.molecule.sequence.len(),alphabet:d.molecule.sequence.alphabet()}))) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone()))) epoch=workspace_epoch on_navigate=Callback::new(move|(query,index,spans):(bool,usize,Vec<(usize,usize)>)|{
                                                 if workspace_restoring.get_untracked(){return;}
                                                 let index=if query{index}else{active.get_untracked()};

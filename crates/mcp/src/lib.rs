@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 192;
+pub const CURRENT_TOOL_COUNT: usize = 195;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -1315,6 +1315,18 @@ pub struct SimilarityQuery {
     pub subjects: Vec<DocumentRef>,
     #[serde(default)]
     pub options: collagene_core::sequence_similarity::Options,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RnaSourceQuery {
+    pub document: DocumentRef,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RnaChemistryQuery {
+    pub document: DocumentRef,
+    pub declaration: collagene_core::rna_chemistry::Declaration,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -6035,6 +6047,48 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             let report=translation::find_orfs(&molecule,&args.options).map_err(bad)?;
             let artifact=server.analysis_artifact(&json!({"document":args.document,"engine_version":verification::ENGINE_VERSION,"orfs":report}))?;
             output(json!({"document":args.document,"options":report.options,"count":report.orfs.len(),"truncated_search":report.truncated,"display_truncated":report.orfs.len()>100,"orfs":report.orfs.iter().take(100).map(|o|json!({"location":o.location,"reverse":o.reverse,"frame":o.frame,"amino_acids":o.protein.len(),"protein_preview":o.protein.chars().take(80).collect::<String>(),"crosses_origin":o.crosses_origin,"partial_5prime":o.partial_5prime,"partial_3prime":o.partial_3prime,"termination":o.termination})).collect::<Vec<_>>(),"warnings":report.warnings,"artifact_id":artifact}))
+        }).await
+    }
+    #[tool(
+        description = "List the current embedded RNA covalent-chemistry model, supported base and imported annotation profiles, declaration version, catalog binding and bounds. Coverage and termini must be explicitly supplied; no default unmodified/closed assumption. This models declared neutral-acid composition, not measured sample state or enzyme behavior."
+    )]
+    async fn list_rna_chemistry_profiles(&self) -> Result<CallToolResult, ErrorData> {
+        use collagene_core::rna_chemistry as rna;
+        output(
+            json!({"engine":rna::ENGINE,"declaration_version":rna::DECLARATION_VERSION,"catalog_revision":rna::catalog_revision(),"nucleosides":rna::profiles(),"annotation_profiles":rna::annotation_profiles(),"mass_model":rna::MASS_MODEL,"max_bases":rna::MAX_BASES,"max_sites":rna::MAX_SITES,"max_links":rna::MAX_LINKS,"max_declaration_bytes":rna::MAX_DECLARATION_BYTES,"indexing":"zero-based stored strand; link.after names upstream residue","authority":"Declared covalent hypothesis only; neutral fully protonated acid without counterions/adducts. Partial coverage and unresolved chemistry withhold aggregate quantities. No material, measured-state or cloning authority."}),
+        )
+    }
+    #[tool(
+        description = "Inspect retained RNA modification features on an exact immutable session document. Returns source-feature fingerprints and typed candidate residue declarations for a bounded INSDC modified_base profile. Suggestions are not accepted reviews. Unsupported codes, uncertain/compound/complement locations, edited features and conflicting parents remain unresolved. Preview bounded to 100 entries/80 code characters; complete evidence is a JSON artifact. No document/history/material mutation."
+    )]
+    async fn inspect_rna_annotations(
+        &self,
+        Parameters(args): Parameters<RnaSourceQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || {
+            use collagene_core::rna_chemistry as rna;
+            let molecule={let store=server.store.lock().unwrap();let m=store.document(&args.document)?;rna::source_revision(m).map_err(bad)?;m.clone()};
+            let candidates=rna::annotation_candidates(&molecule).map_err(bad)?;
+            let artifact=server.analysis_artifact(&json!({"document":args.document,"engine":rna::ENGINE,"catalog_revision":rna::catalog_revision(),"candidates":candidates}))?;
+            let preview=candidates.iter().take(100).map(|c| json!({"feature_index":c.feature_index,"feature_revision":c.feature_revision,"position":c.position,"raw_code_preview":c.raw_code.as_ref().map(|s|s.chars().take(80).collect::<String>()),"raw_code_truncated":c.raw_code.as_ref().is_some_and(|s|s.chars().count()>80),"suggested_site":c.suggested_site,"unsupported_reason":c.unsupported_reason})).collect::<Vec<_>>();
+            output(json!({"document":args.document,"engine":rna::ENGINE,"count":candidates.len(),"preview_truncated":candidates.len()>100,"candidates":preview,"artifact_id":artifact}))
+        }).await
+    }
+    #[tool(
+        description = "Freshly analyze an explicit versioned RNA chemistry declaration against an exact immutable RNA source using embedded Rust. Requires explicit coverage and termini. Checks exact feature review fingerprints and base/sugar constraints, source parents, link positions and chemical contradictions before deriving CHNOPS/F composition and neutral-acid mass. Partial, ambiguous, unknown or unreviewed evidence withholds quantities; PS stereochemistry remains separate. Full source-bound report artifact and bounded diagnostics; no saved declaration, source edit, candidate or material install. Not experimental proof, activity prediction or cloning verification."
+    )]
+    async fn analyze_rna_chemistry(
+        &self,
+        Parameters(args): Parameters<RnaChemistryQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || {
+            use collagene_core::rna_chemistry as rna;
+            let molecule={let store=server.store.lock().unwrap();let m=store.document(&args.document)?;rna::declaration_revision(m,&args.declaration).map_err(bad)?;m.clone()};
+            let report=rna::analyze(&molecule,&args.declaration).map_err(bad)?;
+            let artifact=server.analysis_artifact(&serde_json::to_value(&report).map_err(bad)?)?;
+            output(json!({"document":args.document,"engine":report.engine,"catalog_revision":report.catalog_revision,"declaration_revision":report.declaration_revision,"context_revision":report.context_revision,"formula":report.formula,"mass":report.mass,"formula_complete":report.formula_complete,"identity_complete":report.identity_complete,"issues":report.issues,"unspecified_stereocenter_count":report.unspecified_stereocenters.len(),"unspecified_stereocenter_preview":report.unspecified_stereocenters.iter().take(100).collect::<Vec<_>>(),"stereocenter_preview_truncated":report.unspecified_stereocenters.len()>100,"retained_evidence_count":report.retained_evidence.len(),"unreviewed_evidence_count":report.unreviewed_evidence.len(),"artifact_id":artifact,"authority":"Declared covalent hypothesis; not measured sample, material or cloning authority."}))
         }).await
     }
     #[tool(

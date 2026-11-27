@@ -251,3 +251,5 @@ mod overlap_extension_execution;
 
 /// Bounded local similarity ranking over explicit nucleotide source collections.
 pub mod sequence_similarity;
+
+pub use collagene_rna_chemistry as rna_chemistry;

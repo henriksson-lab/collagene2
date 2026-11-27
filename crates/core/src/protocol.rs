@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 115;
+pub const WORKER_SCHEMA_VERSION: u16 = 116;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 31;
 
 // Current selectors whose accepted payloads can contain complete workspace archives.
@@ -1095,6 +1095,10 @@ pub enum AnalysisJob {
         format: crate::structure_view::coordinates::Format,
         selection: Option<crate::structure_view::coordinates::scene::Selection>,
     },
+    AnalyzeRnaChemistry {
+        molecule: Molecule,
+        declaration: crate::rna_chemistry::Declaration,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1290,6 +1294,7 @@ pub enum AnalysisResult {
     MaterialAnnealedOligosPreview(crate::material_derivation::AnnealedOligosPreview),
     SequenceSimilarity(crate::sequence_similarity::Report),
     StructurePrepared(crate::structure_view::Prepared),
+    RnaChemistry(crate::rna_chemistry::Report),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1468,6 +1473,13 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             crate::material_derivation::annealed_oligos_preview_revision(
                 workspace, top, bottom, options,
             )?;
+        }
+        AnalysisJob::AnalyzeRnaChemistry {
+            molecule,
+            declaration,
+        } => {
+            crate::rna_chemistry::declaration_revision(molecule, declaration)
+                .map_err(|e| Error::Format(e.to_string()))?;
         }
         AnalysisJob::PrepareStructure {
             bytes,
@@ -1950,6 +1962,9 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         AnalysisResult::MaterialAnnealedOligosPreview(report) => {
             report.validate_binding(&response.revision)?;
         }
+        AnalysisResult::RnaChemistry(report) => report
+            .validate_binding(&response.revision)
+            .map_err(|e| Error::Format(e.to_string()))?,
         AnalysisResult::StructurePrepared(report) => report.validate_binding(&response.revision)?,
         AnalysisResult::SequenceSimilarity(report) => {
             report.validate_binding(&response.revision)?;
@@ -2930,6 +2945,18 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
                 return Err(Error::Format(
                     "Annealed-material source events/options changed".into(),
                 ));
+            }
+            None
+        }
+        AnalysisJob::AnalyzeRnaChemistry {
+            molecule,
+            declaration,
+        } => {
+            if crate::rna_chemistry::request_revision(molecule, declaration)
+                .map_err(|e| Error::Format(e.to_string()))?
+                != r.revision
+            {
+                return Err(Error::Format("RNA source/declaration changed".into()));
             }
             None
         }
@@ -4424,6 +4451,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             crate::material_derivation::preview_annealed_oligos(&workspace, &top, &bottom, &options)
                 .map(AnalysisResult::MaterialAnnealedOligosPreview)
         }
+        AnalysisJob::AnalyzeRnaChemistry {
+            molecule,
+            declaration,
+        } => crate::rna_chemistry::analyze(&molecule, &declaration)
+            .map(AnalysisResult::RnaChemistry)
+            .map_err(|e| Error::Format(e.to_string())),
         AnalysisJob::PrepareStructure {
             bytes,
             format,

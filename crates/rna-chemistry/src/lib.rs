@@ -562,6 +562,138 @@ pub fn analyze(source: &Molecule, d: &Declaration) -> Result<Report> {
     })
 }
 impl Report {
+    /// Response binding and bounded shape consistency, without the original bases.
+    /// This cannot establish chemical correctness: accepting a saved result still
+    /// requires `validate_for` against its independently retained source.
+    pub fn validate_binding(&self, expected: &str) -> Result<()> {
+        let d = &self.declaration;
+        if self.engine != ENGINE
+            || d.version != DECLARATION_VERSION
+            || self.catalog_revision != catalog_revision()
+            || self.source_revision != d.source_revision
+            || self.source_revision.len() != 64
+            || !self
+                .source_revision
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            || self.source_length == 0
+            || self.source_length > MAX_BASES
+            || d.sites.len() > MAX_SITES
+            || d.links.len() > MAX_LINKS
+            || d.annotation_reviews.len() > 4096
+            || self.retained_evidence.len() > 8192
+            || self.unreviewed_evidence.len() > self.retained_evidence.len()
+            || hash(b"collagene-rna-declaration-2\0", d, MAX_DECLARATION_BYTES)?
+                != self.declaration_revision
+            || hash(
+                b"collagene-rna-request-2\0",
+                &(
+                    ENGINE,
+                    &self.source_revision,
+                    &self.declaration_revision,
+                    &self.catalog_revision,
+                ),
+                65536,
+            )? != self.context_revision
+            || self.context_revision != expected
+            || self.formula_complete != self.issues.is_empty()
+            || self.formula_complete != self.formula.is_some()
+            || self.identity_complete
+                != (self.formula_complete && self.unspecified_stereocenters.is_empty())
+            || self.mass != self.formula.map(Mass::for_formula)
+        {
+            return Err(Error::Binding);
+        }
+        let mut sites = BTreeSet::new();
+        let mut links = BTreeSet::new();
+        let mut reviews = BTreeSet::new();
+        let bonds = if self.topology == Topology::Circular {
+            self.source_length
+        } else {
+            self.source_length - 1
+        };
+        if d.sites
+            .iter()
+            .any(|s| s.index >= self.source_length || !sites.insert(s.index))
+            || d.links
+                .iter()
+                .any(|l| l.after >= bonds || !links.insert(l.after))
+            || d.annotation_reviews
+                .iter()
+                .any(|r| !reviews.insert(r.feature_index) || r.site_entry >= d.sites.len())
+            || !matches!(
+                (&d.ends, self.topology),
+                (Ends::Linear { .. }, Topology::Linear) | (Ends::Circular, Topology::Circular)
+            )
+        {
+            return Err(Error::Binding);
+        }
+        let stereo = d
+            .links
+            .iter()
+            .filter(|l| {
+                matches!(
+                    l.linkage,
+                    Linkage::Phosphorothioate {
+                        stereo: Stereo::Unspecified
+                    }
+                )
+            })
+            .map(|l| l.after)
+            .collect::<Vec<_>>();
+        if stereo != self.unspecified_stereocenters {
+            return Err(Error::Binding);
+        }
+        let expected_unreviewed = self
+            .retained_evidence
+            .iter()
+            .filter(|e| match e {
+                RetainedEvidence::Feature { index } => !reviews.contains(index),
+                RetainedEvidence::Metadata { .. } => true,
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if expected_unreviewed != self.unreviewed_evidence {
+            return Err(Error::Binding);
+        }
+        if self.formula_complete
+            && (d.coverage != Coverage::ClosedModel
+                || !self.unreviewed_evidence.is_empty()
+                || d.sites.iter().any(|s| {
+                    matches!(s.nucleoside, Nucleoside::Unknown { .. })
+                        || matches!(s.sugar, Sugar::Unknown { .. })
+                })
+                || d.links
+                    .iter()
+                    .any(|l| matches!(l.linkage, Linkage::Unknown { .. }))
+                || matches!(
+                    d.ends,
+                    Ends::Linear {
+                        five: FivePrime::Unknown { .. },
+                        ..
+                    } | Ends::Linear {
+                        three: ThreePrime::Unknown { .. },
+                        ..
+                    }
+                ))
+        {
+            return Err(Error::Binding);
+        }
+        if self
+            .formula
+            .is_some_and(|f| f.c == 0 || f.array().into_iter().any(|n| n > 100_000_000))
+            || self.issues.len() > 8
+            || self.issues.iter().any(|i| {
+                i.count == 0
+                    || i.positions.len() > 100
+                    || i.positions.len() > i.count
+                    || i.positions.iter().any(|&p| p >= self.source_length)
+            })
+        {
+            return Err(Error::Binding);
+        }
+        Ok(())
+    }
     /// Reconstruct every quantity from the independently supplied immutable source
     /// and declaration. A report/hash alone cannot establish chemical state.
     pub fn validate_for(&self, source: &Molecule, d: &Declaration) -> Result<()> {

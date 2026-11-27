@@ -61,6 +61,7 @@ fn neutral_canonical_nucleosides_match_independently_published_formulas_and_mass
         let d = declaration(&m);
         let r = analyze(&m, &d).unwrap();
         assert_eq!(source_revision(&m).unwrap(), m.revision());
+        r.validate_binding(&r.context_revision).unwrap();
         r.validate_for(&m, &d).unwrap();
         assert!(r.identity_complete);
         assert_eq!(r.formula.unwrap().hill(), formula);
@@ -293,6 +294,7 @@ fn partial_unknown_ambiguous_and_retained_foreign_chemistry_never_become_unmodif
         assert!(!r.identity_complete);
         assert!(r.formula.is_none() && r.mass.is_none());
         assert!(!r.issues.is_empty());
+        r.validate_binding(&r.context_revision).unwrap();
         r.validate_for(&m, &d).unwrap();
     }
     let m = source(&"N".repeat(120), Topology::Linear);
@@ -367,22 +369,28 @@ fn report_validation_reconstructs_source_declarations_catalog_formula_and_quanti
     let r = analyze(&m, &d).unwrap();
     let roundtrip: Report = serde_json::from_slice(&serde_json::to_vec(&r).unwrap()).unwrap();
     roundtrip.validate_for(&m, &d).unwrap();
+    roundtrip.validate_binding(&r.context_revision).unwrap();
     assert_eq!(request_revision(&m, &d).unwrap(), r.context_revision);
     let mut changed = r.clone();
     changed.engine = "rna-chemistry-0".into();
     assert!(changed.validate_for(&m, &d).is_err());
+    assert!(changed.validate_binding(&r.context_revision).is_err());
     let mut changed = r.clone();
     changed.formula.as_mut().unwrap().p += 1;
     assert!(changed.validate_for(&m, &d).is_err());
+    assert!(changed.validate_binding(&r.context_revision).is_err());
     let mut changed = r.clone();
     changed.mass.as_mut().unwrap().monoisotopic_da += 1.0;
     assert!(changed.validate_for(&m, &d).is_err());
+    assert!(changed.validate_binding(&r.context_revision).is_err());
     let mut changed = r.clone();
     changed.identity_complete = false;
     assert!(changed.validate_for(&m, &d).is_err());
+    assert!(changed.validate_binding(&r.context_revision).is_err());
     let mut changed = r.clone();
     changed.catalog_revision = "0".repeat(64);
     assert!(changed.validate_for(&m, &d).is_err());
+    assert!(changed.validate_binding(&r.context_revision).is_err());
     let mut changed = d.clone();
     changed.provenance.statement = "Another explicit source hypothesis".into();
     assert!(r.validate_for(&m, &changed).is_err());
@@ -437,6 +445,7 @@ fn insdc_annotation_review_constrains_chemistry_without_erasing_original_evidenc
             vec![RetainedEvidence::Feature { index: 0 }]
         );
         assert!(r.unreviewed_evidence.is_empty());
+        r.validate_binding(&r.context_revision).unwrap();
         r.validate_for(&m, &d).unwrap();
         assert_eq!(m, before);
     }

@@ -4197,12 +4197,13 @@ evidence withhold quantities. PS stereochemistry remains separate from mass, and
 isobaric base/sugar identities are not collapsed. These declarations are hypotheses,
 not measured-state or cloning/material authority.
 
-The current declaration version 1 and engine `rna-chemistry-1` reject unsupported
+The current declaration version 2 and engine `rna-chemistry-2` reject unsupported
 representations directly. Source, provenance, complete catalog/mass data and
 report quantities bind together and can be reconstructed independently. Eight
 fixture groups and the final optional-schema WASM check pass; CI includes the new
-crate on all three native platforms and WASM. Worker, UI, MCP, imported annotation
-review and exact-event persistence remain required integration work, followed by
+crate on all three native platforms and WASM. Imported annotation review and
+worker/MCP integration are implemented below. UI and exact-event persistence
+remain required integration work, followed by
 the rest of F34 and the existing delivery/acceptance gates. [RNA contract](RNA_MODIFICATIONS.md).
 
 ### F34 imported RNA modification review
@@ -4220,3 +4221,20 @@ Native fixtures cover the ten supported codes, independent monomer formulas,
 component combinations, conflicting/stale/duplicate reviews and unresolved source
 evidence. Worker/MCP/UI and exact-event persistence remain integration work; this
 checkpoint does not complete F34 or the full delivery goal.
+
+### F34 RNA worker and native MCP integration
+
+Worker version 116 adds native source/declaration-bound RNA analysis at job 193 /
+result 183, with unchanged ordinary envelope limits and both stateless/session
+execution. The native MCP registry adds profile discovery, imported-annotation
+inspection and explicit typed declaration analysis (195 tools total). RNA source
+bounds are checked before session-source cloning; full artifacts retain exact
+review and declaration evidence while previews remain bounded. Neither path edits
+a source or installs a material/candidate. Response consistency checks do not
+replace source-based report reconstruction for saved-record acceptance. The grouped
+native run passes all 27 selected cases and the integrated web/worker WASM check
+passes with optional core schemas. No browser/application HTTP checks were run.
+
+Exact-event declaration capture and workspace UI remain required, as do antibody
+analysis and the existing platform, graphical/performance and interoperability
+acceptance gates. [RNA integration contract](RNA_MODIFICATIONS.md).

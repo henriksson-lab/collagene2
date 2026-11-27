@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current registry has 192 tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol.rs), [workspace plan](../crates/core/src/workspace.rs), [verifier](../crates/core/src/verification.rs) and [assembly draft](../crates/core/src/assembly_library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
+The current registry has 195 tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol.rs), [workspace plan](../crates/core/src/workspace.rs), [verifier](../crates/core/src/verification.rs) and [assembly draft](../crates/core/src/assembly_library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
 add exact-version matrix paging, native inspection, historical capture/list/open
 and explicit fresh replay. [Batch contracts](COMBINATORIAL_BATCHES.md).
 Reference recombination retains explicit profile discovery, source inspection,
@@ -26,6 +26,16 @@ rows are bounded; full data uses `read_artifact` chunks. No molecule, candidate,
 material or browser workspace is installed. These native/embedded stdio tools do
 not expand thin WebMCP's page-scoped permissions.
 [Coordinate profiles and tool examples](STRUCTURE_IMPORT.md).
+
+RNA analysis uses `list_rna_chemistry_profiles`, `inspect_rna_annotations` and
+`analyze_rna_chemistry`. Inspect an immutable RNA document for exact feature
+fingerprints and proposed residue entries, then explicitly supply coverage,
+termini, declared chemistry and any accepted feature mappings. Native computation
+checks source binding, positions and chemical constraints. Unknown or unreviewed
+evidence withholds quantities. Reports are session artifacts, with bounded
+previews; they do not install documents, persistent declarations or materials.
+The tools grant no measured-state or cloning authority and do not expand WebMCP.
+[RNA model and annotation contract](RNA_MODIFICATIONS.md).
 
 Build and configure:
 

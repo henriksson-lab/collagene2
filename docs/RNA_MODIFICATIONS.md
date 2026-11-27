@@ -3,8 +3,8 @@
 `collagene-rna-chemistry` provides an independent MIT Rust analysis core for
 source-bound RNA base, sugar, backbone and terminal declarations. It is portable
 to native and WASM targets and has optional JSON schemas. This batch supplies the
-scientific core and imported-annotation review; worker, UI, workspace capture and MCP access
-remain to be integrated. It does not complete F34 or change existing RNA documents.
+scientific core, imported-annotation review, binary worker and native MCP access.
+UI and exact-event workspace capture remain to be integrated. It does not complete F34 or change existing RNA documents.
 
 ## Representation and scope
 
@@ -113,6 +113,33 @@ budget additionally bounds source text, annotations, qualifiers and location
 depth; the streamed source serialization is capped at 32 MiB. Duplicate residue
 or linkage declarations, incorrect parents, invalid coordinates, terminal linkage
 indices and topology/terminus contradictions fail before any complete-model claim.
+
+## Worker and MCP
+
+Current worker version 116 adds `AnalyzeRnaChemistry` (job 193) and
+`RnaChemistry` (result 183). Both stateless and retained-session dispatch validate
+the complete source/declaration context before analysis. Requests and responses
+use the ordinary bounded binary envelope, without widening workspace admission.
+Response decoding checks the current catalog/context, declaration hash, bounded
+shape, review-evidence subset and formula/mass consistency. These checks cannot
+reconstruct source bases absent from a response: saved-record acceptance still
+requires fresh `validate_for` against the independently retained source.
+
+Native MCP exposes:
+
+| Tool | Input and behavior |
+| --- | --- |
+| `list_rna_chemistry_profiles` | Current versions, catalog, supported nucleosides/annotation mappings, mass model and bounds |
+| `inspect_rna_annotations` | Exact immutable `document` reference; candidate feature fingerprints and residue suggestions, with full JSON evidence |
+| `analyze_rna_chemistry` | Exact immutable `document` plus typed current `declaration`; fresh native report, quantities or explicit unresolved issues |
+
+The MCP schema requires coverage and termini rather than supplying a closed model.
+Source bounds are checked before cloning a session document. Annotation previews
+contain at most 100 rows and 80 characters of each raw code; full artifacts retain
+the original strings. Analysis previews bound stereocenter examples and issue
+positions. Publication obeys the existing session artifact/storage budgets. No tool
+mutates a source, saves a declaration or installs a candidate/material. Thin WebMCP
+and filesystem permissions are unchanged.
 
 ## Primary sources and fixtures
 

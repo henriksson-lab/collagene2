@@ -1931,7 +1931,7 @@ Unspecified PS stereochemistry withholds complete identity while leaving a known
 formula available. Partial/unknown chemistry, ambiguous references and unreviewed
 retained source modification evidence withhold aggregate formula/mass.
 
-Declaration version 1 and `rna-chemistry-1` bind source, documentary provenance,
+Declaration version 2 and `rna-chemistry-2` bind source, documentary provenance,
 canonical/modified catalog data and mass constants. Unsupported versions refuse;
 report validation recomputes from independent source and declaration. The source
 revision matches the shared molecule hash through bounded streaming serialization.
@@ -1941,6 +1941,32 @@ and an independent condensation oracle for all 340 canonical sequences of length
 1–4 in linear and circular form. Affected catalog/bond groups were rechecked after
 centralizing atom tables and binding them into the catalog revision. The final
 optional-schema WASM check also passes. Three-platform scientific CI and WASM CI
-include the crate. This core does not yet provide worker/UI/MCP integration,
-event-bound workspace persistence or imported annotation review. Those remain in
-the full F34 scope alongside antibody analysis. [Contract](RNA_MODIFICATIONS.md).
+include the crate. Imported annotation review and worker/MCP integration are
+implemented in the following checkpoint. UI and event-bound workspace persistence
+remain in the full F34 scope alongside antibody analysis. [Contract](RNA_MODIFICATIONS.md).
+
+### RNA annotation review and worker/MCP integration
+
+The current representation is declaration version 2 and `rna-chemistry-2`.
+Imported single-residue INSDC `modified_base` features can be explicitly reviewed
+against exact feature fingerprints and declared residue chemistry. All original
+modification evidence stays retained; an unreviewed subset blocks aggregate
+quantities. Unknown codes, uncertain locations, parent conflicts, stale feature
+content and incompatible base/sugar choices refuse review. Opaque modification
+metadata cannot be cleared through a feature review.
+
+Worker 116 adds source-bound native RNA analysis at job 193/result 183 in stateless
+and retained-session dispatch. The native MCP registry has 195 tools, including
+profile discovery, annotation inspection and explicit typed declaration analysis.
+Full artifacts preserve declaration and source-evidence records; summaries bound
+rows and diagnostic positions. A decoded report's structural/context checks do not
+replace fresh recomputation against an independent source for saved acceptance.
+
+The standalone annotation/scientific batch passes 11 native fixture groups and
+the optional-schema WASM check. The subsequent grouped native run passes 27 cases:
+11 RNA chemistry/review/binding cases, two RNA worker cases, one real MCP SDK
+case, five affected structure/similarity worker cases and eight core chemistry
+cases selected by the shared fixture name. The integrated web/worker WASM check
+with optional core schemas passes. Exact-event workspace capture and
+UI controls remain to be implemented, followed by antibody-specific work and the
+existing whole-product delivery gates. [RNA contract](RNA_MODIFICATIONS.md).

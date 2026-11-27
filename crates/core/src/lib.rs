@@ -244,3 +244,5 @@ pub mod run_review;
 pub mod svg_export;
 
 pub mod protocol_layout;
+
+pub mod protocol_quantities;

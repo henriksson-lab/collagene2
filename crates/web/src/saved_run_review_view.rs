@@ -47,6 +47,12 @@ pub fn SavedRunReviewPanel(
     snapshot: Callback<(), Result<Workspace, String>>,
     run_id: String,
     epoch: RwSignal<u64>,
+    validate: Callback<Workspace, Result<(), String>>,
+    on_restore: Callback<Workspace>,
+    db: StoredValue<Option<crate::storage::Database>, LocalStorage>,
+    workspace_busy: RwSignal<bool>,
+    save_generation: RwSignal<u64>,
+    message: RwSignal<String>,
     on_edit_plan: Callback<Arc<PreparedReview>, Result<(), String>>,
 ) -> impl IntoView {
     let run_id = StoredValue::new(run_id);
@@ -211,7 +217,7 @@ pub fn SavedRunReviewPanel(
         bound.set_value(None);
         status.set("Review cancelled.".into());
     };
-    let capture = Callback::new(move |()| {
+    let checked_prepared = Callback::new(move |()| -> Result<Arc<PreparedReview>, String> {
         if epoch.get_untracked() != opened_epoch {
             return Err("Workspace changed; reopen this saved run.".into());
         }
@@ -227,7 +233,7 @@ pub fn SavedRunReviewPanel(
         p.validate_for_workspace(&frame)
             .map_err(|e| e.to_string())?;
         model::validate_report(&p, &r)?;
-        Ok((p.candidate.plan.clone(), p.target.clone()))
+        Ok(p)
     });
     let edit = move |_| {
         let result = (|| -> Result<(), String> {
@@ -246,6 +252,37 @@ pub fn SavedRunReviewPanel(
             status.set(error);
         }
     };
+    let quantity_binding = Callback::new(
+        move |()| -> Result<crate::protocol_quantities_model::Binding, String> {
+            if epoch.get_untracked() != opened_epoch {
+                return Err("Workspace changed; reopen the saved run.".into());
+            }
+            let p = prepared
+                .get_untracked()
+                .ok_or("Prepare the exact saved run first")?;
+            Ok(crate::protocol_quantities_model::Binding {
+                plan_source: collagene_core::protocol_quantities::PlanSource::SavedRun {
+                    run_id: p.run_id.clone(),
+                },
+                plan_revision: p.candidate.plan_revision.clone(),
+                target: p.target_event.clone(),
+                inputs: p.inputs.clone(),
+                step_count: p.candidate.plan.steps.len(),
+                component_sources: p
+                    .candidate
+                    .plan
+                    .steps
+                    .iter()
+                    .map(|op| {
+                        collagene_core::verification::operation_sources(op)
+                            .into_iter()
+                            .cloned()
+                            .collect()
+                    })
+                    .collect(),
+            })
+        },
+    );
     let identity = Memo::new(move |_| {
         prepared
             .get()
@@ -279,7 +316,7 @@ pub fn SavedRunReviewPanel(
                 <h5>{format!("{} freshly reconstructed products",r.products.len())}</h5>{products}
                 <button class="text-tool" disabled=move||product_page.get()==0 on:click=move|_|product_page.update(|v|*v=v.saturating_sub(1))>"Previous products"</button>
                 <button class="text-tool" disabled=move||(product_page.get()+1)*25>=product_count on:click=move|_|product_page.update(|v|*v+=1)>"Next products"</button>
-                {outcomes}<crate::assembly_outputs::AssemblyOutputs capture identity epoch/>
+                {outcomes}<crate::assembly_outputs::AssemblyOutputs capture=Callback::new(move|()|checked_prepared.run(()).map(|p|(p.candidate.plan.clone(),p.target.clone()))) identity epoch/><crate::protocol_quantities_view::ReactionQuantitiesView capture=quantity_binding identity epoch snapshot validate on_restore db workspace_busy save_generation message/>
             </section>}
         })}
     </details>}

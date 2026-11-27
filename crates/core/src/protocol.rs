@@ -6,14 +6,15 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 101;
+pub const WORKER_SCHEMA_VERSION: u16 = 103;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 26;
 
 // Current selectors whose accepted payloads can contain complete workspace archives.
 // Stateless and session dispatch must admit the same envelope before routing.
 const WORKSPACE_REQUEST_SELECTORS: &[u32] = &[
     19, 20, 42, 43, 69, 72, 102, 105, 106, 107, 108, 128, 130, 131, 134, 135, 149, 155, 158, 168,
-    169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 180, 181, 182, 183, 184,
+    169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 180, 181, 182, 183, 184, 185, 186, 187, 188,
+    189,
 ];
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -1035,6 +1036,26 @@ pub enum AnalysisJob {
         layout_hash: String,
         format: crate::protocol_layout::ExportFormat,
     },
+    PreviewProtocolQuantities {
+        workspace: crate::workspace::Workspace,
+        request: crate::protocol_quantities::Request,
+    },
+    CaptureProtocolQuantities {
+        workspace: crate::workspace::Workspace,
+        request: crate::protocol_quantities::Request,
+    },
+    OpenProtocolQuantities {
+        workspace: crate::workspace::Workspace,
+        quantity_hash: String,
+    },
+    ExportProtocolQuantities {
+        workspace: crate::workspace::Workspace,
+        quantity_hash: String,
+        format: crate::protocol_quantities::ExportFormat,
+    },
+    ListProtocolQuantities {
+        workspace: crate::workspace::Workspace,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1222,6 +1243,11 @@ pub enum AnalysisResult {
     ProtocolLayoutPreview(crate::protocol_layout::Layout),
     ProtocolLayoutCaptured(crate::protocol_layout::Capture),
     ProtocolLayoutExported(crate::protocol_layout::Exported),
+    ProtocolQuantitiesPreview(crate::protocol_quantities::Preview),
+    ProtocolQuantitiesCaptured(crate::protocol_quantities::Capture),
+    ProtocolQuantitiesOpened(crate::protocol_quantities::Opened),
+    ProtocolQuantitiesExported(crate::protocol_quantities::Exported),
+    ProtocolQuantitiesListed(crate::protocol_quantities::Listed),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1281,6 +1307,27 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         | AnalysisJob::CaptureProtocolLayout { workspace, request } => {
             crate::protocol_layout::preview_revision(workspace, request)?;
         }
+        AnalysisJob::PreviewProtocolQuantities { workspace, request }
+        | AnalysisJob::CaptureProtocolQuantities { workspace, request } => {
+            crate::protocol_quantities::preview_revision(workspace, request)?;
+        }
+        AnalysisJob::ListProtocolQuantities { workspace } => {
+            crate::protocol_quantities::list_revision(workspace)?;
+        }
+        AnalysisJob::OpenProtocolQuantities {
+            workspace,
+            quantity_hash,
+        } => {
+            crate::protocol_quantities::open_revision(workspace, quantity_hash)?;
+        }
+        AnalysisJob::ExportProtocolQuantities {
+            workspace,
+            quantity_hash,
+            format,
+        } => {
+            crate::protocol_quantities::export_revision(workspace, quantity_hash, *format)?;
+        }
+
         AnalysisJob::ExportProtocolLayout {
             workspace,
             layout_hash,
@@ -1641,6 +1688,11 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::PreviewProtocolLayout { .. }
             | AnalysisJob::CaptureProtocolLayout { .. }
             | AnalysisJob::ExportProtocolLayout { .. }
+            | AnalysisJob::PreviewProtocolQuantities { .. }
+            | AnalysisJob::CaptureProtocolQuantities { .. }
+            | AnalysisJob::OpenProtocolQuantities { .. }
+            | AnalysisJob::ExportProtocolQuantities { .. }
+            | AnalysisJob::ListProtocolQuantities { .. }
     ) {
         MAX_WORKSPACE_MESSAGE_BYTES
     } else {
@@ -1656,12 +1708,27 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         bytes,
         &[
             20, 21, 40, 41, 62, 65, 94, 97, 100, 122, 126, 127, 159, 160, 161, 162, 163, 164, 165,
-            166, 167, 168, 170, 171, 173,
+            166, 167, 168, 170, 171, 173, 176,
         ],
     )?;
 
     let response: Response = decode_with_limit(b"CGR\0", bytes, maximum)?;
     match &response.result {
+        AnalysisResult::ProtocolQuantitiesListed(report) => {
+            report.validate_binding(&response.revision)?;
+        }
+        AnalysisResult::ProtocolQuantitiesPreview(report) => {
+            report.validate_binding(&response.revision)?;
+        }
+        AnalysisResult::ProtocolQuantitiesCaptured(report) => {
+            report.validate_binding(&response.revision)?;
+        }
+        AnalysisResult::ProtocolQuantitiesOpened(report) => {
+            report.validate_binding(&response.revision)?;
+        }
+        AnalysisResult::ProtocolQuantitiesExported(report) => {
+            report.validate_binding(&response.revision)?;
+        }
         AnalysisResult::ProtocolLayoutPreview(report) => {
             report.validate_binding(&response.revision)?
         }
@@ -2861,6 +2928,48 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
 
+        AnalysisJob::PreviewProtocolQuantities { workspace, request }
+        | AnalysisJob::CaptureProtocolQuantities { workspace, request } => {
+            if crate::protocol_quantities::preview_revision(workspace, request)? != r.revision {
+                return Err(Error::Format(
+                    "Reaction quantity source/recipe context changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::ListProtocolQuantities { workspace } => {
+            if crate::protocol_quantities::list_revision(workspace)? != r.revision {
+                return Err(Error::Format(
+                    "Reaction quantity catalog/workspace changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::OpenProtocolQuantities {
+            workspace,
+            quantity_hash,
+        } => {
+            if crate::protocol_quantities::open_revision(workspace, quantity_hash)? != r.revision {
+                return Err(Error::Format(
+                    "Reaction quantity attachment/workspace changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::ExportProtocolQuantities {
+            workspace,
+            quantity_hash,
+            format,
+        } => {
+            if crate::protocol_quantities::export_revision(workspace, quantity_hash, *format)?
+                != r.revision
+            {
+                return Err(Error::Format(
+                    "Reaction quantity export source/format changed".into(),
+                ));
+            }
+            None
+        }
         AnalysisJob::PreviewProtocolLayout { workspace, request }
         | AnalysisJob::CaptureProtocolLayout { workspace, request } => {
             if crate::protocol_layout::preview_revision(workspace, request)? != r.revision {
@@ -4211,6 +4320,29 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
                 .map(AnalysisResult::SelectiveAssemblyPrimers)
         }
 
+        AnalysisJob::PreviewProtocolQuantities { workspace, request } => {
+            crate::protocol_quantities::preview(&workspace, &request)
+                .map(AnalysisResult::ProtocolQuantitiesPreview)
+        }
+        AnalysisJob::CaptureProtocolQuantities { workspace, request } => {
+            crate::protocol_quantities::capture(&workspace, &request)
+                .map(AnalysisResult::ProtocolQuantitiesCaptured)
+        }
+        AnalysisJob::ListProtocolQuantities { workspace } => {
+            crate::protocol_quantities::list(&workspace)
+                .map(AnalysisResult::ProtocolQuantitiesListed)
+        }
+        AnalysisJob::OpenProtocolQuantities {
+            workspace,
+            quantity_hash,
+        } => crate::protocol_quantities::open(&workspace, &quantity_hash)
+            .map(AnalysisResult::ProtocolQuantitiesOpened),
+        AnalysisJob::ExportProtocolQuantities {
+            workspace,
+            quantity_hash,
+            format,
+        } => crate::protocol_quantities::export(&workspace, &quantity_hash, format)
+            .map(AnalysisResult::ProtocolQuantitiesExported),
         AnalysisJob::PreviewProtocolLayout { workspace, request } => {
             crate::protocol_layout::preview(&workspace, &request)
                 .map(AnalysisResult::ProtocolLayoutPreview)
@@ -4916,6 +5048,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             | AnalysisResult::MaterialDigestInspection(_)
             | AnalysisResult::SavedRunReviewPrepared(_)
             | AnalysisResult::ProtocolLayoutCaptured(_)
+            | AnalysisResult::ProtocolQuantitiesCaptured(_)
     ) {
         MAX_WORKSPACE_MESSAGE_BYTES
     } else {

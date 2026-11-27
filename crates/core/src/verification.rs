@@ -4184,6 +4184,52 @@ pub(crate) fn protocol_oligo_sequence<'a>(
     Some(molecule.sequence.as_str())
 }
 
+/// Native-generated documentary appendix. It cannot supply molecular status.
+pub(crate) struct ProtocolAppendix {
+    pub paragraphs: Vec<String>,
+    pub tables: Vec<ProtocolTable>,
+}
+pub(crate) struct ProtocolTable {
+    pub heading: String,
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<String>>,
+}
+impl ProtocolAppendix {
+    pub(crate) fn validate(&self) -> Result<(), Error> {
+        let mut bytes = 0usize;
+        let mut rows = 0usize;
+        if self.paragraphs.len() > 8192 || self.tables.len() > 128 {
+            return Err(Error::TooLarge);
+        }
+        let mut charge = |text: &str| -> Result<(), Error> {
+            bytes = bytes
+                .checked_add(text.len())
+                .filter(|n| *n <= 512 * 1024)
+                .ok_or(Error::TooLarge)?;
+            Ok(())
+        };
+        for p in &self.paragraphs {
+            charge(p)?;
+        }
+        for table in &self.tables {
+            rows = rows
+                .checked_add(table.rows.len())
+                .filter(|n| *n <= 8192)
+                .ok_or(Error::TooLarge)?;
+            if table.columns.is_empty()
+                || table.columns.len() > 8
+                || table.rows.iter().any(|r| r.len() != table.columns.len())
+            {
+                return Err(Error::Format("invalid protocol appendix table".into()));
+            }
+            charge(&table.heading)?;
+            for cell in table.columns.iter().chain(table.rows.iter().flatten()) {
+                charge(cell)?;
+            }
+        }
+        Ok(())
+    }
+}
 /// Fresh in-process protocol context. It cannot be deserialized or constructed
 /// from an imported report; immutable borrows keep plan/target paired with this
 /// exact native reconstruction while several output formats are rendered.
@@ -4191,8 +4237,18 @@ pub(crate) struct CheckedProtocol<'a> {
     plan: &'a DesignPlan,
     target: &'a Molecule,
     report: VerificationReport,
+    appendix: Option<&'a ProtocolAppendix>,
 }
 impl<'a> CheckedProtocol<'a> {
+    pub(crate) fn with_appendix(mut self, appendix: &'a ProtocolAppendix) -> Result<Self, Error> {
+        appendix.validate()?;
+        self.appendix = Some(appendix);
+        Ok(self)
+    }
+    pub(crate) fn appendix(&self) -> Option<&ProtocolAppendix> {
+        self.appendix
+    }
+
     pub(crate) fn plan(&self) -> &'a DesignPlan {
         self.plan
     }
@@ -4213,6 +4269,7 @@ pub(crate) fn checked_protocol<'a>(
         plan,
         target,
         report: verify(plan, target),
+        appendix: None,
     }
 }
 /// Rechecks the plan at export time; the caller cannot attach an unrelated report.
@@ -4314,22 +4371,22 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
             },
             Operation::RecombineReference { sources, request, selection } => body.push_str(&format!("<li>Reference-only {:?} exchange of {} and {}. Pinned full profile/data, work/annotation limits: <code>{}</code>. Explicit component selection: <code>{}</code>. All reciprocal components are computed; selected reference DNA does not establish chemical state, efficacy, repair or experimental selection.</li>",request.reaction,source(&sources[0]),source(&sources[1]),e(&serde_json::to_string(request).unwrap_or_default()),e(&serde_json::to_string(selection).unwrap_or_default()))),
             Operation::PcrWithMismatches{template,forward,reverse,options}=>body.push_str(&format!("<li>Intentional-mismatch PCR of {}. Oligos 5′→3′: <code>{}</code> and <code>{}</code>. Binding/search policy: <code>{}</code>. Primer-derived changes are reconstructed; amplification is not established.</li>",source(template),e(&forward.ordered_sequence()),e(&reverse.ordered_sequence()),e(&serde_json::to_string(options).unwrap_or_default()))),
-            Operation::GoldenGate{templates,options,candidate_index}=>body.push_str(&format!("<li>Golden Gate with {:?}, inputs {}. Explicit zero-based candidate {} under policy <code>{}</code>. Cleavage, orientation, cohesive ends and recognition-site removal are checked. Finite one-copy fragment search does not establish exhaustive mixture uniqueness; conditions and quantities are unspecified.</li>",options.enzyme,templates.iter().map(source).collect::<Vec<_>>().join(", "),candidate_index,e(&serde_json::to_string(options).unwrap_or_default()))),
-            Operation::SelectedGoldenGate{templates,options,candidate_index,directed_sequence_key,physical_sequence_key}=>body.push_str(&format!("<li>Key-bound Golden Gate with {:?}, inputs {}. Explicit zero-based candidate {} under policy <code>{}</code>. Cleavage, orientation, cohesive ends and recognition-site removal are checked. Finite one-copy fragment search does not establish exhaustive mixture uniqueness; conditions and quantities are unspecified. Fresh enumeration must match directed key <code>{}</code> and physical key <code>{}</code>.</li>",options.enzyme,templates.iter().map(source).collect::<Vec<_>>().join(", "),candidate_index,e(&serde_json::to_string(options).unwrap_or_default()),e(directed_sequence_key),e(physical_sequence_key))),
+            Operation::GoldenGate{templates,options,candidate_index}=>body.push_str(&format!("<li>Golden Gate with {:?}, inputs {}. Explicit zero-based candidate {} under policy <code>{}</code>. Cleavage, orientation, cohesive ends and recognition-site removal are checked. Finite one-copy fragment search does not establish exhaustive mixture uniqueness; conditions and quantities are not specified by the molecular model.</li>",options.enzyme,templates.iter().map(source).collect::<Vec<_>>().join(", "),candidate_index,e(&serde_json::to_string(options).unwrap_or_default()))),
+            Operation::SelectedGoldenGate{templates,options,candidate_index,directed_sequence_key,physical_sequence_key}=>body.push_str(&format!("<li>Key-bound Golden Gate with {:?}, inputs {}. Explicit zero-based candidate {} under policy <code>{}</code>. Cleavage, orientation, cohesive ends and recognition-site removal are checked. Finite one-copy fragment search does not establish exhaustive mixture uniqueness; conditions and quantities are not specified by the molecular model. Fresh enumeration must match directed key <code>{}</code> and physical key <code>{}</code>.</li>",options.enzyme,templates.iter().map(source).collect::<Vec<_>>().join(", "),candidate_index,e(&serde_json::to_string(options).unwrap_or_default()),e(directed_sequence_key),e(physical_sequence_key))),
             Operation::MultiSiteRecombineReference{sources,request,selection}=>body.push_str(&format!("<li>Declared multi-site {:?} reference exchange using sources {}. Profile <code>{}</code>; specificity order {:?}; select candidate {}, component {} from bound batch <code>{}</code>. Retain all reciprocal components. This is a reference design, not established chemical material, experimental selection or kit success.</li>",request.reaction.reaction,e(&sources.iter().map(|s|format!("{}: {}",s.role,source(&s.source))).collect::<Vec<_>>().join(", ")),e(&request.reaction.profile.id),request.reaction.specificities,selection.candidate_id,selection.component_id,e(&selection.batch_revision))),
-            Operation::Pcr { template, forward, reverse } => body.push_str(&format!("<li>PCR of {} with {}: <code>{}</code> and {}: <code>{}</code>. Primers shown 5′→3′. Reaction conditions and quantities are unspecified.</li>",source(template),e(&forward.name),e(&forward.ordered_sequence()),e(&reverse.name),e(&reverse.ordered_sequence()))),
+            Operation::Pcr { template, forward, reverse } => body.push_str(&format!("<li>PCR of {} with {}: <code>{}</code> and {}: <code>{}</code>. Primers shown 5′→3′. The molecular model does not specify reaction conditions or quantities.</li>",source(template),e(&forward.name),e(&forward.ordered_sequence()),e(&reverse.name),e(&reverse.ordered_sequence()))),
             Operation::DeclareSourceTermini{template,left,right}=>body.push_str(&format!("<li>Declare original intact linear duplex source termini for {}: left <code>{}</code>, right <code>{}</code>. Explicit operator hypothesis only; not measured chemistry, synthesis, repair, recovered imported physical state or experimental success. Original sequence/features/citations are retained; methylation remains unknown.</li>",source(template),e(&serde_json::to_string(left).unwrap_or_default()),e(&serde_json::to_string(right).unwrap_or_default()))),
             Operation::DeclareSourceModifications{template,assumptions}=>body.push_str(&format!("<li>Declare closed Dam/Dcm/CpG source generation for {} under explicit assumptions <code>{}</code>. Bind the original input revision; these are not measured modifications. Descendant strand states are propagated without resynthesizing methylation.</li>",source(template),e(&serde_json::to_string(assumptions).unwrap_or_default()))),
             Operation::CheckedDigest{template,selection,options,fragment_index}=>body.push_str(&format!("<li>Checked positional-modification digest of {} with {}. Profile <code>{}</code>; zero-based fragment {}. Analysis limits: {} comparisons, {} sites, {} fragments, {} report bytes. Blocked sites remain intact; unknown/impaired or incomplete evidence withholds fully determined products. Reaction conditions and experimental success remain unspecified.</li>",source(template),e(&selection.enzymes.iter().map(|e|e.enzyme.name.clone()).collect::<Vec<_>>().join(", ")),e(&modified_duplex::profile_revision()),fragment_index,options.max_comparisons,options.max_sites,options.max_fragments,options.max_report_bytes)),
             Operation::CatalogDigest{template,selection,fragment_index}=>body.push_str(&format!("<li>Catalog-pinned complete digest of {} under exact selection <code>{}</code>; select zero-based fragment {} in top-reference cut ordering. Identity/name/geometry are checked against the embedded catalog. Complete cleavage and compatible conditions remain assumptions; supplier observations do not establish kinetics, methylation compatibility or experimental completion.</li>",source(template),e(&serde_json::to_string(selection).unwrap_or_default()),fragment_index)),
             Operation::Digest{template,enzymes,fragment_index}=>body.push_str(&format!("<li>Complete restriction digest of {} with {}. Select zero-based fragment index {} in ascending top-reference cut order. Cleavage assumes compatible conditions and no blocking methylation.</li>",source(template),e(&enzymes.join(", ")),fragment_index)),
-            Operation::TreatEnds{template,treatment}=>body.push_str(&format!("<li>Terminal {:?} treatment of {}. Internal nick repair is not assumed; reaction conditions and quantities are unspecified.</li>",treatment,source(template))),
+            Operation::TreatEnds{template,treatment}=>body.push_str(&format!("<li>Terminal {:?} treatment of {}. Internal nick repair is not assumed; the molecular model does not specify reaction conditions or quantities.</li>",treatment,source(template))),
             Operation::Tail3Prime{template,base}=>body.push_str(&format!("<li>Append one {} nucleotide to both strand 3′ ends of {}. Requires reconstructed blunt linear DNA with accessible 3′-OH. Five-prime chemistry and internal nicks remain unchanged; no template ancestry or polymerase/kit activity is inferred.</li>",base.as_str(),source(template))),
             Operation::ProfiledOverlap{fragments,overlaps,circular,options}=>body.push_str(&format!("<li>Profiled {:?} ordered overlap assembly: {}. Overlaps {:?} bp; {} product. Explicit source orientation is retained. Method recommendations are advisory, not evidence of reagent compatibility, experimental completion or uniqueness. Policy <code>{}</code>.</li>",options.method,fragments.iter().map(|f|format!("{} ({})",source(&f.source),if f.reverse{"reverse complement"}else{"forward"})).collect::<Vec<_>>().join(" → "),overlaps,if *circular{"circular"}else{"linear"},e(&serde_json::to_string(options).unwrap_or_default()))),
             Operation::RepairEnds{template,method}=>body.push_str(&format!("<li>End repair {:?} of {}. Only explicitly modeled 3′ fill-in/exonuclease changes occur. Five-prime chemistry and internal nicks are retained; polymerase activity, reagents and experimental success are assumptions.</li>",method,source(template))),
             Operation::AnnealOligos{top,bottom,options,candidate_index}=>body.push_str(&format!("<li>Anneal declared 5′→3′ ssDNA inputs {} and {}.<br>Top ordered oligo 5′→3′: <code>{}</code> (5′ {:?}; 3′ {:?}).<br>Bottom ordered oligo 5′→3′: <code>{}</code> (5′ {:?}; 3′ {:?}).<br>Select zero-based candidate {} under policy <code>{}</code>. Exact antiparallel pairing and placement alternatives are reconstructed; no covalent ligation or implicit phosphorylation occurs.</li>",source(top),source(bottom),e(protocol_oligo_sequence(plan,&report,top,step_index).unwrap_or("Unresolved or unsupported bound oligo sequence")),options.top_chemistry.five_prime,options.top_chemistry.three_prime,e(protocol_oligo_sequence(plan,&report,bottom,step_index).unwrap_or("Unresolved or unsupported bound oligo sequence")),options.bottom_chemistry.five_prime,options.bottom_chemistry.three_prime,candidate_index,e(&serde_json::to_string(options).unwrap_or_default()))),
             Operation::Ligate{fragments,circular,allow_nicked,options}=>body.push_str(&format!("<li>Intended ordered ligation: {}. Product {}; retained nicks {}. Enumerate one-copy alternatives under explicit bounds <code>{}</code>; retain the intended path independently. No probabilities or experimental isolation are inferred. Full extractable outcome paths/sequences are retained below.</li>",fragments.iter().map(|f|format!("{} ({})",source(&f.source),if f.reverse{"reverse"}else{"forward"})).collect::<Vec<_>>().join(", "),if *circular{"circular"}else{"linear"},if *allow_nicked{"allowed"}else{"not allowed"},e(&serde_json::to_string(options).unwrap_or_default()))),
-            Operation::Overlap { fragments, overlaps, circular } => body.push_str(&format!("<li>Ordered overlap assembly, in this order: {}. Junction overlaps {:?} bp; {} product. Reagent conditions and quantities are unspecified.</li>",fragments.iter().map(source).collect::<Vec<_>>().join(", "),overlaps,if *circular {"circular"} else {"linear"})),
+            Operation::Overlap { fragments, overlaps, circular } => body.push_str(&format!("<li>Ordered overlap assembly, in this order: {}. Junction overlaps {:?} bp; {} product. The molecular model does not specify reagent conditions or quantities.</li>",fragments.iter().map(source).collect::<Vec<_>>().join(", "),overlaps,if *circular {"circular"} else {"linear"})),
         }
     }
     body.push_str("</ol><h2>Reconstructed products</h2><ul>");
@@ -4552,6 +4609,28 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
         body.push_str(&format!("<li>{}</li>", e(assumption)));
     }
     body.push_str(&format!("</ul><h2>Provenance</h2><p>Engine {}<br>Plan <code>{}</code><br>Target <code>{}</code></p>",e(&report.engine_version),e(&report.plan_revision),e(&report.target_revision)));
+    if let Some(appendix) = checked.appendix() {
+        body.push_str("<section><h2>Declared reaction quantities</h2><p>Arithmetic for the declared subset is separate from the molecular verification above. Unlisted conditions and reagents remain unspecified.</p>");
+        for line in &appendix.paragraphs {
+            body.push_str(&format!("<p>{}</p>", e(line)));
+        }
+        for table in &appendix.tables {
+            body.push_str(&format!("<h3>{}</h3><table><thead><tr>", e(&table.heading)));
+            for column in &table.columns {
+                body.push_str(&format!("<th>{}</th>", e(column)));
+            }
+            body.push_str("</tr></thead><tbody>");
+            for row in &table.rows {
+                body.push_str("<tr>");
+                for cell in row {
+                    body.push_str(&format!("<td>{}</td>", e(cell)));
+                }
+                body.push_str("</tr>");
+            }
+            body.push_str("</tbody></table>");
+        }
+        body.push_str("</section>");
+    }
     format!(
         "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><title>{}</title><style>body{{font:16px/1.6 system-ui;max-width:850px;margin:40px auto;padding:0 24px;color:#18302d}}code{{overflow-wrap:anywhere}}.protocol-map>svg{{display:block;max-width:100%;height:auto}}h1,h2{{line-height:1.2}}li{{margin:12px 0}}@media print{{body{{margin:0;max-width:none}}h2{{break-after:avoid}}li{{break-inside:avoid}}}}</style>{body}</html>",
         e(&plan.name)

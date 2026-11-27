@@ -406,6 +406,12 @@ pub fn RunDetailsPanel(
     snapshot: Callback<(), Result<Workspace, String>>,
     run_id: String,
     epoch: RwSignal<u64>,
+    validate: Callback<Workspace, Result<(), String>>,
+    on_restore: Callback<Workspace>,
+    db: StoredValue<Option<crate::storage::Database>, LocalStorage>,
+    workspace_busy: RwSignal<bool>,
+    save_generation: RwSignal<u64>,
+    message: RwSignal<String>,
     on_open_event: Callback<EventRequest, Result<(), String>>,
 ) -> impl IntoView {
     let opened_epoch = epoch.get_untracked();
@@ -690,7 +696,7 @@ pub fn RunDetailsPanel(
             <p class="run-authority">"Recorded history · unverified on opening"</p>
             <p class="helper">"Saved status and engine describe a historical assessment. Fresh replay is session evidence only. Neither an imported record nor a replay proves which physical reagents were used."</p>
             <RunProvenanceOverview record epoch opened_epoch open_event/>
-            <crate::saved_run_review_view::SavedRunReviewPanel snapshot run_id=run_id.get_value() epoch on_edit_plan/>
+            <crate::saved_run_review_view::SavedRunReviewPanel snapshot run_id=run_id.get_value() epoch on_edit_plan validate on_restore db workspace_busy save_generation message/>
             {move||match record.get_value(){
                 Err(error)=>view!{<p role="alert">{error}</p>}.into_any(),
                 Ok(record)=>{

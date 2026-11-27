@@ -419,3 +419,8 @@ mod saved_run_review_view;
 mod protocol_layout_model;
 #[cfg(target_arch = "wasm32")]
 mod protocol_layout_view;
+
+#[cfg(any(target_arch = "wasm32", test))]
+mod protocol_quantities_model;
+#[cfg(target_arch = "wasm32")]
+mod protocol_quantities_view;

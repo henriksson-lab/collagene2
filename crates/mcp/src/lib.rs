@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 190;
+pub const CURRENT_TOOL_COUNT: usize = 191;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -3131,6 +3131,21 @@ impl ServerHandler for CollageneServer {
 
 #[tool_router]
 impl CollageneServer {
+    #[tool(
+        description = r#"Plan explicit source-bound cloning reaction quantities using exact retained candidate/saved-run plan, independent target and ordered input event pins. Preview returns exact arithmetic plus missing-field diagnostics, not chemistry, stock availability, recommended recipes or experimental readiness. Capture requires reviewed context and atomically returns a NEW immutable workspace, full quantity artifact and archive without changing biological heads/status. List/Open inspect saved plans. Export formats Csv/Html/Pdf are quantity companions; ProtocolHtml/ProtocolPdf combine complete cloning instructions, fresh native molecular consistency and declared quantity tables. Molecular status and arithmetic completeness remain separate; neither establishes experimental success. Ordinary plasmid sharing omits this sidecar.
+
+Exact quantity JSON: Volume={"unit":"nL","value":{"numerator":"20000","denominator":"1"}} is20uL. Rational numerator/denominator are decimal unsigned64-bit STRINGS; denominator positive. Never use float, exponent or NaN. Canonical mass concentration unit is"ng/nL":100ng/uL=value1/10. Canonical molar concentration unit is"pmol/nL":10uM=value1/100. Never interchange dimensional tags. Blank direct volume is{"Direct":{"volume":null}}, not zero. MassDilution has {"recipe":{"schema_version":1,"stock":<mass concentration or null>,"target":<mass concentration or null>,"final_volume":<Volume or null>},"quantization":null}; MolarDilution uses molar concentrations. Explicit quantization={"increment":<Volume>,"mode":"ExactOnly"|"Floor"|"Ceiling"|"NearestTiesUp"}; inspect achieved concentration/deviation. Nullable request fields must be present.
+
+MINIMAL_PREVIEW={"workspace":{"id":"<workspace id>","revision":"<workspace revision>"},"task":{"Preview":{"request":{"name":"Explicit PCR quantities","plan_source":{"SavedRun":{"run_id":"<retained run id>"}},"plan_revision":"<plan revision>","target":{"document_id":"<target document>","event_id":"<original target event>","revision":"<target revision>"},"inputs":[{"input_id":"template","event":{"document_id":"<source document>","event_id":"<original source event>","revision":"<source revision>"}}],"reactions":[{"id":"pcr","step_index":0,"final_volume":{"unit":"nL","value":{"numerator":"20000","denominator":"1"}},"fill":{"ToFinal":{"component_id":"water","label":"Operator-declared water"}},"components":[{"id":"template-volume","label":"User-declared template volume","source":{"Input":"template"},"volume":{"Direct":{"volume":{"unit":"nL","value":{"numerator":"2000","denominator":"1"}}}}}]}]}}}} END_PREVIEW
+
+Replace ALL angle-bracket pins with exact native values, never names or equal-DNA substitutions. This arithmetic example leaves all other PCR reagents unspecified;18uL fill is an operator declaration, NOT a recommended reaction recipe. Arithmetic completeness is not scientific readiness. Use plan_source="Candidate" only for an exactly retained candidate and explicitly declared events. Capture adds expected_context_revision from Preview. Open/Export use quantity_hash from capture; Export format Csv,Html,Pdf,ProtocolHtml,ProtocolPdf. Combined outputs include a fresh current-engine molecular receipt, actual findings/assumptions in the instructions and exact original target/input events. They never reuse historical scientific status as fresh acceptance. List requires offset and limit1..200."#
+    )]
+    async fn protocol_quantities(
+        &self,
+        Parameters(args): Parameters<quantity_tools::Query>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.reaction_quantities(args).await
+    }
     #[tool(
         description = "Plan explicit96/384-well documentary cloning assignments using exact retained batch declarations or released run/product events. Preview never records; Capture requires the reviewed context and creates a NEW immutable workspace with a bounded layout attachment, preserving all biological heads and historical status. List/Open inspect saved layouts. Export emits native CSV/HTML/PDF planning documents with exact identifiers and missing-quantity notices. No automatic placement, inventory, schedules, instrument commands, fabricated amounts or experimental success. Ordinary plasmid publication omits plate layouts; complete plate publication requires a separate explicit closure review."
     )]
@@ -8321,3 +8336,5 @@ pub async fn serve_stdio(
 }
 
 mod sequence_exchange_tools;
+
+mod quantity_tools;

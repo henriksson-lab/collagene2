@@ -56,7 +56,7 @@ impl io::Write for CountBytes {
         Ok(())
     }
 }
-fn preflight(plan: &DesignPlan, target: &Molecule) -> Result<(), Error> {
+pub(crate) fn preflight(plan: &DesignPlan, target: &Molecule) -> Result<(), Error> {
     if plan.inputs.len() > 1000 || plan.steps.len() > 1000 {
         return Err(Error::TooLarge);
     }
@@ -685,24 +685,28 @@ Bottom strand 5prime to 3prime: {}",
 pub(crate) enum DocumentaryKind {
     SequenceComparison,
     PlateLayout,
+    ReactionQuantities,
 }
 impl DocumentaryKind {
     fn header(self) -> &'static str {
         match self {
             Self::SequenceComparison => "COLLAGENE 2 / SEQUENCE COMPARISON",
             Self::PlateLayout => "COLLAGENE 2 / PLATE LAYOUT",
+            Self::ReactionQuantities => "COLLAGENE 2 / REACTION QUANTITIES",
         }
     }
     fn footer(self) -> (&'static str, &'static str) {
         match self {
             Self::SequenceComparison => ("Reference", "Query"),
             Self::PlateLayout => ("Layout", "Context"),
+            Self::ReactionQuantities => ("Quantities", "Context"),
         }
     }
     fn producer(self) -> &'static str {
         match self {
             Self::SequenceComparison => "Collagene embedded Rust comparison exporter",
             Self::PlateLayout => "Collagene embedded Rust plate layout exporter",
+            Self::ReactionQuantities => "Collagene embedded Rust reaction quantity exporter",
         }
     }
 }
@@ -1674,7 +1678,7 @@ fn export_protocol_pdf_checked_inner(
                 directed_sequence_key,
                 physical_sequence_key,
             } => format!(
-                "Key-bound Golden Gate with {:?}; inputs {}. Explicit zero-based candidate {}. Fresh native enumeration must match directed key {} and physical key {} under policy {}. Finite one-copy search does not establish exhaustive reaction-mixture uniqueness; conditions and quantities are unspecified.",
+                "Key-bound Golden Gate with {:?}; inputs {}. Explicit zero-based candidate {}. Fresh native enumeration must match directed key {} and physical key {} under policy {}. Finite one-copy search does not establish exhaustive reaction-mixture uniqueness; conditions and quantities are not specified by the molecular model.",
                 options.enzyme,
                 templates
                     .iter()
@@ -1691,7 +1695,7 @@ fn export_protocol_pdf_checked_inner(
                 options,
                 candidate_index,
             } => format!(
-                "Golden Gate with {:?}; inputs {}. Explicit zero-based candidate index {} under search policy {}. Complete cleavage, orientation, cohesive ends and recognition-site removal are checked. One-copy fragment search does not establish exhaustive mixture uniqueness; reaction conditions and quantities are unspecified.",
+                "Golden Gate with {:?}; inputs {}. Explicit zero-based candidate index {} under search policy {}. Complete cleavage, orientation, cohesive ends and recognition-site removal are checked. One-copy fragment search does not establish exhaustive mixture uniqueness; reaction conditions and quantities are not specified by the molecular model.",
                 options.enzyme,
                 templates
                     .iter()
@@ -1706,7 +1710,7 @@ fn export_protocol_pdf_checked_inner(
                 forward,
                 reverse,
             } => format!(
-                "PCR of {}. Primers 5′→3′:\n{}: {} (annealing {}; 5′ tail {})\n{}: {} (annealing {}; 5′ tail {}).\nReaction conditions, enzyme choice and quantities are unspecified.",
+                "PCR of {}. Primers 5′→3′:\n{}: {} (annealing {}; 5′ tail {})\n{}: {} (annealing {}; 5′ tail {}).\nThe molecular model does not specify reaction conditions, enzyme choice or quantities.",
                 source_name(template),
                 forward.name,
                 forward.ordered_sequence(),
@@ -1741,7 +1745,7 @@ fn export_protocol_pdf_checked_inner(
                 template,
                 treatment,
             } => format!(
-                "Terminal {treatment:?} treatment of {}. Internal nick repair is not assumed; reaction conditions and quantities are unspecified.",
+                "Terminal {treatment:?} treatment of {}. Internal nick repair is not assumed; reaction conditions and quantities are not specified by the molecular model.",
                 source_name(template)
             ),
             Operation::Tail3Prime { template, base } => format!(
@@ -1828,7 +1832,7 @@ fn export_protocol_pdf_checked_inner(
                 overlaps,
                 circular,
             } => format!(
-                "Ordered overlap assembly: {}. Junction overlaps {overlaps:?} bp; {} product. Reagent conditions and quantities are unspecified.",
+                "Ordered overlap assembly: {}. Junction overlaps {overlaps:?} bp; {} product. Reagent conditions and quantities are not specified by the molecular model.",
                 fragments
                     .iter()
                     .map(source_name)
@@ -1998,8 +2002,26 @@ fn export_protocol_pdf_checked_inner(
         "Exhaustive alternative-product search: {}",
         report.exhaustive_alternative_search
     ))?;
+    if let Some(appendix) = checked.appendix() {
+        layout.heading("Declared reaction quantities")?;
+        layout.paragraph("Arithmetic for the declared reaction subset is separate from molecular verification. Unlisted operations and omitted reagents remain unspecified.")?;
+        for line in &appendix.paragraphs {
+            layout.paragraph(line)?;
+        }
+        for table in &appendix.tables {
+            layout.heading(&table.heading)?;
+            layout.paragraph(&table.columns.join(" | "))?;
+            for row in &table.rows {
+                layout.paragraph(&row.join(" | "))?;
+            }
+        }
+    }
     layout.heading("Laboratory details to complete before use")?;
-    layout.paragraph("Record reaction volumes, material quantities/concentrations, enzymes/reagents, buffer, temperature/time program, purification/selection and experimental confirmation. These are not supplied or validated by the sequence model.")?;
+    layout.paragraph(if checked.appendix().is_some() {
+        "The appendix records only explicitly declared quantities. Review all unlisted operations/reagents, stock measurements, buffer, temperature/time program, purification/selection and experimental confirmation. Arithmetic does not validate chemical suitability or laboratory outcome."
+    } else {
+        "Record reaction volumes, material quantities/concentrations, enzymes/reagents, buffer, temperature/time program, purification/selection and experimental confirmation. These are not supplied or validated by the sequence model."
+    })?;
     layout.heading("Provenance")?;
     layout.paragraph(&format!(
         "Engine {}\nPlan {}\nTarget {}",

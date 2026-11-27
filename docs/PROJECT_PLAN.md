@@ -3456,4 +3456,44 @@ Linux, macOS and Windows. Artifact15173175308 supplied13 static assets; staging
 validated references, declared integrity hashes, the sole current worker and WASM
 headers. Process/socket inspection confirmed the replacement listener. No browser
 or application HTTP checks ran; private services were untouched. This preview
-does not yet include the overlap-extension increment being validated above.
+does not yet include the overlap-extension increment above.
+
+### Reaction quantities for retained cloning plans
+
+The next F27 increment connects the existing exact unit arithmetic to explicit
+reaction-volume declarations for retained candidates and saved runs. Each document
+pins its canonical plan, independent target and ordered source events. Candidate
+pins are explicit caller declarations checked against retained snapshots; saved
+run pins must match the run's actual original event bindings. Neither quantities
+nor concentrations restore molecular verification or establish stock availability.
+
+Volumes start unspecified. Named fill, mass/molar dilution and any rounding are
+explicit choices; missing inputs and unallocated volume remain findings. Arithmetic
+completeness applies only to declared reactions, not every operation or required
+reagent. Referenced DNA must be an actual input of the selected operation. The UI
+uses the native worker for preview, capture, saved-report discovery, reopening
+and CSV/HTML/PDF companion export, with exact-scope guards and native save ACK.
+Combined HTML/PDF also render actual cloning instructions and a declared quantity
+appendix in one document. The existing renderer uses one fresh native verification;
+molecular findings and quantity completeness remain separate.
+Discovery metadata will not authorize material or substitute for reopening the
+full record. A missing candidate must not hide unrelated saved-run reports.
+
+This is protocol documentation, outside the excluded inventory, stock management,
+automation and scheduling areas. Worker103 carries five direct quantity actions;
+MCP191 adds one task family. Candidate26, plan24, science27 and draft15 stay unchanged.
+Bulk plate-row quantity application, editing a saved quantity document as a new
+version, and explicit broader report sharing remain further product work.
+All32 focused native cases and formatting pass, covering exact arithmetic,
+source/event guards, archive restart, MCP, scoped sharing, combined HTML/PDF
+readback and existing protocol PDF regressions. The final web/worker WASM compiler
+check also passes; browser and application HTTP checks remain deferred.
+[Native model](PROTOCOL_QUANTITIES.md) · [Interfaces](PROTOCOL_QUANTITIES_INTERFACES.md) ·
+[Combined instructions](PROTOCOL_QUANTITIES_COMPOSITION.md) · [Web](PROTOCOL_QUANTITIES_WEB.md).
+
+Public8082 has since advanced to the CI-built af664a4 frontend (worker101),
+including original-source overlap-extension domestication. Frontend artifact
+15173712687 passed its build; all three desktop builds passed. Static staging
+validated13 assets (131155545 bytes), exact integrity references and the sole
+current worker. Socket/process identity confirmed the replacement listener.
+No browser or application HTTP checks ran; private services were untouched.

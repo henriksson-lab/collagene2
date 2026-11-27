@@ -80,7 +80,7 @@ fn verified_embedded_pdf_has_unicode_font_vector_map_and_independent_cross_refer
         text.split_whitespace()
             .collect::<Vec<_>>()
             .join(" ")
-            .contains("Reagent conditions and quantities are unspecified")
+            .contains("Reagent conditions and quantities are not specified by the molecular model")
     );
     assert!(text.contains("Exhaustive alternative-product search: false"));
     assert_eq!(

@@ -84,6 +84,7 @@ fn presentation(kind: &str) -> bool {
     kind == collagene_core::assembly_library_history::ACTIVE_DRAFT_KIND
         || kind == collagene_core::domestication_preparation::REVIEW_EVIDENCE_KIND
         || kind == collagene_core::protocol_layout::KIND
+        || kind == collagene_core::protocol_quantities::KIND
         || kind == collagene_core::combinatorial_batch::KIND
         || kind == collagene_core::combinatorial_release::KIND
         || matches!(
